@@ -75,11 +75,123 @@ fn stale_binary_hint() -> String {
         .and_then(|(p, m)| m.modified().ok().map(|t| (p, t)))
         .map(|(p, t)| format!("{} (built {})", p.display(), format_stamp(t)))
         .unwrap_or_else(|| "an unknown build".to_string());
+    // When the tree can be compared, say what IS rather than what may be — a definite answer is what
+    // turns "maybe rebuild?" into an action.
+    if let Some(verdict) = behind_the_tree() {
+        return format!("      note: this binary is {built}.\n      {verdict}");
+    }
     format!(
         "      note: this binary is {built}.\n      \
          If you expected a newer verb it may just not be STAGED — the app copies \
          `target/{{debug,release}}` into ~/.base-studio-code/bin at boot, so: `npm run build:plan`, then restart the app."
     )
+}
+
+/// The newest source mtime in the cargo workspace `start` sits inside — the tree this binary is
+/// supposed to BE. `None` outside a workspace, so a release install or an arbitrary cwd degrades to
+/// silence rather than a guess.
+///
+/// Walks up for the workspace root (`Cargo.toml` containing `[workspace]`), then stats every `.rs`
+/// under `crates/` and `src-tauri/src/`. Bounded and cheap — a few thousand `stat` calls — and only
+/// ever run by `version` and by an unknown-verb error, never on the hot path.
+pub fn newest_workspace_source(start: &std::path::Path) -> Option<std::time::SystemTime> {
+    let root = workspace_root(start)?;
+    let mut newest: Option<std::time::SystemTime> = None;
+    for sub in ["crates", "src-tauri/src"] {
+        let mut stack = vec![root.join(sub)];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    // `target/` is build OUTPUT — it is newer than everything and says nothing about
+                    // whether the SOURCE moved, which is the question being asked.
+                    if e.file_name() != "target" {
+                        stack.push(p);
+                    }
+                } else if p.extension().and_then(|x| x.to_str()) == Some("rs") {
+                    if let Ok(t) = e.metadata().and_then(|m| m.modified()) {
+                        if newest.is_none_or(|n| t > n) {
+                            newest = Some(t);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    newest
+}
+
+/// The cargo workspace root at or above `start` — the directory whose `Cargo.toml` declares
+/// `[workspace]`. `None` when there is none, which is the ordinary case for an installed binary.
+fn workspace_root(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut dir = Some(start);
+    while let Some(d) = dir {
+        let manifest = d.join("Cargo.toml");
+        if std::fs::read_to_string(&manifest).is_ok_and(|t| t.contains("[workspace]")) {
+            return Some(d.to_path_buf());
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+/// How far `built` trails `newest`, or `None` when it does not meaningfully trail it at all.
+///
+/// Split out from [`behind_the_tree`] so the THRESHOLD is testable without a real clock, a real exe or
+/// a real tree — the three things that made the first cut of this fail silently in exactly one way.
+///
+/// The floor is jitter tolerance, NOT a judgement about how stale is too stale: a binary that predates
+/// its sources at all is behind them. It compares the DURATION rather than `as_secs()`, which is the
+/// bug it exists to pin — a 0.2s gap truncates to 0, and the verdict vanished with nothing to say why.
+fn behind_by(
+    built: std::time::SystemTime,
+    newest: std::time::SystemTime,
+) -> Option<std::time::Duration> {
+    let gap = newest.duration_since(built).ok()?;
+    (gap >= std::time::Duration::from_secs(2)).then_some(gap)
+}
+
+/// Is this binary BEHIND the tree it is invoked in — and by how much?
+///
+/// THE QUESTION A SESSION ACTUALLY NEEDS, and the one nothing answered. On 2026-08-24 a designer
+/// session ran for hours against a `bsc` built two days earlier. Three fixes had landed that day and
+/// none were in it; it acted on findings all three exist to stop producing and orphaned 34 specifiers.
+/// The guarded binary was in `target/debug/` five minutes before the damage — only the copy into
+/// `~/.base-studio-code/bin` (which happens at APP BOOT) had never run.
+///
+/// Neither existing check could fire. [`stale_binary_hint`] needs an unknown-verb ERROR, and the
+/// session never hit one — `bsc ui merge` existed, it just behaved like the old code. `stale_sidecars`
+/// compares the sidecar to the app at BOOT, where it was current; the tree moved afterwards.
+///
+/// Returns `None` when the answer is unknowable (no workspace, unreadable exe) or when the binary is
+/// current — a healthy build reports nothing, because a line printed every time is one nobody reads.
+pub fn behind_the_tree() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let built = std::fs::metadata(&exe).and_then(|m| m.modified()).ok()?;
+    let cwd = std::env::current_dir().ok()?;
+    let newest = newest_workspace_source(&cwd)?;
+    let gap = behind_by(built, newest)?;
+    Some(format!(
+        "BEHIND: this binary was built {}, and sources in this workspace changed {} later ({}). \
+         Run `npm run build:plan`, then restart the app to re-stage it.",
+        format_stamp(built),
+        humanize(gap),
+        format_stamp(newest),
+    ))
+}
+
+/// A duration as the coarsest unit that still says something — "2 days", "3 hours", "7 minutes". The
+/// point is the ORDER OF MAGNITUDE: "2 days" is what makes a reader stop, and seconds would not.
+fn humanize(d: std::time::Duration) -> String {
+    let s = d.as_secs();
+    let (n, unit) = match s {
+        0..=119 => (s, "second"),
+        120..=7199 => (s / 60, "minute"),
+        7200..=172_799 => (s / 3600, "hour"),
+        _ => (s / 86_400, "day"),
+    };
+    format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
 }
 
 /// A `SystemTime` as `YYYY-MM-DD HH:MM:SS` UTC — enough to compare against "when did that land?" without
@@ -112,7 +224,13 @@ pub fn version_line(prog: &str) -> String {
         .ok()
         .and_then(|(p, m)| m.modified().ok().map(|t| (p.display().to_string(), format_stamp(t))))
         .unwrap_or_else(|| ("<unknown>".to_string(), "an unknown time".to_string()));
-    format!("{prog} {}\n  built {built}\n  path  {path}", env!("CARGO_PKG_VERSION"))
+    let base = format!("{prog} {}\n  built {built}\n  path  {path}", env!("CARGO_PKG_VERSION"));
+    // The comparison is the whole value: reporting a build time and stopping short leaves the reader to
+    // remember to check, which is exactly what did not happen.
+    match behind_the_tree() {
+        Some(verdict) => format!("{base}\n  {verdict}"),
+        None => base,
+    }
 }
 
 /// Resolve a store path by the shared `--flag` → `$ENV` → `default` precedence:
@@ -745,6 +863,85 @@ pub fn read_payload(file: Option<&str>) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The threshold, pinned at both edges — and the truncation bug that made the first cut of this
+    /// report NOTHING while the binary genuinely was behind.
+    #[test]
+    fn behind_by_compares_durations_and_never_truncates_to_seconds() {
+        use std::time::{Duration, SystemTime};
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_787_600_000);
+
+        // A binary NEWER than its sources is the ordinary case — a build reads them, so it always is.
+        assert!(behind_by(t0 + Duration::from_secs(30), t0).is_none(), "a fresh build reports nothing");
+        assert!(behind_by(t0, t0).is_none(), "identical stamps are not a gap");
+
+        // Sub-threshold jitter stays quiet: two filesystems, two timestamp granularities.
+        assert!(behind_by(t0, t0 + Duration::from_millis(200)).is_none(), "0.2s is jitter");
+        assert!(behind_by(t0, t0 + Duration::from_millis(1_900)).is_none(), "still under the floor");
+
+        // THE BUG: `as_secs()` on a 1.2s gap is 1, and `if gap.as_secs() < 1` let it through as "not
+        // behind" — while a 0.2s gap truncated to 0 and did too. Comparing Durations is what fixes both.
+        assert!(behind_by(t0, t0 + Duration::from_millis(2_100)).is_some(), "just over the floor reports");
+        let two_days = behind_by(t0, t0 + Duration::from_secs(2 * 86_400)).expect("the observed shape");
+        assert_eq!(humanize(two_days), "2 days", "and it reads the way a reader needs it to");
+    }
+
+
+    /// The comparison that would have prevented the 2026-08-24 incident: a session running a binary
+    /// older than the tree it is editing, with nothing to tell it so.
+    #[test]
+    fn the_workspace_scan_finds_the_newest_source_and_stops_at_the_root() {
+        use std::time::{Duration, SystemTime};
+        let root = std::env::temp_dir().join(format!("bsc-behind-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("crates/a/src")).unwrap();
+        std::fs::create_dir_all(root.join("src-tauri/src")).unwrap();
+        std::fs::create_dir_all(root.join("crates/a/target/debug")).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        std::fs::write(root.join("crates/a/src/lib.rs"), "// x").unwrap();
+        std::fs::write(root.join("src-tauri/src/main.rs"), "// y").unwrap();
+        // Build OUTPUT is always newer than everything and says nothing about whether SOURCE moved.
+        std::fs::write(root.join("crates/a/target/debug/gen.rs"), "// generated").unwrap();
+        // A non-`.rs` sibling must not count either.
+        std::fs::write(root.join("crates/a/src/notes.md"), "# no").unwrap();
+
+        let newest = newest_workspace_source(&root.join("crates/a/src")).expect("found from a nested cwd");
+        let stat = |p: &str| std::fs::metadata(root.join(p)).unwrap().modified().unwrap();
+        let sources = [stat("crates/a/src/lib.rs"), stat("src-tauri/src/main.rs")];
+        assert!(sources.contains(&newest), "the newest is one of the two SOURCES, not the target artifact");
+        assert!(
+            newest <= stat("crates/a/target/debug/gen.rs") + Duration::from_secs(0),
+            "sanity: the artifact exists and is not what was picked",
+        );
+
+        // Outside a workspace there is no answer to give, and guessing is worse than silence.
+        let orphan = root.join("crates/a/src/deep");
+        std::fs::create_dir_all(&orphan).unwrap();
+        assert!(newest_workspace_source(&orphan).is_some(), "a nested dir still finds the root above it");
+        assert!(
+            newest_workspace_source(std::path::Path::new("/")).is_none(),
+            "no workspace above `/` — report nothing rather than guess",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = SystemTime::now();
+    }
+
+    /// The verdict is reported only when it IS behind — a healthy build must print nothing, or the line
+    /// becomes noise everyone filters out, which is how a warning stops being one.
+    #[test]
+    fn humanize_reports_the_order_of_magnitude_that_makes_a_reader_stop() {
+        use std::time::Duration;
+        assert_eq!(humanize(Duration::from_secs(1)), "1 second");
+        assert_eq!(humanize(Duration::from_secs(90)), "90 seconds");
+        assert_eq!(humanize(Duration::from_secs(600)), "10 minutes");
+        assert_eq!(humanize(Duration::from_secs(3 * 3600)), "3 hours");
+        // The one that mattered: the designer's binary was two days old.
+        assert_eq!(humanize(Duration::from_secs(2 * 86_400 + 3600)), "2 days");
+        assert_eq!(humanize(Duration::from_secs(176_400)), "2 days", "49 hours rounds DOWN, never up");
+        assert_eq!(humanize(Duration::from_secs(7200)), "2 hours", "the minute/hour boundary");
+    }
+
     use super::*;
 
     // ── the `--raw` byte-clean output contract (#3166) ──────────────────────────────────────────────
