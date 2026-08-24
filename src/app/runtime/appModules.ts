@@ -231,6 +231,40 @@ import * as NodeUrn from "@/shared/lib/graph/nodeUrn";
 // module that is itself a record or registered here. Without this the record compiles, declines at
 // runtime, and the Design Studio silently falls back — the same shape that blanked the Console page.
 import * as CssColor from "@/shared/lib/graph/cssColor";
+// ── record-links-is-red-on-develop ───────────────────────────────────────────────────────────────────
+// Two npm dependencies records import directly. Registered like `lucide-react` and `react-dom` below:
+// a package the graph may import has to be a live instance the shell owns, not a second copy. No
+// registrar covers these — they are not first-party.
+import * as D3Force from "d3-force";
+import * as QrCode from "qrcode.react";
+// Two first-party leaves NO registrar owns: `viz/examples` is outside the algorithms platform surface,
+// and `planner/` has no `graphPlatform` at all — it is domain-only by design, so a specifier of its own
+// can never arrive by a registrar. Both are files nine records already require.
+/* eslint-disable @typescript-eslint/no-restricted-imports -- see below */
+// THE #1545 EXCEPTION, and why it is one. The rule says the shell may use a feature's BARREL but never
+// its internals, and that is right for UI: a feature must be free to move its own parts. These imports
+// are not UI. They are the platform REGISTRARS and the two leaves no registrar owns — the shell's own
+// concern, and the thing the rule's "public API" framing has no slot for, since most of these barrels
+// are records and re-exporting a registrar through them would mean a seed+store edit per feature.
+//
+// The lint-legal alternative is what `shadowPages` does — a DYNAMIC import — and it is wrong here:
+// `registerPlatformModules()` is synchronous and runs at boot, so firing six unawaited imports would
+// leave a window where a record compiles against a registry that does not hold its specifiers yet. A
+// race that only bites under load is a worse outcome than a documented exception.
+import * as VizSandbox from "@/features/algorithms/viz/examples/vizSandbox";
+import * as BlueprintBuiltins from "@/features/planner/stages/blueprintBuiltins";
+// The SIX feature surfaces nothing used to register. Their registrars existed and were called only by
+// two TESTS — the manifest generator and the boundary guard — so the manifest and the guard both
+// resolved specifiers the running app did not have. Calling them HERE, from the one function the app
+// itself calls at boot, is what makes the manifest true and the guard honest; see
+// `registerPlatformModules` below.
+import { registerDebugPlatform } from "@/features/debug/graphPlatform";
+import { registerDesignsPlatform } from "@/features/designs/graphPlatform";
+import { registerPersonasPlatform } from "@/features/personas/graphPlatform";
+import { registerStudioSessionsPlatform } from "@/features/studio-sessions/graphPlatform";
+import { registerTeamsPlatform } from "@/features/teams/graphPlatform";
+import { registerTunnelPlatform } from "@/features/tunnel/graphPlatform";
+/* eslint-enable @typescript-eslint/no-restricted-imports */
 import * as GlGraphRenderer from "@/shared/lib/graph/glGraphRenderer";
 import * as GlyphAtlas from "@/shared/lib/graph/glyphAtlas";
 import * as Types from "@/shared/lib/github/types";
@@ -565,6 +599,11 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/graph/crossGraph": CrossGraph,
   "@/shared/lib/graph/nodeUrn": NodeUrn,
   "@/shared/lib/graph/cssColor": CssColor,
+  // record-links-is-red-on-develop — not first-party, so no registrar covers them.
+  "d3-force": D3Force,
+  "qrcode.react": QrCode,
+  "@/features/algorithms/viz/examples/vizSandbox": VizSandbox,
+  "@/features/planner/stages/blueprintBuiltins": BlueprintBuiltins,
   "@/shared/lib/graph/glGraphRenderer": GlGraphRenderer,
   "@/shared/lib/graph/glyphAtlas": GlyphAtlas,
   "@/shared/lib/github/types": Types,
@@ -688,6 +727,17 @@ export function registerPlatformModules(): void {
   if (done) return;
   done = true;
   for (const [specifier, mod] of Object.entries(PLATFORM)) registerAppModule(specifier, mod);
+  // The six feature surfaces that had NO runtime caller (record-links-is-red-on-develop). They were
+  // registered only inside two tests, so `platform-modules.json` and `platformBoundary.test.ts` both
+  // believed in specifiers the app never held — and `promote-records.mjs` reads that manifest as the
+  // definition of "resolvable", which is how 24 records carrying imports that resolve to nothing got
+  // packaged. One caller, at boot, is what makes those three agree with the runtime.
+  registerDebugPlatform();
+  registerDesignsPlatform();
+  registerPersonasPlatform();
+  registerStudioSessionsPlatform();
+  registerTeamsPlatform();
+  registerTunnelPlatform();
   for (const [key, mod] of Object.entries(DATA_JSON)) {
     const specifier = dataSpecifierFor(key);
     if (specifier) registerAppModule(specifier, asEsModule(mod));
