@@ -4115,6 +4115,21 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
             if into.is_empty() { String::new() } else { format!(", superseded by `{into}`") },
         );
     }
+    // A record harvested from the target's own source file is withheld from the ranking (it is the same
+    // file, not something to merge into — `similarity::module_and_its_harvest`). SAY SO: an unexplained
+    // absence in a ranked list reads as "nothing resembles it", which is the same failure the retired-
+    // record note above exists to prevent. Shape mode scores a different measure and does not withhold.
+    if !shape && !json {
+        let held = crate::similarity::harvest_siblings_of(&id, &comps);
+        if !held.is_empty() {
+            println!(
+                "note: {} record(s) harvested from the same source file are not listed ({}) — they are \
+                 views of one module, not duplicates of it.",
+                held.len(),
+                held.join(", "),
+            );
+        }
+    }
     // #3584: fold each candidate's graph-USAGE (composes-inverse) into the row, so a "these two overlap"
     // proposal arrives with which side is load-bearing — the optimizer folds the LESS-used into the more.
     let idx = used_by_index(&comps);

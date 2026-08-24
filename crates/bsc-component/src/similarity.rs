@@ -642,6 +642,67 @@ fn exactly_caught(a: &Comp, b: &Comp) -> bool {
         || (!a.src_text.trim().is_empty() && a.src_text == b.src_text)
 }
 
+/// A MODULE record and a component HARVESTED OUT OF IT — two VIEWS of one file, never two
+/// implementations of one thing.
+///
+/// The migration (#3604) leaves a source file represented more than once in the store. One record
+/// carries `provides` and IS the file: it is what answers `@/features/settings/cards/AccentColorCard`
+/// when something imports it. The others are the individual components lifted out of that same file so
+/// the graph can render them. Their `srcText` is near-identical *because it is the same source*, so
+/// `contract` scores high and the pair clears every bar this surface has.
+///
+/// It is not a rare shape: across the packaged seed, **61 source files carry more than one record, and
+/// in 57 of them exactly one member carries `provides`**.
+///
+/// Skipping it is not noise reduction — the recommended action is DESTRUCTIVE on this shape. The only
+/// sane-looking way to consolidate a pair is to retire one side, and retiring the `provides` side
+/// orphans the specifier every importer resolves through. On 2026-08-24 a designer session did exactly
+/// that 34 times and took Settings, Glance and Accessibility off the store's resolution graph, one
+/// finding at a time. #4138 is what surfaces the pair in the first place — [`worth_scoring`] promotes
+/// any pair sharing `src_path` — so the measure seeks this shape out and then proposes the one action
+/// that breaks it.
+///
+/// ## The discriminator is `provides`, not the shared `src`
+///
+/// Same `src` and NEITHER side claims a specifier ⇒ two components harvested from one file, which
+/// genuinely CAN duplicate each other (`actionrow` / `menurow` / `menusection` all come out of
+/// `PaneMenu.tsx`). That is the case this surface exists for, and it stays scored.
+///
+/// Same `src` and either side claims one ⇒ a module is in the pair, and the proposal is unsafe.
+///
+/// **It is deliberately "either", not "exactly one".** A first cut used the XOR — the module claims a
+/// specifier and the harvest does not — which is the shape the seed ships. Measured against the live
+/// store it under-fired: a 2026-08-17 batch had rewritten many harvested halves to a `@/components/<id>`
+/// specifier that nothing imports, so BOTH sides carried `provides` and the pair sailed through. The
+/// XOR was reading a data defect as a distinction. One source file is one module, so two records from
+/// it cannot legitimately claim two different specifiers, and the pair is not a merge candidate either
+/// way. (Two records claiming the SAME specifier is a real conflict and keeps its own finding —
+/// [`provides_collision_findings`] — which says something different and correct.)
+///
+/// Distinct from [`live`] (`0298e60f`), which drops TOMBSTONES — records with no content left to score.
+/// Both records here are live and both are legitimate; what makes the pair meaningless is that they are
+/// the same file.
+fn module_and_its_harvest(a: &Comp, b: &Comp) -> bool {
+    !a.src_path.is_empty()
+        && a.src_path == b.src_path
+        && (!a.provides.trim().is_empty() || !b.provides.trim().is_empty())
+}
+
+/// The ids `bsc ui similar <target>` WITHHELD as module/harvest siblings — so the CLI can say so rather
+/// than let them vanish from the ranking. An unexplained absence in a ranked list is indistinguishable
+/// from "nothing resembles it", which is the same reason the retired-record note exists.
+pub fn harvest_siblings_of(target_id: &str, components: &[Value]) -> Vec<String> {
+    let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
+    let Some(target) = comps.iter().find(|c| c.id == target_id) else { return Vec::new() };
+    let mut out: Vec<String> = comps
+        .iter()
+        .filter(|c| c.id != target_id && live(c) && module_and_its_harvest(target, c))
+        .map(|c| c.id.clone())
+        .collect();
+    out.sort();
+    out
+}
+
 /// The two sides of a merge proposal, rendered so they name two DISTINGUISHABLE things.
 ///
 /// A cross-kit pair routinely shares one display name — `GraphCanvas` exists in both the desktop and
@@ -745,7 +806,7 @@ pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Find
     for i in 0..comps.len() {
         for j in (i + 1)..comps.len() {
             let (a, b) = (&comps[i], &comps[j]);
-            if exactly_caught(a, b) {
+            if exactly_caught(a, b) || module_and_its_harvest(a, b) {
                 continue;
             }
             let Some(sc) = score(a, b) else { continue };
@@ -1201,6 +1262,9 @@ pub fn rank_similar(target_id: &str, components: &[Value], top: usize, floor: f6
         .iter()
         .filter(|c| c.id != target_id)
         .filter(|c| live(c)) // a tombstone is never an actionable candidate — see `rank_shape_similar`
+        // A record harvested from the target's own source file is the same file, not a candidate to
+        // merge into — see `module_and_its_harvest`. The CLI names what this withheld.
+        .filter(|c| !module_and_its_harvest(target, c))
         .filter_map(|c| {
             let sc = score(target, c)?;
             if sc.overall < floor {
@@ -1832,6 +1896,108 @@ mod tests {
         // pair's score relative to having no provenance at all.
         let none = explain_pair(&mk("a", "Card", ""), &mk("b", "Card", "")).unwrap();
         assert!(mean(&diff) >= mean(&none) - f64::EPSILON, "a differing src must not penalize the pair");
+    }
+
+    /// The shape that cost Settings, Glance and Accessibility their resolution graph on 2026-08-24: a
+    /// module record and a component harvested out of the SAME FILE, proposed for consolidation.
+    #[test]
+    fn a_module_record_is_not_a_duplicate_of_what_was_harvested_from_it() {
+        // The real records, near-verbatim. Same `src`; the `-module` half carries `provides` and IS the
+        // file, the other half is one component lifted out of it. Near-identical srcText by construction.
+        const SRC: &str = "src/features/settings/cards/accentcolorcard.tsx";
+        // NOT byte-identical: an exact match is owned by the `duplicate` detector and skipped by
+        // `exactly_caught` before this rule is ever consulted, so a test built on identical bodies would
+        // pass without exercising anything. These differ by one line and score on the FUZZY path.
+        let body = |extra: &str| {
+            format!(
+                "import {{ Card }} from \"@/shared/ui/data/Card\";\n\
+                 export function AccentColorCard() {{ {extra}return <Card title=\"Accent color\" />; }}"
+            )
+        };
+        let module = comp_with("settings-accentcolorcard", "AccentColorCard", "base-studio-code", fields! {
+            "src": SRC, "provides": "@/features/settings/cards/AccentColorCard",
+        });
+        let mut module = module;
+        module["srcText"] = json!(body("const { accent } = useAppStore(); "));
+        let harvest = comp_with("accentcolorcard", "AccentColorCard", "base-studio-code", fields! { "src": SRC });
+        let mut harvest = harvest;
+        harvest["srcText"] = json!(body(""));
+
+        // Sanity: WITHOUT the rule this pair scores well past the bar — otherwise the assertions below
+        // would pass for want of similarity rather than because of the rule.
+        assert!(
+            contract_similarity(&module, &harvest) >= 0.7,
+            "the pair must be genuinely near-identical for this test to mean anything: {}",
+            contract_similarity(&module, &harvest),
+        );
+
+        let pair = vec![module.clone(), harvest.clone()];
+        assert!(
+            near_duplicate_findings(&pair, 0.55).is_empty(),
+            "a module and its own harvest are one file, not two implementations: {:?}",
+            near_duplicate_findings(&pair, 0.55),
+        );
+        // ... and neither is offered as somewhere to merge the other INTO. Retiring the `provides` half
+        // is what orphans the specifier every importer resolves through, so this ranking is the whole
+        // hazard: it is the only place the action gets proposed.
+        assert!(rank_similar("settings-accentcolorcard", &pair, 10, 0.0).is_empty(), "module -> harvest");
+        assert!(rank_similar("accentcolorcard", &pair, 10, 0.0).is_empty(), "harvest -> module");
+
+        // The absence is REPORTED, not silent — an unexplained gap in a ranking reads as "nothing
+        // resembles it", which is exactly the wrong conclusion here.
+        assert_eq!(harvest_siblings_of("settings-accentcolorcard", &pair), vec!["accentcolorcard".to_string()]);
+        assert_eq!(
+            harvest_siblings_of("accentcolorcard", &pair),
+            vec!["settings-accentcolorcard".to_string()],
+        );
+
+        // ── The narrowing must not disable the surface. Two ways it could over-reach, both pinned: ──
+
+        // 1 · Same file, BOTH claiming a specifier — still not a merge candidate. One source file is
+        //     one module; two records out of it cannot legitimately claim two different specifiers, so
+        //     the pair is a data defect, not a duplicate. This is the case the XOR first cut got wrong:
+        //     a 2026-08-17 batch had given many harvested halves a `@/components/<id>` specifier, and
+        //     the rule read that defect as a distinction and let the pair through.
+        let mut rival = comp_with("accentcolorcard", "AccentColorCard", "base-studio-code", fields! {
+            "src": SRC, "provides": "@/components/accentcolorcard",
+        });
+        rival["srcText"] = json!(body(""));
+        assert!(
+            near_duplicate_findings(&[module.clone(), rival.clone()], 0.55).is_empty(),
+            "one file is one module — a second specifier out of it is a defect, not a duplicate: {:?}",
+            near_duplicate_findings(&[module.clone(), rival.clone()], 0.55),
+        );
+
+        // ... and the genuine conflict — two records claiming the SAME specifier — keeps its own finding,
+        //     which says something different and correct. Narrowing the dupe surface must not silence it.
+        let mut clash = comp_with("clash", "AccentColorCard", "base-studio-code", fields! {
+            "src": SRC, "provides": "@/features/settings/cards/AccentColorCard",
+        });
+        clash["srcText"] = json!(body(""));
+        let collisions = provides_collision_findings(&[module.clone(), clash]);
+        assert_eq!(collisions.len(), 1, "a real provides collision must still be reported on its own");
+        assert_eq!(collisions[0].category, "provides-collision");
+
+        // 2 · Same file, NEITHER claiming a specifier. Two components harvested from one file genuinely
+        //     CAN duplicate each other — `actionrow` / `menurow` / `menusection` all come out of
+        //     `PaneMenu.tsx`. That is the case this surface exists for, and the narrowing must not eat it.
+        let mut sibling = comp_with("accentswatch", "AccentColorCard", "base-studio-code", fields! { "src": SRC });
+        sibling["srcText"] = json!(body("const x = 1; "));
+        assert!(
+            !near_duplicate_findings(&[harvest.clone(), sibling], 0.55).is_empty(),
+            "two harvested components from one file are still scorable duplicates",
+        );
+
+        // 3 · No `src` at all — the common case. An empty string must never match itself into a pair, or
+        //     the rule would silently swallow every unprovenanced record that happens to carry `provides`.
+        let mut a = comp_with("a", "AccentColorCard", "k", fields! { "provides": "@/x/A" });
+        a["srcText"] = json!(body(""));
+        let mut b = comp_with("b", "AccentColorCard", "k", fields! {});
+        b["srcText"] = json!(body("const y = 2; "));
+        assert!(
+            !near_duplicate_findings(&[a, b], 0.55).is_empty(),
+            "two records with no `src` are not a module/harvest pair — an empty src must not match itself",
+        );
     }
 
     #[test]
