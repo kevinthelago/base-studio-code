@@ -107,14 +107,22 @@ abandoned it or crashed. A no-op (reported) for an unknown or not-claimed id.",
     },
     CmdDoc {
         name: "prune",
-        summary: "remove all RESOLVED requests; prints the count",
+        summary: "remove resolved requests that carry no answer; prints the count",
         usage: "\
 USAGE:
-  bsc request prune
+  bsc request prune [--dry-run] [--with-answers]
 
-Deletes every resolved request and prints how many were removed. The store only grew before this —
-`resolve` flips the status but the row stayed. Only completed (resolved) rows go; an open request,
-even a corrupted one, is left for `remove`.",
+Collects resolved requests that carry NO answer. An open request, even a corrupted one, is left for
+`remove`.
+
+AN ANSWERED THREAD IS KEPT unless you ask twice. `request_notes` cascades on the request, so a prune
+takes the whole discussion with it — and the answer is the durable half: why a reported behaviour was
+or was not a bug lives nowhere else. Request #99 was answered with four notes on 2026-08-24, resolved,
+and pruned within the hour by a routine tidy-up; nothing records that it was ever filed.
+
+--dry-run reports what would go and deletes nothing. --with-answers also drops the answered ones,
+thread and all — the escape hatch stays, it just stops being what a tidy-up does by accident. Either
+way the counts are printed BEFORE anything is deleted.",
     },
     CmdDoc {
         name: "remove",
@@ -147,6 +155,11 @@ struct Args {
     /// Absent ⇒ derived from the text by `Request::display_title`.
     title: Option<String>,
     open: bool,
+    /// `prune --dry-run` — report what would go instead of deleting it.
+    dry_run: bool,
+    /// `prune --with-answers` — also drop resolved requests that carry a reply thread. Off by default:
+    /// the answer is the durable half, and a routine tidy-up should not destroy it (see `add_note`).
+    with_answers: bool,
     limit: Option<i64>,
     positional: Vec<String>,
 }
@@ -164,6 +177,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         from: None,
         title: None,
         open: false,
+        dry_run: false,
+        with_answers: false,
         limit: None,
         positional: Vec::new(),
     };
@@ -174,6 +189,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--open" => a.open = true,
+            "--dry-run" => a.dry_run = true,
+            "--with-answers" => a.with_answers = true,
             "--db" => a.db = Some(val("--db")?),
             "--surface" => a.surface = Some(val("--surface")?),
             "--cmd" => a.cmd = Some(val("--cmd")?),
@@ -357,7 +374,28 @@ fn cmd_unclaim(args: &Args) -> Result<(), String> {
 
 /// `prune` — remove all resolved requests; prints the count.
 fn cmd_prune(args: &Args) -> Result<(), String> {
-    let n = open_store(&args.db)?.prune_resolved().map_err(|e| format!("pruning requests: {e}"))?;
+    let (with_answers, dry) = (args.with_answers, args.dry_run);
+    let store = open_store(&args.db)?;
+    let (bare, answered) = store.prune_preview().map_err(|e| format!("reading requests: {e}"))?;
+    let going = if with_answers { bare + answered } else { bare };
+
+    // SAY WHAT WILL GO, BEFORE IT GOES. `prune` deleted an unbounded set with no preview and no
+    // confirmation, and its help mentioned only the requests — never the threads that cascade with them.
+    println!(
+        "{} {going} resolved request(s){}",
+        if dry { "would prune" } else { "pruning" },
+        if answered > 0 && !with_answers {
+            format!("; KEEPING {answered} that carry an answer (--with-answers to drop those too)")
+        } else if answered > 0 {
+            format!(" — including {answered} with an answer, whose notes go with them")
+        } else {
+            String::new()
+        },
+    );
+    if dry {
+        return Ok(());
+    }
+    let n = store.prune_resolved(with_answers).map_err(|e| format!("pruning requests: {e}"))?;
     println!("pruned {n} resolved request{}", if n == 1 { "" } else { "s" });
     Ok(())
 }
