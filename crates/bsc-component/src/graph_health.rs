@@ -60,7 +60,9 @@ pub struct Finding {
     /// `reimplementation` | `reimplemented-component` (#3892, sev-3) | `orphan` | `unwired-prop` |
     /// `props-metadata-mismatch` (#88, sev-2) | `skips-family-shell` (#87, sev-2) |
     /// `phantom-compose` | `no-empty-state` |
-    /// `multi-component` (#doctor-flags…, sev-2) | `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `multi-component` (#doctor-flags…, sev-2) | `multi-export` (#a-record-holds-one-item…, sev-2 —
+    /// its EXPORTED counterpart; see the loop for why both exist) |
+    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -849,6 +851,17 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// The bar for `multi-component`. See the loop for why it is 4 and what the distribution looked like.
 const MULTI_COMPONENT_MIN: usize = 4;
 
+/// A backtick-quoted, comma-joined name list for a finding's prose, truncated past three. `ui-charts`
+/// carries FIFTEEN foreign exports and a finding that spells all fifteen into one sentence is a wall,
+/// not a report — the full list is one `bsc ui exports <id>` away, and `why` already names them.
+fn naming(names: &[String]) -> String {
+    let shown: Vec<String> = names.iter().take(3).map(|n| format!("`{n}`")).collect();
+    match names.len() {
+        0..=3 => shown.join(", "),
+        n => format!("{} and {} more", shown.join(", "), n - 3),
+    }
+}
+
 // ── skips-family-shell (#87) — the four gates that make "which sibling skips the shared shell?" a
 // SIGNAL rather than a list. Every one of them was set against the real library (585 records): at these
 // values the whole store yields FOUR findings, including the case the request was filed for — 20 of the
@@ -892,7 +905,7 @@ fn name_suffix(name: &str) -> Option<String> {
 /// only signal in the source that separates a component from an ordinary function. It will miss exotic
 /// forms (a `React.memo(` wrapper assigned to a lowercase name); missing one is the right way to be wrong
 /// here, since a false positive pushes someone to split a file that never needed splitting.
-fn top_level_components(src: &str) -> Vec<String> {
+pub(crate) fn top_level_components(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in src.lines() {
         if line.starts_with(char::is_whitespace) {
@@ -3150,6 +3163,64 @@ fn analyze_kit(
         });
     }
 
+    // ── multi-export (severity 2, #a-record-holds-one-item-not-a-module-of-them): a record whose module
+    // EXPORTS a component other than itself. The library's rule is one record, one item — a `Card` record
+    // exports `Card` and the things that decorate it (`CardProps`, `useCard`), not `ListItemCard`.
+    //
+    // It is a DIFFERENT question from `multi-component` above, which counts component DEFINITIONS whether
+    // or not they are exported, and the two disagree in both directions:
+    //   · `ttscard` DEFINES four components and exports one — `multi-component` fires, this does not, and
+    //     this is right: `ToggleRow` is private, so no consumer can reach it. That is a composition
+    //     observation (should the file be split?), not an API one.
+    //   · `teams-canvas` defines ONE component and exports five items — `multi-component` cannot see it.
+    //   · `projectsworkspace` exports 34 names (four `register*Platform` registrars, a manifest validator,
+    //     a payload builder) and `hooksview` 22, and the definition count reports nothing on either.
+    // They want opposite fixes — inline the helper versus extract the record — so they stay separate.
+    //
+    // NO MEASURED BAR HERE, because the sharpening is qualitative rather than numeric. Over the 505
+    // records that carry source, 185 (37%) export more than one NAME and 99 (20%) more than one ITEM —
+    // far too many to be a severity-2 finding, and most of that shoulder is a component plus one domain
+    // type it genuinely owns (`Stepper` + `Stage`, `LogView` + `Commit`). Restricting the finding to a
+    // foreign exported COMPONENT cuts it to 35 records (7%) with no arbitrary threshold, and every one of
+    // them is a real case: `ui-field` ships `TextField`/`TextArea`/`SelectField`, and `textfield`,
+    // `textarea` and `ui-field` each export a `Field`, which is how three records come to claim one name.
+    // The wider item count is not lost — `bsc ui exports --all` ranks the whole store by it, unbounded.
+    for n in nodes {
+        let Some(src) = own_module_source(n, &kit_targets) else {
+            continue; // built-in or spec-only — no source of ours to read
+        };
+        let defined: BTreeSet<String> = top_level_components(src).into_iter().collect();
+        let surface = crate::exports::surface(src, &n.name, &defined);
+        let foreign: Vec<String> = surface.foreign_components().iter().map(|e| e.name.clone()).collect();
+        if foreign.is_empty() {
+            continue;
+        }
+        out.push(Finding {
+            category: "multi-export",
+            severity: 2,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` exports {} component{} beyond itself ({}) — {} item{} in a record whose id names one. An exported sibling is reachable by import but invisible to everything keyed on the id: it has no record, never previews, is never a `composes` edge, and `pickComponent` mounts whichever exported function comes FIRST, so the export ORDER decides what renders",
+                n.name,
+                foreign.len(),
+                if foreign.len() == 1 { "" } else { "s" },
+                foreign.join(", "),
+                surface.items.len(),
+                if surface.items.len() == 1 { "" } else { "s" },
+            ),
+            suggested_action: format!(
+                "give {} {} own record{} and have `{}` reference {} — check `bsc ui similar` first, since a name this record exports may already exist elsewhere in the library",
+                naming(&foreign),
+                if foreign.len() == 1 { "its" } else { "each their" },
+                if foreign.len() == 1 { "" } else { "s" },
+                n.name,
+                if foreign.len() == 1 { "it" } else { "them" },
+            ),
+        });
+    }
+
     // ── no-tests (severity 1, INFORMATIONAL, #3878): an IMPLEMENTED own-module component that carries no
     // tests. Tests are a per-node data contract — the same shape as the analytics manifest one field over —
     // because once a component's source is a store record compiled at runtime, a test file under `src/**` is
@@ -3632,10 +3703,17 @@ function C() {}
     // A buildable component fixture — it carries its own `source` (a real module), so the
     // no-implementation check never fires on it and the topology tests below stay about topology.
     // (The no-implementation-specific tests build their own deliberately source-less fixtures.)
+    //
+    // The placeholder is an ANONYMOUS default export on purpose. It used to be `export const C = …`,
+    // which claimed every one of these records shipped a component called `C` — harmless while nothing
+    // read export NAMES, and a false `multi-export` finding on all 22 fixtures the moment something did
+    // (#a-record-holds-one-item-not-a-module-of-them). A fixture that means "this record has an
+    // implementation" should not also assert what that implementation is called; the named-export cases
+    // are covered by tests that spell the source out.
     fn comp(id: &str, role: &str, used: i64, composes: &[&str]) -> Value {
         json!({ "id": id, "name": id, "kitId": "k", "role": role, "used": used,
                 "composes": composes, "srcText": format!("src-{id}"),
-                "source": "export const C = () => null;" })
+                "source": "export default () => null;" })
     }
 
     fn cats(fs: &[Finding]) -> Vec<&str> {
@@ -3647,8 +3725,8 @@ function C() {}
         // Page → Card → Button, all used; nothing dead or duplicated.
         let comps = [
             comp("page", "page", 1, &["Card"]),
-            json!({ "id": "Card", "name": "Card", "kitId": "k", "role": "composite", "used": 3, "composes": ["Button"], "srcText": "card", "source": "export const C = () => null;" }),
-            json!({ "id": "Button", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": "btn", "source": "export const C = () => null;" }),
+            json!({ "id": "Card", "name": "Card", "kitId": "k", "role": "composite", "used": 3, "composes": ["Button"], "srcText": "card", "source": "export default () => null;" }),
+            json!({ "id": "Button", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": "btn", "source": "export default () => null;" }),
         ];
         assert!(analyze(&comps).is_empty());
     }
@@ -4354,7 +4432,7 @@ export function X(){ return <i>{nope}</i>; }"
         let comps = [
             json!({
                 "id": "gx", "name": "GraphExplorerPage", "kitId": "k", "role": "page", "used": 2,
-                "composes": ["ForceGraph", "TreeDiagram"], "srcText": "src", "source": "export const C = () => null;",
+                "composes": ["ForceGraph", "TreeDiagram"], "srcText": "src", "source": "export default () => null;",
                 "props": [
                     { "name": "title", "type": "string" },
                     { "name": "view", "type": "ReactNode" },
@@ -4377,11 +4455,11 @@ export function X(){ return <i>{nope}</i>; }"
         let comps = [
             // composes children but no ReactNode content slot → renders standalone, not flagged
             json!({ "id": "tb", "name": "Toolbar", "kitId": "k", "role": "composite", "used": 3,
-                    "composes": ["Button"], "srcText": "a", "source": "export const C = () => null;",
+                    "composes": ["Button"], "srcText": "a", "source": "export default () => null;",
                     "props": [{ "name": "label", "type": "string" }] }),
             // a `children`-only prop is universal, never a slot-shell signal
             json!({ "id": "cd", "name": "Card", "kitId": "k", "role": "composite", "used": 3,
-                    "composes": ["Icon"], "srcText": "b", "source": "export const C = () => null;",
+                    "composes": ["Icon"], "srcText": "b", "source": "export default () => null;",
                     "props": [{ "name": "children", "type": "ReactNode" }] }),
             comp("Button", "primitive", 9, &[]),
             comp("Icon", "primitive", 9, &[]),
@@ -4708,6 +4786,58 @@ export function X(){ return <i>{nope}</i>; }"
         assert!(f[0].suggested_action.contains("REPORT, not a rule"), "{}", f[0].suggested_action);
     }
 
+    /// `multi-export` and `multi-component` are asked to disagree, in both directions, on purpose — that
+    /// disagreement is the reason both exist (#a-record-holds-one-item-not-a-module-of-them).
+    #[test]
+    fn multi_export_flags_an_exported_sibling_and_ignores_a_private_one() {
+        // `ui-field`, in shape: three components and their props types under one id. `Field` is the
+        // record; `TextField`/`SelectField` are other components' whole public API riding along.
+        let field = json!({
+            "id": "field", "name": "Field", "kitId": "k", "role": "primitive", "used": 1, "composes": [],
+            "srcText": "s",
+            "source": "export type FieldProps = {};\nexport const Field = (p: FieldProps) => <div />;\nexport const TextField = (p: {}) => <Field />;\nexport const SelectField = (p: {}) => <Field />;\n",
+        });
+        let f = analyze(std::slice::from_ref(&field));
+        let me: Vec<&Finding> = f.iter().filter(|x| x.category == "multi-export").collect();
+        assert_eq!(me.len(), 1, "one finding for the record, not one per extra export");
+        assert!(me[0].why.contains("TextField") && me[0].why.contains("SelectField"), "{}", me[0].why);
+        assert!(!me[0].why.contains("FieldProps"), "a props type decorates Field — not a second item: {}", me[0].why);
+        assert_eq!(me[0].severity, 2);
+
+        // The other direction: `ttscard` DEFINES three components and exports one. `multi-component`
+        // has something to say (below its bar here, but it is the check that sees it); `multi-export`
+        // must not, because nothing outside the record can reach `ToggleRow`.
+        let tts = json!({
+            "id": "ttscard", "name": "TtsCard", "kitId": "k", "role": "composite", "used": 1, "composes": [],
+            "srcText": "s",
+            "source": "const ToggleRow = ({ on }: { on: boolean }) => <input checked={on} />;\nconst SettingsRow = () => <div />;\nexport const TtsCard = () => <ToggleRow on />;\n",
+        });
+        assert!(
+            !cats(&analyze(std::slice::from_ref(&tts))).contains(&"multi-export"),
+            "an unexported sibling is a composition question, not an API one",
+        );
+
+        // And the case the DEFINITION count structurally cannot see: one component, four exported types.
+        // Foreign items, but not foreign COMPONENTS — reportable by `bsc ui exports`, not by this finding.
+        let canvas = json!({
+            "id": "canvas", "name": "TeamsCanvas", "kitId": "k", "role": "composite", "used": 1, "composes": [],
+            "srcText": "s",
+            "source": "export type Position = {};\nexport type Relationship = {};\nexport const TeamsCanvas = () => <div />;\n",
+        });
+        let cf = analyze(std::slice::from_ref(&canvas));
+        assert!(!cats(&cf).contains(&"multi-export"), "exported TYPES do not carry a component's API");
+        assert!(!cats(&cf).contains(&"multi-component"), "one definition — the other check is silent too");
+    }
+
+    #[test]
+    fn a_finding_naming_many_siblings_truncates_instead_of_listing_them_all() {
+        assert_eq!(naming(&["A".into()]), "`A`");
+        assert_eq!(naming(&["A".into(), "B".into(), "C".into()]), "`A`, `B`, `C`");
+        // ui-charts carries fifteen; a sentence spelling all fifteen is a wall, not a report.
+        let many: Vec<String> = (0..15).map(|i| format!("C{i}")).collect();
+        assert_eq!(naming(&many), "`C0`, `C1`, `C2` and 12 more");
+    }
+
     /// The gates, each pinned by the case just under it — because every one of them is what separates a
     /// finding from a list. A family too small, a shell only a minority composes, a shell barely composed
     /// in its kit, and a split rather than an outlier all stay SILENT.
@@ -4798,8 +4928,8 @@ export function X(){ return <i>{nope}</i>; }"
     fn flags_an_unused_root_with_deps_as_a_dangling_branch() {
         // DeadShell (unused, in-degree 0) composes Widget; the whole branch is dead.
         let comps = [
-            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0, "composes": ["Widget"], "srcText": "a", "source": "export const C = () => null;" }),
-            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "b", "source": "export const C = () => null;" }),
+            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0, "composes": ["Widget"], "srcText": "a", "source": "export default () => null;" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "b", "source": "export default () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["dangling-branch"]);
@@ -4810,8 +4940,8 @@ export function X(){ return <i>{nope}</i>; }"
     #[test]
     fn flags_two_components_wrapping_the_same_intrinsic_as_duplicates() {
         let comps = [
-            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "wraps": "button", "srcText": "a", "source": "export const C = () => null;" }),
-            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "wraps": "button", "srcText": "b", "source": "export const C = () => null;" }),
+            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "wraps": "button", "srcText": "a", "source": "export default () => null;" }),
+            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "wraps": "button", "srcText": "b", "source": "export default () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["duplicate"]);
@@ -4890,8 +5020,8 @@ export function X(){ return <i>{nope}</i>; }"
     #[test]
     fn flags_a_composes_cycle() {
         let comps = [
-            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export const C = () => null;" }),
-            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export const C = () => null;" }),
+            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export default () => null;" }),
+            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export default () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["cycle"]);
@@ -4902,9 +5032,9 @@ export function X(){ return <i>{nope}</i>; }"
     fn edges_do_not_cross_kits() {
         // Same dependency name in two kits must not wire them together.
         let comps = [
-            json!({ "id": "k1-page", "name": "Page", "kitId": "k1", "role": "page", "used": 1, "composes": ["Button"], "srcText": "a", "source": "export const C = () => null;" }),
-            json!({ "id": "k1-btn", "name": "Button", "kitId": "k1", "role": "primitive", "used": 4, "composes": [], "srcText": "b", "source": "export const C = () => null;" }),
-            json!({ "id": "k2-btn", "name": "Button", "kitId": "k2", "role": "primitive", "used": 0, "composes": [], "srcText": "c", "source": "export const C = () => null;" }),
+            json!({ "id": "k1-page", "name": "Page", "kitId": "k1", "role": "page", "used": 1, "composes": ["Button"], "srcText": "a", "source": "export default () => null;" }),
+            json!({ "id": "k1-btn", "name": "Button", "kitId": "k1", "role": "primitive", "used": 4, "composes": [], "srcText": "b", "source": "export default () => null;" }),
+            json!({ "id": "k2-btn", "name": "Button", "kitId": "k2", "role": "primitive", "used": 0, "composes": [], "srcText": "c", "source": "export default () => null;" }),
         ];
         // k2's Button is isolated + unused in ITS kit → orphan; k1's Button is composed → clean.
         let fs = analyze(&comps);
@@ -4943,9 +5073,9 @@ export function X(){ return <i>{nope}</i>; }"
             // The usage index IS populated here, so guard 3 can't be what saves the page.
             comp("Button", "primitive", 9, &[]),
             json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0,
-                    "composes": ["DataTable"], "srcText": "p", "source": "export const C = () => null;" }),
+                    "composes": ["DataTable"], "srcText": "p", "source": "export default () => null;" }),
             json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0,
-                    "composes": [], "srcText": "t", "source": "export const C = () => null;" }),
+                    "composes": [], "srcText": "t", "source": "export default () => null;" }),
         ];
         // The FINDING survives — the read-only diagnosis is still complete.
         let reported: Vec<String> = analyze(&comps)
@@ -4972,9 +5102,9 @@ export function X(){ return <i>{nope}</i>; }"
         let comps = [
             comp("Button", "primitive", 9, &[]), // populates the usage index
             json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0,
-                    "builtin": true, "composes": [], "srcText": "a", "source": "export const C = () => null;" }),
+                    "builtin": true, "composes": [], "srcText": "a", "source": "export default () => null;" }),
             json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
-                    "composes": [], "srcText": "g", "source": "export const C = () => null;" }),
+                    "composes": [], "srcText": "g", "source": "export default () => null;" }),
         ];
         assert!(
             analyze(&comps).iter().any(|f| f.category == "orphan" && f.node_names[0] == "AlgoCells"),
@@ -5038,8 +5168,8 @@ export function X(){ return <i>{nope}</i>; }"
     fn ranks_most_severe_first() {
         let comps = [
             comp("Ghost", "primitive", 0, &[]), // orphan (sev 2)
-            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export const C = () => null;" }),
-            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export const C = () => null;" }),
+            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export default () => null;" }),
+            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export default () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(fs[0].category, "cycle"); // severity 4 leads
@@ -5566,7 +5696,7 @@ export function X(){ return <i>{nope}</i>; }"
 
     #[test]
     fn analyze_motion_is_empty_for_name_refs_or_no_animations() {
-        let none = json!({ "id": "x", "name": "X", "kitId": "k", "source": "export const C = () => null;" });
+        let none = json!({ "id": "x", "name": "X", "kitId": "k", "source": "export default () => null;" });
         assert!(analyze_motion(std::slice::from_ref(&none)).is_empty());
         let refs = json!({ "id": "y", "name": "Y", "kitId": "k", "animations": ["fade-in", "pulse"] });
         assert!(analyze_motion(std::slice::from_ref(&refs)).is_empty(), "name-refs alone raise no motion finding");
