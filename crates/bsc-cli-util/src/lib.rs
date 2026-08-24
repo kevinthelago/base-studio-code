@@ -75,13 +75,15 @@ fn stale_binary_hint() -> String {
         .and_then(|(p, m)| m.modified().ok().map(|t| (p, t)))
         .map(|(p, t)| format!("{} (built {})", p.display(), format_stamp(t)))
         .unwrap_or_else(|| "an unknown build".to_string());
-    // When the tree can be compared, say what IS rather than what may be — a definite answer is what
-    // turns "maybe rebuild?" into an action.
-    if let Some(verdict) = behind_the_tree() {
-        return format!("      note: this binary is {built}.\n      {verdict}");
-    }
+    // When the tree can be compared, say what IS as well as what may be — a definite answer is what
+    // turns "maybe rebuild?" into an action. ADDED to the message, never instead of it: the mechanism
+    // sentence is the useful half in both cases, and swapping it out made this text machine-dependent.
+    let verdict = match behind_the_tree() {
+        Some(v) => format!("\n      {v}"),
+        None => String::new(),
+    };
     format!(
-        "      note: this binary is {built}.\n      \
+        "      note: this binary is {built}.{verdict}\n      \
          If you expected a newer verb it may just not be STAGED — the app copies \
          `target/{{debug,release}}` into ~/.base-studio-code/bin at boot, so: `npm run build:plan`, then restart the app."
     )
@@ -172,9 +174,12 @@ pub fn behind_the_tree() -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
     let newest = newest_workspace_source(&cwd)?;
     let gap = behind_by(built, newest)?;
+    // THE FACT ONLY — no instruction. Each caller already ends with its own way out, and a hint that
+    // says "run build:plan" twice reads as boilerplate. It also keeps this string ADDITIVE: replacing a
+    // caller's message meant the message changed shape depending on the machine, which made an existing
+    // assertion on `stale_binary_hint` fail the moment develop moved under a stale test binary.
     Some(format!(
-        "BEHIND: this binary was built {}, and sources in this workspace changed {} later ({}). \
-         Run `npm run build:plan`, then restart the app to re-stage it.",
+        "BEHIND: this binary was built {}, and sources in this workspace changed {} later ({}).",
         format_stamp(built),
         humanize(gap),
         format_stamp(newest),
@@ -228,7 +233,9 @@ pub fn version_line(prog: &str) -> String {
     // The comparison is the whole value: reporting a build time and stopping short leaves the reader to
     // remember to check, which is exactly what did not happen.
     match behind_the_tree() {
-        Some(verdict) => format!("{base}\n  {verdict}"),
+        Some(verdict) => format!(
+            "{base}\n  {verdict} Run `npm run build:plan`, then restart the app to re-stage it."
+        ),
         None => base,
     }
 }
@@ -1559,7 +1566,10 @@ mod tests {
         let h = stale_binary_hint();
         assert!(h.contains("built "), "carries a build time: {h}");
         assert!(h.contains("npm run build:plan"), "and the way out: {h}");
-        assert!(h.contains("STAGED"), "names the actual mechanism, not just 'rebuild': {h}");
+        // MACHINE-INDEPENDENT. The staleness verdict is ADDED to this message, never substituted for it
+        // — a first cut replaced it, so the text changed shape depending on whether the test binary
+        // happened to predate the tree, and this assertion started failing the moment develop moved.
+        assert!(h.contains("STAGED"), "names the actual mechanism whether or not it is behind: {h}");
     }
 
     /// The stamp is compared against 'when did that land?', so a wrong date is worse than none.
