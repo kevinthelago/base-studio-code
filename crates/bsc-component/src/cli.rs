@@ -623,6 +623,43 @@ overlap, then fold the LESS-used component into the more-used one.
 { id, name, kit, count }, most-used first (--kit scopes to one kit). A READ — never scope-gated.",
     },
     CmdDoc {
+        name: "exports",
+        summary: "a record's PUBLIC SURFACE grouped into ITEMS — the one-record-one-item read (#a-record-holds-one-item-not-a-module-of-them)",
+        usage: "\
+USAGE:
+  bsc ui exports <id> [--json] [--pretty]              # one record: every export, its item, foreign or not
+  bsc ui exports --all [--kit K] [--json] [--pretty]   # every record ranked by item count, most-first
+
+The library's standing rule is ONE RECORD, ONE ITEM: a record called `Card` exports `Card` and the things
+that belong to `Card` — its props type, its variant enum, a `useCard` hook. It does not export
+`ListItemCard`. The record's id is the only handle anything has on what it holds: the preview mounts by
+id, `composes` edges resolve by id, `rename`/`merge` move a record whole, and `provides` binds ONE
+specifier to ONE record. Every export beyond the record's own item is reachable by import yet invisible to
+all of that — no record, never previewed, never an edge, and carried off silently by a merge.
+
+This is the read that answers it. An ITEM is a name plus its decorations: `Card`, `CardProps`,
+`CardVariant`, `useCard` and `CARD_DEFAULTS` are ONE item; `Card` and `ListItemCard` are two. The rule is
+a PREFIX match on the normalized stem, not a substring — which is what keeps `TextField` a different item
+from `Field` rather than a decoration of it.
+
+Per-export it reports { name, item, component, foreign }: `component` when the source defines it as one
+(PascalCase `function`/`const … =>` at column 0), `foreign` when its item is not the record's own. The
+sharp subset is `foreignComponents` — another component's whole public API riding inside this record, and
+what `bsc ui doctor`'s `multi-export` finding fires on.
+
+Distinct from doctor's `multi-component`, which counts component DEFINITIONS whether exported or not. The
+two disagree in both directions, and the disagreement is the point: `ttscard` DEFINES four components and
+exports one (its `ToggleRow` is private — nothing outside can reach it, so that is a composition question,
+not an API one), while `teams-canvas` defines ONE and exports five items, and `projectsworkspace` exports
+34 names a definition count cannot see. They want opposite fixes — inline the helper versus extract the
+record.
+
+--all is deliberately UNBOUNDED, with no threshold: over the records that carry source, ~37% export more
+than one name and ~20% more than one item, and that shoulder — a component plus one domain type it
+genuinely owns — is exactly the part a bar would hide. Read the ranking; doctor reports only the sharp end.
+--kit scopes; --json emits the rows; --pretty indents. A READ — never scope-gated.",
+    },
+    CmdDoc {
         name: "define-animation",
         summary: "author a component's motion as data — animation JSON on stdin, upsert by name (#2869)",
         usage: "\
@@ -1209,6 +1246,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_used_by(&args[1..])
+            }
+        }
+        Some("exports") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "exports"));
+                Ok(())
+            } else {
+                cmd_exports(&args[1..])
             }
         }
         // The component-animation authoring verbs (#2869): motion as DATA on a component record. Custom
@@ -4010,6 +4055,131 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// `bsc ui exports` (#a-record-holds-one-item-not-a-module-of-them) — a record's PUBLIC SURFACE, grouped
+/// into the ITEMS its exports name.
+///
+/// The read behind the library's one-record-one-item rule, and the one nothing else could answer:
+/// `bsc ui get --field /srcText` hands back the whole module and `bsc ui doctor` reports only the sharp
+/// end of it. `--all` is the unbounded ranking — deliberately no threshold, because the interesting tail
+/// (a component plus one domain type) is exactly the part a bar would hide.
+fn cmd_exports(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut all, mut kit_filter, mut id) =
+        (None::<String>, false, false, false, None::<String>, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            "--all" => all = true,
+            "--kit" => kit_filter = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let str_of = |c: &serde_json::Value, k: &str| {
+        c.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string()
+    };
+    // The surface of ONE record, plus the fields a caller needs to identify it.
+    let surface_of = |c: &serde_json::Value| {
+        let src = str_of(c, "srcText");
+        let name = str_of(c, "name");
+        let defined: std::collections::BTreeSet<String> =
+            crate::graph_health::top_level_components(&src).into_iter().collect();
+        let s = crate::exports::surface(&src, &name, &defined);
+        (name, s)
+    };
+
+    if all {
+        let mut rows: Vec<serde_json::Value> = comps
+            .iter()
+            .filter(|c| kit_filter.as_deref().is_none_or(|k| str_of(c, "kitId") == k))
+            .filter(|c| !str_of(c, "srcText").trim().is_empty())
+            .map(|c| {
+                let (name, s) = surface_of(c);
+                serde_json::json!({
+                    "id": str_of(c, "id"),
+                    "name": name,
+                    "kit": str_of(c, "kitId"),
+                    "items": s.items.len(),
+                    "exports": s.exports.len(),
+                    "foreign": s.foreign().iter().map(|e| e.name.clone()).collect::<Vec<_>>(),
+                    "foreignComponents": s.foreign_components().iter().map(|e| e.name.clone()).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        rows.sort_by(|a, b| {
+            b["items"].as_u64().cmp(&a["items"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+        });
+        if json {
+            let out = if pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
+            println!("{}", out.map_err(|e| e.to_string())?);
+        } else {
+            println!("records by ITEM count (a name and its decorations are one item), most-first:");
+            for r in &rows {
+                let fc = r["foreignComponents"].as_array().map_or(0, Vec::len);
+                println!(
+                    "  {:>3} items  {:>3} exports  {}{} ({})",
+                    r["items"].as_u64().unwrap_or(0),
+                    r["exports"].as_u64().unwrap_or(0),
+                    r["name"].as_str().unwrap_or(""),
+                    if fc > 0 { format!("  ← {fc} foreign component(s)") } else { String::new() },
+                    r["kit"].as_str().unwrap_or(""),
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    let id = id.ok_or("usage: bsc ui exports <id> [--json]  |  bsc ui exports --all [--kit K]")?;
+    let target = comps
+        .iter()
+        .find(|c| str_of(c, "id") == id)
+        .ok_or_else(|| format!("no component with id '{id}' (see `bsc ui list --raw`)"))?;
+    let (name, s) = surface_of(target);
+    let out = serde_json::json!({
+        "id": id,
+        "name": name,
+        "kit": str_of(target, "kitId"),
+        "items": s.items,
+        "exports": s.exports.iter().map(|e| serde_json::json!({
+            "name": e.name, "item": e.item, "component": e.component, "foreign": e.foreign,
+        })).collect::<Vec<_>>(),
+        "foreignComponents": s.foreign_components().iter().map(|e| e.name.clone()).collect::<Vec<_>>(),
+    });
+    if json {
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        println!("{}", text.map_err(|e| e.to_string())?);
+    } else if s.exports.is_empty() {
+        println!("'{name}' exports NOTHING readable — a spec-only record, a built-in whose source is packaged elsewhere, or a module whose only export is `export * from`.");
+    } else {
+        println!("'{}' — {} export(s) naming {} item(s):", name, s.exports.len(), s.items.len());
+        for e in &s.exports {
+            println!(
+                "  {:<28} item={:<20}{}{}",
+                e.name,
+                e.item,
+                if e.component { "  component" } else { "" },
+                if e.foreign { "  FOREIGN" } else { "" },
+            );
+        }
+        let fc = s.foreign_components();
+        if !fc.is_empty() {
+            println!(
+                "\n{} component(s) beyond `{}` live here: {} — each is reachable by import but has no record, never previews, and is never a `composes` edge.",
+                fc.len(),
+                name,
+                fc.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", "),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The `doctor --fix` optimize action (#2679, #3089 merge) — the curator's mechanical, SAFE graph
 /// optimization as a COMMAND (epic #3087: 'keep the graph minimal' is a tool, not hand-organization).
 /// Two lossless steps, dry-run unless `apply`:
@@ -6250,7 +6420,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
+                "backing", "test", "doctor", "dupes", "similar", "used-by", "exports", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -7705,6 +7875,51 @@ export const P = () => <X />;"
         assert_eq!(idx.get(&("mui".into(), "Button".into())).map(Vec::len), Some(1), "the other kit's Button is separate");
         assert!(!idx.contains_key(&("react-ui".into(), "Card".into())), "nothing composes Card ⇒ absent (an orphan/root)");
         assert_eq!(idx.get(&("react-ui".into(), "Icon".into())).map(Vec::len), Some(1), "a composed NAME appears even with no own record");
+    }
+
+    #[test]
+    fn exports_reads_one_records_surface_and_the_whole_library_ranking() {
+        // #a-record-holds-one-item-not-a-module-of-them. Two records with deliberately opposite shapes:
+        // `field` ships another component's whole API, `ttscard` keeps its siblings private.
+        let store = tmp_component_store("exports");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for rec in [
+            serde_json::json!({
+                "id": "field", "name": "Field", "kitId": "react-ui", "role": "primitive",
+                "srcText": "export type FieldProps = {};\nexport const Field = (p: FieldProps) => <div />;\nexport const TextField = (p: {}) => <Field />;\n",
+            }),
+            serde_json::json!({
+                "id": "ttscard", "name": "TtsCard", "kitId": "react-ui", "role": "composite",
+                "srcText": "const ToggleRow = ({ on }: { on: boolean }) => <input checked={on} />;\nexport const TtsCard = () => <ToggleRow on />;\n",
+            }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+        assert!(run(d(&["exports", "field", "--json"]), "bsc ui").is_ok(), "single form");
+        assert!(run(d(&["exports", "field", "--pretty"]), "bsc ui").is_ok(), "human form");
+        assert!(run(d(&["exports", "--all", "--kit", "react-ui", "--json"]), "bsc ui").is_ok(), "--all --kit --json");
+        assert!(run(vec!["exports".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        let err = run(d(&["exports", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("ghost"), "a missing id names itself: {err}");
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "exports"), "the verb is documented");
+
+        // The shapes themselves, through the pure core the command prints — the assertion that matters.
+        let defined: std::collections::BTreeSet<String> =
+            crate::graph_health::top_level_components("export const Field = () => <div />;\nexport const TextField = () => <Field />;\n")
+                .into_iter().collect();
+        let s = crate::exports::surface(
+            "export type FieldProps = {};\nexport const Field = (p: FieldProps) => <div />;\nexport const TextField = (p: {}) => <Field />;\n",
+            "Field",
+            &defined,
+        );
+        assert_eq!(s.items.len(), 2, "FieldProps decorates Field; TextField is a second item");
+        assert_eq!(
+            s.foreign_components().iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            vec!["TextField"],
+        );
     }
 
     #[test]

@@ -20,6 +20,8 @@ pub mod cli;
 /// The RECORD closure a `bsc ui test` materialization writes around a record — the app's own
 /// `provides` resolution chain, so a composing component can be verified and not just a leaf.
 pub(crate) mod closure;
+/// A record's PUBLIC SURFACE — what its module exports, grouped into the ITEMS those exports name.
+pub mod exports;
 pub mod folder;
 pub mod graph_health;
 pub mod motion;
