@@ -161,8 +161,19 @@ export type MemLoader = "jsx" | "tsx" | "ts";
 export function loaderFor(key: string, contents: string): MemLoader {
   if (key.endsWith(".jsx") || key.endsWith(".js")) return "jsx";
   if (key.endsWith(".tsx")) return "tsx";
-  if (key.endsWith(".ts")) return "ts";
-  return /<\/|\/>/.test(withoutStringsAndComments(contents)) ? "tsx" : "ts";
+  // A `.ts` key is SNIFFED too, not trusted (#a-record-id-ending-in-ts...). The key is often a RECORD
+  // ID rather than a filename, and nothing makes an id agree with the syntax of its `code`:
+  // `@/app/lazyWorkspaces` is served by the graph-impl record `lazy-workspaces.ts`, which holds a
+  // `WorkspaceFallback` COMPONENT. Loaded as `ts`, its `<Row className=…>` parses as a type assertion
+  // and esbuild reports `Expected ">" but found "className"` — a syntax error against source that has
+  // none, at a line the reader will stare at and find blameless (designer request #103).
+  //
+  // Safe because the sniff demands a closing or self-closing TAG. The one thing `.ts` offers that
+  // `.tsx` does not is `<T>expr`, which contains neither `</` nor `/>` — so a file using type
+  // assertions is never upgraded, and one containing real JSX always is.
+  const looksJsx = () => /<\/|\/>/.test(withoutStringsAndComments(contents));
+  if (key.endsWith(".ts")) return looksJsx() ? "tsx" : "ts";
+  return looksJsx() ? "tsx" : "ts";
 }
 
 /**

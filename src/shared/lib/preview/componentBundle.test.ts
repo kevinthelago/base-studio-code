@@ -659,3 +659,40 @@ describe("componentBundle — externals", () => {
     expect(doc).toContain(COMPONENT_IMPORTMAP["d3-force"]);
   });
 });
+
+describe("loaderFor: a record id is not a filename (#103)", () => {
+  const JSX = 'export function Fallback() { return <Row className="mono">loading…</Row>; }';
+
+  it("loads a .ts-keyed module containing JSX as tsx", () => {
+    // `@/app/lazyWorkspaces` is served by the graph-impl record `lazy-workspaces.ts`, and that `.ts` is
+    // part of an ID. Loaded as `ts`, its `<Row className=…>` parses as a type assertion and esbuild
+    // says `Expected ">" but found "className"` — a syntax error against source that has none, which
+    // is exactly what designer request #103 spent its time trying to locate in the file.
+    expect(loaderFor("app/lazyWorkspaces.ts", JSX)).toBe("tsx");
+    expect(loaderFor("lazy-workspaces.ts", JSX)).toBe("tsx");
+  });
+
+  it("still loads a .ts module WITHOUT JSX as ts, so type assertions keep working", () => {
+    // The one thing `.ts` offers that `.tsx` does not. `<T>expr` has neither `</` nor `/>`, so the
+    // sniff cannot upgrade it — if it did, this would stop compiling.
+    expect(loaderFor("x.ts", "const n = <number>value;")).toBe("ts");
+    expect(loaderFor("x.ts", "export const add = (a: number, b: number) => a + b;")).toBe("ts");
+    expect(loaderFor("x.ts", "export function first<T>(xs: T[]): T { return xs[0]; }")).toBe("ts");
+  });
+
+  it("does not mistake a tag inside a string or comment for JSX", () => {
+    // The sniff runs on source with strings and comments removed, or every module documenting a tag
+    // would be upgraded — and the upgrade is only safe because it is rare and evidenced.
+    expect(loaderFor("x.ts", 'const doc = "use <Row /> here";')).toBe("ts");
+    expect(loaderFor("x.ts", "// renders <Row />\nexport const n = 1;")).toBe("ts");
+  });
+
+  it("leaves the explicit extensions alone", () => {
+    expect(loaderFor("x.tsx", "export const n = 1;")).toBe("tsx");
+    expect(loaderFor("x.js", JSX)).toBe("jsx");
+    expect(loaderFor("x.jsx", JSX)).toBe("jsx");
+    // No extension at all — the pre-existing last-resort sniff, unchanged.
+    expect(loaderFor("bare", JSX)).toBe("tsx");
+    expect(loaderFor("bare", "export const n = 1;")).toBe("ts");
+  });
+});
