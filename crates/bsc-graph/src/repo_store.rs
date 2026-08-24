@@ -168,12 +168,174 @@ pub fn content_of(rec: &Value) -> Value {
     c
 }
 
+/// Where the PACKAGED seed lives — the other store-to-file direction.
+///
+/// Not the same target as [`path_under`], and the difference matters: `graph/algorithms.json` is what
+/// the BUILD compiles, while this is what SHIPS and what a fresh install reconciles against. A record
+/// can legitimately be in one and not the other.
+pub fn seed_path_under(root: &Path) -> PathBuf {
+    root.join("src-tauri").join("data").join("knowledge").join("algorithms.json")
+}
+
+/// Every field the packaged impl seed actually carries, in the order it reads best.
+///
+/// Derived from the 667 shipped records rather than hand-maintained — the list this replaces had
+/// drifted to omit `kind`, `summary`, `tests` and `vizCode`, so promoting over an existing entry
+/// silently dropped whichever of those it had.
+pub const SEED_FIELDS: &[&str] = &[
+    "id", "tech", "name", "role", "domain", "folder", "src", "provides", "composes", "kind",
+    "summary", "ref", "tests", "code", "vizCode",
+];
+
+/// Project a runtime record down to what the SEED ships.
+///
+/// [`content_of`] drops the provenance; this additionally drops the store-side harvest metadata
+/// (`moduleAttrs`, `moduleVis`) that none of the 667 packaged records carries and that nothing in the
+/// tree reads by name. Keeping the projection to the seed's own observed shape is what makes a
+/// promoted record byte-comparable with the ones already there.
+pub fn seed_content_of(rec: &Value) -> Value {
+    let full = content_of(rec);
+    let mut out = serde_json::Map::new();
+    for k in SEED_FIELDS {
+        if let Some(v) = full.get(*k) {
+            if !v.is_null() {
+                out.insert((*k).to_string(), v.clone());
+            }
+        }
+    }
+    // `composes` is required by the seed's own integrity guard, and an absent one reads as a missing
+    // field rather than "composes nothing".
+    out.entry("composes".to_string()).or_insert_with(|| Value::Array(vec![]));
+    // NORMALISE `tech`. A runtime record can carry the file EXTENSION where the tech belongs —
+    // `extract.rs` maps the extension `ts` to the tech `typescript`, and the packaged seed is
+    // uniformly `typescript` (640) and `rust` (26) with exactly one stray `ts`. Promoting that stray
+    // verbatim drops the record out of its technology tab, which nothing surfaces as an error.
+    if let Some(t) = out.get("tech").and_then(Value::as_str) {
+        let canon = match t {
+            "ts" | "tsx" => Some("typescript"),
+            "rs" => Some("rust"),
+            _ => None,
+        };
+        if let Some(c) = canon {
+            out.insert("tech".into(), Value::String(c.to_string()));
+        }
+    }
+    Value::Object(out)
+}
+
+/// Drop every `composes` target that is not itself an impl in the resulting document.
+///
+/// `composes` models an edge in the ALGORITHM graph, so a target that is a registered platform module
+/// or a component record is not an edge it can express — and writing one produces a dangling reference
+/// the seed's own integrity guard rejects. Dropping it loses nothing real: the record still IMPORTS
+/// the module and still resolves it through the registry; only the edge goes, and that edge never
+/// existed. Returns what it removed, per record, so the caller can report rather than silently prune.
+pub fn prune_dangling_composes(store: &mut Value) -> Vec<(String, Vec<String>)> {
+    let ids: std::collections::BTreeSet<String> = impls_of(store)
+        .iter()
+        .filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let mut dropped = Vec::new();
+    let Some(list) = store.get_mut("implementations").and_then(Value::as_array_mut) else {
+        return dropped;
+    };
+    for rec in list.iter_mut() {
+        let id = rec.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let Some(c) = rec.get("composes").and_then(Value::as_array) else { continue };
+        let (keep, gone): (Vec<Value>, Vec<Value>) = c
+            .iter()
+            .cloned()
+            .partition(|t| t.as_str().is_some_and(|t| ids.contains(t)));
+        if gone.is_empty() {
+            continue;
+        }
+        dropped.push((
+            id,
+            gone.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+        ));
+        if let Some(o) = rec.as_object_mut() {
+            o.insert("composes".into(), Value::Array(keep));
+        }
+    }
+    dropped
+}
+
+/// Every `@/…` specifier that appears inside a quoted string in `text`.
+///
+/// Deliberately crude — it is looking for evidence that SOMETHING still names a specifier, not
+/// parsing a module graph, and over-reporting only makes the guard below more conservative.
+pub fn quoted_specifiers(text: &str, into: &mut std::collections::BTreeSet<String>) {
+    for (i, _) in text.match_indices("@/") {
+        let rest = &text[i..];
+        let end = rest
+            .find(|c: char| c == '"' || c == '\'' || c == '`' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        let spec = &rest[..end];
+        if spec.len() > 2 {
+            into.insert(spec.trim_end_matches([',', ';', ')']).to_string());
+        }
+    }
+}
+
+/// Refuse a promotion that would STOP something from resolving.
+///
+/// The store can be strictly behind the seed on a MOVE: six impls still say
+/// `@/features/planner/fleet/…` after those modules moved to `@/features/glance/fleet/…`, so promoting
+/// them re-points the provider at the old specifier while every importer still names the new one. That
+/// is not detectable per-record — both values are authored, and `src` is stale on both sides — but it
+/// IS decidable in aggregate: a promote must never shrink the set of specifiers that something still
+/// imports.
+///
+/// Returns the ids reverted to their previous entry, each with the specifier it would have orphaned.
+pub fn refuse_orphaning_promotions(
+    before: &Value,
+    next: &mut Value,
+    imported: &std::collections::BTreeSet<String>,
+) -> Vec<(String, String)> {
+    let prev = impls_of(before);
+    let provided_after: std::collections::BTreeSet<String> = impls_of(next)
+        .iter()
+        .filter_map(|i| i.get("provides").and_then(Value::as_str).map(str::to_string))
+        .collect();
+
+    let mut reverted = Vec::new();
+    for old in &prev {
+        let Some(spec) = old.get("provides").and_then(Value::as_str) else { continue };
+        // Still provided by someone, or nothing ever imported it — either way nothing breaks.
+        if provided_after.contains(spec) || !imported.contains(spec) {
+            continue;
+        }
+        let Some(id) = old.get("id").and_then(Value::as_str) else { continue };
+        if let Some(list) = next.get_mut("implementations").and_then(Value::as_array_mut) {
+            if let Some(at) = list
+                .iter()
+                .position(|i| i.get("id").and_then(Value::as_str) == Some(id))
+            {
+                list[at] = old.clone();
+                reverted.push((id.to_string(), spec.to_string()));
+            }
+        }
+    }
+    reverted
+}
+
 /// Apply a promotion: return the repo store with each named id replaced by the runtime version.
 ///
 /// Ids absent upstream are reported rather than dropped — silently removing a record because the
 /// authoring machine happens not to have it is exactly the kind of quiet loss this store exists to
 /// prevent.
 pub fn promote_into(repo: &Value, runtime: &[Value], ids: &[String]) -> (Value, Vec<String>, Vec<String>) {
+    promote_into_with(repo, runtime, ids, content_of)
+}
+
+/// [`promote_into`] with the projection chosen by the caller — `content_of` for the build-readable
+/// repo store, `seed_content_of` for the packaged seed.
+pub fn promote_into_with(
+    repo: &Value,
+    runtime: &[Value],
+    ids: &[String],
+    project: fn(&Value) -> Value,
+) -> (Value, Vec<String>, Vec<String>) {
     let mut out = repo.clone();
     let mut missing = Vec::new();
     let mut refused = Vec::new();
@@ -186,7 +348,7 @@ pub fn promote_into(repo: &Value, runtime: &[Value], ids: &[String]) -> (Value, 
             missing.push(id.clone());
             continue;
         };
-        let fresh = content_of(up);
+        let fresh = project(up);
         match list.iter().position(|i| i.get("id").and_then(Value::as_str) == Some(id.as_str())) {
             Some(at) => {
                 // NEVER let a promote DELETE a field the committed copy carries. The same shape as
@@ -211,6 +373,98 @@ pub fn promote_into(repo: &Value, runtime: &[Value], ids: &[String]) -> (Value, 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_seed_projection_keeps_every_field_the_seed_actually_ships() {
+        // The list this replaces had drifted to omit `kind`, `summary`, `tests` and `vizCode`, so
+        // promoting over an existing entry silently dropped whichever of those it had.
+        let rec = json!({
+            "id": "x", "tech": "typescript", "name": "X", "role": "algorithm", "code": "1",
+            "kind": "sort", "summary": "s", "tests": ["t"], "vizCode": "v", "ref": "r",
+            "domain": "d", "folder": "f", "src": "s.ts", "provides": "@/x", "composes": ["y"],
+        });
+        let got = seed_content_of(&rec);
+        for k in ["kind", "summary", "tests", "vizCode", "ref"] {
+            assert!(got.get(k).is_some(), "{k} was dropped by the seed projection");
+        }
+    }
+
+    #[test]
+    fn the_seed_projection_drops_provenance_and_harvest_metadata() {
+        let rec = json!({
+            "id": "x", "code": "1", "rev": 3, "updatedAt": "now", "updatedBy": "me",
+            "history": [1], "build": {}, "moduleAttrs": ["#[cfg(x)]"], "moduleVis": "pub",
+        });
+        let got = seed_content_of(&rec);
+        for k in ["rev", "updatedAt", "updatedBy", "history", "build", "moduleAttrs", "moduleVis"] {
+            assert!(got.get(k).is_none(), "{k} leaked into the seed");
+        }
+    }
+
+    #[test]
+    fn a_file_extension_in_the_tech_field_is_normalised() {
+        // `extract.rs` maps the EXTENSION `ts` to the TECH `typescript`; the packaged seed is uniformly
+        // `typescript`/`rust`. One stray `ts` drops that record out of its technology tab silently.
+        assert_eq!(seed_content_of(&json!({"id":"a","tech":"ts"})).get("tech").unwrap(), "typescript");
+        assert_eq!(seed_content_of(&json!({"id":"a","tech":"rs"})).get("tech").unwrap(), "rust");
+        assert_eq!(seed_content_of(&json!({"id":"a","tech":"rust"})).get("tech").unwrap(), "rust");
+    }
+
+    #[test]
+    fn a_dangling_composes_target_is_pruned_and_reported() {
+        let mut store = json!({"implementations": [
+            {"id": "a", "composes": ["b", "not-an-impl"]},
+            {"id": "b", "composes": []},
+        ]});
+        let dropped = prune_dangling_composes(&mut store);
+        assert_eq!(dropped, vec![("a".to_string(), vec!["not-an-impl".to_string()])]);
+        assert_eq!(impls_of(&store)[0].get("composes").unwrap(), &json!(["b"]));
+    }
+
+    #[test]
+    fn a_promotion_that_would_orphan_a_live_specifier_is_refused() {
+        // The real case: six impls still say `@/features/planner/fleet/…` after those modules moved to
+        // `@/features/glance/fleet/…`. Both values are authored and `src` is stale on both sides, so it
+        // is only decidable in aggregate — something still imports the specifier the promote drops.
+        let before = json!({"implementations": [{"id": "m", "provides": "@/features/glance/fleet/W"}]});
+        let mut next = json!({"implementations": [{"id": "m", "provides": "@/features/planner/fleet/W"}]});
+        let imported = ["@/features/glance/fleet/W".to_string()].into_iter().collect();
+        let reverted = refuse_orphaning_promotions(&before, &mut next, &imported);
+        assert_eq!(reverted, vec![("m".to_string(), "@/features/glance/fleet/W".to_string())]);
+        assert_eq!(
+            impls_of(&next)[0].get("provides").unwrap(),
+            "@/features/glance/fleet/W",
+            "the record was not restored to the specifier its importers still name"
+        );
+    }
+
+    #[test]
+    fn a_specifier_nothing_imports_may_still_be_repointed() {
+        // The guard is "do not BREAK resolution", not "never change" — an unreferenced specifier is the
+        // author's to move.
+        let before = json!({"implementations": [{"id": "m", "provides": "@/old"}]});
+        let mut next = json!({"implementations": [{"id": "m", "provides": "@/new"}]});
+        let reverted = refuse_orphaning_promotions(&before, &mut next, &Default::default());
+        assert!(reverted.is_empty());
+        assert_eq!(impls_of(&next)[0].get("provides").unwrap(), "@/new");
+    }
+
+    #[test]
+    fn quoted_specifiers_finds_what_names_a_module() {
+        let mut got = std::collections::BTreeSet::new();
+        quoted_specifiers("import { a } from \"@/x/y\";\nconst b = '@/z';", &mut got);
+        assert!(got.contains("@/x/y"), "{got:?}");
+        assert!(got.contains("@/z"), "{got:?}");
+    }
+
+    #[test]
+    fn the_seed_path_is_not_the_repo_store_path() {
+        // Different targets on purpose: one is what the BUILD compiles, the other is what SHIPS.
+        let r = Path::new("/repo");
+        assert_ne!(seed_path_under(r), path_under(r));
+        assert!(seed_path_under(r).ends_with("src-tauri/data/knowledge/algorithms.json"));
+    }
+
 
     fn rec(id: &str, code: &str) -> Value {
         json!({ "id": id, "role": "algorithm", "tech": "rust", "code": code })
