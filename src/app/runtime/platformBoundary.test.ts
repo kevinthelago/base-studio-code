@@ -26,16 +26,21 @@ import { registerGlancePlatform } from "@/features/glance/graphPlatform";
 import { registerSoundsPlatform } from "@/features/sounds/graphPlatform";
 import { registerAlgorithmsPlatform } from "@/features/algorithms/graphPlatform";
 import { registerConsolePlatform } from "@/app/console/graphPlatform";
-// These six used to arrive INCIDENTALLY: their feature barrel called `register…Platform()` at module
-// load, so any transitive import of the barrel registered them and this list did not need to name
-// them. The barrels no longer do that (ensure-platform-imports-the-platform-not-the-barrel), which is
-// what exposed the gap — the test was passing on a side effect rather than on the path it documents.
-import { registerDebugPlatform } from "@/features/debug/graphPlatform";
-import { registerDesignsPlatform } from "@/features/designs/graphPlatform";
-import { registerPersonasPlatform } from "@/features/personas/graphPlatform";
-import { registerStudioSessionsPlatform } from "@/features/studio-sessions/graphPlatform";
-import { registerTeamsPlatform } from "@/features/teams/graphPlatform";
-import { registerTunnelPlatform } from "@/features/tunnel/graphPlatform";
+// SIX REGISTRARS ARE DELIBERATELY ABSENT — `registerDebugPlatform`, `registerDesignsPlatform`,
+// `registerPersonasPlatform`, `registerStudioSessionsPlatform`, `registerTeamsPlatform`,
+// `registerTunnelPlatform` (record-links-is-red-on-develop).
+//
+// They used to arrive INCIDENTALLY, via a barrel side effect; when the barrels stopped doing that
+// (ensure-platform-imports-the-platform-not-the-barrel) this file imported them DIRECTLY to keep
+// itself green. That made the guard resolve six surfaces **nothing registers at runtime**: measured,
+// each has zero callers outside its own definition and this file, and `shadowPages`'s `ensurePlatform`
+// covers a different set (algorithms, automations, fleet, glance, logs, mcp, settings, skills, sounds).
+//
+// So the guard was more permissive than the runtime it stands for — the exact failure its own comments
+// warn about twice below — and 24 records with imports resolving to nothing sailed past it, visible
+// only to the opt-in `e2e/recordLinks.spec.ts`. Restoring these six imports makes this file green while
+// the app stays broken. If a specifier needs to resolve, register it in `appModules` where the runtime
+// will actually see it.
 import { isAppModule } from "@/shared/lib/runtime/moduleRegistry";
 import algorithmsSeed from "@data/knowledge/algorithms.json";
 // A relative path on purpose: `scripts/` is outside the `@/` alias (which maps to `src/`).
@@ -83,12 +88,6 @@ beforeAll(() => {
   registerSoundsPlatform();
   registerAlgorithmsPlatform();
   registerConsolePlatform();
-  registerDebugPlatform();
-  registerDesignsPlatform();
-  registerPersonasPlatform();
-  registerStudioSessionsPlatform();
-  registerTeamsPlatform();
-  registerTunnelPlatform();
 });
 
 describe("the platform-kernel boundary (#3858)", () => {
