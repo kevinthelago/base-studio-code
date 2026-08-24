@@ -369,10 +369,10 @@ impl SandboxSpec {
             // Deny by default. A caller that needs a toolchain widens this deliberately.
             usr: Usr::Curated(MINIMAL_BINS.iter().map(|s| s.to_string()).collect()),
             mounts: vec![
-                Mount::ReadWrite { host: worktree.into(), guest: PathBuf::from("/repo") },
+                Mount::ReadWrite { host: worktree.into(), guest: PathBuf::from(REPO_GUEST_PATH) },
                 Mount::ReadOnly { host: store.into(), guest: PathBuf::from("/plan") },
             ],
-            cwd: PathBuf::from("/repo"),
+            cwd: PathBuf::from(REPO_GUEST_PATH),
             // No gates by default here: this is the low-level constructor, and `profile::for_role`
             // is where a real launch picks one up. Defaulting a security binary in would make its
             // ABSENCE the silent case, which is backwards.
@@ -381,7 +381,7 @@ impl SandboxSpec {
             credential_file: None,
             harness_state_file: None,
             rc_file: None,
-            env: vec![("HOME".into(), "/repo".into())],
+            env: vec![("HOME".into(), REPO_GUEST_PATH.into())],
             network: false,
             // Deny by default here too: the spec's env is the WHOLE environment, not an overlay
             // on whatever the app happened to be holding.
