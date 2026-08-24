@@ -8,7 +8,7 @@
 //
 // The file is the authority here, deliberately: it is the copy `tsc`, `lint`, `vitest` and `vite build`
 // all validate, and these records claim to BE it. A record that is meant to differ should not carry a
-// `provides` naming its file — see `scripts/audit-store-provides.mjs`.
+// `provides` naming its file — see `npm run census:claims`.
 //
 //   node scripts/refresh-impl-from-file.mjs <impl-id>=<src-relative-path>… [--apply]
 import { execFileSync } from "node:child_process";

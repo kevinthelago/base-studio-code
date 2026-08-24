@@ -428,9 +428,28 @@ shortened the text would corrupt every offset after the first comment.
 
 ### The two guards that stand outside the gate
 
-- **`scripts/audit-store-provides.mjs`** — `providesMatchesItsFile.test.ts` asks the right question and
-  structurally cannot answer it where it matters: it globs the packaged SEED, because a vitest run has no
-  store. But `provides` is resolved at RUNTIME against the STORE, so seed-clean + store-divergent is green
-  everywhere and still breaks the running app. Run this before trusting that overrides are sane.
+- **`npm run census:claims`** — `providesMatchesItsFile.test.ts` asks the right question and structurally
+  cannot answer it where it matters: it globs the packaged SEED, because a vitest run has no store. But
+  `provides` is resolved at RUNTIME against the STORE, so seed-clean + store-divergent is green everywhere
+  and still breaks the running app. Run this before trusting that overrides are sane.
+
+  It CLASSIFIES rather than lists, because three different things divide the divergent records and only
+  one keeps its claim: a **preview-shaped derivative** (vendors a fake, inlines SAMPLE data, swaps a
+  resolver) — repairing its imports would put sample data on live screens; a **per-component lift** out of
+  a multi-component file, which legitimately exports only its own; and the **newer truth**, genuinely
+  ahead of its file. Only the last keeps `provides`.
+
+  Several records sharing one `src` is the multi-component signal, and without it "drops exports" is an
+  overcount — measured at 33 when the class was first counted, and flagged then as untrustworthy for
+  exactly that reason.
+
+  **Re-derive the number; never quote it.** The population moves every tranche: the class was 978 records
+  with `provides` + `src`, 244 files still present, 122 diverging. Re-run on 2026-08-24: 936 / 12 / **0** —
+  924 of those files have been RETIRED since, and once the file is gone the record IS the module and there
+  is nothing to disagree with. `--dir` / `--repo` point it at a fixture store, which is how it was proved
+  to FIRE rather than merely to report zero.
+
+  (It supersedes `scripts/audit-store-provides.mjs`, which asked only whether a record claimed EXACTLY its
+  own file's implied specifier — that reported "store OK" while the broader class went unmeasured.)
 - **`npm run test:e2e -- graphPages`** — the static gate cannot prove a page RENDERS. It is deliberately
   outside the default gate (CLAUDE.md), so a page can sit un-mountable while everything is green.
