@@ -563,6 +563,15 @@ A pair is contract-scored when its NAME is near OR it shares a hard co-location 
 Also reports `provides-collision`: several records overriding ONE platform specifier. Not a similarity
 score — the loader resolves it to one record, so the rest are dead overrides that still read as live.
 
+SUPPRESSED RECORDS ARE NOT SCORED, here or in `bsc ui similar`. A tombstone keeps its id and loses every
+content field, so every contract term drops for want of signal and NAME similarity alone is left carrying
+the pair — and ids retired together are named alike by construction. Left in, one batch consolidation
+mints a mutually near-duplicate clique out of the records it just retired: the live store's largest
+cluster was 31 `settings-*card` tombstones proposing the consolidation that produced them, with 41 of the
+store's 58 tombstones somewhere in the report, sitting on top of the live clusters. Asking about a
+tombstone BY id still answers — it is ranked against the live library, and `similar` says the record is
+retired so a thin result is not read as `nothing resembles it`.
+
 A SHARED FORWARD REFERENCE is not shared code (#89). `composes` is a raw string-set match that never asks
 whether a name resolves, so two records both naming a component nobody has authored score 1.0 on that term.
 Where that fabricated agreement is the only thing carrying a pair over the bar, the pair is DROPPED — the
@@ -3836,8 +3845,20 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
     let store = open_component_store(&dir)?;
     let comps: Vec<serde_json::Value> =
         store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
-    if !comps.iter().any(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())) {
+    let Some(target) = comps.iter().find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+    else {
         return Err(format!("no component with id '{id}' (see `bsc ui list --raw`)"));
+    };
+    // Ranking a TOMBSTONE is a fair question — "what is like the thing I retired?" — and it is answered
+    // against the live library. But an empty or thin result here would otherwise be indistinguishable
+    // from "nothing resembles it", when the real reason is that the record has no content left to score,
+    // so say which one it is. (Tombstones are excluded as CANDIDATES throughout; see `similarity::live`.)
+    if target.get("suppressed").and_then(serde_json::Value::as_bool).unwrap_or(false) && !json {
+        let into = target.get("supersededBy").and_then(serde_json::Value::as_str).unwrap_or("");
+        println!(
+            "note: '{id}' is a RETIRED record{} — `bsc ui suppress` kept its id and dropped its content, so there is little left to score.",
+            if into.is_empty() { String::new() } else { format!(", superseded by `{into}`") },
+        );
     }
     // #3584: fold each candidate's graph-USAGE (composes-inverse) into the row, so a "these two overlap"
     // proposal arrives with which side is load-bearing — the optimizer folds the LESS-used into the more.
