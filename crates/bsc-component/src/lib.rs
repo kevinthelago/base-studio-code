@@ -35,5 +35,8 @@ pub mod scan_cache;
 pub mod similarity;
 pub mod syntax;
 pub mod usage;
+/// Real usage sources for the dead-root heuristic (#3888 / `bsc request` #95) — host-mount + `provides`
+/// reachability from the app's actual entry point, feeding `graph_health`'s `used` field.
+pub(crate) mod usage_sources;
 
 pub use folder::folder_from_src;

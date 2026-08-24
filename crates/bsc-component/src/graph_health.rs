@@ -2049,9 +2049,24 @@ pub fn prunable(components: &[Value]) -> Vec<Prunable> {
 /// A guarded candidate moves to `skipped` rather than vanishing: `doctor` still REPORTS the finding
 /// (the diagnosis is useful), only the automatic removal is withheld.
 pub fn prune_plan(components: &[Value]) -> PrunePlan {
+    prune_plan_with(components, components)
+}
+
+/// Same as [`prune_plan`], except the `usage_index_populated` GUARD is judged against
+/// `usage_reference` instead of `components` — so a caller can hand `analyze` a `components` list
+/// whose `used` has been ENRICHED with an ephemeral, per-run usage signal (#3888's host-mount +
+/// `provides` reachability, `usage_sources::enrich_used`) to suppress false-positive orphan/
+/// dangling-branch findings, WITHOUT that same enrichment also widening what `--fix --yes` is willing
+/// to auto-delete. That is the ordering hazard #3888 names explicitly: the moment `usage_known` flips
+/// true, EVERY other candidate loses the "unpopulated" guard — safe when it flips because something
+/// really did persist a `used` count, not safe when it flips because one run's necessarily-incomplete
+/// reachability walk happened to reach one thing. `usage_reference` stays the STORE's real, persisted
+/// `used` field (pass the un-enriched `components`) so this hazard can only ever be closed by
+/// something that actually writes usage to disk — never by this report's own ephemeral read.
+pub fn prune_plan_with(components: &[Value], usage_reference: &[Value]) -> PrunePlan {
     let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
     let by_id: BTreeMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let usage_known = nodes.iter().any(|n| n.used > 0);
+    let usage_known = usage_index_populated(usage_reference);
 
     let mut plan = PrunePlan::default();
     for f in analyze(components) {
@@ -5162,6 +5177,43 @@ export function X(){ return <i>{nope}</i>; }"
         assert!(usage_index_populated(&with_signal));
         let ids: Vec<String> = prunable(&with_signal).into_iter().map(|p| p.id).collect();
         assert!(ids.contains(&"Ghost".to_string()) && ids.contains(&"shell".to_string()), "{ids:?}");
+    }
+
+    /// #3888's ordering hazard, pinned directly: `prune_plan_with` lets a CALLER enrich `used` for
+    /// finding-suppression (e.g. `usage_sources::enrich_used`'s host-mount/`provides` reachability)
+    /// without that same enrichment widening what `--fix --yes` is willing to delete. The guard must
+    /// stay keyed on `usage_reference` — the store's real, un-enriched `used` — not on `components`.
+    #[test]
+    fn prune_plan_with_judges_the_guard_against_usage_reference_not_the_enriched_components() {
+        let disk_truth = [
+            json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "used": 0,
+                    "composes": [], "srcText": "p" }),
+            json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "g" }),
+        ];
+        // The ephemeral enrichment: some run's reachability walk proved `page` used (host-mounted). It
+        // does NOT touch `ghost` — nothing reaches it.
+        let mut enriched = disk_truth.to_vec();
+        enriched[0]["used"] = json!(1);
+
+        // `page`'s finding is suppressed (in-degree 0 AND used == 0 no longer holds for it) …
+        assert_eq!(
+            analyze(&enriched).iter().filter(|f| matches!(f.category, "orphan" | "dangling-branch")).count(),
+            1,
+            "only ghost's finding should remain once page is enriched"
+        );
+        // … but the disk truth is STILL "usage index unpopulated" (nothing in `disk_truth` ever carries
+        // `used > 0`), so `ghost` — which the enrichment never touched — must stay held back, not
+        // become auto-prunable just because `page` looked used in THIS run.
+        let plan = prune_plan_with(&enriched, &disk_truth);
+        assert!(plan.prune.is_empty(), "the disk usage index is still unpopulated: {:?}", plan.prune);
+        let ghost = plan.skipped.iter().find(|s| s.id == "ghost").expect("ghost is reported, held back");
+        assert!(ghost.guard.contains("usage index"), "{}", ghost.guard);
+
+        // Sanity: `prune_plan` (the self-referencing default) still behaves exactly as before — passing
+        // the SAME enriched list as both components and reference flips usage_known, same as any other
+        // real `used > 0` would (this is not new behavior, just confirming the wrapper is unchanged).
+        assert!(usage_index_populated(&enriched));
     }
 
     #[test]

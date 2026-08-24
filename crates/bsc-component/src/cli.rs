@@ -3752,6 +3752,7 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut fix, mut yes, mut motion) = (false, false, false);
     let mut runtime = false;
     let mut sound_kit = None::<String>;
+    let mut repo = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -3759,6 +3760,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             "--kit" => kit = it.next().cloned(),
             // #3412: resolve `@bsc/sounds/…` against the project's PINNED kit instead of the packaged default.
             "--sound-kit" => sound_kit = it.next().cloned(),
+            // #3888/`bsc request` #95: where the app's REAL entry point lives, for the host-mount +
+            // `provides` reachability walk (`usage_sources::reachable_ids`) that populates `used` for
+            // findings — else the cwd (a doctor run is normally from the repo whose kit it's reporting on).
+            "--repo" => repo = it.next().cloned(),
             "--json" => json = true,
             "--pretty" => pretty = true,
             "--fix" => fix = true,
@@ -3781,18 +3786,34 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         bsc_cli_util::require_write_scope("ui")?;
     }
     let store = open_component_store(&dir)?;
-    let comps: Vec<serde_json::Value> = store
-        .list()
-        .iter()
-        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
-        .filter(|v| match &kit {
-            Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
-            None => true,
-        })
+    // UNFILTERED — a `--kit`-scoped report still needs the FULL store + impls to resolve a
+    // cross-kit `provides` import or an algorithm-impl hop correctly (#3888); only the FINDINGS below
+    // are kit-scoped, never the usage corpus.
+    let all_comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let repo_path = repo.map(std::path::PathBuf::from).or_else(|| std::env::current_dir().ok());
+    let usage = crate::usage_sources::reachable_ids(
+        &all_comps,
+        &bsc_graph::implementations(),
+        crate::graph_health::platform_modules(),
+        repo_path.as_deref(),
+    );
+    let kit_filter = |v: &&serde_json::Value| match &kit {
+        Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
+        None => true,
+    };
+    // The store's real, PERSISTED `used` — never touched by the enrichment below. `prune_plan_with`'s
+    // guard is judged against this, not `comps`, so `--fix --yes`'s deletion eligibility is completely
+    // unaffected by this run's ephemeral reachability walk (see `prune_plan_with`'s doc for why).
+    let comps_disk_truth: Vec<serde_json::Value> =
+        all_comps.iter().filter(kit_filter).cloned().collect();
+    let comps: Vec<serde_json::Value> = crate::usage_sources::enrich_used(&all_comps, &usage.reached)
+        .into_iter()
+        .filter(|v| kit_filter(&v))
         .collect();
 
     if fix {
-        return doctor_fix(&store, &comps, yes);
+        return doctor_fix(&store, &comps, &comps_disk_truth, yes);
     }
 
     // Resolve the pin BEFORE analyzing so a broken pin fails the whole report rather than silently
@@ -3851,6 +3872,23 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         };
         println!("{}", out.map_err(|e| e.to_string())?);
         return Ok(());
+    }
+
+    // The usage-source corpus, so it's INSPECTABLE rather than a black box (#3888) — a report from a
+    // tree with no `src/app/main.tsx` (a different kit's context) says so, rather than silently reading
+    // as "usage was checked and found none".
+    if usage.entry_files_read == 0 {
+        println!(
+            "  (usage sources: no app entry point found under {} — host-mount/`provides` reachability was not checked; pass --repo)",
+            repo_path.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "<cwd>".to_string())
+        );
+    } else {
+        println!(
+            "  (usage sources: {} entry file(s), {} real file(s) scanned, {} record(s)/impl(s) proven reachable)",
+            usage.entry_files_read,
+            usage.files_scanned,
+            usage.reached.len()
+        );
     }
 
     // Human summary — one line per finding, most-severe first.
@@ -4311,12 +4349,23 @@ fn cmd_exports(args: &[String]) -> Result<(), String> {
 ///
 /// Cycles + same-`wraps` (differing-source) duplicates need the curator's SEMANTIC call, so they're only
 /// surfaced as a note — never auto-resolved here.
-fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply: bool) -> Result<(), String> {
+///
+/// `usage_reference` is what the prune guard's `usage_index_populated` check is judged against — pass
+/// `comps` itself when there's no separate enrichment (every direct caller before #3888) or the
+/// UN-enriched store read when `comps`' `used` has been widened by `usage_sources::enrich_used` for
+/// finding-suppression purposes (`cmd_doctor`): see [`crate::graph_health::prune_plan_with`] for why
+/// those two must never be the same list once one of them is ephemeral.
+fn doctor_fix(
+    store: &bsc_json_store::Store,
+    comps: &[serde_json::Value],
+    usage_reference: &[serde_json::Value],
+    apply: bool,
+) -> Result<(), String> {
     let plan = crate::graph_health::merge_plan(comps);
     // Dead roots to prune, minus anything a merge already removes (never double-handle an id).
     let merged_ids: std::collections::BTreeSet<String> =
         plan.groups.iter().flat_map(|g| g.removed.iter().map(|(id, _)| id.clone())).collect();
-    let prune_plan = crate::graph_health::prune_plan(comps);
+    let prune_plan = crate::graph_health::prune_plan_with(comps, usage_reference);
     let prunable: Vec<_> =
         prune_plan.prune.into_iter().filter(|p| !merged_ids.contains(&p.id)).collect();
     let skipped = prune_plan.skipped;
@@ -7121,11 +7170,11 @@ export const P = () => <X />;"
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
 
         // Dry run touches nothing.
-        doctor_fix(&store, &comps, false).unwrap();
+        doctor_fix(&store, &comps, &comps, false).unwrap();
         assert!(store.get("btn2").unwrap().is_some(), "a dry run removes nothing");
 
         // Apply: the byte-identical dup is merged away; the canonical survives; the composer repoints.
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
         assert!(store.get("btn2").unwrap().is_none(), "the byte-identical dup is merged away");
         assert!(store.get("btn").unwrap().is_some(), "the most-used canonical survives");
         let page: serde_json::Value = serde_json::from_str(&store.get("page").unwrap().unwrap()).unwrap();
@@ -7145,7 +7194,7 @@ export const P = () => <X />;"
         store.set("btnbuiltin", &serde_json::json!({ "id": "btnbuiltin", "name": "BtnBuiltin", "kitId": "k", "role": "primitive", "used": 1, "builtin": true, "composes": [], "srcText": src, "source": src }).to_string()).unwrap();
 
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
 
         let tomb = stored(&store, "btnbuiltin");
         assert_eq!(tomb["suppressed"], serde_json::Value::Bool(true), "the merged-away builtin is tombstoned: {tomb}");
@@ -7172,7 +7221,7 @@ export const P = () => <X />;"
         set("ghost", serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }));
 
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
 
         assert!(store.get("invoicespage").unwrap().is_some(), "a page is a root by definition — never pruned");
         assert!(store.get("algocells").unwrap().is_some(), "a packaged builtin seed is never pruned");
@@ -7192,7 +7241,7 @@ export const P = () => <X />;"
         // The orphan IS reported by the read-only analyzer …
         assert!(crate::graph_health::analyze(&comps).iter().any(|f| f.category == "orphan"));
         // … but `--fix --yes` leaves it alone: `used = 0` store-wide means UNKNOWN, not unused.
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
         assert!(store.get("ghost").unwrap().is_some(), "no usage signal ⇒ no automatic removal");
     }
 

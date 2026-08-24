@@ -122,7 +122,7 @@ pub(crate) struct Index<'a> {
 /// As-written comes first because a specifier can already carry its extension — a CSS side-effect import
 /// (`import "@/features/algorithms/algorithms.css"`) is a real dependency of a real component, and
 /// extension-guessing alone left two page records failing on their stylesheets.
-fn file_for(src_root: &std::path::Path, base: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn file_for(src_root: &std::path::Path, base: &str) -> Option<std::path::PathBuf> {
     for cand in [
         base.to_string(),
         format!("{base}.ts"),
@@ -203,7 +203,7 @@ impl<'a> Index<'a> {
     }
 
     /// Resolve one `@/…` specifier through the loader's chain. `base` is the specifier minus the alias.
-    fn lookup(&self, spec: &str, base: &str) -> Option<(String, Origin, String, &'static str)> {
+    pub(crate) fn lookup(&self, spec: &str, base: &str) -> Option<(String, Origin, String, &'static str)> {
         if let Some(id) = base.strip_prefix("components/") {
             if let Some(c) = self.by_id.get(id) {
                 return Some((id_of(c).to_string(), Origin::Sibling, text(c, "srcText"), ext_of(c, "tsx")));
@@ -216,6 +216,18 @@ impl<'a> Index<'a> {
             return Some((id_of(im).to_string(), Origin::Impl, text(im, "code"), ext_of(im, "ts")));
         }
         None
+    }
+
+    /// The repo's `src/`, when the index was built with a real `repo_root` that has one — `None` means
+    /// no boundary is available (see [`Index::src_root`]'s doc on the field itself).
+    pub(crate) fn src_root(&self) -> Option<&std::path::Path> {
+        self.src_root.as_deref()
+    }
+
+    /// Look a component up by its bare `id` (not a `@/…` specifier) — what a HOST MOUNT
+    /// (`<GraphComponent id="…">`) names, as opposed to an import.
+    pub(crate) fn component_by_id(&self, id: &str) -> Option<&Value> {
+        self.by_id.get(id).copied()
     }
 }
 
