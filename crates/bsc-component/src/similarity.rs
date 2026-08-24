@@ -89,6 +89,26 @@ struct Comp {
     /// Tokens of the `whenUse`/`whenNot` guidance — the only term that catches a semantic duplicate
     /// whose name AND body both differ.
     guidance: BTreeSet<String>,
+    /// A TOMBSTONE — the record was retired by `bsc ui suppress`, which keeps its `id` and drops every
+    /// content field. Never a CANDIDATE in any sweep; see [`live`].
+    suppressed: bool,
+}
+
+/// Is this record still a live candidate — i.e. NOT a suppression tombstone?
+///
+/// A tombstone is the worst possible input to a similarity measure, and it fails in a way that looks
+/// like a strong signal. `bsc ui suppress` keeps the `id` and drops name, kit, source, props, composes
+/// and the rest, so EVERY contract term drops for lack of signal on both sides — working exactly as
+/// documented — and NAME similarity alone is left carrying the pair. Ids retired together are named
+/// alike by construction, so a batch consolidation mints a mutually near-duplicate clique out of the
+/// records it just retired.
+///
+/// It was not theoretical: the live store's largest `near-duplicate-cluster` was 31 `settings-*card`
+/// tombstones from one 2026-08-20 consolidation, proposing that they be consolidated — which is what
+/// produced them. 41 of the store's 58 tombstones appeared somewhere in the report, and the noise sat
+/// on top of the live clusters this surface exists to show.
+fn live(c: &Comp) -> bool {
+    !c.suppressed
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -293,6 +313,7 @@ fn parse(v: &Value) -> Option<Comp> {
         prop_sig,
         variants: str_array(v, "variants"),
         composes: str_array(v, "composes"),
+        suppressed: v.get("suppressed").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -625,7 +646,7 @@ fn kit_label(a: &Comp, b: &Comp) -> String {
 /// the library. That is a conflict with a definite answer (keep one), which is why it is its own
 /// finding at higher severity rather than a term in a fuzzy mean.
 pub fn provides_collision_findings(components: &[Value]) -> Vec<Finding> {
-    let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
+    let comps: Vec<Comp> = components.iter().filter_map(parse).filter(live).collect();
     let mut by_spec: std::collections::BTreeMap<String, Vec<&Comp>> = Default::default();
     for c in &comps {
         let spec = c.provides.trim();
@@ -666,7 +687,7 @@ pub fn provides_collision_findings(components: &[Value]) -> Vec<Finding> {
 /// consolidating overlapping kits). PROPOSE-ONLY: emitted here, never fed to the `--fix` planners. Ranked
 /// most-similar first.
 pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Finding> {
-    let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
+    let comps: Vec<Comp> = components.iter().filter_map(parse).filter(live).collect();
     let handles = handles_by_kit(&comps);
     let dangling: Vec<BTreeSet<String>> = comps.iter().map(|c| dangling_composes(c, &handles)).collect();
     let mut scored: Vec<(f64, Finding)> = Vec::new();
@@ -953,6 +974,10 @@ pub fn rank_shape_similar(target_id: &str, components: &[Value], top: usize, flo
     let mut rows: Vec<(f64, Value)> = comps
         .iter()
         .filter(|c| c.id != target_id)
+        // The TARGET may be a tombstone — asking what a retired record was like is a fair question, and
+        // the lookup above deliberately searches the full pool. A CANDIDATE may not be: "merge this into
+        // a record that no longer exists" is not an action anyone can take.
+        .filter(|c| live(c))
         .filter_map(|c| {
             let terms = shape_terms(target, c);
             // Nothing to compare — both sides source-less AND composes-less. Not "identical", unknown.
@@ -995,6 +1020,7 @@ pub fn rank_similar(target_id: &str, components: &[Value], top: usize, floor: f6
     let mut rows: Vec<(f64, Value)> = comps
         .iter()
         .filter(|c| c.id != target_id)
+        .filter(|c| live(c)) // a tombstone is never an actionable candidate — see `rank_shape_similar`
         .filter_map(|c| {
             let sc = score(target, c)?;
             if sc.overall < floor {
@@ -1050,6 +1076,54 @@ mod tests {
             $(m.insert($k.to_string(), json!($v));)*
             m
         }};
+    }
+
+    /// A batch consolidation must not mint a near-duplicate clique out of the records it retired.
+    #[test]
+    fn a_suppression_tombstone_is_never_scored_as_a_candidate() {
+        // The real shape: `bsc ui suppress` keeps the id and drops EVERY content field. Alike ids, no
+        // content — so contract terms drop and name similarity alone would carry every pair.
+        let tomb = |id: &str, into: &str| {
+            json!({ "id": id, "suppressed": true, "supersededBy": into })
+        };
+        let recs = vec![
+            tomb("settings-ttscard", "ttscard"),
+            tomb("settings-themecard", "themecard"),
+            tomb("settings-storagecard", "storagecard"),
+            tomb("settings-studiocard", "studiocard"),
+        ];
+        assert!(
+            near_duplicate_findings(&recs, 0.55).is_empty(),
+            "four ids retired together are not four near-duplicates: {:?}",
+            near_duplicate_findings(&recs, 0.55),
+        );
+
+        // The live record they were superseded BY must not be dragged in either — a pair of one live
+        // record and its own tombstone is the most confusing possible finding.
+        let live_rec = comp("ttscard", "TtsCard", "k", &["on", "onToggle"], "export const TtsCard = () => <Card />;");
+        let mixed = vec![live_rec.clone(), tomb("settings-ttscard", "ttscard")];
+        assert!(
+            near_duplicate_findings(&mixed, 0.3).is_empty(),
+            "a record and its own tombstone are one record, not a duplicate pair",
+        );
+
+        // ... and a tombstone is never offered as something to merge INTO.
+        assert!(
+            rank_similar("ttscard", &mixed, 10, 0.0).is_empty(),
+            "'merge this into a record that no longer exists' is not an action anyone can take",
+        );
+        assert!(rank_shape_similar("ttscard", &mixed, 10, 0.0).is_empty(), "same for the shape mode");
+
+        // Asking about the tombstone BY id still resolves — it is a legitimate read, ranked against the
+        // live library rather than erroring. (The CLI additionally says the record is retired, so a thin
+        // result is not misread as "nothing resembles it".)
+        let alike = comp("ttscard2", "TtsCard", "k", &["on", "onToggle"], "export const TtsCard2 = () => <Card />;");
+        let three = vec![live_rec, alike, tomb("settings-ttscard", "ttscard")];
+        let _ = rank_similar("settings-ttscard", &three, 10, 0.0); // resolves; content-less, so may be empty
+        assert!(
+            !rank_similar("ttscard", &three, 10, 0.0).is_empty(),
+            "the two LIVE records still find each other with a tombstone in the pool",
+        );
     }
 
     // ── shared FORWARD REFERENCE (#89) ───────────────────────────────────────────────────────────────
