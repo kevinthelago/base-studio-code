@@ -212,11 +212,19 @@ BUILTIN comes back on the next hydrate (the seed re-adds it) — use `suppress` 
         summary: "PERMANENTLY remove a packaged builtin component — it won't re-seed (#3725)",
         usage: "\
 USAGE:
-  bsc ui suppress <id> [--superseded-by <new-id>] [--pretty]
+  bsc ui suppress <id> [--superseded-by <new-id>] [--force] [--pretty]
 
 Writes a `{ id, suppressed: true }` TOMBSTONE for <id>, so the frontend seed-reconcile stops re-adding
 the packaged builtin (a plain `remove` re-seeds on the next hydrate). The library and the doctor both
 skip a tombstone. Use for a builtin you never want back; `unsuppress` restores it (re-seeds from source).
+
+THE CLAIM IS NEVER ORPHANED SILENTLY. A tombstone is `{ id, suppressed: true }` — it carries no
+`provides` — so suppressing a record that CLAIMED a specifier drops the claim. If something still
+imports that specifier, the suppression is REFUSED (the error names the importers), unless you either
+name the replacement with --superseded-by, in which case it INHERITS the claim, or pass --force to
+orphan it deliberately. Nothing fails at build time when a claim is orphaned: the loader declines the
+whole closure at MOUNT time and the page renders its fallback, which is how four records went dark in
+one consolidation and stayed dark until someone opened the page.
 
 --superseded-by <new-id> records WHAT replaced this one, on the tombstone — the one record the
 seed-reconcile never overwrites, so the fact survives every hydrate. Use it when retiring a wrapper into
@@ -1000,6 +1008,30 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     ) && next.map(String::as_str) != Some("help")
 }
 
+/// Every LIVE record whose source imports `spec`, excluding `skip_id` and any tombstone.
+///
+/// Matches the specifier QUOTED (`"spec"` or `'spec'`), never as a bare substring: `@/x/Foo` is a
+/// prefix of `@/x/FooBar`, so a `contains` would report the wrong record as an importer and turn a
+/// harmless suppression into a refusal nobody can act on. Covers `import … from`, `export … from` and
+/// `require(…)` alike, because all three are just the specifier in quotes.
+fn live_importers_of(store: &bsc_json_store::Store, spec: &str, skip_id: &str) -> Vec<String> {
+    let needles = [format!("\"{spec}\""), format!("'{spec}'")];
+    let mut out: Vec<String> = store
+        .list()
+        .iter()
+        .filter_map(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .filter(|r| r.get("suppressed").and_then(serde_json::Value::as_bool) != Some(true))
+        .filter(|r| r.get("id").and_then(serde_json::Value::as_str) != Some(skip_id))
+        .filter(|r| {
+            let src = r.get("srcText").and_then(serde_json::Value::as_str).unwrap_or("");
+            needles.iter().any(|n| src.contains(n.as_str()))
+        })
+        .filter_map(|r| r.get("id").and_then(serde_json::Value::as_str).map(str::to_string))
+        .collect();
+    out.sort();
+    out
+}
+
 /// `bsc ui suppress <id>` / `bsc ui kit suppress <id>` (#3725) — write a `{ id, suppressed: true }`
 /// TOMBSTONE into the collection's store, PERMANENTLY removing a packaged builtin: the frontend
 /// `reconcileSeed` sees the tombstone occupying the id and never re-seeds the builtin (a plain `remove`
@@ -1010,9 +1042,12 @@ fn cmd_suppress(
     noun: &str,
 ) -> Result<(), String> {
     let kit_prefix = if noun == "kit" { "kit " } else { "" };
-    let SuppressArgs { positionals, dir, superseded_by } = parse_suppress_args(args)?;
+    let SuppressArgs { positionals, dir, superseded_by, force } = parse_suppress_args(args)?;
     let id = positionals.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}suppress <id>"))?;
     let store = open(&dir)?;
+    // Read BEFORE the tombstone replaces it — the claim being retired is only visible here.
+    let current = current_record(&store, id)?;
+    let mut inherited_by = None::<String>;
     let mut tombstone = serde_json::json!({ "id": id, "suppressed": true });
     // `--superseded-by` (#a-tombstone-can-name-what-superseded-it) — WHAT replaced this record, stored on
     // the tombstone because the tombstone is the one thing the seed-reconcile never overwrites. A
@@ -1040,8 +1075,70 @@ fn cmd_suppress(
                 "--superseded-by '{new_id}' is itself suppressed — a retired {noun} cannot be the replacement"
             ));
         }
-        tombstone["supersededBy"] = serde_json::Value::String(new_id);
+        tombstone["supersededBy"] = serde_json::Value::String(new_id.clone());
+        inherited_by = Some(new_id);
     }
+
+    // THE SPECIFIER MUST NOT BE ORPHANED (the-planning-page-repeats-the-branchesview-cascade).
+    //
+    // A tombstone is `{ id, suppressed: true }` — it does not carry `provides`. So suppressing a record
+    // that CLAIMED a specifier drops the claim, and if the successor never picks it up, every importer
+    // of that specifier resolves to nothing. The record still compiles, so nothing fails at build time;
+    // the loader declines the whole closure at MOUNT time and the page renders its fallback. That is
+    // how four records went dark in one consolidation and were not noticed until someone opened the
+    // page, and it is why `branchesview` needed the same repair before them.
+    //
+    // So: if the retiring record claims a specifier something still imports, the successor inherits it,
+    // and with no successor named the suppression is refused rather than silently orphaning it.
+    if let Some(spec) = current
+        .get("provides")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let importers = live_importers_of(&store, spec, id);
+        match (&inherited_by, importers.is_empty(), force) {
+            // Nothing imports it — orphaning the claim costs nothing, so this stays quiet.
+            (_, true, _) => {}
+            // Deliberate: the operator said orphan it.
+            (_, false, true) => {
+                println!("warning: '{spec}' is imported by {} record(s) and no longer resolves — --force", importers.len());
+            }
+            // A successor was named: it INHERITS the claim, which is what the consolidation meant.
+            (Some(new_id), false, false) => {
+                let mut target = current_record(&store, new_id)?;
+                let held = target.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
+                if held.is_empty() {
+                    target["provides"] = serde_json::Value::String(spec.to_string());
+                    stamped_set(&store, new_id, target, &crate::record::resolve_writer(None))?;
+                    println!("'{new_id}' inherited provides '{spec}' — {} importer(s) keep resolving", importers.len());
+                } else if held != spec {
+                    // Two claims, one successor. Guessing which wins is how a WRONG module starts
+                    // answering a specifier, which is worse than the specifier answering nothing.
+                    return Err(format!(
+                        "'{id}' provides '{spec}' ({} importer(s)) but '{new_id}' already provides '{held}' —                          one record cannot answer both. Re-point the importers, or pass --force to orphan '{spec}'.",
+                        importers.len()
+                    ));
+                }
+            }
+            // No successor and live importers: refuse. The list is what makes it actionable.
+            (None, false, false) => {
+                let mut shown: Vec<&str> = importers.iter().take(5).map(String::as_str).collect();
+                if importers.len() > shown.len() {
+                    shown.push("…");
+                }
+                return Err(format!(
+                    "'{id}' provides '{spec}', which {} record(s) still import ({}). Suppressing it orphans \
+                     that specifier and every importer's closure goes unsatisfiable at MOUNT time, not at build \
+                     time. Name the replacement with --superseded-by so it inherits the claim, or --force to \
+                     orphan it deliberately.",
+                    importers.len(),
+                    shown.join(", ")
+                ));
+            }
+        }
+    }
+
     stamped_set(&store, id, tombstone, &crate::record::resolve_writer(None))?;
     // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707).
     if noun == "component" {
@@ -4973,14 +5070,18 @@ struct SuppressArgs {
     positionals: Vec<String>,
     dir: Option<String>,
     superseded_by: Option<String>,
+    force: bool,
 }
 
 fn parse_suppress_args(args: &[String]) -> Result<SuppressArgs, String> {
     let mut passthrough: Vec<String> = Vec::new();
     let mut superseded_by = None::<String>;
+    let mut force = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        if a == "--superseded-by" {
+        if a == "--force" {
+            force = true;
+        } else if a == "--superseded-by" {
             let v = it
                 .next()
                 .cloned()
@@ -4994,7 +5095,7 @@ fn parse_suppress_args(args: &[String]) -> Result<SuppressArgs, String> {
         }
     }
     let (positionals, dir, _pretty) = parse_anim_args(&passthrough)?;
-    Ok(SuppressArgs { positionals, dir, superseded_by })
+    Ok(SuppressArgs { positionals, dir, superseded_by, force })
 }
 
 fn parse_anim_args(args: &[String]) -> Result<(Vec<String>, Option<String>, bool), String> {
@@ -5605,6 +5706,115 @@ mod tests {
         let rec: serde_json::Value = serde_json::from_str(&store.get("oldcard").unwrap().unwrap()).unwrap();
         assert_eq!(rec["suppressed"], serde_json::Value::Bool(true));
         assert_eq!(rec["supersededBy"], "newwidget", "the pointer rides the tombstone: {rec}");
+    }
+
+    #[test]
+    fn suppress_refuses_to_orphan_a_specifier_something_still_imports() {
+        // the-planning-page-repeats-the-branchesview-cascade. A tombstone is `{id, suppressed}` — it does
+        // NOT carry `provides` — so retiring a record drops its claim. When the successor does not pick
+        // the claim up, every importer resolves to nothing, the loader declines the closure at MOUNT time,
+        // and the page renders its fallback. Four records went dark that way in one consolidation.
+        let dir = tmp_store_dir("suppress-orphan");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store
+            .set("olddialogs", r#"{"id":"olddialogs","name":"OldDialogs","kitId":"k","provides":"@/features/x/Dialogs"}"#)
+            .unwrap();
+        store
+            .set("page", r#"{"id":"page","name":"Page","kitId":"k","srcText":"import { D } from \"@/features/x/Dialogs\";"}"#)
+            .unwrap();
+
+        let err = run(vec!["suppress".into(), "olddialogs".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap_err();
+        assert!(err.contains("@/features/x/Dialogs"), "names the specifier: {err}");
+        assert!(err.contains("page"), "names the importer, so it is actionable: {err}");
+        // AND IT DID NOT WRITE. A refusal that half-applies is worse than no guard.
+        let rec: serde_json::Value = serde_json::from_str(&store.get("olddialogs").unwrap().unwrap()).unwrap();
+        assert!(rec.get("suppressed").is_none(), "the tombstone was not written: {rec}");
+    }
+
+    #[test]
+    fn the_successor_inherits_the_claim_so_importers_keep_resolving() {
+        let dir = tmp_store_dir("suppress-inherit");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store
+            .set("olddialogs", r#"{"id":"olddialogs","name":"OldDialogs","kitId":"k","provides":"@/features/x/Dialogs"}"#)
+            .unwrap();
+        store.set("newdialogs", r#"{"id":"newdialogs","name":"NewDialogs","kitId":"k","srcText":"export const D = 1;"}"#).unwrap();
+        store
+            .set("page", r#"{"id":"page","name":"Page","kitId":"k","srcText":"import { D } from \"@/features/x/Dialogs\";"}"#)
+            .unwrap();
+
+        run(
+            vec![
+                "suppress".into(), "olddialogs".into(),
+                "--superseded-by".into(), "newdialogs".into(),
+                "--dir".into(), dir.clone(),
+            ],
+            "bsc ui",
+        )
+        .unwrap();
+
+        let successor: serde_json::Value = serde_json::from_str(&store.get("newdialogs").unwrap().unwrap()).unwrap();
+        assert_eq!(successor["provides"], "@/features/x/Dialogs", "the successor inherited the claim: {successor}");
+        let tomb: serde_json::Value = serde_json::from_str(&store.get("olddialogs").unwrap().unwrap()).unwrap();
+        assert_eq!(tomb["suppressed"], serde_json::Value::Bool(true));
+        assert_eq!(tomb["supersededBy"], "newdialogs");
+    }
+
+    #[test]
+    fn a_successor_that_already_claims_a_different_specifier_is_refused() {
+        // One record cannot answer two specifiers. Picking one silently is how a WRONG module starts
+        // serving an import — worse than the import resolving to nothing, because it renders.
+        let dir = tmp_store_dir("suppress-two-claims");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("old", r#"{"id":"old","name":"Old","kitId":"k","provides":"@/features/x/A"}"#).unwrap();
+        store.set("new", r#"{"id":"new","name":"New","kitId":"k","provides":"@/features/x/B"}"#).unwrap();
+        store.set("page", r#"{"id":"page","name":"Page","kitId":"k","srcText":"import a from \"@/features/x/A\";"}"#).unwrap();
+
+        let err = run(
+            vec!["suppress".into(), "old".into(), "--superseded-by".into(), "new".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .unwrap_err();
+        assert!(err.contains("cannot answer both"), "{err}");
+    }
+
+    #[test]
+    fn an_unimported_claim_is_orphaned_without_ceremony() {
+        // The guard is about LIVE importers, not about `provides` existing. Most retirements have none,
+        // and a rule that made every one of those pass a flag would just train people to pass the flag.
+        let dir = tmp_store_dir("suppress-unimported");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("lonely", r#"{"id":"lonely","name":"Lonely","kitId":"k","provides":"@/features/x/Nobody"}"#).unwrap();
+
+        run(vec!["suppress".into(), "lonely".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("lonely").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn a_prefix_of_another_specifier_is_not_an_importer() {
+        // `@/x/Foo` is a PREFIX of `@/x/FooBar`, so a bare `contains` reports the wrong record and turns
+        // a harmless suppression into a refusal naming a file that does not import it.
+        let dir = tmp_store_dir("suppress-prefix");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("foo", r#"{"id":"foo","name":"Foo","kitId":"k","provides":"@/x/Foo"}"#).unwrap();
+        store.set("user", r#"{"id":"user","name":"User","kitId":"k","srcText":"import b from \"@/x/FooBar\";"}"#).unwrap();
+
+        run(vec!["suppress".into(), "foo".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("foo").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true), "FooBar is not an importer of Foo");
+    }
+
+    #[test]
+    fn force_orphans_the_specifier_deliberately() {
+        let dir = tmp_store_dir("suppress-force");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("old", r#"{"id":"old","name":"Old","kitId":"k","provides":"@/features/x/A"}"#).unwrap();
+        store.set("page", r#"{"id":"page","name":"Page","kitId":"k","srcText":"import a from \"@/features/x/A\";"}"#).unwrap();
+
+        run(vec!["suppress".into(), "old".into(), "--force".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("old").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true));
     }
 
     #[test]
