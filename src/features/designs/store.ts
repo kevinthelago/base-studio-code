@@ -12,6 +12,7 @@ import type { ComponentBuildStatus, RuntimeStateCategory, ComponentScanResult } 
 import type { PreviewState } from "./lib/componentPreview";
 import type { KitConsumer, KitChange, Dispatch } from "@/features/designs/lib/propagation";
 import type { SeedNotice } from "@/features/designs/lib/seedRefresh";
+import { log } from "@/shared/lib/core/log";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "@/features/designs/lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, planComponentRestamp, reconcileComponents, reconcileKits } from "./lib/seed";
 import { applyStamps } from "@/features/designs/lib/seedRefresh";
@@ -373,6 +374,26 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
       kits: rk.records,
       seedNotices: [...s.seedNotices.filter((n) => n.type === "theme"), ...rk.notices, ...rc.notices],
     }));
+    // SAY IT OUT LOUD. The reconcile has always produced these verdicts; the only surface that showed
+    // them — the in-Studio SeedNoticesCard — was removed in #2948, and nothing replaced it. So a
+    // packaged record whose seed moved while the store copy was edited has been kept SILENTLY ever
+    // since: `algorithmspage` gained its technology tabs in the seed and the running app went on
+    // rendering the older copy, with no way for anyone to find out short of `bsc ui parity`.
+    //
+    // A log line is not the eventual UI, but it is the difference between a drift that is discoverable
+    // and one that is not — and it costs nothing on the common path, where there are no notices.
+    const upstream = rc.notices.filter((n) => n.kind === "updated-upstream" || n.kind === "unstamped");
+    if (upstream.length) {
+      log.warn(
+        `seed reconcile: ${upstream.length} packaged record(s) differ from the shipped seed and the ` +
+          `STORE copy is being rendered — ${upstream.map((n) => n.id).slice(0, 12).join(", ")}` +
+          `${upstream.length > 12 ? ", …" : ""}. Compare with \`bsc ui parity src-tauri/data/components/app\`.`,
+      );
+    }
+    const refreshed = rc.notices.filter((n) => n.kind === "refreshed");
+    if (refreshed.length) {
+      log.info(`seed reconcile: refreshed ${refreshed.length} record(s) from the seed — ${refreshed.map((n) => n.id).join(", ")}`);
+    }
     applyAnimationsToRoot(kitAnimations(rk.records));
     // Converge the store to the verdicts (#2483): push refreshed + missing built-ins (stamped with the
     // new seedHash), drop pristine copies of retired built-ins. User records are never pushed/dropped.
