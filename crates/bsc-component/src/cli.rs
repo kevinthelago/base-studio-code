@@ -714,6 +714,51 @@ Reach for `bsc ui dupes` when the question is `should these be one component?` a
 `what conventions does this library already have?`",
     },
     CmdDoc {
+        name: "pattern",
+        summary: "a convention with an ID — promote a cluster, then author INTO it instead of copying a sibling (#a-pattern-has-no-id-so-the-only-way-to-author-a-sibling-is-to-copy-one)",
+        usage: "\
+USAGE:
+  bsc ui pattern list [--json] [--pretty]
+  bsc ui pattern get <id> [--json] [--pretty]
+  bsc ui pattern new <id> --from <member-id> [--name \"...\"] [--threshold 0..1]
+  bsc ui pattern of <component-id> [--json]
+  bsc ui pattern remove <id>
+
+`bsc ui patterns` (plural) FINDS the library's structural conventions. This names one. A cluster is a
+report — recomputed every sweep, with nothing to point at — so the only way to author into an existing
+convention is to find a sibling and copy it, which is how the convention drifts and how a fifth copy
+gets written by a session that believed it was writing a first.
+
+An id changes the request: `author a telemetry settings card` becomes `add a member to
+settings-toggle-card`, and a pattern you are INSTANTIATING is not one you can duplicate.
+
+  new     PROMOTES the cluster containing --from <member-id> into a named record. Any one member names
+          the cluster, so there is no positional index to go stale. It reuses the same sweep at the same
+          bar, so a promoted pattern's members are the cluster that was reported.
+  get     the signature + its members, recomputed LIVE. Points at an exemplar to read, which is what a
+          session should copy FROM.
+  of      the REVERSE lookup — which convention does this record already belong to? The read to make
+          when you have a component in hand rather than a pattern.
+
+MEMBERSHIP IS COMPUTED, NEVER STORED. A frozen member list is wrong the moment anything is authored,
+which is exactly when the question is asked. The record keeps its `exemplars` (the evidence it was
+promoted from) and nothing else about membership.
+
+TWO KINDS OF PATTERN, tested differently, and the record says which (`signatureSource`):
+
+  derived    promoted from a real cluster, so members define it. A record conforms when it SCORES at or
+             above the pattern's threshold against an exemplar — the same measure the cluster was drawn
+             with.
+  declared   named by an author before any member exists. Nothing to score against, so a record
+             conforms by CONTAINING the signature. That is LOOSER — anything holding those parts
+             matches — and every member row carries `basis` so the caller is never guessing which test
+             produced the answer.
+
+--dir is the COMPONENT store (what conformance is computed against), as everywhere else; the pattern
+records have their own --pattern-dir. Suppressed records are never members. A READ except for `new` and
+`remove`.",
+    },
+    CmdDoc {
         name: "define-animation",
         summary: "author a component's motion as data — animation JSON on stdin, upsert by name (#2869)",
         usage: "\
@@ -1399,6 +1444,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_exports(&args[1..])
             }
         }
+        Some("pattern") => cmd_pattern(&args[1..], prog),
         Some("patterns") => {
             if args.get(1).map(String::as_str) == Some("help") {
                 print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "patterns"));
@@ -4240,6 +4286,234 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The `bsc ui pattern` verbs (#a-pattern-has-no-id-so-the-only-way-to-author-a-sibling-is-to-copy-one)
+/// — a convention with an ID, so authoring the fifth sibling is "add a member to <pattern>" rather than
+/// "find one and copy it".
+fn cmd_pattern(args: &[String], prog: &str) -> Result<(), String> {
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    if sub.is_empty() || sub == "help" {
+        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "pattern"));
+        return Ok(());
+    }
+    // TWO stores are in play here, so `--dir` cannot mean both. It keeps its usual meaning — the
+    // COMPONENT store, which is what conformance is computed against — and the pattern records get
+    // their own flag. Sharing one flag would silently look for patterns inside the component dir.
+    let (mut dir, mut pattern_dir, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
+    let (mut id, mut from, mut name, mut threshold) =
+        (None::<String>, None::<String>, None::<String>, crate::patterns::DEFAULT_CONFORMANCE);
+    let mut it = args[1..].iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pattern-dir" => pattern_dir = it.next().cloned(),
+            "--from" => from = it.next().cloned(),
+            "--name" => name = it.next().cloned(),
+            "--threshold" => {
+                threshold = it.next().and_then(|s| s.parse::<f64>().ok()).ok_or("--threshold needs a number in [0,1]")?;
+            }
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    if !(0.0..=1.0).contains(&threshold) {
+        return Err("--threshold must be in [0,1]".to_string());
+    }
+    let pstore = open_pattern_store(&pattern_dir)?;
+    let cstore = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        cstore.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let emit = |v: &serde_json::Value| -> Result<(), String> {
+        let t = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
+        println!("{}", t.map_err(|e| e.to_string())?);
+        Ok(())
+    };
+    let read = |id: &str| -> Result<serde_json::Value, String> {
+        pstore
+            .get(id)?
+            .as_deref()
+            .and_then(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+            .ok_or_else(|| format!("no pattern with id '{id}' (see `bsc ui pattern list`)"))
+    };
+
+    match sub {
+        "list" => {
+            let rows: Vec<serde_json::Value> = pstore
+                .list()
+                .iter()
+                .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+                .map(|p| {
+                    let n = crate::patterns::conforming(&p, &comps, true).len();
+                    serde_json::json!({
+                        "id": p["id"], "name": p["name"],
+                        "signatureSource": p["signatureSource"], "members": n,
+                    })
+                })
+                .collect();
+            if json {
+                return emit(&serde_json::Value::Array(rows));
+            }
+            if rows.is_empty() {
+                println!("No named patterns yet. Find the library's conventions with `bsc ui patterns`, then promote one:");
+                println!("  bsc ui pattern new <id> --from <a-member-id>");
+                return Ok(());
+            }
+            for r in &rows {
+                println!(
+                    "  {:<28} {:>3} members  [{}]  {}",
+                    r["id"].as_str().unwrap_or(""),
+                    r["members"].as_u64().unwrap_or(0),
+                    r["signatureSource"].as_str().unwrap_or("?"),
+                    r["name"].as_str().unwrap_or(""),
+                );
+            }
+            Ok(())
+        }
+        "get" => {
+            let id = id.ok_or("usage: bsc ui pattern get <id>")?;
+            let p = read(&id)?;
+            let members = crate::patterns::conforming(&p, &comps, true);
+            let rows: Vec<serde_json::Value> = members
+                .iter()
+                .map(|m| serde_json::json!({
+                    "id": m.id, "name": m.name, "kit": m.kit, "exemplar": m.exemplar,
+                    "basis": m.basis.as_str(),
+                    "score": m.score.map(|s| (s * 100.0).round() / 100.0),
+                }))
+                .collect();
+            if json {
+                let mut out = p.clone();
+                out["members"] = serde_json::Value::Array(rows);
+                return emit(&out);
+            }
+            println!("{}  —  {}", p["id"].as_str().unwrap_or(""), p["name"].as_str().unwrap_or(""));
+            let list = |v: &serde_json::Value| {
+                v.as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default()
+            };
+            println!("  signature ({}):", p["signatureSource"].as_str().unwrap_or("?"));
+            println!("    composes: {}", nonempty(&list(&p["signature"]["composes"])));
+            println!("    renders:  {}", nonempty(&list(&p["signature"]["skeleton"])));
+            let basis = members.first().map(|m| m.basis.as_str()).unwrap_or("scored");
+            println!("\n  {} member(s), matched by {basis}:", members.len());
+            for m in &members {
+                println!(
+                    "    {}{}{}",
+                    m.name,
+                    if m.exemplar { "  (exemplar)" } else { "" },
+                    m.score.map(|s| format!("  {:.0}%", s * 100.0)).unwrap_or_default(),
+                );
+            }
+            if basis == "containment" {
+                println!(
+                    "\n  NOTE: matched by CONTAINMENT of a declared signature, which is looser than scoring\n  against exemplars — anything holding these parts matches. Promote a real member with\n  `bsc ui pattern new {} --from <id>` to tighten it.",
+                    p["id"].as_str().unwrap_or("<id>"),
+                );
+            }
+            println!("\n  To author into this pattern, read an exemplar: `bsc ui get <exemplar-id>`");
+            Ok(())
+        }
+        "new" => {
+            let id = id.ok_or("usage: bsc ui pattern new <id> --from <member-id> [--name \"...\"]")?;
+            let from = from.ok_or(
+                "bsc ui pattern new needs --from <member-id>: a pattern is PROMOTED from a cluster `bsc ui patterns` found, and any one member names it",
+            )?;
+            if pstore.get(&id)?.is_some() {
+                return Err(format!("a pattern with id '{id}' already exists — `bsc ui pattern get {id}`, or pick another id"));
+            }
+            // The cluster holding <from> IS the pattern. Reusing the sweep means a promoted pattern's
+            // members are the cluster that was reported, not a differently-drawn set.
+            let clusters = crate::similarity::shape_clusters(&comps, threshold, 2);
+            let cluster = clusters
+                .iter()
+                .find(|c| {
+                    c["members"].as_array().is_some_and(|a| {
+                        a.iter().any(|m| m["id"].as_str() == Some(from.as_str()))
+                    })
+                })
+                .ok_or_else(|| format!(
+                    "'{from}' is not in any cluster at threshold {threshold} — nothing to promote. Check `bsc ui patterns --threshold {threshold}`, or lower the bar."
+                ))?;
+            let member_ids: Vec<&str> =
+                cluster["members"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_str()).collect();
+            let members: Vec<serde_json::Value> = comps
+                .iter()
+                .filter(|c| member_ids.contains(&c.get("id").and_then(serde_json::Value::as_str).unwrap_or("")))
+                .cloned()
+                .collect();
+            let display = name.unwrap_or_else(|| id.clone());
+            let rec = crate::patterns::derive(&id, &display, &members, threshold);
+            pstore.set(&id, &serde_json::to_string(&rec).map_err(|e| e.to_string())?)?;
+            if json {
+                return emit(&rec);
+            }
+            println!("{id}  —  promoted from the cluster containing '{from}' ({} exemplars)", members.len());
+            println!("  bsc ui pattern get {id}");
+            Ok(())
+        }
+        "remove" => {
+            let id = id.ok_or("usage: bsc ui pattern remove <id>")?;
+            read(&id)?; // a removal of nothing is an error, not a silent success
+            pstore.remove(&id)?;
+            println!("{id} removed");
+            Ok(())
+        }
+        "of" => {
+            // The REVERSE lookup: which convention does this record already belong to? The read a
+            // session makes when it has a component in hand, not a pattern.
+            let id = id.ok_or("usage: bsc ui pattern of <component-id>")?;
+            if !comps.iter().any(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())) {
+                return Err(format!("no component with id '{id}' (see `bsc ui list --raw`)"));
+            }
+            let hits: Vec<serde_json::Value> = pstore
+                .list()
+                .iter()
+                .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+                .filter_map(|p| {
+                    let m = crate::patterns::conforming(&p, &comps, true);
+                    m.iter().find(|c| c.id == id).map(|c| serde_json::json!({
+                        "pattern": p["id"], "name": p["name"], "basis": c.basis.as_str(),
+                        "score": c.score.map(|s| (s * 100.0).round() / 100.0), "exemplar": c.exemplar,
+                    }))
+                })
+                .collect();
+            if json {
+                return emit(&serde_json::Value::Array(hits));
+            }
+            if hits.is_empty() {
+                println!("'{id}' belongs to no named pattern.");
+                println!("  If it should: `bsc ui similar {id} --shape` to see what it is built like,");
+                println!("  then `bsc ui pattern new <pattern-id> --from {id}` to name the convention.");
+                return Ok(());
+            }
+            for h in &hits {
+                println!(
+                    "  {} ({}){}",
+                    h["pattern"].as_str().unwrap_or(""),
+                    h["basis"].as_str().unwrap_or(""),
+                    if h["exemplar"].as_bool().unwrap_or(false) { "  — an exemplar" } else { "" },
+                );
+            }
+            Ok(())
+        }
+        other => Err(format!("unknown `pattern` command '{other}' — try list | get | new | remove | of")),
+    }
+}
+
+fn nonempty(s: &str) -> String {
+    if s.is_empty() { "—".to_string() } else { s.to_string() }
+}
+
+fn open_pattern_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
+    let dir = bsc_cli_util::resolve_store_path(dir, "BSC_COMPONENT_PATTERN_DIR", || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join("patterns"))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(bsc_json_store::Store::new(dir, "pattern"))
+}
+
 /// `bsc ui patterns` — the whole-library shape sweep
 /// (#shape-similarity-is-pairwise-so-a-pattern-can-only-be-confirmed-never-found).
 ///
@@ -6795,7 +7069,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "used-by", "exports", "patterns", "define-animation", "list-animations", "remove-animation",
+                "backing", "test", "doctor", "dupes", "similar", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -8250,6 +8524,69 @@ export const P = () => <X />;"
         assert_eq!(idx.get(&("mui".into(), "Button".into())).map(Vec::len), Some(1), "the other kit's Button is separate");
         assert!(!idx.contains_key(&("react-ui".into(), "Card".into())), "nothing composes Card ⇒ absent (an orphan/root)");
         assert_eq!(idx.get(&("react-ui".into(), "Icon".into())).map(Vec::len), Some(1), "a composed NAME appears even with no own record");
+    }
+
+    #[test]
+    fn pattern_promotes_a_cluster_then_answers_membership_both_ways() {
+        let store = tmp_component_store("pattern-c");
+        let pdir = tmp_component_store("pattern-p");
+        let (cd, pd) = (store.dir().to_string_lossy().into_owned(), pdir.dir().to_string_lossy().into_owned());
+        let card = |id: &str, name: &str| {
+            serde_json::json!({
+                "id": id, "name": name, "kitId": "react-ui", "role": "composite", "composes": ["Card", "ToggleRow"],
+                "srcText": format!("export const {name} = () => <Card title=\"x\"><ToggleRow on={{a}} onToggle={{b}} title=\"t\"/></Card>;"),
+            })
+        };
+        for r in [card("a", "AlphaCard"), card("b", "BetaCard"), card("c", "GammaCard")] {
+            store.set(r["id"].as_str().unwrap(), &r.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string())
+                .chain(["--dir".into(), cd.clone(), "--pattern-dir".into(), pd.clone()])
+                .collect::<Vec<_>>()
+        };
+        // An empty store lists cleanly and points at how to fill it, rather than printing nothing.
+        assert!(run(d(&["pattern", "list"]), "bsc ui").is_ok());
+        // Promotion needs --from: there is no positional cluster index, because one would go stale.
+        assert!(run(d(&["pattern", "new", "settings-toggle-card"]), "bsc ui").is_err(), "--from is required");
+        let err = run(d(&["pattern", "new", "p", "--from", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("not in any cluster"), "{err}");
+
+        assert!(run(d(&["pattern", "new", "settings-toggle-card", "--from", "a", "--name", "Settings toggle card"]), "bsc ui").is_ok());
+        assert!(run(d(&["pattern", "new", "settings-toggle-card", "--from", "a"]), "bsc ui").is_err(), "id collision refused");
+        assert!(run(d(&["pattern", "get", "settings-toggle-card", "--json", "--pretty"]), "bsc ui").is_ok());
+        assert!(run(d(&["pattern", "list", "--json"]), "bsc ui").is_ok());
+
+        // The stored record is derived, carries its exemplars, and does NOT carry a member list.
+        let rec: serde_json::Value =
+            serde_json::from_str(pdir.get("settings-toggle-card").unwrap().unwrap().as_str()).unwrap();
+        assert_eq!(rec["signatureSource"], "derived");
+        assert_eq!(rec["exemplars"].as_array().map(Vec::len), Some(3));
+        assert!(rec.get("members").is_none(), "membership is computed, never frozen into the record");
+
+        // The reverse lookup, both outcomes.
+        assert!(run(d(&["pattern", "of", "a", "--json"]), "bsc ui").is_ok());
+        assert!(run(d(&["pattern", "of", "ghost"]), "bsc ui").is_err(), "an absent component names itself");
+        store.set("chart", &serde_json::json!({
+            "id": "chart", "name": "Chart", "kitId": "react-ui", "composes": ["Axis"],
+            "srcText": "export const Chart = () => <Axis scale={s}/>;",
+        }).to_string()).unwrap();
+        assert!(run(d(&["pattern", "of", "chart"]), "bsc ui").is_ok(), "belonging to none is an answer, not an error");
+
+        // A newly authored sibling is a member with NO edit to the pattern — the point of computing it.
+        store.set("new", &card("new", "TelemetryCard").to_string()).unwrap();
+        let comps: Vec<serde_json::Value> =
+            store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        let members = crate::patterns::conforming(&rec, &comps, true);
+        assert!(members.iter().any(|m| m.id == "new"), "the new sibling joined: {:?}", members.iter().map(|m| &m.id).collect::<Vec<_>>());
+        assert!(!members.iter().any(|m| m.id == "chart"), "the unrelated record did not");
+
+        assert!(run(d(&["pattern", "remove", "settings-toggle-card"]), "bsc ui").is_ok());
+        assert!(run(d(&["pattern", "remove", "settings-toggle-card"]), "bsc ui").is_err(), "removing nothing is an error");
+        assert!(run(d(&["pattern", "--nope"]), "bsc ui").is_err(), "unknown flag");
+        assert!(run(d(&["pattern", "wat"]), "bsc ui").is_err(), "unknown subcommand");
+        assert!(run(vec!["pattern".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "pattern"), "the verb is documented");
     }
 
     #[test]

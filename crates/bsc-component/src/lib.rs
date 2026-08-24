@@ -24,6 +24,8 @@ pub(crate) mod closure;
 pub mod exports;
 pub mod folder;
 pub mod graph_health;
+/// A PATTERN — the library's structural conventions, given an id.
+pub mod patterns;
 pub mod motion;
 pub mod preview_errors;
 pub mod preview_props;

@@ -209,6 +209,8 @@ mod tests {
             "bsc ui patterns",            // the conventions sweep
             "--shape",                    // the name-blind similarity mode
             "bsc ui exports",             // the one-record-one-item check
+            "bsc ui pattern list",        // the NAMED conventions — instantiate, never copy a sibling
+            "bsc ui pattern new",         // and NAME an unnamed one, so the next session need not copy
             "NAME SEARCH WILL NOT FIND",  // WHY `bsc ui list` is the wrong tool here
             "SandboxedConsolesCard",      // the measured example, so the rule carries its evidence
         ] {
