@@ -49,6 +49,9 @@ pub enum Role {
     Issuer,
     Juror,
     Documentor,
+    /// Kept although [`Role::parse`] no longer yields it — the profile it describes is the one the
+    /// caged designer will need, and deleting it would mean rebuilding that reasoning from scratch.
+    /// See the note in `parse` for why nothing produces it today.
     Designer,
 }
 
@@ -96,7 +99,23 @@ impl Role {
             "issuer" => Role::Issuer,
             "juror" => Role::Juror,
             "documentor" => Role::Documentor,
-            "designer" => Role::Designer,
+            // `designer` is DELIBERATELY ABSENT — do not add it back without finishing the caged
+            // surface first (`complete-the-caged-designer-surface`).
+            //
+            // It was here once, and every designer session died on its first instructed command:
+            //
+            //     Exit code 127   /bin/bash: line 1: bsc: command not found
+            //
+            // The designer's whole documented surface is `bsc ui`, and this module refuses to bind
+            // `bsc` on purpose (see the module docs — a writable SQLite store in the cage is the
+            // ambient authority the isolation exists to remove). Worse, `/ui` is projected as the
+            // summary tier only, with no `srcText`, so a caged designer cannot even READ the
+            // component it is meant to edit. There is no path through that cage to its job.
+            //
+            // It was never a decision, either: `designer` was already a session role when roles were
+            // mapped onto namespaces, while `architect`, `librarian`, `sound-designer` and
+            // `integrator` were not — so the designer became the only caged studio by name collision.
+            // Uncaged, it matches its four siblings and its own context is true again.
             _ => return None,
         })
     }
@@ -453,11 +472,38 @@ ed".into(),
         assert_eq!(ALL_ROLES.len(), 10, "a Role was added or removed — update the sweeps");
         for name in [
             "planner", "worker", "director", "triage", "tester", "reviewer", "issuer", "juror",
-            "documentor", "designer",
+            "documentor",
         ] {
             let r = Role::parse(name).unwrap_or_else(|| panic!("{name} should parse"));
             assert!(ALL_ROLES.contains(&r), "{name} parses but is not in ALL_ROLES");
         }
+    }
+
+    /// THE STUDIO ROLES ARE UNCAGED TOGETHER, and `designer` is one of them.
+    ///
+    /// It used to be the exception, and that was never a decision: `designer` was already a session
+    /// role when roles were mapped onto namespaces, while `architect`, `librarian`, `sound-designer`
+    /// and `integrator` were not — so the designer became the only caged studio by name collision.
+    /// In that cage every session died on its first instructed command (`bsc: command not found`),
+    /// because its whole documented surface is `bsc ui` and this module refuses to bind `bsc`.
+    ///
+    /// This pins the five together so the designer cannot quietly rejoin the set. Re-adding it is a
+    /// real decision with a precondition — the caged surface has to be able to do the job first
+    /// (`complete-the-caged-designer-surface`) — and that decision should break this test and be
+    /// made here, not slip in as a one-line parser entry.
+    #[test]
+    fn the_studio_roles_are_uncaged_together() {
+        for name in ["designer", "architect", "librarian", "sound-designer", "integrator"] {
+            assert!(
+                Role::parse(name).is_none(),
+                "{name} must NOT resolve to a namespace profile — the studios run uncaged until the \
+                 caged surface can do their job. Re-adding one is a decision; make it here.",
+            );
+        }
+        // ...and the profile it would use is still MODELLED, so completing the cage means filling in
+        // a surface rather than re-deriving what a designer may touch.
+        assert!(ALL_ROLES.contains(&Role::Designer));
+        assert!(!Role::Designer.work_reaches_a_remote(), "still the one role that needs no remote");
     }
 
     #[test]
