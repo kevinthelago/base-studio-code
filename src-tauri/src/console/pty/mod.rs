@@ -2119,6 +2119,98 @@ mod namespace_tests {
         assert!(!text.contains("PLAN-WRITABLE"), "/plan must be read-only: {text:?}");
     }
 
+    /// The protocol's OWN caged instructions, executed inside a real cage
+    /// (bsc-is-unreachable-inside-the-namespace-cage).
+    ///
+    /// The defect was a disagreement, not a missing feature: the worker protocol told every worker to
+    /// read the stores with `bsc`, and `bsc` cannot exist in the namespace — binding it would mean
+    /// binding a writable database, which is the ambient authority the isolation removes, and the
+    /// projections in `bsc-storefs` exist precisely so a read surface can be given WITHOUT that. So a
+    /// caged worker was handed instructions that fail with `command not found`, which reads to an agent
+    /// as a broken environment rather than as a policy.
+    ///
+    /// This asserts the fix the way the acceptance asks for: it EXTRACTS the commands from the shipped
+    /// protocol markdown and runs those, rather than restating them here. A test with its own copy of
+    /// the commands proves the copy works; only running the document catches the document going stale.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_protocols_caged_store_commands_actually_run_inside_the_cage() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        // The EMBEDDED seed, via an empty config root, so a stale local mirror cannot decide this.
+        let empty_cfg = std::env::temp_dir().join(format!("bsc-cagedoc-{}", std::process::id()));
+        std::fs::create_dir_all(&empty_cfg).unwrap();
+        let md = crate::platform::config::with_config_root(&empty_cfg, crate::fleet::protocols::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty_cfg);
+
+        let block = md
+            .split_once("<!-- caged-store-commands -->")
+            .and_then(|(_, rest)| rest.split_once("<!-- /caged-store-commands -->"))
+            .map(|(b, _)| b.to_string())
+            .expect("the protocol carries a caged-store-commands block");
+        let cmds: Vec<String> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("ls ") || l.starts_with("cat "))
+            .map(|l| l.split('#').next().unwrap_or(l).trim().to_string())
+            .collect();
+        assert!(!cmds.is_empty(), "the block must contain runnable commands: {block}");
+
+        let base = std::env::temp_dir().join(format!("bsc-cagedrun-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        // Materialize the three record projections from the SAME library the launcher uses.
+        let items = bsc_storefs::plan::from_json(
+            r#"[{"ref":"demo-item","title":"A demo","status":"open","body":"b","acceptance":["a"],"labels":[],"dependsOn":[]}]"#,
+        )
+        .expect("plan json parses");
+        bsc_storefs::materialize(&stores.join("plan"), &bsc_storefs::plan::project(&items, "2026-01-01T00:00:00Z"))
+            .expect("materialize plan");
+        let impls = bsc_storefs::graph::from_json(
+            r#"[{"id":"fib","name":"fibonacci","role":"algorithm","summary":"s","domain":"math","tech":"typescript","code":"export const f=1;"}]"#,
+        )
+        .expect("graph json parses");
+        bsc_storefs::materialize(&stores.join("graph"), &bsc_storefs::graph::project(&impls, "2026-01-01T00:00:00Z"))
+            .expect("materialize graph");
+        let comps = bsc_storefs::ui::from_json(
+            r#"[{"id":"card","name":"Card","role":"composite","folder":"shared/ui","kitId":"base-studio-code"}]"#,
+        )
+        .expect("ui json parses");
+        bsc_storefs::materialize(&stores.join("ui"), &bsc_storefs::ui::project(&comps, "2026-01-01T00:00:00Z"))
+            .expect("materialize ui");
+
+        let argv = namespace_argv(
+            Some("worker"), "cagedoc", wt.to_str().unwrap(),
+            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+        )
+        .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+
+        // Every command runs, and `bsc` is confirmed ABSENT — the premise the block is written for.
+        let script = format!(
+            "command -v bsc >/dev/null && echo BSC-PRESENT; {}",
+            cmds.iter().map(|c| format!("{c} >/dev/null 2>&1 || echo \"FAILED: {c}\"")).collect::<Vec<_>>().join("; ")
+        );
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", &script]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(
+            !text.contains("BSC-PRESENT"),
+            "the caged block is written for a cage WITHOUT bsc; if bsc is reachable the protocol should \
+             say so instead: {text:?}"
+        );
+        assert!(
+            !text.contains("FAILED:"),
+            "every command the protocol gives a caged worker must run there — {text:?}"
+        );
+    }
+
     // Claude Code with no credential stops at its interactive "Select login method" menu — which,
     // in a pane whose input is wired for an agent, reads exactly like a frozen terminal. That is
     // what shipped: the spec carried `credential_file` and the launcher never filled it in.

@@ -3,12 +3,28 @@
 
 You are one of several parallel sessions building this project. Never stop to ask the user what to do with your work — not for direction, not for whether your work is done, and not for how to integrate it. **The default is LOCAL: nothing you do reaches a remote.** You gate, commit on your own branch, record what you did, mark your item complete, and move to the next one — you do not push, and you do not open a PR. Follow the push instruction in your kickoff; if it names a policy that DOES push (auto-pr, self-merge, push-confirm), that instruction wins over this paragraph and the PR rules further down apply.
 
-**The stores are the source of truth — prefer them over anything quoted in your context.** Your context is assembled once, at launch; the stores are live. If a quote here disagrees with what a store returns, the store is right and the quote is stale. Read them directly — `bsc` is always available to you (you do not need to ask, and you should not work from a copy when the original is one command away):
+**The stores are the source of truth — prefer them over anything quoted in your context.** Your context is assembled once, at launch; the stores are live. If a quote here disagrees with what a store returns, the store is right and the quote is stale. Read them directly rather than working from a copy.
 
 - `bsc graph impl get <id>` · `bsc graph impl list [--tech t] [--domain d]` — the **algorithms library**. Anything your feature `requires` is named in the Reference implementations section below; read each one from here rather than re-deriving it.
 - `bsc ui get <id>` · `bsc ui list [--kit k]` — the **component library**. Before writing a UI component, check whether one already exists.
 - `bsc plan …` — this project's plan: issues, streams, features, contracts. Your scope section is a snapshot of it; `bsc plan` is the live copy.
 - `bsc files read <path>` — a file's text, when you need a module no harvest lifts (a constants/types module).
+
+**IF `bsc` IS NOT ON YOUR PATH, YOU ARE IN THE CAGE, and the same stores are mounted as read-only file trees.** That is by design, not a broken environment: the projection exists so a read surface can be given to you *without* binding a writable database into your namespace. Check once with `command -v bsc`; if it is absent, use these instead — they answer the same questions and need no `--help`:
+
+<!-- caged-store-commands -->
+```sh
+ls /plan/items                 # every item; then cat /plan/items/<ref>/{status,title,body,acceptance}
+ls /plan/by-status             # …grouped; ls /plan/by-status/open to see what is available
+ls /graph/impl                 # the algorithms library; cat /graph/impl/<id>/code for an implementation
+ls /ui/components              # the component library; cat /ui/components/<id>/{name,role,folder,kit}
+```
+<!-- /caged-store-commands -->
+
+Two limits worth knowing before you hit them, because both look like breakage and are not:
+
+- **`/ui` is the SUMMARY tier.** It tells you a component exists, its role, folder and kit — it does NOT carry the source. There is no caged equivalent of `bsc ui get <id>`; if you need a component's source, ask the director with `bsc plan request new` rather than assuming it is missing.
+- **Everything under `/plan`, `/graph`, `/ui` and `/coord` is read-only by the MOUNT**, so a write fails with `Read-only file system` no matter what your role allows. Your own worktree at `/repo` is writable, and so is any outbox the launch gave you (`/coord/out` to emit coordination, `/ui/out` to author a component).
 
 **A COMPONENT file is generated — edit its record, not the file (#4193).** Some source files are the emitted artifact of a component record: the graph holds the source of truth and the file is regenerated from it, so editing the file loses your change (the record keeps the old body, and the app renders the record).
 

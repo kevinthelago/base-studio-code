@@ -46,6 +46,41 @@ mod tests {
     ///
     /// Pinned against the EMBEDDED seed (an empty config root forces the fallback), so a machine with a
     /// stale `config/fleet/worker-protocol.md` mirror cannot make this pass or fail spuriously.
+    /// The protocol must also tell a CAGED worker how to read those stores
+    /// (bsc-is-unreachable-inside-the-namespace-cage).
+    ///
+    /// `bsc` cannot exist inside the namespace — binding it means binding a writable database, the
+    /// ambient authority the isolation removes — so a protocol that names only `bsc` verbs hands a
+    /// caged worker instructions that fail with `command not found`, which reads as a broken
+    /// environment rather than as policy.
+    ///
+    /// The commands themselves are EXECUTED in a real cage by
+    /// `the_protocols_caged_store_commands_actually_run_inside_the_cage`; that test is Linux- and
+    /// bubblewrap-gated, so this one keeps the document's shape checkable everywhere.
+    #[test]
+    fn the_worker_protocol_tells_a_caged_worker_where_the_stores_are() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-caged-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        let block = md
+            .split_once("<!-- caged-store-commands -->")
+            .and_then(|(_, rest)| rest.split_once("<!-- /caged-store-commands -->"))
+            .map(|(b, _)| b)
+            .expect("the caged block is delimited so a test can run exactly what it says");
+        for path in ["/plan/items", "/graph/impl", "/ui/components"] {
+            assert!(block.contains(path), "the caged block must name {path}: {block}");
+        }
+        // The premise, stated where the worker meets it: absence of `bsc` is the SIGNAL, not a fault.
+        assert!(md.contains("command -v bsc"), "tells the worker how to tell which world it is in: {md}");
+        // And the one thing the cage genuinely cannot do, said before the worker hits it.
+        assert!(
+            md.contains("SUMMARY tier"),
+            "/ui carries no source in the projection; a worker must learn that here, not by failing: {md}"
+        );
+    }
+
     #[test]
     fn the_worker_protocol_names_the_stores_and_their_precedence() {
         let empty = std::env::temp_dir().join(format!("bsc-proto-seed-{}", std::process::id()));
