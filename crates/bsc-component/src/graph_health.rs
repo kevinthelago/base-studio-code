@@ -105,7 +105,39 @@ impl Finding {
 /// Deliberately NOT part of [`analyze_with`]: that function has a byte-parity TS twin (`graphHealth.ts`)
 /// which is static-only, and the render error is a Rust/CLI-only signal fed from a log the frontend
 /// doesn't read. `cmd_doctor` appends these like `analyze_motion`, so the twin stays untouched.
-pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) -> Vec<Finding> {
+/// The sentence that keeps a REPLAY from reading as a fresh check.
+///
+/// `bsc ui doctor` cannot build or mount anything — it is a CLI with no esbuild and no DOM, which is the
+/// whole reason [`crate::preview_errors`] exists. So every `render-error` is an observation the APP made
+/// at some earlier moment, and re-running doctor re-reads the same line. Without this sentence the two
+/// are indistinguishable, and the reader's natural loop — fix, re-run doctor, see the same error — reads
+/// as "the fix did not take".
+///
+/// That is not hypothetical. Designer request #101: a session gave a record the `provides` its importer
+/// needed, re-ran doctor six-plus times over several minutes against one 19:48:22Z line, and filed a bug
+/// against the preview's dependency index. The fix had worked — forcing a real render posted a fresh
+/// entry seconds later, and it was a RENDER throw, not the build failure. Nothing in the output could
+/// have told it apart, including its own counter-evidence: the fixes that DID appear to clear were on
+/// components it happened to have open in the Studio, so the app re-rendered those.
+///
+/// The stamp is the log line's own `at`, never a clock read here — so the report is deterministic and a
+/// test over a fixture cannot flake. A line with no `at` degrades to the instruction alone rather than
+/// printing an empty "observed".
+fn replay_notice(kit: &str, id: &str, at: &str) -> String {
+    let target = if kit.is_empty() { id.to_string() } else { format!("{kit} {id}") };
+    let observed = if at.trim().is_empty() {
+        String::from("This is a REPLAY of a recorded observation")
+    } else {
+        format!("This is a REPLAY of what the app observed at {}", at.trim())
+    };
+    format!(
+        "{observed} — doctor never builds, so RE-RUNNING IT CANNOT REFRESH THIS. \
+         `bsc navigate component {target}` makes the running app rebuild and render it, and the \
+         fresh result lands in `bsc ui preview-errors`."
+    )
+}
+
+pub fn render_error_findings(components: &[Value], errors: &[(String, String, String)]) -> Vec<Finding> {
     let by_id: BTreeMap<&str, &Value> = components
         .iter()
         // #3725: a suppression tombstone is not a component — drop its errors like a store-absent one.
@@ -114,7 +146,7 @@ pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) 
         .collect();
     errors
         .iter()
-        .filter_map(|(id, message)| {
+        .filter_map(|(id, message, at)| {
             let comp = by_id.get(id.as_str())?; // drop a stale error for a component no longer in the store
             // #3737: drop a render-error for a component whose current srcText is EMPTY — an empty spec
             // can't have a live render error (the preview shows no-implementation, not a throw), so a
@@ -125,6 +157,7 @@ pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) 
             }
             let name = comp.get("name").and_then(Value::as_str).unwrap_or(id.as_str()).to_string();
             let kit = comp.get("kitId").and_then(Value::as_str).unwrap_or_default().to_string();
+            let kit_for_notice = kit.clone();
             // The scan records the failure with a `build:`/`render:` kind prefix (#3549). Strip it for
             // display and branch the prose — a BUILD failure (esbuild) and a RENDER throw (an exception
             // during mount) need different fixes. A raw message with no prefix is treated as a render throw.
@@ -154,12 +187,14 @@ pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) 
                     format!(
                         "the preview's esbuild build failed — check the source + imports with \
                          `bsc ui get {id} --field srcText --raw` (a missing/mistyped import, an unresolved \
-                         sibling, or TypeScript in a file loaded as plain JS shows up here)"
+                         sibling, or TypeScript in a file loaded as plain JS shows up here). {}",
+                        replay_notice(&kit_for_notice, id, at),
                     )
                 } else {
                     format!(
                         "the preview likely passes `undefined` for a prop it reads — check `bsc ui preview-props {id}` \
-                         and guard the access (or fix the sample-data shape)"
+                         and guard the access (or fix the sample-data shape). {}",
+                        replay_notice(&kit_for_notice, id, at),
                     )
                 },
             })
@@ -5711,9 +5746,9 @@ export function X(){ return <i>{nope}</i>; }"
                     "srcText": "export const BscDropdown = () => null;" }),
         ];
         let errors = vec![
-            ("bsc-keyvaluelist".to_string(), "Cannot read properties of undefined (reading 'map')".to_string()),
-            ("bsc-dropdown".to_string(), "trace line 1\n  at foo\n  at bar".to_string()),
-            ("ghost".to_string(), "not in the store — must be dropped".to_string()),
+            ("bsc-keyvaluelist".to_string(), "Cannot read properties of undefined (reading 'map')".to_string(), "2026-08-24T19:48:22Z".to_string()),
+            ("bsc-dropdown".to_string(), "trace line 1\n  at foo\n  at bar".to_string(), "2026-08-24T19:48:23Z".to_string()),
+            ("ghost".to_string(), "not in the store — must be dropped".to_string(), "2026-08-24T19:48:24Z".to_string()),
         ];
         let f = render_error_findings(&comps, &errors);
         assert_eq!(f.len(), 2, "the stale `ghost` error is dropped");
@@ -5740,13 +5775,90 @@ export function X(){ return <i>{nope}</i>; }"
             json!({ "id": "real", "name": "Real", "kitId": "k", "srcText": "export const Real = () => null;" }),
         ];
         let errors = vec![
-            ("empty".to_string(), "no export Empty in @/x".to_string()),
-            ("real".to_string(), "threw at render".to_string()),
+            ("empty".to_string(), "no export Empty in @/x".to_string(), String::new()),
+            ("real".to_string(), "threw at render".to_string(), String::new()),
         ];
         let f = render_error_findings(&comps, &errors);
         let ids: Vec<&str> = f.iter().flat_map(|x| x.node_ids.iter().map(String::as_str)).collect();
         assert!(!ids.contains(&"empty"), "the empty-srcText render-error is dropped as stale: {ids:?}");
         assert!(ids.contains(&"real"), "the non-empty component keeps its error: {ids:?}");
+    }
+
+    /// Designer request #101: six-plus doctor re-runs against ONE recorded line, read as "the fix did not
+    /// take". The finding must say it is a replay, when it was observed, and what actually refreshes it.
+    #[test]
+    fn a_render_error_says_it_is_a_replay_and_names_what_refreshes_it() {
+        let comps = vec![json!({
+            "id": "console-pane-shell", "name": "PaneShell", "kitId": "base-studio-code",
+            "role": "composite", "srcText": "export const PaneShell = () => null;",
+        })];
+
+        // A BUILD failure — the exact shape that cost #101 its afternoon.
+        let errors = vec![(
+            "console-pane-shell".to_string(),
+            "build: preview: module not found: components/console-pane-menu".to_string(),
+            "2026-08-24T19:48:22Z".to_string(),
+        )];
+        let f = render_error_findings(&comps, &errors);
+        assert_eq!(f.len(), 1);
+        let a = &f[0].suggested_action;
+        assert!(a.contains("REPLAY"), "the finding must admit it is not a fresh check: {a}");
+        assert!(a.contains("2026-08-24T19:48:22Z"), "and name WHEN it was observed: {a}");
+        assert!(
+            a.contains("RE-RUNNING IT CANNOT REFRESH THIS"),
+            "the loop the reader will otherwise try must be ruled out explicitly: {a}",
+        );
+        assert!(
+            a.contains("bsc navigate component base-studio-code console-pane-shell"),
+            "and the verb that DOES refresh it must be spelled out, kit and id: {a}",
+        );
+
+        // The stamp is the LOG LINE's, never a clock read here — so the report is deterministic. Pinned by
+        // asserting a second, different stamp round-trips rather than by asserting "some timestamp".
+        let older = vec![(
+            "console-pane-shell".to_string(),
+            "render: TypeError: null is not an object".to_string(),
+            "2026-01-02T03:04:05Z".to_string(),
+        )];
+        let g = render_error_findings(&comps, &older);
+        assert!(g[0].suggested_action.contains("2026-01-02T03:04:05Z"), "{}", g[0].suggested_action);
+        // ... and a RENDER throw keeps its own prose alongside the notice — the notice is additive.
+        assert!(g[0].suggested_action.contains("bsc ui preview-props"), "{}", g[0].suggested_action);
+
+        // A line with no `at` DEGRADES to the instruction alone. It must never print an empty "observed
+        // at", and must never cost the finding — a preview failure with a malformed stamp is still a
+        // preview failure.
+        let undated = vec![(
+            "console-pane-shell".to_string(),
+            "build: boom".to_string(),
+            String::new(),
+        )];
+        let h = render_error_findings(&comps, &undated);
+        assert_eq!(h.len(), 1, "a blank `at` must not drop the finding");
+        assert!(h[0].suggested_action.contains("REPLAY of a recorded observation"), "{}", h[0].suggested_action);
+        assert!(!h[0].suggested_action.contains("observed at "), "no empty stamp: {}", h[0].suggested_action);
+        assert!(h[0].suggested_action.contains("bsc navigate component base-studio-code console-pane-shell"));
+
+        // A kit-less record still gets an actionable command — the id alone, not "` <id>`" with a hole.
+        let kitless = vec![json!({
+            "id": "loose", "name": "Loose", "role": "composite", "srcText": "export const Loose = () => null;",
+        })];
+        let k = render_error_findings(&kitless, &[("loose".to_string(), "build: x".to_string(), String::new())]);
+        assert!(k[0].suggested_action.contains("bsc navigate component loose"), "{}", k[0].suggested_action);
+        assert!(!k[0].suggested_action.contains("component  loose"), "no double space from an empty kit");
+
+        // No RUN of spaces anywhere in the prose. This is not fussiness: the first cut of this notice
+        // shipped with ten spaces mid-sentence, because a line-continuation collapsed wrong, and every
+        // assertion above still passed — each one matches a fragment on ONE side of the gap. A finding is
+        // read by a person and by an LLM; mangled whitespace in the middle of the actionable sentence is
+        // the kind of defect that survives precisely because nothing asserts the shape of the whole.
+        for f in [&f[0], &g[0], &h[0], &k[0]] {
+            assert!(
+                !f.suggested_action.contains("  "),
+                "collapsed line-continuation left a space run: {:?}",
+                f.suggested_action,
+            );
+        }
     }
 
     #[test]
@@ -5772,8 +5884,9 @@ export function X(){ return <i>{nope}</i>; }"
             (
                 "workspaceshellpage".to_string(),
                 "build: Build failed with 1 error: mem:src/shared/ui/layouts:2:12: ERROR: Expected \"from\" but found \"{\"".to_string(),
+                "2026-08-24T19:48:45Z".to_string(),
             ),
-            ("bsc-dropdown".to_string(), "render: Cannot read properties of undefined".to_string()),
+            ("bsc-dropdown".to_string(), "render: Cannot read properties of undefined".to_string(), String::new()),
         ];
         let f = render_error_findings(&comps, &errors);
         let ws = f.iter().find(|x| x.node_ids == ["workspaceshellpage"]).unwrap();
