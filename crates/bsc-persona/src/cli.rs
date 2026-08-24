@@ -162,6 +162,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // to for THIS invocation; a fn pointer could not see it and would silently clamp against the
     // default store while writing to another.
     let dir = store_dir(&args, prog)?;
+    // `remove` is intercepted for the same reason `rename` is guarded: the shared scaffold knows
+    // nothing about `builtin`, so the protection has to live where the noun does.
+    if args.first().map(String::as_str) == Some("remove") && args.get(1).map(String::as_str) != Some("help") {
+        if let Some(id) = args.iter().skip(1).find(|a| !a.starts_with("--")) {
+            refuse_if_builtin(&bsc_json_store::Store::new(dir.clone(), SPEC.noun), id, prog, "remove")?;
+        }
+    }
     let validate = |items: &[serde_json::Value]| validate_floor_batch(items, &dir, prog);
     bsc_json_store::cli::run_hooked_validated(args, prog, &SPEC, None, Some(&validate))
 }
@@ -276,6 +283,39 @@ fn stored_floor(
 /// held verbatim (that is the whole contract of this store), and round-tripping it through a typed
 /// struct here would quietly drop any field this crate does not know about — which is exactly the data
 /// loss the verb exists to prevent.
+/// Refuse a destructive verb against a PACKAGED persona.
+///
+/// The system sessions — designer, librarian, architect, sound-designer, integrator and the rest —
+/// run as built-in personas. They are the user's window onto what the system IS, and the Teams graph
+/// presents them read-only for exactly that reason ("no inspector CRUD, no right-click delete —
+/// `bsc teams` / `bsc persona` are what write"). The app store agrees: `removePersona` returns early
+/// on `builtin`.
+///
+/// The CLI did not, and that is not theoretical — `bsc persona remove persona-designer` deleted the
+/// running Design Studio's identity, after which `whatami` reported a pane with a role and no
+/// persona. It comes back on the next hydrate, which makes it worse rather than better: the damage
+/// is invisible until someone asks a live session who it is.
+///
+/// `set` is deliberately NOT guarded. Seeding goes through it — `hydratePersonas` reconciles the
+/// packaged built-ins and pushes newly-seeded ones back — so refusing there would break the very
+/// mechanism that restores these records.
+fn refuse_if_builtin(store: &bsc_json_store::Store, id: &str, prog: &str, verb: &str) -> Result<(), String> {
+    let Some(raw) = store.get(id)? else { return Ok(()) };  // absent → let the verb report it
+    let v: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        // Unparseable is not our problem to diagnose here; the verb itself will say so.
+        Err(_) => return Ok(()),
+    };
+    if v.get("builtin").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Err(format!(
+            "{prog} {verb}: '{id}' is a BUILT-IN persona — it belongs to the system, not to a user, \
+             and is read-only here. The Teams graph shows it the same way. (It would also come back \
+             on the next hydrate, so this would look like it worked and quietly change nothing.)"
+        ));
+    }
+    Ok(())
+}
+
 fn rename(args: &[String], prog: &str) -> Result<(), String> {
     // The store dir resolves exactly as the shared scaffold resolves it (`--dir` > env > default), so
     // a rename lands in the same store every other verb reads.
@@ -313,6 +353,7 @@ fn rename(args: &[String], prog: &str) -> Result<(), String> {
     if !v.is_object() {
         return Err(format!("{prog} rename: persona '{id}' is not a JSON object"));
     }
+    refuse_if_builtin(&store, id, prog, "rename")?;
     v["name"] = serde_json::Value::String(name.to_string());
     let out = serde_json::to_string(&v).map_err(|e| format!("{prog} rename: {e}"))?;
     store.set(id, &out)?;
@@ -1007,4 +1048,75 @@ mod tests {
         assert!(h.contains("RELAUNCHES"), "{h}");
     }
 
+}
+
+#[cfg(test)]
+mod builtin_guard_tests {
+    use super::*;
+
+    fn store_with(dir: &std::path::Path, id: &str, builtin: bool) -> bsc_json_store::Store {
+        let s = bsc_json_store::Store::new(dir.to_path_buf(), SPEC.noun);
+        let body = serde_json::json!({ "id": id, "name": "X", "role": "designer", "builtin": builtin });
+        s.set(id, &serde_json::to_string(&body).unwrap()).unwrap();
+        s
+    }
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("bsc-persona-guard-{}-{tag}", std::process::id()))
+    }
+
+    /// A packaged persona is READ-ONLY from the CLI.
+    ///
+    /// THE BUG: `bsc persona remove persona-designer` deleted the running Design Studio's identity.
+    /// The app store had always refused this (`removePersona` returns early on `builtin`); the CLI
+    /// never learned, and the CLI is what an agent — or a user reading the help — actually drives.
+    #[test]
+    fn a_builtin_cannot_be_removed_or_renamed() {
+        let dir = scratch("builtin");
+        let s = store_with(&dir, "persona-designer", true);
+        let e = refuse_if_builtin(&s, "persona-designer", "bsc persona", "remove").unwrap_err();
+        assert!(e.contains("BUILT-IN"), "the refusal says why: {e}");
+        assert!(e.contains("read-only"), "and what the rule is: {e}");
+        assert!(
+            refuse_if_builtin(&s, "persona-designer", "bsc persona", "rename").is_err(),
+            "rename is an UPDATE to a system record and is refused the same way",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A user-authored persona is untouched — the guard must not become a wall around the store.
+    #[test]
+    fn a_user_persona_is_still_removable() {
+        let dir = scratch("user");
+        let s = store_with(&dir, "persona-mine", false);
+        assert!(refuse_if_builtin(&s, "persona-mine", "bsc persona", "remove").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An ABSENT id passes the guard, so the verb itself reports "no such persona".
+    ///
+    /// Otherwise a typo would be answered with a lecture about built-ins, which is a worse error than
+    /// the one it replaced.
+    #[test]
+    fn an_absent_persona_is_left_for_the_verb_to_report() {
+        let dir = scratch("absent");
+        let s = bsc_json_store::Store::new(dir.clone(), SPEC.noun);
+        assert!(refuse_if_builtin(&s, "persona-nope", "bsc persona", "remove").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `set` stays open, and that is deliberate: `hydratePersonas` reconciles the packaged built-ins
+    /// and pushes newly-seeded ones back through it, so guarding `set` would break the mechanism that
+    /// RESTORES these records. Pinned as a decision so nobody "completes" the guard and breaks boot.
+    #[test]
+    fn set_is_deliberately_not_guarded() {
+        let src = include_str!("cli.rs");
+        let run = &src[src.find("pub fn run(").expect("run present")..];
+        let run = &run[..run.find("\n}").expect("end of run")];
+        assert!(run.contains("Some(\"remove\")"), "remove is intercepted");
+        assert!(
+            !run.contains("Some(\"set\")"),
+            "set must NOT be intercepted — seeding pushes built-ins back through it",
+        );
+    }
 }
