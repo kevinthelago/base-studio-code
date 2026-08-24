@@ -1,5 +1,8 @@
 # Compiled nodes: a methodology for Rust in the algorithms graph
 
+> **SESSION ARTIFACT — not maintained.** A METHODOLOGY NOTE answering whether a node can carry its compiled counterpart. It can: `bsc graph build` compiles a node from its own composes closure and stamps the verdict, with `--wasm` writing to a content-addressed sidecar. The wider work is the OPEN epic `epic-compiled-nodes-carry-their-artifact`.
+> See [`README.md`](README.md) for why this lives here.
+
 Answering "can a node carry its compiled counterpart, and would that simplify testing/building/gating?"
 
 **Short answer: yes, and it is more valuable than it first looks — but for a different population than the

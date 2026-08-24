@@ -1,5 +1,8 @@
 # Teams owns agent configuration
 
+> **SESSION ARTIFACT — not maintained.** A PROPOSAL, written for discussion and never implemented as written. Its direction largely arrived by another route: personas are read on the Teams page, `bsc persona` is the write surface, and the rail is now nine Workspaces rather than seven pages. The capability-collapse it argued for is tracked as `the-persona-is-the-whole-agent`.
+> See [`README.md`](README.md) for why this lives here.
+
 **Status:** proposal, for discussion. Nothing implemented.
 **Scope:** the first slice of the "seven pages" refactor — collapse roles + personas + permission
 profiles into the Teams page, and rebuild its right-hand panel to carry them.

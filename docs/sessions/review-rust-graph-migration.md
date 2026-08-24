@@ -1,5 +1,8 @@
 # Rust → algorithms-graph migration: what is actually available
 
+> **SESSION ARTIFACT — not maintained.** A POINT-IN-TIME REVIEW, measured 2026-08-19. The direction it surveyed happened: the algorithms graph now holds 204 rust implementations, and `npm run gate` compiles the rust nodes on every run.
+> See [`README.md`](README.md) for why this lives here.
+
 A review of the Rust/backend tree for records-migration opportunities, measured against the live
 tooling on 2026-08-19. Every number below came from running the shipped `bsc` binary or scanning the
 tree — nothing is estimated. No file in the repo and no live store was written; the write experiments

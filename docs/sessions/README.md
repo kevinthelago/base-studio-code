@@ -17,6 +17,11 @@ file per cluster, so historical `(#N)` references can still be resolved.
 
 | Document | What it was | Outcome |
 |---|---|---|
+| [kickoff-records-migration.md](kickoff-records-migration.md) | Brief to start the records migration, plus a defect to fix before more retirements | **Done** — 1,004 modules ship as records now (337 component + 667 impl). Current reference: [`../records.md`](../records.md) |
+| [kickoff-records-migration-2.md](kickoff-records-migration-2.md) | Brief to finish that migration across two sessions | Delivered; see part one |
+| [proposal-teams-owns-agent-configuration.md](proposal-teams-owns-agent-configuration.md) | Proposal to collapse roles + personas + permissions onto Teams — the first slice of a "seven pages" refactor | Never implemented as written. The direction arrived another way: personas are READ on Teams, `bsc persona` writes, and the rail is nine Workspaces, not seven pages. The capability collapse is `the-persona-is-the-whole-agent` |
+| [review-rust-graph-migration.md](review-rust-graph-migration.md) | Point-in-time survey of the Rust tree for records-migration opportunities (2026-08-19) | The direction happened — 204 rust implementations in the graph, and `npm run gate` compiles the rust nodes every run |
+| [methodology-rust-compiled-nodes.md](methodology-rust-compiled-nodes.md) | Can a node carry its compiled counterpart? | Yes — `bsc graph build` compiles from a node's composes closure and stamps the verdict. The wider work is the open epic `epic-compiled-nodes-carry-their-artifact` |
 | [kickoff-graph-migration.md](kickoff-graph-migration.md) | Brief to start the graph migration, local-first | **Done and then some** — the migration ran through this session; ~930 modules now ship as records. Current reference: [`../records.md`](../records.md) |
 | [kickoff-retire-packaged-kit-artifact.md](kickoff-retire-packaged-kit-artifact.md) | Brief to retire `react-ui.json` for a DB-driven UI | Answered by the investigation below; `react-ui.json` is still packaged and still regenerated (`UPDATE_KITS=1`) |
 | [investigation-retire-packaged-kit-artifact.md](investigation-retire-packaged-kit-artifact.md) | The answer to that kickoff | Superseded by what actually shipped |
@@ -26,3 +31,8 @@ file per cluster, so historical `(#N)` references can still be resolved.
 | [layouts-audit.md](layouts-audit.md) | Every page against the template set (epic #2197) | Point-in-time; several audited files are records now, including `GraphCanvas.tsx` |
 | [ui-kit-coverage.md](ui-kit-coverage.md) | File-level comparison of the kit vs the frontend | Point-in-time, and structurally obsolete — it counts `.tsx` files, which is no longer what the frontend is made of |
 | [project-plan-2026-05.md](project-plan-2026-05.md) | The checked-in product-plan snapshot, from `.github/` | Superseded by [`../../ROADMAP.md`](../../ROADMAP.md) and the roadmap table in `CLAUDE.md`; last touched 2026-05-27 |
+
+Five of these arrived late: `HANDOFF-*`, `PROPOSAL-*` and `RUST-GRAPH-*` sat at the REPO ROOT until
+2026-08-24, which is exactly the confusion this directory exists to prevent — a reader at the root
+could not tell a maintained promise from a document written for one afternoon. They were moved here
+with the banners above rather than deleted, per the rule at the top of this file.
