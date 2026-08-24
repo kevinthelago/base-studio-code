@@ -1,5 +1,8 @@
 # Kickoff — records migration, and a defect that must be fixed before more retirements
 
+> **SESSION ARTIFACT — not maintained.** A KICKOFF BRIEF, kept as a record of what was believed at the start. The migration ran: 1,004 modules now ship as records (337 component + 667 impl). Current reference: [`../records.md`](../records.md).
+> See [`README.md`](README.md) for why this lives here.
+
 Paste this into a fresh session. Everything below was measured, not assumed.
 
 ---

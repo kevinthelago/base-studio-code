@@ -1,3 +1,18 @@
+# Decisions — the `bsc-note` provenance log
+
+> **WHAT THIS IS.** An append-only log of one-line decision records, written by fleet workers through
+> `bsc-note` (the shell helper installed into every session). It is raw provenance, not a curated
+> document: entries are in the order they were emitted, they name issues by their old GitHub numbers,
+> and nothing here is maintained.
+>
+> **WHERE CURRENT DECISIONS LIVE.** Since the move to a local-first workflow, a decision is recorded on
+> its work item as a `bsc plan change note` — keyed by ref, alongside the gate evidence and the
+> reviewer's verdict. That is the mechanism CLAUDE.md's workflow describes, and it is where anything
+> from this session onward will be found. This file's last entry predates it (2026-07-25).
+>
+> Kept, not deleted: it is the only record of a long stretch of fleet reasoning, and several entries
+> explain why a thing is the way it is. Read it as history.
+
 - B-wan-viewonly: gated BOTH PaneInput and PaneResize behind input_granted (view-only by default). Resize mutates the host PTY (SIGWINCH) so a view-only phone shouldn't impose dims; smallest reversible choice consistent with 'view-only'. Focus/set-state stay allowed (read-side filtering only).
 
 - Touched src-tauri/src/lib.rs ONLY to register tunnel::tunnel_set_input_granted in the invoke_handler list (line ~3542). Did NOT touch the GitHub-proxy/credential region (release-eng's seam). Additive, single line.

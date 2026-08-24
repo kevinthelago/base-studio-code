@@ -1,5 +1,8 @@
 # Kickoff — finish the record migration, split across two sessions
 
+> **SESSION ARTIFACT — not maintained.** A KICKOFF BRIEF for the second half of the same migration. Delivered; see the note on part one above.
+> See [`README.md`](README.md) for why this lives here.
+
 Paste this into a fresh session. Everything below was measured, not assumed. Where a number is stale in
 the repo's own docs, that is called out rather than quietly corrected.
 
