@@ -21,7 +21,7 @@
 
 use crate::graph_health::Finding;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The default overall-similarity threshold for a `near-duplicate` finding. Calibrated so an exact
 /// cross-kit name+contract match (`Card` in two kits) and a stripped-affix pair (`Donut`/`DonutChart`)
@@ -81,9 +81,10 @@ struct Comp {
     /// The colocated test files this record names (#4126) — two records naming one test file are
     /// usually one component.
     tests: BTreeSet<String>,
-    /// The JSX skeleton (#90) — `tag(attr,…)` per opening tag, prose stripped by construction. The one
-    /// signal that survives a rewrite of every string in the component, and the basis of the shape mode.
-    skeleton: BTreeSet<String>,
+    /// The JSX skeleton (#90) — `tag(attr,…)` per opening tag, prose stripped by construction, COUNTED.
+    /// The one signal that survives a rewrite of every string in the component, and the basis of the
+    /// shape mode. A bag rather than a set so arity is legible: see [`jsx_skeleton`].
+    skeleton: BTreeMap<String, usize>,
     /// The platform specifier this record OVERRIDES (#3660). A collision is a conflict, not a dupe.
     provides: String,
     /// Tokens of the `whenUse`/`whenNot` guidance — the only term that catches a semantic duplicate
@@ -159,6 +160,25 @@ fn jaccard(a: &BTreeSet<String>, b: &BTreeSet<String>) -> Option<f64> {
     let inter = a.intersection(b).count() as f64;
     let union = a.union(b).count() as f64;
     Some(if union == 0.0 { 0.0 } else { inter / union })
+}
+
+/// Jaccard over a MULTISET — `sum(min(count)) / sum(max(count))`, the Ruzicka measure.
+///
+/// It is the same number as [`jaccard`] whenever every count is 1, which is the property that made it
+/// the right generalization here rather than a new term: the majority of records use each tag once, and
+/// for all of them the score is unchanged. Where counts differ it degrades smoothly instead of
+/// collapsing — a one-toggle card against a two-toggle card scores 0.67, not 0.
+fn weighted_jaccard(a: &BTreeMap<String, usize>, b: &BTreeMap<String, usize>) -> Option<f64> {
+    if a.is_empty() && b.is_empty() {
+        return None;
+    }
+    let (mut lo, mut hi) = (0usize, 0usize);
+    for k in a.keys().chain(b.keys()).collect::<BTreeSet<_>>() {
+        let (x, y) = (a.get(k).copied().unwrap_or(0), b.get(k).copied().unwrap_or(0));
+        lo += x.min(y);
+        hi += x.max(y);
+    }
+    Some(if hi == 0 { 0.0 } else { lo as f64 / hi as f64 })
 }
 
 /// Levenshtein edit distance (two-row DP).
@@ -354,6 +374,18 @@ fn contract_terms(a: &Comp, b: &Comp) -> Vec<Term> {
     ]
 }
 
+/// Inline HTML elements that FORMAT COPY rather than compose anything — excluded from the skeleton,
+/// because a component's structure should not change when someone bolds a word in its description.
+///
+/// Deliberately narrower than "inline elements": `a` and `span` are NOT here. A link is interactive and a
+/// `span` is routinely a layout hook with a className, so excluding either would drop real structure to
+/// buy nothing — the settings-card split that motivated this list is resolved by `b` and `code` alone.
+/// The rule is "carries no layout and no interaction", not "appears inside a sentence".
+const PROSE_TAGS: &[&str] = &[
+    "b", "i", "em", "strong", "code", "br", "small", "sub", "sup", "kbd", "mark", "u", "s", "abbr",
+    "cite", "q", "samp", "var", "wbr", "del", "ins", "dfn", "big", "tt",
+];
+
 /// The JSX SKELETON of `src` — one entry per opening tag as `tag(attr,attr,…)`, tag and attribute names
 /// lowercased and the attributes sorted. Designer request #90: this is the half of a component that
 /// survives a rewrite of all its copy, and the half no existing term measures.
@@ -362,13 +394,28 @@ fn contract_terms(a: &Comp, b: &Comp) -> Vec<Term> {
 /// `title="Idle reaper"` both reduce to `title`. That is the point: two cards differing only in prose have
 /// identical skeletons.
 ///
+/// Two things beyond string literals are needed to actually keep that promise, and both were learned by
+/// running the sweep over the eight live `[Card, ToggleRow]` settings cards:
+///
+/// **Prose CONTAINS TAGS.** A `<b>` or `<code>` written inside a description sentence is an opening tag,
+/// so before #the-shape-signature-counts-prose-markup-and-cannot-count-repeats it entered the skeleton as
+/// structure. Six of those cards have byte-identical structural tags and the sweep split them 3/2 with one
+/// dropped — the separator being whether the author wrote `<code>` in a sentence. [`PROSE_TAGS`] is
+/// therefore excluded: those elements format copy and compose nothing.
+///
+/// **The bag is COUNTED.** It used to be a set, so `<ToggleRow>` once and `<ToggleRow>` three times were
+/// the same signature — and "a single toggle with a description" versus "two toggles with descriptions" is
+/// exactly the distinction the designer was reaching for. Counts are compared with [`weighted_jaccard`],
+/// which is identical to plain Jaccard when every count is 1 (the common case, unchanged) and degrades
+/// smoothly otherwise: one toggle against two scores 0.67, not 0.
+///
 /// A `<` pressed against an identifier is a GENERIC, not a tag (`Map<string, number>`, `Record<K, V>`), and
 /// is skipped — the same adjacency rule the quote scanners use. Without it every component using a typed
 /// collection would share a phantom `string(number)` tag with every other.
-fn jsx_skeleton(src: &str) -> BTreeSet<String> {
+fn jsx_skeleton(src: &str) -> BTreeMap<String, usize> {
     let b: Vec<char> = src.chars().collect();
     let n = b.len();
-    let mut out = BTreeSet::new();
+    let mut out: BTreeMap<String, usize> = BTreeMap::new();
     let mut i = 0;
     while i < n {
         if b[i] != '<' {
@@ -431,7 +478,11 @@ fn jsx_skeleton(src: &str) -> BTreeSet<String> {
                 _ => j += 1,
             }
         }
-        out.insert(format!("{tag}({})", attrs.into_iter().collect::<Vec<_>>().join(",")));
+        // Copy formatting is not composition — see `PROSE_TAGS`. Skipped AFTER the attribute scan so
+        // `j` has advanced past the tag either way, and the caller's `i` still moves.
+        if !PROSE_TAGS.contains(&tag.as_str()) {
+            *out.entry(format!("{tag}({})", attrs.into_iter().collect::<Vec<_>>().join(","))).or_insert(0) += 1;
+        }
         i = j.max(i + 1);
     }
     out
@@ -447,7 +498,7 @@ fn jsx_skeleton(src: &str) -> BTreeSet<String> {
 fn shape_terms(a: &Comp, b: &Comp) -> Vec<Term> {
     vec![
         Term { label: "composes", weight: 0.5, value: jaccard(&a.composes, &b.composes) },
-        Term { label: "skeleton", weight: 0.5, value: jaccard(&a.skeleton, &b.skeleton) },
+        Term { label: "skeleton", weight: 0.5, value: weighted_jaccard(&a.skeleton, &b.skeleton) },
     ]
 }
 
@@ -1174,8 +1225,8 @@ mod tests {
         let one = jsx_skeleton("<Card><ToggleRow title=\"Sound alerts\" on={a} onToggle={b}/></Card>");
         let two = jsx_skeleton("<Card><ToggleRow title=\"Something else entirely\" on={x} onToggle={y}/></Card>");
         assert_eq!(one, two, "two components differing only in copy have ONE skeleton");
-        assert!(one.contains("togglerow(on,ontoggle,title)"), "attrs sorted + lowercased: {one:?}");
-        assert!(one.contains("card()"));
+        assert!(one.contains_key("togglerow(on,ontoggle,title)"), "attrs sorted + lowercased: {one:?}");
+        assert!(one.contains_key("card()"));
 
         // A generic is not a tag. Without the adjacency rule every component holding a typed collection
         // would share a phantom tag with every other one.
@@ -1186,7 +1237,58 @@ mod tests {
         );
         // An expression attribute is skipped BALANCED, so a nested tag inside it is not read as an attr.
         let nested = jsx_skeleton("<Panel body={cond ? <A x={1}/> : <B/>} tone=\"warn\"/>");
-        assert!(nested.contains("panel(body,tone)"), "{nested:?}");
+        assert!(nested.contains_key("panel(body,tone)"), "{nested:?}");
+    }
+
+    /// The two defects that made the shape signal wrong in both directions at once
+    /// (#the-shape-signature-counts-prose-markup-and-cannot-count-repeats): it separated cards that were
+    /// the same, and unified cards that were not.
+    #[test]
+    fn prose_markup_is_not_structure_and_repeats_are_counted() {
+        // Six live settings cards had byte-identical structural tags and the sweep split them 3/2 with
+        // one dropped — the separator being whether the author wrote <code> in a description sentence.
+        let plain = jsx_skeleton("<Card title=\"a\"><ToggleRow on={x} onToggle={y} title=\"t\">Runs a thing.</ToggleRow></Card>");
+        let fancy = jsx_skeleton("<Card title=\"b\"><ToggleRow on={p} onToggle={q} title=\"u\">Runs <b>a</b> <code>thing</code>.</ToggleRow></Card>");
+        assert_eq!(plain, fancy, "bolding a word in the copy is not a structural change");
+        assert_eq!(weighted_jaccard(&plain, &fancy), Some(1.0));
+
+        // `a` and `span` are deliberately NOT excluded — a link is interactive and a span is routinely a
+        // layout hook, so dropping them would cost real structure to buy nothing.
+        assert!(jsx_skeleton("<a href={h}>x</a>").contains_key("a(href)"), "a link is structure");
+        assert!(jsx_skeleton("<span className={c}/>").contains_key("span(classname)"), "a span is structure");
+
+        // ── The other direction: a set could not tell one toggle from three.
+        let one = jsx_skeleton("<Card><ToggleRow on={a} onToggle={b} title=\"t\"/></Card>");
+        let two = jsx_skeleton("<Card><ToggleRow on={a} onToggle={b} title=\"t\"/><ToggleRow on={c} onToggle={d} title=\"u\"/></Card>");
+        assert_eq!(one.get("togglerow(on,ontoggle,title)"), Some(&1));
+        assert_eq!(two.get("togglerow(on,ontoggle,title)"), Some(&2));
+        assert_ne!(one, two, "'a single toggle' and 'two toggles' are different shapes");
+
+        // ... and the degradation is smooth, not a cliff: they are still recognisably the same family.
+        let score = weighted_jaccard(&one, &two).expect("both non-empty");
+        assert!((score - 2.0 / 3.0).abs() < 1e-9, "min/max over the bag: {score}");
+        assert!(score > 0.5 && score < 1.0, "near, not identical and not unrelated: {score}");
+    }
+
+    /// The property that made a counted bag the right generalization rather than a new term: for every
+    /// record whose tags each appear once — the common case — the number does not move at all.
+    #[test]
+    fn weighted_jaccard_is_plain_jaccard_when_nothing_repeats() {
+        let bag = |ks: &[&str]| -> BTreeMap<String, usize> {
+            ks.iter().map(|k| ((*k).to_string(), 1)).collect()
+        };
+        let set = |ks: &[&str]| -> BTreeSet<String> { ks.iter().map(|k| (*k).to_string()).collect() };
+        for (a, b) in [
+            (&["card()", "togglerow(on)"][..], &["card()", "togglerow(on)"][..]),
+            (&["card()", "togglerow(on)"][..], &["card()", "button(kind)"][..]),
+            (&["card()"][..], &["stack()", "text()"][..]),
+        ] {
+            assert_eq!(weighted_jaccard(&bag(a), &bag(b)), jaccard(&set(a), &set(b)), "{a:?} vs {b:?}");
+        }
+        // Both empty stays "no signal", never a score — two source-less specs are not identically shaped.
+        assert_eq!(weighted_jaccard(&BTreeMap::new(), &BTreeMap::new()), None);
+        // One empty is a real 0, not a drop: one side HAS structure and they share none of it.
+        assert_eq!(weighted_jaccard(&bag(&["card()"]), &BTreeMap::new()), Some(0.0));
     }
 
     #[test]
