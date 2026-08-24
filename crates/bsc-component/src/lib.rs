@@ -37,5 +37,6 @@ pub mod scan_cache;
 pub mod similarity;
 pub mod syntax;
 pub mod usage;
+pub mod usage_scan;
 
 pub use folder::folder_from_src;

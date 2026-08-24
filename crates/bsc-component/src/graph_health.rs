@@ -626,7 +626,7 @@ fn is_url_specifier(spec: &str) -> bool {
 /// line/block-comment state is tracked so a quote inside a comment/string is never captured. Deliberately
 /// loose — over-inclusion is harmless (the caller flags only BARE unresolved specifiers). Rust twin of
 /// `importSpecifiers` (TS).
-fn import_specifiers(source: &str) -> Vec<String> {
+pub(crate) fn import_specifiers(source: &str) -> Vec<String> {
     scan_imports(source).into_iter().map(|(spec, _)| spec).collect()
 }
 

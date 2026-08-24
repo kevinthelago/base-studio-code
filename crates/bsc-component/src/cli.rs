@@ -622,6 +622,37 @@ six settings cards composing [Card, ToggleRow] around one skeleton scored 34% bl
 each other; under --shape they are the top five. The default output is unaffected.",
     },
     CmdDoc {
+        name: "usage-scan",
+        summary: "determine each component's usage from composes + host mounts + `provides`, over a DECLARED corpus (#3888)",
+        usage: "\
+USAGE:
+  bsc ui usage-scan [--kit K] [--root DIR]... [--apply] [--json] [--pretty]
+
+The producer for `used`, which has never had one: measured 2026-08-24, 0 of 552 components across all
+four kits carried `used > 0`. So doctor's dead-root rule (`in-degree 0 AND used == 0`) collapsed to
+\"nothing composes it\" and flagged every entry point by construction.
+
+THREE SOURCES, because usage has three shapes: `composes` (another record in the kit composes it) ·
+`mount` (a `<GraphComponent id=\"X\">` literal names it) · `provides` (its specifier is imported).
+Each row says WHICH source answered, so a count is never a bare number you have to trust.
+
+THE CORPUS IS DECLARED AND INCLUDES THE STORE. `--root DIR` adds a tree (repeatable); the kit's own
+records are ALWAYS in it and are named in the report. That is not a convenience — post-#3604 a
+`GraphComponent id=` sweep of `src/` finds ONE hit (the literal `id=\"x\"`), while all ten real mount
+sites live inside record `srcText`. A corpus that is only the repo tree reports every migrated page
+unused, which is the bug this verb exists to fix, one level down.
+
+Dynamic `import()` and `import.meta.glob` count as imports. Without the glob, the *GraphHost records —
+reached only through `lazyWorkspaces`' glob — read as unused BECAUSE the scanner could not see them.
+
+--apply WRITES `used` and `usageAssessed: true` onto every component the scan EXAMINED. Without it this
+is a pure read. `usageAssessed` is what `doctor --fix` gates pruning on, per node, so a partial detector
+can only ever make prunable what it actually measured.
+
+WHAT IT DOES NOT FIX: measured against the 156 dead roots, mounts clear 8 and `provides` clears 56 —
+92 survive both. The report says so rather than implying the category is cleared.",
+    },
+    CmdDoc {
         name: "used-by",
         summary: "a component's REAL graph usage — how many kit components compose it (composes-inverse, #3584)",
         usage: "\
@@ -1088,6 +1119,9 @@ fn is_scoped_mutation(args: &[String]) -> bool {
         verb.map(String::as_str),
         Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
+        // `usage-scan` is a READ until `--apply`, which writes `used`/`usageAssessed` onto every examined
+        // record. Gate on the flag, not the verb, so the diagnosis stays available to a read-scoped session.
+        || (verb.map(String::as_str) == Some("usage-scan") && args.iter().any(|a| a == "--apply"))
 }
 
 /// Every LIVE record whose source imports `spec`, excluding `skip_id` and any tombstone.
@@ -1502,6 +1536,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_similar(&args[1..])
+            }
+        }
+        // `usage-scan` (#3888) — the `used` producer. A read unless `--apply`, which `is_scoped_mutation`
+        // gates like every other write.
+        Some("usage-scan") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "usage-scan"));
+                Ok(())
+            } else {
+                cmd_usage_scan(&args[1..])
             }
         }
         // `used-by` (#3584) — the graph-usage read (composes-inverse); a READ, never scope-gated.
@@ -4284,6 +4328,179 @@ fn used_by_index(
         composers.dedup();
     }
     idx
+}
+
+/// `bsc ui usage-scan` (#3888) — the producer for `used`, and the answer to designer requests #95/#100.
+///
+/// Walks a DECLARED corpus — `--root DIR` trees plus the kit's own records, always — and reports each
+/// component's usage with the source(s) that answered. `--apply` writes `used` + `usageAssessed`.
+///
+/// The record corpus is not an optimization: post-#3604 the app's modules ARE records, so a scan of the
+/// repo tree alone sees one `GraphComponent id=` (the literal `id="x"`) against ten real mount sites.
+fn cmd_usage_scan(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut apply, mut json, mut pretty) = (None::<String>, None::<String>, false, false, false);
+    let mut roots: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--root" => roots.push(it.next().cloned().ok_or("--root needs a directory")?),
+            "--apply" => apply = true,
+            "--json" => json = true,
+            "--pretty" => { json = true; pretty = true }
+            other => return Err(format!("unknown flag '{other}' (usage: bsc ui usage-scan [--kit K] [--root DIR]... [--apply])")),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let all: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+    let in_scope: Vec<serde_json::Value> = match &kit {
+        Some(k) => all.iter().filter(|c| c.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str())).cloned().collect(),
+        None => all.clone(),
+    };
+
+    // ── the corpus ──────────────────────────────────────────────────────────────────────────────
+    // The STORE first, and every record of it — a record importing another record is the ordinary case
+    // now, so scoping the corpus to `--kit` would hide a cross-kit importer and under-count.
+    let mut corpus: Vec<(String, String)> = Vec::new();
+    for c in &all {
+        let id = c.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let mut text = String::new();
+        for f in ["srcText", "source"] {
+            if let Some(t) = c.get(f).and_then(serde_json::Value::as_str) {
+                text.push_str(t);
+                text.push('\n');
+            }
+        }
+        if !text.trim().is_empty() {
+            corpus.push((format!("record:{id}"), text));
+        }
+    }
+    let store_texts = corpus.len();
+    let mut files = 0usize;
+    for root in &roots {
+        walk_source_files(std::path::Path::new(root), &mut |p, text| {
+            corpus.push((format!("file:{}", p.display()), text));
+            files += 1;
+        })?;
+    }
+
+    let report = crate::usage_scan::scan(&in_scope, &corpus);
+    let examined = report.rows.len();
+    let unused = report.unused();
+    let with_usage = examined - unused;
+
+    // A SCAN CAN PROVE USE. IT CANNOT PROVE DISUSE.
+    //
+    // Finding a reference is positive evidence. NOT finding one is evidence only if you know every way a
+    // reference can exist — and this scanner was wrong about that twice while it was being written. With
+    // three sources, `--apply` authorized deleting `App`, `GraphComponent` and `ThemeProvider`; the
+    // fourth source (`src` path) rescued them and left six more, several of which look equally alive.
+    //
+    // So `usageAssessed` — the flag `doctor --fix` gates pruning on — is written ONLY where usage was
+    // actually found. `used` is written for everyone, because the positive counts are the whole point:
+    // they collapse 135 of the 192 false dead-root findings this verb exists to fix. A node with no
+    // evidence keeps `usageAssessed` absent, stays unprunable, and stays REPORTED — which is the correct
+    // reading of "we did not find a reference" until a corpus exists that can justify the stronger claim.
+    let mut assessed = 0usize;
+    if apply {
+        let writer = crate::record::resolve_writer(None);
+        for row in &report.rows {
+            let mut rec = current_record(&store, &row.id)?;
+            if rec.is_null() {
+                continue;
+            }
+            rec["used"] = serde_json::Value::from(row.used);
+            if row.used > 0 {
+                rec["usageAssessed"] = serde_json::Value::Bool(true);
+                assessed += 1;
+            }
+            stamped_set(&store, &row.id, rec, &writer)?;
+        }
+    }
+
+    if json {
+        let out = serde_json::json!({
+            "corpus": { "records": store_texts, "files": files, "roots": roots },
+            "examined": examined,
+            "withUsage": with_usage,
+            "unused": unused,
+            "applied": apply,
+            "assessed": assessed,
+            "rows": report.rows.iter().map(|r| serde_json::json!({
+                "id": r.id, "name": r.name, "kit": r.kit, "used": r.used,
+                "sources": r.sources.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+        });
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        println!("{}", text.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+
+    // The corpus is printed FIRST and always. A usage number whose scope the reader has to infer is the
+    // failure mode this verb exists to end, not one to reproduce in its own output.
+    println!("corpus: {store_texts} record(s) + {files} file(s) from {} root(s){}", roots.len(),
+        if roots.is_empty() { " — records only; pass --root to add a tree" } else { "" });
+    for r in &roots {
+        println!("  root: {r}");
+    }
+    println!("examined {examined} component(s): {with_usage} with usage, {unused} with none");
+    for row in report.rows.iter().filter(|r| r.used > 0).take(40) {
+        let srcs: Vec<&str> = row.sources.iter().map(|s| s.as_str()).collect();
+        println!("  {:>4}  {} ({})  [{}]", row.used, row.name, row.id, srcs.join(" · "));
+    }
+    if with_usage > 40 {
+        println!("  … {} more with usage (use --json for all)", with_usage - 40);
+    }
+    if apply {
+        println!("applied: wrote `used` to {examined} record(s); `usageAssessed` to the {assessed} with evidence of use");
+        println!(
+            "  the other {unused} keep NO assessment on purpose — a scan proves USE, never DISUSE, so \
+             they stay reported and unprunable rather than becoming deletable by default"
+        );
+    } else {
+        println!("(read only — pass --apply to write `used`, and `usageAssessed` for the {with_usage} with evidence)");
+    }
+    Ok(())
+}
+
+/// Walk `root` for TS/TSX/JS/JSX sources, handing each `(path, text)` to `f`. A missing root is an
+/// ERROR, not an empty walk: a mistyped `--root` that silently contributes nothing would report every
+/// component in that tree as unused, and `--apply` would then mark them assessed.
+fn walk_source_files(
+    root: &std::path::Path,
+    f: &mut impl FnMut(&std::path::Path, String),
+) -> Result<(), String> {
+    if !root.exists() {
+        return Err(format!("--root '{}' does not exist — a root that contributes nothing would report its components unused", root.display()));
+    }
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if p.is_dir() {
+                // Never walk into a build output or a dependency tree — they hold megabytes of code that
+                // says nothing about whether THIS library's components are used.
+                if !matches!(name.as_str(), "node_modules" | "target" | "dist" | ".git" | ".bsc-records") {
+                    stack.push(p);
+                }
+            } else if matches!(
+                p.extension().and_then(|e| e.to_str()),
+                Some("ts" | "tsx" | "js" | "jsx")
+            ) {
+                if let Ok(text) = std::fs::read_to_string(&p) {
+                    f(&p, text);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `bsc ui used-by <id>` / `--all` (#3584) — the graph-usage read (composes-inverse). A READ verb, never
@@ -7173,7 +7390,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -8994,6 +9211,71 @@ export const P = () => <X />;"
     /// 2026-08-24: a designer session merged 34 module records away and orphaned 34 specifiers, taking
     /// Settings, Glance and Accessibility off the store's resolution graph. `suppress` refuses exactly
     /// this; `merge` reached the same tombstone through `retire_component`, which had none of the check.
+    /// The write half, which is what decides whether anything can be DELETED.
+    ///
+    /// A scan can prove USE. It cannot prove DISUSE — and this one was wrong about that twice while it
+    /// was being written: with three sources, `--apply` on the real store authorized deleting `App`,
+    /// `GraphComponent` and `ThemeProvider`. So `usageAssessed` is written only where usage was FOUND.
+    #[test]
+    fn usage_scan_writes_used_for_all_but_asserts_assessment_only_where_it_found_use() {
+        let store = tmp_component_store("usage-scan-apply");
+        let dir = store.dir().to_string_lossy().into_owned();
+        let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+        put("child", serde_json::json!({ "id": "child", "name": "Child", "kitId": "k", "role": "primitive", "composes": [] }));
+        put("parent", serde_json::json!({ "id": "parent", "name": "Parent", "kitId": "k", "role": "composite", "composes": ["Child"] }));
+        put("lonely", serde_json::json!({ "id": "lonely", "name": "Lonely", "kitId": "k", "role": "primitive", "composes": [] }));
+
+        // A READ never writes. If it did, every `doctor` run would quietly license the next prune.
+        run(vec!["usage-scan".into(), "--dir".into(), dir.clone()], "bsc ui").expect("read");
+        let before = stored(&store, "child");
+        assert!(before.get("usageAssessed").is_none(), "a read must not write: {before}");
+        assert!(before.get("used").is_none(), "…anything at all: {before}");
+
+        run(vec!["usage-scan".into(), "--apply".into(), "--dir".into(), dir.clone()], "bsc ui").expect("apply");
+        let child = stored(&store, "child");
+        assert_eq!(child["used"], 1, "composed once: {child}");
+        assert_eq!(child["usageAssessed"], serde_json::Value::Bool(true), "evidence of use ⇒ assessed");
+
+        // `lonely` gets the COUNT (it is real information) but NOT the assessment — so `doctor --fix`
+        // still holds it back, and doctor still reports it. "We found no reference" is not "it is dead".
+        let lonely = stored(&store, "lonely");
+        assert_eq!(lonely["used"], 0, "the count is written for everyone: {lonely}");
+        assert!(
+            lonely.get("usageAssessed").is_none(),
+            "no evidence ⇒ NO assessment, or the scan would be licensing its own blind spots: {lonely}",
+        );
+        let comps: Vec<serde_json::Value> =
+            store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        let plan = crate::graph_health::prune_plan(&comps);
+        assert!(
+            !plan.prune.iter().any(|p| p.id == "lonely"),
+            "and it is therefore still unprunable: {:?}",
+            plan.prune,
+        );
+
+        // A mistyped --root is an ERROR, never an empty walk: a root contributing nothing would report
+        // every component in that tree unused, and --apply would then act on it.
+        let err = run(
+            vec!["usage-scan".into(), "--root".into(), "/no/such/tree-xyz".into(), "--dir".into(), dir],
+            "bsc ui",
+        )
+        .expect_err("a missing root must refuse");
+        assert!(err.contains("does not exist"), "{err}");
+    }
+
+    /// `--apply` writes, so it must be scope-gated like every other write — while the READ stays
+    /// available to a read-scoped session, because the diagnosis is the useful half.
+    #[test]
+    fn usage_scan_is_a_read_until_apply() {
+        let a = |args: &[&str]| args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(!is_scoped_mutation(&a(&["usage-scan"])), "the scan is a read");
+        assert!(!is_scoped_mutation(&a(&["usage-scan", "--kit", "k"])), "still a read");
+        assert!(is_scoped_mutation(&a(&["usage-scan", "--apply"])), "--apply writes");
+        assert!(is_scoped_mutation(&a(&["usage-scan", "--kit", "k", "--apply"])), "wherever the flag sits");
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "usage-scan"), "registered in the catalog");
+        assert!(run(vec!["usage-scan".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+    }
+
     #[test]
     fn merge_will_not_orphan_a_specifier_something_still_imports() {
         let store = tmp_component_store("merge-orphan");
