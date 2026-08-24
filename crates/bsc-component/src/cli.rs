@@ -7683,21 +7683,27 @@ export const P = () => <X />;"
         let store = bsc_json_store::Store::new(dir, "component");
         let module = "export const C=()=>null;";
         let set = |id: &str, rec: serde_json::Value| store.set(id, &rec.to_string()).unwrap();
-        // A used component so the usage index is POPULATED — guards 1+2 must stand on their own.
+        // Every candidate is `usageAssessed` — a detector looked and found no usage — so the PAGE and
+        // BUILTIN guards are what hold each one back, not the never-determined one. Since #3888 slice 1
+        // that judgement is per node: a `used > 0` component elsewhere no longer lifts it for all.
         set("btn", serde_json::json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 7, "composes": [], "srcText": "b", "source": module }));
         // A page: a root by definition, composing its section component → "dangling-branch".
-        set("invoicespage", serde_json::json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0, "composes": ["DataTable"], "srcText": "p", "source": module }));
+        set("invoicespage", serde_json::json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0, "usageAssessed": true, "composes": ["DataTable"], "srcText": "p", "source": module }));
         set("table", serde_json::json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "t", "source": module }));
         // A packaged viz seed: isolated ON PURPOSE (#3194/#3242) → "orphan".
-        set("algocells", serde_json::json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0, "builtin": true, "composes": [], "srcText": "a", "source": module }));
+        set("algocells", serde_json::json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0, "usageAssessed": true, "builtin": true, "composes": [], "srcText": "a", "source": module }));
         // A genuine user orphan — the case `--fix` exists for.
-        set("ghost", serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }));
+        set("ghost", serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "usageAssessed": true, "composes": [], "srcText": "g", "source": module }));
+        // A record that CLAIMS a specifier: measured, unused, composed by nothing — and still never
+        // pruned, because an importer resolves that name and nothing here can see it (guard 4).
+        set("claimer", serde_json::json!({ "id": "claimer", "name": "Claimer", "kitId": "k", "role": "composite", "used": 0, "usageAssessed": true, "provides": "@/features/x/Card", "composes": [], "srcText": "c", "source": module }));
 
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
         doctor_fix(&store, &comps, true).unwrap();
 
         assert!(store.get("invoicespage").unwrap().is_some(), "a page is a root by definition — never pruned");
         assert!(store.get("algocells").unwrap().is_some(), "a packaged builtin seed is never pruned");
+        assert!(store.get("claimer").unwrap().is_some(), "a record claiming a specifier is never pruned");
         assert!(store.get("ghost").unwrap().is_none(), "a genuine user orphan still prunes");
     }
 

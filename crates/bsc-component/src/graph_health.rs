@@ -242,6 +242,13 @@ struct Node {
     /// is a store record compiled at runtime, a test file in `src/**` is no longer beside what it tests.
     /// 0 ⇒ untested, which the `no-tests` check flags for an IMPLEMENTED own-module component.
     tests: usize,
+    /// Has this node's usage actually been DETERMINED? (`usageAssessed`, slice 1 of #3888.)
+    ///
+    /// `used == 0` conflates two different facts — "we looked and found nothing" and "nothing looked" —
+    /// and auto-pruning may only ever act on the first. Nothing writes this field yet, so today it is
+    /// false everywhere and `--fix` prunes nothing, exactly as the store-wide guard already achieved.
+    /// What it buys is that a detector can only make prunable the nodes it MEASURED: see [`prune_plan`].
+    usage_assessed: bool,
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -271,6 +278,10 @@ fn parse_node(v: &Value) -> Option<Node> {
             if r.is_empty() { "primitive".to_string() } else { r }
         },
         used: v.get("used").and_then(Value::as_i64).unwrap_or(0),
+        // `used > 0` IS an assessment — someone counted it. The explicit flag is for the other half: a
+        // node a detector examined and found genuinely unused.
+        usage_assessed: v.get("usageAssessed").and_then(Value::as_bool).unwrap_or(false)
+            || v.get("used").and_then(Value::as_i64).unwrap_or(0) > 0,
         composes: v
             .get("composes")
             .and_then(Value::as_array)
@@ -2050,6 +2061,11 @@ pub struct PrunePlan {
 /// reads zero. A store where NOTHING is used is therefore not a store full of dead components — it is a
 /// store with **no usage signal at all**, and `used == 0` there means UNKNOWN, not unused (#3087).
 /// Judged over the components HANDED IN, so a `--kit`-scoped call can only ever prune LESS.
+///
+/// **No longer what gates pruning** (#3888 slice 1) — [`prune_plan`] asks per NODE whether that node's
+/// usage was determined, because a store-wide answer turns one measured node into a licence to delete
+/// every unmeasured one. Kept as the honest READ of whether any usage signal exists at all, which is
+/// what the `--fix` report says out loud and what a detector's own progress is measured against.
 pub fn usage_index_populated(components: &[Value]) -> bool {
     components.iter().filter_map(parse_node).any(|n| n.used > 0)
 }
@@ -2077,16 +2093,36 @@ pub fn prunable(components: &[Value]) -> Vec<Prunable> {
 /// 2. **A packaged `builtin: true` seed is not garbage** — the viz kits' demo components (#3194/#3242)
 ///    are isolated ON PURPOSE, to demo their kit's motion. Removing one only invites the seed reconcile
 ///    to re-add it on the next launch, so the "optimization" is a no-op that churns the store.
-/// 3. **An unpopulated usage index is UNKNOWN, not unused** — see [`usage_index_populated`]. When no
-///    node in scope carries `used > 0` the usage half of the heuristic carries no information, and
-///    in-degree alone must not condemn a node.
+/// 3. **Usage that was never DETERMINED is UNKNOWN, not unused** — `used == 0` conflates "we looked and
+///    found nothing" with "nothing looked", and only the first may condemn a node. A node qualifies when
+///    `used > 0` (someone counted it) or it carries `usageAssessed: true` (a detector examined it against
+///    a declared corpus and found none).
+/// 4. **A record that CLAIMS a specifier is never auto-pruned** — its usage lives outside the composes
+///    graph by definition: an importer resolves `@/x`, and no implemented source measures that.
+///
+/// ## Why guard 3 is PER NODE, and why that is the whole point (#3888 slice 1)
+///
+/// It used to be store-wide — *nothing* in scope has `used > 0`, therefore prune nothing — and that is
+/// the only reason `--fix` has been safe. It also evaporates for EVERY node the moment a detector
+/// populates `used` for ONE. The test pinning it said so as intended behaviour: *"one real usage count
+/// anywhere restores the signal — and the same nodes prune again."* #3888 slice 2 populates `used` for
+/// the 8 host-mounted pages; on that commit, 545 nodes no detector had ever examined would have become
+/// prunable at once, unattended, because #3087 wires a curator to run `--fix` on its own.
+///
+/// Per-node, a detector can only ever make prunable the nodes it actually MEASURED. Nothing writes
+/// `usageAssessed` yet, so today's behaviour is unchanged — `--fix` prunes nothing, exactly as before —
+/// and every later source is additive. The cliff cannot exist by construction rather than by nobody
+/// having stepped off it yet.
+///
+/// Guard 4 exists because a PARTIAL detector is the dangerous case, not a missing one: the moment
+/// `usageAssessed` starts landing, the records that answer a specifier are the ones whose usage the
+/// implemented sources still cannot see. That is the class 34 records went dark from on 2026-08-24.
 ///
 /// A guarded candidate moves to `skipped` rather than vanishing: `doctor` still REPORTS the finding
 /// (the diagnosis is useful), only the automatic removal is withheld.
 pub fn prune_plan(components: &[Value]) -> PrunePlan {
     let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
     let by_id: BTreeMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let usage_known = nodes.iter().any(|n| n.used > 0);
 
     let mut plan = PrunePlan::default();
     for f in analyze(components) {
@@ -2096,10 +2132,15 @@ pub fn prune_plan(components: &[Value]) -> PrunePlan {
         let Some(id) = f.node_ids.into_iter().next() else { continue };
         let name = f.node_names.into_iter().next().unwrap_or_default();
         let node = by_id.get(id.as_str());
-        let guard = if !usage_known {
+        let guard = if node.is_some_and(|n| !n.usage_assessed) {
             Some(
-                "the usage index is unpopulated — NOTHING in scope has `used` > 0, so `used = 0` means \
-                 UNKNOWN, not unused",
+                "this node's usage was never DETERMINED — `used = 0` with no `usageAssessed` means \
+                 nothing looked, not that nothing uses it",
+            )
+        } else if node.is_some_and(|n| !n.provides.trim().is_empty()) {
+            Some(
+                "it CLAIMS a specifier — an importer resolves that name, and no implemented usage source \
+                 measures it, so in-degree cannot condemn it",
             )
         } else if node.is_some_and(|n| n.role == "page") {
             Some("a `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page")
@@ -5081,10 +5122,15 @@ export function X(){ return <i>{nope}</i>; }"
     fn prunable_is_the_orphan_and_dead_root_set_and_never_a_used_node() {
         let comps = [
             comp("Button", "primitive", 9, &[]),   // used → never prunable
-            comp("Ghost", "primitive", 0, &[]),     // orphan → prunable
+            // ASSESSED and unused → prunable. `used: 0` ALONE is not enough since #3888 slice 1: it would
+            // mean "nothing looked", and nothing-looked may never condemn a node.
+            json!({ "id": "Ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "usageAssessed": true, "composes": [], "srcText": "" }),
             // dead root + its dependency; only the ROOT is prunable this pass.
-            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0, "composes": ["Widget"], "srcText": "a" }),
-            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "b" }),
+            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0,
+                    "usageAssessed": true, "composes": ["Widget"], "srcText": "a" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0,
+                    "usageAssessed": true, "composes": [], "srcText": "b" }),
             // a duplicate pair — reported, but NOT auto-prunable.
             json!({ "id": "b1", "name": "Btn1", "kitId": "k", "role": "primitive", "used": 3, "composes": [], "wraps": "button", "srcText": "x" }),
             json!({ "id": "b2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "wraps": "button", "srcText": "y" }),
@@ -5105,9 +5151,12 @@ export function X(){ return <i>{nope}</i>; }"
     #[test]
     fn a_page_is_reported_as_a_dead_root_but_is_never_pruned() {
         let comps = [
-            // The usage index IS populated here, so guard 3 can't be what saves the page.
+            // Both candidates are ASSESSED — a detector looked and found no usage — so guard 3 cannot be
+            // what saves the page and this test still proves what its name says. (#3888 slice 1 made that
+            // guard per-node; before it, one `used > 0` node anywhere was enough to lift it for all.)
             comp("Button", "primitive", 9, &[]),
             json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0,
+                    "usageAssessed": true,
                     "composes": ["DataTable"], "srcText": "p", "source": "export default () => null;" }),
             json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0,
                     "composes": [], "srcText": "t", "source": "export default () => null;" }),
@@ -5135,10 +5184,14 @@ export function X(){ return <i>{nope}</i>; }"
     #[test]
     fn a_packaged_builtin_seed_is_reported_but_never_pruned() {
         let comps = [
-            comp("Button", "primitive", 9, &[]), // populates the usage index
+            comp("Button", "primitive", 9, &[]),
+            // ASSESSED — a detector looked and found no usage — so the BUILTIN guard is what holds this
+            // one back, not the never-determined one (#3888 slice 1).
             json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0,
+                    "usageAssessed": true,
                     "builtin": true, "composes": [], "srcText": "a", "source": "export default () => null;" }),
             json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "usageAssessed": true,
                     "composes": [], "srcText": "g", "source": "export default () => null;" }),
         ];
         assert!(
@@ -5168,8 +5221,14 @@ export function X(){ return <i>{nope}</i>; }"
     }
 
     /// `used` is a reuse count nothing currently increments — the packaged kit ships every component at
-    /// `used: 0`. So a store where NOTHING is used has no usage SIGNAL, and `used == 0` there means
-    /// UNKNOWN. Half the heuristic being blank must not condemn a node on in-degree alone.
+    /// `used: 0`. So `used == 0` means UNKNOWN, and half the heuristic being blank must not condemn a
+    /// node on in-degree alone.
+    ///
+    /// #3888 slice 1 made that judgement PER NODE. The earlier version asked it store-wide, and this
+    /// test asserted the consequence as intended behaviour: *"one real usage count anywhere restores the
+    /// signal — and the same nodes prune again."* It does not, and must not: slice 2 populates `used` for
+    /// 8 host-mounted pages, and under the old rule that one commit made 545 nodes no detector had ever
+    /// examined prunable at once — unattended, because #3087 wires a curator to run `--fix` on its own.
     #[test]
     fn an_unpopulated_usage_index_is_unknown_not_unused() {
         let comps = [
@@ -5189,14 +5248,54 @@ export function X(){ return <i>{nope}</i>; }"
         let plan = prune_plan(&comps);
         assert!(plan.prune.is_empty(), "no usage signal ⇒ nothing auto-pruned: {:?}", plan.prune);
         assert_eq!(plan.skipped.len(), 2, "both are held back, each with its guard");
-        assert!(plan.skipped.iter().all(|s| s.guard.contains("usage index")));
+        assert!(plan.skipped.iter().all(|s| s.guard.contains("never DETERMINED")), "{:?}", plan.skipped);
 
-        // One real usage count anywhere restores the signal — and the same nodes prune again.
+        // THE CLIFF, INVERTED. One real usage count elsewhere must NOT make these prunable — nothing has
+        // looked at THEM, and a measurement of some other node is not a measurement of this one.
         let mut with_signal = comps.to_vec();
         with_signal.push(comp("Button", "primitive", 4, &[]));
-        assert!(usage_index_populated(&with_signal));
-        let ids: Vec<String> = prunable(&with_signal).into_iter().map(|p| p.id).collect();
-        assert!(ids.contains(&"Ghost".to_string()) && ids.contains(&"shell".to_string()), "{ids:?}");
+        assert!(usage_index_populated(&with_signal), "the store now has a usage signal…");
+        let plan = prune_plan(&with_signal);
+        assert!(
+            plan.prune.is_empty(),
+            "…but one measured node is not a licence to delete every unmeasured one: {:?}",
+            plan.prune,
+        );
+
+        // A node the detector actually EXAMINED and found unused does prune — the guard narrows the rule,
+        // it never disables it, or `--fix` would be dead code the day the detector lands.
+        let mut assessed = comps.to_vec();
+        assessed[0] = json!({ "id": "Ghost", "name": "Ghost", "kitId": "k", "role": "primitive",
+                              "used": 0, "usageAssessed": true, "composes": [], "srcText": "" });
+        let ids: Vec<String> = prunable(&assessed).into_iter().map(|p| p.id).collect();
+        assert_eq!(ids, ["Ghost"], "the measured-and-unused node prunes, and only it: {ids:?}");
+    }
+
+    /// Guard 4 (#3888 slice 1): a record that CLAIMS a specifier is never auto-pruned, however its usage
+    /// reads. An importer resolves `@/x` and no implemented source measures that — which is exactly the
+    /// class 34 records went dark from on 2026-08-24, and exactly the class a PARTIAL detector would
+    /// condemn first.
+    #[test]
+    fn a_record_that_claims_a_specifier_is_never_auto_pruned() {
+        let comps = [
+            // Measured, found unused, nothing composes it — every other guard says prune. It answers
+            // `@/features/x/Card` for someone, and nothing here can see that.
+            json!({ "id": "mod", "name": "CardModule", "kitId": "k", "role": "composite", "used": 0,
+                    "usageAssessed": true, "provides": "@/features/x/Card", "composes": [], "srcText": "a" }),
+            // The same node WITHOUT a claim is prunable — so the guard is doing the work, not the fixture.
+            json!({ "id": "plain", "name": "Plain", "kitId": "k", "role": "composite", "used": 0,
+                    "usageAssessed": true, "composes": [], "srcText": "a" }),
+        ];
+        let plan = prune_plan(&comps);
+        let ids: Vec<&str> = plan.prune.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["plain"], "only the claim-less node prunes: {ids:?}");
+        let skip = plan.skipped.iter().find(|s| s.id == "mod").expect("held back, not dropped");
+        assert!(skip.guard.contains("CLAIMS a specifier"), "the guard names itself: {}", skip.guard);
+        // The FINDING is untouched — this narrows removal, never the diagnosis.
+        assert!(
+            analyze(&comps).iter().any(|f| f.node_ids.contains(&"mod".to_string())),
+            "doctor still reports it",
+        );
     }
 
     #[test]
