@@ -134,6 +134,75 @@ export function rawModuleText(files: Record<string, string>, spec: string): stri
   return hit?.contents ?? "";
 }
 
+/** The namespace a `@data/…json` import is loaded in — see {@link dataJsonModule}. */
+export const PREVIEW_DATA_NAMESPACE = "bsc-data";
+
+/**
+ * The app's packaged `@data/**` JSON, embedded so a preview can resolve it (designer request #105).
+ *
+ * ## The gap
+ *
+ * `@data/…` matched no branch of the resolver — not `@/`, not `@bsc/`, not relative, not a curated
+ * external — so it fell to the universal stub (#3696) and a JSON module's default export became a
+ * Proxy. `models.ts` does `import modelsEmbedded from "@data/console/models.json"` and then
+ * `MODELS.map(...)`; against a Proxy, `MODEL_IDS` is undefined and every `.find()` on it throws. That
+ * is `PaneAt`, `PaneMenu` and `PaneShell`, all with the same `MODEL_IDS.find` TypeError.
+ *
+ * Exactly the shape #85 fixed for `?raw`/`?url`: a Vite-only import feature esbuild has no equivalent
+ * for. There the answer was "the empty value of the right type"; for JSON we can do better and supply
+ * the REAL file, which is what a design tool should show. The session that filed this explicitly
+ * declined to fabricate a stand-in model catalogue, and was right to.
+ *
+ * ## Why these two directories are excluded
+ *
+ * Vendoring every imported `@data` JSON would be 8.88 MB, and 8.7 MB of that is two files:
+ * `components/react-ui.json` (4.80 MB) and `knowledge/algorithms.json` (3.91 MB). Both are already
+ * reachable in a preview by their proper routes — the kit ARTIFACT and the library resolver — so as raw
+ * JSON they would be a second copy of something the bundle already has. Excluding them leaves ~171 KB.
+ *
+ * The one record importing either is `componentpreviewframe`, the preview HOST, which is not a thing
+ * previewed inside a preview.
+ */
+const DATA_JSON: Record<string, unknown> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob(
+      // The exclusions are the reason this is a LIST, and they are load-bearing: without them the app
+      // bundle carries 8.88 MB of JSON to serve a preview, 8.7 MB of it these two.
+      ["@data/**/*.json", "!@data/components/**", "!@data/knowledge/**"],
+      { eager: true, import: "default" },
+    ) as Record<string, unknown>,
+  ).map(([path, value]) => [normalizeDataKey(path), value]),
+);
+
+/** A glob key (an absolute or alias-relative path) as its `@data/…` specifier. */
+function normalizeDataKey(path: string): string {
+  const at = path.lastIndexOf("/data/");
+  return at === -1 ? path : `@data${path.slice(at + "/data".length)}`;
+}
+
+/** Is `spec` a packaged-data JSON import? */
+export function dataJsonSpec(spec: string): boolean {
+  return spec.startsWith("@data/") && spec.endsWith(".json");
+}
+
+/**
+ * The module a `@data/…json` import resolves to — the REAL parsed value as the default export.
+ *
+ * A specifier the bundle does not carry (the two excluded directories, or a typo) gets a module that
+ * THROWS NAMING ITSELF on first access. That is the whole improvement over the universal stub: a Proxy
+ * answers every property and fails somewhere else entirely — `MODEL_IDS.find` three frames away — while
+ * this says which specifier was missing, at the moment it is touched.
+ */
+export function dataJsonModule(spec: string): string {
+  if (spec in DATA_JSON) return `export default ${JSON.stringify(DATA_JSON[spec])};\n`;
+  return (
+    `const missing = ${JSON.stringify(spec)};\n` +
+    "export default new Proxy({}, { get() { throw new Error(" +
+    '"preview: " + missing + " is not vendored into this preview (see DATA_JSON in componentBundle)"' +
+    "); } });\n"
+  );
+}
+
 /** The esbuild loaders a preview module can be built with. */
 export type MemLoader = "jsx" | "tsx" | "ts";
 
@@ -309,6 +378,10 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         // impl. A `@bsc/…` NOT vendored (an unresolvable reference) falls through to the mem loader's
         // "module not found" — the honest build failure graphHealth flags as unresolvable-import.
         if (args.path.startsWith("@bsc/")) return { path: args.path, namespace: "mem" };
+        // `@data/…json` (#105) — the app's PACKAGED data, resolved to the real file rather than the
+        // universal stub. Before this branch a JSON import became a Proxy and its consumer failed
+        // somewhere else entirely; see `DATA_JSON`.
+        if (dataJsonSpec(args.path)) return { path: args.path, namespace: PREVIEW_DATA_NAMESPACE };
         // Relative → resolve against the importer within the mem filesystem.
         if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path, files), namespace: "mem" };
         // Any other bare specifier: a curated external (React et al.) stays external — resolved in the iframe
@@ -320,6 +393,7 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
       });
       build.onLoad({ filter: /.*/, namespace: PREVIEW_SHIM_NAMESPACE }, (args) => ({ contents: shimModuleFor(args.path, stubExports.get(args.path)), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: PREVIEW_RAW_NAMESPACE }, (args) => ({ contents: rawModuleSource(rawModuleText(files, args.path)), loader: "js" }));
+      build.onLoad({ filter: /.*/, namespace: PREVIEW_DATA_NAMESPACE }, (args) => ({ contents: dataJsonModule(args.path), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "", loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "mem" }, (args) => {
         const hit = lookupMem(files, args.path);

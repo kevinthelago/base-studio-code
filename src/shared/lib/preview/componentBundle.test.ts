@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
+import { dataJsonSpec, dataJsonModule } from "@/shared/lib/preview/componentBundle";
 import {
   resolveMemPath, lookupMem, loaderFor, stubsBoundaryModule, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
   PREVIEW_DEFINE, PREVIEW_GLOB_BANNER, PREVIEW_GLOB_SHIM,
@@ -694,5 +695,45 @@ describe("loaderFor: a record id is not a filename (#103)", () => {
     // No extension at all — the pre-existing last-resort sniff, unchanged.
     expect(loaderFor("bare", JSX)).toBe("tsx");
     expect(loaderFor("bare", "export const n = 1;")).toBe("ts");
+  });
+});
+
+describe("@data JSON in a preview (#105)", () => {
+  it("recognises a packaged-data JSON import and nothing else", () => {
+    expect(dataJsonSpec("@data/console/models.json")).toBe(true);
+    expect(dataJsonSpec("@data/ui/themes.json")).toBe(true);
+    expect(dataJsonSpec("@data/fleet/worker-protocol.md")).toBe(false); // not JSON
+    expect(dataJsonSpec("@/app/console/lib/models")).toBe(false);       // first-party code
+    expect(dataJsonSpec("react")).toBe(false);
+  });
+
+  it("serves the REAL packaged file, so a preview shows real data and not a stand-in", () => {
+    // The exact import in `models.ts` that made PaneAt/PaneMenu/PaneShell throw.
+    const mod = dataJsonModule("@data/console/models.json");
+    expect(mod.startsWith("export default ")).toBe(true);
+    const value = JSON.parse(mod.replace(/^export default /, "").replace(/;\s*$/, ""));
+    expect(Array.isArray(value)).toBe(true);
+    expect(value.length).toBeGreaterThan(0);
+    // It is an ARRAY of things with ids — which is all `MODELS.map((m) => m.id)` needs to survive.
+    expect(value.every((m: { id?: unknown }) => typeof m.id === "string")).toBe(true);
+  });
+
+  it("makes a MISSING specifier name itself instead of failing three frames away", () => {
+    // The whole improvement over the universal stub: a Proxy answers every property and the failure
+    // surfaces as `MODEL_IDS.find` somewhere else. This says WHICH specifier was missing, when touched.
+    const mod = dataJsonModule("@data/knowledge/algorithms.json"); // deliberately excluded — 3.91 MB
+    expect(mod).toContain("is not vendored into this preview");
+    expect(mod).toContain("@data/knowledge/algorithms.json");
+    expect(mod).not.toContain("export default {}");
+  });
+
+  it("excludes the two giant directories, and only those", () => {
+    // Bounded on purpose: vendoring everything imported would be 8.88 MB, and 8.7 MB of it is these two
+    // — both already reachable in a preview by their proper routes.
+    expect(dataJsonModule("@data/components/react-ui.json")).toContain("is not vendored");
+    expect(dataJsonModule("@data/knowledge/algorithms.json")).toContain("is not vendored");
+    for (const kept of ["@data/ui/themes.json", "@data/teams/departments.json", "@data/mcp/catalog.json"]) {
+      expect(dataJsonModule(kept), `${kept} must be vendored`).toContain("export default ");
+    }
   });
 });
