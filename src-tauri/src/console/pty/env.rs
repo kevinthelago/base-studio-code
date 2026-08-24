@@ -266,6 +266,24 @@ pub(crate) fn stage_dev_sidecars() {
         };
         let dst = dir.join(&exe);
 
+        // REFUSE A SOURCE THAT CANNOT BE A BINARY, before anything is copied over the live path.
+        //
+        // `target/<profile>/bsc` is unlinked and rewritten by every `cargo build`, so at boot it can be
+        // a zero-byte placeholder mid-link. `fs::copy` reproduces it faithfully — including its 0644
+        // mode — and `verify_staged` then compares source length to staged length, agrees at 0, and logs
+        // SUCCESS. Observed 2026-08-24: both sidecars staged 0 bytes and non-executable, and every `bsc`
+        // call from every session failed `Permission denied` until they were replaced by hand. The
+        // symptom appears wherever a session next execs `$BSC_BIN`, which looks nothing like staging.
+        if let Err(why) = source_is_plausible(&src) {
+            log::error!(
+                "[startup] refusing to stage `{stem}` from {}: {why}. Keeping whatever is already staged \
+                 — a stale sidecar is recoverable, a truncated one is not. Rebuild with \
+                 `npm run build:plan` and restart.",
+                src.display()
+            );
+            continue;
+        }
+
         // NEVER STAGE BACKWARDS. Detection at boot (`stale_sidecars`) reports the damage after it is
         // done; this refuses to do it. Skipping leaves the NEWER staged binary in place, which is the
         // one sessions should be running anyway — and the log names the fix, because the real problem
@@ -291,7 +309,10 @@ pub(crate) fn stage_dev_sidecars() {
             // only symptom, weeks later, was `bsc: unknown command 'change'` in an agent session, which
             // looks nothing like a staging problem. So assert the outcome instead of trusting the call.
             Ok(_) => match verify_staged(&src, &dst) {
-                Ok(()) => log::info!("[startup] staged dev sidecar `{stem}` → {}", dst.display()),
+                Ok(()) => {
+                    ensure_executable(&dst);
+                    log::info!("[startup] staged dev sidecar `{stem}` → {}", dst.display());
+                }
                 Err(why) => log::error!(
                     "[startup] staged `{stem}` to {} but it does NOT match the source ({why}) — sessions \
                      will run a DIFFERENT binary than this build. Source: {}",
@@ -322,6 +343,40 @@ pub(crate) fn stage_dev_sidecars() {
 ///
 /// Windows lets you RENAME an open file — the handle follows the file — so the running session keeps
 /// its old copy (valid until it exits) while a fresh binary lands at the canonical path.
+/// Could `src` be a usable binary at all? The check [`verify_staged`] structurally cannot make.
+///
+/// `verify_staged` asks "does the staged copy MATCH the source" — a relative question, and a truncated
+/// source satisfies it trivially. This asks the absolute one. Zero bytes is the unambiguous line and the
+/// shape actually observed; a partially-written binary of nonzero length still slips through, and saying
+/// so is better than implying this closes every window.
+fn source_is_plausible(src: &std::path::Path) -> Result<(), String> {
+    let md = std::fs::metadata(src).map_err(|e| format!("unreadable: {e}"))?;
+    if !md.is_file() {
+        return Err("not a regular file".to_string());
+    }
+    if md.len() == 0 {
+        return Err("it is 0 bytes — a build is probably writing it right now".to_string());
+    }
+    Ok(())
+}
+
+/// Make the staged copy executable. `fs::copy` carries the SOURCE's mode, so a build artifact caught
+/// mid-write at 0644 lands unrunnable — which is the second half of what was observed on 2026-08-24:
+/// not just empty, but `-rw-rw-r--`, so even a correct binary at that path would have failed to exec.
+#[cfg(unix)]
+fn ensure_executable(dst: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(md) = std::fs::metadata(dst) {
+        let mode = md.permissions().mode();
+        if mode & 0o111 != 0o111 {
+            let _ = std::fs::set_permissions(dst, std::fs::Permissions::from_mode(mode | 0o755));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn ensure_executable(_dst: &std::path::Path) {}
+
 fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
     match std::fs::copy(src, dst) {
         Ok(_) => return Ok(()),
@@ -359,6 +414,12 @@ fn is_in_use(e: &std::io::Error) -> bool {
 fn verify_staged(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
     let sl = std::fs::metadata(src).map_err(|e| format!("source unreadable: {e}"))?.len();
     let dl = std::fs::metadata(dst).map_err(|e| format!("staged copy unreadable: {e}"))?.len();
+    // MATCHING IS NOT ENOUGH. Two zero-byte files match perfectly, and that is exactly the state this
+    // function reported as healthy on 2026-08-24. `source_is_plausible` refuses it earlier now; this is
+    // the same question asked of the OUTCOME, so neither check depends on the other having run.
+    if dl == 0 {
+        return Err("the staged copy is 0 bytes — it cannot be executed".to_string());
+    }
     if sl == dl {
         return Ok(());
     }
@@ -863,7 +924,7 @@ pub(super) fn wire_bsc_env(
 
 #[cfg(test)]
 mod swap_tests {
-    use super::{sidecar_predates_app, staging_would_downgrade, verify_staged};
+    use super::{ensure_executable, sidecar_predates_app, source_is_plausible, staging_would_downgrade, verify_staged};
     use std::time::{Duration, SystemTime};
 
     /// Which errors earn the rename-aside dance in [`super::stage_one`].
@@ -919,6 +980,62 @@ mod swap_tests {
     /// the staged `bsc` was a Jul 20 build of 49,027,584 bytes and the source was 74,270,208 — and the
     /// only symptom, weeks later, was `bsc: unknown command 'change'` inside an agent session. A
     /// successful `fs::copy` is not evidence the staged binary matches; the sizes are.
+    /// 2026-08-24: both staged sidecars were 0 bytes and `-rw-rw-r--`, and every `bsc` call from every
+    /// session failed `Permission denied` until they were replaced by hand. Staging had logged SUCCESS,
+    /// because `verify_staged` asks whether the copy MATCHES the source — and two empty files match.
+    #[test]
+    fn a_truncated_source_is_refused_rather_than_staged_over_a_working_binary() {
+        let dir = crate::testutil::unique_dir("bsc-stage", "truncated");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // The shape cargo leaves mid-link: the path EXISTS, so `p.exists()` picks it, and it is empty.
+        let empty = dir.join("empty.bin");
+        std::fs::write(&empty, b"").unwrap();
+        let why = source_is_plausible(&empty).expect_err("a 0-byte source must be refused");
+        assert!(why.contains("0 bytes"), "the reason names the shape: {why}");
+
+        // A real artifact passes — the guard must not refuse the ordinary case.
+        let real = dir.join("real.bin");
+        std::fs::write(&real, vec![0u8; 4096]).unwrap();
+        assert!(source_is_plausible(&real).is_ok());
+        assert!(source_is_plausible(&dir.join("absent.bin")).is_err(), "a missing source is not plausible");
+        assert!(source_is_plausible(&dir).is_err(), "a directory is not a binary");
+
+        // And the OUTCOME is judged on its own: two empty files match perfectly, which is precisely the
+        // state that was reported healthy. `verify_staged` must refuse it without relying on the
+        // earlier check having run.
+        let dst = dir.join("dst.bin");
+        std::fs::write(&dst, b"").unwrap();
+        let err = verify_staged(&empty, &dst).expect_err("0 == 0 is not a healthy stage");
+        assert!(err.contains("0 bytes"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The second half of what was observed: not just empty, but NOT EXECUTABLE. `fs::copy` carries the
+    /// source's mode, so a build artifact caught at 0644 lands unrunnable even when its bytes are right.
+    #[cfg(unix)]
+    #[test]
+    fn a_staged_sidecar_is_made_executable_whatever_mode_the_source_carried() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::testutil::unique_dir("bsc-stage", "mode");
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst = dir.join("bsc");
+        std::fs::write(&dst, vec![0u8; 64]).unwrap();
+        std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        ensure_executable(&dst);
+        let mode = std::fs::metadata(&dst).unwrap().permissions().mode();
+        assert_eq!(mode & 0o111, 0o111, "every exec bit is set, not just the owner's: {mode:o}");
+
+        // Idempotent — an already-executable file is left exactly as it is.
+        std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).unwrap();
+        ensure_executable(&dst);
+        assert_eq!(std::fs::metadata(&dst).unwrap().permissions().mode() & 0o777, 0o755);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn verify_staged_rejects_a_different_build_at_the_staged_path() {
         let dir = std::env::temp_dir().join(format!("bsc-stage-{}", std::process::id()));
