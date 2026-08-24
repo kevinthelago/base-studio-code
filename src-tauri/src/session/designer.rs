@@ -195,6 +195,36 @@ mod tests {
         }
     }
 
+    /// The DISCOVER-BEFORE-AUTHORING routing. The seed's rule was always right — one component per job —
+    /// but it pointed at `bsc ui list`, a NAME search, and a name is the one signal a structural
+    /// duplicate defeats: five identically-built settings cards are named after their subject and share
+    /// no substring. Measured, a session authored a sixth and `similar --shape` scored it 100% against
+    /// four existing records while the write returned exit 0 in silence. If this routing rots back to a
+    /// name search the library bloats again, so the terms are pinned.
+    #[test]
+    fn packaged_designer_spec_routes_discovery_at_authoring_time() {
+        let seed = crate::platform::config::embedded_str("designer/claude.md");
+        for needle in [
+            "Before you author: ask the graph what already exists", // the section, at Rung 4
+            "bsc ui patterns",            // the conventions sweep
+            "--shape",                    // the name-blind similarity mode
+            "bsc ui exports",             // the one-record-one-item check
+            "NAME SEARCH WILL NOT FIND",  // WHY `bsc ui list` is the wrong tool here
+            "SandboxedConsolesCard",      // the measured example, so the rule carries its evidence
+        ] {
+            assert!(seed.contains(needle), "designer seed must teach the discovery term `{needle}`");
+        }
+        // The routing is only worth anything if it fires BEFORE the write. `bsc ui patterns` must be
+        // taught at Rung 4 (authoring), not merely down in the graph-health cleanup section.
+        let authoring = seed.find("## Rung 4").expect("Rung 4 section");
+        let cleanup = seed.find("## Graph health").expect("graph-health section");
+        let patterns = seed.find("bsc ui patterns").expect("patterns verb");
+        assert!(
+            patterns > authoring && patterns < cleanup,
+            "`bsc ui patterns` must be taught where authoring happens, not only where cleanup does",
+        );
+    }
+
     /// #3376 — the read-side companion to "Authoring: write, then apply". The seed must name the lean
     /// read verbs AND say WHY a redirect / chain / `$VAR` can never be allow-listed: a session that only
     /// learns "that was rejected" retries another variant of the same unmatchable shape.
