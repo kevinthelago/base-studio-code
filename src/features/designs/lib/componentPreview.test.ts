@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, componentBuildable, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { makeGraphProvidesResolver, componentPreviewFiles, componentBuildable, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, erasedSpecs, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -680,5 +680,56 @@ describe("componentPreviewFiles — a specifier an ALGORITHMS record provides (#
     // disagreement here means a component is never previewed at all rather than previewed broken.
     expect(componentBuildable(consumer, artifact, [], undefined)).toBe(false);
     expect(componentBuildable(consumer, artifact, [], graphResolver)).toBe(true);
+  });
+});
+
+describe("makeGraphProvidesResolver — the producer #83 specified and never had", () => {
+  const IMPLS = [
+    { provides: "@/app/lazyWorkspaces", code: "export const WorkspaceFallback = () => null;" },
+    { provides: "  @/app/spaced  ", code: "export const S = 1;" },
+    { provides: "@/app/empty", code: "   " },
+    { provides: "", code: "export const X = 1;" },
+    { provides: "@/app/lazyWorkspaces", code: "export const LATER = 2;" },
+  ];
+
+  it("resolves a specifier an algorithms record provides, keyed the way providesMod is", () => {
+    const r = makeGraphProvidesResolver(IMPLS);
+    expect(r("@/app/lazyWorkspaces")).toEqual({
+      path: "app/lazyWorkspaces.tsx",
+      source: "export const WorkspaceFallback = () => null;",
+    });
+    expect(r("@/app/spaced")?.path).toBe("app/spaced.tsx");
+  });
+
+  it("answers null for anything it cannot honestly serve", () => {
+    const r = makeGraphProvidesResolver(IMPLS);
+    expect(r("@/app/empty")).toBeNull();       // a record with no code is not an implementation
+    expect(r("@/app/unknown")).toBeNull();
+    expect(r("react")).toBeNull();             // not first-party; the bundler externalises it
+    expect(makeGraphProvidesResolver([])("@/app/lazyWorkspaces")).toBeNull();
+  });
+
+  it("keeps the FIRST record for a duplicated specifier, deterministically", () => {
+    // Two impls claiming one specifier is a defect elsewhere; picking at random would make the preview
+    // differ run to run, which is the worst way to find out.
+    expect(makeGraphProvidesResolver(IMPLS)("@/app/lazyWorkspaces")?.source).toContain("WorkspaceFallback");
+  });
+
+  it("makes the gate and the bundler AGREE about a graph-provided import", () => {
+    // The bug: `detachedwindow` imports `@/app/lazyWorkspaces`, the impl record provides it, and the
+    // gate judged it unbuildable — so it was refused a preview and doctor reported no-implementation
+    // for a specifier that resolves. Both sides must now say the same thing.
+    const comp = {
+      id: "consumer", name: "Consumer", kitId: "k", role: "composite",
+      props: [], variants: [], composes: [],
+      srcText: 'import { WorkspaceFallback } from "@/app/lazyWorkspaces";\nexport const C = () => <WorkspaceFallback />;',
+    } as never;
+    const artifact = { components: [], runtime: {} } as unknown as KitArtifact;
+    const resolver = makeGraphProvidesResolver(IMPLS);
+
+    expect(componentBuildable(comp, artifact, [], resolver)).toBe(true);
+    const built = componentPreviewFiles(comp, artifact, [], undefined, "loaded", {}, undefined, resolver);
+    expect(built).not.toBeNull();
+    expect(Object.keys(built!.files)).toContain("app/lazyWorkspaces.tsx");
   });
 });

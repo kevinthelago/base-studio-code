@@ -25,6 +25,11 @@ import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import { isPlatformModule } from "@/shared/lib/preview/platformModules";
 import type { ComponentRecord, PropSpec } from "@/features/designs/lib/model";
+// The ALGORITHMS store, for {@link defaultGraphResolver} — the same read `resolveGraphSource` makes
+// from `shared/lib/runtime`, and for the same reason: a specifier can be answered by a RECORD, so a
+// buildability verdict that only knows components and files is answering a narrower question than the
+// one it is asked.
+import { useAppStore } from "@/store";
 
 /**
  * Resolve a `@bsc/<segment>/<name>` LIBRARY import (#3116) to the preview module it vendors — a `path` the
@@ -53,6 +58,66 @@ export type LibraryModuleResolver = (spec: string) => { path: string; source: st
  * before, so a component reaching no graph-provided module is unaffected.
  */
 export type GraphProvidesResolver = (spec: string) => { path: string; source: string } | null;
+
+/** The ALGORITHMS store's records, as much of them as graph-provides resolution needs. */
+export interface GraphImplRecord {
+  provides?: string | null;
+  code?: string | null;
+}
+
+/**
+ * A {@link GraphProvidesResolver} over the ALGORITHMS store — the producer #83 specified and never had.
+ *
+ * The type, the two parameter slots ({@link componentBuildable}, {@link componentPreviewFiles}) and the
+ * consumer ({@link vendorGraphProvides}) all shipped; NOTHING in the app ever built one, so every
+ * production call passed `undefined` and only the tests exercised the path. The visible consequence:
+ * `detachedwindow` and `app` import `@/app/lazyWorkspaces`, which the graph-impl record
+ * `lazy-workspaces.ts` provides — and both were judged unbuildable and refused a preview, with
+ * `bsc ui doctor` reporting `no-implementation` for a specifier that resolves.
+ *
+ * Only the ALGORITHMS store: a component's own `provides` is already handled by the `providesMod` map,
+ * and letting an impl answer a specifier a component claims would shadow a rendering component with a
+ * non-rendering module — the ordering `resolveGraphSource` states and this must not contradict.
+ *
+ * Keyed at `<base>.tsx` to match `providesMod`. The extension is a hint the loader no longer trusts
+ * blindly (it sniffs `.ts` for JSX), so a `.ts`-named impl holding a component still builds.
+ */
+/**
+ * The resolver to use when a caller did not supply one — built from the app's hydrated ALGORITHMS store.
+ *
+ * A DEFAULT rather than a required argument, because the gap this closes was every production caller
+ * forgetting an optional last parameter. `ComponentPreviewFrame` calls `componentPreviewFiles` with
+ * seven arguments and the resolver is the eighth; nothing about that call site looks wrong, and the
+ * failure surfaces two layers away as "has no implementation source yet". Making the capability opt-IN
+ * put the burden in the place least able to notice it was missing.
+ *
+ * The parameter stays, so a test can inject a resolver (or `null` to assert the unresolved behaviour)
+ * without a store.
+ */
+function defaultGraphResolver(): GraphProvidesResolver | undefined {
+  try {
+    const impls = useAppStore.getState().algorithmImpls as readonly GraphImplRecord[] | undefined;
+    return impls?.length ? makeGraphProvidesResolver(impls) : undefined;
+  } catch {
+    // No store (a node test, a worker) — resolve nothing rather than throw inside a build decision.
+    return undefined;
+  }
+}
+
+export function makeGraphProvidesResolver(impls: readonly GraphImplRecord[]): GraphProvidesResolver {
+  const bySpec = new Map<string, string>();
+  for (const im of impls) {
+    const spec = im.provides?.trim();
+    const code = im.code;
+    if (spec && code && code.trim() && !bySpec.has(spec)) bySpec.set(spec, code);
+  }
+  return (spec) => {
+    const source = bySpec.get(spec.trim());
+    if (!source) return null;
+    const base = resolveInternalBase(spec, "");
+    return base === null ? null : { path: `${base}.tsx`, source };
+  };
+}
 
 /** The buildable slice of the packaged kit artifact — each component's verbatim `source` and the
  *  `runtime` (non-component @/ closure), both keyed by their `src/`-relative path. This is exactly the
@@ -823,6 +888,7 @@ export function componentBuildable(
   // unresolved import is graph-provided is judged unbuildable and never previewed at all.
   graphResolver?: GraphProvidesResolver,
 ): boolean {
+  const graph = graphResolver ?? defaultGraphResolver();
   const { bySrc, bases } = artifactIndex(artifact);
   // BUILT-IN: present in the artifact with a source ⇒ always a build (the branch below never returns null).
   if (comp.src && bySrc.has(comp.src)) return true;
@@ -850,7 +916,7 @@ export function componentBuildable(
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {
     if (hasProvideSpec(spec)) return true;
-    if (graphResolver?.(spec)) return true; // #83 — provided by an ALGORITHMS record
+    if (graph?.(spec)) return true; // #83 — provided by an ALGORITHMS record
     if (isPlatformModule(spec)) return true; // the DECLARED BOUNDARY — stubbed by the bundler
     const base = resolveInternalBase(spec, fromRel);
     return base !== null && (bases.has(base) || hasProvideMod(`${base}.tsx`) || hasSibBase(base));
@@ -861,7 +927,7 @@ export function componentBuildable(
   // `looksBuildableModule` ("no `@/` at all"), so a component whose only first-party import is
   // graph-provided was judged unbuildable and never previewed.
   const canResolveInternal =
-    providesModNonEmpty || anyOwnedByOther(sib.baseOwners, comp.id) || bases.size > 0 || !!graphResolver;
+    providesModNonEmpty || anyOwnedByOther(sib.baseOwners, comp.id) || bases.size > 0 || !!graph;
   return canResolveInternal
     ? isPreviewBuildable(userSource, path, resolvesInternal)
     : looksBuildableModule(userSource);
@@ -898,6 +964,9 @@ export function componentPreviewFiles(
 ): ComponentPreviewBuild | null {
   // #4130: the built-in lookup + the internal-resolution base set come from the cached artifact index,
   // so this and `componentBuildable` read the SAME derivation (and neither re-scans the artifact).
+  // Same default as `componentBuildable`, or the two disagree about the same component — which is the
+  // failure this whole change exists to end, and it would be one function apart rather than two stores.
+  const graph = graphResolver ?? defaultGraphResolver();
   const artIdx = artifactIndex(artifact);
   const inArtifact = comp.src ? artIdx.bySrc.get(comp.src) : undefined;
 
@@ -906,7 +975,7 @@ export function componentPreviewFiles(
     for (const [path, src] of Object.entries(artifact.runtime ?? {})) files[path] = src;
     for (const c of artifact.components) if (c.source) files[c.src] = c.source;
     vendorLibraryModules(files, libResolver); // #3116: any `@bsc/…` a built-in references
-    vendorGraphProvides(files, graphResolver); // #83: any `@/…` an algorithms record provides
+    vendorGraphProvides(files, graph); // #83: any `@/…` an algorithms record provides
     const importSpec = `@/${stripExt(inArtifact.src)}`;
     files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state, previewData, liveStates);
     return { files, entry: PREVIEW_ENTRY };
@@ -955,7 +1024,7 @@ export function componentPreviewFiles(
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {
     if (providesSpecs.has(spec)) return true; // (a) exact `provides` match
-    if (graphResolver?.(spec)) return true; // (a2) #83 — provided by an ALGORITHMS record
+    if (graph?.(spec)) return true; // (a2) #83 — provided by an ALGORITHMS record
     if (isPlatformModule(spec)) return true; // (d) the DECLARED BOUNDARY — stubbed by the bundler
     const base = resolveInternalBase(spec, fromRel);
     return base !== null && (artifactBases.has(base) || providesMod.has(`${base}.tsx`) || sibByBase.has(base)); // (b)/(a)/(c)
@@ -966,7 +1035,7 @@ export function componentPreviewFiles(
   // is the fallback when there is nothing to resolve against.
   // #83 — same rule as `componentBuildable`, or the two disagree about the same component.
   const canResolveInternal =
-    providesMod.size > 0 || sibByBase.size > 0 || artifactBases.size > 0 || !!graphResolver;
+    providesMod.size > 0 || sibByBase.size > 0 || artifactBases.size > 0 || !!graph;
   const buildable = explicitSource !== null
     || (canResolveInternal ? isPreviewBuildable(userSource, path, resolvesInternal) : looksBuildableModule(userSource));
   if (!buildable) return null;
@@ -991,7 +1060,7 @@ export function componentPreviewFiles(
     }
   }
   vendorLibraryModules(files, libResolver); // #3116: vendor any `@bsc/…` library imports (recursively)
-  vendorGraphProvides(files, graphResolver); // #83: same, for `@/…` an algorithms record provides
+  vendorGraphProvides(files, graph); // #83: same, for `@/…` an algorithms record provides
   files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state, previewData, liveStates);
   return { files, entry: PREVIEW_ENTRY };
 }
