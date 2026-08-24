@@ -1161,65 +1161,7 @@ fn cmd_suppress(
         inherited_by = Some(new_id);
     }
 
-    // THE SPECIFIER MUST NOT BE ORPHANED (the-planning-page-repeats-the-branchesview-cascade).
-    //
-    // A tombstone is `{ id, suppressed: true }` — it does not carry `provides`. So suppressing a record
-    // that CLAIMED a specifier drops the claim, and if the successor never picks it up, every importer
-    // of that specifier resolves to nothing. The record still compiles, so nothing fails at build time;
-    // the loader declines the whole closure at MOUNT time and the page renders its fallback. That is
-    // how four records went dark in one consolidation and were not noticed until someone opened the
-    // page, and it is why `branchesview` needed the same repair before them.
-    //
-    // So: if the retiring record claims a specifier something still imports, the successor inherits it,
-    // and with no successor named the suppression is refused rather than silently orphaning it.
-    if let Some(spec) = current
-        .get("provides")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        let importers = live_importers_of(&store, spec, id);
-        match (&inherited_by, importers.is_empty(), force) {
-            // Nothing imports it — orphaning the claim costs nothing, so this stays quiet.
-            (_, true, _) => {}
-            // Deliberate: the operator said orphan it.
-            (_, false, true) => {
-                println!("warning: '{spec}' is imported by {} record(s) and no longer resolves — --force", importers.len());
-            }
-            // A successor was named: it INHERITS the claim, which is what the consolidation meant.
-            (Some(new_id), false, false) => {
-                let mut target = current_record(&store, new_id)?;
-                let held = target.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
-                if held.is_empty() {
-                    target["provides"] = serde_json::Value::String(spec.to_string());
-                    stamped_set(&store, new_id, target, &crate::record::resolve_writer(None))?;
-                    println!("'{new_id}' inherited provides '{spec}' — {} importer(s) keep resolving", importers.len());
-                } else if held != spec {
-                    // Two claims, one successor. Guessing which wins is how a WRONG module starts
-                    // answering a specifier, which is worse than the specifier answering nothing.
-                    return Err(format!(
-                        "'{id}' provides '{spec}' ({} importer(s)) but '{new_id}' already provides '{held}' —                          one record cannot answer both. Re-point the importers, or pass --force to orphan '{spec}'.",
-                        importers.len()
-                    ));
-                }
-            }
-            // No successor and live importers: refuse. The list is what makes it actionable.
-            (None, false, false) => {
-                let mut shown: Vec<&str> = importers.iter().take(5).map(String::as_str).collect();
-                if importers.len() > shown.len() {
-                    shown.push("…");
-                }
-                return Err(format!(
-                    "'{id}' provides '{spec}', which {} record(s) still import ({}). Suppressing it orphans \
-                     that specifier and every importer's closure goes unsatisfiable at MOUNT time, not at build \
-                     time. Name the replacement with --superseded-by so it inherits the claim, or --force to \
-                     orphan it deliberately.",
-                    importers.len(),
-                    shown.join(", ")
-                ));
-            }
-        }
-    }
+    guard_provides_claim(&store, id, &current, inherited_by.as_deref(), force, "Suppressing")?;
 
     stamped_set(&store, id, tombstone, &crate::record::resolve_writer(None))?;
     // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707).
@@ -1253,6 +1195,136 @@ fn cmd_unsuppress(
     Ok(())
 }
 
+/// The `bsc ui merge` result object — extracted so the CONTRACT is testable without capturing stdout
+/// (`cmd_merge` prints with `println!`, which the shared capture sink does not see).
+///
+/// `retired` NAMES what happened, and `removed` is the id ONLY when the record is genuinely gone.
+/// Reporting a tombstone as `removed` is what sent designer request #102 hunting a missing delete call
+/// through 32 ids that were every one of them behaving exactly as designed.
+fn merge_report(
+    from_id: &str,
+    into_id: &str,
+    kit_id: &str,
+    repointed: &[String],
+    retired: Retired,
+) -> serde_json::Value {
+    serde_json::json!({
+        "from": from_id,
+        "into": into_id,
+        "kit": kit_id,
+        "repointed": repointed,
+        "retired": retired.as_str(),
+        "removed": match retired {
+            Retired::Removed => serde_json::Value::String(from_id.to_string()),
+            Retired::Tombstoned => serde_json::Value::Null,
+        },
+    })
+}
+
+/// THE SPECIFIER MUST NOT BE ORPHANED — the one guard every retirement path shares.
+///
+/// A tombstone is `{ id, suppressed: true }`; it carries no `provides`. So retiring a record that
+/// CLAIMED a specifier drops the claim, and if no successor picks it up, every importer of that
+/// specifier resolves to nothing. The record still compiles, so nothing fails at build time; the loader
+/// declines the whole closure at MOUNT time and the page renders its fallback. That is how four records
+/// went dark in one consolidation and were not noticed until someone opened the page, and it is why
+/// `branchesview` needed the same repair before them.
+///
+/// **It lived inside `cmd_suppress` and nowhere else, which is the bug moving it here fixes.** `bsc ui
+/// merge` and `doctor --fix`'s dup fold retire records through [`retire_component`], which wrote the
+/// same tombstone with none of this checking — so the guarded verb refused while the unguarded ones did
+/// it silently. On 2026-08-24 a designer session merged 34 module records away and orphaned 34
+/// specifiers, taking Settings, Glance and Accessibility off the store's resolution graph one `merge` at
+/// a time. Its output looked right because `merge` repoints `composes`, by NAME — and `composes` is not
+/// what an import resolves through.
+///
+/// `verb` is the gerund naming the action in the refusal ("Suppressing" / "Merging"), so the message
+/// describes what the caller actually did rather than what this function is called.
+fn guard_provides_claim(
+    store: &bsc_json_store::Store,
+    id: &str,
+    current: &serde_json::Value,
+    successor: Option<&str>,
+    force: bool,
+    verb: &str,
+) -> Result<(), String> {
+    let Some(spec) = current
+        .get("provides")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(());
+    };
+    let importers = live_importers_of(store, spec, id);
+    match (successor, importers.is_empty(), force) {
+        // Nothing imports it — orphaning the claim costs nothing, so this stays quiet.
+        (_, true, _) => Ok(()),
+        // Deliberate: the operator said orphan it.
+        (_, false, true) => {
+            println!("warning: '{spec}' is imported by {} record(s) and no longer resolves — --force", importers.len());
+            Ok(())
+        }
+        // A successor was named: it INHERITS the claim, which is what the consolidation meant.
+        (Some(new_id), false, false) => {
+            let mut target = current_record(store, new_id)?;
+            let held = target.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
+            if held.is_empty() {
+                target["provides"] = serde_json::Value::String(spec.to_string());
+                stamped_set(store, new_id, target, &crate::record::resolve_writer(None))?;
+                println!("'{new_id}' inherited provides '{spec}' — {} importer(s) keep resolving", importers.len());
+                Ok(())
+            } else if held != spec {
+                // Two claims, one successor. Guessing which wins is how a WRONG module starts answering
+                // a specifier, which is worse than the specifier answering nothing.
+                Err(format!(
+                    "'{id}' provides '{spec}' ({} importer(s)) but '{new_id}' already provides '{held}' — \
+                     one record cannot answer both. Re-point the importers, or clear `provides` on \
+                     '{new_id}' so it can inherit '{spec}'.",
+                    importers.len()
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        // No successor and live importers: refuse. The list is what makes it actionable.
+        (None, false, false) => {
+            let mut shown: Vec<&str> = importers.iter().take(5).map(String::as_str).collect();
+            if importers.len() > shown.len() {
+                shown.push("…");
+            }
+            Err(format!(
+                "'{id}' provides '{spec}', which {} record(s) still import ({}). {verb} it orphans that \
+                 specifier and every importer's closure goes unsatisfiable at MOUNT time, not at build \
+                 time. Name the replacement so it inherits the claim, or --force to orphan it deliberately.",
+                importers.len(),
+                shown.join(", ")
+            ))
+        }
+    }
+}
+
+/// What [`retire_component`] actually did. A tombstone and a delete are not the same event, and a caller
+/// that reports one as the other makes the store look broken: designer request #102 spot-checked 32 ids
+/// `bsc ui merge` had called `"removed"` and found all 32 still gettable. They were tombstoned, by design
+/// (#3725/#96) — only the WORD was wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Retired {
+    /// Deleted outright — a non-builtin, with no packaged seed to come back from.
+    Removed,
+    /// A `{ id, suppressed: true }` tombstone replaced it, so the packaged seed will not re-add it.
+    Tombstoned,
+}
+
+impl Retired {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Retired::Removed => "removed",
+            Retired::Tombstoned => "tombstoned",
+        }
+    }
+}
+
 /// Retire a component `id` whose references have already been repointed away — the shared tail of
 /// `merge` and `doctor --fix`'s byte-identical dup fold. A packaged BUILTIN gets a suppression
 /// TOMBSTONE (the same `{ id, suppressed: true, supersededBy }` shape `bsc ui suppress` writes) instead
@@ -1267,10 +1339,15 @@ fn retire_component(
     id: &str,
     builtin: bool,
     superseded_by: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Retired, String> {
+    // The claim check comes FIRST and applies to BOTH arms — a bare delete drops a `provides` exactly as
+    // a tombstone does, so gating it on `builtin` would leave the same hole for the other half. See
+    // `guard_provides_claim` for what this cost before it was here.
+    let current = current_record(store, id)?;
+    guard_provides_claim(store, id, &current, superseded_by, false, "Merging")?;
     if !builtin {
         store.remove(id)?;
-        return Ok(());
+        return Ok(Retired::Removed);
     }
     let mut tombstone = serde_json::json!({ "id": id, "suppressed": true });
     if let Some(b) = superseded_by {
@@ -1280,7 +1357,7 @@ fn retire_component(
     // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707),
     // same as `cmd_suppress`.
     let _ = crate::preview_errors::clear(id);
-    Ok(())
+    Ok(Retired::Tombstoned)
 }
 
 /// The component-verb entrypoint: `args` is everything after the mount point (`bsc ui`, or the
@@ -2448,16 +2525,10 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
     // a suppression tombstone rather than a bare delete, so the fold survives the next hydrate (#96) —
     // see `retire_component`.
     let from_builtin = from.get("builtin").and_then(serde_json::Value::as_bool) == Some(true);
-    retire_component(&store, from_id, from_builtin, Some(into_id))?;
+    let retired = retire_component(&store, from_id, from_builtin, Some(into_id))?;
     bsc_util::emit_ui_activity("component", from_id);
 
-    let out = serde_json::json!({
-        "from": from_id,
-        "into": into_id,
-        "kit": kit_id,
-        "repointed": repointed,
-        "removed": from_id,
-    });
+    let out = merge_report(from_id, into_id, &kit_id, &repointed, retired);
     let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     println!("{}", text.map_err(|e| e.to_string())?);
     Ok(())
@@ -4825,12 +4896,24 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
         })
         .collect();
     let mut merged = 0usize;
+    let mut skipped_claims = 0usize;
     for g in &plan.groups {
         for (id, name) in &g.removed {
             let builtin = builtin_by_id.get(id.as_str()).copied().unwrap_or(false);
-            retire_component(store, id, builtin, Some(&g.canonical_id))?;
-            println!("merged {name} ({id}) → {}", g.canonical_name);
-            merged += 1;
+            // A refused retirement SKIPS this pair and says why. It must not `?` out: the repoints above
+            // are already written, so aborting here leaves the store half-folded — references pointing at
+            // the survivor while the record they came from is still live. One unsafe pair is not a reason
+            // to abandon the safe ones, and a silent skip is not an option either (#no-silent-caps).
+            match retire_component(store, id, builtin, Some(&g.canonical_id)) {
+                Ok(what) => {
+                    println!("merged {name} ({id}) → {} [{}]", g.canonical_name, what.as_str());
+                    merged += 1;
+                }
+                Err(why) => {
+                    println!("SKIPPED {name} ({id}) → {}: {why}", g.canonical_name);
+                    skipped_claims += 1;
+                }
+            }
         }
     }
     let mut pruned = 0usize;
@@ -4838,6 +4921,12 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
         store.remove(&p.id)?;
         println!("pruned {} ({})", p.name, p.id);
         pruned += 1;
+    }
+    if skipped_claims > 0 {
+        println!(
+            "{skipped_claims} merge(s) SKIPPED — each would have orphaned a specifier something still imports. \
+             Re-point those importers (or give the survivor the claim) and re-run."
+        );
     }
     println!("optimized: merged {merged} duplicate(s), pruned {pruned} dead node(s). Re-run `bsc ui doctor` — an optimization can surface more.");
     guard_note();
@@ -8896,6 +8985,105 @@ export const P = () => <X />;"
     /// bare `store.remove` leaves the id looking merely absent, and the frontend seed-reconcile treats
     /// "absent" as "never seeded", bringing the packaged builtin right back on the next hydrate. Merging
     /// a builtin `from` must instead write the same suppression tombstone `bsc ui suppress` does.
+    /// 2026-08-24: a designer session merged 34 module records away and orphaned 34 specifiers, taking
+    /// Settings, Glance and Accessibility off the store's resolution graph. `suppress` refuses exactly
+    /// this; `merge` reached the same tombstone through `retire_component`, which had none of the check.
+    #[test]
+    fn merge_will_not_orphan_a_specifier_something_still_imports() {
+        let store = tmp_component_store("merge-orphan");
+        let dir = store.dir().to_string_lossy().into_owned();
+        let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+        // The real shape: a MODULE record answering a specifier, the component harvested from the same
+        // file, and a page that imports the specifier.
+        put("mod", serde_json::json!({
+            "id": "mod", "name": "CardModule", "kitId": "k", "role": "composite", "builtin": true,
+            "provides": "@/features/x/Card", "srcText": "export const Card = () => null;", "composes": [],
+        }));
+        put("harv", serde_json::json!({
+            "id": "harv", "name": "Card", "kitId": "k", "role": "primitive", "builtin": true,
+            "provides": "@/components/harv", "srcText": "export const Card = () => null;", "composes": [],
+        }));
+        put("page", serde_json::json!({
+            "id": "page", "name": "Page", "kitId": "k", "role": "page", "builtin": true,
+            "srcText": "import { Card } from \"@/features/x/Card\";", "composes": ["CardModule"],
+        }));
+
+        // REFUSED — the survivor already claims a different specifier, so it cannot inherit this one.
+        let err = run(
+            vec!["merge".into(), "mod".into(), "harv".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .expect_err("merging away a live claim onto a survivor that holds another must refuse");
+        assert!(err.contains("@/features/x/Card"), "the refusal names the specifier at risk: {err}");
+        assert!(err.contains("one record cannot answer both"), "{err}");
+        // ... and NOTHING was written. A refusal that half-applies is worse than no guard at all.
+        let still = stored(&store, "mod");
+        assert!(still.get("suppressed").is_none(), "the refused record must be untouched: {still}");
+        assert_eq!(still["provides"], "@/features/x/Card", "and must keep its claim: {still}");
+
+        // The survivor with NO claim INHERITS it instead — the consolidation still lands, and the
+        // importer keeps resolving. This is the path that makes the guard usable rather than a wall.
+        put("free", serde_json::json!({
+            "id": "free", "name": "FreeCard", "kitId": "k", "role": "primitive", "builtin": true,
+            "srcText": "export const Card = () => null;", "composes": [],
+        }));
+        run(vec!["merge".into(), "mod".into(), "free".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .expect("a survivor with no claim inherits and the merge lands");
+        assert_eq!(
+            stored(&store, "free")["provides"], "@/features/x/Card",
+            "the survivor inherited the claim, so the importer still resolves",
+        );
+        assert_eq!(stored(&store, "mod")["suppressed"], serde_json::Value::Bool(true));
+
+        // A claim NOTHING imports is not a hazard — orphaning it costs nothing and must stay quiet, or
+        // the guard would block every ordinary consolidation in the library.
+        put("lonely", serde_json::json!({
+            "id": "lonely", "name": "Lonely", "kitId": "k", "role": "primitive", "builtin": true,
+            "provides": "@/nobody/imports/this", "srcText": "export const L = () => null;", "composes": [],
+        }));
+        put("keep", serde_json::json!({
+            "id": "keep", "name": "Keep", "kitId": "k", "role": "primitive", "builtin": true,
+            "srcText": "export const K = () => null;", "composes": [],
+        }));
+        run(vec!["merge".into(), "lonely".into(), "keep".into(), "--dir".into(), dir], "bsc ui")
+            .expect("an unimported claim is not a hazard");
+        assert_eq!(stored(&store, "lonely")["suppressed"], serde_json::Value::Bool(true));
+    }
+
+    /// #102: 32 ids reported `"removed"` were all still gettable. They were TOMBSTONED, by design — the
+    /// word was the defect. A caller cannot tell a delete from a tombstone if both are called removed.
+    #[test]
+    fn merge_reports_a_tombstone_as_a_tombstone_and_a_delete_as_a_delete() {
+        // The report object, which is the contract a caller parses.
+        let t = merge_report("builtin-dup", "survivor", "k", &["page".to_string()], Retired::Tombstoned);
+        assert_eq!(t["retired"], "tombstoned", "a builtin is tombstoned, and must say so: {t}");
+        assert_eq!(
+            t["removed"], serde_json::Value::Null,
+            "`removed` must be null for a record that still answers `bsc ui get`: {t}",
+        );
+        let r = merge_report("user-dup", "survivor", "k", &[], Retired::Removed);
+        assert_eq!(r["retired"], "removed", "a non-builtin is deleted outright: {r}");
+        assert_eq!(r["removed"], "user-dup", "and `removed` names it: {r}");
+
+        // ... and the STORE agrees with the word, which is the half #102 actually checked.
+        let store = tmp_component_store("merge-retired-word");
+        let dir = store.dir().to_string_lossy().into_owned();
+        let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+        put("survivor", serde_json::json!({ "id": "survivor", "name": "Survivor", "kitId": "k", "role": "composite" }));
+        put("builtin-dup", serde_json::json!({
+            "id": "builtin-dup", "name": "BuiltinDup", "kitId": "k", "role": "composite", "builtin": true,
+        }));
+        put("user-dup", serde_json::json!({ "id": "user-dup", "name": "UserDup", "kitId": "k", "role": "composite" }));
+
+        run(vec!["merge".into(), "builtin-dup".into(), "survivor".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .expect("merge lands");
+        assert!(store.get("builtin-dup").unwrap().is_some(), "`tombstoned` means it still answers `get`");
+
+        run(vec!["merge".into(), "user-dup".into(), "survivor".into(), "--dir".into(), dir], "bsc ui")
+            .expect("merge lands");
+        assert!(store.get("user-dup").unwrap().is_none(), "`removed` means it is genuinely gone");
+    }
+
     #[test]
     fn merge_of_a_builtin_from_writes_a_suppression_tombstone_not_a_bare_delete() {
         let store = tmp_component_store("merge-builtin");
