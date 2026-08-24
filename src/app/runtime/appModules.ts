@@ -230,6 +230,7 @@ import * as NodeUrn from "@/shared/lib/graph/nodeUrn";
 // imports them: `graph-gpu-layer` is a packaged record, and a record can only reach a first-party
 // module that is itself a record or registered here. Without this the record compiles, declines at
 // runtime, and the Design Studio silently falls back — the same shape that blanked the Console page.
+import * as CssColor from "@/shared/lib/graph/cssColor";
 import * as GlGraphRenderer from "@/shared/lib/graph/glGraphRenderer";
 import * as GlyphAtlas from "@/shared/lib/graph/glyphAtlas";
 import * as Types from "@/shared/lib/github/types";
@@ -565,6 +566,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/graph/selectionNeighborhood": SelectionNeighborhood,
   "@/shared/lib/graph/crossGraph": CrossGraph,
   "@/shared/lib/graph/nodeUrn": NodeUrn,
+  "@/shared/lib/graph/cssColor": CssColor,
   "@/shared/lib/graph/glGraphRenderer": GlGraphRenderer,
   "@/shared/lib/graph/glyphAtlas": GlyphAtlas,
   "@/shared/lib/github/types": Types,

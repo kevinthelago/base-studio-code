@@ -252,6 +252,7 @@
   "@/shared/lib/github/types",
   "@/shared/lib/github/useGithubQuery",
   "@/shared/lib/graph/crossGraph",
+  "@/shared/lib/graph/cssColor",
   "@/shared/lib/graph/edgePath",
   "@/shared/lib/graph/glGraphRenderer",
   "@/shared/lib/graph/glyphAtlas",
