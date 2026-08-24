@@ -266,8 +266,29 @@ impl Store {
     /// before this — `resolve` flips the status but the row stayed, so completed work accumulated forever.
     /// Keys off `status`, NOT a timestamp, because legacy rows resolved before #3295 stamped `resolved_at`
     /// carry a null one; an OPEN request (even a corrupted one) is never touched.
-    pub fn prune_resolved(&self) -> rusqlite::Result<usize> {
-        self.conn.execute("DELETE FROM requests WHERE status = 'resolved'", [])
+    pub fn prune_resolved(&self, with_answers: bool) -> rusqlite::Result<usize> {
+        if with_answers {
+            return self.conn.execute("DELETE FROM requests WHERE status = 'resolved'", []);
+        }
+        self.conn.execute(
+            "DELETE FROM requests WHERE status = 'resolved' \
+             AND id NOT IN (SELECT DISTINCT request_id FROM request_notes)",
+            [],
+        )
+    }
+
+    /// Resolved requests split by whether they carry an ANSWER — `(prunable, answered)` counts. What
+    /// `prune` reports before it deletes anything, and what `--dry-run` prints instead of deleting.
+    pub fn prune_preview(&self) -> rusqlite::Result<(usize, usize)> {
+        let answered: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM requests WHERE status = 'resolved' \
+             AND id IN (SELECT DISTINCT request_id FROM request_notes)",
+            [],
+            |r| r.get(0),
+        )?;
+        let total: i64 =
+            self.conn.query_row("SELECT COUNT(*) FROM requests WHERE status = 'resolved'", [], |r| r.get(0))?;
+        Ok(((total - answered) as usize, answered as usize))
     }
 
     /// Delete ONE request by id, regardless of status; returns whether a row matched (#3522). The escape
@@ -289,6 +310,13 @@ impl Store {
     /// APPEND-ONLY by construction — there is no update or delete path to a note, which is the same
     /// guarantee `bsc plan change note` makes and for the same reason: a thread whose earlier entries can
     /// be rewritten is not a record of what was said.
+    ///
+    /// Append-only is not FOREVER, and the difference cost a thread. `request_notes` cascades on the
+    /// request, so `remove` and `prune` take the whole discussion with it. On 2026-08-24 request #99 was
+    /// answered with four notes — root cause, diagnosis, cross-link, outcome — resolved, and pruned
+    /// within the hour by a routine tidy-up; nothing records that it was ever filed. So [`prune_resolved`]
+    /// now keeps an ANSWERED thread unless asked twice, because the answer is the durable half: the
+    /// reasoning for why a reported behaviour was or was not a bug lives nowhere else.
     ///
     /// `Ok(false)` when no such request exists, so the caller can REFUSE rather than accept a reply that
     /// goes nowhere.
@@ -531,12 +559,12 @@ mod tests {
         assert!(s.resolve(b.id, Some("fixed b"), 20).unwrap());
         assert!(s.resolve(c.id, None, 30).unwrap());
 
-        assert_eq!(s.prune_resolved().unwrap(), 2, "both resolved rows removed");
+        assert_eq!(s.prune_resolved(false).unwrap(), 2, "both resolved rows removed");
         let left = s.list(&Filter::default()).unwrap();
         assert_eq!(left.len(), 1, "the open one survives");
         assert_eq!(left[0].id, a.id);
 
-        assert_eq!(s.prune_resolved().unwrap(), 0, "idempotent — nothing left to prune");
+        assert_eq!(s.prune_resolved(false).unwrap(), 0, "idempotent — nothing left to prune");
     }
 
     #[test]
@@ -549,7 +577,7 @@ mod tests {
             .execute("UPDATE requests SET status = 'resolved', resolved_at = NULL WHERE id = ?1", params![r.id])
             .unwrap();
         assert_eq!(s.get(r.id).unwrap().unwrap().resolved_at, None, "no timestamp, like the legacy rows");
-        assert_eq!(s.prune_resolved().unwrap(), 1, "pruned by status despite the null resolved_at");
+        assert_eq!(s.prune_resolved(false).unwrap(), 1, "pruned by status despite the null resolved_at");
     }
 
     #[test]
@@ -686,13 +714,30 @@ mod tests {
     }
 
     #[test]
-    fn pruning_resolved_requests_takes_their_threads_too() {
+    fn pruning_keeps_an_answered_thread_and_says_it_did() {
+        // The old contract was "prune takes the threads too", and it cost one: request #99 was answered
+        // with four notes on 2026-08-24, resolved, and pruned within the hour by a routine tidy-up.
+        // Nothing records that it was ever filed. The ANSWER is the durable half — why a reported
+        // behaviour was or was not a bug lives nowhere else — so it survives unless asked for twice.
         let s = Store::open_in_memory().unwrap();
-        let r = s.create(&req("will be pruned", None, 1)).unwrap();
-        s.add_note(r.id, "a reply", None, 2).unwrap();
-        s.resolve(r.id, None, 3).unwrap();
-        assert_eq!(s.prune_resolved().unwrap(), 1);
-        assert!(s.notes(r.id).unwrap().is_empty());
+        let answered = s.create(&req("answered", None, 1)).unwrap();
+        s.add_note(answered.id, "here is why", None, 2).unwrap();
+        s.resolve(answered.id, None, 3).unwrap();
+        let bare = s.create(&req("no reply", None, 4)).unwrap();
+        s.resolve(bare.id, None, 5).unwrap();
+
+        assert_eq!(s.prune_preview().unwrap(), (1, 1), "one prunable, one answered — counted BEFORE deleting");
+        assert_eq!(s.prune_resolved(false).unwrap(), 1, "only the answerless row goes");
+        assert!(s.get(answered.id).unwrap().is_some(), "the answered request survives a routine prune");
+        assert_eq!(s.notes(answered.id).unwrap().len(), 1, "and so does its thread");
+        assert!(s.get(bare.id).unwrap().is_none(), "the one with nothing to lose is collected");
+
+        // Asked TWICE — explicitly — it goes, thread and all. The escape hatch stays; it just stops
+        // being what a tidy-up does by accident.
+        assert_eq!(s.prune_resolved(true).unwrap(), 1, "--with-answers drops it");
+        assert!(s.get(answered.id).unwrap().is_none());
+        assert!(s.notes(answered.id).unwrap().is_empty(), "no orphaned notes either way");
+        assert_eq!(s.prune_preview().unwrap(), (0, 0), "and the store is empty of resolved rows");
     }
 
     #[test]
