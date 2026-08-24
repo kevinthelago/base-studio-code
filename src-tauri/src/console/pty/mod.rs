@@ -2329,6 +2329,53 @@ mod namespace_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The path the cage BINDS and the path the trust write KEYS ON are one value, proved by reading
+    /// BOTH ends rather than by asserting each against the same const.
+    ///
+    /// That distinction is the whole point. `REPO_GUEST_PATH` was introduced for the trust key while
+    /// every site that actually binds the tree kept its own `"/repo"` literal, so the guest path had
+    /// two definitions and nothing could see them disagree: a test that compared the trust key to the
+    /// const would have passed no matter what the BIND said. Here the expected key is taken from a
+    /// rendered argv, so changing the bind and leaving the key behind fails — and it fails as a test,
+    /// not as the trust dialog reappearing with no obvious cause, which is how this class was found.
+    #[test]
+    fn the_bound_guest_path_is_the_path_the_trust_write_keys_on() {
+        let spec = bsc_sandbox::SandboxSpec::worker(
+            "bsc-guest-path-test",
+            "/host/worktree",
+            "/host/store",
+            vec!["bash".to_string()],
+        );
+        let argv = spec.render().expect("the worker spec renders");
+        // `--bind <host> <guest>` — the guest side of the worktree mount IS the cage's repo path.
+        let bound = argv
+            .windows(3)
+            .find(|w| w[0] == "--bind" && w[1] == "/host/worktree")
+            .map(|w| w[2].clone())
+            .expect("the worker binds its worktree");
+
+        let dir = std::env::temp_dir().join(format!("bsc-guest-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = dir.join(".claude.json");
+        std::fs::write(&state, r#"{"projects":{}}"#).unwrap();
+        super::trust_guest_repo("test-pane", &state);
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(
+            v["projects"][&bound]["hasTrustDialogAccepted"],
+            serde_json::Value::Bool(true),
+            "the cage binds the repo at {bound}, so that is the path the trust write must key on: {v}"
+        );
+        // And nothing ELSE was trusted — a write keyed on a stale path would show up as a second entry.
+        assert_eq!(
+            v["projects"].as_object().map(|m| m.len()),
+            Some(1),
+            "exactly one project trusted, keyed on the bound path: {v}"
+        );
+    }
+
     /// Fail-safe: a state file that is not JSON leaves the plain copy alone rather than destroying it.
     #[test]
     fn an_unparseable_harness_state_is_left_untouched() {

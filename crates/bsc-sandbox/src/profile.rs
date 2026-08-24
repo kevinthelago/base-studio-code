@@ -33,7 +33,7 @@
 //! (`bsc_storefs::ui`), exactly as `/coord/out` is one for coordination. No role binds `bsc`, and
 //! [`Profile::caveat`] is `None` for every role.
 
-use crate::{Limits, Mount, SandboxSpec, Scope, SpecError, Usr, MINIMAL_BINS};
+use crate::{Limits, Mount, SandboxSpec, Scope, SpecError, Usr, MINIMAL_BINS, REPO_GUEST_PATH};
 use std::path::{Path, PathBuf};
 
 /// The roles the app launches. Deliberately a closed set: an unrecognised role is **refused**,
@@ -305,7 +305,7 @@ fn hook_env(paths: &SessionPaths) -> Vec<(String, String)> {
         .home
         .as_ref()
         .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_else(|| "/repo".to_string());
+        .unwrap_or_else(|| REPO_GUEST_PATH.to_string());
     let mut env = vec![
         ("HOME".to_string(), home),
         // PATH is SET, not left to bash. `--clearenv` removes it, and bash's fallback default ends
@@ -321,7 +321,7 @@ fn hook_env(paths: &SessionPaths) -> Vec<(String, String)> {
         ),
     ];
     if paths.hook_bin.is_some() {
-        env.push(("BSC_REPO_ROOT".to_string(), "/repo".to_string()));
+        env.push(("BSC_REPO_ROOT".to_string(), REPO_GUEST_PATH.to_string()));
         if !paths.scope_globs.is_empty() {
             env.push(("BSC_SCOPE_GLOBS".to_string(), paths.scope_globs.clone()));
         }
@@ -343,7 +343,7 @@ pub fn for_role(
 ) -> Result<Profile, SpecError> {
     let mut mounts = vec![Mount::ReadWrite {
         host: paths.root.clone(),
-        guest: PathBuf::from("/repo"),
+        guest: PathBuf::from(REPO_GUEST_PATH),
     }];
     for (name, host) in &paths.stores {
         mounts.push(Mount::ReadOnly {
@@ -384,7 +384,7 @@ pub fn for_role(
         usr: Usr::Curated(bins),
         mounts,
         history_dir: paths.history_dir.clone(),
-        cwd: PathBuf::from("/repo"),
+        cwd: PathBuf::from(REPO_GUEST_PATH),
         // The WHOLE environment, not an overlay — `clear_env` below drops everything else.
         //
         // TERM is passed through because this is an interactive terminal session and a shell with
