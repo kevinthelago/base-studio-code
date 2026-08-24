@@ -158,7 +158,19 @@ pub(crate) fn persona_use_ack(ack: PersonaUseAck, state: tauri::State<'_, Person
 }
 
 /// What the frontend sends back for a whatami.
+///
+/// `camelCase` IS LOAD-BEARING. The frontend sends `personaId`, `personaName`, `startPrompt` and
+/// `pageTab`; without the rename those four silently deserialize to `None` while `id`, `error`,
+/// `role`, `viewing` and `workspace` — the single-word fields — come through fine. The result reads
+/// exactly like a pane that HAS a role and HAS no persona, which is what a designer session reported
+/// when its persona had been assigned all along.
+///
+/// Nothing catches it by type: every field is `Option` with `#[serde(default)]`, precisely so a
+/// partial ack is tolerated, so a missing field is indistinguishable from an absent value. The
+/// sibling [`PersonaUseAck`] is not affected only because all of its fields happen to be one word,
+/// which is luck rather than design — so the test below pins the wire shape rather than the struct.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WhatamiAck {
     pub id: String,
     #[serde(default)]
@@ -257,5 +269,71 @@ pub(crate) fn persona_whatami_ack(ack: WhatamiAck, state: tauri::State<'_, Whata
         let _ = tx.send(ack);
     } else {
         log::debug!("persona_whatami_ack: no waiter for {} (timed out already?)", ack.id);
+    }
+}
+
+#[cfg(test)]
+mod ack_wire_tests {
+    use super::*;
+
+    /// The EXACT payload the frontend sends must deserialize whole.
+    ///
+    /// THE BUG: `WhatamiAck` derived `Deserialize` with no `rename_all`, so `personaId`,
+    /// `personaName`, `startPrompt` and `pageTab` all landed as `None` while `role` — one word —
+    /// came through. `bsc persona whatami` then reported a pane with a role and no persona, and the
+    /// persona had been assigned the whole time.
+    ///
+    /// Written as a literal JSON string rather than by serializing a Rust struct, because a
+    /// round-trip through our own types would agree with itself whatever the names are. This is the
+    /// FRONTEND's shape, copied from `describePane`'s return, and that is the thing that has to parse.
+    #[test]
+    fn the_frontends_camel_case_ack_deserializes_whole() {
+        let sent = r#"{
+            "id": "req-1",
+            "personaId": "persona-designer",
+            "personaName": "Designer",
+            "role": "designer",
+            "startPrompt": "You are the UI-kit designer",
+            "viewing": "Components — React — bsc-kit",
+            "workspace": "components",
+            "pageTab": "react"
+        }"#;
+        let a: WhatamiAck = serde_json::from_str(sent).expect("the frontend's ack must parse");
+        assert_eq!(a.persona_id.as_deref(), Some("persona-designer"));
+        assert_eq!(a.persona_name.as_deref(), Some("Designer"));
+        assert_eq!(a.role.as_deref(), Some("designer"));
+        assert_eq!(a.start_prompt.as_deref(), Some("You are the UI-kit designer"));
+        assert_eq!(a.viewing.as_deref(), Some("Components — React — bsc-kit"));
+        assert_eq!(a.workspace.as_deref(), Some("components"));
+        assert_eq!(a.page_tab.as_deref(), Some("react"));
+    }
+
+    /// A pane that genuinely has no persona still parses — the `Option`s are real, not a workaround
+    /// for the rename. Both states have to be expressible or the fix above would just hide the bug.
+    #[test]
+    fn an_ack_for_a_pane_with_no_persona_still_parses() {
+        let a: WhatamiAck = serde_json::from_str(r#"{"id":"r","role":"worker"}"#).unwrap();
+        assert_eq!(a.role.as_deref(), Some("worker"));
+        assert!(a.persona_id.is_none() && a.persona_name.is_none() && a.start_prompt.is_none());
+    }
+
+    /// The sibling ack is unaffected ONLY because its fields are single-word. Pinned so that adding a
+    /// multi-word field to it fails here rather than silently dropping at runtime.
+    #[test]
+    fn the_sibling_ack_has_no_multi_word_field_to_lose() {
+        let src = include_str!("persona_use.rs");
+        let start = src.find("pub struct PersonaUseAck {").expect("struct present");
+        let body = &src[start..start + src[start..].find('}').expect("closing brace")];
+        let multi: Vec<&str> = body
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("pub "))
+            .filter_map(|l| l.split(':').next())
+            .filter(|f| f.contains('_'))
+            .collect();
+        assert!(
+            multi.is_empty(),
+            "PersonaUseAck gained a multi-word field ({multi:?}) — it needs \
+             #[serde(rename_all = \"camelCase\")] like WhatamiAck, or that field will arrive as None",
+        );
     }
 }
