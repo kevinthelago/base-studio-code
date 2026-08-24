@@ -1,6 +1,5 @@
 [
   "@/app/SessionFailure",
-  "@/app/SessionReadinessBanner",
   "@/app/a11y/useCoordAnnouncer",
   "@/app/a11y/useCoordSpeaker",
   "@/app/chrome/locationCrumb",
@@ -411,7 +410,6 @@
   "@data/components/app/app/detachedtabstrip.json",
   "@data/components/app/app/keptmountedpage.json",
   "@data/components/app/app/sessionfailure.json",
-  "@data/components/app/app/sessionreadinessbanner.json",
   "@data/components/app/app/workspacefallback.json",
   "@data/components/app/features/algorithms/algorithms-inspector.json",
   "@data/components/app/features/algorithms/algorithms-kit-graph.json",

@@ -42,6 +42,18 @@ afterEach(() => cleanup());
 const mountDesigner = () => render(<TerminalHost><StudioSessionMount studio="designerReact" /></TerminalHost>);
 
 describe("StudioSessionMount (#3357)", () => {
+  it("sends the technology and the session's context to the workspace command, for its CLAUDE.md", async () => {
+    // The context has to REACH the file, or moving it out of the chat just loses it. `tech` is what
+    // gives this studio its own directory — without it both designers share a cwd, and Claude Code
+    // keys conversation history on the cwd, so they would resume each other's session.
+    mountDesigner();
+    await waitFor(() => expect(callsTo("setup_designer_workspace")).toHaveLength(1));
+    const args = callsTo("setup_designer_workspace")[0];
+    expect(args.tech).toBe("react");
+    expect(String(args.context)).toContain("bsc ui");        // the persona
+    expect(String(args.context)).toContain("Your technology: react"); // the scope
+  });
+
   it("resolves the studio workspace, then hosts the terminal off-screen at that cwd", async () => {
     const { getByTestId } = mountDesigner();
     await waitFor(() => expect(callsTo("setup_designer_workspace")).toHaveLength(1));
@@ -67,8 +79,12 @@ describe("StudioSessionMount (#3357)", () => {
     expect(buildSessionSettings(useAppStore.getState(), pid).allowedCommands)
       .toEqual(restrictedRoleCommands("designer"));
 
-    // The persona kickoff, baked into the launch arg (never typed after idle detection).
-    expect(s.paneStartupPromptText[pid]).toContain("bsc ui");
+    // NOTHING IS TYPED INTO THE CHAT. This used to assert the opposite — that the persona kickoff was
+    // baked into `paneStartupPromptText` — and the inversion is the point: `plan_launch` bakes that
+    // field as claude's FIRST MESSAGE, so the session's identity arrived as conversation, was re-sent
+    // on every launch, and (because a startup prompt beats `initCmd`) SUPPRESSED the resume the next
+    // assertion asks for. The same prose goes into the workspace CLAUDE.md instead.
+    expect(s.paneStartupPromptText[pid]).toBeUndefined();
     // Resume the prior conversation rather than greeting a fresh one on every re-open.
     expect(s.paneContinue[pid]).toBe(true);
     // MCP/hooks pinned EMPTY: without these the generic path falls back to the GLOBAL sets, attaching

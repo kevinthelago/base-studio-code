@@ -12,7 +12,6 @@
 //! ONE widening over its studio siblings, because this role's work starts at the vendor's documentation.
 //! It launches with `restrictedAllow: true`, so the whole auto-runnable surface is `bsc data connector`.
 
-use crate::StrErr;
 
 #[derive(serde::Serialize)]
 pub(crate) struct IntegratorWorkspacePaths {
@@ -24,23 +23,25 @@ pub(crate) struct IntegratorWorkspacePaths {
 /// (re)write its `CLAUDE.md` from the packaged seed (`data/integrator/claude.md`, config-dir
 /// overridable). Safe to call on every panel open — rewriting keeps the spec current with seed/config
 /// updates, exactly as `setup_librarian_workspace` refreshes the librarian CLAUDE.md.
+/// `context` is the session's own prose — persona, scope, and how to see what the user is looking
+/// at — appended to the packaged spec IN THE FILE. It used to be typed into the chat as claude's
+/// first message, which made identity indistinguishable from conversation and re-sent it every launch.
 #[tauri::command]
-pub(crate) fn setup_integrator_workspace() -> Result<IntegratorWorkspacePaths, String> {
-    let dir = setup_integrator_workspace_inner(&crate::platform::paths::bsc_base_dir())?;
+pub(crate) fn setup_integrator_workspace(
+    context: Option<String>,
+) -> Result<IntegratorWorkspacePaths, String> {
+    let dir = setup_integrator_workspace_inner(&crate::platform::paths::bsc_base_dir(), None, context.as_deref())?;
     Ok(IntegratorWorkspacePaths { integrations_dir: dir.to_string_lossy().into_owned() })
 }
 
 /// Synchronous core of [`setup_integrator_workspace`] (testable without a Tauri runtime or the real
 /// home dir): creates `<base>/integration-studio/` and writes its `CLAUDE.md` from the integrator seed.
-pub(crate) fn setup_integrator_workspace_inner(base: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let dir = base.join("integration-studio");
-    std::fs::create_dir_all(&dir).str_err()?;
-    let spec = crate::platform::config::load_str("integrator/claude.md");
-    if spec.trim().is_empty() {
-        return Err("integrator/claude.md seed is missing or empty".to_string());
-    }
-    std::fs::write(dir.join("CLAUDE.md"), spec).str_err()?;
-    Ok(dir)
+pub(crate) fn setup_integrator_workspace_inner(
+    base: &std::path::Path,
+    tech: Option<&str>,
+    context: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    super::studio_ws::setup_studio_workspace(base, "integration-studio", tech, "integrator/claude.md", context)
 }
 
 #[cfg(test)]
@@ -65,7 +66,7 @@ mod tests {
         // process-global home that `testutil::temp_home` repoints mid-run.
         let cfg = base.join("config");
         crate::platform::config::with_config_root(&cfg, || {
-            let dir = setup_integrator_workspace_inner(&base).unwrap();
+            let dir = setup_integrator_workspace_inner(&base, None, None).unwrap();
             assert_eq!(dir, base.join("integration-studio"));
             let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
             assert_eq!(md, crate::platform::config::load_str("integrator/claude.md"));
@@ -77,10 +78,10 @@ mod tests {
     #[test]
     fn is_idempotent_and_refreshes_the_spec_on_recall() {
         let base = scratch();
-        let dir = setup_integrator_workspace_inner(&base).unwrap();
+        let dir = setup_integrator_workspace_inner(&base, None, None).unwrap();
         // Simulate a stale spec from an older app — a re-run must refresh it, not error.
         std::fs::write(dir.join("CLAUDE.md"), "STALE").unwrap();
-        let again = setup_integrator_workspace_inner(&base).unwrap();
+        let again = setup_integrator_workspace_inner(&base, None, None).unwrap();
         assert_eq!(again, dir);
         let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
         assert_ne!(md, "STALE", "recall must rewrite the spec from the seed");

@@ -273,9 +273,9 @@ import * as NetworkLayout from "@/shared/ui/pages/networkLayout";
 import * as Manifest from "@/shared/ui/manifest";
 import * as GeneralNode from "@/shared/ui/spec/generalNode";
 import * as SpecWalk from "@/shared/ui/spec/specWalk";
-// `record-link-debt` — five of the six specifiers that were registered NOWHERE, so any record importing
+// `record-link-debt` — the specifiers that were registered NOWHERE, so any record importing
 // one threw the loader's named error the moment something mounted it. Each of these five ALSO exists as a
-// record (`keyvaluelist`, `labelchip`, `sessionfailure`, `sessionreadinessbanner`), and the tempting fix
+// record (`keyvaluelist`, `labelchip`, `sessionfailure`), and the tempting fix
 // was to give those records a `provides` field instead. That is a TRAP: `resolveGraphSource` matches
 // `provides` GLOBALLY, so the record would override the bundled module for EVERY graph consumer — and all
 // four are drifted from their files. Registering the FILE resolves to the newer copy; the `provides` flip
@@ -283,7 +283,6 @@ import * as SpecWalk from "@/shared/ui/spec/specWalk";
 import * as KeyValueList from "@/shared/ui/data/KeyValueList"; // collection/pipeline/record/table/treeexplorer pages
 import * as LabelChip from "@/shared/ui/data/LabelChip";       // issuecard, detailpanel
 import * as SessionFailure from "@/app/SessionFailure";        // terminalbanners
-import * as SessionReadinessBanner from "@/app/SessionReadinessBanner"; // terminalbanners
 import * as TauriApp from "@tauri-apps/api/app"; // statusbar reads the app version — bare, like @tauri-apps/api/core
 // The event API, sibling of core/app above. THIRTEEN records reach for `listen` — every log/coord/PTY
 // stream in the app is a Tauri event subscription — and each was unpromotable purely because the
@@ -491,7 +490,6 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/data/KeyValueList": KeyValueList,
   "@/shared/ui/data/LabelChip": LabelChip,
   "@/app/SessionFailure": SessionFailure,
-  "@/app/SessionReadinessBanner": SessionReadinessBanner,
   "@tauri-apps/api/app": TauriApp,
   "@tauri-apps/api/event": TauriEvent,
   "@tauri-apps/api/window": TauriWindow,

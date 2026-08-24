@@ -10,7 +10,6 @@
 //! `librarian` role capability (#219): none on every axis. It launches with `restrictedAllow: true`,
 //! so the whole auto-runnable surface is `bsc graph` (the knowledge-graph CLI).
 
-use crate::StrErr;
 
 #[derive(serde::Serialize)]
 pub(crate) struct LibrarianWorkspacePaths {
@@ -22,23 +21,28 @@ pub(crate) struct LibrarianWorkspacePaths {
 /// and (re)write its `CLAUDE.md` from the packaged seed (`data/librarian/claude.md`, config-dir
 /// overridable). Safe to call on every panel open — rewriting keeps the spec current with seed/config
 /// updates, exactly as `setup_architect_workspace` refreshes the architect CLAUDE.md.
+/// `tech` gives the studio its own sub-directory, so its `CLAUDE.md` can carry its own scope and
+/// its conversation is its own — the two designers used to share both.
+/// `context` is the session's own prose — persona, scope, and how to see what the user is looking
+/// at — appended to the packaged spec IN THE FILE. It used to be typed into the chat as claude's
+/// first message, which made identity indistinguishable from conversation and re-sent it every launch.
 #[tauri::command]
-pub(crate) fn setup_librarian_workspace() -> Result<LibrarianWorkspacePaths, String> {
-    let dir = setup_librarian_workspace_inner(&crate::platform::paths::bsc_base_dir())?;
+pub(crate) fn setup_librarian_workspace(
+    tech: Option<String>,
+    context: Option<String>,
+) -> Result<LibrarianWorkspacePaths, String> {
+    let dir = setup_librarian_workspace_inner(&crate::platform::paths::bsc_base_dir(), tech.as_deref(), context.as_deref())?;
     Ok(LibrarianWorkspacePaths { algorithms_dir: dir.to_string_lossy().into_owned() })
 }
 
 /// Synchronous core of [`setup_librarian_workspace`] (testable without a Tauri runtime or the real
 /// home dir): creates `<base>/algorithms-studio/` and writes its `CLAUDE.md` from the librarian seed.
-pub(crate) fn setup_librarian_workspace_inner(base: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let dir = base.join("algorithms-studio");
-    std::fs::create_dir_all(&dir).str_err()?;
-    let spec = crate::platform::config::load_str("librarian/claude.md");
-    if spec.trim().is_empty() {
-        return Err("librarian/claude.md seed is missing or empty".to_string());
-    }
-    std::fs::write(dir.join("CLAUDE.md"), spec).str_err()?;
-    Ok(dir)
+pub(crate) fn setup_librarian_workspace_inner(
+    base: &std::path::Path,
+    tech: Option<&str>,
+    context: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    super::studio_ws::setup_studio_workspace(base, "algorithms-studio", tech, "librarian/claude.md", context)
 }
 
 #[cfg(test)]
@@ -64,7 +68,7 @@ mod tests {
         // `platform::config::with_config_root`.
         let cfg = base.join("config");
         crate::platform::config::with_config_root(&cfg, || {
-            let dir = setup_librarian_workspace_inner(&base).unwrap();
+            let dir = setup_librarian_workspace_inner(&base, None, None).unwrap();
             assert_eq!(dir, base.join("algorithms-studio"));
             let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
             // The written spec is exactly the loaded seed (here the embedded default).
@@ -77,10 +81,10 @@ mod tests {
     #[test]
     fn is_idempotent_and_refreshes_the_spec_on_recall() {
         let base = scratch();
-        let dir = setup_librarian_workspace_inner(&base).unwrap();
+        let dir = setup_librarian_workspace_inner(&base, None, None).unwrap();
         // Simulate a stale spec from an older app — a re-run must refresh it, not error.
         std::fs::write(dir.join("CLAUDE.md"), "STALE").unwrap();
-        let again = setup_librarian_workspace_inner(&base).unwrap();
+        let again = setup_librarian_workspace_inner(&base, None, None).unwrap();
         assert_eq!(again, dir);
         let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
         assert_ne!(md, "STALE", "recall must rewrite the spec from the seed");

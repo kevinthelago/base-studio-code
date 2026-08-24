@@ -11,7 +11,6 @@
 //! so the whole auto-runnable surface is `bsc teams`, `bsc persona`, `bsc project link` and
 //! `bsc project architect`.
 
-use crate::StrErr;
 
 #[derive(serde::Serialize)]
 pub(crate) struct ArchitectWorkspacePaths {
@@ -23,23 +22,25 @@ pub(crate) struct ArchitectWorkspacePaths {
 /// (re)write its `CLAUDE.md` from the packaged seed (`data/architect/claude.md`, config-dir
 /// overridable). Safe to call on every panel open — rewriting keeps the spec current with seed/config
 /// updates, exactly as `setup_designer_workspace` refreshes the designer CLAUDE.md.
+/// `context` is the session's own prose — persona, scope, and how to see what the user is looking
+/// at — appended to the packaged spec IN THE FILE. It used to be typed into the chat as claude's
+/// first message, which made identity indistinguishable from conversation and re-sent it every launch.
 #[tauri::command]
-pub(crate) fn setup_architect_workspace() -> Result<ArchitectWorkspacePaths, String> {
-    let dir = setup_architect_workspace_inner(&crate::platform::paths::bsc_base_dir())?;
+pub(crate) fn setup_architect_workspace(
+    context: Option<String>,
+) -> Result<ArchitectWorkspacePaths, String> {
+    let dir = setup_architect_workspace_inner(&crate::platform::paths::bsc_base_dir(), None, context.as_deref())?;
     Ok(ArchitectWorkspacePaths { teams_dir: dir.to_string_lossy().into_owned() })
 }
 
 /// Synchronous core of [`setup_architect_workspace`] (testable without a Tauri runtime or the real
 /// home dir): creates `<base>/teams-studio/` and writes its `CLAUDE.md` from the architect seed.
-pub(crate) fn setup_architect_workspace_inner(base: &std::path::Path) -> Result<std::path::PathBuf, String> {
-    let dir = base.join("teams-studio");
-    std::fs::create_dir_all(&dir).str_err()?;
-    let spec = crate::platform::config::load_str("architect/claude.md");
-    if spec.trim().is_empty() {
-        return Err("architect/claude.md seed is missing or empty".to_string());
-    }
-    std::fs::write(dir.join("CLAUDE.md"), spec).str_err()?;
-    Ok(dir)
+pub(crate) fn setup_architect_workspace_inner(
+    base: &std::path::Path,
+    tech: Option<&str>,
+    context: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    super::studio_ws::setup_studio_workspace(base, "teams-studio", tech, "architect/claude.md", context)
 }
 
 #[cfg(test)]
@@ -65,7 +66,7 @@ mod tests {
         // `platform::config::with_config_root`.
         let cfg = base.join("config");
         crate::platform::config::with_config_root(&cfg, || {
-            let dir = setup_architect_workspace_inner(&base).unwrap();
+            let dir = setup_architect_workspace_inner(&base, None, None).unwrap();
             assert_eq!(dir, base.join("teams-studio"));
             let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
             // The written spec is exactly the loaded seed (here the embedded default).
@@ -78,10 +79,10 @@ mod tests {
     #[test]
     fn is_idempotent_and_refreshes_the_spec_on_recall() {
         let base = scratch();
-        let dir = setup_architect_workspace_inner(&base).unwrap();
+        let dir = setup_architect_workspace_inner(&base, None, None).unwrap();
         // Simulate a stale spec from an older app — a re-run must refresh it, not error.
         std::fs::write(dir.join("CLAUDE.md"), "STALE").unwrap();
-        let again = setup_architect_workspace_inner(&base).unwrap();
+        let again = setup_architect_workspace_inner(&base, None, None).unwrap();
         assert_eq!(again, dir);
         let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
         assert_ne!(md, "STALE", "recall must rewrite the spec from the seed");
