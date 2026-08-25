@@ -853,7 +853,7 @@ fn pty_create_inner(
     // (e.g. ✓, →, box-drawing) so we never split a character across reads.
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     spawn_reader(pane_id.clone(), reader, tx);
-    spawn_emitter(pane_id.clone(), app.clone(), rx);
+    spawn_emitter(pane_id.clone(), app.clone(), rx, sandbox_role.clone());
 
     log::info!(
         "pty[{}] created · {}x{} · provider={} · shell={} · cwd={} · init={}",
@@ -3731,5 +3731,63 @@ mod plan_drain_tests {
             accept_write("s", &fields(&[("verb", "status"), ("ref", "r"), ("status", "complete")])),
             Ok(PlanWrite::Status { .. }),
         ));
+    }
+}
+
+// ── the defunct child is collected (a-cage-that-dies-at-launch-leaves-a-silent-zombie) ───────────
+//
+// A PTY reaching EOF reaps nothing: the child is a separate process, and until something waits on
+// it the kernel keeps a zombie. The observed symptom was `[bwrap] <defunct>` — State Z, no cmdline,
+// no children — sitting for the app's whole lifetime, findable only with `ps`.
+
+#[cfg(all(test, unix))]
+mod reap_tests {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+
+    /// A child that has exited is COLLECTED, not left defunct.
+    ///
+    /// Drives a real PTY and a real child rather than mocking `try_wait`, because the whole failure
+    /// is about what the kernel does with an uncollected process — which a mock cannot have.
+    /// `/proc/<pid>/stat` field 3 is the state character; `Z` is the bug.
+    #[test]
+    fn an_exited_child_does_not_stay_a_zombie() {
+        let pair = native_pty_system()
+            .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("exit 7");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+        let pid = child.process_id().expect("a pid");
+
+        // Wait for it to actually exit — the same bounded grace `reap` uses, for the same reason:
+        // EOF arrives a beat before the child is collectable.
+        let mut status = None;
+        for _ in 0..40 {
+            if let Ok(Some(s)) = child.try_wait() {
+                status = Some(s.exit_code());
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert_eq!(status, Some(7), "the child's status is readable once collected");
+
+        // ...and having collected it, the process is GONE rather than defunct.
+        let state = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|s| s.rsplit_once(would_be_comm_end()).map(|(_, rest)| rest.trim().chars().next()))
+            .flatten();
+        assert!(
+            !matches!(state, Some('Z')),
+            "a collected child must not remain a zombie — got state {state:?} for pid {pid}",
+        );
+    }
+
+    /// `/proc/<pid>/stat`'s second field is the command in parentheses and MAY CONTAIN SPACES or
+    /// parens, so the state character is found after the LAST ')' rather than by splitting on
+    /// whitespace. Naming it here rather than inlining a bare `")"` so the reason travels with it.
+    fn would_be_comm_end() -> &'static str {
+        ")"
     }
 }
