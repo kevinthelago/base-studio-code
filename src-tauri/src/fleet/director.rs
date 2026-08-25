@@ -171,6 +171,46 @@ mod relocated_tests {
     }
 
     #[test]
+    fn director_protocol_tells_it_how_to_reach_the_architect() {
+        // Same shape as the test below, and the same diagnosis: the capability was already there and
+        // the protocol never said so. The director is not a restricted role, and `bsc` is
+        // mandatory-tier, so `bsc session list` and `bsc session ask architect` have always been
+        // permitted — the live Network Monitor director's settings.json carries `Bash(bsc *)`. What
+        // it had was a channel it could only RECEIVE on: a brief is explicitly information rather
+        // than a question, and `bsc plan request` was worked BY the director, so filing one
+        // addressed it to itself.
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        // The VIEW upward — the twin of looking down at its own workers.
+        assert!(p.contains("session list"), "the director must be told how to SEE the architect");
+        // The CALL: an answer it can act on this turn.
+        assert!(
+            p.contains("session ask architect"),
+            "the director must be told how to ASK the architect and get an answer back",
+        );
+        // The CONTRACT: a decision that outlives the turn.
+        assert!(
+            p.contains("--to architect"),
+            "…and how to file something that must not be lost when its turn ends",
+        );
+        // The two are for different things, and choosing wrong is the failure worth naming.
+        assert!(
+            p.contains("ask when you need an answer to keep going"),
+            "the protocol must say WHICH to reach for, not just that both exist",
+        );
+        // The queue is pull, like every other queue the director works.
+        assert!(
+            p.contains("request list --to architect"),
+            "nothing surfaces an upward request either — say so, or it waits forever",
+        );
+        // And the boundary, so the lane is not used to hand its own work upward.
+        assert!(
+            p.contains("Anything inside this project is YOURS"),
+            "an upward lane without a boundary becomes a way to stall your own work",
+        );
+    }
+
+    #[test]
     fn director_protocol_takes_team_design_and_the_worker_context() {
         // #funnel-planner-takes-team-and-context. The director staffs the fleet and authors the context
         // its workers run under, from the architect's sealed requirement. Its capability row already

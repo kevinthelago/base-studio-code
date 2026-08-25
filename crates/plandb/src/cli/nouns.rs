@@ -904,18 +904,42 @@ pub(crate) fn cmd_request(args: &Args) -> Result<(), String> {
             // a defense against an agent that passes a different `--from`.
             let env_stream = crate::scope::env_stream();
             let from = args.from.as_deref().or(env_stream.as_deref()).unwrap_or("");
+            // `--to` names the TIER this is addressed to; absent ⇒ the director, which is what a
+            // request has always meant. `--ref` cites the plan item it concerns, exactly as
+            // `brief --ref` does — and it is what makes "the items the architect is responsible
+            // for" answerable: `request list --to architect --status open`.
+            let target = args.to.as_deref().unwrap_or("");
             let id = s
-                .request_new(&text, args.command.as_deref().unwrap_or(""), from)
+                .request_new_to(
+                    &text,
+                    args.command.as_deref().unwrap_or(""),
+                    from,
+                    target,
+                    args.brief_ref.as_deref().unwrap_or(""),
+                )
                 .map_err(|e| e.to_string())?;
             // Announce it (#4001). The pump re-derives its pending set from the LOG, so a request
             // that is stored but not announced is invisible to the director forever.
-            crate::coord::emit(crate::coord::KIND_REQUEST, &id.to_string(), &text);
+            //
+            // The TARGET rides in the announcement too. Without it every tier's pump would surface
+            // every request, and a director would be handed the asks it just sent upward.
+            crate::coord::emit3(
+                crate::coord::KIND_REQUEST,
+                &id.to_string(),
+                &text,
+                if target.is_empty() { crate::requests::TARGET_DIRECTOR } else { target },
+            );
             println!("{}", if args.json { serde_json::to_string(&id).unwrap_or_default() } else { id.to_string() });
             Ok(())
         }
         // `request list [--status open|claimed|resolved]` — the queue, oldest first (JSON).
         "list" => {
-            let items = s.request_list(args.status.as_deref().unwrap_or("")).map_err(|e| e.to_string())?;
+            let items = s
+                .request_list_for(
+                    args.status.as_deref().unwrap_or(""),
+                    args.to.as_deref().unwrap_or(""),
+                )
+                .map_err(|e| e.to_string())?;
             print_json(&serde_json::to_value(&items).unwrap_or_default(), args.pretty);
             Ok(())
         }

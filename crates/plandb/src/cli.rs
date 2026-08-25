@@ -447,18 +447,31 @@ timestamp, target), so there is no second store to fall out of step with the log
     },
     CmdDoc {
         name: "request",
-        summary: "worker->director change requests (the project ask lane; #4000)",
+        summary: "tier-upward change requests (the project ask lane; #4000)",
         usage: "USAGE:
   bsc plan request new \"<what you need>\" [--command \"<cmd that failed>\"] [--from <stream>]
-  bsc plan request list [--status open|claimed|resolved]      # the queue, OLDEST first
+                                        [--to director|architect] [--ref <item>]
+  bsc plan request list [--status open|claimed|resolved] [--to <tier>]   # the queue, OLDEST first
   bsc plan request show <id>
-  bsc plan request claim <id>                                  # director takes it (exclusive)
+  bsc plan request claim <id>                                  # the receiver takes it (exclusive)
   bsc plan request resolve <id> --note \"<what you did>\"        # close it with the answer
 
 For an ask a worker cannot act on itself - no integration branch to target, a kickoff pointing at a
-path that does not exist. PROJECT-scoped (this plan.db), worked by the DIRECTOR; distinct from the
+path that does not exist. PROJECT-scoped (this plan.db), worked by the tier it NAMES (--to, default director); distinct from the
 global `bsc request` tooling queue, which project roles are denied. Pass --command: a request carrying
-the exact command that failed is actionable without a conversation.",
+the exact command that failed is actionable without a conversation.
+
+THE LANE GOES UP A TIER. --to defaults to `director`, which is what a request has always meant. A
+DIRECTOR uses `--to architect` for what only the tier above can settle: a requirement that does not
+cover the work, a re-scope, a cross-project dependency. That is the upward twin of `bsc plan brief`,
+which goes DOWN and is information rather than a question.
+
+  --to <tier>   director (default) | architect
+  --ref <item>  the plan item this concerns
+
+WHAT A TIER OWES IS ITS OPEN REQUESTS. `bsc plan request list --to architect --status open` is the
+set of items handed up and not yet settled - the architect's responsibilities for this project, as a
+query rather than a second ownership field beside `stream`. `list` with no --to is the whole queue.",
     },
     CmdDoc {
         name: "triage",
@@ -565,6 +578,9 @@ struct Args {
     /// The optional coordination REF carried by `brief <target> --ref <ref>`
     /// (#funnel-generalize-brief-channel) — an issue/contract/file the brief is about.
     brief_ref: Option<String>,
+    /// `--to <tier>` — the tier a request is addressed to (`director` | `architect`). The name is
+    /// generic because the lane is: `brief` goes down a tier, `request` goes up one.
+    to: Option<String>,
     /// Automation fields (#2009) — `automations add <name> --command … [--schedule …] [--description …]`.
     command: Option<String>,
     schedule: Option<String>,
@@ -597,7 +613,7 @@ struct Args {
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
-        rule: None, cause: None, from: None, note: None, brief_ref: None, command: None, schedule: None, description: None,
+        rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false, force: false,
@@ -617,6 +633,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--why" => a.why = Some(it.next().ok_or("--why needs a value")?),
             "--note" => a.note = Some(it.next().ok_or("--note needs a value")?),
             "--ref" => a.brief_ref = Some(it.next().ok_or("--ref needs a value")?),
+            "--to" => a.to = Some(it.next().ok_or("--to needs a value")?),
             "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
             "--mode" => a.mode = Some(it.next().ok_or("--mode needs a value")?),
             "--direction" => a.direction = Some(it.next().ok_or("--direction needs a value")?),
