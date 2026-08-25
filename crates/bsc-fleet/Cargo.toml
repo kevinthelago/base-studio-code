@@ -19,3 +19,7 @@ bsc-appchan = { path = "../bsc-appchan" }
 # file on disk holds. (SQLite only — plandb takes bsc-data with default-features off, so this does not
 # drag DuckDB into `bsc fleet`'s build.)
 plandb = { path = "../plandb" }
+# The hub's clone primitive (#the-director-can-clone-its-projects-repos) — `bsc fleet clone` and the
+# app's `clone_repo` command call the SAME function, so the CLI's door and the UI's door cannot drift.
+# Tauri-free, which is what lets this run with the desktop closed.
+bsc-project = { path = "../bsc-project" }

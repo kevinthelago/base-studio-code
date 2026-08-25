@@ -152,6 +152,34 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "clone",
+    summary: "clone the project's linked repos into its hub — the prerequisite for any worker",
+    usage: "\
+USAGE:
+  bsc fleet clone [--db <plan.db>] [--repo <owner/name>]… [--source <path-or-url>] [--token <t>] [--json]
+
+Materializes the repo CLONES a fleet needs. Every worker runs in a git worktree cut from its repo's
+clone inside the project hub, so a hub with no clone cannot start a single worker — `bsc fleet start`
+and `bsc fleet wake` both fail with `ensure_worktree: repo not cloned`, and until now the only thing
+that could fix that was a click in the desktop UI. A director is a shell session, so the one act that
+unblocks its whole fleet was the one act it could not perform.
+
+THE REPOS COME FROM plan.db, the same store `fleet list` reads membership from — so this and the UI
+cannot disagree about which repos the project has. `--repo` narrows it to the ones you name.
+
+IDEMPOTENT: a repo already cloned is reported `already-present` and nothing runs. That is what makes
+it safe to run before every launch rather than working out first which repos are missing. It never
+re-clones over an existing checkout, which would destroy the worktrees cut from it.
+
+NO APP NEEDED. A clone is git plus a path; this does not go through the desktop, so it works with the
+app closed — unlike `start` and `wake`, which place panes and therefore cannot.
+
+--source clones from a local path instead of github.com. Use it when a checkout already exists on this
+machine: it is the difference between seconds and re-downloading hundreds of megabytes, and it is the
+only form that works with no network.
+
+--token authorizes a private repo. It is redacted from any error, since git echoes the URL it was given.",
+}, CmdDoc {
     name: "wake",
     summary: "wake a parked/reaped worker — the director's lever over a stopped session",
     usage: "USAGE:
@@ -190,11 +218,17 @@ struct Args {
     prompt: Option<String>,
     force: bool,
     timeout_ms: Option<i64>,
+    /// `clone`: the PAT for a private repo. Never echoed — a failed clone redacts it.
+    token: Option<String>,
+    /// `clone`: clone FROM here instead of github.com (a local path, or any git URL).
+    source: Option<String>,
+    /// `clone`: restrict to these repos instead of every one the plan links.
+    repos: Vec<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, timeout_ms: None, positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -204,6 +238,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
+            "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
+            "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
+            "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -261,8 +298,97 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "director" => cmd_director(&args, prog),
         "start" => cmd_start(&args, prog),
         "wake" => cmd_wake(&args, prog),
+        "clone" => cmd_clone(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
+}
+
+/// The plan store this session is scoped to — `--db`, else `$BSC_PLAN_DB`. A path naming nothing is
+/// `None` rather than a fresh empty store: `Store::open` would mint one, and a project invented by a
+/// typo is not a project to clone repos for.
+fn plan_db_path(db_flag: Option<&str>) -> Option<std::path::PathBuf> {
+    let flag = db_flag.map(str::to_string);
+    let path = bsc_cli_util::resolve_store_path(&flag, "BSC_PLAN_DB", || Err("no plan store".to_string())).ok()?;
+    path.is_file().then_some(path)
+}
+
+/// A project's key, read off its plan store's filename — plans live at `plans/<key>.db`, and the key
+/// is what names the hub the clone lands in. Taken from the PATH rather than from inside the store
+/// because that mapping is the one `plan_db_path` in the app already relies on.
+fn project_key_from_db(db: &std::path::Path) -> Option<String> {
+    db.file_stem().map(|s| s.to_string_lossy().into_owned()).filter(|k| !k.is_empty())
+}
+
+/// `clone` — materialize the hub's repo clones, the prerequisite every worker has.
+///
+/// Deliberately NOT folded into `ensure_worktree`. A clone is minutes and `bsc fleet wake`'s CLI
+/// timeout is 8 seconds, so a wake that cloned would report a timeout while the work continued
+/// invisibly — and the director would be told its wake failed when a clone was in fact running. A verb
+/// with its own timeout is the honest shape for a long operation; `ensure_worktree` names this command
+/// in its error instead.
+fn cmd_clone(args: &Args, prog: &str) -> Result<(), String> {
+    let db = plan_db_path(args.db.as_deref())
+        .ok_or_else(|| format!("{prog} clone: no plan store — pass --db <plan.db> or set BSC_PLAN_DB"))?;
+    let key = project_key_from_db(&db).ok_or_else(|| {
+        format!("{prog} clone: cannot tell which project {} belongs to", db.display())
+    })?;
+    let store = plandb::Store::open(&db).map_err(|e| format!("{prog} clone: cannot open {}: {e}", db.display()))?;
+    let linked = store.repo_list().map_err(|e| format!("{prog} clone: cannot read the linked repos: {e}"))?;
+
+    // Naming a repo the plan does not link is a mistake worth refusing: it would clone something the
+    // fleet has no stream for, into a hub that will never use it.
+    let repos: Vec<String> = if args.repos.is_empty() {
+        linked.clone()
+    } else {
+        for r in &args.repos {
+            if !linked.contains(r) {
+                return Err(format!(
+                    "{prog} clone: '{r}' is not linked to '{key}'. Linked: {}",
+                    if linked.is_empty() { "(none)".into() } else { linked.join(", ") }
+                ));
+            }
+        }
+        args.repos.clone()
+    };
+    if repos.is_empty() {
+        return Err(format!(
+            "{prog} clone: '{key}' links no repos, so there is nothing to clone. \
+             `bsc plan repo list` shows what the plan holds."
+        ));
+    }
+
+    let token = args.token.clone().unwrap_or_default();
+    let mut rows = Vec::new();
+    for repo in &repos {
+        // FAIL CLOSED on the first repo that cannot be cloned, naming it. A partial clone reported as
+        // success is the state where half the fleet starts and the other half fails one wake at a time.
+        let (path, outcome) = bsc_project::ensure_clone(&key, repo, &token, args.source.as_deref())
+            .map_err(|e| format!("{prog} clone: {e}"))?;
+        rows.push(serde_json::json!({
+            "repo": repo,
+            "path": path.to_string_lossy(),
+            "outcome": match outcome {
+                bsc_project::CloneOutcome::AlreadyPresent => "already-present",
+                bsc_project::CloneOutcome::Cloned => "cloned",
+            },
+        }));
+    }
+
+    let res = serde_json::json!({ "projectKey": key, "repos": rows });
+    bsc_cli_util::emit(args.pretty, args.json, &res, || {
+        let mut out = String::new();
+        for r in &rows {
+            out.push_str(&format!(
+                "{:<14} {}  {}\n",
+                r["outcome"].as_str().unwrap_or(""),
+                r["repo"].as_str().unwrap_or(""),
+                r["path"].as_str().unwrap_or(""),
+            ));
+        }
+        out.push_str(&format!("{} repo(s) for {key}", rows.len()));
+        out
+    });
+    Ok(())
 }
 
 /// `start <projectKey>` — launch the whole fleet.
@@ -913,6 +1039,69 @@ mod tests {
                 .unwrap();
         }
         path
+    }
+
+    // ── `clone` (#the-director-can-clone-its-projects-repos) ────────────────────────────────────
+
+    /// A plan store with two LINKED repos, for the clone refusals. Separate from `seed_plan_db`
+    /// because that one seeds streams and a ledger and links no repos — and the repo list is the
+    /// entire input here.
+    fn seed_repo_db(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-clone-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("demo.db");
+        let _ = std::fs::remove_file(&path);
+        let store = plandb::Store::open(&path).unwrap();
+        store.repo_add("o/one").unwrap();
+        store.repo_add("o/two").unwrap();
+        path
+    }
+
+    fn clone_args(db: &std::path::Path, extra: &[&str]) -> Args {
+        let mut raw = vec!["clone".to_string(), "--db".to_string(), db.to_string_lossy().into_owned()];
+        raw.extend(extra.iter().map(|s| s.to_string()));
+        parse_args(raw).unwrap()
+    }
+
+    #[test]
+    fn the_project_key_is_read_off_the_plan_store_filename() {
+        // plans live at `plans/<key>.db`, and the key is what names the hub the clone lands in.
+        assert_eq!(project_key_from_db(std::path::Path::new("/p/plans/studio-code.db")).unwrap(), "studio-code");
+        assert_eq!(project_key_from_db(std::path::Path::new("nm.db")).unwrap(), "nm");
+    }
+
+    #[test]
+    fn cloning_a_repo_the_plan_does_not_link_is_refused_and_lists_what_it_does() {
+        // Not pedantry: it would clone something the fleet has no stream for, into a hub that will
+        // never use it — and the useful half of the refusal is being told what IS linked.
+        let db = seed_repo_db("unlinked");
+        let err = cmd_clone(&clone_args(&db, &["--repo", "o/three"]), "bsc fleet").unwrap_err();
+        assert!(err.contains("o/three"), "names the repo asked for: {err}");
+        assert!(err.contains("o/one") && err.contains("o/two"), "names what IS linked: {err}");
+    }
+
+    #[test]
+    fn a_project_that_links_no_repos_says_so_rather_than_succeeding_emptily() {
+        // "0 repos cloned" exiting 0 reads as done. It is not — it means the plan has no repos, and
+        // the caller's next step is `bsc plan repo`, not another clone.
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-clone-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("empty.db");
+        let _ = std::fs::remove_file(&path);
+        plandb::Store::open(&path).unwrap();
+        let err = cmd_clone(&clone_args(&path, &[]), "bsc fleet").unwrap_err();
+        assert!(err.contains("links no repos"), "{err}");
+        assert!(err.contains("bsc plan repo list"), "points at where repos come from: {err}");
+    }
+
+    #[test]
+    fn a_plan_store_that_names_nothing_is_not_minted_into_existence() {
+        // `Store::open` would happily create one, and a fresh empty store answers "no repos" — the
+        // wrong answer for a typo'd --db, and it would litter the disk with empty plan stores.
+        let missing = std::env::temp_dir().join(format!("bsc-fleet-no-such-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&missing);
+        assert!(plan_db_path(Some(&missing.to_string_lossy())).is_none());
+        assert!(!missing.exists(), "the probe must not create it");
     }
 
     /// THE FIX, at the CLI seam. Membership comes out of plan.db — every planned stream and every

@@ -296,6 +296,13 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
 
 ## Your workers' sessions (`bsc fleet`)
 
+- `bsc fleet clone` FIRST, if any wake or start reports `repo not cloned`. Every worker runs in a git
+  worktree cut from its repo's clone inside the project hub, so a hub with no clone cannot start a
+  single stream — and the failure looks like a broken wake rather than a missing prerequisite. This is
+  yours to run: it needs no app, it is idempotent (an already-cloned repo is left alone), and it reads
+  the repo list from the same plan.db `fleet list` reads. Add `--source <path>` when a checkout of the
+  repo already exists on this machine — it clones from there instead of re-downloading it.
+
 - `bsc fleet list` is your whole fleet — EVERY worker this project has, running or not. It reads
   membership from plan.db (the streams your plan names + the ledger of everything ever launched) and
   asks the app for liveness, so a worker with no session still gets a row. This is the ONLY authority
