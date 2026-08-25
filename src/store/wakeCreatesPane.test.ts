@@ -214,3 +214,45 @@ describe("wakePane STARTS a stream the roster never saw", () => {
     expect(useAppStore.getState().tabs[0].paneIds).toContain(PANE);
   });
 });
+
+// ── the grid has to have a cell for it (#a-woken-pane-needs-a-cell-in-the-grid) ──────────────────
+//
+// Every test above uses a `2×2` fixture, so there was always a spare cell and the layout never had to
+// grow. A REAL build tab whose fleet never launched holds one pane — the director — and is `1×1`. So
+// seating a second id put it outside the grid: the pane was in the roster, fully wired, with the right
+// cwd and role, and TerminalView never mounted it, so `pty_create` never ran. Observed on the live
+// app: `woke studio-code:accessibility` returned success and `bsc fleet list` still said `stopped`.
+//
+// The success is the dangerous half — `wakePane` returned true because it had done everything it
+// thought it had to.
+describe("a woken pane gets a cell, not just a slot in the array", () => {
+  beforeEach(() => { resetFleetPanes(); useAppStore.setState({ tabs: [] }); });
+
+  /** The shape a director-only build tab actually has. */
+  function armOnePaneTab() {
+    useAppStore.setState({
+      tabs: [{ ...buildTab([`${KEY}:director`]), layout: "1×1" }],
+      fleetPaneStreams: {}, disabledPanes: {}, dormantPanes: {}, endedPanes: {},
+      personas: [], blueprints: [], projectBlueprintId: {},
+    } as never);
+  }
+
+  it("grows the layout so the pane it just seated can render", () => {
+    armOnePaneTab();
+    expect(useAppStore.getState().wakePane(PANE, "go", NEVER_LAUNCHED)).toBe(true);
+    const tab = useAppStore.getState().tabs[0];
+    const ids = tab.paneIds ?? [];
+    expect(ids).toEqual([`${KEY}:director`, PANE]);
+    const [cols, rows] = tab.layout.split("×").map(Number);
+    expect(cols * rows, `the grid must hold ${ids.length} panes, got ${tab.layout}`)
+      .toBeGreaterThanOrEqual(ids.length);
+  });
+
+  it("leaves a layout that already fits exactly as it was", () => {
+    // Reshaping a grid the user arranged, to seat a pane that already had a home, would be a second bug.
+    arm(["", `${KEY}:director`]);
+    const before = useAppStore.getState().tabs[0].layout;
+    useAppStore.getState().wakePane(PANE, "go", NEVER_LAUNCHED);
+    expect(useAppStore.getState().tabs[0].layout).toBe(before);
+  });
+});
