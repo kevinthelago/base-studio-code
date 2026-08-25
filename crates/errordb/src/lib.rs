@@ -13,12 +13,6 @@
 //! capped per fingerprint. `stage` is `runtime` for every fault today; the column is the taxonomy seam
 //! for later producers (see #2258) — this crate does not build the other stages.
 
-pub mod cli;
-/// Turning a failed command's OUTPUT into a fault title + detail the fingerprint can dedup on.
-pub mod detect;
-/// `bsc errors run` — the tee that records a failing build or launch without changing it.
-pub mod run;
-mod schema;
 
 use rusqlite::types::Value;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -480,3 +474,15 @@ mod tests {
         assert_eq!(n, 0);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/detect.rs, src/run.rs, src/schema.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get errordb--<module>.rs
+//     bsc graph impl set --id errordb--<module>.rs --code-file <f>
+//     bsc graph promote --id errordb--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

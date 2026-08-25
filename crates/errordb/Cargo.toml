@@ -2,10 +2,15 @@
 name = "errordb"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Per-project runtime-fault store (SQLite) for base-studio-code (#2258/#2260) — the fingerprinted sink `bsc errors` reads and the (slice-2) collector writes."
 
 # Tauri-free core lib + the `bsc errors` subcommand, so the umbrella binary and the desktop app both
 # reuse it without relinking the whole app (mirrors plandb/skilldb).
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "errordb"
 
