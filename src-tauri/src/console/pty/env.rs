@@ -201,6 +201,22 @@ pub(crate) fn bsc_bin_path() -> Option<std::path::PathBuf> {
     sidecar_bin_path("bsc")
 }
 
+/// The `bsc-hook` binary — the PreToolUse gates a session inside a mount namespace can actually
+/// reach, bound read-only at `/bsc-hook` (`bsc_sandbox::HOOK_GUEST_PATH`).
+///
+/// It is a SEPARATE binary from the umbrella `bsc` on purpose, and that is not an accident of
+/// packaging: inside a cage there is no `bsc`, no `BASH_ENV` and an environment cleared to
+/// HOME/TERM, so the pure-shell gates never load and `bsc hook` has nothing to exec. Binding the
+/// umbrella instead would mean binding DuckDB and a writable store into the cage — the ambient
+/// authority the isolation exists to remove (see `crates/bsc-hook/Cargo.toml`). So this carries
+/// exactly the two checks the kernel cannot express (`scope`, `bash-deny`) and nothing else.
+///
+/// `None` when it has not been built — the launch then proceeds with path confinement only, which
+/// is what every namespace session got before this was wired at all.
+pub(crate) fn bsc_hook_bin_path() -> Option<std::path::PathBuf> {
+    sidecar_bin_path("bsc-hook")
+}
+
 /// The agent harness's own per-session state directory for a session running in `cwd` —
 /// `~/.claude/projects/<slug>/`, where `<slug>` is the cwd with `:` `\` `/` `.` each replaced by `-`.
 ///
@@ -259,7 +275,10 @@ pub(crate) fn stage_dev_sidecars() {
         log::warn!("[startup] could not create sidecar staging dir {}: {e}", dir.display());
         return;
     }
-    for stem in ["bsc", "bsc-agent"] {
+    // `bsc-hook` rides along: it is the PreToolUse floor a SANDBOXED session reaches (`/bsc-hook`),
+    // and it is bound from wherever this resolves it. Staged like the others so a dev session gets
+    // the stable copy rather than the build output cargo relinks under it.
+    for stem in ["bsc", "bsc-agent", "bsc-hook"] {
         let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
         let Some(src) = sidecar_candidates(&cur, &exe).into_iter().find(|p| p.exists()) else {
             continue; // not built yet — sidecar_status reports it missing

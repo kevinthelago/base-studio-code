@@ -32,7 +32,8 @@
     "targets": "all",
     "externalBin": [
       "binaries/bsc",
-      "binaries/bsc-agent"
+      "binaries/bsc-agent",
+      "binaries/bsc-hook"
     ],
     "resources": {
       "resources/data/components/react-ui.json": "data/components/react-ui.json",

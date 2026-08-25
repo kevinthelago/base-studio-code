@@ -24,6 +24,8 @@ mod pump;
 pub(crate) use env::{
     bsc_bin_path, session_env, sidecar_status, stage_dev_sidecars, stale_sidecars,
 };
+#[cfg(target_os = "linux")]
+use env::bsc_hook_bin_path;
 use env::wire_bsc_env;
 use launch::{build_bash_init_line, plan_launch, LaunchPlan};
 use pump::{spawn_emitter, spawn_reader};
@@ -326,6 +328,21 @@ fn build_session_init_line(
 /// So this fails CLOSED: anything uncertain answers `false`, and the caller keeps the working shell
 /// gates. Being wrong in the safe direction costs a little redundancy; being wrong the other way
 /// costs the floor.
+///
+/// **This analysis was right and its premise was not.** It reasons about the mismatch case by
+/// contrasting it with the matched one — settings sandboxed, launch sandboxed, `/bsc-hook` present.
+/// That third state did not exist: nothing ever filled in `SessionPaths::hook_bin`, so `/bsc-hook`
+/// was absent from EVERY namespace launch and the "no write-scope, no command floor" outcome
+/// described above was what a correctly-matched sandboxed session got too. `namespace_argv` now
+/// binds the hook, so the contrast is real.
+///
+/// One thing this probe still does NOT ask: whether `bsc_hook_bin_path()` actually resolved. A host
+/// with `bwrap` but no built hook binary answers `true` here and gets a cage with kernel path
+/// confinement but no scope/deny gate, while the caller drops the shell gates — the mismatch
+/// direction this doc calls a regression. Making the probe require the hook would mean
+/// `namespace_argv` must refuse without one too (the agreement test pins both directions), and that
+/// trades real kernel confinement for the shell gates. That is a posture decision, not a bug fix,
+/// and is deliberately left to the maintainer rather than taken here.
 #[tauri::command]
 pub(crate) fn sandbox_available() -> bool {
     namespace_supported()
@@ -1815,6 +1832,23 @@ fn namespace_argv(
         history_dir: stores_root
             .filter(|r| !r.is_empty())
             .and_then(|r| history_dir_for(pane_id, std::path::Path::new(r))),
+        // ...and the PreToolUse floor, which until now was declared and never bound.
+        //
+        // `buildSessionSettings` already writes `/bsc-hook scope` and `/bsc-hook bash-deny` into a
+        // namespace session's settings.json — that is the WHOLE point of the namespaceHooks branch,
+        // which DROPS the pure-shell gates because they cannot load in a cage. But nothing ever
+        // filled in `hook_bin`, so `/bsc-hook` did not exist inside the namespace and both hooks
+        // were no-ops. The session therefore had neither the shell gates (deliberately removed) nor
+        // the binary that replaces them: `bsc-scope` and `bsc-deny` were simply absent, on the one
+        // launch path that had been told it did not need them.
+        //
+        // `bsc-hook`'s own module docs open by naming this exact gap ("inside a namespace the hooks
+        // do not run at all"). The binary was written for it and then never reached the launcher.
+        //
+        // `None` (not built yet) leaves the session with path confinement only — what it already
+        // had — rather than refusing to launch. `hook_env` keys the gate's config off this same
+        // Option, so nothing declares BSC_REPO_ROOT for a gate that is not there.
+        hook_bin: bsc_hook_bin_path(),
         ..Default::default()
     };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
@@ -2629,5 +2663,72 @@ mod dead_pane_tests {
         assert!(first_write_to_missing("dead-pane-tests:second:p0"));
         assert!(first_write_to_missing("dead-pane-tests:third:p0"));
         assert!(!first_write_to_missing("dead-pane-tests:second:p0"));
+    }
+}
+
+// ── the PreToolUse floor inside the cage (the-cage-binds-no-bsc-so-every-store-verb-is-127) ──────
+//
+// `buildSessionSettings` writes `/bsc-hook scope` + `/bsc-hook bash-deny` for a namespace session
+// and DROPS the pure-shell gates, because those cannot load in a cage. Nothing ever set
+// `SessionPaths::hook_bin`, so the path it pointed at did not exist and both hooks were no-ops —
+// the session had neither the shell gates nor the binary meant to replace them.
+
+#[cfg(all(test, target_os = "linux"))]
+mod hook_floor_tests {
+    use super::{bsc_hook_bin_path, namespace_argv};
+
+    /// THE regression, as a BICONDITIONAL: the argv binds the gate exactly when the launcher
+    /// resolved one, and declares its config exactly then too.
+    ///
+    /// Written this way on purpose. The obvious form — "if the binary is built, assert the bind" —
+    /// passes without asserting anything wherever it is not built, and under `cargo nextest` it is
+    /// never built: `current_exe()` is `target/debug/deps/<test>`, whose `sidecar_candidates` are
+    /// `deps/`, `debug/debug/` and `debug/release/`, none of which is `target/debug/bsc-hook`. The
+    /// first draft of this test reported PASS while taking that branch — the same green-gate-that-
+    /// sees-less shape the bug it guards was hiding behind. Both branches assert now, so the test
+    /// is meaningful in a checkout that has built the sidecar and in one that has not.
+    #[test]
+    fn the_gate_is_bound_exactly_when_the_launcher_resolved_one() {
+        let a = namespace_argv(Some("director"), "pane-1", "/tmp/hub", None, "bash", &[])
+            .expect("a known role with a cwd renders");
+        let bound = a.windows(3).any(|w| w[0] == "--ro-bind" && w[2] == bsc_sandbox::HOOK_GUEST_PATH);
+        let configured =
+            a.windows(3).any(|w| w[0] == "--setenv" && w[1] == "BSC_REPO_ROOT" && w[2] == "/repo");
+
+        match bsc_hook_bin_path() {
+            Some(hook) => {
+                let host = hook.to_string_lossy().to_string();
+                assert!(
+                    a.windows(3).any(|w| w[0] == "--ro-bind"
+                        && w[1] == host
+                        && w[2] == bsc_sandbox::HOOK_GUEST_PATH),
+                    "settings.json already invokes {}; without the bind both PreToolUse hooks are \
+                     no-ops and the session has neither the shell gates nor their replacement: {a:?}",
+                    bsc_sandbox::HOOK_GUEST_PATH,
+                );
+                // The gate matches paths as the SESSION sees them — a host-shaped root would fail
+                // to strip and every write would read as out-of-scope.
+                assert!(configured, "a bound gate must be given its guest-relative root: {a:?}");
+            }
+            None => {
+                assert!(!bound, "nothing to bind, so nothing may claim to be bound: {a:?}");
+                assert!(
+                    !configured,
+                    "and no gate config may be declared for a gate that is not there — a session \
+                     carrying BSC_REPO_ROOT with no /bsc-hook reads like a working floor: {a:?}",
+                );
+            }
+        }
+    }
+
+    /// The guest path is a contract with the frontend: `buildSessionSettings` writes the literal
+    /// `/bsc-hook ...` commands, and this is where they have to land. A rename on either side
+    /// silently restores the original bug — settings invoking a path nothing binds.
+    #[test]
+    fn the_guest_path_matches_what_the_frontend_writes() {
+        assert_eq!(
+            bsc_sandbox::HOOK_GUEST_PATH, "/bsc-hook",
+            "sessionLaunch writes `/bsc-hook scope` and `/bsc-hook bash-deny` verbatim",
+        );
     }
 }
