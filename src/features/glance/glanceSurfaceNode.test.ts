@@ -72,26 +72,23 @@ describe("the command-surface node kind", () => {
 describe("buildGlanceData — L0 no longer draws the surface band", () => {
   const p = [{ id: "app-a", name: "App A" }];
 
-  it("emits NO surface node, however many the catalog carries", () => {
-    // It used to emit one per row and — as its own comment conceded — no edge, because the `invokes`
-    // edge runs session→surface and L0 has no session node. That left 33 permanently unconnected nodes
-    // beside the project network: an inventory of the CLI rendered as part of the project graph.
-    const d = buildGlanceData(p, [], [], [], [], [], [], [
-      { name: "plan", status: "active", store: "plan.db" },
-      { name: "ui", status: "active" },
-    ]);
+  it("emits no surface node and no invokes edge", () => {
+    // It used to emit one node per catalog row and — as its own comment conceded — no edge, because
+    // the `invokes` edge runs session→surface and L0 has no session node. That left 33 permanently
+    // unconnected nodes beside the project network: an inventory of the CLI drawn as if it were part
+    // of the project graph.
+    const d = buildGlanceData(p, [], [], [], [], [], []);
     expect(d.rawNodes.filter((n) => n.kind === "surface")).toEqual([]);
-  });
-
-  it("still emits no invokes edge — there is no session node at L0 for one to leave", () => {
-    const d = buildGlanceData(p, [], [], [], [], [], [], [{ name: "plan", status: "active" }]);
     expect(d.rawEdges.filter((e) => e.kind === "invokes")).toEqual([]);
   });
 
-  it("ignores the catalog entirely — passing one changes nothing", () => {
-    const without = buildGlanceData(p, [], [], [], [], [], []);
-    const withCatalog = buildGlanceData(p, [], [], [], [], [], [], [{ name: "plan" }, { name: "cad" }]);
-    expect(withCatalog).toEqual(without);
+  it("no longer TAKES a catalog at all", () => {
+    // The parameter is gone rather than kept and ignored. A positional argument every caller still
+    // passes and nothing reads is exactly how a future reader concludes L0 still draws these — so the
+    // arity is the assertion.
+    expect(buildGlanceData).toHaveLength(1); // only `projects` is required; the rest are defaulted
+    const src = buildGlanceData.toString();
+    expect(src).not.toMatch(/surfaceNodeId/);
   });
 });
 
