@@ -1,5 +1,6 @@
 //! The `bsc fleet` subcommand (#4098) — real per-pane liveness, joined onto the roster.
 
+use crate::membership;
 use crate::{
     DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
     StartOutcome, StartRequest, StartResult, WakeRequest, WakeResult, DIRECTOR_KIND, KIND,
@@ -15,29 +16,47 @@ const TAGLINE: &str = "which fleet panes are ACTUALLY alive — asks the running
 
 const COMMANDS: &[CmdDoc] = &[CmdDoc {
     name: "list",
-    summary: "every tracked pane's real liveness (+ pid), joined onto the roster when there is one",
+    summary: "every worker this project has, running or not — plan.db's membership joined onto real liveness",
     usage: "\
 USAGE:
-  bsc fleet [list] [--roster <path>] [--json|--pretty]
+  bsc fleet [list] [--db <plan.db>] [--roster <path>] [--json|--pretty]
 
-Asks the RUNNING app which panes have a live PTY session and which have something actually running
-in them, and prints one row per pane.
+One row per pane in this project's fleet — INCLUDING the ones that are not running. Each row carries
+the state, and each state is one move:
 
-  LIVE   a PTY session exists (`pty_create` would reconnect, not launch)
-  BUSY   that session has a live descendant — something is running in it
-  PID    the session's OS process id
+  running          a session exists and its agent is working        leave it alone
+  idle             the shell is up but its agent has EXITED         wake it
+  stopped          it launched before; no session now               wake it
+  never-launched   the plan names the stream, nothing ever ran it   start the fleet
 
-This is the counterpart to the `bsc-fleet` shell helper. That one reads fleet.roster.tsv — a LAUNCH
-MANIFEST — and joins coord.log, so it reports what was launched and what each pane has SAID since; it
-never checks a process. A pane whose session exited an hour ago read exactly like a live one. Use the
-helper to see the planned fleet and its coordination state; use this to see what is running.
+  LIVE / BUSY / PID are the app's raw answer behind that state.
 
-With a roster present (the hub's fleet.roster.tsv, or --roster) each row also carries its stream and
-role, and a manifest row the app is NOT tracking is reported explicitly rather than omitted — that
-gap is the thing worth seeing.
+ISSUES is that stream's PROGRESS — its plan issues done/total — because liveness alone does not say
+which stopped worker to wake: stopped-having-finished and stopped-at-issue-one look identical
+otherwise. A stream that owns no issues shows `-`, never 0/0. Blocked and failed issues cannot show
+in a ratio, so the streams holding them are NAMED under the table.
 
-Requires the desktop app: liveness lives in its PTY state, not on disk. Errors plainly when it is not
-running rather than reporting everything as dead.",
+WHERE THE LIST COMES FROM, and why it matters. MEMBERSHIP is plan.db's — the fleet-session ledger
+(every agent this project has launched, persisted across a clean quit) unioned with the planned
+streams. LIVENESS is the app's, because the PTY sessions live in its state and no file on disk knows
+whether something is running. Asking the app for both is what used to lose the stopped workers: a
+pane with no session is not a key in its session map, so it produced no row at all, and a director
+looking at a 38-stream fleet saw one row — itself.
+
+The plan store is found at --db, else $BSC_PLAN_DB (set for every project session, so a director in
+its hub needs neither). Without one — a plain console that is not part of a fleet — this falls back
+to the hub's fleet.roster.tsv, and then to whatever the app is tracking.
+
+--roster <path> names the set yourself and wins over the plan store. Note the hub's fleet.roster.tsv
+is a LAUNCH MANIFEST rewritten by each launch, so a director-only relaunch clobbers its worker rows;
+that is why it is the fallback and not the source.
+
+There is no STREAM column: a worker's pane id IS <projectKey>:<stream>, and the pane id is what you
+pass to `bsc fleet wake` / bsc-answer / bsc-assign. --json carries `stream` along with the role,
+state, ledger status, launch timestamps and the full `issues` tally.
+
+Requires the desktop app for the liveness half: it errors plainly when the app is not running rather
+than reporting a live fleet as dead.",
 },
 CmdDoc {
     name: "directors",
@@ -146,6 +165,7 @@ struct Args {
     json: bool,
     pretty: bool,
     roster: Option<String>,
+    db: Option<String>,
     prompt: Option<String>,
     force: bool,
     timeout_ms: Option<i64>,
@@ -153,13 +173,14 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, prompt: None, force: false, timeout_ms: None, positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, timeout_ms: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--roster" => a.roster = Some(it.next().ok_or("--roster needs a path")?),
+            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
             "--timeout" => {
@@ -390,7 +411,95 @@ pub fn director_project_key(pane_id: &str) -> &str {
     pane_id.strip_suffix(DIRECTOR_SUFFIX).unwrap_or(pane_id)
 }
 
+/// Read the project's fleet MEMBERSHIP out of plan.db — the ledger of what launched, unioned with
+/// the planned streams. `None` when no plan store resolves (no `--db`, no `$BSC_PLAN_DB`, or the path
+/// names nothing), which is the case for a plain console session that is not part of a project fleet.
+///
+/// A missing file is NOT created here. `Store::open` would happily mint an empty db at whatever
+/// `$BSC_PLAN_DB` points at, and a fresh empty store answers "this fleet has no members" — the exact
+/// wrong answer for a command whose job is to prove a stopped worker still exists.
+fn plan_membership(db_flag: &Option<String>) -> Option<(String, Vec<membership::Member>)> {
+    let path = bsc_cli_util::resolve_store_path(db_flag, "BSC_PLAN_DB", || {
+        Err("no plan store".to_string())
+    })
+    .ok()?;
+    if !path.is_file() {
+        return None;
+    }
+    let store = plandb::Store::open(&path).ok()?;
+    let ledger: Vec<membership::LedgerRow> = store
+        .fleet_session_list()
+        .ok()?
+        .into_iter()
+        .map(|s| membership::LedgerRow {
+            pane_id: s.pane_id,
+            stream_id: s.stream_id,
+            role: s.role,
+            launched_at: s.launched_at,
+            last_seen: s.last_seen,
+            status: s.status,
+        })
+        .collect();
+    let fleet = store.fleet_get().ok().flatten().unwrap_or(serde_json::Value::Null);
+    let streams: Vec<String> = fleet
+        .get("streams")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.get("id").and_then(|v| v.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let director = fleet
+        .get("director")
+        .map(|d| d.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true))
+        .unwrap_or(false);
+
+    // The key names the panes the plan has no ledger row for. Prefer one OBSERVED in the ledger over
+    // the db's filename: the filename is the canonical construction (`plans/<key>.db`) but an explicit
+    // `--db` can name anything, and a wrong key would mint pane ids that resolve to nothing.
+    let key = ledger
+        .first()
+        .map(|r| membership::project_key_of(&r.pane_id).to_string())
+        .or_else(|| path.file_stem().map(|s| s.to_string_lossy().to_string()))?;
+
+    let mut members = membership::build(&key, &ledger, &streams, director);
+    if members.is_empty() {
+        return None;
+    }
+    // Progress, from the same store: what each worker has ACHIEVED, not merely whether it breathes.
+    // A failed read leaves every tally at zero, which renders as `-` — the same as a stream with no
+    // issues. That is the right failure: a missing tally must never read as "nothing done".
+    if let Ok(issues) = store.list(None, None) {
+        let mut by_stream: std::collections::HashMap<String, Vec<&str>> =
+            std::collections::HashMap::new();
+        for i in &issues {
+            if let Some(st) = i.stream.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                by_stream.entry(st.to_string()).or_default().push(&i.status);
+            }
+        }
+        let tallies = by_stream
+            .into_iter()
+            .map(|(k, v)| (k, membership::Progress::tally(v)))
+            .collect();
+        membership::attach_progress(&mut members, &tallies);
+    }
+    Some((key, members))
+}
+
+/// Which source names the panes. plan.db unless the caller named a roster themselves — an explicit
+/// `--roster` is the caller asserting the set, and second-guessing it would make the flag a no-op.
+fn choose_membership(args: &Args) -> Option<(String, Vec<membership::Member>)> {
+    if args.roster.is_some() {
+        return None;
+    }
+    plan_membership(&args.db)
+}
+
 fn cmd_list(args: &Args) -> Result<(), String> {
+    if let Some((key, members)) = choose_membership(args) {
+        return list_from_plan(args, &key, members);
+    }
     let roster = read_roster(args.roster.as_deref());
     // Ask about the roster's panes when there is one; otherwise let the app report everything it has.
     let req = FleetRequest { pane_ids: roster.iter().map(|r| r.pane_id.clone()).collect() };
@@ -411,6 +520,144 @@ fn cmd_list(args: &Args) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// One member joined with the app's liveness answer — the shape `--json` emits and the table prints.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Row {
+    #[serde(flatten)]
+    member: membership::Member,
+    state: membership::State,
+    live: bool,
+    busy: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pid: Option<u32>,
+}
+
+/// Join plan.db's membership onto the app's liveness.
+///
+/// The request asks for EVERYTHING the app tracks rather than naming the members, because naming them
+/// is what makes a pane the plan store never heard of invisible — and a session running outside the
+/// plan is exactly the thing a director needs told about.
+fn list_from_plan(
+    args: &Args,
+    project_key: &str,
+    mut members: Vec<membership::Member>,
+) -> Result<(), String> {
+    let res = send(&FleetRequest::default(), args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
+    membership::absorb_tracked(
+        &mut members,
+        project_key,
+        &res.panes.iter().map(|p| p.pane_id.clone()).collect::<Vec<_>>(),
+    );
+
+    let rows: Vec<Row> = members
+        .into_iter()
+        .map(|m| {
+            let p = res.panes.iter().find(|p| p.pane_id == m.pane_id);
+            let state = membership::State::classify(&m, p.map(|p| (p.live, p.busy)));
+            Row {
+                state,
+                live: p.map(|p| p.live).unwrap_or(false),
+                busy: p.map(|p| p.busy).unwrap_or(false),
+                pid: p.and_then(|p| p.pid),
+                member: m,
+            }
+        })
+        .collect();
+
+    if args.json || args.pretty {
+        bsc_cli_util::emit(args.pretty, args.json, &rows, String::new);
+        return Ok(());
+    }
+    print!("{}", render_plan_table(&rows));
+    Ok(())
+}
+
+/// The STREAM column is deliberately absent: a worker's pane id IS `<key>:<stream>`, and the pane id is
+/// the argument to wake / bsc-answer / bsc-assign, so printing both doubles a 50-column table's width
+/// to repeat itself. `--json` carries `stream` for anything that wants the field.
+fn render_plan_table(rows: &[Row]) -> String {
+    // Width from the data: pane ids run from `k:api` to `network-monitor:safety-test-suite-and-adapter-fixtures`,
+    // and a fixed column either truncates the id — which is the argument a director has to TYPE — or
+    // pads every short fleet to the width of the longest one that ever existed.
+    let w = rows.iter().map(|r| r.member.pane_id.len()).max().unwrap_or(4).max(4);
+    let mut out = format!(
+        "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
+        "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "BUSY",
+        w = w
+    );
+    for r in rows {
+        out.push_str(&format!(
+            "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} {}\n",
+            r.member.pane_id,
+            if r.member.role.is_empty() { "-" } else { &r.member.role },
+            r.state.as_str(),
+            r.member.progress.cell(),
+            if r.live { "yes" } else { "no" },
+            if r.busy { "yes" } else { "no" },
+            r.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
+            w = w,
+        ));
+    }
+    out.push('\n');
+    out.push_str(&summarize(rows));
+    out.push('\n');
+    out
+}
+
+/// The tally, plus the ONE next move it implies. A 39-row table whose 38 stopped rows scroll past is
+/// how the gap stayed invisible even once the rows existed, so the count is stated rather than left
+/// to be counted.
+fn summarize(rows: &[Row]) -> String {
+    let count = |s: membership::State| rows.iter().filter(|r| r.state == s).count();
+    let (running, idle, stopped, never) = (
+        count(membership::State::Running),
+        count(membership::State::Idle),
+        count(membership::State::Stopped),
+        count(membership::State::NeverLaunched),
+    );
+    let mut out = format!(
+        "{} pane(s) — {running} running · {idle} idle · {stopped} stopped · {never} never launched",
+        rows.len()
+    );
+    if idle + stopped > 0 {
+        out.push_str(
+            "\n  idle/stopped workers do not come back on their own: `bsc fleet wake <pane-id> --prompt \"<what to do>\"`",
+        );
+    }
+    if never > 0 {
+        out.push_str(
+            "\n  a never-launched stream has no session to wake — `bsc fleet start <projectKey>` brings the fleet up",
+        );
+    }
+    // ISSUES is done/total, so a stuck issue is invisible in it — a stream sitting at 2/7 reads the
+    // same whether the other five are untouched or blocked. Name the streams instead of leaving the
+    // difference to be counted out of the table.
+    let stuck: Vec<String> = rows
+        .iter()
+        .filter(|r| r.member.progress.stuck() > 0)
+        .map(|r| {
+            format!(
+                "{} ({})",
+                r.member.pane_id,
+                [
+                    (r.member.progress.blocked, "blocked"),
+                    (r.member.progress.failed, "failed"),
+                ]
+                .iter()
+                .filter(|(n, _)| *n > 0)
+                .map(|(n, label)| format!("{n} {label}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+            )
+        })
+        .collect();
+    if !stuck.is_empty() {
+        out.push_str(&format!("\n  stuck issues — {}", stuck.join("; ")));
+    }
+    out
 }
 
 /// `None` means the app is NOT tracking this pane — a manifest row with nothing behind it. Printed
@@ -467,6 +714,251 @@ mod tests {
         let a = parse_args(vec!["list".into(), "--json".into(), "--roster".into(), "/r.tsv".into()]).unwrap();
         assert!(a.json && a.roster.as_deref() == Some("/r.tsv"));
         assert!(parse_args(vec!["--nope".into()]).is_err());
+
+        // --db is the plan store this fleet's MEMBERSHIP comes from; without a value it must fail
+        // rather than silently swallow the next positional as a path.
+        let a = parse_args(vec!["list".into(), "--db".into(), "/p.db".into()]).unwrap();
+        assert_eq!(a.db.as_deref(), Some("/p.db"));
+        assert!(parse_args(vec!["--db".into()]).is_err());
+    }
+
+    fn args_with(db: Option<&str>, roster: Option<&str>) -> Args {
+        let mut raw = vec!["list".to_string()];
+        if let Some(d) = db {
+            raw.extend(["--db".to_string(), d.to_string()]);
+        }
+        if let Some(r) = roster {
+            raw.extend(["--roster".to_string(), r.to_string()]);
+        }
+        parse_args(raw).unwrap()
+    }
+
+    /// Seed a real plan.db: a launched ledger and a plan whose streams outnumber it — the two records
+    /// membership is built from. Returns its path.
+    fn seed_plan_db(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-plan-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("nm.db");
+        let _ = std::fs::remove_file(&path);
+        let store = plandb::Store::open(&path).unwrap();
+        store
+            .fleet_set(&serde_json::json!({
+                "director": { "enabled": true },
+                "streams": [
+                    { "id": "api", "repo": "o/r" },
+                    { "id": "ui", "repo": "o/r" },
+                    { "id": "docs", "repo": "o/r" },
+                ],
+            }))
+            .unwrap();
+        for (pane, stream, role) in [
+            ("network-monitor:director", "", "director"),
+            ("network-monitor:api", "api", "worker"),
+            ("network-monitor:ui", "ui", "worker"),
+        ] {
+            store
+                .fleet_session_upsert(&plandb::FleetSession {
+                    pane_id: pane.into(),
+                    stream_id: stream.into(),
+                    role: role.into(),
+                    status: "running".into(),
+                    launched_at: 1000,
+                    last_seen: 2000,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        path
+    }
+
+    /// THE FIX, at the CLI seam. Membership comes out of plan.db — every planned stream and every
+    /// launched agent — with no roster file anywhere and nothing running. The old path produced at
+    /// most the panes the app was tracking, which is why a stopped worker had no row.
+    #[test]
+    fn membership_comes_from_the_plan_store_with_no_roster_and_nothing_running() {
+        let db = seed_plan_db("members");
+        let (key, members) = choose_membership(&args_with(Some(&db.to_string_lossy()), None))
+            .expect("a plan store with a fleet yields membership");
+        assert_eq!(key, "network-monitor", "the key is read off the ledger's own pane ids");
+        let ids: Vec<&str> = members.iter().map(|m| m.pane_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "network-monitor:director",
+                "network-monitor:api",
+                "network-monitor:ui",
+                "network-monitor:docs",
+            ],
+            "director, then the plan's streams in plan order"
+        );
+        // `docs` is planned and never launched; the other two launched. That difference is the whole
+        // reason both records are read instead of just one.
+        let docs = members.iter().find(|m| m.pane_id.ends_with(":docs")).unwrap();
+        assert!(docs.planned && !docs.launched);
+        assert!(members.iter().find(|m| m.pane_id.ends_with(":api")).unwrap().launched);
+    }
+
+    /// An explicit --roster is the caller naming the set. If the plan store won anyway the flag would
+    /// be a no-op, and `bsc fleet list --roster <a-manifest-you-are-debugging>` could not be used to
+    /// debug that manifest.
+    #[test]
+    fn an_explicit_roster_wins_over_the_plan_store() {
+        let db = seed_plan_db("precedence");
+        let db = db.to_string_lossy().to_string();
+        assert!(choose_membership(&args_with(Some(&db), None)).is_some());
+        assert!(
+            choose_membership(&args_with(Some(&db), Some("/some/roster.tsv"))).is_none(),
+            "--roster must send the command down the roster path"
+        );
+    }
+
+    /// A `$BSC_PLAN_DB` (or --db) naming a file that does not exist must fall back, NOT mint an empty
+    /// store: `Store::open` creates one, and a fresh empty store answers "this fleet has no members" —
+    /// the precise wrong answer for a command whose job is proving a stopped worker still exists.
+    #[test]
+    fn a_missing_plan_store_falls_back_and_is_never_created() {
+        let missing = std::env::temp_dir()
+            .join(format!("bsc-fleet-absent-{}", std::process::id()))
+            .join("nope.db");
+        let _ = std::fs::remove_file(&missing);
+        assert!(choose_membership(&args_with(Some(&missing.to_string_lossy()), None)).is_none());
+        assert!(!missing.exists(), "the fallback must not leave a db behind");
+    }
+
+    /// A plan store that exists but holds no fleet and no ledger is not a fleet report — fall back
+    /// rather than printing an empty table that reads as "you have no workers".
+    #[test]
+    fn an_empty_plan_store_falls_back_rather_than_reporting_an_empty_fleet() {
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("blank.db");
+        let _ = std::fs::remove_file(&path);
+        plandb::Store::open(&path).unwrap();
+        assert!(choose_membership(&args_with(Some(&path.to_string_lossy()), None)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn row(pane: &str, role: &str, state: membership::State, live: bool, busy: bool) -> Row {
+        Row {
+            member: membership::Member {
+                pane_id: pane.into(),
+                role: role.into(),
+                ..Default::default()
+            },
+            state,
+            live,
+            busy,
+            pid: if live { Some(42) } else { None },
+        }
+    }
+
+    /// The table must print a row for a pane with NO session — that row is the entire point. The old
+    /// renderer never received one, because the pane set came from the app's session map.
+    #[test]
+    fn the_table_prints_a_row_for_a_pane_with_no_session() {
+        let rows = vec![
+            row("nm:director", "director", membership::State::Running, true, true),
+            row("nm:api", "worker", membership::State::Stopped, false, false),
+            row("nm:ui", "worker", membership::State::Idle, true, false),
+            row("nm:docs", "worker", membership::State::NeverLaunched, false, false),
+        ];
+        let out = render_plan_table(&rows);
+        for pane in ["nm:director", "nm:api", "nm:ui", "nm:docs"] {
+            assert!(out.contains(pane), "{pane} is missing from:\n{out}");
+        }
+        assert!(out.contains("stopped") && out.contains("idle") && out.contains("never-launched"));
+        // The pane id is what a director types, so it is never truncated — the column grows to fit.
+        let header = out.lines().next().unwrap();
+        assert!(header.starts_with("PANE       "), "column widens to the longest id: {header:?}");
+    }
+
+    /// The tally states the thing that scrolls off: 38 stopped rows above the fold read as a healthy
+    /// fleet. Each non-running state names the move that clears it — and the two moves differ, so a
+    /// never-launched stream must not be pointed at `wake`.
+    #[test]
+    fn the_summary_counts_the_states_and_names_the_move_for_each() {
+        let rows = vec![
+            row("nm:director", "director", membership::State::Running, true, true),
+            row("nm:api", "worker", membership::State::Stopped, false, false),
+            row("nm:ui", "worker", membership::State::Stopped, false, false),
+        ];
+        let s = summarize(&rows);
+        assert!(s.contains("3 pane(s)"), "{s}");
+        assert!(s.contains("1 running") && s.contains("2 stopped"), "{s}");
+        assert!(s.contains("bsc fleet wake"), "a stopped worker's move is named: {s}");
+        assert!(!s.contains("bsc fleet start"), "nothing is unlaunched here: {s}");
+
+        // An all-running fleet is told to do nothing — the hints are for the states that need one.
+        let quiet = summarize(&[row("nm:director", "director", membership::State::Running, true, true)]);
+        assert!(!quiet.contains("bsc fleet wake") && !quiet.contains("bsc fleet start"), "{quiet}");
+
+        // A planned stream that never ran has no session to wake; it needs a launch.
+        let unlaunched = summarize(&[row("nm:docs", "worker", membership::State::NeverLaunched, false, false)]);
+        assert!(unlaunched.contains("bsc fleet start"), "{unlaunched}");
+        assert!(!unlaunched.contains("bsc fleet wake"), "{unlaunched}");
+    }
+
+    /// The tally is only useful if it reaches the table. `done/total` beside each row is what turns
+    /// "38 stopped" into "34 finished, 4 stalled at the start".
+    #[test]
+    fn the_table_carries_each_streams_progress() {
+        let mut finished = row("nm:api", "worker", membership::State::Stopped, false, false);
+        finished.member.progress = membership::Progress::tally(vec!["verified", "complete"]);
+        let mut barely = row("nm:ui", "worker", membership::State::Stopped, false, false);
+        barely.member.progress = membership::Progress::tally(vec!["open", "open", "complete"]);
+        let director = row("nm:director", "director", membership::State::Running, true, true);
+
+        let out = render_plan_table(&[director, finished, barely]);
+        assert!(out.contains("ISSUES"), "the column is labelled: {out}");
+        assert!(out.contains("2/2") && out.contains("1/3"), "{out}");
+        // The director owns no stream, so it gets no ratio — a `0/0` there would read as no progress.
+        let dir_line = out.lines().find(|l| l.starts_with("nm:director")).unwrap();
+        assert!(dir_line.contains(" - "), "a streamless row shows `-`: {dir_line:?}");
+    }
+
+    /// `done/total` cannot show a stuck issue: 2/7 reads the same whether the other five are
+    /// untouched or blocked. The streams are NAMED under the table rather than left to be counted.
+    #[test]
+    fn stuck_issues_are_named_by_stream_under_the_table() {
+        let mut stuck = row("nm:api", "worker", membership::State::Stopped, false, false);
+        stuck.member.progress =
+            membership::Progress::tally(vec!["complete", "blocked", "blocked", "failed"]);
+        let clean = row("nm:ui", "worker", membership::State::Running, true, true);
+
+        let s = summarize(&[stuck, clean]);
+        assert!(s.contains("stuck issues"), "{s}");
+        assert!(s.contains("nm:api"), "the stuck stream is named: {s}");
+        assert!(s.contains("2 blocked") && s.contains("1 failed"), "{s}");
+        assert!(!s.contains("nm:ui"), "a stream with nothing stuck is not listed: {s}");
+
+        // No stuck work anywhere ⇒ no line. The exception report must stay an exception.
+        let quiet = summarize(&[row("nm:ui", "worker", membership::State::Running, true, true)]);
+        assert!(!quiet.contains("stuck issues"), "{quiet}");
+    }
+
+    /// `--json` is what a director reads programmatically, so the joined fields must be on the wire
+    /// under stable camelCase names — and `stream` in particular, since the table drops that column.
+    #[test]
+    fn the_json_row_carries_the_joined_shape() {
+        let mut r = row("nm:api", "worker", membership::State::Stopped, false, false);
+        r.member.stream = "api".into();
+        r.member.launched = true;
+        r.member.ledger_status = "running".into();
+        r.member.launched_at = 1000;
+        r.member.last_seen = 2000;
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["paneId"], "nm:api");
+        assert_eq!(v["stream"], "api");
+        assert_eq!(v["role"], "worker");
+        assert_eq!(v["state"], "stopped");
+        assert_eq!(v["live"], false);
+        assert_eq!(v["launched"], true);
+        assert_eq!(v["ledgerStatus"], "running");
+        assert_eq!(v["launchedAt"], 1000);
+        assert_eq!(v["lastSeen"], 2000);
+        assert_eq!(v["issues"]["total"], 0);
+        // A pane with no session has no pid; the key is absent rather than a misleading 0.
+        assert!(v.get("pid").is_none(), "{v}");
     }
 
     #[test]
