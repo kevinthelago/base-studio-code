@@ -14,5 +14,11 @@
     "Text"
   ],
   "src": "src/features/designs/ThemesMenu.tsx",
-  "folder": "features/designs"
+  "folder": "features/designs",
+  "tests": [
+    {
+      "name": "ThemesMenu (#2834)",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { ThemesMenu } from \"@/features/designs/ThemesMenu\";\nimport { SEED_THEMES } from \"@/features/designs/lib/themes\";\n\ndescribe(\"ThemesMenu (#2834)\", () => {\n  it(\"groups themes by design group (#2749) and washes the active row\", () => {\n    const { container } = render(<ThemesMenu themes={SEED_THEMES} activeId=\"nord\" onSelect={() => {}} />);\n    // The packaged themes all bind to the `react` design group → one group header.\n    expect(container.querySelectorAll(\".tm-grouphead\").length).toBeGreaterThanOrEqual(1);\n    expect(screen.getByRole(\"button\", { name: /Nord/ }).className).toContain(\"on\");   // active\n    expect(screen.getByRole(\"button\", { name: /^Dark/ }).className).not.toContain(\"on\");\n  });\n\n  it(\"selecting a theme calls onSelect with its id (drives the preview retint)\", () => {\n    const onSelect = vi.fn();\n    render(<ThemesMenu themes={SEED_THEMES} activeId=\"default\" onSelect={onSelect} />);\n    fireEvent.click(screen.getByRole(\"button\", { name: /Nord/ }));\n    expect(onSelect).toHaveBeenCalledWith(\"nord\");\n  });\n\n  it(\"collapsing a design group hides its theme rows\", () => {\n    const { container } = render(<ThemesMenu themes={SEED_THEMES} activeId=\"default\" onSelect={() => {}} />);\n    expect(screen.queryByRole(\"button\", { name: /Nord/ })).toBeTruthy();\n    fireEvent.click(container.querySelector(\".tm-grouphead\") as HTMLElement);   // collapse `react`\n    expect(screen.queryByRole(\"button\", { name: /Nord/ })).toBeNull();\n  });\n\n  it(\"shows a per-row surface glyph (dark/light) from the theme's base\", () => {\n    render(<ThemesMenu themes={SEED_THEMES} activeId=\"default\" onSelect={() => {}} />);\n    // Light is a packaged light-surface theme → its row carries the ◑ glyph. Anchor `^Light` so it\n    // matches ONLY the `light` theme, not `solarized-light` (\"Solarized Light\") — mirrors the `^Dark`\n    // disambiguation above now that a second light-surface theme exists (base-drift, #3032).\n    expect(screen.getByRole(\"button\", { name: /^Light.*◑/ })).toBeTruthy();\n  });\n});\n"
+    }
+  ]
 }

@@ -12,5 +12,11 @@
     "EmptyState",
     "Skeleton"
   ],
-  "props": []
+  "props": [],
+  "tests": [
+    {
+      "name": "ActivityFeed",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { ActivityFeed, type ActivityItem } from \"@/shared/ui/data/ActivityFeed\";\n\nconst items: ActivityItem[] = [\n  { login: \"alice\", action: \"merged\", target: \"#12 fix bug\", repo: \"org/web\", createdAt: new Date().toISOString() },\n  { login: \"bob\", action: \"pushed\", target: \"abc123 wip\", repo: \"org/api\", createdAt: new Date().toISOString() },\n];\n\ndescribe(\"ActivityFeed\", () => {\n  it(\"renders the hint and a row per item with action/target/repo\", () => {\n    render(<ActivityFeed items={items} hint=\"across all repos\" loading={false} tone={{ merged: \"var(--success)\" }} />);\n    expect(screen.getByText(\"across all repos\")).toBeInTheDocument();\n    expect(screen.getByText(\"merged\")).toBeInTheDocument();\n    expect(screen.getByText(\"#12 fix bug\")).toBeInTheDocument();\n    expect(screen.getByText(\"org/api\")).toBeInTheDocument();\n  });\n\n  it(\"shows the empty state only when not loading and there are no items\", () => {\n    const { container, rerender } = render(<ActivityFeed items={[]} hint=\"h\" loading={false} tone={{}} />);\n    // The empty state now renders via <EmptyState> (title has no trailing period).\n    expect(screen.getByText(\"No recent activity\")).toBeInTheDocument();\n    rerender(<ActivityFeed items={[]} hint=\"h\" loading={true} tone={{}} />);\n    expect(screen.queryByText(\"No recent activity\")).not.toBeInTheDocument();\n    // Loading now renders shimmer skeleton rows (#2234) rather than a \"Loading…\" label.\n    const shimmers = Array.from(container.querySelectorAll<HTMLElement>('[aria-hidden=\"true\"]'))\n      .filter(el => (el.getAttribute(\"style\") ?? \"\").includes(\"skeleton-shimmer\"));\n    expect(shimmers.length).toBeGreaterThan(0);\n  });\n\n  it(\"renders the optional right-slot control\", () => {\n    render(<ActivityFeed items={items} hint=\"h\" loading={false} tone={{}} right={<button>filter</button>} />);\n    expect(screen.getByRole(\"button\", { name: \"filter\" })).toBeInTheDocument();\n  });\n});\n"
+    }
+  ]
 }

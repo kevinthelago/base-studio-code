@@ -21,5 +21,11 @@
   ],
   "whenUse": [],
   "whenNot": [],
-  "tags": []
+  "tags": [],
+  "tests": [
+    {
+      "name": "ToolPermissionsPanel",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { ToolPermissionsPanel } from \"@/features/settings/cards/ToolPermissionsPanel\";\nimport { TOOL_PRESETS } from \"@/features/settings/lib/toolPresets\";\n\nfunction baseProps() {\n  return {\n    allow: [] as string[],\n    setAllow: vi.fn(),\n    deny: [] as string[],\n    setDeny: vi.fn(),\n    allowInput: \"\",\n    setAllowInput: vi.fn(),\n    denyInput: \"\",\n    setDenyInput: vi.fn(),\n    applyPreset: vi.fn(),\n    addToAllow: vi.fn(),\n    addToDeny: vi.fn(),\n  };\n}\n\ndescribe(\"ToolPermissionsPanel\", () => {\n  it(\"renders every preset and the empty allow/deny placeholders\", () => {\n    render(<ToolPermissionsPanel {...baseProps()} />);\n    for (const p of TOOL_PRESETS) {\n      expect(screen.getByText(p.label)).toBeInTheDocument();\n    }\n    expect(screen.getByText(\"all tools allowed\")).toBeInTheDocument();\n    expect(screen.getByText(\"nothing denied\")).toBeInTheDocument();\n  });\n\n  it(\"calls applyPreset when a preset chip is clicked\", () => {\n    const props = baseProps();\n    render(<ToolPermissionsPanel {...props} />);\n    fireEvent.click(screen.getByText(\"read-only\"));\n    expect(props.applyPreset).toHaveBeenCalledWith(TOOL_PRESETS.find((p) => p.label === \"read-only\"));\n  });\n\n  it(\"renders the settings.json preview when there are tool rules\", () => {\n    render(<ToolPermissionsPanel {...baseProps()} allow={[\"Read\"]} />);\n    expect(screen.getByText(/\"permissions\"/)).toBeInTheDocument();\n  });\n});\n"
+    }
+  ]
 }

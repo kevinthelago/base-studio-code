@@ -7,5 +7,11 @@
   "srcText": "import { Card } from \"@/shared/ui/data/Card\";\nimport { useAppStore } from \"@/store\";\nimport { ToggleRow } from \"@/features/settings/pages/SettingsControls\";\n\n/**\n * Toggle: show the legacy Console page in the rail (#2372). OFF by default — the graph (Glance) is\n * becoming the execution surface, where an agent's live stream opens from its node. This is the\n * migration escape hatch: turn it on to keep the classic tabbed console during the transition.\n */\nexport function ConsolePageCard() {\n  const { showConsolePage, setShowConsolePage } = useAppStore();\n  return (\n    <Card title=\"Console page\">\n      <ToggleRow\n        on={showConsolePage}\n        onToggle={() => setShowConsolePage(!showConsolePage)}\n        title=\"Show the legacy Console page\"\n      >\n        The tabbed <b>Console</b> is being retired — <b>Glance</b> is becoming the execution surface,\n        where you open an agent's live stream right from its node in the graph. Off by default; turn it\n        on to keep the classic tabbed console as a rail destination during the transition. Your agents\n        keep running either way — this only controls whether the page is reachable.\n      </ToggleRow>\n    </Card>\n  );\n}\n",
   "composes": [],
   "src": "src/features/settings/cards/ConsolePageCard.tsx",
-  "folder": "features/settings/cards"
+  "folder": "features/settings/cards",
+  "tests": [
+    {
+      "name": "ConsolePageCard",
+      "src": "import { describe, it, expect, beforeEach } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { ConsolePageCard } from \"@/features/settings/cards/ConsolePageCard\";\nimport { useAppStore } from \"@/store\";\n\ndescribe(\"ConsolePageCard\", () => {\n  beforeEach(() => useAppStore.setState({ showConsolePage: false }));\n\n  it(\"toggles the legacy console page on (off by default, #2372)\", () => {\n    render(<ConsolePageCard />);\n    expect(screen.getByText(/Show the legacy Console page/)).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"switch\"));\n    expect(useAppStore.getState().showConsolePage).toBe(true);\n  });\n});\n"
+    }
+  ]
 }

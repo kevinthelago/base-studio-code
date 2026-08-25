@@ -12,5 +12,11 @@
     "ColorSwatch"
   ],
   "src": "src/features/designs/PaletteStrip.tsx",
-  "folder": "features/designs"
+  "folder": "features/designs",
+  "tests": [
+    {
+      "name": "PaletteStrip (#2834)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { PaletteStrip } from \"@/features/designs/PaletteStrip\";\nimport { SEED_THEMES } from \"@/features/designs/lib/themes\";\n\ndescribe(\"PaletteStrip (#2834)\", () => {\n  it(\"renders one swatch per semantic token, grouped by category\", () => {\n    const nord = SEED_THEMES.find((t) => t.id === \"nord\")!;\n    const { container } = render(<PaletteStrip theme={nord} />);\n    expect(container.querySelectorAll(\".ds-swatch\").length).toBe(14);\n    expect(screen.getByText(\"Surfaces\")).toBeTruthy();\n    expect(screen.getByText(\"Status\")).toBeTruthy();\n  });\n\n  it(\"a base-look theme (no overrides) still renders every swatch (base defaults)\", () => {\n    const base = SEED_THEMES.find((t) => t.id === \"default\")!;\n    const { container } = render(<PaletteStrip theme={base} />);\n    expect(container.querySelectorAll(\".ds-swatch\").length).toBe(14);\n  });\n});\n"
+    }
+  ]
 }
