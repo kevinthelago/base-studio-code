@@ -528,6 +528,22 @@ fn pty_create_inner(
         // than a guess, so the failure is "command not found" and not a silently widened cage.
         Some(_) => &[],
     };
+    // The gate's CONFIG, read from the caller's env rather than from a new parameter.
+    //
+    // `buildAgentEnv` already computes both values for every gated pane — `BSC_SCOPE_GLOBS` (the
+    // role's write globs, or the `__bsc_deny_all__` sentinel for a `code: none` role) and
+    // `BSC_DENY_BASH` (the role/user/profile deny patterns). They reach here in `env` and are then
+    // DISCARDED for a caged session, because the namespace clears the environment and `hook_env`
+    // supplies the whole of it. Taking them from the same map is what keeps ONE decision driving
+    // both the settings.json the frontend writes and the gate the cage runs; a second parameter
+    // computed a second way is exactly how those two drift apart.
+    //
+    // Guest-safe by construction: these globs are REPO-RELATIVE (`src/auth/**`, the planner's plan
+    // globs, the director's commons carve-out), and the gate normalizes a tool's `file_path`
+    // against `BSC_REPO_ROOT=/repo` before matching. A host-shaped glob would fail to strip and
+    // every write would read as out-of-scope — fails closed, but wedges the agent, so
+    // `namespace_argv` refuses one rather than passing it through.
+    let gate_env = env.as_ref();
     let ns_argv: Option<Vec<String>> = namespace_argv(
         sandbox_role.as_deref(),
         &pane_id,
@@ -535,6 +551,16 @@ fn pty_create_inner(
         sandbox_stores.as_deref(),
         &shell,
         harness_bins,
+        GateConfig {
+            scope_globs: gate_env
+                .and_then(|e| e.get("BSC_SCOPE_GLOBS"))
+                .map(String::as_str)
+                .unwrap_or_default(),
+            deny_bash: gate_env
+                .and_then(|e| e.get("BSC_DENY_BASH"))
+                .map(String::as_str)
+                .unwrap_or_default(),
+        },
     );
 
     let mut cmd = if let Some(argv) = ns_argv.as_ref() {
@@ -1770,6 +1796,72 @@ fn scope_mode() -> bsc_sandbox::Scope {
     })
 }
 
+/// The caged PreToolUse gate's configuration — the two values `bsc-hook` reads that are NOT
+/// compiled into it. Passed as one struct because they are one decision: a session's write
+/// boundary and its command denies come from the same role+profile resolution, and splitting them
+/// across the signature is how one gets wired and the other forgotten (which is the state this
+/// type was introduced to fix).
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Default)]
+struct GateConfig<'a> {
+    /// `$BSC_SCOPE_GLOBS` — whitespace-separated REPO-RELATIVE globs, or the `__bsc_deny_all__`
+    /// sentinel. Empty ⇒ no write-scope restriction (`scope_verdict` reads empty as Allow), which
+    /// is correct only for an UNGATED pane.
+    scope_globs: &'a str,
+    /// `$BSC_DENY_BASH` — newline-separated role/user/profile deny patterns. The dangerous floor
+    /// itself is compiled into the hook and needs no configuration.
+    deny_bash: &'a str,
+}
+
+/// Keep only the write-scope globs the CAGED gate can actually match, and say what was dropped.
+///
+/// The gate normalizes a tool's `file_path` against `BSC_REPO_ROOT=/repo` and then matches the
+/// globs against the remainder, so every glob has to be REPO-RELATIVE. That is what the frontend
+/// produces today (`src/auth/**`, the planner's plan globs, the director's commons carve-out), and
+/// this exists so a future absolute path cannot silently become an enforcement change.
+///
+/// A host-shaped glob is DROPPED, not rewritten. Rewriting would mean guessing which host prefix
+/// corresponds to `/repo`, and guessing wrong widens the scope. Dropping narrows it: the remaining
+/// globs still bound the session, and an empty result falls back to the sentinel below rather than
+/// to allow-all. Passing it through unchanged would fail closed but wedge the agent on its own
+/// worktree, with the gate blocking exactly the writes it was configured to permit.
+///
+/// The `__bsc_deny_all__` sentinel is path-independent and passes through untouched.
+#[cfg(target_os = "linux")]
+fn guest_relative_globs(pane_id: &str, scope_globs: &str) -> String {
+    if scope_globs.trim().is_empty() || scope_globs.trim() == bsc_util::scope::DENY_ALL {
+        return scope_globs.to_string();
+    }
+    let (keep, drop): (Vec<&str>, Vec<&str>) = scope_globs
+        .split_whitespace()
+        .partition(|g| !is_host_shaped_glob(g));
+    if !drop.is_empty() {
+        log::warn!(
+            "pty[{pane_id}] dropping {} host-shaped write-scope glob(s) the caged gate cannot match \
+             ({}); it matches against {}-relative paths",
+            drop.len(),
+            drop.join(" "),
+            bsc_sandbox::REPO_GUEST_PATH,
+        );
+    }
+    // Every glob dropped is NOT allow-all: fall back to denying writes outright, because a session
+    // whose entire scope was unusable is the one case where guessing wide is worst.
+    if keep.is_empty() {
+        return bsc_util::scope::DENY_ALL.to_string();
+    }
+    keep.join(" ")
+}
+
+/// A glob that names a HOST location rather than a path inside the repo: a POSIX absolute path, or
+/// a Windows drive/UNC path (the app is developed on Windows, so those reach here as strings even
+/// though the cage is Linux-only).
+#[cfg(target_os = "linux")]
+fn is_host_shaped_glob(g: &str) -> bool {
+    g.starts_with('/')
+        || g.starts_with("\\\\")
+        || g.chars().nth(1) == Some(':') && g.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+}
+
 #[cfg(target_os = "linux")]
 fn namespace_argv(
     role: Option<&str>,
@@ -1778,6 +1870,7 @@ fn namespace_argv(
     stores_root: Option<&str>,
     shell: &str,
     harness_bins: &[&str],
+    gate: GateConfig<'_>,
 ) -> Option<Vec<String>> {
     use bsc_sandbox::profile::{for_role, Role, SessionPaths};
     use std::path::PathBuf;
@@ -1849,6 +1942,16 @@ fn namespace_argv(
         // had — rather than refusing to launch. `hook_env` keys the gate's config off this same
         // Option, so nothing declares BSC_REPO_ROOT for a gate that is not there.
         hook_bin: bsc_hook_bin_path(),
+        // ...and the gate's config. Without these the hook is bound and answers Allow to
+        // everything: `scope_verdict` treats empty globs as unrestricted, so the write-scope half
+        // of the floor was present and inert.
+        //
+        // A HOST-SHAPED glob is dropped rather than passed on. The gate normalizes against
+        // `BSC_REPO_ROOT=/repo`, so an absolute host path cannot strip and every write would read
+        // as out-of-scope — which fails closed but wedges the agent on its own worktree, and the
+        // cause would show up as the gate blocking writes it was configured to allow.
+        scope_globs: guest_relative_globs(pane_id, gate.scope_globs),
+        deny_bash: gate.deny_bash.to_string(),
         ..Default::default()
     };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
@@ -1929,6 +2032,7 @@ fn namespace_argv(
     _stores_root: Option<&str>,
     _shell: &str,
     _harness_bins: &[&str],
+    _gate: (&str, &str),
 ) -> Option<Vec<String>> {
     if role.is_some_and(|r| !r.is_empty()) {
         log::warn!(
@@ -1947,14 +2051,14 @@ fn namespace_argv(
 
 #[cfg(test)]
 mod namespace_tests {
-    use super::{namespace_argv, namespace_supported};
+    use super::{namespace_argv, namespace_supported, GateConfig};
 
     #[test]
     fn the_probe_agrees_with_what_the_launcher_will_actually_do() {
         // The invariant that matters: `sandbox_available()` must not claim a capability
         // `namespace_argv` then refuses. If it did, the frontend would write a hook list pointing at
         // /bsc-hook for a session that launches unsandboxed — no write-scope, no command floor.
-        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash", &[]).is_some();
+        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash", &[], GateConfig::default()).is_some();
         if namespace_supported() {
             assert!(rendered, "the probe says yes, so the launcher must render");
         } else {
@@ -1973,22 +2077,22 @@ mod namespace_tests {
 
     #[test]
     fn no_role_means_no_namespace_and_the_launch_path_is_untouched() {
-        assert!(namespace_argv(None, "p", "/tmp", None, "bash", &[]).is_none());
-        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash", &[]).is_none());
+        assert!(namespace_argv(None, "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
+        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
     }
 
     #[test]
     fn an_unknown_role_refuses_rather_than_launching_unsandboxed() {
         // The security-relevant one. A typo must NOT quietly yield a session with no isolation —
         // the caller asked for a cage and would believe it got one.
-        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash", &[]).is_none());
-        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash", &[]).is_none());
+        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
+        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn a_known_role_renders_a_scope_wrapping_a_namespace() {
-        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash", &[])
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash", &[], GateConfig::default())
             .expect("a known role with a cwd renders");
         assert_eq!(a[0], "systemd-run", "the scope carries the cgroup limits");
         assert!(a.iter().any(|x| x == "bwrap"), "and wraps a namespace");
@@ -2002,7 +2106,7 @@ mod namespace_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn an_empty_cwd_refuses_because_there_is_nothing_to_bind_at_repo() {
-        assert!(namespace_argv(Some("worker"), "p", "", None, "bash", &[]).is_none());
+        assert!(namespace_argv(Some("worker"), "p", "", None, "bash", &[], GateConfig::default()).is_none());
     }
 
     #[cfg(target_os = "linux")]
@@ -2010,11 +2114,11 @@ mod namespace_tests {
     fn the_scope_name_is_derived_from_the_pane_so_two_launches_do_not_collide() {
         // systemd refuses a --unit that is still loaded, so a FIXED name makes the second launch
         // of a pane silently fail to start.
-        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash", &[]).unwrap();
+        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash", &[], GateConfig::default()).unwrap();
         let unit = a.iter().find(|x| x.starts_with("--unit=")).expect("a unit is named");
         assert!(unit.contains("studio"), "the pane id is in the unit: {unit}");
         assert!(!unit.contains(':'), "and sanitized to be unit-safe: {unit}");
-        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash", &[]).unwrap();
+        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash", &[], GateConfig::default()).unwrap();
         assert_ne!(unit, b.iter().find(|x| x.starts_with("--unit=")).unwrap());
     }
 
@@ -2038,7 +2142,7 @@ mod namespace_tests {
         let _ = std::fs::create_dir_all(&root);
         std::os::unix::fs::symlink(&shared, root.join("graph")).expect("symlink the shared graph");
 
-        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[])
+        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default())
             .unwrap();
 
         // `Path::is_dir` follows the link, so discovery needs no special case and bwrap binds the
@@ -2064,6 +2168,7 @@ mod namespace_tests {
             Some(root.to_str().unwrap()),
             "bash",
             &[],
+            GateConfig::default(),
         )
         .unwrap();
 
@@ -2138,6 +2243,7 @@ mod namespace_tests {
         let argv = namespace_argv(
             Some("worker"), "pp", wt.to_str().unwrap(),
             Some(stores.to_str().unwrap()), "/bin/sh", &[],
+            GateConfig::default(),
         )
         .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
@@ -2218,6 +2324,7 @@ mod namespace_tests {
         let argv = namespace_argv(
             Some("worker"), "cagedoc", wt.to_str().unwrap(),
             Some(stores.to_str().unwrap()), "/bin/sh", &[],
+            GateConfig::default(),
         )
         .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
@@ -2258,7 +2365,7 @@ mod namespace_tests {
         let Some(_) = super::credential_for_harness() else { return };
         let wt = std::env::temp_dir().join(format!("bsc-cred-{}", std::process::id()));
         std::fs::create_dir_all(&wt).unwrap();
-        let argv = namespace_argv(Some("worker"), "c", wt.to_str().unwrap(), None, "/bin/sh", &[])
+        let argv = namespace_argv(Some("worker"), "c", wt.to_str().unwrap(), None, "/bin/sh", &[], GateConfig::default())
             .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
         let mut cmd = std::process::Command::new(&argv[0]);
@@ -2281,7 +2388,7 @@ mod namespace_tests {
         // Observed: a pane with no cwd fell back to $HOME and launched sandboxed, binding the
         // user's entire home read-write at /repo. A cage containing everything is not a cage.
         let home = crate::platform::paths::home_dir();
-        assert!(namespace_argv(Some("worker"), "h", home.to_str().unwrap(), None, "/bin/sh", &[]).is_none());
+        assert!(namespace_argv(Some("worker"), "h", home.to_str().unwrap(), None, "/bin/sh", &[], GateConfig::default()).is_none());
     }
 
     // The cage shipped complete and USELESS: a worker was launched with a 3 KB kickoff for
@@ -2297,7 +2404,7 @@ mod namespace_tests {
         let wt = std::env::temp_dir().join(format!("bsc-harness-{}", std::process::id()));
         std::fs::create_dir_all(&wt).unwrap();
         let wt_s = wt.to_str().unwrap().to_string();
-        let argv = namespace_argv(Some("worker"), "h", &wt_s, None, "/bin/sh", &["node", "claude"])
+        let argv = namespace_argv(Some("worker"), "h", &wt_s, None, "/bin/sh", &["node", "claude"], GateConfig::default())
             .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
         let mut cmd = std::process::Command::new(&argv[0]);
@@ -2338,7 +2445,7 @@ mod namespace_tests {
         std::fs::write(wt.join("main.rs"), "fn main() {}\n").unwrap();
         let wt_s = wt.to_str().unwrap().to_string();
 
-        let argv = namespace_argv(Some("worker"), "extcmd", &wt_s, None, "/bin/bash", &["node", "claude"])
+        let argv = namespace_argv(Some("worker"), "extcmd", &wt_s, None, "/bin/bash", &["node", "claude"], GateConfig::default())
             .expect("a worker renders");
 
         // The REAL init line, sandboxed. `rc_bash` is the host path the launcher passes today —
@@ -2546,6 +2653,7 @@ mod namespace_tests {
 
         let argv = super::namespace_argv(
             Some("worker"), "storesext", &wt_s, Some(&stores_s), "/bin/bash", &["node", "claude"],
+            GateConfig::default(),
         )
         .expect("a worker with stores renders");
 
@@ -2624,7 +2732,7 @@ mod namespace_tests {
         std::fs::create_dir_all(&theirs).unwrap();
         std::fs::write(theirs.join("secret.txt"), "SECRET").unwrap();
 
-        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh", &[])
+        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh", &[], GateConfig::default())
             .expect("renders");
         // Replace the trailing interactive shell with a one-shot probe.
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
@@ -2675,7 +2783,7 @@ mod dead_pane_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod hook_floor_tests {
-    use super::{bsc_hook_bin_path, namespace_argv};
+    use super::{bsc_hook_bin_path, namespace_argv, GateConfig};
 
     /// THE regression, as a BICONDITIONAL: the argv binds the gate exactly when the launcher
     /// resolved one, and declares its config exactly then too.
@@ -2689,7 +2797,7 @@ mod hook_floor_tests {
     /// is meaningful in a checkout that has built the sidecar and in one that has not.
     #[test]
     fn the_gate_is_bound_exactly_when_the_launcher_resolved_one() {
-        let a = namespace_argv(Some("director"), "pane-1", "/tmp/hub", None, "bash", &[])
+        let a = namespace_argv(Some("director"), "pane-1", "/tmp/hub", None, "bash", &[], GateConfig::default())
             .expect("a known role with a cwd renders");
         let bound = a.windows(3).any(|w| w[0] == "--ro-bind" && w[2] == bsc_sandbox::HOOK_GUEST_PATH);
         let configured =
@@ -2730,5 +2838,104 @@ mod hook_floor_tests {
             bsc_sandbox::HOOK_GUEST_PATH, "/bsc-hook",
             "sessionLaunch writes `/bsc-hook scope` and `/bsc-hook bash-deny` verbatim",
         );
+    }
+}
+
+// ── the caged gate's CONFIG (the-caged-gate-is-bound-but-never-told-its-write-scope) ─────────────
+//
+// Binding `/bsc-hook` made the dangerous-command floor real, because that floor is compiled in.
+// The write-scope half is configured, and `namespace_argv` left `scope_globs`/`deny_bash` at their
+// empty defaults — where `scope_verdict` reads empty as Allow. So the gate was present and inert
+// for every write. These pin the config actually reaching it, and that a host-shaped glob (which
+// the gate could never match, since it normalizes against /repo) narrows rather than wedges.
+
+#[cfg(all(test, target_os = "linux"))]
+mod gate_config_tests {
+    use super::{guest_relative_globs, is_host_shaped_glob, namespace_argv, GateConfig};
+
+    fn argv(role: &str, globs: &str, denies: &str) -> Vec<String> {
+        namespace_argv(
+            Some(role),
+            "cfg-pane",
+            "/tmp/wt",
+            None,
+            "bash",
+            &[],
+            GateConfig { scope_globs: globs, deny_bash: denies },
+        )
+            .expect("a known role with a cwd renders")
+    }
+
+    fn setenv(a: &[String], key: &str) -> Option<String> {
+        a.windows(3).find(|w| w[0] == "--setenv" && w[1] == key).map(|w| w[2].clone())
+    }
+
+    /// THE regression: the role's write globs reach the gate as `$BSC_SCOPE_GLOBS`.
+    #[test]
+    fn a_workers_write_globs_reach_the_gate() {
+        if super::bsc_hook_bin_path().is_none() {
+            // `hook_env` declares gate config only alongside a bound hook — correctly, since config
+            // for an absent gate reads like a working floor. Assert THAT instead of skipping.
+            let a = argv("worker", "src/auth/** src/y.ts", "");
+            assert_eq!(setenv(&a, "BSC_SCOPE_GLOBS"), None, "no gate ⇒ no gate config");
+            return;
+        }
+        let a = argv("worker", "src/auth/** src/y.ts", "");
+        assert_eq!(
+            setenv(&a, "BSC_SCOPE_GLOBS").as_deref(),
+            Some("src/auth/** src/y.ts"),
+            "empty globs are read as ALLOW by scope_verdict, so an unset value is not a safe default",
+        );
+    }
+
+    /// A `code: none` role carries the sentinel, which `scope_verdict` turns into an outright Deny.
+    /// This is what actually stops a caged director from writing feature code.
+    #[test]
+    fn a_code_none_role_carries_the_deny_all_sentinel() {
+        if super::bsc_hook_bin_path().is_none() {
+            return;
+        }
+        let a = argv("director", bsc_util::scope::DENY_ALL, "");
+        assert_eq!(setenv(&a, "BSC_SCOPE_GLOBS").as_deref(), Some(bsc_util::scope::DENY_ALL));
+    }
+
+    /// The deny patterns travel too — the built-in dangerous floor is compiled in, but the
+    /// role/user/profile denies are configuration and were being dropped.
+    #[test]
+    fn the_role_deny_patterns_reach_the_gate() {
+        if super::bsc_hook_bin_path().is_none() {
+            return;
+        }
+        let a = argv("worker", "src/**", "git push *\ngh pr merge *");
+        assert_eq!(setenv(&a, "BSC_DENY_BASH").as_deref(), Some("git push *\ngh pr merge *"));
+    }
+
+    /// A host-shaped glob cannot match inside the cage — the gate strips `BSC_REPO_ROOT=/repo` and
+    /// matches the remainder — so it is dropped rather than passed through. Passing it on fails
+    /// closed but wedges the agent on its own worktree, with the gate blocking precisely the writes
+    /// it was configured to allow.
+    #[test]
+    fn a_host_shaped_glob_is_dropped_and_the_rest_still_bounds_the_session() {
+        assert_eq!(guest_relative_globs("p", "/home/u/wt/src/** src/ok.rs"), "src/ok.rs");
+        assert_eq!(guest_relative_globs("p", "C:/Users/u/wt/** src/ok.rs"), "src/ok.rs");
+        assert!(is_host_shaped_glob("/abs/path/**"));
+        assert!(is_host_shaped_glob("C:/Users/x"));
+        assert!(!is_host_shaped_glob("src/**"));
+        assert!(!is_host_shaped_glob("crates/bsc-ui/src/*.rs"));
+    }
+
+    /// ...and if EVERY glob was unusable, deny rather than fall back to allow-all. A session whose
+    /// entire scope failed to translate is the one case where guessing wide is worst.
+    #[test]
+    fn a_scope_that_translates_to_nothing_denies_rather_than_allows() {
+        assert_eq!(guest_relative_globs("p", "/only/host/paths/**"), bsc_util::scope::DENY_ALL);
+    }
+
+    /// The sentinel and the empty case are path-independent and pass through untouched — the empty
+    /// case is an UNGATED pane, which has no role and must stay allow-all.
+    #[test]
+    fn the_sentinel_and_the_ungated_case_pass_through() {
+        assert_eq!(guest_relative_globs("p", bsc_util::scope::DENY_ALL), bsc_util::scope::DENY_ALL);
+        assert_eq!(guest_relative_globs("p", ""), "");
     }
 }
