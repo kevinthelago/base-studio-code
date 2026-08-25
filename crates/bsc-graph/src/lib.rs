@@ -1390,9 +1390,31 @@ mod tests {
         assert!(impls.len() >= 16, "the seed carries the Rust kit");
         // No abstract concept ontology (#2961) — a node IS its implementation.
         assert!(g.get("nodes").is_none(), "the abstract `nodes` array is gone");
-        assert!(g.get("edges").is_none(), "the abstract `edges` array is gone");
+        // `edges` is NOT forbidden outright any more, and the distinction is the whole point of the
+        // original assertion rather than a loosening of it. #2961 removed an abstract CONCEPT ONTOLOGY —
+        // a layer of ideas floating above the implementations. The edge tier
+        // (integration-tests-become-graph-edges) reuses the key for the opposite thing: concrete evidence
+        // ABOUT implementations, naming them by id and carrying the tests that verify them together.
+        //
+        // So the guard now checks the intent it always meant — every edge is grounded in two or more real
+        // impls — instead of the key's absence, which happened to imply it while the tier was empty and
+        // silently forbade populating it.
         let ids: std::collections::HashSet<String> =
             impls.iter().filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_owned)).collect();
+        for e in edges_of(&g) {
+            let members: Vec<&str> = e
+                .get("members")
+                .and_then(Value::as_array)
+                .map(|m| m.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            assert!(
+                members.len() >= 2,
+                "an edge spans 2+ impls — one member is a node test and belongs on the node: {e:?}",
+            );
+            for m in members {
+                assert!(ids.contains(m), "edge member '{m}' is a real impl id, not an abstract concept");
+            }
+        }
         let mut has_primitive = false;
         for im in &impls {
             let role = im.get("role").and_then(Value::as_str).expect("impl.role is set");
