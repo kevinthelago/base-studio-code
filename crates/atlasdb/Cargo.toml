@@ -2,6 +2,7 @@
 name = "atlasdb"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 [dependencies]
 # Shared leaf utilities (#1646): the one home-dir resolver.
@@ -15,3 +16,7 @@ serde_json = "1"
 include_dir = "0.7"
 # `bundled` compiles SQLite from source (matches skilldb / plandb) for cross-platform reliability.
 rusqlite = { version = "0.40", features = ["bundled"] }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

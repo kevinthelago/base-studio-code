@@ -24,7 +24,6 @@
 
 use serde::{Deserialize, Serialize};
 
-pub mod cli;
 
 /// This verb's routing key in the shared channel ([`bsc_appchan`]). Must not collide with `shot` /
 /// `navigate`; a test in the desktop crate's dispatcher pins that.
@@ -178,3 +177,15 @@ mod tests {
         assert_eq!(bsc_appchan::take_payload::<DebugResult>(ok).unwrap(), empty);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-debug--<module>.rs
+//     bsc graph impl set --id bsc-debug--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-debug--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

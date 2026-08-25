@@ -2,7 +2,12 @@
 name = "bsc-debug"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Inspect the RUNNING app's live DOM + preview state from a session (#3437) — the read-only third leg beside `bsc shot` (pixels) and `bsc navigate` (steering). Rides the shared bsc_appchan request channel."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_debug"
