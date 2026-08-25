@@ -78,7 +78,14 @@ fn readme(count: usize, generated_at: &str) -> String {
          by-kit/<kit>            id and name, tab-separated\n\
          \n\
          A component's srcText is NOT projected — `bsc ui list` does not carry it, and pulling it\n\
-         would mean one `bsc ui get` per record. To read a component's source, use `bsc ui get <id>`.\n\
+         would mean one `bsc ui get` per record.\n\
+         \n\
+         THERE IS NO `bsc` IN THIS SESSION, so `bsc ui get <id>` is not a route from here. That is\n\
+         the point of the projection, not an oversight: a read surface can exist here precisely\n\
+         because no writable database is bound into the namespace. So a component's SOURCE cannot\n\
+         be read from inside the cage at all — this index is names and grouping only.\n\
+         To AUTHOR a component, write it to the /ui/out outbox (see that directory); the host\n\
+         drains it. To ask for a source you cannot read, emit it on the coordination outbox.\n\
          \n\
          THIS IS A SNAPSHOT, NOT A LIVE VIEW.\n\
          {count} component(s), projected at {generated_at}.\n"
@@ -117,7 +124,30 @@ mod tests {
         let t = project(&comps(), "T");
         assert!(!t.contains_key("components/glance-node/srcText"));
         assert!(t["README"].contains("INDEX, NOT THE SOURCE"));
-        assert!(t["README"].contains("bsc ui get"));
+    }
+
+    /// The README used to close by telling the reader to run `bsc ui get <id>` — a command that
+    /// does not exist in the only place this projection is ever mounted. `bsc` is deliberately not
+    /// bound into the cage (a writable store there is the ambient authority the isolation removes),
+    /// which is the very reason the projection exists.
+    ///
+    /// Asserted as "names the CLI *and* says it is unreachable" rather than "does not mention bsc":
+    /// the honest text has to name the command a reader would otherwise reach for, so a
+    /// `!contains("bsc ui get")` check would fail on correct prose — and the ORIGINAL assertion,
+    /// a bare `contains("bsc ui get")`, still passes against text saying the exact opposite.
+    #[test]
+    fn the_readme_does_not_send_the_reader_to_a_cli_the_cage_lacks() {
+        let readme = &project(&comps(), "T")["README"];
+        assert!(
+            readme.contains("NO `bsc` IN THIS SESSION"),
+            "the reader must be told the CLI is absent: {readme}",
+        );
+        assert!(
+            readme.contains("/ui/out"),
+            "...and pointed at the write path that DOES exist: {readme}",
+        );
+        let sends_to_cli = readme.contains("use `bsc ui get") || readme.contains("use bsc ui get");
+        assert!(!sends_to_cli, "it must not instruct a caged reader to run it: {readme}");
     }
 
     #[test]

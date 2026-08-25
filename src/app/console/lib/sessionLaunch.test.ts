@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL, resolveSandboxBackend, usesNamespaceHooks, sandboxPlanFor } from "@/app/console/lib/sessionLaunch";
+import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL, resolveSandboxBackend, usesNamespaceHooks, sandboxPlanFor, mcpReachableFrom} from "@/app/console/lib/sessionLaunch";
+import { BUILTIN_MCP_SERVERS } from "@/features/mcp";
 import { DEBUG_STUDIO_SESSION_ID, designerSessionId,
   librarianSessionId, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
@@ -926,5 +927,42 @@ describe("launch resolves capability from the pane's PERSONA, not its role name"
       panePersonas: { p: "p-narrow" }, paneRoles: { p: "worker" },
     });
     expect(bashDenies(noFloor)).toEqual(bashDenies(roleOnly()));
+  });
+});
+
+// ── a caged session is not offered servers it cannot spawn ───────────────────────────────────────
+//
+// `the-cage-still-advertises-the-cli-the-read-half-replaced`. The built-in MCP servers carry a
+// marker command the Rust side rewrites to the bundled `bsc` binary's absolute HOST path. Inside
+// the cage `$HOME` is `/home/agent` and that path does not exist — `bsc` is deliberately not bound
+// — so every caged launch declared two servers, enabled both, and both failed to spawn.
+
+describe("mcpReachableFrom — the cage does not advertise what it cannot run", () => {
+  const builtin = BUILTIN_MCP_SERVERS[0];
+  const repoAuthored = {
+    id: "user-node-server",
+    name: "RepoServer",
+    enabled: true,
+    projects: [],
+    transport: "stdio" as const,
+    command: "node",
+    args: "./scripts/mcp.js",
+  };
+
+  it("drops the bundled servers for a namespace session", () => {
+    expect(builtin, "the built-in set must not be empty or this asserts nothing").toBeTruthy();
+    const kept = mcpReachableFrom([builtin, repoAuthored], true);
+    expect(kept.map((e) => e.id)).toEqual(["user-node-server"]);
+  });
+
+  it("keeps a repo-authored server, whose command CAN spawn in the cage", () => {
+    // `node` is bound for a Claude session and the script lives under /repo, so this one works.
+    // Dropping every stdio server would remove a working case to fix a knowably broken one.
+    expect(mcpReachableFrom([repoAuthored], true)).toEqual([repoAuthored]);
+  });
+
+  it("changes nothing for an uncaged session", () => {
+    const all = [builtin, repoAuthored];
+    expect(mcpReachableFrom(all, false)).toEqual(all);
   });
 });
