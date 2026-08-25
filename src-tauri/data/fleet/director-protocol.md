@@ -311,8 +311,10 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
     `bsc fleet wake <pane-id> --prompt "…"`.
   - `stopped` (`live: false`, launched before) — parked or reclaimed. Also a wake case. THIS IS THE
     ORDINARY STATE OF MOST OF YOUR FLEET between waves; do not read a table of them as a healthy fleet.
-  - `never-launched` — your plan names the stream and nothing ever ran it. There is no session to
-    wake: that one needs `bsc fleet start <projectKey>`.
+  - `never-launched` — your plan names the stream and nothing ever ran it. ALSO A WAKE CASE:
+    `bsc fleet wake <pane-id> --prompt "…"` STARTS it, building its worktree on the way. Pass a real
+    task — a stream that never launched has no assignment in its pane yet, so the standard
+    "re-read your assignment" wake would drop it at a prompt with nothing to re-read.
 - The tally under the table counts each state, because a long fleet's stopped rows scroll past.
 - THE `ISSUES` COLUMN IS THAT WORKER'S PROGRESS — its stream's plan issues done/total. Read it WITH
   the state: `stopped 7/7` finished and needs nothing; `stopped 0/7` never started and is the one to
@@ -320,7 +322,8 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   ratio, so the streams holding them are named under the table — those are yours to route, not to wake.
 - `bsc fleet wake <pane-id> --prompt "<what to do>"` brings a stopped worker back and hands it that task.
   Use it when a stream still has open issues but its session is not `live` — that worker is not coming
-  back on its own.
+  back on its own. It is also how you START a stream that has never run: the pane does not have to
+  exist, only the plan row, so `bsc fleet start` is for bringing up a WHOLE fleet, never one stream.
 - Waking KILLS the session first, so it refuses a `busy` pane unless you pass `--force`. Do not reach
   for `--force` to hurry a worker along: check `bsc fleet list` and let real work finish.
 - The prompt is what the woken worker starts on, so write the task, not a greeting. Omit it and it gets
