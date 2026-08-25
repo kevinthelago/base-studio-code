@@ -6123,12 +6123,53 @@ fn set_at_pointer(root: &mut serde_json::Value, pointer: &str, value: serde_json
     }
 }
 
+/// Refuse to regress a PREVIEW-BUILDABLE `srcText` (the Design Studio preview sandbox can compile and
+/// mount it — [`crate::graph_health::looks_buildable_module`]) into one it cannot, on a record that
+/// carries no `provides`. `provides` is what turns "the preview sandbox can't build this" from a defect
+/// into a deliberate module-lift outcome (#43) — and a record with none yet is exactly the state
+/// `bsc ui set-src` leaves it in for the first of `lift-component-module.mjs`'s two writes (`set-src` the
+/// faithful module, THEN `set --provides` in a second call). Un-refused, nothing marked that in-between
+/// state as a real regression rather than corruption: the write-time gate only WARNS on an unbuildable
+/// non-page `srcText` (`validate_component_batch`), so the first write landed silently and the record
+/// stayed exactly there whenever the follow-up `set --provides` call never ran (or targeted the wrong
+/// id) — which is how a designer-authored preview stub (bsc request #119: `KitShareModal`/`ConsolePage`)
+/// got silently clobbered back to raw `@/…`-importing app source no preview could render.
+///
+/// `--force` ([`FORCE_WRITE`], the same escape `set` already has for the page-role refusal) is the
+/// deliberate override — e.g. a genuine module lift that sets `provides` in a LATER call, same as the
+/// script does today.
+fn refuse_buildable_regression(old_record: &serde_json::Value, new_src: &str) -> Result<(), String> {
+    let provides = old_record.get("provides").and_then(serde_json::Value::as_str).unwrap_or_default();
+    if !provides.trim().is_empty() {
+        return Ok(()); // already a module record — `provides` beats the preview sandbox (#43)
+    }
+    let old_src = old_record.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+    if !crate::graph_health::looks_buildable_module(old_src) {
+        return Ok(()); // nothing buildable was there to protect
+    }
+    if crate::graph_health::looks_buildable_module(new_src) {
+        return Ok(()); // still buildable — not a regression
+    }
+    if FORCE_WRITE.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+    let id = old_record.get("id").and_then(serde_json::Value::as_str).unwrap_or("<no id>");
+    Err(format!(
+        "'{id}': refusing to overwrite a srcText the Design Studio preview can BUILD with one it can't ({}). \
+         This record carries no `provides`, so nothing marks the new source as a deliberate module lift \
+         rather than a silent regression (bsc request #119). Set `provides` in the SAME write if this is a \
+         real module lift, or pass --force to store it anyway.",
+        crate::graph_health::module_defects(new_src).join("; ")
+    ))
+}
+
 /// Replace ONLY component `id`'s `srcText` with `src`, leaving every other field untouched, then run the
 /// SAME write-time JSX syntax gate as `set` (#2928) before writing. The write funnels through
 /// [`stamped_set`] so it bumps `rev`/`updatedAt`/`updatedBy` like every other `bsc ui` mutation (#3164).
 /// Errors when the component is absent. Pure of stdin/print so tests drive it directly.
 fn replace_src(store: &bsc_json_store::Store, id: &str, src: &str) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
+    refuse_buildable_regression(&record, src)?;
     record
         .as_object_mut()
         .expect("load_component_object guarantees an object")
@@ -6153,7 +6194,13 @@ fn apply_patch(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
-    set_at_pointer(&mut record, &normalize_pointer(pointer)?, value)?;
+    let pointer = normalize_pointer(pointer)?;
+    if pointer == "/srcText" {
+        if let serde_json::Value::String(new_src) = &value {
+            refuse_buildable_regression(&record, new_src)?;
+        }
+    }
+    set_at_pointer(&mut record, &pointer, value)?;
     validate_component_batch(std::slice::from_ref(&record))?;
     stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
     // #3737: a component patch invalidates the last render — clear any stale `render-error` (see `replace_src`).
@@ -6179,12 +6226,29 @@ fn field_output(value: &serde_json::Value, raw: bool, pretty: bool) -> Result<St
     }
 }
 
-/// `set-src <id> [--dir D]` (#3162) — replace ONLY component <id>'s `srcText` from stdin. A ui-scope
-/// MUTATION: the write-scope is honored BEFORE stdin/the store are touched (so a read-scoped session
-/// refuses immediately without blocking on stdin).
+/// Pull a bare `--force` out of an args list and arm [`FORCE_WRITE`] when present, returning the rest for
+/// `parse_anim_args` (which errors on any flag it doesn't recognize). Shared by `set-src`/`patch` so both
+/// carry the same escape `set` already has for the page-role refusal — see
+/// [`refuse_buildable_regression`].
+fn strip_force_flag(args: &[String]) -> Vec<String> {
+    let mut rest = Vec::with_capacity(args.len());
+    for a in args {
+        if a == "--force" {
+            FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            rest.push(a.clone());
+        }
+    }
+    rest
+}
+
+/// `set-src <id> [--dir D] [--force]` (#3162) — replace ONLY component <id>'s `srcText` from stdin. A
+/// ui-scope MUTATION: the write-scope is honored BEFORE stdin/the store are touched (so a read-scoped
+/// session refuses immediately without blocking on stdin). `--force` is the escape for
+/// [`refuse_buildable_regression`] (bsc request #119).
 fn cmd_set_src(args: &[String]) -> Result<(), String> {
-    let (pos, dir, _pretty) = parse_anim_args(args)?;
-    let id = pos.first().ok_or("usage: bsc ui set-src <id>   # the new srcText on stdin")?;
+    let (pos, dir, _pretty) = parse_anim_args(&strip_force_flag(args))?;
+    let id = pos.first().ok_or("usage: bsc ui set-src <id> [--force]   # the new srcText on stdin")?;
     bsc_cli_util::require_write_scope("ui")?;
     let mut src = String::new();
     std::io::stdin().read_to_string(&mut src).map_err(|e| format!("cannot read stdin: {e}"))?;
@@ -6195,11 +6259,12 @@ fn cmd_set_src(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `patch <id> <json-pointer> <value> [--dir D]` (#3162) — set ONE field by JSON pointer, parsing
-/// <value> as JSON (else a bare string). A ui-scope MUTATION (gated before the store is touched).
+/// `patch <id> <json-pointer> <value> [--dir D] [--force]` (#3162) — set ONE field by JSON pointer,
+/// parsing <value> as JSON (else a bare string). A ui-scope MUTATION (gated before the store is touched).
+/// `--force` is the escape for [`refuse_buildable_regression`] when `<json-pointer>` is `/srcText`.
 fn cmd_patch(args: &[String]) -> Result<(), String> {
-    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value>";
-    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value> [--force]";
+    let (pos, dir, _pretty) = parse_anim_args(&strip_force_flag(args))?;
     let id = pos.first().ok_or(USAGE)?;
     let pointer = pos.get(1).ok_or(USAGE)?;
     let raw_value = pos.get(2).ok_or(USAGE)?;
@@ -8169,6 +8234,75 @@ export const P = () => <X />;"
         // A missing parent and an absent component both error.
         assert!(apply_patch(&store, "card", "/deep/x", json!(1)).is_err());
         assert!(apply_patch(&store, "ghost", "/name", json!("x")).unwrap_err().contains("ghost"));
+    }
+
+    /// bsc request #119: `refuse_buildable_regression` is what makes `set-src`/`patch /srcText` refuse
+    /// exactly the write that clobbered `KitShareModal`/`ConsolePage` — a `provides`-less record whose
+    /// `srcText` the Design Studio preview sandbox could BUILD, overwritten with one it cannot.
+    #[test]
+    fn refuse_buildable_regression_blocks_only_a_provides_less_buildable_to_unbuildable_write() {
+        use serde_json::json;
+        let buildable = "export const Button = () => null;";
+        let unbuildable = "import { X } from \"@/store\";\nexport const Button = () => X;";
+
+        // The core case: no `provides`, buildable -> unbuildable is refused, and the error names both
+        // the request and the escape.
+        let bare = json!({ "id": "consolepage", "srcText": buildable });
+        let err = refuse_buildable_regression(&bare, unbuildable).unwrap_err();
+        assert!(err.contains("consolepage"), "{err}");
+        assert!(err.contains("#119"), "{err}");
+        assert!(err.contains("--force"), "{err}");
+        assert!(err.contains("provides"), "{err}");
+
+        // A record that already CARRIES `provides` is a module lift, not a preview stub — the preview
+        // sandbox no longer decides buildability for it (#43), so the same regression is fine.
+        let with_provides = json!({ "id": "c", "srcText": buildable, "provides": "@/components/c" });
+        assert!(refuse_buildable_regression(&with_provides, unbuildable).is_ok());
+
+        // Nothing buildable was there to protect — the prior copy was ALREADY unbuildable (e.g. a raw
+        // seed transcription that was never fixed), so there is no regression to guard against.
+        let already_broken = json!({ "id": "d", "srcText": unbuildable });
+        assert!(refuse_buildable_regression(&already_broken, unbuildable).is_ok());
+
+        // The new source is STILL buildable — not a regression at all.
+        let still_good = "export const Button2 = () => null;";
+        assert!(refuse_buildable_regression(&bare, still_good).is_ok());
+
+        // `--force` is the deliberate override, same escape `set` already has for the page-role refusal.
+        FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let forced = refuse_buildable_regression(&bare, unbuildable);
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(forced.is_ok(), "--force stores the regression deliberately");
+    }
+
+    /// The guard is wired into the actual write paths, not just the pure predicate: `set-src` refuses
+    /// the regression, leaves the store untouched, and `--force` overrides it.
+    #[test]
+    fn set_src_refuses_a_buildable_to_unbuildable_regression_unless_forced() {
+        let dir = tmp_store_dir("set-src-buildability");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let buildable = "export const ConsolePage = () => null;";
+        store
+            .set("consolepage", &format!(r#"{{"id":"consolepage","name":"ConsolePage","srcText":{}}}"#, serde_json::to_string(buildable).unwrap()))
+            .unwrap();
+
+        let unbuildable = "import { useAppStore } from \"@/store\";\nexport const ConsolePage = () => useAppStore;";
+        let err = replace_src(&store, "consolepage", unbuildable).unwrap_err();
+        assert!(err.contains("#119"), "{err}");
+        let rec: serde_json::Value = serde_json::from_str(&store.get("consolepage").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["srcText"], buildable, "the refused write left srcText untouched");
+
+        // Setting `provides` in the SAME write (a genuine module lift, via `patch`) opts back in.
+        use serde_json::json;
+        apply_patch(&store, "consolepage", "/provides", json!("@/app/console/ConsolePage")).unwrap();
+        assert!(replace_src(&store, "consolepage", unbuildable).is_ok(), "provides beats the preview sandbox");
+
+        // And `--force` overrides it even without `provides`, on a fresh record.
+        store.set("kitsharemodal", r#"{"id":"kitsharemodal","name":"KitShareModal","srcText":"export const K = () => null;"}"#).unwrap();
+        FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let forced = replace_src(&store, "kitsharemodal", unbuildable);
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(forced.is_ok(), "--force stores the regression deliberately");
     }
 
     #[test]
