@@ -30,21 +30,11 @@ import { readFileSync, statSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planVerification } from "./build-artifact-plan.mjs";
+// The canonical sidecar list, shared with `publish-sidecars.mjs` (which publishes exactly what this
+// verifies) so the two can never disagree about which binaries exist.
+import { expectedBins } from "./lib/sidecarBins.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** The sidecar binaries a build is expected to emit, from `tauri.conf.json`'s `bundle.externalBin`
- *  — the same canonical list `stage-sidecar.mjs` reads. Derived rather than restated so adding a
- *  sidecar cannot silently escape this check (that is how `bsc-hook` would otherwise have been
- *  missed: it is newer than `build:plan`'s original two). */
-function expectedBins() {
-  const conf = JSON.parse(readFileSync(join(REPO_ROOT, "src-tauri", "tauri.conf.json"), "utf8"));
-  const ext = conf?.bundle?.externalBin;
-  if (!Array.isArray(ext) || ext.length === 0) {
-    throw new Error("no bundle.externalBin array in tauri.conf.json — cannot know what to verify");
-  }
-  return ext.map((p) => p.replace(/^binaries\//, ""));
-}
 
 function parseArgs(argv) {
   const o = { profile: "debug", heal: true, quiet: false };
@@ -70,7 +60,7 @@ function statOf(a) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const exe = process.platform === "win32" ? ".exe" : "";
-  const artifacts = expectedBins().map((name) => ({
+  const artifacts = expectedBins(REPO_ROOT).map((name) => ({
     name,
     path: join(REPO_ROOT, "target", opts.profile, `${name}${exe}`),
   }));
