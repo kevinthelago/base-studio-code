@@ -34,8 +34,24 @@ for (const id of IDS) {
   changed += 1;
 }
 
+/**
+ * Re-serialize the seed EXACTLY as it is stored on disk: 1-space indent, non-ASCII escaped, and NO
+ * trailing newline — i.e. Python's `json.dumps(d, indent=1, ensure_ascii=True)`, which is what writes
+ * this file today.
+ *
+ * This is not cosmetic. `JSON.stringify(seed, null, 2)` + "\n" re-indents all 6.3 MB, so a two-record
+ * sync produced a 22,500-line diff in which the actual change was invisible — unreviewable, and it
+ * would have carried a whole-file reformat into every branch that ran this script once.
+ */
+function serializeSeed(value) {
+  return JSON.stringify(value, null, 1).replace(
+    /[\u0080-\uffff]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 if (APPLY && changed) {
-  writeFileSync(SEED, `${JSON.stringify(seed, null, 2)}\n`);
+  writeFileSync(SEED, serializeSeed(seed));
   console.log(`wrote ${SEED} (${changed} record(s))`);
 } else if (!APPLY) {
   console.log("(dry run — pass --apply to write)");
