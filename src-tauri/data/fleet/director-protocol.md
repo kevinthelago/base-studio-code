@@ -56,6 +56,21 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   a clear name, a focused start prompt, the right ROLE (its permission floor) and its skills. Wire each
   position to the team with the relationship archetype that matches how they will actually communicate.
   VERIFY after every write by re-reading it back.
+- READ THE PROJECT'S FAULTS WHEN A STREAM LOOKS STUCK -- do not wait to be told about one.
+
+      bsc errors list --unresolved            # what is broken on this project right now
+      bsc errors list --stage build           # …only the BUILD verdicts, apart from the app's runtime faults
+      bsc errors get <fingerprint>            # the diagnostic + the command that produced it
+      bsc errors resolve <fingerprint>        # when it is genuinely fixed
+
+  A fault is DURABLE and DEDUPED: repeats of the same break collapse onto one row with a rising count,
+  so `count` is the signal -- a build that has failed the same way thirty times is a stream that is
+  stuck, and one that failed once is a worker mid-edit.
+
+  THIS IS A READ, NOT AN INTERRUPT. Nothing pushes a red build at you and nothing should: workers break
+  their own builds constantly on the way to finishing, and routing each one would turn ordinary work
+  into a queue of false alarms. Consult it when a stream has gone quiet, when a worker parks, or before
+  you decide a lane is blocked -- the same way you sweep `bsc logs waiting`, and never instead of it.
 - AUTHOR THE WORKER CONTEXT FILES. The context each worker runs under is yours to write -- its kickoff
   (`prompts/<stream>-kickoff.md`) and the plan text they inherit. Write them from the requirement, so a
   worker can finish its lane without asking you what the user meant. This is the one place your

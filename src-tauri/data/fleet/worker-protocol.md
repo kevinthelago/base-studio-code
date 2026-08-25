@@ -53,6 +53,26 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 - `bsc plan change note <ref> "<what you learned>" --from <you>` — as you go, for anything a future reader would otherwise have to rediscover: a trap, a false lead, a decision and its reason. Append-only; nothing can drop an earlier one.
 - `bsc plan change gate <ref> <step> <pass|fail|not-run>` — record what each gate command ACTUALLY did, as it runs. Evidence, not a claim. A step you skipped is recorded `not-run`, never omitted — an omitted step reads as one that passed.
 
+**WHEN YOU BUILD OR RUN THE PRODUCT, RECORD THE RESULT — `bsc errors run`.** Your session already
+carries `$BSC_ERROR_DB` pointed at this project's fault store, the same store its running app reports
+into, so this needs no setup:
+
+```sh
+bsc errors run --stage build --source <a stable tag> -- <the build command>
+```
+
+It streams the command through untouched and exits with its exact code, so it goes exactly where the
+bare command went. A failure becomes one fingerprinted fault on THIS project — visible to the director,
+durable past your session, and beside the runtime faults the app reports, told apart by `--stage`. A
+success clears what that same `--source` recorded, so the store says what is broken NOW.
+
+**Do NOT wrap your iteration loop, and do not wrap the gate.** A build that fails because you are
+half-way through an edit is you working, not a defect, and a fault per keystroke-cycle would bury the
+one that matters and pin the project's health red while nothing is wrong. Wrap the runs that are a
+VERDICT on the product — building or launching the deliverable to check it — and leave the loop alone.
+The store dedups repeats onto one row with a rising count, so the thing to protect against is not
+volume, it is meaning.
+
 **Under the default LOCAL policy you never push and never open a PR.** Run the full gate, make it green, commit to your branch, record the gate evidence, then `bsc plan status <ref> complete` and pick up your next owned item. The integration stream merges your branch; you do not merge it yourself.
 
 `complete` is your half — it means "I did my part", NOT "this is done". Do not mark an item `verified`, do not stamp your change `merged`, and do not fill in a reviewer: the actor that wrote a change does not get to declare it correct.
