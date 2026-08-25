@@ -57,6 +57,36 @@ mod relocated_tests {
             "the roster instruction must name `bsc fleet list`, not the superseded bsc-fleet helper");
     }
 
+    /// #captured-issues-and-briefs-have-no-queue-to-pull-from.
+    ///
+    /// Both these bullets used to point at `bsc logs coord` — a raw replayed feed with no notion of
+    /// which rows are still OPEN, so a director re-read every issue it had already routed on every
+    /// sweep. Stale prose is the failure mode here: a director told to read a feed will read a feed.
+    #[test]
+    fn director_protocol_points_at_the_pending_queue_not_the_raw_feed() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        assert!(p.contains("logs pending"), "the routing queue must be named");
+        // The two bullets it replaced. `logs coord` may still appear elsewhere (it is a legitimate
+        // raw reader), but never as the way to find an issue or a brief.
+        for stale in [
+            "read it with `$BSC_BIN logs coord`",
+            "`$BSC_BIN logs coord` is where you find one",
+        ] {
+            assert!(!p.contains(stale), "a queue exists now; the feed must not be the instruction: {stale}");
+        }
+
+        // The CLOSING half of each. A queue whose rows are never closed is the feed again with extra
+        // steps — and neither close is guessable: an assign silently closes nothing without --issue,
+        // and a brief has exactly one closing verb.
+        assert!(p.contains("--issue"), "the assign must be told to carry the id back");
+        assert!(p.contains("bsc-brief-done"), "a brief's only closing verb must be named");
+        assert!(
+            p.contains("reconciled, nothing to do"),
+            "closing a brief that needed no change is the case a director will otherwise skip"
+        );
+    }
+
     /// #fleet-list-cannot-see-a-stopped-worker.
     ///
     /// `bsc fleet list` reported only what the app was tracking, so a stopped worker had no row at

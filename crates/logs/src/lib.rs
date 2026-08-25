@@ -19,6 +19,9 @@ pub mod instrument;
 pub mod cli;
 pub mod scope;
 pub mod waiting;
+/// What awaits the DIRECTOR (issues to route, briefs to reconcile) — the sibling of [`waiting`],
+/// which is about a session blocked on a person. The header argues why they are two verbs.
+pub mod pending;
 // Re-exported so a consumer says `logs::waiting(..) -> logs::WaitingSession` without naming the
 // module twice — matching `usage`/`Usage` and `PerfSample` below. The Tauri command's return type
 // is part of the frontend contract, so it is worth being a short, stable path.
