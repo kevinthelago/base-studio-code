@@ -269,6 +269,78 @@ pub fn attach_progress(
     }
 }
 
+/// One project's director, before liveness is asked for — the architect's tier read.
+///
+/// Deliberately NOT a [`Member`]: a director row is keyed by PROJECT and carries that project's whole
+/// issue tally, where a member is keyed by stream and carries its own. Reusing one struct would mean
+/// a `stream` field that is always blank and a `planned` flag that means something different.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectorMember {
+    pub project_key: String,
+    pub pane_id: String,
+    /// The plan's fleet meta enables a director for this project.
+    pub planned: bool,
+    /// A ledger row exists — this director was actually launched at some point.
+    pub launched: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub ledger_status: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub launched_at: i64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub last_seen: i64,
+    /// The PROJECT's issue tally, not one stream's — what this director is accountable for.
+    #[serde(rename = "issues")]
+    pub progress: Progress,
+}
+
+impl DirectorMember {
+    /// The liveness question this row answers, in [`Member`] terms, so both tiers classify through
+    /// one function rather than growing a second copy of the state rules that could drift.
+    fn as_member(&self) -> Member {
+        Member { launched: self.launched, ..Default::default() }
+    }
+
+    /// This director's state against the app's answer.
+    pub fn state(&self, live: Option<(bool, bool)>) -> State {
+        State::classify(&self.as_member(), live)
+    }
+}
+
+/// Fold app-tracked `:director` panes that no plan store accounts for. Same reason as
+/// [`absorb_tracked`]: a director the app is running is the architect's business whether or not a
+/// plan store on this machine knows about it.
+pub fn absorb_tracked_directors(rows: &mut Vec<DirectorMember>, tracked: &[String]) {
+    let known: std::collections::HashSet<&str> =
+        rows.iter().map(|r| r.pane_id.as_str()).collect();
+    let mut add: Vec<String> = tracked
+        .iter()
+        .filter(|id| id.ends_with(DIRECTOR_SUFFIX) && !known.contains(id.as_str()))
+        .cloned()
+        .collect();
+    add.sort();
+    add.dedup();
+    for pane_id in add {
+        rows.push(DirectorMember {
+            project_key: project_key_of(&pane_id).to_string(),
+            pane_id,
+            ..Default::default()
+        });
+    }
+}
+
+/// Order the tier for reading: projects whose director is NOT running first (they are the ones an
+/// architect must act on), then alphabetically inside each group so two runs agree.
+pub fn sort_directors(rows: &mut [DirectorMember], state_of: impl Fn(&DirectorMember) -> State) {
+    rows.sort_by(|a, b| {
+        let rank = |r: &DirectorMember| match state_of(r) {
+            State::Running => 1,
+            _ => 0,
+        };
+        rank(a).cmp(&rank(b)).then_with(|| a.project_key.cmp(&b.project_key))
+    });
+}
+
 /// Fold panes the APP is tracking for this project that membership does not name. Without this, a
 /// session running outside the plan (a hand-opened pane, a stream deleted from the plan while its
 /// worker still runs) would be silently dropped by the join — the same class of omission this whole
@@ -490,6 +562,70 @@ mod tests {
         assert_eq!(get("nm:api").cell(), "1/2");
         assert_eq!(get("nm:director"), Progress::default(), "the director owns no stream");
         assert_eq!(get("nm:ui"), Progress::default(), "a stream with no issues stays empty");
+    }
+
+    fn dir(key: &str, planned: bool, launched: bool) -> DirectorMember {
+        DirectorMember {
+            project_key: key.into(),
+            pane_id: format!("{key}:director"),
+            planned,
+            launched,
+            ..Default::default()
+        }
+    }
+
+    /// THE ARCHITECT'S HALF OF THE BUG. A director that stopped must be distinguishable from a
+    /// project that never created one — that difference is the entire question the verb answers,
+    /// since it exists to say whether `bsc plan brief <key>:director` will reach anything.
+    #[test]
+    fn a_stopped_director_is_distinguishable_from_one_that_never_existed() {
+        let stopped = dir("alpha", true, true);
+        let never = dir("beta", true, false);
+        assert_eq!(stopped.state(None), State::Stopped);
+        assert_eq!(never.state(None), State::NeverLaunched);
+        assert_ne!(stopped.state(None), never.state(None));
+    }
+
+    /// Both tiers classify through ONE function. A second copy of the state rules is how the two
+    /// views would drift into disagreeing about what `idle` means.
+    #[test]
+    fn a_director_classifies_through_the_same_four_states_a_worker_does() {
+        let d = dir("alpha", true, true);
+        assert_eq!(d.state(Some((true, true))), State::Running);
+        assert_eq!(d.state(Some((true, false))), State::Idle, "shell up, agent exited");
+        assert_eq!(d.state(Some((false, false))), State::Stopped);
+        assert_eq!(d.state(None), State::Stopped);
+    }
+
+    /// A director the app is RUNNING whose plan store is missing (moved, deleted, another machine's
+    /// project) is still the architect's business. Dropping it would repeat the omission one tier up.
+    #[test]
+    fn a_tracked_director_no_plan_store_accounts_for_is_folded_in() {
+        let mut rows = vec![dir("alpha", true, true)];
+        absorb_tracked_directors(
+            &mut rows,
+            &["alpha:director".into(), "ghost:director".into(), "alpha:api".into()],
+        );
+        let keys: Vec<&str> = rows.iter().map(|r| r.project_key.as_str()).collect();
+        assert_eq!(keys, vec!["alpha", "ghost"]);
+        // A WORKER pane must never enter the director tier — that boundary is the verb's whole point.
+        assert!(!rows.iter().any(|r| r.pane_id == "alpha:api"));
+        let ghost = rows.iter().find(|r| r.project_key == "ghost").unwrap();
+        assert!(!ghost.planned && !ghost.launched, "no plan store backs it");
+        assert_eq!(ghost.state(Some((true, true))), State::Running);
+    }
+
+    /// The rows an architect must ACT on come first. A running director needs nothing; the reason to
+    /// read this table is finding the ones that will silently swallow a brief.
+    #[test]
+    fn directors_sort_the_unreachable_to_the_top() {
+        let mut rows = vec![dir("zulu", true, true), dir("alpha", true, true), dir("mike", true, true)];
+        // Only `alpha` is up.
+        sort_directors(&mut rows, |r| {
+            if r.project_key == "alpha" { State::Running } else { State::Stopped }
+        });
+        let keys: Vec<&str> = rows.iter().map(|r| r.project_key.as_str()).collect();
+        assert_eq!(keys, vec!["mike", "zulu", "alpha"], "stopped first, then alphabetical");
     }
 
     /// A blank / whitespace stream id in the plan cannot become the pane id `nm:` — that id resolves
