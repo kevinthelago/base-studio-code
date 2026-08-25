@@ -42,8 +42,11 @@ pub const BOOL_FLAGS: [&str; 11] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 43] = [
+pub const FLAGS: [&str; 44] = [
     "--pretty",
+    // Optimistic concurrency: refuse the write when the record has moved on since it was read.
+    // The algorithms store had none while a librarian session wrote it live — see `set_impl_versioned`.
+    "--if-version",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
     "--check",
@@ -1050,7 +1053,24 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // A trace-program is JS and routinely carries both backticks and `${…}`, so this is the
                 // flag most likely to be corrupted in transit — see `source_flag`.
                 if let Some(v) = source_flag(&args, "--viz-code")? { im["vizCode"] = Value::String(v); }
-                let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
+                // Optimistic concurrency. A librarian session writes this store LIVE, and until now
+                // nothing here could refuse a stale overwrite — the sixteen `algorithms.json.bak-*`
+                // files beside the store are what a human does instead. An ABSENT record, and one
+                // never written since #72, both read as rev 0, so `--if-version 0` is the honest guard
+                // for them and no backfill is needed to make them safe.
+                let if_version = match flag_value(&args, "--if-version") {
+                    Some(raw) => Some(raw.parse::<i64>().map_err(|_| {
+                        format!("--if-version '{raw}' is not an integer (read the current rev with `bsc graph impl history <id>`)")
+                    })?),
+                    None => None,
+                };
+                let replaced = crate::set_impl_versioned(
+                    &mut g,
+                    im.clone(),
+                    &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()),
+                    flag_value(&args, "--note").as_deref(),
+                    if_version,
+                )?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
                 // fields this call restated, so a `--domain`-only edit answered without `src`, `summary`
@@ -1074,7 +1094,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     ));
                 }
                 let mut g = crate::load();
-                if crate::remove_impl(&mut g, id) {
+                if crate::remove_impl_by(&mut g, id, &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref())) {
                     crate::save(&g)?;
                     emit(&serde_json::json!({ "ok": true, "removed": id }))
                 } else {
@@ -1151,7 +1171,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     }
                     tomb["supersededBy"] = Value::String(new_id);
                 }
-                crate::remove_impl(&mut g, id);
+                crate::remove_impl_by(&mut g, id, &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()));
                 // Idempotent (#77) — suppressing an already-suppressed id refreshes its pointer
                 // instead of appending a second tombstone for the same id.
                 crate::add_suppression(&mut g, id, tomb.get("supersededBy").and_then(Value::as_str));
@@ -1226,6 +1246,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // project-glue with a score + reasons (#2745 slice 2). `--worthy-only` keeps just the worthy
         // ones. Emits candidates ONLY — storing them into the library is the curation gate, never here.
         "harvest" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph harvest <dir-or-file> [--tech typescript|rust] [--worthy-only] [--module [--apply]]")?;
@@ -1376,7 +1397,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(p) = &c.provides {
                         im["provides"] = Value::String(p.clone());
                     }
-                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired, &writer, "harvest --module --apply: lift a module as one record")?;
                     // ROUTE THE INTEGRATION TEST (edges-fill-themselves-at-retirement). A colocated test
                     // that reaches other modules is not paired onto the node — but it must not be left
                     // behind either, because the file it lives in goes when the module retires. It
@@ -1457,6 +1478,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // or an `optimize` when the store already holds that id (the harvested version replaces it).
         // `--apply` writes them to the runtime store (`impl set` semantics); without it, a dry-run plan.
         "curate" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph curate <dir> [--tech typescript|rust] [--apply]")?;
@@ -1500,7 +1522,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
                     }
-                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired, &writer, "curate --apply: write a worthy candidate into the library")?;
                 }
                 crate::save(&g)?;
             }
@@ -1532,6 +1554,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `folder_from_src` is a fixed point on an already-clean path, so only records that actually
         // MOVED are rewritten, and a re-run reports zero.
         "refolder" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let mut g = crate::load();
             let mut moved = Vec::new();
             let mut srcless = 0usize;
@@ -1556,7 +1579,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         next.as_object_mut().map(|o| o.remove("folder"));
                     }
                 }
-                crate::set_impl(&mut g, next)?;
+                // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                // could not tell a refolder from a hand edit).
+                crate::set_impl_by(&mut g, next, &writer, Some("refolder: re-derive folder from src"))?;
                 moved.push(serde_json::json!({ "id": id, "from": cur, "to": next_folder }));
             }
             if !moved.is_empty() {
@@ -1579,6 +1604,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         //
         // Idempotent: an impl that already carries `src` is left alone, so a re-run reports zero.
         "relink" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph relink <dir> [--tech typescript|rust] [--dry-run] [--pretty]")?;
@@ -1626,7 +1652,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                             if let Some(f) = folder {
                                 next["folder"] = Value::String(f.clone());
                             }
-                            crate::set_impl(&mut g, next)?;
+                            // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                            // could not tell a relink from a hand edit).
+                            crate::set_impl_by(&mut g, next, &writer, Some("relink: recover src by matching a fresh harvest"))?;
                         }
                         linked.push(serde_json::json!({ "id": id, "src": src, "folder": folder }));
                     }
@@ -1665,6 +1693,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling
         // file, so path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
         "tests" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             if positional.get(1).copied() != Some("harvest") {
                 return Err("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]".to_string());
             }
@@ -1739,7 +1768,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if !dry {
                     let mut next = im.clone();
                     next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
-                    crate::set_impl(&mut g, next)?;
+                    // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                    // could not tell a tests from a hand edit).
+                    crate::set_impl_by(&mut g, next, &writer, Some("tests harvest: carry the colocated test file onto the node"))?;
                 }
                 paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
             }
@@ -1982,6 +2013,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // invalid-kind / mistyped / missing-viz. `--fix` assigns the heuristic kind to UNTYPED-but-
         // classifiable impls (never overwriting an assigned kind), then re-diagnoses.
         "doctor" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let fix = args.iter().any(|a| a == "--fix");
             let mut g = crate::load();
             // #78 — a FOCUSED mode, not another section bolted onto the default report. The default
@@ -2002,7 +2034,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                             let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                             let mut next = im.clone();
                             next["kind"] = Value::String(k.to_string());
-                            crate::set_impl(&mut g, next)?;
+                            // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                            // could not tell a doctor from a hand edit).
+                            crate::set_impl_by(&mut g, next, &writer, Some("doctor --fix: assign the inferred viz kind"))?;
                             fixed.push(serde_json::json!({ "id": id, "kind": k }));
                         }
                     }
@@ -2109,7 +2143,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let from = positional.get(1).copied().ok_or("usage: bsc graph merge <from-id> <into-id>")?;
             let into = positional.get(2).copied().ok_or("usage: bsc graph merge <from-id> <into-id> — the survivor id is required")?;
             let mut g = crate::load();
-            let repointed = crate::merge_impls(&mut g, from, into)?;
+            // Attributed: the fold edits records the caller never named, so every repointed
+            // `composes` lands in that record's own history with a who and a why.
+            let repointed = crate::merge_impls_by(
+                &mut g, from, into,
+                &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()),
+            )?;
             crate::save(&g)?;
             emit(&serde_json::json!({ "from": from, "into": into, "repointed": repointed, "removed": from }))
         }
@@ -2253,13 +2292,19 @@ fn source_flag(args: &[String], flag: &str) -> Result<Option<String>, String> {
 ///
 /// Skipped ids are RETURNED, never swallowed: a silent skip is how the caller ends up believing a
 /// record was written when it was not — the same class of quiet wrongness as the resurrection itself.
-fn set_impl_skipping_retired(g: &mut Value, im: Value, skipped: &mut Vec<String>) -> Result<(), String> {
+fn set_impl_skipping_retired(
+    g: &mut Value,
+    im: Value,
+    skipped: &mut Vec<String>,
+    writer: &str,
+    note: &str,
+) -> Result<(), String> {
     let id = im.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
     if !id.is_empty() && crate::is_suppressed(g, &id) {
         skipped.push(id);
         return Ok(());
     }
-    crate::set_impl(g, im).map(|_| ())
+    crate::set_impl_by(g, im, writer, Some(note)).map(|_| ())
 }
 
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
@@ -2292,7 +2337,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>] [--if-version <n>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). --if-version <n> is OPTIMISTIC CONCURRENCY: the write is REJECTED (nothing changes) unless the record's current rev is exactly n, so a bulk pass cannot clobber a librarian edit that landed since it read. Read the current rev with `bsc graph impl history <id>`; a record that has never been stamped, and one that does not exist yet, both read as rev 0. PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
          {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
@@ -2891,8 +2936,8 @@ mod batch_retired_tests {
         });
         let mut skipped = Vec::new();
 
-        set_impl_skipping_retired(&mut g, impl_json("llm-energy.ts"), &mut skipped).expect("not fatal");
-        set_impl_skipping_retired(&mut g, impl_json("fresh.ts"), &mut skipped).expect("the rest still land");
+        set_impl_skipping_retired(&mut g, impl_json("llm-energy.ts"), &mut skipped, "test", "test").expect("not fatal");
+        set_impl_skipping_retired(&mut g, impl_json("fresh.ts"), &mut skipped, "test", "test").expect("the rest still land");
 
         assert_eq!(skipped, vec!["llm-energy.ts".to_string()], "the skip is NAMED, not swallowed");
         let live: Vec<String> = crate::implementations_of(&g)
@@ -2909,7 +2954,7 @@ mod batch_retired_tests {
         let mut g = serde_json::json!({ "implementations": [] });
         let mut skipped = Vec::new();
         let bad = serde_json::json!({ "id": "b.ts", "tech": "typescript", "role": "not-a-role", "name": "B" });
-        assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped).is_err(), "a bad role still aborts");
+        assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped, "test", "test").is_err(), "a bad role still aborts");
         assert!(skipped.is_empty());
     }
 }

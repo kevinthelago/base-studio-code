@@ -625,6 +625,56 @@ pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
     set_impl_by(g, im, "unknown", None)
 }
 
+/// The record's current `rev`, or 0 when it is absent from the store — the same
+/// "absent reads as rev 0" contract [`bsc_record::read_rev`] gives a record with no stamp.
+///
+/// So `--if-version 0` is the correct guard for a record that has never been written since #72, and
+/// for one that does not exist yet. That is why the 695 records carrying no stamp need no backfill to
+/// be safe under optimistic concurrency: they already answer 0, and a guard reading 0 is telling the
+/// truth about them.
+pub fn impl_rev(g: &Value, id: &str) -> i64 {
+    implementations_of(g)
+        .iter()
+        .find(|x| x.get("id").and_then(Value::as_str) == Some(id))
+        .map(bsc_record::read_rev)
+        .unwrap_or(0)
+}
+
+/// Upsert an implementation, refusing the write when the record has MOVED ON since the caller read it
+/// (optimistic concurrency, mirroring `bsc ui set --if-version`).
+///
+/// This is the guard the algorithms store did not have. The component store has had it since #3164 —
+/// 27 call sites — while `bsc graph` had none, and the algorithms store is the one a librarian session
+/// writes LIVE, in a single 13.7 MB JSON document with no transaction and no rollback. The sixteen
+/// hand-made `algorithms.json.bak-*` files beside it are what that absence cost: a human snapshotting
+/// the store before every bulk edit, because nothing else could refuse a stale overwrite.
+///
+/// `if_version: None` is the unguarded write every existing caller already makes — the guard is opt-in,
+/// exactly as it is for components, so this adds a capability without changing a single existing path.
+pub fn set_impl_versioned(
+    g: &mut Value,
+    im: Value,
+    writer: &str,
+    note: Option<&str>,
+    if_version: Option<i64>,
+) -> Result<bool, String> {
+    if let Some(n) = if_version {
+        let id = im
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .ok_or("an implementation needs a non-empty `id`")?;
+        let prior_rev = impl_rev(g, id);
+        if prior_rev != n {
+            return Err(format!(
+                "version conflict on implementation '{id}': its current rev is {prior_rev}, not {n} — \
+                 it changed since you read it. Re-read (`bsc graph impl history {id}`) and retry."
+            ));
+        }
+    }
+    set_impl_by(g, im, writer, note)
+}
+
 /// Upsert an implementation, STAMPING the write with its author, timestamp, rev and history (#72).
 ///
 /// `writer` is who to attribute it to (`--by`, else the resolved default) and `note` is the optional
@@ -748,6 +798,17 @@ pub fn set_impl_by(g: &mut Value, im: Value, writer: &str, note: Option<&str>) -
 /// Remove an implementation by id (#2863) and scrub the id from every other impl's `composes`. Returns
 /// whether it existed.
 pub fn remove_impl(g: &mut Value, id: &str) -> bool {
+    remove_impl_by(g, id, "unknown")
+}
+
+/// [`remove_impl`], attributed — `writer` lands on the history entry of every record whose `composes`
+/// the scrub edited.
+///
+/// The scrub is a write to records the caller never named. Leaving it unstamped meant a record's
+/// dependency list could lose an entry with nothing in `bsc graph impl history` to say who did it or
+/// when — the same hole `merge_impls` had, from the same cause (the #3164 provenance layer arrived for
+/// this store only in #72, and the removal paths were never revisited).
+pub fn remove_impl_by(g: &mut Value, id: &str, writer: &str) -> bool {
     let existed = {
         let arr = ensure_array(g, "implementations");
         let before = arr.len();
@@ -757,11 +818,18 @@ pub fn remove_impl(g: &mut Value, id: &str) -> bool {
     if !existed {
         return false;
     }
-    let arr = ensure_array(g, "implementations");
-    for im in arr.iter_mut() {
+    let now = bsc_record::now_iso();
+    let note = format!("remove: scrub composes reference to '{id}'");
+    for im in ensure_array(g, "implementations").iter_mut() {
+        let Some(list) = im.get("composes").and_then(Value::as_array) else { continue };
+        if !list.iter().any(|v| v.as_str() == Some(id)) {
+            continue; // this record never referenced it — a stamp here would be a write that did not happen
+        }
+        let prior = im.clone();
         if let Some(list) = im.get_mut("composes").and_then(Value::as_array_mut) {
             list.retain(|v| v.as_str() != Some(id));
         }
+        bsc_record::stamp_with_history_of(im, &prior, writer, &now, Some(&note), "code");
     }
     true
 }
@@ -792,9 +860,21 @@ pub fn used_by_index(g: &Value) -> std::collections::BTreeMap<String, Vec<String
 /// Fold implementation `from` INTO `into` (#3594) — the combine ACT that mirrors `bsc ui merge`: repoint
 /// every impl's `composes` from→into (deduped; a self-reference the fold would create is dropped), then
 /// remove `from`. `into` stays authoritative. Returns the ids of the impls whose `composes` were
-/// repointed. Errs on a self-merge or an absent id. No history stamp — the graph store has no #3164
-/// provenance layer (unlike the component store).
+/// repointed. Errs on a self-merge or an absent id.
+///
+/// Every repointed record is STAMPED. This used to carry "No history stamp — the graph store has no
+/// #3164 provenance layer (unlike the component store)", which #72 made false: the layer exists and
+/// `set_impl_by` uses it. The comment outliving the gap is how a merge went on silently editing other
+/// people's records — a `composes` list changed underneath a record whose owner never wrote it, and
+/// `bsc graph impl history` showed nothing, so the edit was unattributable and unrevertible. A merge
+/// touches records the caller did not name, which makes it MORE in need of a trail than an ordinary
+/// write, not less.
 pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>, String> {
+    merge_impls_by(g, from, into, "unknown")
+}
+
+/// [`merge_impls`], attributed. `writer` lands on every repointed record's history entry.
+pub fn merge_impls_by(g: &mut Value, from: &str, into: &str, writer: &str) -> Result<Vec<String>, String> {
     if from == into {
         return Err(format!("cannot merge '{from}' into itself"));
     }
@@ -809,11 +889,16 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
         return Err(format!("unknown implementation '{into}'"));
     }
     let mut repointed = Vec::new();
+    // The pre-repoint `composes` of every record the fold edits, keyed by id — the honest `prior` the
+    // stamp below diffs against. Captured HERE because after the loop the old value is gone, and a
+    // reconstructed prior would put a guess in the history where a fact belongs.
+    let mut prior_composes: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
     for im in ensure_array(g, "implementations").iter_mut() {
         let own_id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
         if own_id == from {
             continue; // being removed
         }
+        let was = im.get("composes").cloned();
         if let Some(list) = im.get_mut("composes").and_then(Value::as_array_mut) {
             let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
             let mut next: Vec<Value> = Vec::with_capacity(list.len());
@@ -834,8 +919,28 @@ pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>,
             }
             if any {
                 *list = next;
+                if let Some(w) = was {
+                    prior_composes.insert(own_id.clone(), w);
+                }
                 repointed.push(own_id);
             }
+        }
+    }
+    // Stamp every record the fold edited. Done in a SECOND pass, not inside the borrow above, because
+    // the stamp diffs a prior against a next and the loop above already holds `composes` mutably.
+    {
+        let now = bsc_record::now_iso();
+        let note = format!("merge: repoint composes '{from}' -> '{into}'");
+        for im in ensure_array(g, "implementations").iter_mut() {
+            let own_id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            let Some(was) = prior_composes.get(&own_id) else { continue };
+            // The real pre-repoint record: this one with its ORIGINAL `composes` put back, so the
+            // entry's `changed` set is a diff of what actually happened.
+            let mut prior = im.clone();
+            if let Some(o) = prior.as_object_mut() {
+                o.insert("composes".into(), was.clone());
+            }
+            bsc_record::stamp_with_history_of(im, &prior, writer, &now, Some(&note), "code");
         }
     }
     // RETIRE `from`. A plain remove is only durable for a USER-MADE impl: the seed reconcile re-adds any
@@ -2201,5 +2306,126 @@ mod merge_tests {
         assert!(!inserted, "a new id inserts");
         let r = implementations_of(&g).into_iter().find(|i| i["id"] == "n.ts").unwrap().clone();
         assert_eq!(r["composes"], json!([]));
+    }
+}
+
+#[cfg(test)]
+mod stale_write_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn impl_of(id: &str, composes: &[&str]) -> Value {
+        json!({
+            "id": id, "tech": "typescript", "role": "algorithm", "name": id,
+            "composes": composes, "code": "// c", "src": format!("src/{id}"), "folder": "src"
+        })
+    }
+    fn rec(g: &Value, id: &str) -> Value {
+        implementations_of(g).into_iter().find(|i| i["id"] == id).unwrap().clone()
+    }
+
+    #[test]
+    fn if_version_rejects_a_stale_write_and_allows_a_current_one() {
+        let mut g = json!({ "implementations": [] });
+        set_impl_versioned(&mut g, impl_of("a.ts", &[]), "me", None, None).unwrap();
+        assert_eq!(impl_rev(&g, "a.ts"), 1, "a create stamps rev 1");
+
+        // rev 0 is STALE now — the record moved on. Rejected, and the message names both revisions so
+        // the caller can tell "I am behind" from "no such record".
+        let err = set_impl_versioned(&mut g, impl_of("a.ts", &[]), "me", None, Some(0)).unwrap_err();
+        assert!(err.contains("version conflict"), "{err}");
+        assert!(err.contains("current rev is 1"), "names the CURRENT rev: {err}");
+        assert_eq!(impl_rev(&g, "a.ts"), 1, "a rejected write changes nothing");
+
+        // The matching version lands and moves the record forward.
+        set_impl_versioned(&mut g, impl_of("a.ts", &[]), "me", None, Some(1)).unwrap();
+        assert_eq!(impl_rev(&g, "a.ts"), 2);
+    }
+
+    #[test]
+    fn an_unstamped_record_reads_as_rev_zero_so_it_needs_no_backfill() {
+        // THE REASON THE 695 UNSTAMPED RECORDS ARE NOT BACKFILLED. A record written before #72 carries
+        // no `rev` at all. It reads as 0, so `--if-version 0` is a TRUE statement about it and the guard
+        // works on day one. Rewriting all 695 to say `rev: 1` would buy nothing and would stamp today's
+        // date onto writes that happened months ago.
+        let mut g = json!({ "implementations": [
+            { "id": "old.ts", "tech": "typescript", "role": "algorithm", "name": "old", "composes": [], "code": "// c" }
+        ]});
+        assert_eq!(impl_rev(&g, "old.ts"), 0, "no stamp reads as rev 0");
+        set_impl_versioned(&mut g, impl_of("old.ts", &[]), "me", None, Some(0))
+            .expect("--if-version 0 is the correct guard for an unstamped record");
+        assert_eq!(impl_rev(&g, "old.ts"), 1);
+    }
+
+    #[test]
+    fn if_version_on_an_absent_record_guards_the_create() {
+        let mut g = json!({ "implementations": [] });
+        set_impl_versioned(&mut g, impl_of("new.ts", &[]), "me", None, Some(0))
+            .expect("an absent record is rev 0, so 0 creates it");
+        let err = set_impl_versioned(&mut g, impl_of("other.ts", &[]), "me", None, Some(3)).unwrap_err();
+        assert!(err.contains("current rev is 0"), "{err}");
+    }
+
+    #[test]
+    fn merge_stamps_every_record_whose_composes_it_repointed() {
+        // A merge edits records the caller never named. Before this, that edit was invisible: the
+        // `composes` list changed under a record whose owner never wrote it and `impl history` said
+        // nothing, so it was unattributable and unrevertible.
+        let mut g = json!({ "implementations": [] });
+        for im in [impl_of("dup.ts", &[]), impl_of("keep.ts", &[]),
+                   impl_of("consumer.ts", &["dup.ts"]), impl_of("bystander.ts", &[])] {
+            set_impl(&mut g, im).unwrap();
+        }
+        let before = bsc_record::read_rev(&rec(&g, "bystander.ts"));
+        let repointed = merge_impls_by(&mut g, "dup.ts", "keep.ts", "librarian").unwrap();
+        assert_eq!(repointed, vec!["consumer.ts"]);
+
+        let c = rec(&g, "consumer.ts");
+        assert_eq!(c["composes"][0], "keep.ts", "the repoint happened");
+        let last = c["history"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(last["by"], "librarian", "attributed to whoever ran the merge");
+        assert!(last["note"].as_str().unwrap().contains("merge:"), "the why is recorded: {last}");
+        assert!(
+            last["changed"].as_array().unwrap().iter().any(|v| v == "composes"),
+            "the diff names the field that actually moved: {last}"
+        );
+
+        assert_eq!(
+            bsc_record::read_rev(&rec(&g, "bystander.ts")), before,
+            "a record the merge did not touch is NOT stamped — a write that did not happen leaves no entry"
+        );
+    }
+
+    #[test]
+    fn remove_stamps_every_record_whose_composes_it_scrubbed() {
+        let mut g = json!({ "implementations": [] });
+        for im in [impl_of("gone.ts", &[]), impl_of("consumer.ts", &["gone.ts"]), impl_of("bystander.ts", &[])] {
+            set_impl(&mut g, im).unwrap();
+        }
+        let before = bsc_record::read_rev(&rec(&g, "bystander.ts"));
+        assert!(remove_impl_by(&mut g, "gone.ts", "librarian"));
+
+        let c = rec(&g, "consumer.ts");
+        assert!(c["composes"].as_array().unwrap().is_empty(), "the reference is scrubbed");
+        let last = c["history"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(last["by"], "librarian");
+        assert!(last["note"].as_str().unwrap().contains("scrub composes"), "{last}");
+
+        assert_eq!(
+            bsc_record::read_rev(&rec(&g, "bystander.ts")), before,
+            "a record that never referenced the removed id is not stamped"
+        );
+    }
+
+    #[test]
+    fn a_build_verdict_is_not_an_authored_write() {
+        // DELIBERATE, and pinned so it does not drift into an accidental omission. `bsc graph build`
+        // writes a DERIVED facet whose hash covers the materialized source + toolchain + flags, so it
+        // is re-derivable and losing it is free. Entering it in the authoring log would evict real
+        // history: `HISTORY_CAP` is 30, and one `build --all` appends an entry to every Tier-R node, so
+        // a few full builds would push out the edits the log exists to record.
+        //
+        // If this ever needs to change, the fix is a SEPARATE derived-facet log, not an entry here.
+        assert_eq!(bsc_record::HISTORY_CAP, 30, "the cap this reasoning rests on");
     }
 }
