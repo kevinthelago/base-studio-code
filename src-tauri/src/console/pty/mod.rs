@@ -2264,11 +2264,37 @@ fn namespace_argv(
     // Falling back to "no sandbox" here would be worse than failing — the caller asked for
     // isolation and would silently not get it.
     let Some(role) = Role::parse(role_name) else {
-        log::error!(
-            "pty[{pane_id}] sandbox role {role_name:?} is not recognised — refusing to launch \
-             UNSANDBOXED. Known roles: planner worker director triage tester reviewer issuer \
-             juror documentor designer"
-        );
+        // TWO DIFFERENT THINGS REACHED THIS BRANCH and it reported both as an error, in wording that
+        // described neither. A role in `UNCAGED_ROLES` does not parse ON PURPOSE — that is the
+        // decision, not a fault — and returning `None` here does not "refuse to launch": the caller
+        // falls through to a plain shell, so the session runs UNCAGED. The designer logged this as an
+        // ERROR on every launch while working exactly as designed, and the hardcoded role list named
+        // `director` and `designer`, neither of which parses.
+        if let Some((_, store, blocker)) =
+            bsc_sandbox::profile::UNCAGED_ROLES.iter().find(|(n, _, _)| *n == role_name)
+        {
+            log::info!(
+                "pty[{pane_id}] {role_name} runs UNCAGED by decision — its surface is {store}, and \
+                 the cage cannot host it yet ({blocker}). Launching without a namespace."
+            );
+        } else {
+            log::error!(
+                "pty[{pane_id}] sandbox role {role_name:?} is not a role at all — launching \
+                 UNCAGED. Caged roles: {caged}. Uncaged by decision: {uncaged}.",
+                caged = bsc_sandbox::profile::ALL_ROLES
+                    .iter()
+                    .copied()
+                    .filter(|r| Role::parse(r.as_str()).is_some())
+                    .map(|r| r.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                uncaged = bsc_sandbox::profile::UNCAGED_ROLES
+                    .iter()
+                    .map(|(n, _, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
         return None;
     };
     if cwd.is_empty() {
@@ -3289,7 +3315,9 @@ mod hook_floor_tests {
     /// is meaningful in a checkout that has built the sidecar and in one that has not.
     #[test]
     fn the_gate_is_bound_exactly_when_the_launcher_resolved_one() {
-        let a = namespace_argv(Some("director"), "pane-1", "/tmp/hub", None, "bash", &[], GateConfig::default())
+        // `worker`, not `director` — the director joined `UNCAGED_ROLES` on 2026-08-25 and no longer
+        // resolves to a namespace profile. Any still-caged role exercises this bind identically.
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/hub", None, "bash", &[], GateConfig::default())
             .expect("a known role with a cwd renders");
         let bound = a.windows(3).any(|w| w[0] == "--ro-bind" && w[2] == bsc_sandbox::HOOK_GUEST_PATH);
         let configured =
@@ -3387,7 +3415,9 @@ mod gate_config_tests {
         if super::bsc_hook_bin_path().is_none() {
             return;
         }
-        let a = argv("director", bsc_util::scope::DENY_ALL, "");
+        // `triage` is the code:none role that is still CAGED — `director` was code:none too but is
+        // uncaged now, so it renders no argv at all.
+        let a = argv("triage", bsc_util::scope::DENY_ALL, "");
         assert_eq!(setenv(&a, "BSC_SCOPE_GLOBS").as_deref(), Some(bsc_util::scope::DENY_ALL));
     }
 
