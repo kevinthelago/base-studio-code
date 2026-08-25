@@ -2,9 +2,14 @@
 name = "skilldb"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Global skills + task-groups store (SQLite) for base-studio-code (#1338, instance of #1325) — shared by the Tauri app and the `bsc-skill` CLI."
 
 # The core lib (no Tauri) so a tiny CLI can reuse it without dragging the whole desktop app in.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "skilldb"
 

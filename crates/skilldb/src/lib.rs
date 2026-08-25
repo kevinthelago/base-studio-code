@@ -15,7 +15,6 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc skill …`), dispatched by the unified `bsc` binary
 //! (#1877) and by the legacy `bsc-skill` shim.
 
-pub mod cli;
 
 use bsc_sqlite_util::{arr_to_json, json_to_arr};
 use include_dir::{include_dir, Dir};
@@ -734,3 +733,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get skilldb--<module>.rs
+//     bsc graph impl set --id skilldb--<module>.rs --code-file <f>
+//     bsc graph promote --id skilldb--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
