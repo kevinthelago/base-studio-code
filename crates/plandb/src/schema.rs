@@ -210,6 +210,11 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // be distinguishable from "published as issue 0", because that distinction is the entire input to
     // `bsc plan sync`: a NULL `gh_number` is what says an issue still needs creating. A `DEFAULT 0`
     // would make every pre-existing row claim to be issue #0 and the first sync would skip all of them.
+    // The request lane gained a TIER it is addressed to (the director's upward channel) and the plan
+    // item it concerns. An existing row means what it always meant — a worker asking its director —
+    // which is exactly what the DEFAULT encodes, so no backfill is needed.
+    let _ = conn.execute("ALTER TABLE requests ADD COLUMN target TEXT NOT NULL DEFAULT 'director'", []);
+    let _ = conn.execute("ALTER TABLE requests ADD COLUMN ref_id TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN gh_number INTEGER", []);
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN gh_node_id TEXT", []);
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN synced_at INTEGER", []);
