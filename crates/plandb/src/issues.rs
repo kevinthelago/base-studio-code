@@ -240,6 +240,15 @@ pub const AMEND_OWNED_ELSEWHERE: &[(&str, &str)] = &[
     ("syncedAt", "owned by publish/sync — use `bsc plan link <ref>`"),
 ];
 
+/// The fields `amend` may actually change — every `PlanIssue` key that isn't in
+/// {@link AMEND_OWNED_ELSEWHERE}. A patch key outside this set is a typo (`"tittle"`,
+/// `"acceptence"`), and without this check `merge_patch` would insert it into the JSON object,
+/// `serde` would silently ignore the unrecognized key on the way back out, and the caller would see
+/// its write succeed having changed nothing — exactly the kind of quiet no-op this crate's own gate
+/// discipline exists to catch elsewhere. Named once so the error can list them.
+const AMENDABLE_FIELDS: &[&str] =
+    &["title", "phase", "repo", "stream", "parent", "body", "acceptance", "owns", "dependsOn", "labels"];
+
 /// Merge a partial JSON `patch` onto `existing`, returning the resulting issue WITHOUT writing it
 /// (the caller — the CLI — applies scope + validation, then `upsert`s).
 ///
@@ -263,6 +272,13 @@ pub fn merge_patch(
     for (key, hint) in AMEND_OWNED_ELSEWHERE {
         if patch.contains_key(*key) {
             return Err(format!("amend cannot change `{key}`: {hint}"));
+        }
+    }
+    for key in patch.keys() {
+        if !AMENDABLE_FIELDS.contains(&key.as_str()) {
+            return Err(format!(
+                "amend: unknown field `{key}` — expected one of {AMENDABLE_FIELDS:?} (a typo here would otherwise be silently ignored)"
+            ));
         }
     }
     let mut value = serde_json::to_value(existing).map_err(|e| e.to_string())?;
@@ -719,6 +735,22 @@ mod tests {
             let err = merge_patch(&existing, patch.as_object().unwrap()).unwrap_err();
             assert!(err.contains(key), "{err}");
         }
+    }
+
+    /// A typo'd field name must be rejected, not silently dropped. Without this guard `merge_patch`
+    /// would insert `"tittle"` into the JSON object, `serde` would ignore the unrecognized key
+    /// deserializing back to `PlanIssue`, and the write would report success having changed nothing —
+    /// the exact silent no-op #request-107's own investigation flagged in a different form (status
+    /// being ignored on an `add` update with no error).
+    #[test]
+    fn merge_patch_rejects_an_unknown_field_instead_of_silently_ignoring_it() {
+        let existing = mk_full("F1");
+        let patch = serde_json::json!({ "tittle": "typo'd title" });
+        let err = merge_patch(&existing, patch.as_object().unwrap()).unwrap_err();
+        assert!(err.contains("tittle"), "{err}");
+        // ...and did not sneak the correctly-named field's old value into a differently-cased slot.
+        let existing2 = mk_full("F1");
+        assert_eq!(existing2.title, "original title");
     }
 
     #[test]
