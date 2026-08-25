@@ -85,7 +85,8 @@ The transport-free decision logic lives in [`src/protocol.ts`](src/protocol.ts) 
 unit-tested without a workerd runtime; [`src/room.ts`](src/room.ts) (the Durable Object)
 and [`src/worker.ts`](src/worker.ts) are thin glue over it.
 
-See [`crates/bsc-tunnel/src/protocol.rs`](../crates/bsc-tunnel/src/protocol.rs) for the wire
-contract (shared verbatim with mobile-studio-code) and
+The wire contract (shared verbatim with mobile-studio-code) is the graph record
+`bsc-tunnel--protocol.rs`, not a file — read it with `bsc graph impl get bsc-tunnel--protocol.rs`.
+See also
 [`docs/tunnel-state-transfer.md`](../docs/tunnel-state-transfer.md) for what crosses it; and
 [#197](https://github.com/kevinthelago/base-studio-code/issues/197) for the architecture.

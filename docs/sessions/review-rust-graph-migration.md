@@ -66,7 +66,8 @@ src-tauri/console 6 · src-tauri/platform 6 · bsc-util 5 · bsc-agent 4 · bsc-
 
 Good first targets are small, leaf and pure: `crates/plandb/src/{classify,market,requirement,skipped,
 deploy,triage}.rs` (46–86 L), `crates/bsc-cad/src/stl.rs` (42 L), `crates/data/src/source_meta.rs`
-(36 L), `crates/bsc-tunnel/src/noise.rs` (34 L).
+(36 L), and `bsc-tunnel`'s `noise.rs` (34 L) — the last of which has since migrated and is now the
+record `bsc-tunnel--noise.rs`.
 
 ---
 

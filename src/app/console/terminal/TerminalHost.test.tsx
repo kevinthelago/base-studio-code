@@ -11,12 +11,20 @@ const rec = vi.hoisted(() => ({ mounts: [] as string[], unmounts: [] as string[]
 vi.mock("@/app/console/panes/views/TerminalView", async () => {
   const { useEffect } = await import("react");
   return {
-    TerminalView: ({ paneId, visible, initialCwd }: { paneId: string; visible?: boolean; initialCwd?: string }) => {
+    TerminalView: ({ paneId, visible, initialCwd, startupPrompt }: { paneId: string; visible?: boolean; initialCwd?: string; startupPrompt?: string }) => {
       useEffect(() => {
         rec.mounts.push(paneId);
         return () => { rec.unmounts.push(paneId); };
       }, [paneId]);
-      return <div data-testid="tv" data-pane={paneId} data-visible={String(!!visible)} data-cwd={initialCwd ?? ""} />;
+      return (
+        <div
+          data-testid="tv"
+          data-pane={paneId}
+          data-visible={String(!!visible)}
+          data-cwd={initialCwd ?? ""}
+          data-prompt={startupPrompt ?? ""}
+        />
+      );
     },
   };
 });
@@ -165,6 +173,49 @@ describe("TerminalHost parked holding claims (#3357)", () => {
       </TerminalHost>,
     );
     expect(rec.mounts).toEqual(["proj:api"]);
+  });
+
+  /// A DEBUG-studio session is per-REQUEST, so its pane id is not in the exact-match
+  /// `STUDIO_SESSION_PANE_IDS` the #3427 gate reads — and the mount the gate's comment named as the
+  /// guarantee (`DebugSessionMount`) no longer exists. The gate silently stopped covering the sessions
+  /// that replaced it, and the failure is the one #3427 exists to prevent: reproduced before this fix,
+  /// the launch went out with cwd `""` and initCmd `""` — which also skips `ensure_session_settings`,
+  /// so the session runs with no role gate at all.
+  it("does NOT launch a per-request DEBUG session before its mount claims it", () => {
+    const Opening = ({ mounted }: { mounted: boolean }) => (
+      <TerminalHost>
+        <div key="v" data-testid="viewer"><TerminalSlot paneId="debug-studio:req-7" visible /></div>
+        {mounted && (
+          <div key="m" data-testid="holding">
+            <TerminalSlot paneId="debug-studio:req-7" primary parked visible={false} initialCwd="/repo" initCmd="claude" startupPrompt="YOUR REQUEST IS #7." />
+          </div>
+        )}
+      </TerminalHost>
+    );
+    const { queryByTestId, rerender } = render(<Opening mounted={false} />);
+    expect(queryByTestId("tv"), "launched before its mount claimed it").toBeFalsy();
+
+    rerender(<Opening mounted />);
+    expect(rec.mounts).toEqual(["debug-studio:req-7"]);
+    expect(queryByTestId("tv")!.getAttribute("data-cwd")).toBe("/repo");
+  });
+
+  /// The launch PROMPT travels with the other launch props, from the primary claim.
+  ///
+  /// It used to reach `TerminalView` only through the store, read once inside a one-shot launch effect —
+  /// so a surface whose write landed after that read lost it silently, and a session with no prompt is
+  /// indistinguishable from one that has finished its work. Measured on the running app before this fix:
+  /// 58 of 58 debug launches carried the props and NOT ONE carried the prompt.
+  it("sources the startup prompt from the primary claim, like the other launch props", () => {
+    render(
+      <TerminalHost>
+        <div data-testid="viewer"><TerminalSlot paneId="debug-studio:req-9" visible /></div>
+        <div data-testid="holding">
+          <TerminalSlot paneId="debug-studio:req-9" primary parked visible={false} initialCwd="/repo" initCmd="claude" startupPrompt="YOUR REQUEST IS #9." />
+        </div>
+      </TerminalHost>,
+    );
+    expect(document.querySelector("[data-testid='tv']")!.getAttribute("data-prompt")).toBe("YOUR REQUEST IS #9.");
   });
 
   it("owns the terminal (parked, off-screen) once it is the last claim standing", () => {

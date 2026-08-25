@@ -12,8 +12,6 @@
 //! volume stays bounded no matter how often an event fires — plus a capped raw log of occurrences.
 //! `summary` returns the aggregates (the "what are users doing" read); `list` returns raw occurrences.
 
-pub mod cli;
-mod schema;
 
 use rusqlite::types::Value;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -248,3 +246,15 @@ mod tests {
         assert_eq!(n, 0);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/schema.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get usagedb--<module>.rs
+//     bsc graph impl set --id usagedb--<module>.rs --code-file <f>
+//     bsc graph promote --id usagedb--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
