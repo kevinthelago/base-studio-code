@@ -246,19 +246,28 @@ which group's contract it resolved against. Compact JSON by default; --pretty in
     },
     CmdDoc {
         name: "tests",
-        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node (#3907)",
+        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node, or adopt one into its SEED (#3907/#109)",
         usage: "USAGE:
   bsc ui tests harvest [<root>] [--kit K] [--pretty]
+  bsc ui tests adopt <id> --from <path> [<root>] [--pretty]
 
-Pairs each record with its COLOCATED test (`<src-without-ext>.test.tsx`, else `.test.ts`) under <root>
-(default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY — pipe into `set`:
+harvest pairs each record with its COLOCATED test (`<src-without-ext>.test.tsx`, else `.test.ts`) under
+<root> (default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY — pipe
+into `set`:
 
   bsc ui tests harvest --kit base-studio-code | bsc ui set --by tests-harvest
 
 MIRROR, not source: the files stay authoritative; this copies them onto the node so the graph is
 queryable and `bsc ui doctor`'s `no-tests` is honest. ONE ENTRY PER FILE, verbatim — a test's meaning
 lives partly outside its `it()` blocks (imports, beforeEach, mocks), so a per-test split would drop it.
-A record with no colocated test is OMITTED, never given an empty `tests`.",
+A record with no colocated test is OMITTED, never given an empty `tests`.
+
+adopt writes a test straight into a record's SEED file (`src-tauri/data/components/app/**`, default
+<root> `.`) — the copy `emit-records` reads, which `set` (the runtime STORE) cannot reach (#109). Use it
+when a record's carried test has fallen behind the src/ file that still shadows it: reads <path>
+verbatim, replaces the record's whole `tests` array, and edits only that one field (no full
+re-serialize, so key order and formatting elsewhere are untouched). Reports `changed: false` when the
+content already matched. A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "harvest",
