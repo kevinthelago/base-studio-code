@@ -73,7 +73,32 @@ USAGE:
 Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.
 Validated at set-time (#2395): a non-empty ref + title per issue, and a known \"status\" when set
 (open | in_progress | blocked | complete | verified | failed). A bad batch is rejected whole —
-nothing is written. --force skips validation.",
+nothing is written. --force skips validation.
+
+WARNING (#request-107): on an EXISTING ref this REPLACES the content fields — any field the object
+omits (body, acceptance, owns, dependsOn, labels, …) is cleared, not left as-is. For a partial edit
+(fix one acceptance criterion, append to a body) use `bsc plan amend <ref>` instead, which merges.
+\"status\" and the gh* identity are the two fields `add` never touches on an existing ref even when
+the object carries them — they're owned by `bsc plan status` / `bsc plan link`.",
+    },
+    CmdDoc {
+        name: "amend",
+        summary: "merge partial JSON onto ONE issue, preserving every other field",
+        usage: "\
+USAGE:
+  bsc plan amend <ref>   # a JSON object of just the fields to change, on stdin
+
+Merges the patch onto the existing issue: a field the patch does not name is left exactly as it was,
+a `null` value CLEARS an optional field (mirrors `bsc graph impl set --clear`), and any other value
+overwrites that one field. Array fields (acceptance/owns/dependsOn/labels) replace whole when supplied
+— correcting one entry means sending the corrected array, still only ONE field of the issue.
+
+Use this instead of `add` when changing part of an existing issue: `add` needs the WHOLE object, so a
+one-field correction otherwise means reading the full record, editing it in an interpreter, and
+writing it back — and a slip in that round trip can silently drop the rest of a long body.
+
+Refuses to touch \"ref\" / \"status\" / \"ghNumber\" / \"ghNodeId\" / \"syncedAt\" — each is owned by a
+different verb (`status`, `link`) or is the issue's identity; the error names which one to use.",
     },
     CmdDoc {
         name: "get",
@@ -680,6 +705,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // helpers below.
     match cmd.as_str() {
         "add" => issues::cmd_add_cmd(&args),
+        "amend" => issues::cmd_amend(&args),
         "get" => issues::cmd_get(&args),
         "summary" => issues::cmd_summary(&args),
         "list" | "mine" => issues::cmd_list(&args),
@@ -940,7 +966,7 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc plan", TAGLINE, COMMANDS);
         // Every top-level command appears in the compact menu.
         for c in [
-            "add", "get", "summary", "list", "mine", "status", "link", "remove", "render", "snapshot", "feature", "repo",
+            "add", "amend", "get", "summary", "list", "mine", "status", "link", "remove", "render", "snapshot", "feature", "repo",
             "fleet", "deploy", "deps", "market", "classify", "transformation", "mcp", "blueprint", "ui", "discovery",
             "confirm", "skip", "integration", "lesson", "request", "triage", "stage", "automations", "startup",
             "github-context", "artifact",
