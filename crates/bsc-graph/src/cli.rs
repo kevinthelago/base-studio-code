@@ -1703,12 +1703,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // file, so path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
         "tests" => {
             if positional.get(1).copied() != Some("harvest") {
-                return Err("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]".to_string());
+                return Err("usage: bsc graph tests harvest <dir> [--id a,b] [--dry-run] [--pretty]".to_string());
             }
             let dir = positional
                 .get(2)
-                .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
+                .ok_or("usage: bsc graph tests harvest <dir> [--id a,b] [--dry-run] [--pretty]")?;
             let dry = args.iter().any(|a| a == "--dry-run");
+            // #123 — SCOPED to named ids, so pairing one record does not rewrite every other impl that
+            // happens to share the harvest's colocated-test pass. Absent, the whole store is walked, as
+            // before.
+            let ids: Option<std::collections::HashSet<String>> = flag_value(&args, "--id").map(|s| {
+                s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+            });
             let root = std::path::Path::new(dir);
             if !root.is_dir() {
                 return Err(format!("no such directory: {dir}"));
@@ -1718,7 +1724,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             bsc_cli_util::require_harvestable_root(root)?;
 
             let mut g = crate::load();
-            let impls = crate::implementations_of(&g);
+            let impls: Vec<Value> = crate::implementations_of(&g)
+                .into_iter()
+                .filter(|im| {
+                    ids.as_ref().is_none_or(|ids| {
+                        im.get("id").and_then(Value::as_str).is_some_and(|id| ids.contains(id))
+                    })
+                })
+                .collect();
 
             // ⚠️ A WRONG ROOT LOOKS EXACTLY LIKE AN UNTESTED LIBRARY. Every `src` is repo-relative and
             // already begins `src/`, so the root to pass is the REPO root. Handed `src` instead, every
@@ -2398,7 +2411,7 @@ fn help(prog: &str) -> String {
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
-  \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
+  \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
@@ -2734,6 +2747,77 @@ mod tests {
         // every colliding id, so the caller can retry with the exact one it means.
         let err = run(vec!["impl".into(), "get".into(), "dup".into()], "bsc graph").unwrap_err();
         assert!(err.contains("dup-a.ts") && err.contains("dup-b.ts"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #123 — a bare `tests harvest` walks the WHOLE store, so pairing one just-harvested record used to
+    /// rewrite every other impl that happened to share the pass. `--id` scopes the write to the named
+    /// ids: `b.ts` carries an equally real colocated test and must be left untouched when only `a.ts` is
+    /// named.
+    #[test]
+    fn tests_harvest_scopes_pairing_to_named_ids_via_id_flag() {
+        let dir = crate::unique_temp("testsharvest-id");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env — the same
+        // accepted-racy pattern `impl_set_writes_and_clears_module_state` already uses, since
+        // `BSC_GRAPH_STORE` is process-global while Rust tests run in parallel.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(repo.join("src/x")).unwrap();
+        std::fs::write(repo.join("src/x/a.ts"), "export function a() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/a.test.ts"),
+            "describe(\"a\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+        std::fs::write(repo.join("src/x/b.ts"), "export function b() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/b.test.ts"),
+            "describe(\"b\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+
+        let set = |id: &str, src: &str| {
+            run(
+                vec![
+                    "impl".into(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), id.into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), id.into(),
+                    "--code".into(), "export function x() {}".into(),
+                    "--src".into(), src.into(),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+        };
+        set("a.ts", "src/x/a.ts");
+        set("b.ts", "src/x/b.ts");
+
+        run(
+            vec![
+                "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
+                "--id".into(), "a.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let has_tests = |id: &str| {
+            crate::implementations()
+                .into_iter()
+                .find(|i| i.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|i| i.get("tests").cloned())
+                .is_some()
+        };
+        assert!(has_tests("a.ts"), "the named id is paired");
+        assert!(!has_tests("b.ts"), "an unnamed id is left alone even though it also has a colocated test");
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
