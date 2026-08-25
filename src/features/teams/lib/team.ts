@@ -10,6 +10,10 @@ import formsEmbedded from "@data/teams/communication-forms.json";
 import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
 import { slugify } from "@/shared/lib/core/format";
+// The tier vocabulary, TYPE-only so this model stays React/Tauri-free (and the feature-boundary rule
+// allows a type import anywhere). The runtime validation of a stored value lives where a value is
+// actually read — `teamRoleStreams` at launch, and `bsc teams model` at write time.
+import type { ModelId } from "@/app/console/lib/models";
 
 /** The canonical orientation a form typically flows (a HINT; an archetype's lane placement wins). */
 export type FormDirection = "down" | "up" | "lateral" | "in" | "out";
@@ -71,6 +75,18 @@ export interface Position {
   kind: PositionKind;
   /** For `agent` positions: the persona this node embodies (its behavior/role/skills). */
   personaId?: string;
+  /** For `agent` positions: run THIS placement on a different model tier than the persona's own
+   *  default. Unset (the normal state) = the persona's `model`; unset there too = Claude Code's own
+   *  default, with no `--model` at all.
+   *
+   *  It lives on the PLACEMENT rather than the persona because a persona is shared across teams by
+   *  design: pointing a team at a cheap tier by editing its personas would move every other team that
+   *  places them, and cloning the personas instead forks the start prompt + skill list that were the
+   *  reason to share one. This is what makes a team cheap to run while testing.
+   *
+   *  Precedence at fleet launch, nearest first: the stream's own model > this > the persona's default.
+   *  Authored from the CLI with `bsc teams model <team> <node> <tier>`. */
+  model?: ModelId;
   /** Display override — required for external/resource nodes; optional label for a duplicated persona. */
   label?: string;
   /** Canvas layout (optional; the designer places them). */

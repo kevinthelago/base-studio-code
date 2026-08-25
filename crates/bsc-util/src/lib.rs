@@ -26,6 +26,12 @@ pub use sidecars::{Sidecar, CHANNEL_MOCK_MCP, COMPLIANCE_MCP, RESEARCH_MCP, SIDE
 pub mod log_streams;
 pub use log_streams::{LogStream, LOG_STREAMS};
 
+/// The canonical model-tier registry — ONE list shared by the app's launch path
+/// (`claude_model_flag`) and the `bsc persona` / `bsc teams` verbs that WRITE a model, so a tier the
+/// CLI accepts is exactly a tier the harness can launch.
+pub mod models;
+pub use models::{is_model_id, model_alias, model_id_list, model_ids, ModelTier, MODEL_TIERS};
+
 /// The canonical always-on dangerous-bash floor (#1844) — ONE list both the Claude harness
 /// (`Bash(<glob>)` deny rules) and the bsc-agent runtime (substring match) render from.
 pub mod dangerous;

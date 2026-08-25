@@ -16,7 +16,8 @@ bsc-json-store = { path = "../bsc-json-store" }
 # Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
 bsc-cli-util = { path = "../bsc-cli-util" }
 # The ONE home-dir resolver (#1646) — `rename` resolves the persona store the same way the shared
-# scaffold does (`--dir` > env > `~/.base-studio-code/personas`).
+# scaffold does (`--dir` > env > `~/.base-studio-code/personas`) — AND the canonical model-tier
+# registry `model` validates against, so a tier this CLI accepts is one the harness can launch.
 bsc-util = { path = "../bsc-util" }
 # `rename` patches ONE field of the stored record without re-serializing a typed model.
 # The wire contract for `bsc persona use` (#change-a-panes-persona-from-the-cli) crosses the appchan,

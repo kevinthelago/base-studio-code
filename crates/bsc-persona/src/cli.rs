@@ -31,9 +31,13 @@ const COMMANDS: &[CmdDoc] = &[
 USAGE:
   bsc persona list [--full] [--pretty]
 
-Prints every persona's { id, name, role } as JSON (compact; --pretty for indented). --full emits the
-COMPLETE persona objects (role + startPrompt + skills + model + …) as a plain array — the
-full-fidelity read the desktop library hydration needs.",
+Prints every persona's { id, name, role, model } as JSON (compact; --pretty for indented). --full
+emits the COMPLETE persona objects (role + startPrompt + skills + model + …) as a plain array — the
+full-fidelity read the desktop library hydration needs.
+
+An empty `model` is the real answer for a persona that has never set one: it launches on Claude
+Code's own default. `model` is projected here so the whole library's tiers are ONE read — asking
+which personas run cheap used to mean a `get` per persona.",
     },
     CmdDoc {
         name: "get",
@@ -75,6 +79,39 @@ it is for a project.
 
 An architect persona's name is what the Glance architect node is labelled with, so this is how an
 architect names itself or another one.",
+    },
+    CmdDoc {
+        name: "model",
+        summary: "set (or clear) the LLM tier a persona launches on",
+        usage: "\
+USAGE:
+  bsc persona model <id> <tier>     # haiku-4.5 | sonnet-4.5 | opus-4.5
+  bsc persona model <id> --clear    # back to the harness default
+
+Sets one persona's default MODEL and leaves every other field byte-identical. Prints the stored
+persona. Every session launched as this persona runs on that tier (`claude --model <alias>`) unless
+something nearer overrides it — a fleet stream's own model, or a team placement's.
+
+This is how you make a team cheap to test: point its personas at `haiku-4.5`, run the fleet, then
+clear them again. Use `bsc teams model` instead when only ONE team should be cheap — that overrides
+the tier for that placement and leaves the persona's default alone.
+
+An unknown tier is REFUSED and the error names the ones that exist. That matters more than it looks:
+an unrecognized value is not an error at launch, it is silently no `--model` at all, so a typo would
+read as `sonnet` and cost like `opus` with nothing to see.
+
+--clear removes the field, which is not the same as naming a tier: the session then launches with no
+`--model` and runs on Claude Code's own default. That is the default for every persona that has never
+set one.
+
+It exists for the reason `rename` does: `set` is a whole-record verbatim upsert, so changing one
+field through it means reading the record, hand-copying it, editing and writing the whole thing back
+— and the start prompt and the skill list are the expensive things to lose in that round trip. A
+restricted session cannot pipe or redirect either.
+
+A BUILT-IN persona is settable here, unlike `rename`/`remove`. Its model is not its identity, the
+library reconcile preserves the edit, and the system sessions (designer, librarian, architect, …) are
+exactly the ones worth running cheap while testing.",
     },
     CmdDoc {
         name: "use",
@@ -134,7 +171,7 @@ const SPEC: CliSpec = CliSpec {
     dir_segment: "personas",
     tagline: TAGLINE,
     commands: COMMANDS,
-    meta_fields: &["id", "name", "role"],
+    meta_fields: &["id", "name", "role", "model"],
     graph_fields: &[],
     field_aliases: &[],
 };
@@ -142,12 +179,15 @@ const SPEC: CliSpec = CliSpec {
 /// The `persona` subcommand entrypoint: `args` is everything after `bsc persona`; `prog` is the
 /// display name for help/errors. Delegates to the shared dispatch with the persona [`SPEC`].
 ///
-/// `rename` is intercepted BEFORE delegating: it is persona-specific (the shared store CLI knows
-/// nothing about a `name` field) and the scaffold would reject it as an unknown command. `help` still
-/// lists it, because the catalog above is what the shared help renders.
+/// `rename` and `model` are intercepted BEFORE delegating: they are persona-specific (the shared store
+/// CLI knows nothing about a `name` or `model` field) and the scaffold would reject them as unknown
+/// commands. `help` still lists them, because the catalog above is what the shared help renders.
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     if args.first().map(String::as_str) == Some("rename") && args.get(1).map(String::as_str) != Some("help") {
         return rename(&args, prog);
+    }
+    if args.first().map(String::as_str) == Some("model") && args.get(1).map(String::as_str) != Some("help") {
+        return set_model(&args, prog);
     }
     if args.first().map(String::as_str) == Some("use") && args.get(1).map(String::as_str) != Some("help") {
         return use_pane(&args, prog);
@@ -356,6 +396,85 @@ fn rename(args: &[String], prog: &str) -> Result<(), String> {
     refuse_if_builtin(&store, id, prog, "rename")?;
     v["name"] = serde_json::Value::String(name.to_string());
     let out = serde_json::to_string(&v).map_err(|e| format!("{prog} rename: {e}"))?;
+    store.set(id, &out)?;
+    println!("{out}");
+    Ok(())
+}
+
+/// `model <id> <tier>` / `model <id> --clear` — set (or remove) one persona's default model tier,
+/// leaving every other field untouched.
+///
+/// Read-modify-write over the STORED json for the same reason [`rename`] is: the record is held
+/// verbatim, and round-tripping it through a typed struct here would quietly drop any field this
+/// crate has no model for.
+///
+/// ## The tier is validated, and that is the point of the verb
+/// An unrecognized model is not an error at launch — `claude_model_flag` returns `None`, no `--model`
+/// is injected, and the session runs on the harness default. So a typo stored through `set` is
+/// invisible: the persona reads as `haiku-4.5x` and costs like whatever Claude Code defaults to. The
+/// vocabulary is [`bsc_util::MODEL_TIERS`], the same table the launch maps through, so a tier this
+/// accepts is exactly a tier the harness can carry.
+///
+/// ## Built-ins are NOT refused here
+/// Unlike `rename`/`remove`, which are guarded because a packaged persona is the system's own
+/// identity and the Teams graph presents it read-only. A model is not identity: the library's
+/// reconcile keeps a user edit to a built-in (`definedFields`), and the system sessions are precisely
+/// the ones a user wants to run cheap while testing.
+fn set_model(args: &[String], prog: &str) -> Result<(), String> {
+    let usage = format!(
+        "usage: {prog} model <id> <tier> | {prog} model <id> --clear   (tiers: {})",
+        bsc_util::model_id_list()
+    );
+    let mut clear = false;
+    let mut positional: Vec<&str> = Vec::new();
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--clear" => clear = true,
+            // Consumed by `store_dir`, which re-reads the raw args — skipped here so a store path is
+            // never mistaken for the persona id or the tier.
+            "--dir" => { it.next().ok_or("--dir needs a value")?; }
+            "--pretty" | "--json" => {}
+            other if other.starts_with("--") => return Err(format!("{prog} model: unknown flag {other}")),
+            other => positional.push(other),
+        }
+    }
+    let id = positional.first().copied().ok_or_else(|| usage.clone())?;
+    let tier = positional.get(1).copied().map(str::trim).filter(|t| !t.is_empty());
+    if clear && tier.is_some() {
+        return Err(format!("{prog} model: --clear takes no tier — pass one or the other"));
+    }
+    if !clear && tier.is_none() {
+        return Err(usage);
+    }
+    if let Some(t) = tier {
+        if !bsc_util::is_model_id(t) {
+            return Err(format!(
+                "{prog} model: '{t}' is not a model tier. Pick one of: {}\n  \
+                 (or `{prog} model {id} --clear` to launch on Claude Code's own default)",
+                bsc_util::model_id_list()
+            ));
+        }
+    }
+
+    let dir = store_dir(args, prog)?;
+    let store = bsc_json_store::Store::new(dir, SPEC.noun);
+    let raw = store
+        .get(id)?
+        .ok_or_else(|| format!("{prog} model: no persona '{id}' (list them with `{prog} list`)"))?;
+    let mut v: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("{prog} model: persona '{id}' is not valid JSON: {e}"))?;
+    let obj = v
+        .as_object_mut()
+        .ok_or_else(|| format!("{prog} model: persona '{id}' is not a JSON object"))?;
+    match tier {
+        // Cleared by REMOVING the key rather than writing `""`: an empty string is a value the app
+        // would have to special-case everywhere it reads one, and "no model" is genuinely the absence
+        // of the field — which is how every persona that never set one is already stored.
+        None => { obj.remove("model"); }
+        Some(t) => { obj.insert("model".into(), serde_json::Value::String(t.to_string())); }
+    }
+    let out = serde_json::to_string(&v).map_err(|e| format!("{prog} model: {e}"))?;
     store.set(id, &out)?;
     println!("{out}");
     Ok(())
@@ -601,11 +720,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn spec_is_the_persona_store_with_role_in_the_lean_list() {
+    fn spec_is_the_persona_store_with_role_and_model_in_the_lean_list() {
         assert_eq!(SPEC.noun, "persona");
         assert_eq!(SPEC.dir_env, "BSC_PERSONA_DIR");
         assert_eq!(SPEC.dir_segment, "personas");
-        assert_eq!(SPEC.meta_fields, &["id", "name", "role"]);
+        // `model` is projected so "which personas run cheap" is ONE read rather than a `get` each.
+        assert_eq!(SPEC.meta_fields, &["id", "name", "role", "model"]);
     }
 
     /// A scratch persona store, wired through `--dir` so the test never touches the real one.
@@ -904,11 +1024,138 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // ── `model` — the tier verb (a-model-cannot-be-chosen-from-the-command-surface) ───────────────
+
+    /// The point of the verb: one field moves and the expensive ones do not. `set` is a whole-record
+    /// upsert, so the alternative is a read-edit-write round trip that drops whatever it forgets.
+    #[test]
+    fn model_sets_the_tier_and_leaves_every_other_field_byte_identical() {
+        let dir = scratch("model-set");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store
+            .set(
+                "persona-worker",
+                r#"{"id":"persona-worker","name":"Worker","role":"worker","startPrompt":"long prose","skills":["a","b"],"unknownFutureField":42}"#,
+            )
+            .unwrap();
+
+        run(vec!["model".into(), "persona-worker".into(), "haiku-4.5".into(), "--dir".into(), dir.to_string_lossy().into_owned()], "bsc persona").unwrap();
+
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-worker").unwrap().unwrap()).unwrap();
+        assert_eq!(v["model"], "haiku-4.5");
+        assert_eq!(v["id"], "persona-worker");
+        assert_eq!(v["name"], "Worker");
+        assert_eq!(v["role"], "worker");
+        assert_eq!(v["startPrompt"], "long prose");
+        assert_eq!(v["skills"], serde_json::json!(["a", "b"]));
+        assert_eq!(v["unknownFutureField"], 42, "a field this crate has no model for must survive");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `--clear` REMOVES the key rather than writing `""`. Absence is what "no model" already looks
+    /// like for every persona that never set one, and an empty string would be a second spelling of
+    /// the same state that every reader would have to know about.
+    #[test]
+    fn model_clear_removes_the_key_rather_than_emptying_it() {
+        let dir = scratch("model-clear");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store.set("p1", r#"{"id":"p1","name":"One","role":"worker","model":"opus-4.5"}"#).unwrap();
+
+        run(vec!["model".into(), "p1".into(), "--clear".into(), "--dir".into(), dir.to_string_lossy().into_owned()], "bsc persona").unwrap();
+
+        let v: serde_json::Value = serde_json::from_str(&store.get("p1").unwrap().unwrap()).unwrap();
+        assert!(v.get("model").is_none(), "cleared means ABSENT, not empty: {v}");
+        assert_eq!(v["name"], "One", "clearing one field touches nothing else");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The refusal is the whole reason the verb validates. An unrecognized tier is NOT an error at
+    /// launch — no `--model` is injected and the session runs on the harness default — so a stored
+    /// typo would read as the tier the user named and bill as something else entirely.
+    #[test]
+    fn model_refuses_an_unknown_tier_and_writes_nothing() {
+        let dir = scratch("model-bad");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store.set("p1", r#"{"id":"p1","name":"One","role":"worker"}"#).unwrap();
+        let d = || dir.to_string_lossy().into_owned();
+
+        for junk in ["haiku", "sonnet-4", "gpt-4o", "OPUS-4.5"] {
+            let err = run(vec!["model".into(), "p1".into(), junk.into(), "--dir".into(), d()], "bsc persona").unwrap_err();
+            assert!(err.contains(junk), "the error names what was passed: {err}");
+            // ...and what could have been passed instead — a refusal that only says "no" is a dead end.
+            for tier in bsc_util::model_ids() {
+                assert!(err.contains(tier), "the error names the tier {tier}: {err}");
+            }
+        }
+        // An unknown persona is an error, not a create — `set` is the verb that creates.
+        let err = run(vec!["model".into(), "ghost".into(), "haiku-4.5".into(), "--dir".into(), d()], "bsc persona").unwrap_err();
+        assert!(err.contains("ghost"), "{err}");
+        // A tier with no persona, and a persona with no tier, are both usage errors.
+        assert!(run(vec!["model".into(), "p1".into(), "--dir".into(), d()], "bsc persona").is_err());
+        assert!(run(vec!["model".into(), "--dir".into(), d()], "bsc persona").is_err());
+        // `--clear` and a tier together are ambiguous — refused rather than one silently winning.
+        assert!(run(vec!["model".into(), "p1".into(), "haiku-4.5".into(), "--clear".into(), "--dir".into(), d()], "bsc persona").is_err());
+
+        // Nothing any refusal touched was written.
+        let v: serde_json::Value = serde_json::from_str(&store.get("p1").unwrap().unwrap()).unwrap();
+        assert!(v.get("model").is_none(), "a refusal writes nothing: {v}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every tier the registry offers is settable. This is the property that keeps the CLI and the
+    /// launch in step: what one accepts, the other can map to a `--model` alias.
+    #[test]
+    fn every_registry_tier_is_settable() {
+        let dir = scratch("model-all");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store.set("p1", r#"{"id":"p1","name":"One","role":"worker"}"#).unwrap();
+        for tier in bsc_util::model_ids() {
+            run(vec!["model".into(), "p1".into(), tier.into(), "--dir".into(), dir.to_string_lossy().into_owned()], "bsc persona").unwrap();
+            let v: serde_json::Value = serde_json::from_str(&store.get("p1").unwrap().unwrap()).unwrap();
+            assert_eq!(v["model"], tier);
+            assert!(bsc_util::model_alias(tier).is_some(), "a settable tier must map to a launch alias");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A BUILT-IN persona is settable here, unlike `rename`/`remove`. Those are guarded because a
+    /// packaged persona is the system's own identity; a model is not identity, the library reconcile
+    /// keeps the edit, and the system sessions (designer, librarian, architect, …) are exactly the
+    /// ones worth running cheap while testing.
+    #[test]
+    fn model_is_settable_on_a_builtin_unlike_rename() {
+        let dir = scratch("model-builtin");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store.set("persona-designer", r#"{"id":"persona-designer","name":"Designer","role":"designer","builtin":true}"#).unwrap();
+        let d = || dir.to_string_lossy().into_owned();
+
+        run(vec!["model".into(), "persona-designer".into(), "haiku-4.5".into(), "--dir".into(), d()], "bsc persona").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-designer").unwrap().unwrap()).unwrap();
+        assert_eq!(v["model"], "haiku-4.5");
+        assert_eq!(v["builtin"], true, "the packaged identity is untouched");
+        // ...while renaming the same record is still refused.
+        assert!(run(vec!["rename".into(), "persona-designer".into(), "Mine".into(), "--dir".into(), d()], "bsc persona").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn model_help_still_routes_to_help_rather_than_setting_a_persona_called_help() {
+        let dir = scratch("model-help");
+        run(vec!["model".into(), "help".into(), "--dir".into(), dir.to_string_lossy().into_owned()], "bsc persona").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc persona", TAGLINE, COMMANDS);
-        for c in ["list", "get", "set", "remove", "use", "whatami"] {
+        for c in ["list", "get", "set", "remove", "use", "whatami", "model"] {
             assert!(ov.contains(c), "overview lists {c}");
+        }
+        // The tier vocabulary is rendered INTO the help, so `bsc persona model help` answers "which
+        // tiers" without a second lookup — and cannot name a tier the launch would not accept.
+        let m = bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "model");
+        for tier in bsc_util::model_ids() {
+            assert!(m.contains(tier), "the model help names {tier}");
         }
         let one = bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "set");
         assert!(one.contains("bsc persona set"));

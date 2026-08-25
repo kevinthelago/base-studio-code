@@ -127,6 +127,42 @@
     /// clamp would then fall through to the CLOSED floor and refuse every write to it, in shipped
     /// builds only. That is the failure class `every_runtime_seed_is_shipped_in_the_bundle` exists
     /// for, arriving through a different door.
+    /// The UI's model catalog and the Rust tier registry are ONE vocabulary, and this is what keeps
+    /// them one.
+    ///
+    /// `@data/console/models.json` is what the model menu renders and what `MODEL_IDS` validates a
+    /// stored persona / placement / stream against on the frontend; `bsc_util::MODEL_TIERS` is what
+    /// `claude_model_flag` maps to a `--model` alias and what `bsc persona model` / `bsc teams model`
+    /// accept. A tier in one and not the other is invisible until it reaches a launch: a JSON-only
+    /// tier is offerable in the UI and then silently launches with NO `--model` (the harness default),
+    /// and a Rust-only tier is settable from the CLI and never appears in the menu.
+    ///
+    /// ORDER is asserted too, not just membership — the catalog is ordered cheapest → most capable and
+    /// both the menu and `DEFAULT_MODEL_ID`'s middle-tier fallback read that order.
+    #[test]
+    fn the_ui_model_catalog_and_the_rust_tier_registry_are_one_vocabulary() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let raw = std::fs::read_to_string(manifest.join("data").join("console").join("models.json"))
+            .expect("data/console/models.json");
+        let catalog: Vec<serde_json::Value> = serde_json::from_str(&raw).expect("models.json parses");
+
+        let json_ids: Vec<String> = catalog
+            .iter()
+            .map(|m| m["id"].as_str().expect("every catalog entry has a string id").to_string())
+            .collect();
+        let rust_ids: Vec<String> = bsc_util::model_ids().iter().map(|s| s.to_string()).collect();
+        assert_eq!(json_ids, rust_ids, "the UI catalog and MODEL_TIERS must name the same tiers, in the same order");
+
+        // ...and every one of them actually maps to a launch alias, which is the property that makes
+        // the shared vocabulary worth anything.
+        for id in &json_ids {
+            assert!(
+                crate::session::launch::claude_model_flag(id).is_some(),
+                "the catalog offers '{id}', which the launch cannot map to a --model alias",
+            );
+        }
+    }
+
     #[test]
     fn every_packaged_persona_is_shipped_in_the_bundle() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
