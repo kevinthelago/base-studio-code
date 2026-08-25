@@ -159,6 +159,10 @@
             assert!(
                 crate::session::launch::claude_model_flag(id).is_some(),
                 "the catalog offers '{id}', which the launch cannot map to a --model alias",
+            );
+        }
+    }
+
     /// The app's own project key is written by TWO independent producers, and they must agree.
     ///
     /// Rust files the app's own faults under `bsc_util::SELF_PROJECT_KEY` (the boot watchdog); the
