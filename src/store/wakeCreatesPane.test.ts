@@ -248,6 +248,23 @@ describe("a woken pane gets a cell, not just a slot in the array", () => {
       .toBeGreaterThanOrEqual(ids.length);
   });
 
+  it("grows the layout for a pane that is ALREADY seated but does not fit", () => {
+    // The correction. Checking capacity only where the pane is SEATED was not enough: once seated, the
+    // next wake finds an owning tab, takes the early path, and skipped the check — so a pane that never
+    // fit stayed outside the grid forever, and every wake killed its PTY and remounted a grid without
+    // it. Observed live: a `live` worker became `stopped` once per wake, while the wake said it worked.
+    useAppStore.setState({
+      tabs: [{ ...buildTab([`${KEY}:director`, PANE]), layout: "1×1" }],
+      fleetPaneStreams: { [PANE]: { id: STREAM, name: "API", repo: "own/api", owns: [], issues: [], dependsOn: [] } },
+      disabledPanes: {}, dormantPanes: {}, endedPanes: {},
+    } as never);
+    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(true);
+    const tab = useAppStore.getState().tabs[0];
+    const [cols, rows] = tab.layout.split("×").map(Number);
+    expect(cols * rows, `a seated pane still needs a cell; layout ${tab.layout}`)
+      .toBeGreaterThanOrEqual((tab.paneIds ?? []).length);
+  });
+
   it("leaves a layout that already fits exactly as it was", () => {
     // Reshaping a grid the user arranged, to seat a pane that already had a home, would be a second bug.
     arm(["", `${KEY}:director`]);
