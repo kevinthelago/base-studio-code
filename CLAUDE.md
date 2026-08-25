@@ -654,8 +654,13 @@ bsc request new "<what you needed and could not do>" \
 `--cmd` is the part that matters — pass the pipeline or the script you were reaching for, verbatim.
 A request is **observed, not narrated**, and the session that closes it needs to see what you actually
 tried. `--title` labels the request's node in the Glance graph, so a good one keeps the queue readable.
-Do **not** pass `--from`: the filing session is stamped for you, which is what wires the request back
-to you in the graph.
+
+`--from` is the one flag whose right answer differs here from the app's own charters. Origin resolves
+`--from` first, then `$BSC_AUDIT_PANE`, and records **absent** rather than guessing (`resolve_origin`,
+`crates/bsc-request/src/cli.rs`). A session running in an app pane carries that variable, so its charter
+tells it never to pass `--from` — the stamp is what hangs the request off its node in the graph. A dev
+session in this checkout is **not** an app pane and carries no such variable, so pass `--from <who is
+driving>` or the request lands unattributed.
 
 **Filing never blocks you.** `bsc request new` prints an id and returns. Do not wait for it, do not
 poll it, and do not stop working because a capability is missing — route around the gap with what the
@@ -684,8 +689,9 @@ transforms, migrates, promotes, repairs or generates something. It is **not**:
 - **Reading.** A one-off `grep`/`jq`/`wc` pipeline to answer a question you have right now is
   ordinary inspection. Look freely; the rule is about operations, not about eyes.
 - **The build tree.** `scripts/gate*`, `gc`, `release`, `emit-records`, `stage-sidecar` and their kin
-  are npm's job and run in CI. They are not agent surface and they stay where they are — the split of
-  which scripts belong to `bsc` and which belong to npm is written down on the item above.
+  are npm's job and run in CI. They are not agent surface and they stay where they are; which scripts
+  move to `bsc` and which stay npm's is enumerated on
+  `record-operations-belong-on-the-bsc-surface-not-in-scripts`.
 - **A test.** A test is not a temp script; it is the deliverable, and it ships on the branch.
 
 **A studio session already lives by this rule** — the architect, designer, librarian and sound-designer
