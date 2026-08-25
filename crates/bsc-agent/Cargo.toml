@@ -2,6 +2,7 @@
 name = "bsc-agent"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 # The model-agnostic agent runtime (epic #1078, P2). A LEAN binary — depends on the
 # shared provider crate, NOT on src-tauri/tauri — so it spawns cheaply per session
@@ -31,3 +32,7 @@ regex = "1"
 # thread (the agent loop runs tools inline on a tokio worker; a nested runtime panics).
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

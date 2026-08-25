@@ -22,7 +22,6 @@
 //! The render is pure and platform-independent **on purpose**: it means these tests run on the
 //! Windows host today, before the Linux migration lands, rather than being untestable until then.
 
-pub mod profile;
 
 use std::path::{Path, PathBuf};
 
@@ -1084,3 +1083,15 @@ mod clear_env_tests {
         assert_eq!(a[i + 2], "/repo");
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/profile.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-sandbox--<module>.rs
+//     bsc graph impl set --id bsc-sandbox--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-sandbox--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

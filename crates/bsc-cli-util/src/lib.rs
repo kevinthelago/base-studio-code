@@ -15,9 +15,6 @@
 //! the scaffold can't live in a SQLite-named crate. Tauri-free and dependency-light (`serde` /
 //! `serde_json`) so the small CLIs stay small.
 
-/// The vendored-file provenance contract (#4192) — the stamp + hash + `sync` verdicts shared by every
-/// `emit` surface, so `bsc ui emit` and `bsc graph emit` cannot drift into two look-alike formats.
-pub mod vendored;
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -1619,3 +1616,15 @@ mod tests {
         assert_eq!(empty, "");
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/vendored.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-cli-util--<module>.rs
+//     bsc graph impl set --id bsc-cli-util--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-cli-util--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
