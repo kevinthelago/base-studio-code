@@ -26,6 +26,10 @@ use serde::{Deserialize, Serialize};
 pub mod cli;
 /// Who the fleet IS — plan.db's membership, kept separate from the app's liveness (see the module docs).
 pub mod membership;
+/// The dependency gate (#the-director-can-see-which-streams-are-held) — which streams may start, which
+/// are waiting on an upstream, and which sit in a cycle. Shares one CONTRACT FIXTURE with the app's
+/// `streamGate.ts`, so the reporter and the launcher cannot answer differently.
+pub mod gate;
 
 /// This verb's routing key in the shared channel.
 pub const KIND: &str = "fleet";

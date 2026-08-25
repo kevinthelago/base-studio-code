@@ -23,3 +23,7 @@ plandb = { path = "../plandb" }
 # app's `clone_repo` command call the SAME function, so the CLI's door and the UI's door cannot drift.
 # Tauri-free, which is what lets this run with the desktop closed.
 bsc-project = { path = "../bsc-project" }
+# The coord log (#the-director-can-see-which-streams-are-held) — tier 3 of the dependency gate is a
+# `maintain` event, and this crate already owns the one parser for that file. Cheap: its heaviest dep
+# is the bundled rusqlite `plandb` already pulls in here.
+logs = { path = "../logs" }
