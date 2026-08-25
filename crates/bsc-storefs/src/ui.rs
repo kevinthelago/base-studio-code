@@ -32,6 +32,13 @@ pub struct Component {
     pub folder: String,
     #[serde(default, rename = "kitId")]
     pub kit_id: String,
+    /// The component's SOURCE, when the caller read it with `bsc ui list --full`.
+    ///
+    /// `None` for the summary read (`bsc ui list`), which is what every non-cage caller wants — the
+    /// two shapes differ by 0.08 MB against 5.7 MB. `Option` rather than `String` so the projection
+    /// can tell "not asked for" from "genuinely empty" and say the right thing in its README.
+    #[serde(default, rename = "srcText")]
+    pub src_text: Option<String>,
 }
 
 pub fn from_json(s: &str) -> Result<Vec<Component>, serde_json::Error> {
@@ -49,6 +56,15 @@ pub fn project(components: &[Component], generated_at: &str) -> Tree {
         t.insert(format!("{base}/role"), line(&c.role));
         t.insert(format!("{base}/folder"), line(&c.folder));
         t.insert(format!("{base}/kit"), line(&c.kit_id));
+        // The SOURCE tier, when the caller read it. Byte-for-byte and in its own file, for the
+        // reason `/ui/out` puts it in one: it is TSX, and a backtick or a `${…}` in it is content.
+        //
+        // Absent for a summary read, which is every caller that is not building a cage. Without it
+        // a caged designer could see that a component exists and not read the thing it was asked to
+        // edit — which is why the designer had to be let out of its cage in the first place.
+        if let Some(src) = c.src_text.as_ref().filter(|s| !s.is_empty()) {
+            t.insert(format!("{base}/srcText"), src.clone());
+        }
 
         if !c.role.is_empty() {
             by_role.entry(slug(&c.role)).or_default().push(format!("{}\t{}", c.id, c.name));
@@ -65,11 +81,22 @@ pub fn project(components: &[Component], generated_at: &str) -> Tree {
         t.insert(format!("by-kit/{k}"), lines(&v));
     }
     t.insert("schema".into(), write_schema());
-    t.insert("README".into(), readme(components.len(), generated_at));
+    // From the DATA, not from a flag the caller might set wrong: if any component carries source,
+    // the projection has a source tier and its README has to say so.
+    let has_source = components.iter().any(|c| c.src_text.as_ref().is_some_and(|s| !s.is_empty()));
+    t.insert("README".into(), readme_with_source(components.len(), generated_at, has_source));
     t
 }
 
-fn readme(count: usize, generated_at: &str) -> String {
+/// The README, told whether the SOURCE tier is present — the one fact that changes what a reader
+/// can do here, so it must not be stated from a constant.
+fn readme_with_source(count: usize, generated_at: &str, has_source: bool) -> String {
+    let source_note = if has_source {
+        "components/<id>/srcText  the component SOURCE, byte-for-byte as stored"
+    } else {
+        "A component's srcText is NOT projected in this snapshot — it was read with the summary\n\
+         tier (`bsc ui list`). There is no way to read a component's source from here."
+    };
     format!(
         "The component store, as files. THIS IS AN INDEX, NOT THE SOURCE.\n\
          \n\
@@ -77,8 +104,7 @@ fn readme(count: usize, generated_at: &str) -> String {
          by-role/<role>          id and name, tab-separated\n\
          by-kit/<kit>            id and name, tab-separated\n\
          \n\
-         A component's srcText is NOT projected — `bsc ui list` does not carry it, and pulling it\n\
-         would mean one `bsc ui get` per record.\n\
+         {source_note}\n\
          \n\
          THERE IS NO `bsc` IN THIS SESSION, so `bsc ui get <id>` is not a route from here. That is\n\
          the point of the projection, not an oversight: a read surface can exist here precisely\n\
@@ -104,8 +130,9 @@ mod tests {
                 role: "composite".into(),
                 folder: "features/glance".into(),
                 kit_id: "base-studio-code".into(),
+                src_text: None,
             },
-            Component { id: "alertrow".into(), name: "AlertRow".into(), role: "primitive".into(), folder: "app/(alerts)".into(), kit_id: "mobile-studio-code".into() },
+            Component { id: "alertrow".into(), name: "AlertRow".into(), role: "primitive".into(), folder: "app/(alerts)".into(), kit_id: "mobile-studio-code".into(), src_text: None },
         ]
     }
 
