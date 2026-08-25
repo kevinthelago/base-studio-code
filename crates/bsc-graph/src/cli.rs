@@ -715,6 +715,19 @@ fn module_paths_agree(a: &str, b: &str) -> bool {
 
 /// Would joining these sources to a root named `root_name` double the prefix — `src/` under `src/`?
 ///
+/// The extension a carried test's SOURCE FILE had, in the `.ts` / `.tsx` form `AlgoImplTest::ext` holds.
+///
+/// Recorded rather than re-derived because the consumer's fallback is a GUESS from the body — the
+/// emitter reads any `<Word…>` as JSX — and a generic arrow, or a bare `<base>` in a comment, satisfies
+/// it. The test is then written `.tsx`, the parser reads `<T>` as a JSX tag, and the suite reports as a
+/// DEAD FILE rather than a red test: wrong on 177 of 376 files when the algorithm corpus moved onto its
+/// records. Only a real module extension is carried; anything else is left for the fallback rather than
+/// stated wrongly, since a stated extension OVERRIDES the guess.
+fn carried_test_ext(path: &std::path::Path) -> Option<String> {
+    let ext = format!(".{}", path.extension()?.to_string_lossy());
+    matches!(ext.as_str(), ".ts" | ".tsx" | ".js" | ".jsx").then_some(ext)
+}
+
 /// `bsc graph tests harvest <dir>` takes the REPO root, because every `src` is repo-relative and already
 /// begins `src/`. Handed `src` instead, every join becomes `src/src/…`, nothing resolves, and the command
 /// still exits 0 reporting a plausible `paired: 31 · noColocatedTest: 876`. That number reads as "the
@@ -1771,9 +1784,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                 let name = bsc_util::test_display_name(&path, &contents);
                 let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                // CARRY THE SOURCE FILE'S EXTENSION. Without it the emitter falls back to guessing from
+                // the body, and its guess is `/<[A-Za-z][^>]*>/` — which any generic arrow, or a bare
+                // `<base>` inside a comment, satisfies. The test is then written `.tsx`, the parser reads
+                // `<T>` as a JSX tag, and the whole suite reports as a DEAD FILE rather than a red test.
+                // Measured wrong on 177 of 376 files when the algorithm corpus moved onto its records,
+                // which is why `AlgoImplTest::ext` exists — this is the harvest half that fills it.
+                let ext = carried_test_ext(&path);
                 if !dry {
                     let mut next = im.clone();
-                    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+                    next["tests"] = serde_json::json!([{ "name": name, "src": contents, "ext": ext }]);
                     crate::set_impl(&mut g, next)?;
                 }
                 paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
@@ -2790,6 +2810,23 @@ mod set_gate_tests {
     fn a_primitive_is_exempt_and_no_src_is_the_explicit_none() {
         assert!(provenance_declared("primitive", &json!({ "id": "p" }), None, false)); // #2972
         assert!(provenance_declared("algorithm", &json!({ "id": "a" }), None, true));  // --no-src
+    }
+
+    // ── a carried test states its extension (#a-carried-test-cannot-import-a-colocated-json-fixture) ──
+
+    #[test]
+    fn a_harvested_test_carries_the_extension_its_file_had() {
+        // The emitter OBEYS a stated `ext` and only guesses without one, so stating it is the whole fix.
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.ts")).as_deref(), Some(".ts"));
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.tsx")).as_deref(), Some(".tsx"));
+    }
+
+    #[test]
+    fn an_extension_the_emitter_cannot_use_is_left_to_the_fallback() {
+        // A stated ext OVERRIDES the guess, so stating one the consumer rejects is worse than silence:
+        // `.mts` is not in its `/^\.[jt]sx?$/`, and carrying it would name a file nothing collects.
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.mts")), None);
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/README")), None);
     }
 
     // ── unknown flags are an error, not silence (#4154, designer request #52) ────────────────────
