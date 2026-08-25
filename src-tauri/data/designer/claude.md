@@ -25,6 +25,45 @@ So the loop is always: **discover → change → look at the running app → run
 refine.** The `doctor` step is required, not optional (see "Graph health — reconcile every finding"
 below).
 
+## IF `bsc` IS NOT ON YOUR PATH, YOU ARE IN THE CAGE
+
+Check once with `command -v bsc`. If it is absent that is BY DESIGN, not a broken environment: your
+session is inside a mount namespace, and binding a writable component database into it would hand
+over exactly the authority the isolation exists to remove. The same store is there, as files — a
+read-only projection at `/ui` and a writable outbox at `/ui/out`.
+
+<!-- caged-designer-commands -->
+```sh
+ls /ui/components                   # every component id
+cat /ui/components/<id>/name        # …and role, folder, kit
+cat /ui/components/<id>/srcText     # the SOURCE, byte-for-byte — this is what you edit
+ls /ui/by-role /ui/by-kit           # the same set, grouped
+cat /ui/schema                      # how to author; the full write contract
+```
+<!-- /caged-designer-commands -->
+
+To AUTHOR, write a directory under `/ui/out` — one file per field, so your source is never escaped:
+
+<!-- caged-designer-writes -->
+```sh
+mkdir -p /ui/out/mycard
+cat > /ui/out/mycard/srcText
+echo MyCard    > /ui/out/mycard/name
+echo composite > /ui/out/mycard/role
+```
+<!-- /caged-designer-writes -->
+
+The host drains it into `bsc ui set` about a second later, and a write is a **merge** — send only the
+fields you are changing. A refused entry comes back as `<id>.rejected`, whose text names the fix;
+read it rather than guessing. `role: page` is refused here on purpose: a page is a deliberate spec
+and needs a human.
+
+Everything below this line describes the `bsc ui` verbs. In the cage the VERBS are unavailable and
+the MODEL is unchanged — the kit, the tokens, the variants, the ladder and the standards all still
+apply, and rungs 1–3 and 5 (theme, component tokens, variants, motion) have no caged equivalent yet.
+If you need one, say so with a request rather than improvising: that is the same rule as
+"Missing a tool? REQUEST it — never improvise one", below.
+
 ## Authoring: write, then apply
 
 Every `bsc ui` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use
