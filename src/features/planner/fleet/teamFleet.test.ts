@@ -98,6 +98,32 @@ describe("teamRoleStreams (#3102)", () => {
     expect(teamRoleStreams(t, PERSONAS, [])[0].id).toBe("curator-bot");
   });
 
+  // ── the per-placement model override (a-model-cannot-be-chosen-from-the-command-surface) ──────
+
+  it("carries a placement's model onto its stream, so ONE team can run cheap", () => {
+    const t = team([
+      { nodeId: "curator", kind: "agent", personaId: "persona-curator", model: "haiku-4.5" },
+      agent("scribe", "persona-documentor"),
+    ]);
+    const out = teamRoleStreams(t, PERSONAS, []);
+    expect(out[0].model).toBe("haiku-4.5");
+    // The persona itself is untouched — the override is the PLACEMENT's, and the same persona placed
+    // in another team keeps its own default.
+    expect(PERSONAS.find((p) => p.id === "persona-curator")!.model).toBeUndefined();
+    // A placement with no override carries NO model key at all rather than an explicit undefined: the
+    // launch falls back with `sess?.model ?? persona.model`, which an own-property undefined satisfies
+    // — so an absent override would shadow the persona's default with nothing.
+    expect("model" in out[1]).toBe(false);
+  });
+
+  it("DROPS an unrecognized tier rather than carrying it to the launch", () => {
+    // A team record is stored verbatim, so this is what a hand-edited store looks like. An unknown
+    // tier injects no `--model` at all downstream, so carrying it would silently replace the persona's
+    // real default with the harness default — worse than ignoring it.
+    const t = team([{ nodeId: "curator", kind: "agent", personaId: "persona-curator", model: "gpt-4o" as never }]);
+    expect("model" in teamRoleStreams(t, PERSONAS, [])[0]).toBe(false);
+  });
+
   it("is deterministic (author order) and empty for no/undefined team", () => {
     expect(teamRoleStreams(undefined, PERSONAS, [])).toEqual([]);
     expect(teamRoleStreams(team([]), PERSONAS, [])).toEqual([]);

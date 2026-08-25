@@ -68,11 +68,48 @@ asked for. `npm run lint` **does** cover `e2e/`, so the dir is never unchecked b
 
 ```bash
 npm run dev               # Vite dev server — frontend only (hot-reload)
-npm run tauri -- dev      # Full Tauri app with native window + hot-reload
+npm run dev:app           # the FULL app, with build/launch failures recorded (see below)
+npm run tauri -- dev      # the same launch, unrecorded
 npm run tauri -- build    # Production build (creates platform installer)
 cargo test                # Run Rust backend tests
 npm run typecheck    # TypeScript type-check without emit
 ```
+
+### When a build or launch fails, it records itself
+
+A build or launch failure used to exist only as scrollback in whoever's shell ran it, and vanished with
+that shell. `npm run build:plan`, `npm run build` and `npm run dev:app` are wrapped in
+**`bsc errors run`**, which streams the command through untouched, exits with its exact code, and files
+one fingerprinted fault into `projects/studio-code/error.db` when it fails. A green run clears what its
+own command recorded, so the store is a list of what is broken NOW rather than a pile of fixed things.
+
+```bash
+bsc errors projects                       # which project broke — the entry point when you know nothing
+bsc errors list --project studio-code --unresolved
+bsc errors get <fingerprint> --project studio-code    # the diagnostic + its context
+bsc errors resolve <fingerprint> --project studio-code
+```
+
+`--project` matters more than it looks: every other path resolves the store from `$BSC_ERROR_DB`, which
+is set **per session at launch** — so the one reader who most needs these, a session outside the app
+after the app failed to start, is exactly the one without it.
+
+A wrapper can only see a launch that DIES. The one that hurts is the launch where every process stays
+alive — vite up, window open, **frontend never mounted** — and exit codes say nothing. So Rust arms a
+deadline at startup and the frontend acks (`boot_mounted`) when it mounts; silence past it becomes a
+`launch` fault, and a late ack clears it, so guessing the deadline too low costs a few seconds of amber
+rather than a standing lie. When the crash overlay can still reach the backend it hands over the real
+error; when it cannot — the case it exists for — the watchdog files the message-less one, which says
+so rather than inventing a cause.
+
+**A session inside the app cannot answer a LAUNCH failure, and that is structural, not a gap.** The
+panes that would host it are the app's own UI and the runtime collector lives in the app's process, so
+there is nothing running to do the work. Build failures are different — they happen while the app is up
+— and a fault is durable, so a launch failure at 03:00 is still there, and still amber in Glance, at
+09:00. Epic: `bsc plan get epic-a-build-or-launch-failure-leaves-no-record`.
+
+The **gate is deliberately not wired to this**: it already fails loudly in your own shell, and ten
+worktree agents gating in parallel would pin every node red and destroy the signal.
 
 ## Project Structure
 
@@ -397,7 +434,7 @@ Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)
 Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc.rs`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
 
-**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`), `bsc project` (project-hub list/published), and `bsc files` (file tree + `read`, the root-confined file-text
+**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`; `bsc teams model <team> <node> <tier>` overrides ONE placement's model, where `bsc persona model` moves an identity's default everywhere it is placed), `bsc project` (project-hub list/published), and `bsc files` (file tree + `read`, the root-confined file-text
 verb a session reaches for when neither harvest lifts a module — #4161). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
 
 ### GitHub-readiness (#297 S1)

@@ -127,6 +127,82 @@
     /// clamp would then fall through to the CLOSED floor and refuse every write to it, in shipped
     /// builds only. That is the failure class `every_runtime_seed_is_shipped_in_the_bundle` exists
     /// for, arriving through a different door.
+    /// The UI's model catalog and the Rust tier registry are ONE vocabulary, and this is what keeps
+    /// them one.
+    ///
+    /// `@data/console/models.json` is what the model menu renders and what `MODEL_IDS` validates a
+    /// stored persona / placement / stream against on the frontend; `bsc_util::MODEL_TIERS` is what
+    /// `claude_model_flag` maps to a `--model` alias and what `bsc persona model` / `bsc teams model`
+    /// accept. A tier in one and not the other is invisible until it reaches a launch: a JSON-only
+    /// tier is offerable in the UI and then silently launches with NO `--model` (the harness default),
+    /// and a Rust-only tier is settable from the CLI and never appears in the menu.
+    ///
+    /// ORDER is asserted too, not just membership — the catalog is ordered cheapest → most capable and
+    /// both the menu and `DEFAULT_MODEL_ID`'s middle-tier fallback read that order.
+    #[test]
+    fn the_ui_model_catalog_and_the_rust_tier_registry_are_one_vocabulary() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let raw = std::fs::read_to_string(manifest.join("data").join("console").join("models.json"))
+            .expect("data/console/models.json");
+        let catalog: Vec<serde_json::Value> = serde_json::from_str(&raw).expect("models.json parses");
+
+        let json_ids: Vec<String> = catalog
+            .iter()
+            .map(|m| m["id"].as_str().expect("every catalog entry has a string id").to_string())
+            .collect();
+        let rust_ids: Vec<String> = bsc_util::model_ids().iter().map(|s| s.to_string()).collect();
+        assert_eq!(json_ids, rust_ids, "the UI catalog and MODEL_TIERS must name the same tiers, in the same order");
+
+        // ...and every one of them actually maps to a launch alias, which is the property that makes
+        // the shared vocabulary worth anything.
+        for id in &json_ids {
+            assert!(
+                crate::session::launch::claude_model_flag(id).is_some(),
+                "the catalog offers '{id}', which the launch cannot map to a --model alias",
+    /// The app's own project key is written by TWO independent producers, and they must agree.
+    ///
+    /// Rust files the app's own faults under `bsc_util::SELF_PROJECT_KEY` (the boot watchdog); the
+    /// wrapped build commands in `package.json` pass `--project <key>` to `bsc errors run`. A
+    /// disagreement would split the app's faults across two stores, each looking EMPTY from the other
+    /// — a build failure recorded where nobody reads, and a `bsc errors projects` that says the app is
+    /// fine. Neither side can see the other, so nothing but this test can catch it.
+    ///
+    /// It reaches outside `src-tauri/` to read `package.json`, which Rust otherwise only does for the
+    /// cross-repo wire fixtures. That is the point: the drift being guarded is exactly the one that
+    /// crosses the boundary.
+    #[test]
+    fn the_self_project_key_matches_the_wired_npm_scripts() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let raw = std::fs::read_to_string(manifest.join("..").join("package.json")).expect("package.json");
+        let pkg: serde_json::Value = serde_json::from_str(&raw).expect("package.json parses");
+        let scripts = pkg["scripts"].as_object().expect("scripts is an object");
+
+        let wired: Vec<(&String, String)> = scripts
+            .iter()
+            .filter_map(|(name, v)| {
+                let s = v.as_str()?;
+                let at = s.find("--project ")?;
+                let key = s[at + "--project ".len()..].split_whitespace().next()?;
+                Some((name, key.to_string()))
+            })
+            .collect();
+
+        assert!(
+            !wired.is_empty(),
+            "no npm script passes `--project` any more — either the build/launch recording was unwired \
+             (see epic-a-build-or-launch-failure-leaves-no-record) or this guard is now pointing at nothing",
+        );
+        for (name, key) in wired {
+            assert_eq!(
+                key,
+                bsc_util::SELF_PROJECT_KEY,
+                "npm script `{name}` records into project `{key}`, but the app records its own faults \
+                 into `{}` — the two stores would each look empty from the other",
+                bsc_util::SELF_PROJECT_KEY,
+            );
+        }
+    }
+
     #[test]
     fn every_packaged_persona_is_shipped_in_the_bundle() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));

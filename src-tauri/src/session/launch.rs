@@ -10,15 +10,15 @@ pub(crate) fn claude_launch(prompt: &str, continue_session: bool) -> String {
 /// Map a UI model id (`sonnet-4.5`, `opus-4.5`, `haiku-4.5`) to the alias Claude
 /// Code's `--model` flag accepts. Returns `None` for anything unrecognized, so the
 /// session falls back to Claude Code's own default and we never interpolate an
-/// arbitrary caller string into the shell command (the match only ever yields a
+/// arbitrary caller string into the shell command (the table only ever yields a
 /// fixed literal — no injection surface).
+///
+/// The table itself is [`bsc_util::MODEL_TIERS`], not a `match` here: the `bsc persona model` /
+/// `bsc teams model` verbs VALIDATE against the same list, so a tier a session is allowed to write
+/// is exactly a tier this launch can carry. It used to be a local match, which meant the CLIs had
+/// nothing to check against and would have needed a copy of their own.
 pub(crate) fn claude_model_flag(model: &str) -> Option<&'static str> {
-    match model {
-        "haiku-4.5" => Some("haiku"),
-        "sonnet-4.5" => Some("sonnet"),
-        "opus-4.5" => Some("opus"),
-        _ => None,
-    }
+    bsc_util::model_alias(model)
 }
 /// Claude Code's on-disk *directory name* for a launch cwd. Conversations live at
 /// `~/.claude/projects/<dir>/<session>.jsonl`, where `<dir>` is the cwd with every

@@ -30,6 +30,42 @@ the stack/detail from stdin (used for the fingerprint + kept as the sample). --s
 `runtime` (the only stage with a producer today). Prints the fingerprint id.",
     },
     CmdDoc {
+        name: "run",
+        summary: "run a command; record a fault if it fails, clear its own if it passes",
+        usage: "\
+USAGE:
+  bsc errors run --stage <stage> [--project <key>|--db <path>] [--source <tag>] [--level L] -- <cmd>…
+
+Every verb below also takes --project <key> (or --db <path>) to name the store, so a session that is
+not inside the app can still reach one. --db and --project together are refused, not ranked.
+
+Runs <cmd>, streams its output through UNCHANGED, and exits with the command's OWN exit code. If it
+fails, the diagnostic is extracted from the output and recorded as one fingerprinted fault. If it
+passes, the faults this same --source recorded at this stage are resolved.
+
+It is a tee, never a gate. Recording cannot change the exit code, the output, or the timing: no store,
+an unopenable db, or a write error are all silent. Chain it exactly where you would have chained the
+command.
+
+  --stage <s>    which lifecycle stage failed — compile | build | typecheck | launch | … (required)
+  --source <t>   this producer's identity; defaults to the command itself. A green run clears by it,
+                 so two commands that should clear independently need different tags.
+  --level <l>    warn | error | fatal (default error)
+
+WHAT IS NOT A FAILURE: a command killed by a signal. Ctrl-C on a dev server exits 130, and filing a
+fault for that would put a defect in the store every time someone stopped their own server.
+
+THE TITLE IS THE DIAGNOSTIC, NOT THE COMMAND. Faults dedup on stage + title + first detail line, so a
+compiler error that moves to another line is still ONE fault with a rising count. The command rides on
+the event row instead. When nothing in the output is recognizable the fault names the command, because
+then there is genuinely nothing else to say.
+
+THE COST: the child's stdout/stderr are pipes, so a tool that colorizes only for a terminal will stop
+(CARGO_TERM_COLOR=always turns it back on) and one that wants a TTY for interactive keys will not get
+one. Wrap batch commands — a build, a typecheck, a launch — not an interactive dev server. stdin stays
+inherited, so a child that prompts still can.",
+    },
+    CmdDoc {
         name: "list",
         summary: "the fault table (lean TSV; newest-seen first)",
         usage: "\
@@ -51,6 +87,21 @@ USAGE:
   bsc errors tail [--limit N] [--unresolved] [--json|--pretty]
 
 The most-recently-seen faults — `list` ordered by last_seen with a small default limit (20).",
+    },
+    CmdDoc {
+        name: "projects",
+        summary: "every project holding faults — the entry point when you know no ids",
+        usage: "\
+USAGE:
+  bsc errors projects [--unresolved] [--json|--pretty]
+
+Every project hub with an error.db, with its unresolved count, worst level and newest fault — so a
+session that knows nothing can find which project broke and read it with `--project <key>`.
+
+This is the read path for a session OUTSIDE the app. Every other verb resolves its store from --db or
+$BSC_ERROR_DB, and $BSC_ERROR_DB is set per-session at launch — which is exactly the thing that is not
+running when an app failed to launch. A project with no faults is listed with a zero count rather than
+omitted: absent and clean are different answers, and only one of them means \"look somewhere else\".",
     },
     CmdDoc {
         name: "get",
@@ -78,6 +129,8 @@ struct Args {
     json: bool,
     pretty: bool,
     db: Option<String>,
+    project: Option<String>,
+    level: Option<String>,
     stage: Option<String>,
     stack: Option<String>,
     source: Option<String>,
@@ -86,6 +139,9 @@ struct Args {
     since: Option<i64>,
     limit: Option<i64>,
     positional: Vec<String>,
+    /// Everything after a bare `--` — the command `run` executes, kept out of this CLI's own parsing
+    /// so a child's flags (`cargo build --release`) can never be mistaken for ours.
+    trailing: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -93,6 +149,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         json: false,
         pretty: false,
         db: None,
+        project: None,
+        level: None,
         stage: None,
         stack: None,
         source: None,
@@ -101,6 +159,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         since: None,
         limit: None,
         positional: Vec::new(),
+        trailing: Vec::new(),
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -113,6 +172,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--pretty" => a.pretty = true,
             "--unresolved" => a.unresolved = true,
             "--db" => a.db = Some(val("--db")?),
+            "--project" => a.project = Some(val("--project")?),
+            "--level" => a.level = Some(val("--level")?),
             "--stage" => a.stage = Some(val("--stage")?),
             "--stack" => a.stack = Some(val("--stack")?),
             "--source" => a.source = Some(val("--source")?),
@@ -120,6 +181,11 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--since" => a.since = Some(val("--since")?.parse().map_err(|_| "--since needs an integer epoch")?),
             "--limit" => a.limit = Some(val("--limit")?.parse().map_err(|_| "--limit needs an integer")?),
             "-h" | "--help" => a.positional.insert(0, "help".into()),
+            // A bare `--` ends OUR arguments: everything after it is the child's, verbatim.
+            "--" => {
+                a.trailing.extend(it.by_ref());
+                break;
+            }
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => a.positional.push(arg),
         }
@@ -139,6 +205,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
     match cmd.as_str() {
         "add" => cmd_add(&args),
+        "run" => cmd_run(&args),
+        "projects" => cmd_projects(&args),
         "list" => cmd_list(&args, &args.filter()),
         "tail" => cmd_list(&args, &Filter { limit: Some(args.limit.unwrap_or(20)), unresolved: args.unresolved, ..Default::default() }),
         "get" => cmd_get(&args),
@@ -181,14 +249,14 @@ fn cmd_add(args: &Args) -> Result<(), String> {
         context: None,
         ts: now_ms(),
     };
-    let fault = open_store(&args.db)?.record(&input).map_err(|e| format!("recording fault: {e}"))?;
+    let fault = open_store(&args.db, &args.project)?.record(&input).map_err(|e| format!("recording fault: {e}"))?;
     println!("{}", fault.fingerprint);
     Ok(())
 }
 
 /// `list` / `tail` — the fault table under `filter`.
 fn cmd_list(args: &Args, filter: &Filter) -> Result<(), String> {
-    let faults = open_store(&args.db)?.list(filter).map_err(|e| format!("listing faults: {e}"))?;
+    let faults = open_store(&args.db, &args.project)?.list(filter).map_err(|e| format!("listing faults: {e}"))?;
     bsc_cli_util::emit(args.pretty, args.json, &faults, || {
         if faults.is_empty() {
             "(no faults)".to_string()
@@ -202,7 +270,7 @@ fn cmd_list(args: &Args, filter: &Filter) -> Result<(), String> {
 /// `get <fingerprint>` — one fault's full record.
 fn cmd_get(args: &Args) -> Result<(), String> {
     let fp = args.positional.get(1).ok_or("usage: bsc errors get <fingerprint>")?;
-    let fault = open_store(&args.db)?
+    let fault = open_store(&args.db, &args.project)?
         .get(fp)
         .map_err(|e| format!("reading fault: {e}"))?
         .ok_or_else(|| format!("no fault {fp}"))?;
@@ -213,7 +281,7 @@ fn cmd_get(args: &Args) -> Result<(), String> {
 /// `resolve <fingerprint>` — mark a fault resolved.
 fn cmd_resolve(args: &Args) -> Result<(), String> {
     let fp = args.positional.get(1).ok_or("usage: bsc errors resolve <fingerprint>")?;
-    let matched = open_store(&args.db)?.resolve(fp, now_ms()).map_err(|e| format!("resolving fault: {e}"))?;
+    let matched = open_store(&args.db, &args.project)?.resolve(fp, now_ms()).map_err(|e| format!("resolving fault: {e}"))?;
     println!("{}", if matched { format!("resolved {fp}") } else { format!("no unresolved fault {fp}") });
     Ok(())
 }
@@ -255,17 +323,155 @@ fn fault_block(f: &Fault) -> String {
     s
 }
 
+/// `run --stage <s> -- <cmd>…` — the producer. See [`crate::run`] for why it is a tee and not a gate.
+///
+/// The store is resolved but NOT required: a build failing on a machine with no project hub is still a
+/// build that should run, and refusing here would make the wrapper unusable in exactly the case it was
+/// added for (a fresh clone, CI, a bare shell). No store ⇒ run the command and record nothing.
+fn cmd_run(args: &Args) -> Result<(), String> {
+    let cmd = &args.trailing;
+    if cmd.is_empty() {
+        return Err("usage: bsc errors run --stage <stage> -- <cmd>…  (the `--` is required)".to_string());
+    }
+    let stage = args.stage.clone().unwrap_or_else(|| crate::DEFAULT_STAGE.to_string());
+    if !crate::is_valid_stage(&stage) {
+        return Err(format!("invalid stage '{stage}' (one of: {})", crate::STAGES.join(" | ")));
+    }
+    let level = args.level.clone().unwrap_or_else(|| crate::DEFAULT_LEVEL.to_string());
+    if !crate::is_valid_level(&level) {
+        return Err(format!("invalid level '{level}' (one of: {})", crate::LEVELS.join(" | ")));
+    }
+    // The command IS the default identity: stable for a given wrapped command, distinct across
+    // different ones, and never part of the fingerprint — so using it here cannot affect dedup.
+    let source = args.source.clone().unwrap_or_else(|| cmd.join(" "));
+    // Resolution failing is not fatal here, unlike every other verb.
+    let db = resolve_db(&args.db, &args.project).ok();
+    crate::run::run_and_record(cmd, db.as_deref(), &stage, &source, &level, now_ms()).map(|_| ())
+}
+
+/// One project's fault summary — the row `projects` prints.
+#[derive(serde::Serialize)]
+struct ProjectFaults {
+    key: String,
+    unresolved: usize,
+    /// The worst unresolved level present (`fatal` > `error` > `warn`), or absent when clean.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worst: Option<String>,
+    /// `last_seen` of the newest unresolved fault, or absent when clean.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_seen: Option<i64>,
+    /// The newest unresolved fault's title — enough to know whether to look, without a second call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+}
+
+/// `projects` — every hub holding an error.db, with its unresolved count.
+///
+/// Read-only in the strictest sense: it opens only paths that already EXIST, because `Store::open`
+/// creates and migrates, and a discovery verb that minted an empty db for every directory it looked at
+/// would be writing to answer a question.
+fn cmd_projects(args: &Args) -> Result<(), String> {
+    let mut rows = scan_projects(&projects_dir()?)?;
+    if args.unresolved {
+        rows.retain(|r| r.unresolved > 0);
+    }
+    bsc_cli_util::emit(args.pretty, args.json, &rows, || {
+        if rows.is_empty() {
+            "(no project has an error.db)".to_string()
+        } else {
+            rows.iter()
+                .map(|r| {
+                    format!(
+                        "{}\t{}\t{}\t{}",
+                        r.key,
+                        r.unresolved,
+                        r.worst.as_deref().unwrap_or("-"),
+                        r.title.as_deref().unwrap_or(""),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    });
+    Ok(())
+}
+
+/// The scan itself, over an explicit hubs directory — so a test can drive real dbs in a temp tree
+/// without mutating `HOME`, which under a thread-parallel runner would leak into every other test.
+fn scan_projects(dir: &std::path::Path) -> Result<Vec<ProjectFaults>, String> {
+    let mut rows: Vec<ProjectFaults> = Vec::new();
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))?;
+    for entry in entries.flatten() {
+        let key = entry.file_name().to_string_lossy().to_string();
+        let db = entry.path().join("error.db");
+        if !db.is_file() {
+            continue;
+        }
+        let Ok(store) = Store::open(&db) else { continue };
+        let faults = store.list(&Filter { unresolved: true, ..Default::default() }).unwrap_or_default();
+        let newest = faults.iter().max_by_key(|f| f.last_seen);
+        rows.push(ProjectFaults {
+            key,
+            unresolved: faults.len(),
+            worst: worst_level(&faults),
+            last_seen: newest.map(|f| f.last_seen),
+            title: newest.map(|f| f.title.clone()),
+        });
+    }
+    // Noisiest first — the answer to "where do I look" is the top row.
+    rows.sort_by(|a, b| b.unresolved.cmp(&a.unresolved).then_with(|| a.key.cmp(&b.key)));
+    Ok(rows)
+}
+
+/// The worst level among `faults` — `fatal` > `error` > `warn`; `None` for an empty set.
+fn worst_level(faults: &[Fault]) -> Option<String> {
+    crate::LEVELS
+        .iter()
+        .rev()
+        .find(|l| faults.iter().any(|f| f.level == **l))
+        .map(|l| l.to_string())
+}
+
+/// `~/.base-studio-code/projects` — the one place a project hub lives.
+fn projects_dir() -> Result<PathBuf, String> {
+    bsc_util::bsc_base_dir()
+        .map(|b| b.join("projects"))
+        .ok_or_else(|| "could not resolve the project hubs; set HOME/USERPROFILE".to_string())
+}
+
 /// Open the project's error.db (resolved from `--db` / `$BSC_ERROR_DB`). Opened lazily so a pure error
 /// path (bad usage, unknown sub) never touches the disk.
-fn open_store(db: &Option<String>) -> Result<Store, String> {
-    let path = resolve_db(db)?;
+fn open_store(db: &Option<String>, project: &Option<String>) -> Result<Store, String> {
+    let path = resolve_db(db, project)?;
     Store::open(&path).map_err(|e| format!("opening {}: {e}", path.display()))
 }
 
-/// Resolve the error.db path via `--db` → `$BSC_ERROR_DB` → (no default → hard error), like plan.db.
-fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
+/// Resolve the error.db path via `--project <key>` / `--db <path>` → `$BSC_ERROR_DB` → (no default →
+/// error).
+///
+/// `--project` exists because `$BSC_ERROR_DB` is set per-SESSION at launch, so the one caller who most
+/// needs to read these faults — a session outside the app, after the app failed to start — is precisely
+/// the one that does not have it. Before this, that caller had to know
+/// `~/.base-studio-code/projects/<key>/error.db` by heart.
+///
+/// It derives the path exactly as the app's `error_db_path` does. It does NOT check that the hub
+/// exists: `Store::open` creates and migrates, so naming a new project and recording into it is a
+/// legitimate first write, and a pre-check here would only refuse it later and less clearly.
+///
+/// **`--db` and `--project` together are REFUSED, not ranked.** They are two typed answers to the same
+/// question, and there is no reading of the pair where the caller meant one of them — a precedence rule
+/// would just decide silently which store a write went to, which is the one mistake worth being loud
+/// about here.
+fn resolve_db(flag: &Option<String>, project: &Option<String>) -> Result<PathBuf, String> {
+    let key = project.as_deref().map(str::trim).filter(|k| !k.is_empty());
+    if key.is_some() && flag.is_some() {
+        return Err("--db and --project name two different stores; pass one".to_string());
+    }
+    if let Some(key) = key {
+        return Ok(projects_dir()?.join(key).join("error.db"));
+    }
     bsc_cli_util::resolve_store_path(flag, "BSC_ERROR_DB", || {
-        Err("no error.db: pass --db <path> or set BSC_ERROR_DB".to_string())
+        Err("no error.db: pass --db <path>, --project <key>, or set BSC_ERROR_DB".to_string())
     })
 }
 
@@ -329,6 +535,110 @@ mod tests {
         assert!(one.contains("bsc errors resolve") && !one.contains("--stack"));
     }
 
+    /// The `--` split is what lets a child carry flags of its own. Without it `cargo build --release`
+    /// would be parsed as OUR `--release`, which this CLI does not have, and the wrapper would refuse
+    /// every real build command.
+    #[test]
+    fn a_bare_dashdash_hands_everything_after_it_to_the_child() {
+        let a = parse_args(vec![
+            "run".into(), "--stage".into(), "compile".into(), "--json".into(),
+            "--".into(),
+            "cargo".into(), "build".into(), "--release".into(), "--json".into(),
+        ])
+        .unwrap();
+        assert_eq!(a.stage.as_deref(), Some("compile"));
+        assert!(a.json, "our own flag before the `--` still parses");
+        assert_eq!(a.trailing, vec!["cargo", "build", "--release", "--json"]);
+        assert_eq!(a.positional, vec!["run"], "the child's words are not our positionals");
+    }
+
+    /// `run` without a `--` is refused rather than guessed at: taking the positionals as the command
+    /// would make `bsc errors run --stage build` (a typo, no command) try to execute something.
+    #[test]
+    fn run_without_a_command_is_a_usage_error() {
+        let err = run(vec!["run".into(), "--stage".into(), "build".into()], "bsc errors").unwrap_err();
+        assert!(err.contains("usage:") && err.contains("--"), "{err}");
+    }
+
+    /// An invalid stage is refused BEFORE the command runs. Running it first and then discovering the
+    /// stage is bad would leave a build that ran and a fault that could not be filed.
+    #[test]
+    fn run_refuses_a_bad_stage_before_executing_anything() {
+        let err = run(
+            vec!["run".into(), "--stage".into(), "nonsense".into(), "--".into(), "true".into()],
+            "bsc errors",
+        )
+        .unwrap_err();
+        assert!(err.contains("invalid stage"), "{err}");
+        for stage in crate::STAGES {
+            assert!(err.contains(stage), "the refusal names `{stage}`");
+        }
+    }
+
+    /// `--project <key>` derives the hub path the app's `error_db_path` derives, so a session outside
+    /// the app reaches the same db the app writes — without knowing any path.
+    #[test]
+    fn project_resolves_the_hub_db_and_beats_the_env() {
+        let p = resolve_db(&None, &Some("studio-code".into())).expect("resolves from HOME");
+        assert!(p.ends_with(std::path::Path::new("projects/studio-code/error.db")), "{}", p.display());
+        // Both together are REFUSED rather than ranked: silently choosing one decides which store a
+        // write lands in, which is exactly the mistake to be loud about.
+        let err = resolve_db(&Some("/tmp/x.db".into()), &Some("studio-code".into())).unwrap_err();
+        assert!(err.contains("--db") && err.contains("--project"), "{err}");
+        // With neither, and no env, the error names all three ways in.
+        std::env::remove_var("BSC_ERROR_DB");
+        let err = resolve_db(&None, &None).unwrap_err();
+        assert!(err.contains("--db") && err.contains("--project") && err.contains("BSC_ERROR_DB"), "{err}");
+        // A blank --project is not a project: it would silently resolve to `projects/error.db`.
+        assert!(resolve_db(&None, &Some("   ".into())).is_err());
+    }
+
+    /// The discovery verb: which project broke, ranked, from a session that knows nothing.
+    #[test]
+    fn projects_ranks_the_noisiest_and_reports_a_clean_hub_as_zero() {
+        let base = std::env::temp_dir().join(format!("errordb-projects-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let mk = |key: &str| {
+            let d = base.join(key);
+            std::fs::create_dir_all(&d).unwrap();
+            Store::open(&d.join("error.db")).unwrap()
+        };
+        let noisy = mk("noisy");
+        for (i, t) in ["a", "b"].iter().enumerate() {
+            noisy.record(&FaultInput { level: "error".into(), title: (*t).into(), ts: 10 + i as i64, ..Default::default() }).unwrap();
+        }
+        noisy.record(&FaultInput { level: "fatal".into(), title: "worst".into(), ts: 30, ..Default::default() }).unwrap();
+        let quiet = mk("quiet");
+        let fp = quiet.record(&FaultInput { level: "warn".into(), title: "meh".into(), ts: 5, ..Default::default() }).unwrap().fingerprint;
+        quiet.resolve(&fp, 6).unwrap();
+        // A hub with no error.db at all is skipped — it is not a project that has faults.
+        std::fs::create_dir_all(base.join("no-store")).unwrap();
+
+        let rows = scan_projects(&base).unwrap();
+        assert_eq!(rows.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(), vec!["noisy", "quiet"],
+                   "noisiest first; a hub without an error.db is not listed");
+        assert_eq!(rows[0].unresolved, 3);
+        assert_eq!(rows[0].worst.as_deref(), Some("fatal"), "the worst level present, not the newest");
+        assert_eq!(rows[0].title.as_deref(), Some("worst"), "the newest fault's title");
+        // A hub whose faults are all resolved reports ZERO rather than vanishing: absent and clean are
+        // different answers, and only one of them means look somewhere else.
+        assert_eq!(rows[1].unresolved, 0);
+        assert_eq!(rows[1].worst, None);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Discovery must not WRITE. `Store::open` creates and migrates, so a scan that opened every
+    /// directory would mint an empty error.db for each one — answering a question by changing it.
+    #[test]
+    fn projects_never_creates_a_store_for_a_hub_that_has_none() {
+        let base = std::env::temp_dir().join(format!("errordb-projects-ro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("bare")).unwrap();
+        assert!(scan_projects(&base).unwrap().is_empty());
+        assert!(!base.join("bare").join("error.db").exists(), "the scan created a store");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn end_to_end_add_list_get_resolve_over_a_temp_db() {
         // Drive the CLI through $BSC_ERROR_DB against a temp file (the same resolution a session uses).
@@ -344,13 +654,13 @@ mod tests {
         }
         std::env::set_var("BSC_ERROR_DB", &path);
         // list --unresolved --json returns both, newest-first.
-        let faults = open_store(&None).unwrap().list(&Filter { unresolved: true, ..Default::default() }).unwrap();
+        let faults = open_store(&None, &None).unwrap().list(&Filter { unresolved: true, ..Default::default() }).unwrap();
         assert_eq!(faults.len(), 2);
         assert_eq!(faults[0].title, "meh");
         // resolve one, then --unresolved returns one.
         let fp = faults[1].fingerprint.clone();
-        assert!(open_store(&None).unwrap().resolve(&fp, 99).unwrap());
-        assert_eq!(open_store(&None).unwrap().list(&Filter { unresolved: true, ..Default::default() }).unwrap().len(), 1);
+        assert!(open_store(&None, &None).unwrap().resolve(&fp, 99).unwrap());
+        assert_eq!(open_store(&None, &None).unwrap().list(&Filter { unresolved: true, ..Default::default() }).unwrap().len(), 1);
         std::env::remove_var("BSC_ERROR_DB");
         let _ = std::fs::remove_dir_all(&dir);
     }
