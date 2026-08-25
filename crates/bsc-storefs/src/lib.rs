@@ -33,10 +33,6 @@
 
 use std::collections::BTreeMap;
 
-pub mod coord;
-pub mod graph;
-pub mod plan;
-pub mod ui;
 
 /// A rendered tree: relative guest path -> file contents.
 ///
@@ -146,3 +142,15 @@ mod tests {
         assert_eq!(lines(&["a".into(), "b".into()]), "a\nb\n");
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/coord.rs, src/graph.rs, src/plan.rs, src/ui.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-storefs--<module>.rs
+//     bsc graph impl set --id bsc-storefs--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-storefs--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

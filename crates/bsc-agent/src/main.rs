@@ -6,11 +6,6 @@
 //! chain (cwd + ancestors) + `CLAUDE.local.md`, matching Claude Code's context loading. Output goes to
 //! stdout — it runs inside the PTY like `claude` does.
 
-mod agent;
-mod mcp;
-mod permissions;
-mod telemetry;
-mod tools;
 
 use agent::{run_agent, Tool};
 use tools::{bsc_cli_tool, default_tools};
@@ -472,3 +467,15 @@ mod tests {
         let _ = fs::remove_dir_all(&bare);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/agent.rs, src/mcp.rs, src/permissions.rs, src/telemetry.rs, src/tools.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-agent--<module>.rs
+//     bsc graph impl set --id bsc-agent--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-agent--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

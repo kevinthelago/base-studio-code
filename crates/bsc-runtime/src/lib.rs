@@ -16,10 +16,6 @@
 //! often, how slow". Every write folds into a row keyed by
 //! `(specifier, record_id, src_hash, outcome, session)`.
 
-pub mod cli;
-pub mod doctor;
-mod hash;
-mod schema;
 
 pub use hash::src_hash;
 
@@ -471,3 +467,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/doctor.rs, src/hash.rs, src/schema.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-runtime--<module>.rs
+//     bsc graph impl set --id bsc-runtime--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-runtime--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

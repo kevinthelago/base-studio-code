@@ -2,7 +2,12 @@
 name = "bsc-sandbox"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Renders an agent's isolation spec into an exec-ready argv: a systemd-run cgroup scope wrapping a bubblewrap namespace. Replaces the WSL2 subsystem in src-tauri/src/session/sandbox (phase-2-kernel-isolation-replaces-the-hook-floor). Tauri-free, dependency-free, and the RENDER is platform-independent so its tests run everywhere - only execution is Linux-gated."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_sandbox"
