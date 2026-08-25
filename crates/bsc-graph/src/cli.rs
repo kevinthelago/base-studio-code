@@ -2800,13 +2800,20 @@ mod tests {
         set("a.ts", "src/x/a.ts");
         set("b.ts", "src/x/b.ts");
 
-        run(
-            vec![
-                "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
-                "--id".into(), "a.ts".into(),
-            ],
-            "bsc graph",
-        )
+        // Unconfined for this call, like `harvest_and_curate_refuse_a_target_outside_the_sessions_
+        // confinement_root` — the fixture lives under the OS temp dir, not this crate's own root, and
+        // this test's own confinement is not what it is checking. Without this the test's result
+        // depends on whether the CALLING session happens to have `$BSC_REPO_ROOT` set, which is exactly
+        // the ambient-env dependency #3475 exists to avoid asserting around.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
+                    "--id".into(), "a.ts".into(),
+                ],
+                "bsc graph",
+            )
+        })
         .unwrap();
 
         let has_tests = |id: &str| {
