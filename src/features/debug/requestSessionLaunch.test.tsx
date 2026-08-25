@@ -95,6 +95,30 @@ describe("a spawned debug session launches with its charter", () => {
     });
   });
 
+  /// The bug this file was written for, and the assertion that would have caught it first time.
+  ///
+  /// The charter was reaching `pty_create` all along — and the BACKEND threw it away.
+  /// `resolveStartupPromptFreshOnly` returned true for every `debug-studio:` pane, and `plan_launch`
+  /// suppresses the prompt when `fresh_only && has_history`. Every debug session runs in the
+  /// base-studio-code repo, where claude has always run before, so `has_history` is permanently true:
+  /// the charter was dropped on every launch that has ever happened, and the session came up as a
+  /// bare `claude` with nothing to do.
+  ///
+  /// Asserting the flag — not just the prompt — is what makes this a guard rather than a coincidence:
+  /// a prompt that is present in the payload and then discarded downstream looks identical to a
+  /// working launch from here.
+  it("does NOT ask the backend to suppress the charter — the launch is fresh, so there is nothing to re-greet", async () => {
+    render(<TerminalHost><RequestSessionsMount /></TerminalHost>);
+    await waitFor(() => {
+      const p = launch() as ({ startupPromptFreshOnly?: boolean } & Record<string, unknown>) | undefined;
+      expect(p, "pty_create was never called").toBeTruthy();
+      expect(
+        p!.startupPromptFreshOnly,
+        "fresh-only is set, so the backend drops the charter wherever claude has run before — which is always",
+      ).toBe(false);
+    });
+  });
+
   it("launches fresh in the repo, never resuming another conversation (#3497)", async () => {
     render(<TerminalHost><RequestSessionsMount /></TerminalHost>);
     await waitFor(() => {
