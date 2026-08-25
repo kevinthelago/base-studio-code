@@ -42,8 +42,10 @@ with neither, the origin is recorded as absent rather than guessed.",
 USAGE:
   bsc request list [--open] [--surface S] [--limit N] [--json|--pretty]
 
-The requests, newest first. --open shows only unresolved (the debug session's work queue); --surface
-filters by tool. Lean TSV by default; --json emits the full rows (with cmd + note).",
+The requests, newest first. --open shows only UNCLAIMED ones — the queue `claim` draws from, so a
+request another session is already holding is absent. It is NOT \"everything unresolved\": for that,
+list without the flag, which is the triage view. --surface filters by tool. Lean TSV by default;
+--json emits the full rows (with cmd + note).",
     },
     CmdDoc {
         name: "get",
@@ -583,6 +585,21 @@ mod tests {
         // own identity will either invent a flag or hand-type a value that cannot resolve a technology.
         assert!(new.contains("BSC_AUDIT_PANE"), "names where the origin comes from");
         assert!(new.contains("--title"), "documents the label flag");
+    }
+
+    /// REGRESSION. `--open` filters `status = 'open'`, so a CLAIMED request is excluded — and the help
+    /// said it "shows only unresolved". A claimed request IS unresolved, so the sentence promised the
+    /// triage view and delivered the claimable queue. Read literally, an empty `--open` says the queue is
+    /// clear while sessions are still holding work; two requests sat that way for hours. The behaviour is
+    /// right (it is what `claim` draws from) — the word was not.
+    #[test]
+    fn the_open_flag_documents_what_it_actually_filters() {
+        let list = bsc_cli_util::help_for("bsc request", TAGLINE, COMMANDS, "list");
+        assert!(list.contains("UNCLAIMED"), "says which set it is: {list}");
+        assert!(
+            !list.contains("shows only unresolved"),
+            "a claimed request is unresolved too, so this claim is false: {list}"
+        );
     }
 
     #[test]

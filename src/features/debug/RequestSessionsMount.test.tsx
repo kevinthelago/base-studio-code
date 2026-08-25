@@ -3,7 +3,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { RequestSessionsMount } from "@/features/debug/RequestSessionsMount";
 import { requestCharter, requestPaneId, originLabel } from "@/features/debug/requestSession";
 import { bscRun } from "@/shared/lib/core/bsc";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { designerSessionId, librarianSessionId, SOUND_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 
@@ -11,18 +11,33 @@ import { designerSessionId, librarianSessionId, SOUND_STUDIO_SESSION_ID } from "
 // factory throws "Cannot access before initialization" the moment anything calls the mock early (the
 // store does, at init). The tests still passed green while that rejection fired — exactly the kind of
 // green-but-throwing suite worth not shipping.
-const { queue, resetQueue } = vi.hoisted(() => {
+const { queue, resetQueue, ptys, invokeImpl } = vi.hoisted(() => {
   const queue: {
     rows: { id: number; status: string; claimed_by: string | null; origin: string | null; display_title: string }[];
   } = { rows: [] };
+  // The app's PTY session map, as `pty_pane_runtime` reports it. The mount must reconcile against THIS
+  // rather than against anything it remembers — a session outlives the component that started it, which
+  // is the whole of `a-resolved-requests-debug-session-is-never-closed`.
+  const ptys: { live: Set<string> } = { live: new Set() };
   const resetQueue = () => {
     queue.rows = [
       { id: 1, status: "open", claimed_by: null, origin: "design-studio:designer-react", display_title: "ui list needs --kit" },
       { id: 2, status: "open", claimed_by: null, origin: "algorithms-studio:librarian-typescript", display_title: "impl list needs --domain" },
     ];
+    ptys.live = new Set();
   };
   resetQueue();
-  return { queue, resetQueue };
+  // Hoisted WITH the state it reads. Declared as a plain const it would be referenced by the hoisted
+  // `vi.mock` factory before initialization — the same trap this file's header already documents.
+  const invokeImpl = async (cmd: string, payload?: unknown) => {
+    if (cmd === "reload_sidecars") return [];
+    if (cmd === "pty_pane_runtime") {
+      const ids = (payload as { paneIds?: string[] } | undefined)?.paneIds ?? [];
+      return ids.map((paneId) => ({ paneId, live: ptys.live.has(paneId) }));
+    }
+    return "C:/repo";
+  };
+  return { queue, resetQueue, ptys, invokeImpl };
 });
 
 // The queue read, the repo-root probe and the terminal itself are all external systems; stub them so the
@@ -48,13 +63,27 @@ vi.mock("@/shared/lib/core/bsc", () => ({
   bscRun: vi.fn(async () => {}),
   bscWrite: vi.fn(async () => {}),
 }));
-// `safeInvoke` serves TWO calls here — the repo-root probe and the sidecar reload — so the mock
-// dispatches on the command name. A single blanket return would answer the reload with a path and
-// the repo-root probe with whatever the reload wanted, which is how a mock starts lying quietly.
+// `safeInvoke` serves THREE calls here — the repo-root probe, the liveness read and the sidecar reload —
+// so the mock dispatches on the command name. A single blanket return would answer the reload with a path
+// and the repo-root probe with whatever the reload wanted, which is how a mock starts lying quietly.
+// (`pty_pane_runtime` is the one that would break loudest: a bare string has no `.filter`.)
 vi.mock("@/shared/lib/core/safeInvoke", () => ({
-  safeInvoke: vi.fn(async (cmd: string) => (cmd === "reload_sidecars" ? [] : "C:/repo")),
+  safeInvoke: vi.fn(invokeImpl),
+  // The kill is fire-and-forget, so it is a DIFFERENT export — mocking only `safeInvoke` would leave
+  // `fireInvoke` undefined and the mount would throw asynchronously while the suite stayed green.
+  fireInvoke: vi.fn((cmd: string, payload?: { paneId?: string }) => {
+    if (cmd === "pty_kill" && payload?.paneId) ptys.live.delete(payload.paneId);
+  }),
 }));
-vi.mock("@/app/console/terminal/TerminalSlot", () => ({ TerminalSlot: () => null }));
+// The slot stands in for the real one, and the real one CREATES THE PTY. Registering the pane here is
+// what makes `pty_pane_runtime` above answer truthfully on the next poll — without it every session
+// would read as dead one tick after it started, and the mount would re-charter it forever.
+vi.mock("@/app/console/terminal/TerminalSlot", () => ({
+  TerminalSlot: ({ paneId }: { paneId: string }) => {
+    ptys.live.add(paneId);
+    return null;
+  },
+}));
 // Run the poll body once, deterministically, instead of on a timer.
 vi.mock("@/shared/hooks/usePoll", () => ({
   usePoll: (fn: () => void | Promise<void>) => { void fn(); },
@@ -73,7 +102,8 @@ const resetAll = () => {
   // source tree, and `mockImplementation` persists for the whole FILE — so without this reset every
   // later test silently ran against a null repo root and asserted nothing spawning, which is a green
   // suite proving the opposite of the feature.
-  vi.mocked(safeInvoke).mockImplementation(async (cmd: string) => (cmd === "reload_sidecars" ? [] : "C:/repo"));
+  vi.mocked(safeInvoke).mockImplementation(invokeImpl as never);
+  vi.mocked(fireInvoke).mockClear();
   useAppStore.setState({ paneContinue: {}, paneStartupPromptText: {}, activeDebugRequests: [] });
 };
 
@@ -179,6 +209,61 @@ describe("a resolved request goes live without a restart", () => {
     render(<RequestSessionsMount />);
     await waitFor(() => expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toHaveLength(2));
     expect(reloadCalls()).toHaveLength(0);
+  });
+});
+
+// REGRESSION, `a-resolved-requests-debug-session-is-never-closed`. A session OUTLIVES the component that
+// started it — the PTY is owned by the backend, and `TerminalView`'s cleanup deliberately keeps it alive
+// so a console tab-switch reconnects rather than respawns. The mount was reconciling against a
+// `useState([])` it accumulated as it started sessions, and that state dies on every remount: after a
+// workspace change or an app restart it was `[]`, so `close` was `[]`, and every running session was
+// orphaned with its `claude` process live for good.
+//
+// The old suite could not see it because its close test uses `rerender`, which keeps the SAME instance and
+// its ref. A rerender is not a remount. These mount FRESH against PTYs that are already up, which is the
+// only shape that reproduces it.
+describe("a session outlives the component that started it", () => {
+  beforeEach(resetAll);
+
+  const killed = () =>
+    vi.mocked(fireInvoke).mock.calls
+      .filter(([cmd]) => cmd === "pty_kill")
+      .map(([, payload]) => (payload as { paneId?: string } | undefined)?.paneId);
+
+  it("closes a resolved request's session though THIS mount never started it", async () => {
+    queue.rows = [
+      { id: 1, status: "resolved", claimed_by: null, origin: null, display_title: "done" },
+      { id: 2, status: "claimed", claimed_by: null, origin: null, display_title: "in flight" },
+    ];
+    ptys.live = new Set([requestPaneId(1), requestPaneId(2)]);
+
+    render(<RequestSessionsMount />);
+    await waitFor(() => expect(killed()).toContain(requestPaneId(1)));
+    // …and the one still working its request is left strictly alone. A reconcile that closed both would
+    // be just as wrong, and far louder.
+    expect(killed()).not.toContain(requestPaneId(2));
+  });
+
+  it("does not re-charter a claimed request whose session is already running", async () => {
+    // The same empty-set bug in the other direction: `start` is "claimed with no TRACKED session", so a
+    // fresh mount also re-chartered every live one. Harmless only because `pty_create` reconnects.
+    queue.rows = [{ id: 2, status: "claimed", claimed_by: null, origin: null, display_title: "in flight" }];
+    ptys.live = new Set([requestPaneId(2)]);
+
+    render(<RequestSessionsMount />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useAppStore.getState().paneStartupPromptText).toEqual({});
+  });
+
+  it("still starts a claimed request whose session is genuinely gone", async () => {
+    // The reconcile has to work both ways, or "derive it" would just be a different way to be wrong:
+    // a session the user stopped by hand must come back.
+    queue.rows = [{ id: 2, status: "claimed", claimed_by: null, origin: null, display_title: "in flight" }];
+    ptys.live = new Set();
+
+    render(<RequestSessionsMount />);
+    await waitFor(() =>
+      expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toEqual([requestPaneId(2)]));
   });
 });
 
