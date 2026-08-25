@@ -205,7 +205,11 @@ fn cmd_ask(args: &Args, prog: &str) -> Result<(), String> {
     let wait = std::time::Duration::from_secs(
         args.wait_secs.unwrap_or(crate::ask::DEFAULT_ANSWER_TIMEOUT_SECS),
     );
-    let res = crate::ask::ask(&env, id, request, wait)?;
+    // WHO IS ASKING, resolved here at the edge — the verb itself stays a pure decision over its
+    // inputs. Before this it was hard-coded to the architect, so a director asking the architect was
+    // told it could not ask itself.
+    let caller = crate::ask::caller_participant();
+    let res = crate::ask::ask(&env, id, request, wait, &caller)?;
 
     bsc_cli_util::emit(args.pretty, args.json, &res, || match &res.answer {
         Some(a) => a.clone(),
