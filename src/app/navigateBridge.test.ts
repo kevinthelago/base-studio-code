@@ -259,6 +259,109 @@ describe("navigateBridge — unknown ids are errors, not silent no-ops", () => {
   });
 });
 
+// REGRESSION, designer request #104 (and its second filing). `bsc ui get keyboardcard` prints the record
+// stored as `settings-keyboardcard`, because `resolve_component_handle` falls back to a unique `name`.
+// `bsc navigate component` did not, so the same handle that WORKED one command over produced a five-second
+// timeout blaming the window here. The reporter concluded the preview was hanging and went debugging
+// KeyboardCard's keyboard listeners; there was nothing there. Then `formlane` (id `teams-form-lane`, name
+// `FormLane`) reproduced it, and was filed as possibly-a-slow-compile. Two false reports, one lookup gap.
+describe("navigateBridge — a component HANDLE resolves the way `bsc ui get` resolves one (#104)", () => {
+  // The real store carries `name`; the fixture above deliberately does not, so these cases add it.
+  const named = {
+    components: [
+      { id: "settings-keyboardcard", name: "KeyboardCard", kitId: "app" },
+      { id: "teams-form-lane", name: "FormLane", kitId: "app" },
+      { id: "settings-themecard", name: "ThemeCard", kitId: "app" },
+      { id: "ui-box", name: "Box", kitId: "other-kit" },
+    ],
+    designsKitId: "app",
+    activeWorkspace: "components",
+  };
+
+  it("resolves a unique NAME, case-insensitively — the exact handle from the request", () => {
+    const v = makeVocab(named);
+    for (const handle of ["keyboardcard", "KeyboardCard", "KEYBOARDCARD", "formlane"]) {
+      const ack = applyNavigate({ component: handle }, v);
+      expect(ack.error, `'${handle}' must resolve`).toBeUndefined();
+    }
+    // …and the ack reports the id that ACTUALLY landed, not the handle it was asked with, so the caller
+    // learns the real id rather than keeping the one that only half-works.
+    expect(applyNavigate({ component: "formlane" }, v).component).toBe("teams-form-lane");
+  });
+
+  it("an id still WINS over a name of the same spelling — the store is keyed by id", () => {
+    // The same precedence `resolve_component_handle` takes. Resolving to the other record would be a
+    // silent switcheroo, and the id is the identity every other verb uses.
+    const v = makeVocab({
+      ...named,
+      components: [
+        { id: "themecard", name: "Unrelated", kitId: "app" },
+        { id: "settings-themecard", name: "themecard", kitId: "app" },
+      ],
+    });
+    expect(applyNavigate({ component: "themecard" }, v).component).toBe("themecard");
+  });
+
+  it("REFUSES an ambiguous name instead of picking one, and names both candidates", () => {
+    const v = makeVocab({
+      ...named,
+      components: [
+        { id: "a-card", name: "Card", kitId: "app" },
+        { id: "b-card", name: "Card", kitId: "app" },
+      ],
+    });
+    const ack = applyNavigate({ component: "Card" }, v);
+    expect(ack.error).toContain("is the NAME of 2 components");
+    expect(ack.error).toContain("a-card");
+    expect(ack.error).toContain("b-card");
+    // NOT retryable: a hydrate cannot make an ambiguous name unique, so spending the adapter's retry
+    // budget on it would only delay an error the caller can already act on.
+    expect(ack.retryAfterHydrate).toBeUndefined();
+  });
+
+  it("a genuine miss NAMES the id and suggests the near one, rather than blaming the window", () => {
+    const v = makeVocab(named);
+    const ack = applyNavigate({ component: "keybordcard" }, v);
+    expect(ack.error).toContain("unknown component 'keybordcard'");
+    expect(ack.error).toContain("in kit 'app'");
+    // A typo has no substring neighbour, so it falls to the bounded sample — which still names real ids.
+    expect(ack.error).toContain("settings-keyboardcard");
+    expect(ack.retryAfterHydrate).toBe(true);
+  });
+
+  it("suggests the affixed id when the caller used the bare one", () => {
+    // The shape every real miss here has had: the store id carries a folder prefix nothing on screen
+    // shows. With name resolution these now RESOLVE, so the suggestion is for the ones that don't.
+    const v = makeVocab({ ...named, components: [{ id: "settings-keyboardcard", name: "Something", kitId: "app" }] });
+    expect(applyNavigate({ component: "keyboardcard" }, v).error).toContain("did you mean: settings-keyboardcard");
+  });
+
+  it("points at the OTHER kit when the handle lives there", () => {
+    const v = makeVocab(named);
+    const ack = applyNavigate({ component: "ui-box" }, v);
+    expect(ack.error).toContain("it is in kit 'other-kit'");
+    expect(ack.error).toContain("bsc navigate component other-kit ui-box");
+  });
+
+  it("does not print the whole kit: a miss names at most 8 ids and says how many it withheld", () => {
+    // The app kit carries ~476 components. Printing every id buried the one line that mattered under a
+    // wall a terminal reader scrolls past — the message existed but could not be read.
+    const many = Array.from({ length: 30 }, (_, i) => ({ id: `c${String(i).padStart(2, "0")}`, name: `C${i}`, kitId: "app" }));
+    const v = makeVocab({ ...named, components: many });
+    const err = String(applyNavigate({ component: "zzz" }, v).error);
+    expect(err.match(/c\d\d/g)).toHaveLength(8);
+    expect(err).toContain("+22 more");
+    expect(err).toContain("bsc ui list --raw");
+  });
+
+  it("still resolves by id when the record carries no name at all (the lite projection)", () => {
+    // Phase 1 of `hydrateComponents` paints from a 33 KB projection that carries no `name`. Resolution
+    // must not depend on a field that is legitimately absent for the first second of a boot.
+    const v = makeVocab({ components: [{ id: "Heatmap", kitId: "react-d3" }], designsKitId: "react-d3" });
+    expect(applyNavigate({ component: "Heatmap" }, v).error).toBeUndefined();
+  });
+});
+
 describe("the vocabulary the bridge is handed", () => {
   // `makeVocab` writes the workspace list by hand, and the REAL bridge builds it from WORKSPACES
   // (useNavigateBridge). Nothing connected the two, so every test here could stay green against a

@@ -93,6 +93,103 @@ describe("useNavigateBridge re-reads the store on a resolvable miss (#55)", () =
   });
 });
 
+// REGRESSION, designer request #104. The retry was an unbounded `await`, and a full `hydrateComponents`
+// does not fit in the Rust waiter's 5s: the designs store measures the `--full` read at up to 8040ms. So
+// an unresolvable id blew the budget DETERMINISTICALLY and the caller was told the frontend "did not apply
+// the navigation — is a window open?" — a sentence about the window that says nothing about the id.
+//
+// Measured against the running app before the fix: the error paths that do NOT retry answered in 0.12s
+// and 0.17s; both paths that DO took 5.17s and 5.01s and timed out. The ack was never lost. It arrived
+// after nobody was waiting, which is indistinguishable from never for everyone downstream.
+describe("useNavigateBridge always answers INSIDE the waiter's budget (#104)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetPreviewFrames();
+    useAppStore.setState({
+      components: [], kits: [{ id: "harvested", name: "Harvested" }], designsKitId: "harvested",
+    } as never);
+  });
+
+  it("acks a miss even when the hydrate never finishes", async () => {
+    // The pathological shape: a hydrate that outlives the request entirely. Before the bound, this path
+    // acked only when the hydrate did — i.e. never, from the caller's side.
+    useAppStore.setState({ hydrateComponents: vi.fn(() => new Promise<void>(() => {})) } as never);
+    renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "b1", kit: "harvested", component: "does-not-exist" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy(), { timeout: 4_000 });
+    expect(String(sentAck()?.error)).toContain("unknown component 'does-not-exist'");
+  }, 10_000);
+
+  it("says 'not found YET' when the hydrate lost the race, rather than a confident 'unknown'", async () => {
+    // The retry exists because a component written from a shell is genuinely absent from the app's copy
+    // (request #55). Answering early is right; answering early while CLAIMING the record does not exist
+    // would trade one wrong report for another.
+    useAppStore.setState({ hydrateComponents: vi.fn(() => new Promise<void>(() => {})) } as never);
+    renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "b2", kit: "harvested", component: "written-out-of-band" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy(), { timeout: 4_000 });
+    const err = String(sentAck()?.error);
+    expect(err).toContain("still refreshing");
+    expect(err).toContain("not found yet");
+    expect(err).toContain("run the command again");
+  }, 10_000);
+
+  it("does NOT add the caveat when the hydrate finished in time", async () => {
+    // A real miss against a fresh store is a real miss, and hedging every one of them would make the
+    // hedge meaningless.
+    useAppStore.setState({ hydrateComponents: vi.fn(async () => {}) } as never);
+    renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "b3", kit: "harvested", component: "does-not-exist" });
+
+    await waitFor(() => expect(sentAck()).toBeTruthy());
+    expect(String(sentAck()?.error)).not.toContain("still refreshing");
+  });
+});
+
+// The `if (disposed) return` early-outs were the only paths out of the handler that produced no ack at
+// all — the plan item's prime suspect for the timeout, and the one thing here that is unanswerable by
+// construction rather than merely slow. Measurement cleared it as the cause of #104 (the hydrate budget
+// was), but a silent return is still a stranded waiter, so it is closed either way.
+describe("useNavigateBridge acks on EVERY path out, teardown included", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetPreviewFrames();
+  });
+
+  it("acks the teardown when the bridge unmounts mid-hydrate", async () => {
+    useAppStore.setState({
+      components: [], kits: [{ id: "harvested", name: "Harvested" }], designsKitId: "harvested",
+      hydrateComponents: vi.fn(() => new Promise<void>(() => {})),
+    } as never);
+    const { unmount } = renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "d1", kit: "harvested", component: "does-not-exist" });
+    unmount();
+
+    await waitFor(() => expect(sentAck()).toBeTruthy(), { timeout: 4_000 });
+    expect(String(sentAck()?.error)).toContain("torn down mid-navigation");
+    expect(String(sentAck()?.error)).toContain("bsc navigate show");
+    expect(sentAck()?.id).toBe("d1");
+  }, 10_000);
+
+  it("acks the teardown when the bridge unmounts while waiting for the frame to settle", async () => {
+    // The second silent return: a resolvable navigate whose preview never settles, unmounted mid-wait.
+    useAppStore.setState({
+      activeWorkspace: "components", designsKitId: "react-d3",
+      kits: [{ id: "react-d3", name: "D3" }],
+      components: [{ id: "Heatmap", name: "Heatmap", kitId: "react-d3" }],
+      hydrateComponents: vi.fn(async () => {}),
+    } as never);
+    const { unmount } = renderHook(() => useNavigateBridge());
+    emitNavigate({ id: "d2", kit: "react-d3", component: "Heatmap" });
+    unmount();
+
+    await waitFor(() => expect(sentAck()).toBeTruthy(), { timeout: 4_000 });
+    expect(String(sentAck()?.error)).toContain("torn down mid-navigation");
+  }, 10_000);
+});
+
 // The ack reported the store SELECTION — the value it had just written — so a component the preview
 // REFUSED to build acked exactly like one that rendered. Since the caller's next move is `bsc shot
 // preview`, that produced a capture of the previously-mounted component with nothing reporting it.
