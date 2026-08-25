@@ -6149,7 +6149,7 @@ mod name_collision_tests {
     }
 
     #[test]
-    fn three_records_report_as_ONE_finding_naming_every_member() {
+    fn three_records_report_as_one_finding_naming_every_member() {
         let fs = analyze_name_collisions(&[c("a", "Row", "k"), c("b", "Row", "k"), c("c", "Row", "k")]);
         assert_eq!(fs.len(), 1, "N colliding records are ONE finding, not N-1 pairs");
         assert_eq!(fs[0].node_ids.len(), 3, "and it names every member: {:?}", fs[0].node_ids);
