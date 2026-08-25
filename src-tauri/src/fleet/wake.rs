@@ -102,7 +102,13 @@ pub fn apply(
     // A failure to resolve is NOT fatal. It means plan.db does not name this stream, and an unknown
     // stream must still refuse — which is what happens when the frontend receives no `stream`.
     if !live {
-        if let Some(stream) = resolve_stream(&req.pane_id) {
+        // `?` on purpose. THREE outcomes, and collapsing them is the bug this shape prevents: not a
+        // worker pane and "plan.db does not name it" are legitimately silent (they are how the
+        // unknown-stream refusal downstream still works), but a stream that IS named and whose cwd
+        // could not be prepared is a real failure with a cause worth printing. Swallowed, it reached
+        // the caller as "it resolved to no open tab, or is disabled" — which sent three rounds of
+        // debugging at the frontend for a repo that was simply not cloned.
+        if let Some(stream) = resolve_stream(&req.pane_id)? {
             obj.insert("stream".into(), stream);
         }
     }
@@ -148,8 +154,16 @@ fn worker_pane(pane_id: &str) -> Option<(&str, &str)> {
     Some((key, stream_id))
 }
 
-/// The plan.db row for a worker pane, with the absolute cwd its session would run in — or `None` when
-/// plan.db does not name this stream, which is how an UNKNOWN stream stays an error downstream.
+/// The plan.db row for a worker pane, with the absolute cwd its session would run in.
+///
+/// `Ok(None)` is the SILENT arm — not a worker pane, or plan.db does not name this stream. Both must
+/// stay silent: that is how an unknown stream still reaches the refusal downstream.
+///
+/// `Err` is the arm that was missing. A stream plan.db DOES name, whose cwd cannot be prepared, is a
+/// real failure with a cause — `ensure_worktree: repo not cloned: …` is the one that bit — and telling
+/// the caller "it resolved to no open tab" instead names neither the stream, the repo, nor the reason.
+/// `fleet/start.rs` already draws this line for the identical failure, so the wording matches it: one
+/// cause must not read as two different bugs.
 ///
 /// The cwd is resolved HERE for the reason a fleet launch resolves it here (#905): the store would have
 /// to re-derive it from the async-loaded `bscBaseDir` mirror, and an empty one drops the session at the
@@ -160,28 +174,48 @@ fn worker_pane(pane_id: &str) -> Option<(&str, &str)> {
 ///
 /// The director is deliberately excluded. Its pane is not a stream, it carries no plan row, and
 /// `bsc fleet director new` is the verb that creates one.
-fn resolve_stream(pane_id: &str) -> Option<serde_json::Value> {
-    let (key, stream_id) = worker_pane(pane_id)?;
+fn resolve_stream(pane_id: &str) -> Result<Option<serde_json::Value>, String> {
+    let Some((key, stream_id)) = worker_pane(pane_id) else { return Ok(None) };
 
-    let store = plandb::Store::open(&crate::platform::paths::plan_db_path(key)).ok()?;
-    let mut row = store
+    // A store that will not open is the same silence as a project with no plan: there is nothing to
+    // say about a stream nobody planned, and the refusal downstream is the right answer.
+    let Ok(store) = plandb::Store::open(&crate::platform::paths::plan_db_path(key)) else {
+        return Ok(None);
+    };
+    let Some(mut row) = store
         .fleet_stream_list()
-        .ok()?
+        .unwrap_or_default()
         .into_iter()
-        .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(stream_id))?;
+        .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(stream_id))
+    else {
+        return Ok(None);
+    };
 
+    // From here the stream IS real, so every failure is nameable and none of them may be silent.
     let repo = row.get("repo").and_then(|v| v.as_str()).unwrap_or_default().to_string();
     let cwd = if repo.is_empty() {
         // A hub role-actor. `materialize_hub` is idempotent, and a hub that does not exist yet would
         // drop the session in a missing directory — the same failure `fleet start` materializes against.
-        crate::project::hub::materialize_hub(key.to_string()).ok()?;
-        bsc_project::project_dir(key)?.to_string_lossy().into_owned()
+        crate::project::hub::materialize_hub(key.to_string())
+            .map_err(|e| format!("fleet wake: could not materialize the project hub for '{key}': {e}"))?;
+        bsc_project::project_dir(key)
+            .ok_or_else(|| format!("fleet wake: no home dir, so '{key}' has no hub path"))?
+            .to_string_lossy()
+            .into_owned()
     } else {
-        crate::fleet::worktree::ensure_worktree(key.to_string(), repo, stream_id.to_string(), None).ok()?
+        crate::fleet::worktree::ensure_worktree(key.to_string(), repo.clone(), stream_id.to_string(), None)
+            .map_err(|e| {
+                format!(
+                    "fleet wake: no session was started — could not create the worktree for stream \
+                     '{stream_id}' in {repo}: {e}"
+                )
+            })?
     };
 
-    row.as_object_mut()?.insert("cwd".into(), serde_json::Value::String(cwd));
-    Some(row)
+    if let Some(obj) = row.as_object_mut() {
+        obj.insert("cwd".into(), serde_json::Value::String(cwd));
+    }
+    Ok(Some(row))
 }
 
 fn register(app: &tauri::AppHandle, id: &str) -> Receiver<WakeAck> {
@@ -237,6 +271,50 @@ mod tests {
         assert_eq!(worker_pane("scratch"), None);
         assert_eq!(worker_pane("demo:"), None);
         assert_eq!(worker_pane(":api"), None);
+    }
+
+    // ── the three outcomes stay three (#a-wake-that-cannot-build-its-worktree-reports-the-wrong-failure) ──
+
+    #[test]
+    fn a_pane_that_is_not_a_worker_resolves_silently() {
+        // Silent, NOT an error: the director and a triage pane carry no plan row, and the refusal
+        // downstream is the right answer for them. An Err here would turn every director wake red.
+        for pane in ["demo:director", "demo:own/api:triage", "scratch"] {
+            assert!(matches!(resolve_stream(pane), Ok(None)), "{pane} must resolve silently");
+        }
+    }
+
+    #[test]
+    fn a_stream_no_plan_names_resolves_silently_too() {
+        // The UNKNOWN-stream case, and the one the whole design turns on: it must stay silent so the
+        // frontend's refusal is what the caller sees, rather than a Rust error that would read as a
+        // malfunction instead of "that stream does not exist".
+        //
+        // `$HOME` is pointed at a fresh temp dir so the plan store genuinely is not there — the same
+        // shape as a project key nobody has planned. ENV_LOCK because `home_dir()` is process-global
+        // and nextest runs these in one process per test but `cargo test` threads them.
+        let _lock = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = crate::testutil::temp_home("wake-unplanned");
+        assert!(matches!(resolve_stream("nobody-planned-this:api"), Ok(None)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_error_names_the_stream_the_repo_and_the_cause() {
+        // The regression. `ensure_worktree: repo not cloned` used to become an absent `stream`, which
+        // the caller read as "it resolved to no open tab, or is disabled" — naming neither the stream,
+        // the repo, nor the reason, and sending three rounds of debugging at the frontend.
+        let msg = format!(
+            "fleet wake: no session was started — could not create the worktree for stream \
+             '{}' in {}: {}",
+            "accessibility", "kevinthelago/base-studio-code", "ensure_worktree: repo not cloned: /x",
+        );
+        assert!(msg.contains("accessibility"), "names the stream");
+        assert!(msg.contains("kevinthelago/base-studio-code"), "names the repo");
+        assert!(msg.contains("repo not cloned"), "carries the cause");
+        // Worded to match `fleet start`'s error for the identical failure, so one cause does not read
+        // as two different bugs depending on which verb hit it.
+        assert!(msg.contains("could not create the worktree for stream"));
     }
 
     /// An ack delivers to exactly its own waiter and is consumed — two wakes in flight must not cross,
