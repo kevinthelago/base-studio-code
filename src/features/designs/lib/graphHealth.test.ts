@@ -100,6 +100,27 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(fs[0].nodeNames).toEqual(expect.arrayContaining(["DeadShell", "Widget"]));
   });
 
+  // bsc-request #110 (design-studio:designer-react): `bsc ui used-by toggle` showed `DeployToggle`
+  // composed by several real components, yet the Design Studio badged it as unused. Root cause: a
+  // `page` (in-degree 0 by definition — nothing composes a page) had no explicit composer, so its
+  // dangling-branch finding's `nodeIds` swept in every reachable descendant — including `DeployToggle`,
+  // which really is composed elsewhere, just not via this page. A page's `nodeIds` must name only the
+  // root. Mirrors the Rust twin's `a_page_roots_dangling_branch_names_only_the_root_not_its_shared_descendants`.
+  it("a page root's dangling-branch names only the root, not its shared descendants (#110)", () => {
+    const fs = analyzeGraphHealth([
+      comp("SettingsWorkspace", "page", 0, ["ToggleRow"]),
+      // ToggleRow composes DeployToggle within the dead page's branch...
+      comp("ToggleRow", "composite", 0, ["DeployToggle"]),
+      // ...but DeployToggle is ALSO composed by a real, live, unrelated card — exactly `used-by`'s claim.
+      comp("DeployToggle", "primitive", 0),
+      comp("IdleReaperCard", "composite", 3, ["DeployToggle"]),
+    ]);
+    const finding = fs.find((f) => f.category === "dangling-branch");
+    expect(finding).toBeDefined();
+    expect(finding!.nodeIds).toEqual(["SettingsWorkspace"]);
+    expect(finding!.nodeNames).toEqual(["SettingsWorkspace"]);
+  });
+
   it("flags two components wrapping the same intrinsic as duplicates", () => {
     const fs = analyzeGraphHealth([
       comp("Button", "primitive", 9, [], { wraps: "button" }),

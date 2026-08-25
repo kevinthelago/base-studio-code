@@ -2578,12 +2578,27 @@ fn analyze_kit(
             let mut reachable = BTreeSet::new();
             collect_reachable(n.id.as_str(), &out_ids, &mut reachable);
             reachable.remove(n.id.as_str());
-            let mut ids = vec![n.id.clone()];
-            let mut names = vec![n.name.clone()];
-            for id in &reachable {
-                ids.push(id.to_string());
-                names.push(name_of(id));
-            }
+            // A `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page
+            // (`prune_plan` guard 1 already says so for auto-prune, #3087). The finding still surfaces so a
+            // human auditing the graph sees a page with no explicit mount-composer, but its `node_ids`
+            // deliberately name ONLY the root, never the reachable set: those are the page's ordinary,
+            // often widely-shared content (#110 — `SettingsWorkspace` alone reaches 73 real components
+            // including `DeployToggle`, which `bsc ui used-by` shows composed by 8 others elsewhere).
+            // Spreading the category onto every one of them badged real, live components as "unused"
+            // purely because ONE unrelated page happens to reach them. A dead LAYOUT keeps the full
+            // branch below — unlike a page it is not guaranteed to be a real entry point, so dragging its
+            // subtree down with it is a genuine, worth-reporting risk (`flags_an_unused_root_with_deps_as_a_dangling_branch`).
+            let (ids, names) = if n.role == "page" {
+                (vec![n.id.clone()], vec![n.name.clone()])
+            } else {
+                let mut ids = vec![n.id.clone()];
+                let mut names = vec![n.name.clone()];
+                for id in &reachable {
+                    ids.push(id.to_string());
+                    names.push(name_of(id));
+                }
+                (ids, names)
+            };
             out.push(Finding {
                 category: "dangling-branch",
                 severity: 3,
@@ -2596,10 +2611,17 @@ fn analyze_kit(
                     reachable.len(),
                     if reachable.len() == 1 { "y" } else { "ies" }
                 ),
-                suggested_action: format!(
-                    "prune the branch from its root `{}` — check each dependency isn't shared before removing",
-                    n.name
-                ),
+                suggested_action: if n.role == "page" {
+                    "a page is a root by definition — nothing composes it; it is never auto-pruned (see \
+                     `bsc ui doctor --fix`'s guard), reported here only so a human notices it has no \
+                     explicit mount-composer"
+                        .to_string()
+                } else {
+                    format!(
+                        "prune the branch from its root `{}` — check each dependency isn't shared before removing",
+                        n.name
+                    )
+                },
             });
         }
     }
@@ -5328,6 +5350,38 @@ export function X(){ return <i>{nope}</i>; }"
         );
         let skip = plan.skipped.iter().find(|s| s.id == "invoicespage").expect("held back, not dropped");
         assert!(skip.guard.contains("page"), "the guard names itself: {}", skip.guard);
+    }
+
+    /// #110 (design-studio:designer-react's request): `bsc ui used-by toggle` showed `DeployToggle`
+    /// composed by 8 real components, yet the Design Studio badged it as unused. Root cause:
+    /// `SettingsWorkspace` (role `page`, in-degree 0) had no explicit composer, so its dangling-branch
+    /// finding's `nodeIds` swept in every reachable descendant — including `DeployToggle`, which really
+    /// is composed elsewhere, just not via this page. A page's `nodeIds` must name ONLY the root.
+    #[test]
+    fn a_page_roots_dangling_branch_names_only_the_root_not_its_shared_descendants() {
+        let comps = [
+            json!({ "id": "settingspage", "name": "SettingsWorkspace", "kitId": "k", "role": "page", "used": 0,
+                    "composes": ["ToggleRow"], "srcText": "p", "source": "export default () => null;" }),
+            // ToggleRow composes DeployToggle within the dead page's branch...
+            json!({ "id": "togglerow", "name": "ToggleRow", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": ["DeployToggle"], "srcText": "r", "source": "export default () => null;" }),
+            // ...but DeployToggle is ALSO composed by a real, live, unrelated card — exactly `used-by`'s claim.
+            json!({ "id": "toggle", "name": "DeployToggle", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "t", "source": "export default () => null;" }),
+            json!({ "id": "idlereapercard", "name": "IdleReaperCard", "kitId": "k", "role": "composite", "used": 3,
+                    "composes": ["DeployToggle"], "srcText": "c", "source": "export default () => null;" }),
+        ];
+        let finding = analyze(&comps)
+            .into_iter()
+            .find(|f| f.category == "dangling-branch")
+            .expect("SettingsWorkspace is still reported as a dead root");
+        assert_eq!(
+            finding.node_ids,
+            vec!["settingspage".to_string()],
+            "only the page root is named — ToggleRow/DeployToggle must not be badged unused: {:?}",
+            finding.node_ids,
+        );
+        assert_eq!(finding.node_names, vec!["SettingsWorkspace".to_string()]);
     }
 
     /// A packaged built-in seed (the viz kits' demo components, #3194/#3242) is isolated ON PURPOSE.
