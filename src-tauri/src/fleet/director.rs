@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::fleet::protocols::append_section_once;
+use crate::fleet::protocols::upsert_section;
 
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
 /// async-integrator director always has its standing duties as authoritative context
@@ -10,17 +10,28 @@ pub(crate) fn director_protocol_md() -> String {
     crate::platform::config::load_str("fleet/director-protocol.md")
 }
 
-/// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
+/// Ensure the project hub's CLAUDE.local.md carries the CURRENT director protocol (#375).
+///
+/// Idempotent, and — since `an-auto-added-protocol-section-is-frozen-once-written` — idempotent on
+/// the CURRENT content rather than on whatever was written first. Both sections are auto-generated,
+/// so a relaunch refreshes them; anything around them is preserved.
+///
+/// The order matters and is known only here: the director protocol runs until the
+/// injection-resistance marker, and that one runs to end of file.
 #[tauri::command]
 pub(crate) fn ensure_director_protocol(project_key: String) -> Result<(), String> {
     let local = project_dir(&project_key).join("CLAUDE.local.md");
     if let Some(parent) = local.parent() { let _ = std::fs::create_dir_all(parent); }
-    // Both sections are appended verbatim only when their marker is absent (idempotent), via the
-    // shared helper — no scattered read-modify-write blocks. Errors propagate (this is a command).
-    append_section_once(&local, "## Director protocol", &director_protocol_md()).str_err()?;
+    upsert_section(
+        &local,
+        "## Director protocol",
+        &director_protocol_md(),
+        Some(INJECTION_RESISTANCE_MARKER),
+    )
+    .str_err()?;
     // Injection-resistance preamble (#1167): the director reads issue/PR prose + authors kickoffs,
     // so it's a high-value injection target — give it the same untrusted-input rules as workers.
-    append_section_once(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md()).str_err()?;
+    upsert_section(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md(), None).str_err()?;
     Ok(())
 }
 
