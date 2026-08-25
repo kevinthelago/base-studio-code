@@ -36,7 +36,50 @@
 use crate::{Limits, Mount, SandboxSpec, Scope, SpecError, Usr, MINIMAL_BINS, REPO_GUEST_PATH};
 use std::path::{Path, PathBuf};
 
-/// The roles the app launches. Deliberately a closed set: an unrecognised role is **refused**,
+/// The studio roles that run UNCAGED, each with the store its whole surface writes and the reason
+/// the cage cannot host it yet.
+///
+/// `(role, the store it writes, what the cage would need)`.
+///
+/// This is the per-role answer to "what should its write surface be", and it is the whole content
+/// of the decision to leave them out of [`Role`]. Every one of them is `git:none github:none
+/// code:none` with `scratch/**` as its only write glob — so the ROLE GATE is not what makes them
+/// uncaged; the missing surface is. Caging any of them today reproduces the designer's failure
+/// exactly: `Exit code 127 — bsc: command not found` on the first instructed command, because the
+/// cage refuses to bind `bsc` (a writable store inside the namespace is the ambient authority the
+/// isolation exists to remove) and there is no outbox for its store.
+///
+/// The precondition for moving one INTO [`Role`] is therefore concrete rather than vague: its store
+/// needs an outbox, the way `/ui/out` and `/plan/out` already exist.
+pub const UNCAGED_STUDIO_ROLES: &[(&str, &str, &str)] = &[
+    (
+        "designer",
+        "bsc ui",
+        // The one that was caged by accident and had to be let out. `/ui/out` exists, so this is the
+        // closest to reversible — what it still lacks is the SOURCE tier on the read side: `/ui`
+        // projects names and grouping, not `srcText`, so a caged designer cannot read the component
+        // it is meant to edit (`complete-the-caged-designer-surface`).
+        "/ui/out exists; /ui projects no srcText, so it cannot READ what it edits",
+    ),
+    (
+        "architect",
+        "bsc teams · bsc persona · bsc plan brief/requirement · bsc fleet director",
+        // Partly reachable NOW: `/plan/out` carries change/note/gate/status/request. What has no
+        // outbox is the persona and teams stores, and creating a director.
+        "/plan/out covers its plan verbs; bsc teams / bsc persona / bsc fleet director have none",
+    ),
+    (
+        "librarian",
+        "bsc graph",
+        // `/graph` projects `impl/<id>/code` byte-for-byte, so the READ half is already complete
+        // here — better placed than the designer. It is the write half that is missing entirely.
+        "/graph reads completely (impl/<id>/code); there is no /graph/out",
+    ),
+    ("sound-designer", "bsc sound", "no projection and no outbox for the sound kits"),
+    ("integrator", "bsc data connector", "no projection and no outbox for connector manifests"),
+];
+
+/// The roles the app launches. Deliberately a closed set: an unrecognised role is **refused**,/// The roles the app launches. Deliberately a closed set: an unrecognised role is **refused**,
 /// never defaulted to something permissive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -99,8 +142,12 @@ impl Role {
             "issuer" => Role::Issuer,
             "juror" => Role::Juror,
             "documentor" => Role::Documentor,
-            // `designer` is DELIBERATELY ABSENT — do not add it back without finishing the caged
-            // surface first (`complete-the-caged-designer-surface`).
+            // THE FIVE STUDIO ROLES ARE DELIBERATELY ABSENT — designer, architect, librarian,
+            // sound-designer and integrator. Each is listed in [`UNCAGED_STUDIO_ROLES`] with the
+            // store it writes and the outbox the cage would need first; that constant IS the
+            // decision, and `the_studio_roles_are_uncaged_together` holds it.
+            //
+            // `designer` is the one with history, because it was caged by accident:
             //
             // It was here once, and every designer session died on its first instructed command:
             //
@@ -493,12 +540,21 @@ ed".into(),
     /// made here, not slip in as a one-line parser entry.
     #[test]
     fn the_studio_roles_are_uncaged_together() {
-        for name in ["designer", "architect", "librarian", "sound-designer", "integrator"] {
+        // Driven from the CONSTANT rather than a list repeated here: the constant is where the
+        // decision and its per-role reason live, so a role removed from it to be caged breaks this
+        // test at the same moment, instead of leaving a stale duplicate that still passes.
+        assert!(!UNCAGED_STUDIO_ROLES.is_empty(), "the set must not silently empty out");
+        for (name, store, blocker) in UNCAGED_STUDIO_ROLES {
             assert!(
                 Role::parse(name).is_none(),
                 "{name} must NOT resolve to a namespace profile — the studios run uncaged until the \
                  caged surface can do their job. Re-adding one is a decision; make it here.",
             );
+            // The reason has to be a REASON. "Leave it uncaged" is a legitimate answer only while it
+            // is written down, and an entry with an empty store or an empty blocker is a TODO
+            // wearing the shape of a decision.
+            assert!(!store.trim().is_empty(), "{name} must name the store its surface writes");
+            assert!(!blocker.trim().is_empty(), "{name} must name what the cage still lacks");
         }
         // ...and the profile it would use is still MODELLED, so completing the cage means filling in
         // a surface rather than re-deriving what a designer may touch.
