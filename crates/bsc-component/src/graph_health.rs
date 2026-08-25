@@ -2276,10 +2276,18 @@ fn analyze_kit(
     kits_holding: &BTreeMap<&str, BTreeSet<&str>>,
     out: &mut Vec<Finding>,
 ) {
-    // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
-    let mut id_by_name: BTreeMap<&str, &str> = BTreeMap::new();
+    // Name → ids (in-kit). A name is NOT guaranteed unique — a fossil left behind by a promotion/rename
+    // can carry the same `name` as its live replacement (#request-115: `ConsolePageCard` existed as both
+    // the live `settings-consolepagecard` and a stale built-in `consolepagecard`). Crediting only ONE id
+    // for a shared name (keep-first, or any other arbitrary pick) silently starves every OTHER same-named
+    // node of the edge a real composer declares — which is exactly what turned six live settings-page
+    // cards into false `orphan`/`dangling-branch` findings: `GeneralPage.composes` names `ConsolePageCard`
+    // once, but the store held two ids for that name, and only the arbitrarily-chosen one received the
+    // in-degree. `bsc ui used-by` resolves by name too and was never wrong — it credits every id sharing
+    // the queried name — so this collects every id per name and credits ALL of them, agreeing with it.
+    let mut ids_by_name: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for n in nodes {
-        id_by_name.entry(n.name.as_str()).or_insert(n.id.as_str());
+        ids_by_name.entry(n.name.as_str()).or_default().push(n.id.as_str());
     }
     // Resolved edges (composer id → dependency id) + in/out degree by id.
     let mut out_ids: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -2296,9 +2304,11 @@ fn analyze_kit(
     let mut dangling: BTreeMap<&str, Vec<&&Node>> = BTreeMap::new();
     for n in nodes {
         for dep_name in &n.composes {
-            if let Some(&dep_id) = id_by_name.get(dep_name.as_str()) {
-                out_ids.entry(n.id.as_str()).or_default().push(dep_id);
-                *in_deg.entry(dep_id).or_insert(0) += 1;
+            if let Some(dep_ids) = ids_by_name.get(dep_name.as_str()) {
+                for &dep_id in dep_ids {
+                    out_ids.entry(n.id.as_str()).or_default().push(dep_id);
+                    *in_deg.entry(dep_id).or_insert(0) += 1;
+                }
             } else if !dep_name.trim().is_empty() && !ids_in_kit.contains(dep_name.as_str()) {
                 dangling.entry(dep_name.as_str()).or_default().push(n);
             }
@@ -3816,6 +3826,25 @@ function C() {}
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["orphan"]);
         assert_eq!(fs[0].node_names, ["Ghost"]);
+    }
+
+    #[test]
+    fn a_name_shared_by_two_ids_credits_the_composer_to_both_not_just_one() {
+        // #request-115: a stale fossil left behind by a promotion/rename can carry the SAME `name` as
+        // its live replacement (the real library had `ConsolePageCard` on both `consolepagecard`, a
+        // built-in fossil, and `settings-consolepagecard`, the live record `GeneralPage` actually
+        // composes). `composes` resolves by NAME, so crediting only the FIRST id seen for that name
+        // silently starves the other — which is what turned six live settings-page cards into false
+        // `orphan` findings even though `bsc ui used-by` (name-keyed the same way) correctly reported
+        // them composed. The fossil is listed FIRST here, which is what made the old keep-first
+        // resolution steal the edge in the real store.
+        let fossil = json!({ "id": "card-fossil", "name": "Card", "kitId": "k", "role": "composite",
+            "used": 0, "composes": [], "srcText": "fossil", "source": "export default () => null;" });
+        let live = json!({ "id": "card-live", "name": "Card", "kitId": "k", "role": "composite",
+            "used": 0, "composes": [], "srcText": "live", "source": "export default () => null;" });
+        let comps = [comp("page", "page", 1, &["Card"]), fossil, live];
+        let fs = analyze(&comps);
+        assert!(fs.is_empty(), "neither same-named id should read as orphan: {fs:?}");
     }
 
     #[test]
