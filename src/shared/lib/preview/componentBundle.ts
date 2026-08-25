@@ -510,6 +510,19 @@ export interface ComponentSrcDocOptions {
    *  posts `{__navigate: name}` on click; releasing Alt returns full interactivity. Only the EXPANDED
    *  preview passes it — empty/absent ⇒ no inspect layer (byte-for-byte unchanged srcdoc). */
   inspect?: string[];
+  /** This build's ordinal (designer request #126) — echoed on every `__preview` message the srcdoc
+   *  posts. `srcdoc` reassignment does not synchronously replace the iframe's document: the outgoing one
+   *  (including a pending timer, like the 400ms empty-render probe below, or a late async throw) keeps
+   *  running until the new one loads, and `contentWindow` identity belongs to the FRAME, not the
+   *  document, so it stays the same across the swap. A host reusing one iframe across rebuilds (the
+   *  Design Studio's `ComponentPreviewFrame` re-selects a component into the SAME `<iframe>`) cannot tell
+   *  a leftover message from the new build apart by source window alone — it measurably attributed a
+   *  stale `STARTER_KIT is undefined` and a stale `SecurityError` to whichever component was current when
+   *  they finally arrived. Stamping the build's own ordinal in and echoing it back lets the host drop
+   *  anything that doesn't match the build it is currently on. Absent ⇒ omitted from every posted message
+   *  (byte-for-byte unchanged srcdoc) — a caller that reuses no iframe (the runtime probe, which mounts a
+   *  fresh element per call) has no need of it. */
+  buildGen?: number;
 }
 
 /**
@@ -889,7 +902,10 @@ export function inspectEngineScript(components: string[]): string {
 }
 
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine, inspect = [] } = opts;
+  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine, inspect = [], buildGen } = opts;
+  // Spliced into every `__preview` message's object literal — absent `buildGen` omits it entirely, so a
+  // caller that never passes one gets a byte-for-byte unchanged srcdoc (see `buildGen` above).
+  const genField = buildGen != null ? `, __gen: ${JSON.stringify(buildGen)}` : "";
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -936,8 +952,8 @@ ${previewCspMeta()}
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}
 <script>
-  window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message) }, "*"));
-  window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason) }, "*"));
+  window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message)${genField} }, "*"));
+  window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason)${genField} }, "*"));
   // #3556: apply a THEME change live — set the data-theme base + swap the token overrides — WITHOUT a
   // rebuild, so the in-iframe pan/zoom engine (and any other runtime state) survives a theme switch.
   window.addEventListener("message", (e) => {
@@ -948,7 +964,7 @@ ${previewCspMeta()}
 </script>
 <script type="module">
 ${bundleJs}
-parent.postMessage({ __preview: "ready" }, "*");
+parent.postMessage({ __preview: "ready"${genField} }, "*");
 // Empty-render probe (#2926): a beat after mount (past sync + effect renders), measure whether #root
 // produced anything visible — no element beyond the bootstrap wrapper AND no trimmed text — and report
 // it. Cheap + best-effort; the parent probe folds this into its ok verdict. Guarded so a throw here
@@ -957,7 +973,7 @@ setTimeout(() => {
   try {
     var r = document.getElementById("root");
     var empty = !!r && r.querySelectorAll("*").length <= 1 && (r.textContent || "").trim().length === 0;
-    parent.postMessage({ __preview: "rendered", empty: empty }, "*");
+    parent.postMessage({ __preview: "rendered", empty: empty${genField} }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
 </script>${fitShim}${engineShim}${inspectShim}
