@@ -366,6 +366,29 @@ impl Rollback {
     }
 }
 
+/// Run a delegated `bsc graph …` verb with its output CAPTURED, folding what it said into the error.
+///
+/// The driver delegates every write to the same `cli::run` arm a human would type — that is what keeps
+/// this tool and the CLI from drifting about what `harvest` means. The cost is that those arms `emit`
+/// their full record JSON, so one module buried two lines of progress under three enormous blobs.
+///
+/// It was never merely noisy. A record blob carries THE CRATE'S OWN SOURCE, so the output cannot be
+/// filtered by the obvious means: `grep "^  harvested"` still returns everything (a blob is one line),
+/// and `grep -oE "REFUSED.*"` matched the word REFUSED inside `bsc-navigate`'s own help text and read a
+/// SUCCESSFUL migration as a refusal. Both happened while migrating the single-module batch.
+///
+/// `capture_output` is the mechanism the warm server already uses (#4152) and is documented to nest, so
+/// this adds no second suppression path. Capturing rather than discarding is the point: on failure the
+/// verb's own words go into the error. A quiet tool that also goes silent when it breaks would be a
+/// worse bug than the noise it fixed.
+fn delegate(args: Vec<String>, what: &str) -> Result<(), String> {
+    let (res, said) = bsc_util::capture_output(|| crate::cli::run(args, "bsc graph"));
+    res.map_err(|e| {
+        let said = said.trim();
+        if said.is_empty() { format!("{what}: {e}") } else { format!("{what}: {e}\n{said}") }
+    })
+}
+
 /// `bsc graph migrate-crate <crate> [--apply] [--root <dir>]`.
 pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> {
     let krate = args
@@ -458,13 +481,12 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         // here. Passing it made the verb read as `graph`, which is unknown — and an unknown verb prints
         // the whole help and exits 1 rather than reporting an error, so it looks like a usage mistake by
         // the CALLER instead of a bug in the call.
-        crate::cli::run(
+        delegate(
             ["harvest", &rel, "--module", "--apply"].iter().map(|s| s.to_string()).collect(),
-            "bsc graph",
+            &format!("harvesting src/{}.rs", d.name),
         )
-        .map_err(|e| {
+        .inspect_err(|_| {
             rollback.restore();
-            format!("harvesting src/{}.rs: {e}", d.name)
         })?;
         // Record HOW it was declared, so materializing reproduces the program rather than a widened,
         // ungated approximation of it. Attributes go through a FILE — `#[cfg(feature = "x")]` on a
@@ -479,11 +501,10 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
             set.push("--module-attrs-file".into());
             set.push(attrs_file.to_string_lossy().to_string());
         }
-        let set_res = crate::cli::run(set, "bsc graph");
+        let set_res = delegate(set, &format!("recording the declaration of src/{}.rs", d.name));
         let _ = std::fs::remove_file(&attrs_file);
-        set_res.map_err(|e| {
+        set_res.inspect_err(|_| {
             rollback.restore();
-            format!("recording the declaration of src/{}.rs: {e}", d.name)
         })?;
         writeln!(out, "  harvested {id}{}", if d.public { "" } else { " (private)" }).map_err(|e| e.to_string())?;
         done.push(Migrated { module: d.name.clone(), id });
@@ -491,14 +512,13 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
 
     // ── promote, then VERIFY it landed ──────────────────────────────────────────────────────────
     let ids: Vec<String> = done.iter().map(|m| m.id.clone()).collect();
-    crate::cli::run(
+    delegate(
         ["promote", "--id", &ids.join(","), "--root", &root.to_string_lossy()]
             .iter().map(|s| s.to_string()).collect(),
-        "bsc graph",
+        &format!("promoting [{}]", ids.join(", ")),
     )
-    .map_err(|e| {
+    .inspect_err(|_| {
         rollback.restore();
-        format!("promoting [{}]: {e}", ids.join(", "))
     })?;
     // READ THE STORE BACK rather than trusting the promote's own report. A promote that could not carry
     // an id was reported all along; the tool simply never looked, which is how a partial migration
@@ -609,6 +629,78 @@ mod tests {
         // nearly the same thing.
         assert!(with_carried_docs("//! Its own header.\npub fn run() {}", &docs).is_none());
         assert!(with_carried_docs("pub fn run() {}", &[]).is_none());
+    }
+
+    /// The driver's own report must survive contact with the verbs it delegates to.
+    ///
+    /// This pins the REPORT — the writer the driver speaks through — on the dry-run path, which is the
+    /// one a test can drive without a store. It does NOT by itself prove the capture works: the dry run
+    /// delegates nothing, so "no record JSON" is true there no matter what `delegate` does. The capture
+    /// is pinned separately by `a_failing_delegated_verb_still_says_what_it_said`.
+    #[test]
+    fn the_report_is_readable_and_carries_no_record_json() {
+        let dir = std::env::temp_dir().join(format!("bsc-migrate-report-{}", std::process::id()));
+        let src = dir.join("crates").join("demo").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(dir.join("crates/demo/Cargo.toml"), "[package]\nname = \"demo\"\nedition = \"2021\"\n").unwrap();
+        std::fs::write(src.join("lib.rs"), "//! demo\npub mod cli;\n").unwrap();
+        std::fs::write(src.join("cli.rs"), "pub fn run() {}\n").unwrap();
+
+        let mut out: Vec<u8> = Vec::new();
+        run(&["demo".into(), "--root".into(), dir.to_string_lossy().to_string()], &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        assert!(text.contains("would migrate demo"), "it says what it would do: {text}");
+        assert!(text.contains("src/cli.rs  ->  record demo--cli.rs"), "{text}");
+        // The shape that broke: a delegated verb's JSON in the stream. One blob makes the whole output
+        // unfilterable, because it contains arbitrary source.
+        assert!(!text.contains("\"applied\""), "no harvest JSON: {text}");
+        assert!(!text.contains("\"impl\""), "no impl-set JSON: {text}");
+        assert!(text.lines().count() < 12, "a report a human reads, not a dump: {} lines", text.lines().count());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The capture must not become a GAG. `delegate` suppresses a verb's output on the success path, so
+    /// the one thing that would make it a worse bug than the noise is losing that output when the verb
+    /// FAILS — a tool that goes silent exactly when something breaks.
+    ///
+    /// Driven through a real delegated call with a bogus id, so it exercises `capture_output` rather
+    /// than a stub of it.
+    #[test]
+    fn a_failing_delegated_verb_still_says_what_it_said() {
+        let err = delegate(
+            ["impl".into(), "set".into(), "--id".into(), "".into()].to_vec(),
+            "recording something",
+        )
+        .expect_err("an empty id is refused");
+        assert!(err.starts_with("recording something: "), "the error names WHAT was being done: {err}");
+        assert!(err.len() > "recording something: ".len(), "…and carries the verb's own words: {err}");
+    }
+
+    /// And the success path is genuinely quiet.
+    ///
+    /// Written in TWO halves on purpose, because the obvious one-half version passes for the wrong
+    /// reason. My first attempt delegated `help` and asserted the outer sink was empty — but `help`
+    /// prints through a raw `print!`, which never reaches the capture sink at all, so the assertion was
+    /// true no matter what `delegate` did. A quiet test proves nothing unless the thing it silences is
+    /// shown to be loud first.
+    ///
+    /// So: pick a verb that DOES emit through the shared helper (`impl get` answers `null` for a miss),
+    /// prove it is loud undelegated, then prove `delegate` swallows exactly that.
+    #[test]
+    fn a_succeeding_delegated_verb_prints_nothing_through() {
+        let args = || ["impl".into(), "get".into(), "no-such-id-zzz".into()].to_vec();
+
+        // Half one: undelegated, this verb really does emit through the capturable helper.
+        let (direct, loud) = bsc_util::capture_output(|| crate::cli::run(args(), "bsc graph"));
+        assert!(direct.is_ok(), "the verb ran: {direct:?}");
+        assert!(!loud.trim().is_empty(), "the verb IS loud undelegated — otherwise half two is vacuous");
+
+        // Half two: through `delegate`, the inner capture takes it and the outer sink sees nothing.
+        let (result, said) = bsc_util::capture_output(|| delegate(args(), "reading a record"));
+        assert!(result.is_ok(), "still ran: {result:?}");
+        assert!(said.is_empty(), "delegate captured it — outer sink got {} bytes: {said}", said.len());
     }
 
     /// The header is written into EVERY migrated crate, so its grammar is not cosmetic — it is the
