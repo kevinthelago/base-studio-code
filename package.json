@@ -8,7 +8,7 @@
     "build": "node scripts/emit-records.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:plan": "node scripts/gc.mjs --quiet && cargo build --bin bsc --bin bsc-agent --bin bsc-hook",
+    "build:plan": "node scripts/gc.mjs --quiet && cargo build --bin bsc --bin bsc-agent --bin bsc-hook && node scripts/verify-build-artifacts.mjs --quiet",
     "clean:incremental": "node scripts/prune-incremental.mjs",
     "clean:target": "node scripts/sweep-target.mjs",
     "gc": "node scripts/gc.mjs --force",
@@ -34,7 +34,9 @@
     "dev-boot-check": "node scripts/dev-boot-check.mjs",
     "retirement-candidates": "node scripts/retirement-candidates.mjs",
     "bsc:doctor": "node scripts/bsc-doctor.mjs",
-    "census:claims": "node scripts/census-claims.mjs"
+    "census:claims": "node scripts/census-claims.mjs",
+    "diagnose:build": "node scripts/diagnose-build-failure.mjs",
+    "verify:artifacts": "node scripts/verify-build-artifacts.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

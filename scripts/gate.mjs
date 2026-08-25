@@ -11,11 +11,13 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireGateSlot } from "./gateLock.mjs";
 import { planGate, parsePorcelain, gateCommands, isRecordStorePath } from "./gateScope.mjs";
+import { decideGateTree, devPortFrom } from "./gate-tree-guard.mjs";
+import { classifyBuildFailure, failingPackage } from "./build-artifact-plan.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -25,6 +27,26 @@ const baseIdx = argv.indexOf("--base");
 const base = baseIdx >= 0 ? argv[baseIdx + 1] : "develop";
 
 const sh = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8" }).trim();
+
+/** Is something LISTENING on `port` of the loopback interface? A synchronous probe, because the gate
+ *  runs top-level and this must answer before any build starts. Implemented by connecting rather
+ *  than by shelling out to `ss`/`netstat`, which differ per platform and are absent on Windows.
+ *  ANY failure answers "no" — an inconclusive probe must never block a gate. */
+function portIsListening(port) {
+  const probe = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `const s=require("net").connect(${port},"127.0.0.1");` +
+        `s.setTimeout(400);` +
+        `s.on("connect",()=>{s.destroy();process.exit(0)});` +
+        `s.on("timeout",()=>{s.destroy();process.exit(1)});` +
+        `s.on("error",()=>process.exit(1));`,
+    ],
+    { encoding: "utf8", timeout: 3000 }
+  );
+  return probe.status === 0;
+}
 // UNTRIMMED — `git status --porcelain` encodes status in the first two COLUMNS, so trimming the block
 // eats the leading space of the first line and shifts its path by one. See `parsePorcelain`.
 const shRaw = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8" });
@@ -101,6 +123,45 @@ if (!plan.full) {
   }
 }
 
+// REFUSE TO BUILD IN A TREE WHOSE DEV SERVER IS LIVE
+// (#a-corrupt-build-artifact-has-no-recovery-path). `tauri dev` owns that tree's `target/`, and a
+// second cargo there is the condition under which both observed corruptions happened: a 0-byte
+// `target/debug/bsc` (twice) and a 40-minute app link failure, with `cargo check` passing throughout.
+//
+// Keyed on the dev server actually LISTENING, not on "this is the main tree" — a solo gate in a
+// quiet main tree is fine and refusing it would obstruct daily work for a risk that is not present.
+// A probe that cannot answer counts as "no dev server": a guard that fails closed on its own
+// uncertainty would block the fleet the first time a config moved.
+{
+  let devServerUp = false;
+  try {
+    const conf = JSON.parse(readFileSync(join(REPO, "src-tauri", "tauri.conf.json"), "utf8"));
+    const port = devPortFrom(conf);
+    if (port) devServerUp = portIsListening(port);
+  } catch {
+    // unreadable config ⇒ treat as no dev server (see above)
+  }
+  // A LINKED worktree has `.git` as a FILE (`gitdir: …`); the main worktree has it as a DIRECTORY.
+  // That is the cheapest portable way to ask "am I the tree `tauri dev` runs in" — and it is what
+  // keeps this guard from firing in the other worktrees, where the same global dev port is visible.
+  let isMainWorktree = false;
+  try {
+    isMainWorktree = statSync(join(REPO, ".git")).isDirectory();
+  } catch {
+    // no .git at all ⇒ not the main worktree ⇒ never refuse
+  }
+  const verdict = decideGateTree({
+    isMainWorktree,
+    devServerUp,
+    override: process.env.BSC_GATE_ALLOW_DEV_TREE === "1",
+  });
+  if (!verdict.allow) {
+    process.stderr.write(`\ngate: REFUSED — ${verdict.reason}\n\n`);
+    process.exit(2);
+  }
+  if (verdict.reason) process.stdout.write(`gate: ${verdict.reason}\n`);
+}
+
 // Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
 // agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
 // so the only tree ever collected was the one where the app gets launched, and no worktree had been
@@ -134,6 +195,19 @@ releaseSlot(); // before the exit below, and before printing — a held slot blo
 
 const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
 process.stdout.write(`\n${failed.length ? `GATE FAILED: ${failed.join(", ")}` : "gate passed"}\n`);
+// A failing RUST step may be an artifact problem wearing a compiler error's clothes — an
+// `undefined hidden symbol` link failure passes `cargo check` and looks nothing like a stale
+// target/. Point at the reader that can tell them apart.
+//
+// The gate does NOT classify the step's own stderr, deliberately: `run` uses `stdio: "inherit"` so
+// cargo's progress streams live, and buffering it to pattern-match would leave the gate looking
+// frozen through every long compile. A pointer costs one line and no output fidelity.
+if (failed.some((n) => /check|clippy|test|nextest|build/i.test(n))) {
+  process.stdout.write(
+    "  if a step failed while LINKING (`undefined hidden symbol`, `invalid metadata`), that is a\n" +
+      "  corrupt artifact set, not your code — `npm run diagnose:build -- <log>` names it and prints the fix\n"
+  );
+}
 if (!plan.full) {
   process.stdout.write("this was the SCOPED gate — step 7 still runs `npm run gate -- --full` before merging\n");
 }
