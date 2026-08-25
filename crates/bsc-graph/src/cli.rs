@@ -918,7 +918,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         //     carry source intact (the shell eats backticks and `${…}`), and it fails silently.
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
         //   impl remove <id>                             # delete an implementation + scrub it from every composes
-        //   impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
+        //   impl get <id-or-name> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120); get falls back to a bare NAME when it's unambiguous (#118)
         "impl" => match positional.get(1).copied() {
             Some("set") => {
                 let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <code>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate]")?;
@@ -1178,8 +1178,42 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // gets truncated to a file OUTSIDE the session's confined FS roots, and so cannot be read
             // back at all. The designer skipped correcting several entries rather than write blind.
             Some("get") => {
-                let id = positional.get(2).copied().ok_or("usage: bsc graph impl get <id>")?;
-                match crate::implementations().into_iter().find(|im| im.get("id").and_then(Value::as_str) == Some(id)) {
+                let ref_ = positional.get(2).copied().ok_or("usage: bsc graph impl get <id-or-name>")?;
+                let impls = crate::implementations();
+                let by_id = impls.iter().find(|im| im.get("id").and_then(Value::as_str) == Some(ref_));
+                // #118: every OTHER reader of this library — `resolveLibrarySpec`/`libraryModuleResolver`
+                // (the preview's `@bsc/algorithms/<name>` import) and this crate's own `resolves_library`
+                // (`graph_health.rs`) — accepts an algorithm's BARE name interchangeably with its exact
+                // id. `impl get` did not, so a designer verifying a `bsc ui doctor` finding like "re-codes
+                // `models` (import `@bsc/algorithms/models`)" by running `impl get models` got `null` and
+                // reasonably read that as "the target doesn't exist" — when it does, under id `models.ts`,
+                // and the import in the finding already resolves and builds. Fall back to a NAME match,
+                // but only when it is UNAMBIGUOUS: an id is unique by construction, a name is not (`index`
+                // alone names 20 unrelated modules in this store), and a wrong silent pick on a read that
+                // precedes a write is worse than the miss this verb already treats as a normal answer.
+                let found = match by_id {
+                    Some(im) => Some(im),
+                    None => {
+                        let mut by_name = impls.iter().filter(|im| im.get("name").and_then(Value::as_str) == Some(ref_));
+                        match (by_name.next(), by_name.next()) {
+                            (Some(only), None) => Some(only),
+                            (Some(_), Some(_)) => {
+                                let ids: Vec<&str> = impls
+                                    .iter()
+                                    .filter(|im| im.get("name").and_then(Value::as_str) == Some(ref_))
+                                    .filter_map(|im| im.get("id").and_then(Value::as_str))
+                                    .collect();
+                                return Err(format!(
+                                    "'{ref_}' names {} implementations — pass the exact --id instead: {}",
+                                    ids.len(),
+                                    ids.join(", ")
+                                ));
+                            }
+                            (None, _) => None,
+                        }
+                    }
+                };
+                match found {
                     // `--metrics` (#doctor-reads-the-runtime) JOINS the runtime attestations at read
                     // time, under a `metrics` key. Deliberately not a field ON the record: writing it
                     // there would make every boot a record write (filling `bsc ui revert` history with
@@ -1188,12 +1222,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     // numbers to another inside a seed or a Studio snapshot.
                     Some(im) if args.iter().any(|a| a == "--metrics") => {
                         let mut out = im.clone();
+                        let metrics_id = im.get("id").and_then(Value::as_str).unwrap_or(ref_);
                         if let Some(obj) = out.as_object_mut() {
-                            obj.insert("metrics".into(), runtime_metrics(id));
+                            obj.insert("metrics".into(), runtime_metrics(metrics_id));
                         }
                         emit(&out)
                     }
-                    Some(im) => emit(&im),
+                    Some(im) => emit(im),
                     // `null` rather than an error: a miss is a normal answer to "does this exist?", and
                     // it keeps the output parseable by the same reader as a hit.
                     None => emit(&Value::Null),
@@ -1214,7 +1249,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
-            _ => Err("usage: bsc graph impl set … | impl get <id> | impl remove <id> \
+            _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
                       | impl list [--tech <t>] [--role r] [--domain <d>] \
                       | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>]"
@@ -2279,7 +2314,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
+         {prog} impl get <id-or-name> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -2577,6 +2612,56 @@ mod tests {
         assert!(run(vec!["impl".into(), "get".into(), "definitely-not-here.rs".into()], "bsc graph").is_ok());
         // A missing id is a usage error, since there is nothing to look up.
         assert!(run(vec!["impl".into(), "get".into()], "bsc graph").is_err());
+    }
+
+    #[test]
+    fn impl_get_falls_back_to_an_unambiguous_bare_name_but_refuses_to_guess_among_several() {
+        // #118 (design-studio:designer-react): `bsc ui doctor`'s reimplementation findings print an
+        // algorithm's BARE name (`` `models` (import `@bsc/algorithms/models`) ``, never the exact id
+        // `models.ts`) — the SAME bare form `resolveLibrarySpec`/`libraryModuleResolver` (the preview's
+        // import) and this crate's own `resolves_library` (graph_health.rs) already accept in place of the
+        // id. `impl get <bare-name>` did not, so a designer verifying a finding this way got `null` and
+        // reasonably read it as "the target doesn't exist" — a false read, since the import already builds.
+        // The fallback is unambiguous-only: a name can collide (`index` alone names 20+ unrelated modules
+        // in the real store), and a wrong silent pick on a read that precedes a write is worse than the
+        // miss `impl get` already treats as a normal answer.
+        let dir = crate::unique_temp("implget-name");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let set = |id: &str, name: &str| {
+            run(
+                vec![
+                    "impl".to_string(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), id.into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), name.into(),
+                    "--code".into(), format!("export function {name}() {{}}"),
+                    "--src".into(), format!("src/x/{id}"),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+        };
+        set("only-one.ts", "onlyOne");
+        set("dup-a.ts", "dup");
+        set("dup-b.ts", "dup");
+
+        // A name with exactly one implementation resolves through it — the fix.
+        assert!(run(vec!["impl".into(), "get".into(), "onlyOne".into()], "bsc graph").is_ok());
+        // An exact id still resolves directly, unaffected by the fallback.
+        assert!(run(vec!["impl".into(), "get".into(), "only-one.ts".into()], "bsc graph").is_ok());
+        // A name shared by several implementations is refused rather than guessed — and the error names
+        // every colliding id, so the caller can retry with the exact one it means.
+        let err = run(vec!["impl".into(), "get".into(), "dup".into()], "bsc graph").unwrap_err();
+        assert!(err.contains("dup-a.ts") && err.contains("dup-b.ts"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
