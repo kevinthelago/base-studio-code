@@ -4023,6 +4023,28 @@ function C() {}
     }
 
     #[test]
+    fn zustand_is_a_curated_external_not_a_stub_import() {
+        // #120: `@/store` (a registered platform module) does `import { create } from "zustand"` and
+        // `import { persist, createJSONStorage } from "zustand/middleware"` at top level. Before this fix
+        // neither specifier was in `preview-importmap.json`, so both fell to the universal stub — a
+        // severity-1 `stubbed-import` note here, but at RUNTIME the curried `create<T>()(persist(...))`
+        // call shape turned the stub into a hard `TypeError: create() is not a function` (the universal
+        // stub's `apply` trap returns `null` for a zero-arg non-`use*` call, and `null(...)` throws).
+        // Pinning zustand as a curated external is what keeps this doctor check honest AND the preview
+        // actually running the real store.
+        let comps = [json!({
+            "id":"store-user", "name":"StoreUser", "kitId":"k", "role":"composite", "used":2, "composes":[],
+            "srcText":"import React from \"react\";\nimport { create } from \"zustand\";\nimport { persist } from \"zustand/middleware\";\nexport function StoreUser(){ return React.createElement(\"div\", null, String(create), String(persist)); }"
+        })];
+        let fs = analyze(&comps);
+        assert!(
+            !fs.iter().any(|f| f.category == "stubbed-import" && f.why.contains("zustand")),
+            "zustand must resolve via the curated import-map, not the universal stub: {fs:?}"
+        );
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"));
+    }
+
+    #[test]
     fn does_not_flag_unresolvable_import_when_all_resolve_or_for_a_snippet() {
         let comps = [
             json!({ "id":"fine", "name":"Fine", "kitId":"k", "role":"composite", "used":2, "composes":[],
