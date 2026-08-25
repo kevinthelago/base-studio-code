@@ -396,12 +396,54 @@ fn ensure_executable(dst: &std::path::Path) {
 #[cfg(not(unix))]
 fn ensure_executable(_dst: &std::path::Path) {}
 
+/// Stage `src` onto `dst` WITHOUT the destination ever being a partial file.
+///
+/// ## Why not `fs::copy` straight onto `dst`
+///
+/// It used to be exactly that, and it is the same defect the surrounding guards exist to prevent,
+/// inside the code that prevents it. `fs::copy` TRUNCATES the destination and then streams into it, so
+/// for as long as a 261 MB binary takes to copy, `$BSC_BIN` is a growing fragment — and a session that
+/// execs it in that window gets the failure this module's own comments describe from the other side:
+/// a `bsc` that is 0 bytes and unrunnable. `source_is_plausible` guards the source and `verify_staged`
+/// guards the result; neither can guard the destination DURING the copy.
+///
+/// So: copy into a temp file **in the destination's own directory** (same dir ⇒ same filesystem ⇒ the
+/// rename cannot fail with `EXDEV`), then `rename` it onto `dst`. A rename is atomic — a reader sees
+/// the whole old file or the whole new one, never a fragment — and on POSIX renaming over a binary
+/// that is currently being EXECUTED is legal: the running process keeps its inode. Only truncating in
+/// place would give `ETXTBSY`, which is what the old code risked.
+///
+/// The mode is set on the TEMP file before the rename, for the same reason: a copy carries the
+/// source's mode, so a rename that published a 0644 file would publish something unrunnable.
+///
+/// ## Windows still needs the dance
+///
+/// `rename` there fails while the destination is open for execution, so the `.old-<stamp>` park-and-
+/// replace fallback stays for exactly that case. It is a fallback now rather than the path, and on
+/// POSIX it is unreachable.
 fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    match std::fs::copy(src, dst) {
-        Ok(_) => return Ok(()),
+    let dir = dst.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let tmp = dir.join(format!(
+        ".{}.staging-{}",
+        dst.file_name().and_then(|n| n.to_str()).unwrap_or("sidecar"),
+        std::process::id()
+    ));
+    // A leftover from a killed run must never be mistaken for this one's work.
+    let _ = std::fs::remove_file(&tmp);
+    if let Err(e) = std::fs::copy(src, &tmp) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    ensure_executable(&tmp);
+
+    match std::fs::rename(&tmp, dst) {
+        Ok(()) => return Ok(()),
         // Only the "in use" case earns the rename dance; a permissions/disk error should surface as-is
-        // rather than leave a renamed-away binary behind.
-        Err(e) if !is_in_use(&e) => return Err(e),
+        // rather than leave a parked-away binary behind.
+        Err(e) if !is_in_use(&e) => {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
         Err(_) => {}
     }
     let stamp = std::time::SystemTime::now()
@@ -409,18 +451,21 @@ fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let parked = dst.with_extension(format!("old-{stamp}"));
-    std::fs::rename(dst, &parked)?;
-    match std::fs::copy(src, dst) {
-        Ok(_) => Ok(()),
+    if let Err(e) = std::fs::rename(dst, &parked) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    match std::fs::rename(&tmp, dst) {
+        Ok(()) => Ok(()),
         Err(e) => {
             // Put it back — a missing sidecar is worse than a stale one.
             let _ = std::fs::rename(&parked, dst);
+            let _ = std::fs::remove_file(&tmp);
             Err(e)
         }
     }
 }
 
-/// Windows reports a locked file as `PermissionDenied` with OS error 32 (ERROR_SHARING_VIOLATION).
 fn is_in_use(e: &std::io::Error) -> bool {
     e.raw_os_error() == Some(32) || e.kind() == std::io::ErrorKind::PermissionDenied
 }
@@ -1507,6 +1552,76 @@ mod tests {
         let dst = dir.join("bsc.exe");
         stage_one(&src, &dst).unwrap();
         assert_eq!(std::fs::read(&dst).unwrap(), b"NEW");
+    }
+
+    /// THE property: the destination is never a partial file.
+    ///
+    /// Proven the only way it can be proven without racing — by holding an open handle to the OLD
+    /// destination across the stage. If staging truncated and rewrote in place (what `fs::copy` onto
+    /// `dst` does), that handle would see the new bytes, or an empty file mid-copy. Through a rename
+    /// it keeps the whole old inode, which is exactly what a session already exec'ing `$BSC_BIN` gets.
+    #[test]
+    fn stage_one_replaces_the_destination_atomically_rather_than_truncating_it() {
+        use std::io::Read;
+        let dir = crate::testutil::unique_dir("bsc-stage", "atomic");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.bin");
+        let dst = dir.join("bsc");
+        std::fs::write(&src, b"NEW-BUILD").unwrap();
+        std::fs::write(&dst, b"OLD-BUILD").unwrap();
+
+        // A reader that opened the old binary BEFORE the stage — the session already running it.
+        let mut held = std::fs::File::open(&dst).unwrap();
+        stage_one(&src, &dst).unwrap();
+
+        let mut seen = String::new();
+        held.read_to_string(&mut seen).unwrap();
+        assert_eq!(seen, "OLD-BUILD", "the open handle kept the whole old file — a rename, not a rewrite");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"NEW-BUILD", "…and the path now serves the new one");
+    }
+
+    /// No temp file survives a stage, success or failure. A `.bsc.staging-<pid>` left in the staged dir
+    /// is a 261 MB leak per boot, and `sidecar_status` would eventually have to explain it.
+    #[test]
+    fn stage_one_leaves_no_temp_file_behind() {
+        let dir = crate::testutil::unique_dir("bsc-stage", "notmp");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.bin");
+        let dst = dir.join("bsc");
+        std::fs::write(&src, b"NEW").unwrap();
+        stage_one(&src, &dst).unwrap();
+        // ...and after a FAILED stage (an absent source), too.
+        let _ = stage_one(&dir.join("gone.bin"), &dst);
+
+        let strays: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("staging-"))
+            .collect();
+        assert!(strays.is_empty(), "temp files left behind: {strays:?}");
+    }
+
+    /// The mode is set BEFORE the file is published, not after.
+    ///
+    /// `a_staged_sidecar_is_made_executable_whatever_mode_the_source_carried` covers
+    /// `ensure_executable` on its own; this covers it THROUGH `stage_one`, which is the part the
+    /// atomic rewrite changed. Setting the mode after the rename would republish the old problem in
+    /// miniature — a window where the path is the right binary and still cannot be exec'd — and only
+    /// a test at this level can tell the two orderings apart.
+    #[cfg(unix)]
+    #[test]
+    fn stage_one_publishes_an_executable_file_from_a_non_executable_source() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::testutil::unique_dir("bsc-stage", "stagemode");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src.bin");
+        std::fs::write(&src, b"NEW").unwrap();
+        std::fs::set_permissions(&src, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let dst = dir.join("bsc");
+        stage_one(&src, &dst).unwrap();
+        let mode = std::fs::metadata(&dst).unwrap().permissions().mode();
+        assert_eq!(mode & 0o111, 0o111, "staged sidecar is executable (mode {mode:o})");
     }
 
     #[test]
