@@ -57,6 +57,62 @@ mod relocated_tests {
             "the roster instruction must name `bsc fleet list`, not the superseded bsc-fleet helper");
     }
 
+    /// #captured-issues-and-briefs-have-no-queue-to-pull-from.
+    ///
+    /// Both these bullets used to point at `bsc logs coord` — a raw replayed feed with no notion of
+    /// which rows are still OPEN, so a director re-read every issue it had already routed on every
+    /// sweep. Stale prose is the failure mode here: a director told to read a feed will read a feed.
+    #[test]
+    fn director_protocol_points_at_the_pending_queue_not_the_raw_feed() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        assert!(p.contains("logs pending"), "the routing queue must be named");
+        // The two bullets it replaced. `logs coord` may still appear elsewhere (it is a legitimate
+        // raw reader), but never as the way to find an issue or a brief.
+        for stale in [
+            "read it with `$BSC_BIN logs coord`",
+            "`$BSC_BIN logs coord` is where you find one",
+        ] {
+            assert!(!p.contains(stale), "a queue exists now; the feed must not be the instruction: {stale}");
+        }
+
+        // The CLOSING half of each. A queue whose rows are never closed is the feed again with extra
+        // steps — and neither close is guessable: an assign silently closes nothing without --issue,
+        // and a brief has exactly one closing verb.
+        assert!(p.contains("--issue"), "the assign must be told to carry the id back");
+        assert!(p.contains("bsc-brief-done"), "a brief's only closing verb must be named");
+        assert!(
+            p.contains("reconciled, nothing to do"),
+            "closing a brief that needed no change is the case a director will otherwise skip"
+        );
+    }
+
+    /// #fleet-list-cannot-see-a-stopped-worker.
+    ///
+    /// `bsc fleet list` reported only what the app was tracking, so a stopped worker had no row at
+    /// all — on network-monitor a director with 38 streams saw one row, itself. The command now takes
+    /// membership from plan.db, and this prose is what tells the director the table is the WHOLE fleet
+    /// rather than the running part of it. Stale prose here is worse than none: a director that reads
+    /// a four-row table as "these are my workers" never wakes the other thirty-four.
+    #[test]
+    fn director_protocol_says_the_fleet_list_includes_workers_that_are_not_running() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        assert!(p.contains("running or not") || p.contains("running or NOT"),
+            "the director must be told the list covers workers that are NOT running");
+
+        // All four states, by the name the command prints — a director matching prose to output is
+        // how a state gets acted on, and `never-launched` is the one whose move is different.
+        for state in ["`running`", "`idle`", "`stopped`", "`never-launched`"] {
+            assert!(p.contains(state), "the protocol must name the {state} state");
+        }
+
+        // The two moves must stay distinct. A never-launched stream has no session, so waking it does
+        // nothing; pointing a director at `wake` for it is the failure this separation prevents.
+        assert!(p.contains("bsc fleet start"),
+            "a never-launched stream needs a launch, not a wake — the protocol must say so");
+    }
+
     /// The same file said `bsc-assign` "resumes the chosen worker" in one bullet and "does NOT resume
     /// the worker" in another, twenty lines apart. A director acting on the first leaves work sitting
     /// in an inbox nobody opens.

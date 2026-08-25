@@ -89,8 +89,38 @@ fn readme(count: usize, generated_at: &str) -> String {
          \n\
          THIS IS A SNAPSHOT, NOT A LIVE VIEW.\n\
          {count} implementation(s), projected at {generated_at}.\n\
-         To WRITE, or to read the live store, use `bsc graph`.\n"
+         \n\
+         THERE IS NO `bsc` IN THIS SESSION. That is the point of the projection, not an oversight:\n\
+         a read surface can exist here precisely because no writable database is bound into the\n\
+         namespace. Unlike /ui, the implementation SOURCE is projected — impl/<id>/code is the\n\
+         record byte-for-byte, so reading is complete here.\n\
+         There is no graph WRITE path from inside the cage. To raise a change, emit it on the\n\
+         coordination outbox; the host is what reaches the store.\n"
     )
+}
+
+#[cfg(test)]
+mod readme_tests {
+    /// The README used to close with "To WRITE, or to read the live store, use `bsc graph`" — a
+    /// command absent from the only place this is mounted. Unlike `/ui`, the READ half here is
+    /// genuinely complete (`impl/<id>/code` is the record byte-for-byte), so the correction is to
+    /// say that rather than to point at a CLI.
+    #[test]
+    fn the_readme_does_not_send_a_caged_reader_to_a_cli_it_lacks() {
+        let readme = super::readme(2, "2026-01-01T00:00:00Z");
+        assert!(
+            readme.contains("NO `bsc` IN THIS SESSION"),
+            "the reader must be told the CLI is absent: {readme}",
+        );
+        assert!(
+            !readme.contains("use `bsc graph`"),
+            "and must not be sent to it anyway: {readme}",
+        );
+        assert!(
+            readme.contains("impl/<id>/code"),
+            "reading IS complete here, unlike /ui — say so: {readme}",
+        );
+    }
 }
 
 #[cfg(test)]

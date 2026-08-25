@@ -54,6 +54,22 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     }
   });
 
+  it("tells the architect to check a brief will LAND before sending it (#the-architect-cannot-see-a-stopped-director)", () => {
+    const architect = makeBuiltinPersonas().find((p) => p.id === "persona-architect")!;
+    // `bsc plan brief` is the architect's only outbound channel, and a brief to a director that is
+    // not running is written into a session nobody reads — it goes quietly missing. The protocol has
+    // to name the check, because nothing else will tell the architect the brief was lost.
+    expect(architect.startPrompt).toContain("bsc fleet directors");
+    // All four states, spelled as the command prints them — an architect matching prose to output is
+    // how a state gets acted on.
+    for (const state of ["running", "idle", "stopped", "never-launched"]) {
+      expect(architect.startPrompt).toContain(state);
+    }
+    // And the boundary: only a running director reads a brief, and starting one is the USER's act —
+    // the architect has no verb for it and must not imply otherwise.
+    expect(architect.startPrompt).toMatch(/Only `running` reads you/);
+  });
+
   it("the designer persona (#2471) rides the designer role and kicks off onto the bsc ui surface", () => {
     const designer = makeBuiltinPersonas().find((p) => p.id === "persona-designer")!;
     expect(designer.role).toBe("designer");

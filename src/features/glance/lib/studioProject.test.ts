@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, withStudioSessions, studioNodeForOrigin, isAppProject, APP_PROJECT_KEY } from "@/features/glance/lib/studioProject";
+import { buildStudioFleetData, buildArchitectFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, withProjectRequestNodes, withStudioSessions, withUnparentedRequestNodes, studioNodeForOrigin, isAppProject, APP_PROJECT_KEY } from "@/features/glance/lib/studioProject";
 import type { GlanceData } from "@/features/glance/lib/glanceData";
 import {
   designerSessionId,
@@ -427,5 +427,114 @@ describe("withStudioSessions — the app's sessions fold into its project's dril
   it("preserves the fleet graph's own fields", () => {
     const base = { ...fleet(["console"]), sample: true };
     expect(withStudioSessions(base, BUILTIN_ORGS, BUILTIN_PERSONAS, []).sample).toBe(true);
+  });
+});
+
+
+// ── withUnparentedRequestNodes (#every-live-debug-session-is-visible-in-the-app-drill) ───────────────
+//
+// THE ORIGINS HERE ARE REAL, read off the live queue while two debug sessions were running, because the
+// bug survived a green suite that asserted invented shapes. `design-studio:designer-react` is what a
+// designer session actually stamps (the studio is named for the SURFACE, the role sits in the tail);
+// `kevin` is what `bsc request new --from` writes; `network-monitor:director` is another project's
+// director. Only the first of those three was ever drawn.
+describe("withUnparentedRequestNodes — a live session is VISIBLE even when it cannot be related", () => {
+  const drill = (ids: string[] = []): GlanceData => ({
+    rawNodes: ids.map((id) => ({
+      id, slug: id, role: "service" as const, roleLabel: "worker", health: "off" as const, activity: "idle" as const,
+    })),
+    rawEdges: [],
+    sample: false,
+  });
+
+  it("draws a request whose origin resolves to NOTHING — the live session that had no node anywhere", () => {
+    // `kevin` is a person at a shell, not a pane. `withStudioSessions` skipped it (an origin is a claim
+    // another graph might host) and `withProjectRequestNodes` skipped it (not `<project>:director`), so
+    // a running, busy PTY was invisible in every graph. That is the defect.
+    const out = withUnparentedRequestNodes(drill(["api"]), [
+      { id: 107, origin: "kevin", title: "No verb amends one field of an issue" },
+    ]);
+    expect(out.rawNodes.map((n) => n.id)).toContain("debugger-req-107");
+    // …and it is OPENABLE, which is the whole point of drawing it: a node that cannot be opened is a
+    // worse outcome than no node, and this codebase has shipped that failure before.
+    expect(studioPaneIdForNode("debugger-req-107")).toBe("debug-studio:req-107");
+  });
+
+  it("draws ANOTHER project's director-filed request too — unrelatable here, still visible", () => {
+    const out = withUnparentedRequestNodes(drill(), [
+      { id: 42, origin: "network-monitor:director", title: "publish run cannot target a fork" },
+    ]);
+    expect(out.rawNodes.map((n) => n.id)).toContain("debugger-req-42");
+  });
+
+  it("draws NO edge — there is nothing truthful to point at", () => {
+    // Inventing a target is the exact failure `studioNodeForOrigin` returns null to avoid. An
+    // unparented node says "running, unattributed"; a fabricated edge says something false.
+    const out = withUnparentedRequestNodes(drill(["api"]), [{ id: 107, origin: "kevin", title: "t" }]);
+    expect(out.rawEdges).toHaveLength(0);
+  });
+
+  it("leaves a request another drawer already drew ALONE — it must not steal an edge", () => {
+    // The ordering guarantee, asserted rather than trusted. This is what makes the sweep safe to run
+    // after `withProjectRequestNodes`: the director-edged node is already `present`, so the sweep is a
+    // no-op on it and the edge survives.
+    const withDirector = withProjectRequestNodes(drill(["director"]), "myproject", [
+      { id: 5, origin: "myproject:director", title: "board is stale" },
+    ]);
+    const swept = withUnparentedRequestNodes(withDirector, [
+      { id: 5, origin: "myproject:director", title: "board is stale" },
+    ]);
+    expect(swept.rawNodes.filter((n) => n.id === "debugger-req-5")).toHaveLength(1);
+    expect(swept.rawEdges).toContainEqual(expect.objectContaining({ from: "director", to: "debugger-req-5" }));
+  });
+
+  it("a node it draws is INDISTINGUISHABLE from a related one, apart from the edge", () => {
+    // Same role/label/health/activity — "unrelated" must not render as "a different kind of thing".
+    const related = withProjectRequestNodes(drill(["director"]), "myproject", [
+      { id: 5, origin: "myproject:director", title: "board is stale" },
+    ]).rawNodes.find((n) => n.id === "debugger-req-5")!;
+    const orphan = withUnparentedRequestNodes(drill(), [
+      { id: 5, origin: "kevin", title: "board is stale" },
+    ]).rawNodes.find((n) => n.id === "debugger-req-5")!;
+    expect(orphan).toEqual(related);
+  });
+
+  it("is idempotent, and de-duplicates rows that repeat an id within one call", () => {
+    // `present` is sampled once, before anything is pushed, so two rows carrying one id would both pass
+    // it and draw the session twice.
+    const once = withUnparentedRequestNodes(drill(["api"]), [{ id: 107, origin: "kevin", title: "t" }]);
+    const twice = withUnparentedRequestNodes(once, [{ id: 107, origin: "kevin", title: "t" }]);
+    expect(twice.rawNodes).toHaveLength(once.rawNodes.length);
+    const dupes = withUnparentedRequestNodes(drill(), [
+      { id: 9, origin: "kevin", title: "a" },
+      { id: 9, origin: null, title: "a" },
+    ]);
+    expect(dupes.rawNodes.filter((n) => n.id === "debugger-req-9")).toHaveLength(1);
+  });
+
+  it("is a no-op with no requests, and preserves the graph's own fields", () => {
+    const base = { ...drill(["api"]), sample: true };
+    expect(withUnparentedRequestNodes(base, [])).toBe(base);
+    expect(withUnparentedRequestNodes(base, [{ id: 1, origin: null, title: "t" }]).sample).toBe(true);
+  });
+
+  it("END TO END: every live session gets a node, whatever its origin", () => {
+    // The three live shapes plus an origin-less one, through the REAL ladder in the real order. This is
+    // the acceptance criterion: four running sessions, four nodes.
+    const requests = [
+      { id: 106, origin: designerSessionId("react"), title: "algorithms.json not vendored" },
+      { id: 107, origin: "kevin", title: "No verb amends one field of an issue" },
+      { id: 42, origin: "network-monitor:director", title: "publish run cannot target a fork" },
+      { id: 93, origin: null, title: "navigate times out" },
+    ];
+    const studio = withStudioSessions(drill(["cli-platform"]), BUILTIN_ORGS, BUILTIN_PERSONAS, requests);
+    const out = withUnparentedRequestNodes(
+      withProjectRequestNodes(studio, APP_PROJECT_KEY, requests),
+      requests,
+    );
+    const ids = out.rawNodes.map((n) => n.id);
+    for (const r of requests) expect(ids).toContain(`debugger-req-${r.id}`);
+    // The one that CAN be related still is — visibility was added, nothing was traded for it.
+    expect(out.rawEdges).toContainEqual(expect.objectContaining({ from: "designer", to: "debugger-req-106" }));
   });
 });

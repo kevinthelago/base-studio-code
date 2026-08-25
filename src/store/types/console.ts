@@ -270,8 +270,13 @@ export interface ConsoleState {
    * that narrowing at the one moment it mattered: a user persona derived from `worker` with a tighter
    * floor still launched with the full worker capability.
    *
-   * Transient, like `paneRoles` — neither is in the persist allowlist, so both are rewritten by
-   * whatever re-seeds the pane after a restart, and there is no migration to carry.
+   * PERSISTED, along with `paneRoles` — see the note beside them in `@/store/persist`.
+   *
+   * They were transient, on the premise that both are "rewritten by whatever re-seeds the pane after
+   * a restart". Nothing re-seeds a fleet pane on a plain restart, and the pane relaunches anyway, so
+   * the role resolved undefined and the session came up with no cage and no role gate — while every
+   * value DERIVED from that role (`paneProfiles`, `paneRoleGlobs`, `paneFlows`) was persisted right
+   * beside it.
    */
   panePersonas: Record<string, string>;
   /** Drive mode for each launched director pane (#366) — read by useDirectorPump. */

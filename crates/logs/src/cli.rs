@@ -96,6 +96,31 @@ Re-derived from the whole log each call, so it is correct across an app restart.
 nothing is blocked.",
     },
     CmdDoc {
+        name: "pending",
+        summary: "captured work awaiting YOUR routing (issues to assign, briefs to reconcile)",
+        usage: "\nUSAGE:
+  bsc logs pending [--all] [--json]
+
+Everything captured that still needs the DIRECTOR, oldest first — a queue, not a feed. Two kinds:
+  issue   captured by `bsc-issue`, not yet routed  -> `bsc-assign <pane> --issue <id>`
+  brief   an upstream plan update, not yet handled -> reconcile, then `bsc-brief-done <id>`
+
+The ID COLUMN IS WHAT CLOSES THE ROW. Pass it back verbatim: an issue is closed by the assign that
+carries `--issue <id>`, a brief by `bsc-brief-done <id>`. An assign with no --issue routes the work
+but closes nothing, so the row keeps coming back.
+
+SIBLING OF `bsc logs waiting`, not part of it. That queue is about a SESSION that is stopped and
+needs something to resume it — every one of its kinds is a parked pane. Nothing here is parked:
+this is work that has been captured and needs routing. Sweep both; they are the same discipline.
+
+YOUR project only, from your own pane id — an issue is placed by its emitter, a brief by its target
+(a brief comes from an upstream tier that sits outside your project). --all shows every project, and
+outside a session there is no pane id, so --all is the default.
+
+Re-derived from the whole log each call, so it is correct across an app restart. Empty output means
+nothing is awaiting you.",
+    },
+    CmdDoc {
         name: "pane-activity",
         summary: "each pane's latest run/idle turn state",
         usage: "\
@@ -323,6 +348,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }
                 lines.join("
 ")
+            });
+        }
+        // Captured work awaiting the DIRECTOR (#captured-issues-and-briefs-have-no-queue-to-pull-from)
+        // — the routing queue, sibling to `waiting`'s parked-session queue.
+        "pending" => {
+            // Same scoping rule and the same reason as `waiting`: `coord.log` is one app-wide file,
+            // so an unscoped queue hands a director captured work it has no authority to route.
+            let me = std::env::var("BSC_AUDIT_PANE").ok().filter(|s| !s.is_empty() && s != "?");
+            let scope = if a.all { None } else { me.as_deref() };
+            let rows = crate::pending::pending_in(&dir, scope);
+            emit(a.pretty, a.json, &rows, || {
+                let mut lines = vec!["kind\tid\tfrom\ttarget\ttitle\tdetail".to_string()];
+                for p in &rows {
+                    lines.push(format!(
+                        "{}\t{}\t{}\t{}\t{}\t{}",
+                        p.kind, p.id, p.from, p.target, p.title, p.detail
+                    ));
+                }
+                lines.join("\n")
             });
         }
         // Each pane's latest run/idle turn state (#1184).
