@@ -27,8 +27,35 @@
 use crate::{LifecycleAction, LifecycleRequest, LifecycleResult, SessionListRequest, SessionListResult};
 use std::time::{Duration, Instant};
 
-/// The caller's participant name in every ask loop.
+/// The architect's participant name, and the fallback caller for a bare CLI run.
+///
+/// It was ALSO, until `session-ask-assumes-its-caller-is-always-the-architect`, hard-coded as *the*
+/// caller in every ask loop — the verb was written for one caller and grew a second. A director
+/// running `bsc session ask architect …` was refused with "it is the caller of this verb", which is
+/// a true statement about the architect and a false one about the director doing the asking.
 pub const ARCHITECT_PARTICIPANT: &str = "architect";
+
+/// Who is asking, as a loop participant name.
+///
+/// Read from `$BSC_AUDIT_PANE`, the pane id every session already carries. A pane that IS a system
+/// session resolves to that session's short id, so the architect keeps calling itself `architect`
+/// and existing loops are unchanged; anything else — a project director, a worker — uses its pane
+/// id, which is already unique per session.
+///
+/// Falls back to the architect when the variable is absent, which is a bare CLI run outside any
+/// session and is exactly what the verb assumed before.
+pub fn caller_participant() -> String {
+    let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_default();
+    let pane = pane.trim();
+    if pane.is_empty() {
+        return ARCHITECT_PARTICIPANT.to_string();
+    }
+    crate::SYSTEM_SESSIONS
+        .iter()
+        .find(|s| s.pane_id == pane)
+        .map(|s| s.id.to_string())
+        .unwrap_or_else(|| pane.to_string())
+}
 
 /// How long `ask` waits for an answer before reporting the loop is still open.
 pub const DEFAULT_ANSWER_TIMEOUT_SECS: u64 = 300;
@@ -64,16 +91,20 @@ pub struct AskResult {
 
 /// Resolve the target of an ask.
 ///
-/// Refuses the architect itself. `ask` names the caller as participant `b`, so asking the architect
-/// would put `architect` on both sides of one loop and break the strict alternation the store
+/// Refuses a session asking ITSELF. `ask` names the caller as participant `b`, so a target equal to
+/// the caller would put one name on both sides of a loop and break the strict alternation the store
 /// enforces — the request would fail deep inside the loop layer with a message about participants
-/// rather than about the actual mistake. It is also, plainly, a session asking itself a question.
-pub fn resolve_askable(id: &str) -> Result<&'static crate::SystemSession, String> {
+/// rather than about the actual mistake.
+///
+/// The check is against the ACTUAL caller, not against the architect. Hard-coding the architect here
+/// meant a director could never ask the architect anything: it was refused for being "the caller of
+/// this verb" when it was the callee, which is the one direction the funnel had no lane for.
+pub fn resolve_askable(id: &str, caller: &str) -> Result<&'static crate::SystemSession, String> {
     let s = crate::resolve(id)?;
-    if s.id == ARCHITECT_PARTICIPANT {
+    if s.id == caller {
         return Err(format!(
-            "'{}' cannot be asked — it is the caller of this verb, so the request would name the same \
-             participant on both sides of one loop.",
+            "'{}' cannot ask itself — the request would name the same participant on both sides of \
+             one loop.",
             s.id
         ));
     }
@@ -88,7 +119,8 @@ pub trait AskEnv {
     /// Start it, carrying the loop id so it comes up watching.
     fn start(&self, session_id: &str, loop_id: i64) -> Result<(), String>;
     /// Open a loop; returns its id.
-    fn open_loop(&self, session_id: &str, request: &str) -> Result<i64, String>;
+    /// Open a loop between `session_id` (participant `a`, who speaks first) and `caller` (`b`).
+    fn open_loop(&self, session_id: &str, request: &str, caller: &str) -> Result<i64, String>;
     /// Whose turn is it — `None` once the loop is closed.
     fn whose_turn(&self, loop_id: i64) -> Result<Option<String>, String>;
     /// The last turn's message, if any.
@@ -105,14 +137,17 @@ pub fn ask(
     session_id: &str,
     request: &str,
     timeout: Duration,
+    // Who is asking. Threaded rather than read here so the decision logic stays testable without an
+    // environment — the same reason `AskEnv` exists.
+    caller: &str,
 ) -> Result<AskResult, String> {
-    let session = resolve_askable(session_id)?;
+    let session = resolve_askable(session_id, caller)?;
     let request = request.trim();
     if request.is_empty() {
         return Err(format!("usage: bsc session ask {} \"<request>\"", session.id));
     }
 
-    let loop_id = env.open_loop(session.id, request)?;
+    let loop_id = env.open_loop(session.id, request, caller)?;
 
     // Start it only when it is not already up. Asking must not disturb a running session's lifecycle —
     // that is the whole distinction between this verb and `start`.
@@ -129,7 +164,7 @@ pub fn ask(
         // is its reply. A CLOSED loop means the session answered with the sentinel — also an answer,
         // and the common case for a one-shot ask.
         match env.whose_turn(loop_id)? {
-            Some(who) if who == ARCHITECT_PARTICIPANT => {
+            Some(who) if who == caller => {
                 return Ok(AskResult {
                     id: session.id.to_string(),
                     loop_id,
@@ -207,14 +242,14 @@ impl AskEnv for ChannelEnv {
         Ok(())
     }
 
-    fn open_loop(&self, session_id: &str, request: &str) -> Result<i64, String> {
+    fn open_loop(&self, session_id: &str, request: &str, caller: &str) -> Result<i64, String> {
         let store = Self::loop_store()?;
         // The SESSION is `a` — it speaks first, replying to the seed, which IS the request.
         let lp = store
             .create(
                 &bsc_loop::NewLoop {
                     a: session_id.to_string(),
-                    b: ARCHITECT_PARTICIPANT.to_string(),
+                    b: caller.to_string(),
                     seed: request.to_string(),
                     until: Some(ANSWER_SIGNAL.to_string()),
                     max_turns: Some(ASK_MAX_TURNS),
@@ -275,7 +310,7 @@ mod tests {
             self.started.borrow_mut().push((s.into(), l));
             Ok(())
         }
-        fn open_loop(&self, s: &str, r: &str) -> Result<i64, String> {
+        fn open_loop(&self, s: &str, r: &str, _caller: &str) -> Result<i64, String> {
             self.opened.borrow_mut().push((s.into(), r.into()));
             Ok(77)
         }
@@ -294,7 +329,7 @@ mod tests {
     fn a_running_session_is_asked_without_being_started() {
         // The distinction that makes this a call and not a launch: asking must not touch lifecycle.
         let f = Fake::new(true, vec![Some(ARCHITECT_PARTICIPANT.into())], Some("here is the kit"));
-        let r = ask(&f, "designerReact", "make me a card", T).unwrap();
+        let r = ask(&f, "designerReact", "make me a card", T, ARCHITECT_PARTICIPANT).unwrap();
         assert_eq!(r.answer.as_deref(), Some("here is the kit"));
         assert!(!r.started);
         assert!(f.started.borrow().is_empty(), "a live session is never started");
@@ -305,7 +340,7 @@ mod tests {
         // Ask COMPOSES with start — and the loop must exist first, or the session comes up with
         // nothing to watch.
         let f = Fake::new(false, vec![Some(ARCHITECT_PARTICIPANT.into())], Some("done"));
-        let r = ask(&f, "librarianRust", "implement dijkstra in rust", T).unwrap();
+        let r = ask(&f, "librarianRust", "implement dijkstra in rust", T, ARCHITECT_PARTICIPANT).unwrap();
         assert!(r.started);
         assert_eq!(f.started.borrow().as_slice(), &[("librarianRust".to_string(), 77)]);
         assert_eq!(f.opened.borrow()[0].0, "librarianRust", "the SESSION is participant a");
@@ -314,7 +349,7 @@ mod tests {
     #[test]
     fn the_request_becomes_the_seed_the_session_replies_to() {
         let f = Fake::new(true, vec![Some(ARCHITECT_PARTICIPANT.into())], Some("ok"));
-        ask(&f, "designerReact", "  make me a card  ", T).unwrap();
+        ask(&f, "designerReact", "  make me a card  ", T, ARCHITECT_PARTICIPANT).unwrap();
         assert_eq!(f.opened.borrow()[0].1, "make me a card", "trimmed, and used verbatim as the seed");
     }
 
@@ -326,14 +361,14 @@ mod tests {
             vec![Some("designerReact".into()), Some("designerReact".into()), Some(ARCHITECT_PARTICIPANT.into())],
             Some("the answer"),
         );
-        assert_eq!(ask(&f, "designerReact", "q", T).unwrap().answer.as_deref(), Some("the answer"));
+        assert_eq!(ask(&f, "designerReact", "q", T, ARCHITECT_PARTICIPANT).unwrap().answer.as_deref(), Some("the answer"));
     }
 
     #[test]
     fn a_closed_loop_is_an_answer_not_a_failure() {
         // The session answered WITH the sentinel, which closes the loop — the one-shot common case.
         let f = Fake::new(true, vec![None], Some("final answer ANSWERED"));
-        assert_eq!(ask(&f, "designerReact", "q", T).unwrap().answer.as_deref(), Some("final answer ANSWERED"));
+        assert_eq!(ask(&f, "designerReact", "q", T, ARCHITECT_PARTICIPANT).unwrap().answer.as_deref(), Some("final answer ANSWERED"));
     }
 
     #[test]
@@ -341,32 +376,74 @@ mod tests {
         // The honest gap: a running session that is not parked in `watch` may not look for a while.
         // Reporting failure would send the caller to re-ask and leave the session two loops to answer.
         let f = Fake::new(true, vec![Some("designerReact".into()); 8], None);
-        let r = ask(&f, "designerReact", "q", Duration::from_millis(300)).unwrap();
+        let r = ask(&f, "designerReact", "q", Duration::from_millis(300), ARCHITECT_PARTICIPANT).unwrap();
         assert!(r.answer.is_none());
         assert_eq!(r.loop_id, 77, "the loop id comes back so the answer can be collected later");
     }
 
     #[test]
-    fn the_architect_cannot_ask_itself() {
-        let err = resolve_askable("architect").unwrap_err();
-        assert!(err.contains("caller of this verb"));
+    fn a_session_cannot_ask_itself() {
+        let err = resolve_askable("architect", ARCHITECT_PARTICIPANT).unwrap_err();
+        assert!(err.contains("cannot ask itself"), "{err}");
         // And it fails BEFORE a loop is opened — a self-loop would otherwise be created and stranded.
         let f = Fake::new(true, vec![], None);
-        assert!(ask(&f, "architect", "q", T).is_err());
+        assert!(ask(&f, "architect", "q", T, ARCHITECT_PARTICIPANT).is_err());
         assert!(f.opened.borrow().is_empty(), "no loop is opened for a refused ask");
+
+        // The rule is about IDENTITY, not about the architect: the designer asking the designer is
+        // refused for the same reason, and the message says so without naming a tier.
+        let err = resolve_askable("designerReact", "designerReact").unwrap_err();
+        assert!(err.contains("cannot ask itself"), "{err}");
+    }
+
+    /// THE regression. A director running `bsc session ask architect …` was refused with "it is the
+    /// caller of this verb" — a true statement about the architect and a false one about the
+    /// director doing the asking. The verb was written for one caller and grew a second.
+    #[test]
+    fn a_director_can_ask_the_architect() {
+        const DIRECTOR: &str = "network-monitor:director";
+        resolve_askable("architect", DIRECTOR).expect("a director may ask the architect");
+
+        // ...and the loop names the DIRECTOR as participant `b`, so the answer comes back to it.
+        let f = Fake::new(true, vec![Some(DIRECTOR.into())], Some("here is the clause"));
+        let r = ask(&f, "architect", "we hold no authority", T, DIRECTOR).unwrap();
+        assert_eq!(r.answer.as_deref(), Some("here is the clause"));
+        assert_eq!(f.opened.borrow().len(), 1, "one loop, opened for the ask");
+    }
+
+    /// The caller's participant name comes from its pane, and a pane that IS a system session keeps
+    /// its short id — so the architect's own loops are named exactly as before and nothing that
+    /// already exists is renamed.
+    #[test]
+    fn the_callers_name_is_its_pane_unless_it_is_a_system_session() {
+        // Serialized against the other env-touching test in this module. nextest runs each test in
+        // its OWN PROCESS, so this is belt-and-braces — but `cargo test` threads them in one.
+        static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+
+        std::env::remove_var("BSC_AUDIT_PANE");
+        assert_eq!(caller_participant(), ARCHITECT_PARTICIPANT, "a bare CLI run is the old behaviour");
+
+        std::env::set_var("BSC_AUDIT_PANE", "teams-studio:architect");
+        assert_eq!(caller_participant(), "architect", "the architect keeps its short id");
+
+        std::env::set_var("BSC_AUDIT_PANE", "network-monitor:director");
+        assert_eq!(caller_participant(), "network-monitor:director", "anything else uses its pane");
+
+        std::env::remove_var("BSC_AUDIT_PANE");
     }
 
     #[test]
     fn the_closed_set_still_applies() {
         for candidate in ["studio-code:director", "director", "worker", "Designer"] {
-            assert!(resolve_askable(candidate).unwrap_err().contains("is not a system session"));
+            assert!(resolve_askable(candidate, ARCHITECT_PARTICIPANT).unwrap_err().contains("is not a system session"));
         }
     }
 
     #[test]
     fn an_empty_request_is_refused_before_a_loop_is_opened() {
         let f = Fake::new(true, vec![], None);
-        assert!(ask(&f, "designerReact", "   ", T).is_err());
+        assert!(ask(&f, "designerReact", "   ", T, ARCHITECT_PARTICIPANT).is_err());
         assert!(f.opened.borrow().is_empty());
     }
 
