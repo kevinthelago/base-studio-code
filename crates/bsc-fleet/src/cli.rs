@@ -1,5 +1,6 @@
 //! The `bsc fleet` subcommand (#4098) — real per-pane liveness, joined onto the roster.
 
+use crate::gate;
 use crate::membership;
 use crate::{
     DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
@@ -35,6 +36,21 @@ ISSUES is that stream's PROGRESS — its plan issues done/total — because live
 which stopped worker to wake: stopped-having-finished and stopped-at-issue-one look identical
 otherwise. A stream that owns no issues shows `-`, never 0/0. Blocked and failed issues cannot show
 in a ratio, so the streams holding them are NAMED under the table.
+
+WAITING ON is the DEPENDENCY GATE, and it appears only when something is actually held. `dependsOn`
+is planning-time sequencing, so a worker never parks on an upstream at run time — but a stream whose
+upstream has not LANDED has nothing to build on, and waking it gets you a worker with no ground under
+it. Without this column `stopped 0/7` read the same for a stream ready to go and one that is not.
+
+  waits:a,b   the unlanded upstreams. Wake it once they land.
+  cycle:a     it sits in (or downstream of) a `dependsOn` CYCLE and can NEVER become ready. That is a
+              PLAN fix — `bsc plan fleet` — not a wake, and the two look identical without this.
+
+LANDED is three signals OR'd, because each is empty on some real fleet: every owned issue done, its
+branch merged into its clone's HEAD, or its session reported `maintain`. The rules are shared with the
+app's launcher through one contract fixture, so this table and Glance cannot disagree.
+
+This half needs no app: plan.db, the clones' git history and the coord log are all on disk.
 
 WHERE THE LIST COMES FROM, and why it matters. MEMBERSHIP is plan.db's — the fleet-session ledger
 (every agent this project has launched, persisted across a clean quit) unioned with the planned
@@ -803,6 +819,57 @@ struct Row {
     busy: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pid: Option<u32>,
+    /// The UNLANDED upstreams this stream is waiting on
+    /// (#the-director-can-see-which-streams-are-held). Empty ⇒ nothing blocks it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    waiting_on: Vec<String>,
+    /// In, or downstream of, a `dependsOn` cycle — it can never become ready on its own.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    deadlocked: bool,
+}
+
+/// This project's held streams, keyed by stream id — the `DEPS` column's content.
+///
+/// Every signal is read HERE rather than asked of the app: plan.db, the repo clones' git history and
+/// the coord log are all on disk, so a director gets this answer with the desktop closed. The app's
+/// own producer (`fleet_landed_streams`) calls the same function for tier 2, and the pure rules are
+/// pinned to `streamGate.ts` by a shared fixture — so the launcher and this reporter cannot disagree.
+///
+/// Best-effort by design: no plan store, no hub, or a git failure yields an EMPTY map, which reads as
+/// "nothing is blocked". That is the safe direction — it degrades to the table that printed before —
+/// whereas a partial gate reported as authoritative would tell a director not to wake a ready worker.
+fn gate_for(args: &Args, project_key: &str) -> std::collections::HashMap<String, gate::HeldStream> {
+    let Some(db) = plan_db_path(args.db.as_deref()) else { return Default::default() };
+    let Ok(store) = plandb::Store::open(&db) else { return Default::default() };
+    let streams: Vec<gate::GateStream> = store
+        .fleet_stream_list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| {
+            let id = r.get("id").and_then(serde_json::Value::as_str)?.to_string();
+            let strs = |k: &str| {
+                r.get(k)
+                    .and_then(serde_json::Value::as_array)
+                    .map(|a| a.iter().filter_map(serde_json::Value::as_str).map(str::to_string).collect())
+                    .unwrap_or_default()
+            };
+            Some(gate::GateStream { id, depends_on: strs("dependsOn"), issues: strs("issues") })
+        })
+        .collect();
+    if streams.is_empty() {
+        return Default::default();
+    }
+    let hub = bsc_project::project_dir(project_key).unwrap_or_default();
+    let ev = gate::LandedEvidence {
+        done_issues: gate::done_issue_refs(&store),
+        merged_branches: gate::landed_branches(&hub).into_iter().collect(),
+        session_done: gate::maintaining_streams(&logs::log_dir(), project_key),
+    };
+    gate::partition_by_deps(&streams, &ev)
+        .held
+        .into_iter()
+        .map(|h| (h.stream_id.clone(), h))
+        .collect()
 }
 
 /// Join plan.db's membership onto the app's liveness.
@@ -822,16 +889,28 @@ fn list_from_plan(
         &res.panes.iter().map(|p| p.pane_id.clone()).collect::<Vec<_>>(),
     );
 
+    // THE DEPENDENCY GATE (#the-director-can-see-which-streams-are-held). Liveness says whether a
+    // worker is breathing and ISSUES says what it achieved; neither says whether it is WAITING on
+    // another stream — so "stopped 0/7" read the same for a stream ready to wake and one whose
+    // upstream has not landed, and picking between them was the director's whole job.
+    //
+    // Best-effort: a gate that cannot be computed leaves every row unblocked, which degrades to the
+    // table this printed before. An empty answer must never read as "everything is held".
+    let waiting = gate_for(args, project_key);
+
     let rows: Vec<Row> = members
         .into_iter()
         .map(|m| {
             let p = res.panes.iter().find(|p| p.pane_id == m.pane_id);
             let state = membership::State::classify(&m, p.map(|p| (p.live, p.busy)));
+            let held = waiting.get(m.stream.as_str());
             Row {
                 state,
                 live: p.map(|p| p.live).unwrap_or(false),
                 busy: p.map(|p| p.busy).unwrap_or(false),
                 pid: p.and_then(|p| p.pid),
+                waiting_on: held.map(|h| h.waiting_on.clone()).unwrap_or_default(),
+                deadlocked: held.is_some_and(|h| h.deadlocked),
                 member: m,
             }
         })
@@ -853,28 +932,78 @@ fn render_plan_table(rows: &[Row]) -> String {
     // and a fixed column either truncates the id — which is the argument a director has to TYPE — or
     // pads every short fleet to the width of the longest one that ever existed.
     let w = rows.iter().map(|r| r.member.pane_id.len()).max().unwrap_or(4).max(4);
-    let mut out = format!(
-        "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
-        "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "BUSY",
-        w = w
-    );
+    // The DEPS column is printed only when something is actually held. A column of `-` on every row
+    // widens the table for a fleet whose graph is flat and teaches the reader nothing.
+    let show_deps = rows.iter().any(|r| !r.waiting_on.is_empty());
+    let dw = rows.iter().map(|r| waits_cell(r).len()).max().unwrap_or(4).max(4);
+    let mut out = if show_deps {
+        format!(
+            "{:<w$}  {:<9} {:<14} {:<8} {:<dw$} {:<5} {:<5} PID\n",
+            "PANE", "ROLE", "STATE", "ISSUES", "WAITING ON", "LIVE", "BUSY",
+            w = w, dw = dw.max("WAITING ON".len())
+        )
+    } else {
+        format!(
+            "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
+            "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "BUSY",
+            w = w
+        )
+    };
     for r in rows {
-        out.push_str(&format!(
-            "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} {}\n",
+        let head = format!(
+            "{:<w$}  {:<9} {:<14} {:<8}",
             r.member.pane_id,
             if r.member.role.is_empty() { "-" } else { &r.member.role },
             r.state.as_str(),
             r.member.progress.cell(),
+            w = w,
+        );
+        let tail = format!(
+            "{:<5} {:<5} {}",
             if r.live { "yes" } else { "no" },
             if r.busy { "yes" } else { "no" },
             r.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
-            w = w,
-        ));
+        );
+        if show_deps {
+            out.push_str(&format!("{head} {:<dw$} {tail}\n", waits_cell(r), dw = dw.max("WAITING ON".len())));
+        } else {
+            out.push_str(&format!("{head} {tail}\n"));
+        }
     }
     out.push('\n');
     out.push_str(&summarize(rows));
     out.push('\n');
     out
+}
+
+/// The widest the `WAITING ON` cell may render before it is elided.
+const WAITS_MAX: usize = 28;
+
+/// What a row is waiting on, short enough for a column.
+///
+/// A DEADLOCK is called out by name rather than shown as an ordinary wait: those two rows look
+/// identical in a table (`waiting on X`) and mean opposite things — one resolves when a worker
+/// finishes, the other never resolves at all and needs the PLAN edited.
+fn waits_cell(r: &Row) -> String {
+    if r.waiting_on.is_empty() {
+        return "-".into();
+    }
+    let tag = if r.deadlocked { "cycle" } else { "waits" };
+    let names = if r.waiting_on.len() <= 2 {
+        r.waiting_on.join(",")
+    } else {
+        format!("{},{},+{}", r.waiting_on[0], r.waiting_on[1], r.waiting_on.len() - 2)
+    };
+    // CAPPED. Pane ids in this table already run past 50 characters, and one stream named
+    // `commons--kevinthelago-base-studio-code` would otherwise set the column width for all 45 rows
+    // and push LIVE/BUSY/PID off an ordinary terminal. The column exists to carry the SIGNAL — held
+    // vs cycle, and roughly what by; `--json` carries the full `waitingOn` for anything that needs it.
+    let cell = format!("{tag}:{names}");
+    if cell.len() <= WAITS_MAX {
+        cell
+    } else {
+        format!("{}…", &cell[..WAITS_MAX - 1])
+    }
 }
 
 /// The tally, plus the ONE next move it implies. A 39-row table whose 38 stopped rows scroll past is
@@ -901,6 +1030,20 @@ fn summarize(rows: &[Row]) -> String {
         out.push_str(
             "\n  a never-launched stream has no session to wake — `bsc fleet start <projectKey>` brings the fleet up",
         );
+    }
+    // The point of the gate: of the workers you COULD wake, say which ones would just sit there. A
+    // director picking the next move needs the difference between "not running" and "not runnable".
+    let held = rows.iter().filter(|r| !r.waiting_on.is_empty()).count();
+    let stuck = rows.iter().filter(|r| r.deadlocked).count();
+    if held > 0 {
+        out.push_str(&format!(
+            "\n  {held} stream(s) WAITING on an upstream that has not landed — waking one now gets a worker with nothing to build on",
+        ));
+    }
+    if stuck > 0 {
+        out.push_str(&format!(
+            "\n  {stuck} of them sit in a `dependsOn` CYCLE and can never become ready — that is a PLAN fix (`bsc plan fleet`), not a wake",
+        ));
     }
     // ISSUES is done/total, so a stuck issue is invisible in it — a stream sitting at 2/7 reads the
     // same whether the other five are untouched or blocked. Name the streams instead of leaving the
@@ -1039,6 +1182,69 @@ mod tests {
                 .unwrap();
         }
         path
+    }
+
+    // ── the WAITING ON column (#the-director-can-see-which-streams-are-held) ────────────────────
+
+    fn row_waiting(pane: &str, waiting: &[&str], deadlocked: bool) -> Row {
+        Row {
+            member: membership::Member {
+                pane_id: pane.into(),
+                stream: pane.split(':').nth(1).unwrap_or("").into(),
+                role: "worker".into(),
+                ..Default::default()
+            },
+            state: membership::State::Stopped,
+            live: false,
+            busy: false,
+            pid: None,
+            waiting_on: waiting.iter().map(|s| s.to_string()).collect(),
+            deadlocked,
+        }
+    }
+
+    #[test]
+    fn a_flat_fleet_does_not_grow_a_column_of_dashes() {
+        // A DEPS column on a fleet whose graph is flat widens every row to teach the reader nothing.
+        let out = render_plan_table(&[row_waiting("k:a", &[], false)]);
+        assert!(!out.contains("WAITING ON"), "no column when nothing is held: {out}");
+    }
+
+    #[test]
+    fn a_held_stream_names_what_it_waits_on() {
+        let out = render_plan_table(&[row_waiting("k:a", &[], false), row_waiting("k:b", &["a"], false)]);
+        assert!(out.contains("WAITING ON"), "the column appears: {out}");
+        assert!(out.contains("waits:a"), "and names the upstream: {out}");
+        assert!(out.contains("WAITING on an upstream"), "the summary states the count: {out}");
+    }
+
+    #[test]
+    fn a_cycle_is_called_out_as_a_cycle_not_as_an_ordinary_wait() {
+        // The two look identical in a table and mean opposite things: one resolves when a worker
+        // finishes, the other never resolves and needs the PLAN edited. A director that reads a
+        // deadlock as a wait waits forever.
+        let out = render_plan_table(&[row_waiting("k:a", &["b"], true), row_waiting("k:b", &["a"], true)]);
+        assert!(out.contains("cycle:b"), "the row says cycle: {out}");
+        assert!(out.contains("can never become ready"), "and the summary says what to do: {out}");
+        assert!(out.contains("bsc plan fleet"), "naming the surface that fixes it: {out}");
+    }
+
+    #[test]
+    fn a_long_wait_list_is_truncated_rather_than_widening_the_table() {
+        let out = render_plan_table(&[row_waiting("k:a", &["one", "two", "three", "four"], false)]);
+        assert!(out.contains("waits:one,two,+2"), "first two then a count: {out}");
+    }
+
+    #[test]
+    fn one_long_upstream_name_cannot_set_the_width_for_every_row() {
+        // Measured on the real fleet: pane ids already run past 50 chars, and a single
+        // `commons--kevinthelago-base-studio-code` upstream pushed LIVE/BUSY/PID off the terminal for
+        // all 45 rows. The cell carries the SIGNAL; `--json` carries the full list.
+        let out = render_plan_table(&[row_waiting("k:a", &["commons--kevinthelago-base-studio-code"], false)]);
+        for line in out.lines().filter(|l| l.contains("waits:")) {
+            assert!(line.contains('…'), "the long cell is elided: {line}");
+        }
+        assert!(out.contains("waits:"), "and still says it is waiting: {out}");
     }
 
     // ── `clone` (#the-director-can-clone-its-projects-repos) ────────────────────────────────────
@@ -1182,6 +1388,8 @@ mod tests {
             live,
             busy,
             pid: if live { Some(42) } else { None },
+            waiting_on: Vec::new(),
+            deadlocked: false,
         }
     }
 

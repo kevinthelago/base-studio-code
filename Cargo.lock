@@ -869,6 +869,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-project",
  "bsc-util",
+ "logs",
  "plandb",
  "serde",
  "serde_json",

@@ -322,6 +322,16 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
     `bsc fleet wake <pane-id> --prompt "…"` STARTS it, building its worktree on the way. Pass a real
     task — a stream that never launched has no assignment in its pane yet, so the standard
     "re-read your assignment" wake would drop it at a prompt with nothing to re-read.
+- THE `WAITING ON` COLUMN IS THE DEPENDENCY GATE, and it is the difference between "not running" and
+  "not runnable". It appears only when something is held:
+  - `waits:a,b` — those upstreams have not LANDED. The stream is not coming back with anything to
+    build on, so waking it now gets you a worker with no ground under it. Wake it after they land.
+  - `cycle:a` — it is in (or downstream of) a `dependsOn` CYCLE and can never become ready on its
+    own. That is a PLAN fix (`bsc plan fleet`), NOT a wake. The two rows look identical without the
+    tag and mean opposite things.
+  Remember what `dependsOn` is and is not: it is planning-time sequencing (#1039). A RUNNING worker
+  never parks on an upstream — it builds against the contracts in `contracts/`, which are yours. This
+  column is about what to DISPATCH, not about making anyone wait.
 - The tally under the table counts each state, because a long fleet's stopped rows scroll past.
 - THE `ISSUES` COLUMN IS THAT WORKER'S PROGRESS — its stream's plan issues done/total. Read it WITH
   the state: `stopped 7/7` finished and needs nothing; `stopped 0/7` never started and is the one to
