@@ -78,6 +78,20 @@ function collectSeeds() {
   return out;
 }
 
+/** The graph's EDGES (integration-tests-become-graph-edges), or `[]`.
+ *
+ *  Read separately from {@link collectSeeds} because an edge is not a module: it has no `provides`, emits
+ *  no source, and is keyed by its own id rather than by a specifier. Folding it into the specifier map
+ *  would make an edge compete with a record for a key it does not own. */
+function collectEdges() {
+  try {
+    const k = JSON.parse(readFileSync(join(REPO, "src-tauri", "data", "knowledge", "algorithms.json"), "utf8"));
+    return Array.isArray(k?.edges) ? k.edges : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Does `src/` still hold this specifier? If so the record must NOT be emitted — the file wins. */
 function fileExists(spec) {
   const base = join(REPO, "src", ...spec.slice(2).split("/"));
@@ -133,6 +147,25 @@ function rewriteRelativeImports(src, dir) {
     out = out.slice(0, at) + aliasForDir(dir, spec) + out.slice(at + spec.length);
   }
   return out;
+}
+
+/**
+ * Where an edge test is emitted, as a `.bsc-records/`-relative path. PURE, and exported so the guard can
+ * exercise the rule with no edges in the seed — otherwise "every edge is handled" passes by there being
+ * none, which is the vacuous green this repo keeps getting caught by.
+ *
+ * The address is the edge's PROVENANCE (`src`), mirrored. An edge spans several records and so has no
+ * home specifier to sit beside, and the alternative — one synthetic folder — would silently re-classify
+ * every pure-domain integration test: the vitest `node` project selects on a path containing `/lib/`,
+ * and losing that costs 488.56s of DOM construction against 13.93s of tests on this subset.
+ *
+ * `i` disambiguates an edge carrying more than one test file, exactly as the node path does.
+ */
+export function edgeTestPath(from, i, ext, code) {
+  const relBase = from.replace(/^src\//, "").replace(/\.(test|spec)\.tsx?$/, "");
+  const suffix = i === 0 ? "" : `.${i}`;
+  const chosen = typeof ext === "string" && /^\.[jt]sx?$/.test(ext) ? ext : extFor(code ?? "");
+  return relBase + suffix + ".test" + chosen;
 }
 
 /** DECIDE what to emit, writing nothing.
@@ -204,11 +237,64 @@ export function planRecords() {
       });
     });
   }
-  return { modules, tests, shadowed, unresolvable };
+  // ── EDGE tests (integration-tests-become-graph-edges) ────────────────────────────────────────────
+  //
+  // An edge test spans SEVERAL records, so unlike a node test it has no home specifier to be emitted
+  // beside. Its address is its PROVENANCE — `edge.src`, the root-relative path of the file it was lifted
+  // from — mirrored into `.bsc-records/`.
+  //
+  // That is not merely tidy. The vitest `node` project selects on a path containing `/lib/`, so parking
+  // every edge test under one synthetic folder would hand each pure-domain integration test a jsdom it
+  // was written not to need — 488.56s of environment against 13.93s of tests, measured on that subset.
+  // Mirroring the source path keeps the classification the author already made.
+  const edgeTests = [];
+  const edgeShadowed = [];
+  const edgeUnresolvable = [];
+  for (const e of collectEdges()) {
+    const id = typeof e?.id === "string" ? e.id.trim() : "";
+    const list = Array.isArray(e?.tests) ? e.tests : [];
+    if (!id || !list.length) continue;
+    const from = typeof e?.src === "string" ? e.src.trim() : "";
+    // Provenance is REQUIRED to emit, not optional. Without it there is no honest path to write to, and
+    // guessing one is how a lib/ test loses its environment. Declined loudly rather than parked anywhere.
+    if (!from.startsWith("src/")) {
+      edgeUnresolvable.push({ id, detail: `${id} — no \`src\` provenance, so there is no path to emit it at` });
+      continue;
+    }
+    // The file still exists ⇒ IT is the copy that runs, exactly as for a node test. Emitting as well
+    // would run the same assertions twice, which is the one thing this tier must never do.
+    if (existsSync(join(REPO, ...from.split("/")))) {
+      edgeShadowed.push(id);
+      continue;
+    }
+    const relBase = from.slice("src/".length).replace(/\.(test|spec)\.tsx?$/, "");
+    const dir = relBase.includes("/") ? relBase.slice(0, relBase.lastIndexOf("/")) : "";
+    list.forEach((t, i) => {
+      const src = typeof t?.src === "string" ? t.src : "";
+      if (!src.trim()) return;
+      const missing = relativeSpecifiers(src)
+        .map((r) => r.spec)
+        .filter((r, idx, all) => all.indexOf(r) === idx)
+        .filter((r) => !reachable(resolveRel(dir, r), willEmit));
+      if (missing.length) {
+        edgeUnresolvable.push({ id, detail: `${id} — cannot resolve ${missing.join(", ")}` });
+        return;
+      }
+      edgeTests.push({
+        id,
+        members: Array.isArray(e.members) ? e.members : [],
+        src: rewriteRelativeImports(src, dir),
+        rel: edgeTestPath(from, i, t?.ext, src),
+        detail: `${id} [${(Array.isArray(e.members) ? e.members : []).join(" × ")}]`,
+      });
+    });
+  }
+
+  return { modules, tests, shadowed, unresolvable, edgeTests, edgeShadowed, edgeUnresolvable };
 }
 
 export function emitRecords({ quiet = false } = {}) {
-  const { modules, tests, shadowed, unresolvable } = planRecords();
+  const { modules, tests, shadowed, unresolvable, edgeTests, edgeShadowed, edgeUnresolvable } = planRecords();
   // A full rebuild each run: a stale emitted file for a module that came BACK would shadow nothing (src
   // wins) but would still be dead weight the next reader has to explain.
   rmSync(OUT, { recursive: true, force: true });
@@ -249,6 +335,25 @@ export function emitRecords({ quiet = false } = {}) {
     );
     emittedTests.push(t.detail);
   }
+
+  // The EDGE tests, at the mirror of the file each was lifted from. Same writer as the node tests, and
+  // deliberately so: an edge test that ran differently from a record test would be a second execution
+  // model to keep in agreement with the first.
+  const emittedEdges = [];
+  for (const t of edgeTests) {
+    const tPath = join(OUT, ...t.rel.split("/"));
+    mkdirSync(dirname(tPath), { recursive: true });
+    writeFileSync(
+      tPath,
+      `// GENERATED from the packaged seed's EDGE test \`${t.id}\` — do not edit, do not commit.\n` +
+        `// It verifies the RELATIONSHIP between ${t.members.length || "several"} records` +
+        `${t.members.length ? ` (${t.members.join(" × ")})` : ""}, which is why it lives on the edge\n` +
+        `// rather than being forced onto one node that does not own it.\n` +
+        t.src,
+      "utf8",
+    );
+    emittedEdges.push(t.detail);
+  }
   const shadowedTests = shadowed;
   const unresolvableTests = unresolvable.map((u) => u.detail);
 
@@ -270,6 +375,18 @@ export function emitRecords({ quiet = false } = {}) {
     if (unresolvableTests.length) {
       console.log(`emit-records: ${unresolvableTests.length} carried test(s) NOT emitted — unresolvable`);
       for (const s of unresolvableTests.sort()) console.log("   " + s);
+    }
+    // The edge tier reports in the SAME three states, and reports 0 rather than staying silent: an
+    // unpopulated tier and a broken one look identical from outside, and this one shipped unpopulated.
+    console.log(`emit-records: ${emittedEdges.length} EDGE test file(s) materialized`);
+    for (const s of emittedEdges.sort()) console.log("   " + s);
+    if (edgeShadowed.length) {
+      console.log(`emit-records: ${edgeShadowed.length} edge(s) carry tests a src/ file still shadows`);
+      for (const s of [...edgeShadowed].sort()) console.log("   " + s);
+    }
+    if (edgeUnresolvable.length) {
+      console.log(`emit-records: ${edgeUnresolvable.length} edge test(s) NOT emitted — unresolvable`);
+      for (const u of edgeUnresolvable.map((u) => u.detail).sort()) console.log("   " + u);
     }
   }
   return emitted;

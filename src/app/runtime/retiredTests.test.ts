@@ -21,7 +21,9 @@
 // it is guarding. `planRecords` deliberately WRITES NOTHING — calling `emitRecords` here would `rmSync`
 // the tree out from under every other test file being collected in parallel.
 import { describe, it, expect } from "vitest";
-import { planRecords } from "../../../scripts/emit-records.mjs";
+import { planRecords, edgeTestPath } from "../../../scripts/emit-records.mjs";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 /** Every packaged seed, as the record objects the app would load. */
 const seeds = import.meta.glob<{ id?: string; provides?: string; tests?: { name?: string; src?: string }[] }>(
@@ -110,6 +112,60 @@ describe("a retired module keeps its tests in the gate", () => {
       expect(t.src, `${t.spec} carries no unrewritten relative import`).not.toMatch(
         /(?:from|import|vi\.mock|require)\s*\(?\s*["']\.{1,2}(?:\/|["'])/,
       );
+    }
+  });
+});
+
+
+// ── EDGES (integration-tests-become-graph-edges) ────────────────────────────────────────────────────
+//
+// The node twin above exists because "deleting a colocated test trades executed coverage for stored
+// coverage behind a green gate" — it cost 31 assertions before anything checked. The edge tier is the
+// same trade with the same shape, and it shipped with a STORE and a CLI and nothing that runs a test,
+// so these assert the executing half before 51 cross-module tests are moved onto it.
+describe("an edge test is executed, not merely stored", () => {
+  it("emits an edge's tests at the mirror of the file it came from — so a lib/ test keeps `node`", () => {
+    // NOT vacuous at zero edges: this exercises the rule directly rather than iterating a set that is
+    // currently empty. A synthetic folder for every edge would be the tempting alternative and would
+    // re-classify every pure-domain integration test into jsdom, which the `node` project selects
+    // against by path (`src/**/lib/**`) and costs 488.56s of environment for 13.93s of tests.
+    expect(edgeTestPath("src/shared/lib/security/roleProfileConsistency.test.ts", 0, ".ts", "")).toBe(
+      "shared/lib/security/roleProfileConsistency.test.ts",
+    );
+    expect(edgeTestPath("src/shared/ui/overlay/modalFocus.test.tsx", 0, ".tsx", "")).toBe(
+      "shared/ui/overlay/modalFocus.test.tsx",
+    );
+    // A second test on one edge gets its own file rather than overwriting the first — `roleModel ×
+    // sessionRoles` already attracts two (funnelTiers + sessionRoles.roleTable).
+    expect(edgeTestPath("src/a/b.test.ts", 1, ".ts", "")).toBe("a/b.1.test.ts");
+    // The carried extension wins over the body guess, for the reason the node path learned it: a
+    // generic arrow named `.tsx` fails to parse and reports as a dead suite.
+    expect(edgeTestPath("src/a/b.test.ts", 0, undefined, "const f = <T>(x: T) => x;")).toBe("a/b.test.tsx");
+    expect(edgeTestPath("src/a/b.test.ts", 0, ".ts", "const f = <T>(x: T) => x;")).toBe("a/b.test.ts");
+  });
+
+  it("accounts for EVERY edge that carries tests — emitted, shadowed, or declined with a reason", () => {
+    const plan = planRecords();
+    // The three buckets exist as arrays whatever the seed holds, so a reader can tell "no edges" from
+    // "edges the emitter never looked at".
+    for (const k of ["edgeTests", "edgeShadowed", "edgeUnresolvable"] as const) {
+      expect(Array.isArray(plan[k]), `plan.${k} is a bucket`).toBe(true);
+    }
+    // Declined is never silent — the node tier learned this too: "has no test", "is shadowed" and
+    // "cannot run" are three different states that look identical from outside.
+    for (const u of plan.edgeUnresolvable) {
+      expect(u.id, "a declined edge names itself").toBeTruthy();
+      expect(u.detail, `${u.id} says WHY it was declined`).toBeTruthy();
+    }
+    // An edge test must never be emitted while its src/ file still runs — that double-counts.
+    for (const t of plan.edgeTests) {
+      expect(existsSync(join(process.cwd(), "src", t.rel)), `${t.id} is emitted AND still in src/`).toBe(false);
+    }
+  });
+
+  it("carries the members onto the emitted file, so the relationship is readable where it runs", () => {
+    for (const t of planRecords().edgeTests) {
+      expect(t.members.length, `${t.id} spans 2+ records — one is a node test`).toBeGreaterThanOrEqual(2);
     }
   });
 });

@@ -11230,5 +11230,22 @@
    "src": "src/features/planner/fleet/useFleetGithub.ts",
    "tech": "typescript"
   }
+ ],
+ "edges": [
+  {
+   "id": "session-roles--role-profile",
+   "members": [
+    "session-roles.ts",
+    "role-profile.ts"
+   ],
+   "src": "src/shared/lib/security/roleProfileConsistency.test.ts",
+   "tests": [
+    {
+     "name": "role -> profile consistency",
+     "ext": ".ts",
+     "src": "import { describe, it, expect } from \"vitest\";\nimport { ROLE_DEFAULTS, roleCapability, roleWriteRules, hasScopedWriteCarveOut, type SessionRole } from \"@/shared/lib/session/sessionRoles\";\nimport { roleProfileId } from \"@/shared/lib/session/roleProfile\";\nimport { PROFILES, APP_ROLES, type AgentProfile } from \"./agentProfiles\";\n\n// Role \u2192 profile consistency (the unified model). Every session role maps to a DEFAULT profile\n// (roleProfile.ROLE_PROFILE), which must (a) exist in the packaged set and (b) not escalate past the\n// role's code tier \u2014 a code:none role's profile must never auto-ALLOW the file-write tools. The role\n// gate is the backstop: it hard-denies the write tools for code:none roles regardless of the profile.\n\nconst ROLES = Object.keys(ROLE_DEFAULTS) as SessionRole[];\nconst ALL: AgentProfile[] = [...PROFILES, ...APP_ROLES];\nconst profileFor = (role: SessionRole) => ALL.find((p) => p.id === roleProfileId(role));\nconst WRITE_TOOLS = [\"Edit\", \"Write\", \"NotebookEdit\"]; // no MultiEdit \u2014 removed tool (#3534)\n\ndescribe(\"role \u2192 profile consistency (sessionRoles \u2194 roleProfile)\", () => {\n  it(\"every role maps to a packaged profile that exists\", () => {\n    for (const role of ROLES) {\n      expect(profileFor(role), `role '${role}' \u2192 '${roleProfileId(role)}' resolves to no profile`).toBeTruthy();\n    }\n  });\n\n  it(\"no code:'none' role's profile auto-allows the file-write tools\", () => {\n    for (const role of ROLES) {\n      if (ROLE_DEFAULTS[role].code !== \"none\") continue;\n      // A scoped carve-out role (documentor's DOC_GLOBS) intentionally allows writes, hard-limited to\n      // its globs by the bsc-scope hook \u2014 its profile allow is by design, not an escalation (#2326).\n      if (hasScopedWriteCarveOut(roleCapability(role))) continue;\n      const p = profileFor(role)!;\n      expect(p.tools.edit, `${role}: code:none profile must not allow edit`).not.toBe(\"allow\");\n      expect(p.tools.write, `${role}: code:none profile must not allow write`).not.toBe(\"allow\");\n    }\n  });\n\n  it(\"the role gate hard-denies the write tools for every code:none role (backstop)\", () => {\n    // Makes a looser profile safe: at launch the sessionRoles gate denies the file-write tools\n    // outright for every code:none role (no commons carve-out), and Claude precedence is deny > allow.\n    for (const role of ROLES) {\n      if (ROLE_DEFAULTS[role].code !== \"none\") continue;\n      // Carve-out roles (documentor) lift the whole-tool deny so their per-glob doc allows aren't\n      // masked; the bsc-scope hook is their backstop instead. Every OTHER code:none role keeps the deny.\n      if (hasScopedWriteCarveOut(roleCapability(role))) continue;\n      const deny = roleWriteRules(roleCapability(role)).deny;\n      for (const t of WRITE_TOOLS) {\n        expect(deny, `${role}: role gate must deny ${t}`).toContain(t);\n      }\n    }\n  });\n});\n"
+    }
+   ]
+  }
  ]
 }
