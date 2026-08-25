@@ -60,26 +60,37 @@ than reporting a live fleet as dead.",
 },
 CmdDoc {
     name: "directors",
-    summary: "every project's DIRECTOR and whether it is running — the architect's view of its tier",
+    summary: "every project's DIRECTOR, running or not — the architect's view of its tier",
     usage: "USAGE:
   bsc fleet directors [--json|--pretty]
 
-One row per project that has a director pane, with the same real liveness `list` reports:
+One row per project that HAS a director — including the ones whose session is not running. Same four
+states `list` reports, because it is the same question one tier up:
 
-  LIVE   a PTY session exists for that director
-  BUSY   it has a live descendant — it is working, not merely open
+  running          it is up and working                          a brief reaches it
+  idle             the shell is up but its agent has EXITED       a brief does NOT reach it
+  stopped          it launched before; no session now             a brief does NOT reach it
+  never-launched   the plan enables one and it never ran          there is nothing to brief
+
+  ISSUES is that PROJECT's plan progress (done/total) — every issue, not one stream's.
+
+WHAT IT IS FOR. The architect's only outbound channel is `bsc plan brief <projectKey>:director`, and
+briefing a director that is not running is how work goes quietly missing. So the question this
+answers is whether that brief will reach anything — which is why a stopped director must appear as a
+ROW rather than be absent. The footer counts the reachable ones, and unreachable rows sort FIRST.
+
+MEMBERSHIP comes from the plan stores (~/.base-studio-code/plans/*.db), read WITHOUT migrating them —
+an architect's listing must not write to stores it does not own. LIVENESS comes from the app. A
+project with no director in either place is not listed at all, which is how the scratch stores that
+accumulate in plans/ stay out of the way.
 
 WHY IT IS SEPARATE FROM `list`. This is the ARCHITECT's read, and the architect must not see
 individual workers: that is the director's view, and an architect that reaches past its director is
-back in the middle of a fleet it does not run. So the scoping is the command, not a flag a caller
-could omit.
+back in the middle of a fleet it does not run. The scoping is the command, not a flag a caller could
+omit — neither source it reads can name a worker.
 
-READ-ONLY, and deliberately so. Seeing a stopped director does not let you start one — the architect's
-only outbound channel is `bsc plan brief <projectKey>:director`. What this answers is whether that
-brief will reach anything: briefing a director that is not running is how work goes quietly missing,
-which is the same failure the director protocol already warns about for assigns to stopped workers.
-
-Requires the desktop app, like `list` — liveness is the app's fact, not the filesystem's.",
+READ-ONLY, and deliberately so. Seeing a stopped director does not let you start one; that is the
+user's click. Requires the desktop app for the liveness half.",
 },
 CmdDoc {
     name: "director",
@@ -355,55 +366,178 @@ fn describe_director(res: &DirectorNewResult) -> String {
     }
 }
 
-/// The DIRECTOR pane-id suffix. Pane identity is `<projectKey>:director` (paneIdentity.ts), so the
-/// project key is everything before it — which is also why this needs no roster: the id carries the
-/// project.
-const DIRECTOR_SUFFIX: &str = ":director";
+/// The DIRECTOR pane-id suffix — ONE definition, re-exported from `membership` rather than spelled
+/// again here. Two copies of this string is precisely the drift that would let `director new` create a
+/// pane the `directors` read cannot see.
+use membership::DIRECTOR_SUFFIX;
+
+/// Where the plan stores live: `~/.base-studio-code/plans/<key>.db`, the central location #2996 moved
+/// them to. `$BSC_PLANS_DIR` overrides it, which is what makes the scan testable without a home dir.
+fn plans_dir() -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("BSC_PLANS_DIR") {
+        let p = p.trim();
+        if !p.is_empty() {
+            return Some(std::path::PathBuf::from(p));
+        }
+    }
+    bsc_util::bsc_base_dir().map(|b| b.join("plans"))
+}
+
+/// Read one plan store's director, if it has one. `None` for a store that neither planned a director
+/// nor ever launched one — which is how the scan skips the scratch/abandoned stores that accumulate
+/// in `plans/` without having to keep a list of them.
+///
+/// READ-ONLY: `open_read_only` neither creates nor migrates. An architect listing its tier must not
+/// write to thirty stores it does not own.
+fn director_of(path: &std::path::Path) -> Option<membership::DirectorMember> {
+    let store = plandb::Store::open_for_scan(path).ok()?;
+    let ledger = store.fleet_session_list_or_empty();
+    let fleet = store.fleet_get_or_none().unwrap_or(serde_json::Value::Null);
+    let planned = fleet
+        .get("director")
+        .map(|d| d.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true))
+        .unwrap_or(false);
+
+    // Prefer a key OBSERVED in the ledger over the filename: `plans/<key>.db` is the canonical
+    // construction, but a legacy or hand-copied store can disagree, and a wrong key would print a
+    // pane id that resolves to nothing — which is worse than not listing the project at all.
+    let row = ledger.iter().find(|r| r.pane_id.ends_with(membership::DIRECTOR_SUFFIX));
+    let key = row
+        .map(|r| membership::project_key_of(&r.pane_id).to_string())
+        .or_else(|| path.file_stem().map(|s| s.to_string_lossy().to_string()))?;
+    if !planned && row.is_none() {
+        return None;
+    }
+
+    // The PROJECT's tally — every issue, not one stream's. That is what a director is accountable for.
+    let progress = store
+        .list(None, None)
+        .map(|issues| {
+            membership::Progress::tally(issues.iter().map(|i| i.status.as_str()))
+        })
+        .unwrap_or_default();
+
+    Some(membership::DirectorMember {
+        pane_id: format!("{key}{}", membership::DIRECTOR_SUFFIX),
+        project_key: key,
+        planned,
+        launched: row.is_some(),
+        ledger_status: row.map(|r| r.status.clone()).unwrap_or_default(),
+        launched_at: row.map(|r| r.launched_at).unwrap_or(0),
+        last_seen: row.map(|r| r.last_seen).unwrap_or(0),
+        progress,
+    })
+}
+
+/// Every project that HAS a director, from the plan stores. Sorted by key here so the scan is
+/// deterministic regardless of readdir order; the caller re-sorts once liveness is known.
+fn scan_directors() -> Vec<membership::DirectorMember> {
+    let Some(dir) = plans_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("db"))
+        .collect();
+    paths.sort();
+    // A store that cannot be opened or read is SKIPPED, never fatal: one corrupt or locked plan.db
+    // must not hide every other project's director.
+    paths.iter().filter_map(|p| director_of(p)).collect()
+}
 
 /// `bsc fleet directors` — one row per project director, with real liveness.
 ///
-/// Scoped by CONSTRUCTION rather than by a flag: it asks the app for every tracked pane and keeps only
-/// the director ones. An architect running this cannot widen it to workers, which is the tier boundary
-/// this verb exists to hold.
+/// Scoped by CONSTRUCTION rather than by a flag: membership is the DIRECTOR of each plan store and
+/// the app's `:director` panes, and neither source can name a worker. An architect running this
+/// cannot widen it to workers, which is the tier boundary this verb exists to hold.
 fn cmd_directors(args: &Args) -> Result<(), String> {
-    // No roster: the architect does not sit in a project hub, and a director's pane id already names
-    // its project. An empty `pane_ids` means "everything the app tracks".
+    // No roster and no `--db`: the architect does not sit in a hub, and a director's pane id already
+    // names its project. An empty `pane_ids` means "everything the app tracks".
     let res = send(&FleetRequest::default(), args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))?;
-    let mut directors: Vec<&PaneLive> =
-        res.panes.iter().filter(|p| p.pane_id.ends_with(DIRECTOR_SUFFIX)).collect();
-    directors.sort_by(|a, b| a.pane_id.cmp(&b.pane_id));
+    let tracked: Vec<String> = res.panes.iter().map(|p| p.pane_id.clone()).collect();
+
+    let mut rows = scan_directors();
+    membership::absorb_tracked_directors(&mut rows, &tracked);
+    let live_of = |r: &membership::DirectorMember| {
+        res.panes.iter().find(|p| p.pane_id == r.pane_id).map(|p| (p.live, p.busy))
+    };
+    membership::sort_directors(&mut rows, |r| r.state(live_of(r)));
 
     if args.json || args.pretty {
-        let rows: Vec<_> = directors
+        let out: Vec<_> = rows
             .iter()
-            .map(|p| {
-                serde_json::json!({
-                    "projectKey": director_project_key(&p.pane_id),
-                    "paneId": p.pane_id,
-                    "live": p.live,
-                    "busy": p.busy,
-                    "pid": p.pid,
-                })
+            .map(|r| {
+                let p = res.panes.iter().find(|p| p.pane_id == r.pane_id);
+                let mut v = serde_json::to_value(r).unwrap_or(serde_json::Value::Null);
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("state".into(), r.state(live_of(r)).as_str().into());
+                    obj.insert("live".into(), p.map(|p| p.live).unwrap_or(false).into());
+                    obj.insert("busy".into(), p.map(|p| p.busy).unwrap_or(false).into());
+                    if let Some(pid) = p.and_then(|p| p.pid) {
+                        obj.insert("pid".into(), pid.into());
+                    }
+                }
+                v
             })
             .collect();
-        bsc_cli_util::emit(args.pretty, args.json, &rows, String::new);
+        bsc_cli_util::emit(args.pretty, args.json, &out, String::new);
         return Ok(());
     }
-    println!("{:<28} {:<34} {:<6} {:<6} PID", "PROJECT", "PANE", "LIVE", "BUSY");
-    for p in &directors {
-        println!(
-            "{:<28} {:<34} {:<6} {:<6} {}",
-            director_project_key(&p.pane_id),
-            p.pane_id,
-            if p.live { "yes" } else { "no" },
-            if p.busy { "yes" } else { "no" },
-            p.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
+    print!("{}", render_directors(&rows, &res));
+    Ok(())
+}
+
+/// The architect's table. Dynamic key width for the same reason the fleet table has one: a project
+/// key is what goes into `bsc plan brief <key>:director`, so it is never truncated.
+fn render_directors(rows: &[membership::DirectorMember], res: &FleetResult) -> String {
+    let w = rows.iter().map(|r| r.project_key.len()).max().unwrap_or(7).max(7);
+    let mut out = format!(
+        "{:<w$}  {:<14} {:<8} {:<5} {:<5} PID\n",
+        "PROJECT", "STATE", "ISSUES", "LIVE", "BUSY",
+        w = w
+    );
+    for r in rows {
+        let p = res.panes.iter().find(|p| p.pane_id == r.pane_id);
+        let live = p.map(|p| p.live).unwrap_or(false);
+        out.push_str(&format!(
+            "{:<w$}  {:<14} {:<8} {:<5} {:<5} {}\n",
+            r.project_key,
+            r.state(p.map(|p| (p.live, p.busy))).as_str(),
+            r.progress.cell(),
+            if live { "yes" } else { "no" },
+            if p.map(|p| p.busy).unwrap_or(false) { "yes" } else { "no" },
+            p.and_then(|p| p.pid).map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
+            w = w,
+        ));
+    }
+    if rows.is_empty() {
+        out.push_str("(no project has a director — none planned, none ever launched)\n");
+        return out;
+    }
+    let reachable = rows
+        .iter()
+        .filter(|r| {
+            let p = res.panes.iter().find(|p| p.pane_id == r.pane_id);
+            matches!(
+                r.state(p.map(|p| (p.live, p.busy))),
+                membership::State::Running | membership::State::Idle
+            )
+        })
+        .count();
+    out.push_str(&format!(
+        "\n{} director(s) — {reachable} reachable by `bsc plan brief <projectKey>:director`\n",
+        rows.len()
+    ));
+    if reachable < rows.len() {
+        out.push_str(
+            "  briefing a director that is not running is how work goes quietly missing — the rest need the user to start them\n",
         );
     }
-    if directors.is_empty() {
-        println!("(no director panes — no project fleet is running)");
-    }
-    Ok(())
+    out
 }
 
 /// The project key in front of a `<key>:director` pane id.
@@ -982,6 +1116,201 @@ mod tests {
 #[cfg(test)]
 mod director_tests {
     use super::*;
+
+    /// Build a plans DIRECTORY the way the real one looks: several stores, only some with a director,
+    /// plus the scratch/abandoned ones that accumulate in `plans/` and must be skipped silently.
+    fn seed_plans_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-plans-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // alpha — a director both PLANNED and LAUNCHED, with issues.
+        {
+            let s = plandb::Store::open(&dir.join("alpha.db")).unwrap();
+            s.fleet_set(&serde_json::json!({"director": {"enabled": true}, "streams": []})).unwrap();
+            s.fleet_session_upsert(&plandb::FleetSession {
+                pane_id: "alpha:director".into(),
+                role: "director".into(),
+                status: "running".into(),
+                launched_at: 10,
+                last_seen: 20,
+                ..Default::default()
+            })
+            .unwrap();
+            for (r, st) in [("a", "verified"), ("b", "open"), ("c", "blocked")] {
+                s.upsert(&plandb::PlanIssue {
+                    r#ref: r.into(),
+                    title: r.into(),
+                    status: st.into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            }
+        }
+        // beta — a director PLANNED but never launched.
+        {
+            let s = plandb::Store::open(&dir.join("beta.db")).unwrap();
+            s.fleet_set(&serde_json::json!({"director": {"enabled": true}, "streams": []})).unwrap();
+        }
+        // gamma — a real project with a fleet but NO director. Not part of this tier.
+        {
+            let s = plandb::Store::open(&dir.join("gamma.db")).unwrap();
+            s.fleet_set(&serde_json::json!({"streams": [{"id": "api", "repo": "o/r"}]})).unwrap();
+        }
+        // scratch — an empty store, the kind `plans/` accumulates. Nothing planned, nothing launched.
+        plandb::Store::open(&dir.join("scratch.db")).unwrap();
+        // Not a store at all — the scan must not choke on it.
+        std::fs::write(dir.join("notes.txt"), "not a db").unwrap();
+        dir
+    }
+
+    /// The scan reports a project whose director is NOT running, skips projects that have no director
+    /// at all, and does not choke on the junk that shares the directory.
+    #[test]
+    fn the_scan_finds_every_project_with_a_director_and_only_those() {
+        let dir = seed_plans_dir("scan");
+        let rows: Vec<_> = {
+            std::env::set_var("BSC_PLANS_DIR", &dir);
+            let r = scan_directors();
+            std::env::remove_var("BSC_PLANS_DIR");
+            r
+        };
+        let keys: Vec<&str> = rows.iter().map(|r| r.project_key.as_str()).collect();
+        assert_eq!(keys, vec!["alpha", "beta"], "gamma has no director; scratch has nothing");
+
+        let alpha = &rows[0];
+        assert!(alpha.planned && alpha.launched);
+        assert_eq!(alpha.pane_id, "alpha:director", "the id `brief` is typed against");
+        assert_eq!(alpha.ledger_status, "running");
+        // The ledger stamps its OWN launched_at/last_seen on upsert, so the values are whatever it
+        // wrote — what matters is that the scan carries them through rather than zeroing them.
+        assert!(alpha.launched_at > 0 && alpha.last_seen > 0, "the launch times survive the scan");
+        // The PROJECT's tally, not a stream's — 1 of 3 done, 1 blocked.
+        assert_eq!(alpha.progress.cell(), "1/3");
+        assert_eq!(alpha.progress.blocked, 1);
+
+        let beta = &rows[1];
+        assert!(beta.planned && !beta.launched, "planned, never launched");
+        assert_eq!(beta.progress.cell(), "-", "no issues at all");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE SIDE-EFFECT GUARANTEE. The architect's listing is READ-ONLY, and a scan that migrated
+    /// every store would write to thirty plan.dbs it does not own — some open under a live fleet.
+    #[test]
+    fn the_scan_does_not_write_to_the_stores_it_reads() {
+        let dir = seed_plans_dir("readonly");
+        let before: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                let m = e.metadata().unwrap();
+                (e.path(), m.len(), m.modified().unwrap())
+            })
+            .collect();
+        assert!(!before.is_empty(), "the seed produced something to compare against");
+
+        std::env::set_var("BSC_PLANS_DIR", &dir);
+        let rows = scan_directors();
+        std::env::remove_var("BSC_PLANS_DIR");
+        assert_eq!(rows.len(), 2, "it did read them");
+
+        for (path, len, mtime) in &before {
+            let m = std::fs::metadata(path).unwrap();
+            assert_eq!(m.len(), *len, "{} changed size", path.display());
+            assert_eq!(m.modified().unwrap(), *mtime, "{} was rewritten", path.display());
+        }
+        // No new plan STORE was minted. Scoped to `.db` deliberately: a read-only query on a WAL
+        // database creates its `-wal`/`-shm` coordination files (measured — see
+        // `a_read_only_query_creates_the_wal_sidecars` in plandb), so asserting "no new file at all"
+        // would be asserting something SQLite does not offer. What the architect's read must never do
+        // is change or create a project's DATA, and that is what these two checks cover.
+        let dbs = |d: &std::path::Path| -> std::collections::BTreeSet<std::path::PathBuf> {
+            std::fs::read_dir(d)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("db"))
+                .collect()
+        };
+        let seen: std::collections::BTreeSet<std::path::PathBuf> =
+            before.iter().map(|(p, _, _)| p.clone()).filter(|p| p.extension().and_then(|x| x.to_str()) == Some("db")).collect();
+        assert_eq!(dbs(&dir), seen, "the scan minted a plan store");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A missing plans dir is an architect with no projects, not a crash.
+    #[test]
+    fn a_missing_plans_dir_scans_to_nothing() {
+        let missing = std::env::temp_dir().join(format!("bsc-fleet-noplans-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&missing);
+        std::env::set_var("BSC_PLANS_DIR", &missing);
+        let rows = scan_directors();
+        std::env::remove_var("BSC_PLANS_DIR");
+        assert!(rows.is_empty());
+    }
+
+    fn pane(id: &str, live: bool, busy: bool) -> PaneLive {
+        PaneLive { pane_id: id.into(), live, busy, pid: if live { Some(7) } else { None } }
+    }
+
+    /// The table must show a stopped director as a ROW — that row is the point — and say plainly how
+    /// many of them a brief can actually reach.
+    #[test]
+    fn the_directors_table_shows_the_unreachable_and_counts_what_a_brief_reaches() {
+        let mut rows = vec![
+            membership::DirectorMember {
+                project_key: "alpha".into(),
+                pane_id: "alpha:director".into(),
+                planned: true,
+                launched: true,
+                progress: membership::Progress::tally(vec!["verified", "open"]),
+                ..Default::default()
+            },
+            membership::DirectorMember {
+                project_key: "beta".into(),
+                pane_id: "beta:director".into(),
+                planned: true,
+                launched: true,
+                ..Default::default()
+            },
+        ];
+        // Only alpha is up.
+        let res = FleetResult { panes: vec![pane("alpha:director", true, true)] };
+        let live_of = |r: &membership::DirectorMember| {
+            res.panes.iter().find(|p| p.pane_id == r.pane_id).map(|p| (p.live, p.busy))
+        };
+        membership::sort_directors(&mut rows, |r| r.state(live_of(r)));
+
+        let out = render_directors(&rows, &res);
+        assert!(out.contains("beta") && out.contains("stopped"), "the stopped one has a row:\n{out}");
+        assert!(out.contains("alpha") && out.contains("running"), "{out}");
+        assert!(out.contains("2 director(s) — 1 reachable"), "{out}");
+        assert!(out.contains("quietly missing"), "the consequence is stated: {out}");
+        assert!(out.contains("1/2"), "the project's progress is carried: {out}");
+        // Unreachable first — those are the rows an architect must act on.
+        let first = out.lines().nth(1).unwrap();
+        assert!(first.starts_with("beta"), "the actionable row leads: {first:?}");
+    }
+
+    /// An all-running tier is told nothing extra, and an empty one says why it is empty rather than
+    /// printing a bare header a reader would take for a failure.
+    #[test]
+    fn a_healthy_tier_gets_no_warning_and_an_empty_one_explains_itself() {
+        let rows = vec![membership::DirectorMember {
+            project_key: "alpha".into(),
+            pane_id: "alpha:director".into(),
+            planned: true,
+            launched: true,
+            ..Default::default()
+        }];
+        let res = FleetResult { panes: vec![pane("alpha:director", true, true)] };
+        let out = render_directors(&rows, &res);
+        assert!(out.contains("1 reachable") && !out.contains("quietly missing"), "{out}");
+
+        let empty = render_directors(&[], &FleetResult::default());
+        assert!(empty.contains("no project has a director"), "{empty}");
+    }
 
     /// The pane id one spelling, used by create / list / brief alike — a second spelling would create
     /// a director the `directors` read could not see.

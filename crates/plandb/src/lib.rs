@@ -101,6 +101,79 @@ impl Store {
         Ok(Store { conn })
     }
 
+    /// Open an EXISTING plan.db **read-only, without migrating it**.
+    ///
+    /// [`Store::open`] creates the file and runs `migrate`, which is right for the one store a session
+    /// owns and wrong for a SCAN. `bsc fleet directors` reads every project's plan store to answer one
+    /// question — does this project have a director — and if that read migrated each one, an
+    /// architect's read-only listing would write to thirty stores it does not own, some of them open
+    /// under a live fleet.
+    ///
+    /// Errors when the file does not exist (rather than creating it), which is the other half of the
+    /// same guarantee: a scan cannot mint a plan store for a stray path.
+    ///
+    /// WHAT "READ-ONLY" DOES AND DOES NOT MEAN HERE — measured, because the obvious reading is wrong.
+    /// The DATABASE is never modified: no migrate, no write, byte-identical size and mtime after a
+    /// full read (pinned by `open_read_only_reads_without_writing_and_refuses_to_create`). But these
+    /// stores are in WAL mode, and **a WAL reader needs the `-shm` shared-memory index, so the first
+    /// QUERY on a read-only connection creates `<db>-wal` and `<db>-shm` if they are absent.** That is
+    /// SQLite's design, not a leak in this wrapper: those are reader-coordination files, not data.
+    /// Do not "fix" it by asserting their absence — `a_read_only_query_creates_the_wal_sidecars` pins
+    /// the real behaviour so the next reader is not surprised into a wrong assertion.
+    ///
+    /// Note also that the open is LAZY: it touches no file, so an `Ok` here proves nothing about
+    /// whether a read will succeed. The failure surfaces on the first query.
+    ///
+    /// The caller must treat a missing TABLE as absent data, not as failure — a store written before a
+    /// table existed opens fine and errors on the query. The `*_or_empty` readers below do exactly
+    /// that; a raw method called on this connection will surface the rusqlite error instead.
+    pub fn open_read_only(path: &Path) -> rusqlite::Result<Store> {
+        let conn = rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_millis(
+            bsc_sqlite_util::BUSY_TIMEOUT_MS as u64,
+        ))?;
+        Ok(Store { conn })
+    }
+
+    /// Open an existing plan.db for a SCAN: never creating it, never migrating it.
+    ///
+    /// Prefers a read-only connection ([`Store::open_read_only`]) and falls back to an ordinary one.
+    /// The fallback is not a loophole — the guarantee that matters is "we never run `migrate`", and
+    /// that holds on both paths.
+    ///
+    /// It exists because a WAL database read READ-ONLY needs its `-shm` index, and SQLite returns
+    /// `SQLITE_CANTOPEN` when it cannot create one — which happens when the containing DIRECTORY is
+    /// not writable (a read-only mount, a locked-down profile). Without the fallback the scan would
+    /// silently skip those stores, which is the same class of omission the scan was written to remove.
+    /// On an ordinary writable `plans/` the read-only path is the one taken, every time.
+    ///
+    /// A path that names nothing is an error on both paths: a scan must not mint a plan store.
+    pub fn open_for_scan(path: &Path) -> rusqlite::Result<Store> {
+        if !path.is_file() {
+            return Err(rusqlite::Error::InvalidPath(path.to_path_buf()));
+        }
+        if let Ok(store) = Store::open_read_only(path) {
+            return Ok(store);
+        }
+        let conn = bsc_sqlite_util::open_db(path)?;
+        Ok(Store { conn })
+    }
+
+    /// [`Store::fleet_session_list`] tolerating a store whose `fleet_sessions` table predates the
+    /// ledger (#2405). An older plan.db is not an error — it is a project with no ledger.
+    pub fn fleet_session_list_or_empty(&self) -> Vec<sessions::FleetSession> {
+        self.fleet_session_list().unwrap_or_default()
+    }
+
+    /// [`Store::fleet_get`] with the same tolerance — a store with no `fleet_streams`/`fleet_meta`
+    /// reads as "no fleet planned" rather than failing the whole scan.
+    pub fn fleet_get_or_none(&self) -> Option<serde_json::Value> {
+        self.fleet_get().ok().flatten()
+    }
+
     /// An ephemeral in-memory store — for tests. WAL is moot in-memory; the busy_timeout is still set.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
         let conn = bsc_sqlite_util::open_in_memory_db()?;
@@ -183,5 +256,144 @@ mod tests {
         s.clear().unwrap();
         assert!(s.list(None, None).unwrap().is_empty(), "issues cleared");
         assert!(s.feature_list().unwrap().is_empty(), "features cleared");
+    }
+
+    /// A SCAN must not write. `open_read_only` is what lets `bsc fleet directors` read every
+    /// project's plan store to answer "does this project have a director" without migrating thirty
+    /// stores it does not own — some of them open under a live fleet.
+    #[test]
+    fn open_read_only_reads_without_writing_and_refuses_to_create() {
+        let dir = std::env::temp_dir().join(format!("plandb-ro-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("scan.db");
+        let _ = std::fs::remove_file(&path);
+
+        // A path that names nothing is an ERROR, not a new store — a scan cannot mint a plan.db for
+        // a stray file name.
+        assert!(Store::open_read_only(&path).is_err(), "read-only must not create the file");
+        assert!(!path.exists());
+
+        {
+            let s = Store::open(&path).unwrap();
+            s.fleet_session_upsert(&FleetSession {
+                pane_id: "k:director".into(),
+                role: "director".into(),
+                status: "running".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+        let before = std::fs::metadata(&path).unwrap().len();
+
+        let ro = Store::open_read_only(&path).unwrap();
+        assert_eq!(ro.fleet_session_list_or_empty().len(), 1, "it can still READ");
+        // And it genuinely cannot write — the guarantee, not merely the intent.
+        assert!(
+            ro.fleet_session_upsert(&FleetSession {
+                pane_id: "k:nope".into(),
+                ..Default::default()
+            })
+            .is_err(),
+            "a read-only connection must refuse a write"
+        );
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), before, "the file is untouched");
+        drop(ro);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A read-only QUERY on a WAL store CREATES its `-wal`/`-shm` sidecars. Surprising enough that it
+    /// broke an assertion written on the obvious assumption, so it is pinned: the next person to write
+    /// "a read-only scan creates no files" should fail here and read why.
+    ///
+    /// The database itself stays untouched — that is the guarantee, and the test above proves it.
+    /// These two are SQLite's reader-coordination files.
+    #[test]
+    fn a_read_only_query_creates_the_wal_sidecars() {
+        let dir = std::env::temp_dir().join(format!("plandb-shm-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("wal.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let s = Store::open(&path).unwrap();
+            s.fleet_session_upsert(&FleetSession {
+                pane_id: "k:director".into(),
+                role: "director".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+        let wal = dir.join("wal.db-wal");
+        let shm = dir.join("wal.db-shm");
+        // A clean close checkpoints and removes them.
+        assert!(!wal.exists() && !shm.exists(), "the seed left no sidecars");
+
+        let ro = Store::open_read_only(&path).unwrap();
+        // The OPEN is lazy — it has touched nothing yet.
+        assert!(!wal.exists() && !shm.exists(), "open_with_flags touches no file");
+
+        let db_before = std::fs::metadata(&path).unwrap().len();
+        assert_eq!(ro.fleet_session_list_or_empty().len(), 1, "the read succeeds");
+        assert!(wal.exists() && shm.exists(), "a WAL reader needs -shm, so the query mints both");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            db_before,
+            "the DATABASE is still untouched — only the coordination files appeared"
+        );
+        drop(ro);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `open_for_scan` must never MIGRATE. The fallback path opens read-write (it has to, for a live
+    /// WAL store), so the guarantee has to be tested rather than assumed from the flags: a scan that
+    /// silently created our tables in someone else's store would be a write nobody asked for.
+    #[test]
+    fn open_for_scan_never_migrates_the_store_it_reads() {
+        let dir = std::env::temp_dir().join(format!("plandb-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("foreign.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let c = bsc_sqlite_util::open_db(&path).unwrap();
+            c.execute_batch("CREATE TABLE unrelated (x INTEGER);").unwrap();
+        }
+        let table_count = |p: &std::path::Path| -> i64 {
+            let c = bsc_sqlite_util::open_db(p).unwrap();
+            c.query_row("SELECT count(*) FROM sqlite_master WHERE type='table'", [], |r| r.get(0))
+                .unwrap()
+        };
+        let before = table_count(&path);
+
+        let s = Store::open_for_scan(&path).unwrap();
+        assert!(s.fleet_session_list_or_empty().is_empty(), "no ledger to read");
+        assert!(s.fleet_get_or_none().is_none());
+        drop(s);
+        assert_eq!(table_count(&path), before, "the scan created no tables");
+
+        // And it refuses a path that names nothing, rather than creating a store there.
+        let ghost = dir.join("ghost.db");
+        assert!(Store::open_for_scan(&ghost).is_err());
+        assert!(!ghost.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A plan.db written before the ledger existed (#2405) opens fine and errors on the query. The
+    /// scan must read that as "this project has no ledger", never as a failure that drops the whole
+    /// listing — one legacy store would otherwise hide every other project's director.
+    #[test]
+    fn a_store_missing_the_fleet_tables_reads_as_empty_rather_than_failing() {
+        let dir = std::env::temp_dir().join(format!("plandb-legacy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("legacy.db");
+        let _ = std::fs::remove_file(&path);
+        // A db with none of our tables at all — the extreme of "written by an older build".
+        {
+            let c = bsc_sqlite_util::open_db(&path).unwrap();
+            c.execute_batch("CREATE TABLE unrelated (x INTEGER);").unwrap();
+        }
+        let ro = Store::open_read_only(&path).unwrap();
+        assert!(ro.fleet_session_list_or_empty().is_empty());
+        assert!(ro.fleet_get_or_none().is_none());
+        drop(ro);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
