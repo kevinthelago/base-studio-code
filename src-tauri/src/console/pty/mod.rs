@@ -3948,6 +3948,81 @@ mod designer_surface_tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    /// The spec's own caged commands, EXECUTED in a real cage against a real projection.
+    ///
+    /// The same guarantee the worker protocol gets: what the document tells a session to run has to
+    /// run there. The designer's spec was the counter-example — it taught `bsc ui`, the cage has no
+    /// `bsc`, and every caged designer session died on its first instructed command.
+    #[test]
+    fn the_designer_specs_caged_commands_run_inside_the_cage() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let cfg = std::env::temp_dir().join(format!("bsc-dsgncfg-{}", std::process::id()));
+        std::fs::create_dir_all(&cfg).unwrap();
+        let md = crate::platform::config::with_config_root(&cfg, || {
+            crate::platform::config::load_str("designer/claude.md")
+        });
+        let _ = std::fs::remove_dir_all(&cfg);
+
+        let block = md
+            .split_once("<!-- caged-designer-commands -->")
+            .and_then(|(_, r)| r.split_once("<!-- /caged-designer-commands -->"))
+            .map(|(b, _)| b.to_string())
+            .expect("the spec carries a caged-designer-commands block");
+        let cmds: Vec<String> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("ls ") || l.starts_with("cat "))
+            .map(|l| l.split('#').next().unwrap_or(l).trim().replace("<id>", "card"))
+            .collect();
+        assert!(!cmds.is_empty(), "the block must contain runnable commands: {block}");
+
+        let base = std::env::temp_dir().join(format!("bsc-dsgnrun-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        let comps = bsc_storefs::ui::from_json(
+            r#"[{"id":"card","name":"Card","role":"composite","folder":"shared/ui","kitId":"k","srcText":"export const Card = () => null;"}]"#,
+        )
+        .expect("parses");
+        bsc_storefs::materialize(&stores.join("ui"), &bsc_storefs::ui::project(&comps, "T"))
+            .expect("materialize ui");
+        std::fs::create_dir_all(stores.join("ui").join("out")).unwrap();
+
+        let argv = namespace_argv(
+            Some("worker"), "dsgn", wt.to_str().unwrap(),
+            Some(stores.to_str().unwrap()), "/bin/sh", &[], GateConfig::default(),
+        )
+        .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+
+        // Every read command runs, AND the write path the spec teaches is actually writable.
+        let script = format!(
+            "command -v bsc >/dev/null && echo BSC-PRESENT; {}; \
+             mkdir -p /ui/out/mycard && echo x > /ui/out/mycard/srcText || echo \"FAILED: author\"",
+            cmds.iter()
+                .map(|c| format!("{c} >/dev/null 2>&1 || echo \"FAILED: {c}\""))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", &script]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let authored = stores.join("ui").join("out").join("mycard").join("srcText").is_file();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(!text.contains("BSC-PRESENT"), "the caged block is written for a cage WITHOUT bsc: {text:?}");
+        assert!(
+            !text.contains("FAILED:"),
+            "every command the spec gives a caged designer must run there — {text:?} / {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(authored, "and the authored component must land on the HOST side of /ui/out");
+    }
+
     /// The SOURCE tier. Without it a caged designer can see that a component exists and cannot read
     /// the thing it was asked to edit — which is why the designer had to be let out of its cage.
     #[test]

@@ -59,6 +59,41 @@ mod tests {
         ))
     }
 
+    /// The spec must describe the surface the CAGE gives, not only the `bsc ui` verbs.
+    ///
+    /// This is the item's third acceptance criterion, and it is why the designer had to be let out
+    /// of its cage at all: the persona said "your ONLY surface is `bsc ui`" and the cage has no
+    /// `bsc`, so every session died on its first instructed command. Shape only — the commands are
+    /// EXECUTED in a real cage by `the_designer_specs_caged_commands_run_inside_the_cage`.
+    #[test]
+    fn the_spec_describes_the_surface_the_cage_actually_provides() {
+        let md = crate::platform::config::embedded_str("designer/claude.md");
+
+        for path in ["/ui/components", "/ui/out", "/ui/schema"] {
+            assert!(md.contains(path), "the caged section must name {path}");
+        }
+        // The SOURCE tier specifically: it is the thing whose absence made the cage unusable.
+        assert!(
+            md.contains("/ui/components/<id>/srcText"),
+            "a caged designer must be told where to read the source it edits",
+        );
+        // The premise, stated where the designer meets it — absence of `bsc` is the SIGNAL.
+        assert!(md.contains("command -v bsc"), "tells the designer which world it is in");
+        // ...and the honest limit, so it does not discover it by failing.
+        assert!(
+            md.contains("no caged equivalent yet"),
+            "rungs 1-3 and 5 have no outbox; say so rather than letting it be found by failing",
+        );
+
+        // The persona must agree with the spec — it is read FIRST, and it used to assert an
+        // exclusivity that was false in the cage.
+        let persona = crate::platform::config::embedded_str("personas/designer.json");
+        assert!(
+            persona.contains("/ui/out"),
+            "the persona's one-surface claim must cover the caged form too",
+        );
+    }
+
     #[test]
     fn creates_the_workspace_and_writes_the_designer_claude_md() {
         let base = scratch();
