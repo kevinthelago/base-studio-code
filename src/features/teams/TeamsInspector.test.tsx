@@ -102,6 +102,20 @@ describe("TeamsInspector — the persona is presented in full", () => {
     expect(screen.getByText("You own exactly one issue.")).toBeTruthy();
   });
 
+  it("shows the model THIS PLACEMENT launches on, not the persona's, when the team overrides it", () => {
+    // A persona is shared across teams and a team may override its tier per placement
+    // (`bsc teams model`). Rendering `persona.model` here would name a model the session in this team
+    // is not running — the one mistake an identity/permissions panel must not make.
+    const overridden: Team = {
+      ...org,
+      positions: [{ nodeId: "n1", kind: "agent", personaId: "p-worker", model: "haiku-4.5" }],
+    };
+    render(<TeamsInspector {...baseProps} org={overridden} orgs={[overridden]} sel={{ type: "node", id: "n1" }} />);
+    expect(screen.getByText("haiku-4.5")).toBeTruthy();
+    // ...and what it replaced is named, since the override is invisible from the persona itself.
+    expect(screen.getByText(/persona default claude-sonnet-4-6/)).toBeTruthy();
+  });
+
   it("says so when a persona has no start prompt, naming the role it falls back to", () => {
     render(<TeamsInspector {...baseProps} sel={{ type: "node", id: "n3" }} />);
     expect(screen.getByText(/falls back to the designer role/)).toBeTruthy();

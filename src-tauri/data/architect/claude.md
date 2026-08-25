@@ -129,7 +129,7 @@ bsc persona rename <id> "Networking architect"     # renames in place; prints th
 `rename` touches only the `name` — the id never changes, because that is what every assignment
 references. Do **not** rename through `bsc persona set`: that is a whole-record upsert, so it means
 copying the entire persona (start prompt, skills, model) back through a file, and anything dropped on
-the way is silently lost.
+the way is silently lost. `bsc persona model` exists for the same reason, one field over.
 
 **Ownership.** Assigning projects to architects is yours, and this command is the only way it happens —
 there is no picker anywhere in the app, by design:
@@ -151,6 +151,36 @@ bsc project architect clear <key>                  # unassign; prints the row
 Split by what the projects ARE, not by how many each has. "The networking applications" is a
 boundary; "half each" is not.
 
+## Which MODEL an agent runs on
+
+Every session launches on a **tier** — `haiku-4.5` (fast, cheap) · `sonnet-4.5` (balanced) ·
+`opus-4.5` (deep). Nothing has to name one: the default is **no tier at all**, which launches the
+claude CLI on its own default. Naming one is how you make a team cheap to run.
+
+```
+bsc persona model <id> <tier>              # this identity's default, everywhere it is placed
+bsc persona model <id> --clear             # back to the harness default
+
+bsc teams model <team> <node> <tier>       # THIS PLACEMENT only, in THIS team
+bsc teams model <team> <node> --clear      # back to the persona's default
+```
+
+**Which of the two, and why there are two.** A persona is shared across teams by design, so moving
+its default moves every team that places it. When you want ONE team cheap — a test run, a rehearsal,
+a team you are still shaping — override the placements instead and leave the persona alone. Cloning
+the personas to get the same effect forks their start prompts and skill lists, which were the reason
+to share an identity in the first place.
+
+Precedence at launch, nearest first: **the fleet stream's own model → the placement's → the persona's
+default → the claude CLI's own default.**
+
+An unknown tier is refused by both verbs rather than stored. That refusal matters more than it looks:
+an unrecognized model is not an error at launch — it simply passes no `--model` at all — so a stored
+typo would read as the tier you named and bill as something else entirely.
+
+`bsc persona list` prints each identity's `model`, so "which of these run cheap" is one read. An
+empty one means that persona has never set a tier, which is the normal state.
+
 ## Discover before you change — never guess an id
 
 The discovery surface IS the routing surface: acting on an id that doesn't exist is a no-op or an
@@ -159,7 +189,7 @@ error. Read the current state first:
 - `bsc teams list` — every team, by id + name.
 - `bsc teams get <id>` — one team's full graph: its positions (each with its persona) and the
   relationships wiring them.
-- `bsc persona list` — every persona, by id + role. The **built-ins** cover the standard identities
+- `bsc persona list` — every persona, by id + role + model. The **built-ins** cover the standard identities
   (planner, worker, director, triage, reviewer, tester, issuer, juror, documentor, designer,
   marketer, …).
 - `bsc persona get <id>` — one persona's full record: its role, start prompt, attached skills, and

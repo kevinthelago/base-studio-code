@@ -73,6 +73,23 @@ describe("personas store slice (#2094)", () => {
     expect(st.paneModels["t0p0"]).toBeUndefined();   // documentor has no model override
   });
 
+  it("applyPersonaToPane stamps a VALID model and ignores one the launch could not use", () => {
+    // The persona store is verbatim (`bsc persona set` writes any string), and an unrecognized tier
+    // injects no `--model` at all — so casting it onto the pane would leave the menu showing a model
+    // the session is not running. `bsc persona model` validates at write time; this is the read side.
+    useAppStore.setState({ paneRoles: {}, paneModels: {}, panePermsStale: {} });
+    useAppStore.getState().updatePersona("persona-worker", { model: "haiku-4.5" });
+    useAppStore.getState().applyPersonaToPane("t0p0", "persona-worker");
+    expect(useAppStore.getState().paneModels["t0p0"]).toBe("haiku-4.5");
+
+    useAppStore.getState().updatePersona("persona-worker", { model: "gpt-4o" });
+    useAppStore.getState().applyPersonaToPane("t0p1", "persona-worker");
+    expect(useAppStore.getState().paneModels["t0p1"]).toBeUndefined();
+    // ...and the rest of the adopt still happened — an unusable model is not a reason to drop the
+    // identity.
+    expect(useAppStore.getState().paneRoles["t0p1"]).toBe("worker");
+  });
+
   it("applyPersonaToPane is a no-op for an unknown persona id", () => {
     useAppStore.setState({ paneRoles: {}, panePermsStale: {} });
     useAppStore.getState().applyPersonaToPane("t0p0", "persona-nope");

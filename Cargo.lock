@@ -1116,6 +1116,8 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-util",
+ "serde_json",
 ]
 
 [[package]]

@@ -57,7 +57,25 @@ mod relocated_tests {
             "the roster instruction must name `bsc fleet list`, not the superseded bsc-fleet helper");
     }
 
-    /// #fleet-list-cannot-see-a-stopped-worker.
+    /// Staffing includes WHICH MODEL, and the director is the one who staffs.
+    ///
+    /// Both verbs have to be named, because they are not interchangeable: `bsc persona model` moves an
+    /// identity's default in every team that places it, and `bsc teams model` overrides one placement.
+    /// A director told only about the first would make one team cheap by changing every team that
+    /// shares the persona — which is exactly the mistake the placement override exists to prevent.
+    #[test]
+    fn director_protocol_names_both_model_verbs_and_which_one_scopes_to_a_team() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(p.contains("bsc persona model"), "the identity-wide default verb must be named");
+        assert!(p.contains("bsc teams model"), "the per-placement override verb must be named");
+        // The tier vocabulary the CLI actually accepts — a protocol naming one it would refuse is
+        // worse than naming none.
+        for tier in bsc_util::model_ids() {
+            assert!(p.contains(tier), "the protocol names the tier `{tier}` the CLI accepts");
+        }
+    }
+
+    /// #fleet-list-cannot-see-a-stopped-worker.    /// #fleet-list-cannot-see-a-stopped-worker.
     ///
     /// `bsc fleet list` reported only what the app was tracking, so a stopped worker had no row at
     /// all — on network-monitor a director with 38 streams saw one row, itself. The command now takes
