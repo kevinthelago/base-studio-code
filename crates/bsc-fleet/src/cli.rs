@@ -161,6 +161,16 @@ Wakes a worker whose session was parked or reclaimed, and hands it a prompt to s
 --prompt the app supplies its standard change-request wake, so a director does not have to reproduce
 that prose to use the command.
 
+IT ALSO STARTS A STREAM THAT NEVER RAN — the `never-launched` state in `bsc fleet list`. The pane does
+not have to exist; the plan row is what has to. The stream is resolved from plan.db, its worktree is
+built if it has none, and the pane comes up wired exactly as a fleet launch would have wired it. So
+`bsc fleet start` is for bringing up a WHOLE fleet, never for the one stream that did not come up —
+it refuses outright while any pane is live. Pass a real --prompt for a never-launched stream: it has
+no assignment in its pane yet, so the standard wake would tell it to re-read nothing.
+
+A stream plan.db does NOT name is still an error, and says so — an unknown stream is not the same
+thing as an unlaunched one.
+
 REFUSES a BUSY pane unless --force. Waking KILLS the PTY before relaunching, so interrupting a worker
 that is mid-task is a deliberate act, not something to do by accident. `bsc fleet list` shows which
 panes are busy.

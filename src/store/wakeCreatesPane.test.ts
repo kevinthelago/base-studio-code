@@ -109,3 +109,108 @@ describe("wakePane reaches a stream whose pane does not exist", () => {
     expect(st.tabs[0].runId).toBe(2);
   });
 });
+
+// ── STARTING a stream that never launched (#the-director-cannot-start-a-stream-that-never-launched) ──
+//
+// Reported from a running fleet: "the director is unable to start sessions that aren't already opened."
+//
+// The refusal above (`REFUSES a stream that is not in the project's fleet`) used `fleetPaneStreams` as
+// the oracle for "is this a real stream". But that map is written by `fleetStartProject` alone, so it is
+// the roster of what LAUNCHED — never of what the plan HOLDS. A stream plan.db names and no session ever
+// ran has no entry, so it read as UNKNOWN and the wake refused. `bsc fleet list` calls that state
+// `never-launched` and sent the director to `bsc fleet start <projectKey>`, a WHOLE-fleet launch that is
+// refused outright while any pane is live — so a director with a running fleet had no lever at all.
+//
+// Rust reads plan.db (`fleet/start.rs` already does) and now carries the row, with the absolute cwd it
+// resolved, on `bsc://fleet-wake` for a pane that is NOT LIVE. So the store's answer to "is this real"
+// comes from the plan rather than from its own launch history, and the acceptance's line survives
+// intact: Rust resolving NOTHING means plan.db does not name it, and that still refuses.
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
+
+/** The plan row for a stream that has never launched, as Rust hands it over. */
+const NEVER_LAUNCHED: AgentStream & { cwd: string } = {
+  id: STREAM, name: "API", repo: "own/api", owns: ["src/api/"], issues: ["#7"], dependsOn: [],
+  cwd: "/home/u/.base-studio-code/worktrees/demo/api--api",
+};
+
+describe("wakePane STARTS a stream the roster never saw", () => {
+  beforeEach(() => { resetFleetPanes(); useAppStore.setState({ tabs: [] }); });
+
+  /** A build tab exists (the director is running in it) and the roster is EMPTY — the never-launched case. */
+  function armUnlaunched() {
+    useAppStore.setState({
+      tabs: [buildTab([`${KEY}:director`])],
+      fleetPaneStreams: {}, disabledPanes: {}, dormantPanes: {}, endedPanes: {},
+      personas: [], blueprints: [], projectBlueprintId: {},
+    } as never);
+  }
+
+  it("seats the pane when Rust supplies the plan row", () => {
+    armUnlaunched();
+    expect(useAppStore.getState().wakePane(PANE, "start on #7", NEVER_LAUNCHED)).toBe(true);
+    expect(useAppStore.getState().tabs[0].paneIds).toContain(PANE);
+  });
+
+  it("adopts the row into the roster, so the NEXT wake needs no plan lookup", () => {
+    // The roster is what `bsc fleet wake` reads on the second call, and what the coordinator resolves a
+    // pane's stream through — a pane seated without it would be a session nothing could attribute.
+    armUnlaunched();
+    useAppStore.getState().wakePane(PANE, "go", NEVER_LAUNCHED);
+    expect(useAppStore.getState().fleetPaneStreams[PANE]?.id).toBe(STREAM);
+    // `cwd` is a LAUNCH fact, not part of the plan row — it must not be stored as if it were.
+    expect(useAppStore.getState().fleetPaneStreams[PANE]).not.toHaveProperty("cwd");
+  });
+
+  it("uses the absolute cwd RUST resolved, never a re-derived one", () => {
+    // #905: re-deriving it here reads the async-loaded `bscBaseDir` mirror, and an empty one drops the
+    // session at the user's home dir. `bscBaseDir` is deliberately left unset to prove nothing falls back.
+    armUnlaunched();
+    useAppStore.setState({ bscBaseDir: "" } as never);
+    useAppStore.getState().wakePane(PANE, "go", NEVER_LAUNCHED);
+    expect(useAppStore.getState().paneCwds[PANE]).toBe(NEVER_LAUNCHED.cwd);
+  });
+
+  it("still REFUSES when Rust resolved nothing — an unknown stream stays an error", () => {
+    // This is the whole reason the refusal moved rather than being deleted: plan.db not naming the
+    // stream is what "unknown" now means, and it arrives as an absent `stream`.
+    armUnlaunched();
+    expect(useAppStore.getState().wakePane(fleetPaneId(KEY, "not-a-stream"), "go")).toBe(false);
+    expect(useAppStore.getState().tabs[0].paneIds).not.toContain(fleetPaneId(KEY, "not-a-stream"));
+  });
+
+  it("wires the woken pane EXACTLY as a launch would have wired it", () => {
+    // The anti-drift guard, and the reason `streamPaneWiring` exists. Two launch paths that agree today
+    // and diverge later is the failure this codebase has paid for before (`fleetStartBridge`'s header
+    // names it). So: launch the same row, record what it produced, then wake it and compare.
+    const streamRow: AgentStream = (({ cwd: _cwd, ...row }) => row)(NEVER_LAUNCHED);
+    resetFleetPanes();
+    useAppStore.setState({ tabs: [], personas: [], blueprints: [], projectBlueprintId: {}, bscBaseDir: "/base" } as never);
+    useAppStore.getState().fleetStartProject("Demo", { recommended: 1, reasoning: "t", streams: [streamRow], director: { enabled: false } }, KEY,
+      { hubPath: "/hub", worktreePaths: { [STREAM]: NEVER_LAUNCHED.cwd } });
+    const launched = useAppStore.getState();
+    const asLaunched = {
+      role: launched.paneRoles[PANE], profile: launched.paneProfiles[PANE], repo: launched.paneRepos[PANE],
+      globs: launched.paneRoleGlobs[PANE], flow: launched.paneFlows[PANE], model: launched.paneModels[PANE],
+      stream: launched.paneStream[PANE], cwd: launched.paneCwds[PANE],
+    };
+
+    resetFleetPanes();
+    armUnlaunched();
+    useAppStore.getState().wakePane(PANE, "go", NEVER_LAUNCHED);
+    const woken = useAppStore.getState();
+    expect({
+      role: woken.paneRoles[PANE], profile: woken.paneProfiles[PANE], repo: woken.paneRepos[PANE],
+      globs: woken.paneRoleGlobs[PANE], flow: woken.paneFlows[PANE], model: woken.paneModels[PANE],
+      stream: woken.paneStream[PANE], cwd: woken.paneCwds[PANE],
+    }).toEqual(asLaunched);
+    // Non-vacuity: the comparison is worthless if the launch wired nothing.
+    expect(asLaunched.role).toBe("worker");
+    expect(asLaunched.globs, "the owned path became a write boundary").toEqual(["src/api/**"]);
+  });
+
+  it("leaves the ALREADY-ROSTERED path alone — a plain wake still needs no stream", () => {
+    arm([]);
+    expect(useAppStore.getState().wakePane(PANE, "resume")).toBe(true);
+    expect(useAppStore.getState().tabs[0].paneIds).toContain(PANE);
+  });
+});
