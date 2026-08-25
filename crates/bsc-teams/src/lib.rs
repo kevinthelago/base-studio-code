@@ -16,4 +16,14 @@
 //! are seeded into this store on first hydrate + kept reconciled by the frontend, exactly like the user
 //! persona/blueprint libraries.
 
-pub mod cli;
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-teams--<module>.rs
+//     bsc graph impl set --id bsc-teams--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-teams--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

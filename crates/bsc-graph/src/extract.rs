@@ -486,6 +486,73 @@ pub(crate) const BACKSLASH: char = '\u{5C}';
 /// A specifier that resolves to no file on disk is LEFT ALONE. Rewriting it would be a guess, and a wrong
 /// `@/…` is worse than an honest `./…`: the loader names an unresolved absolute specifier, while a guessed
 /// one may silently resolve to the wrong module.
+/// Rewrite a Rust module's RELATIVE `include_str!` / `include_bytes!` paths so they survive
+/// materialization.
+///
+/// `include_str!("../data/x.json")` resolves relative to the FILE THAT CONTAINS IT. Materialized,
+/// that file is `target/debug/build/<crate>-<hash>/out/crate.rs`, so the same relative path points
+/// somewhere else entirely and the build fails with "couldn't read" — measured on `bsc-sound`, which
+/// is why the migration tool refused these crates rather than predicting it.
+///
+/// The rewrite happens HERE, at harvest, so the stored record is the thing that compiles. Repairing
+/// it in `build.rs` instead would mean a build script silently fixing up a record that does not build
+/// on its own — a second copy of the truth, which is the failure mode this whole migration exists to
+/// remove.
+///
+/// `CARGO_MANIFEST_DIR` is set for the crate being compiled and `include!` does not change that, so
+/// `<manifest>/<the file's dir relative to the manifest>/<original path>` names exactly what the
+/// relative path meant before. `..` segments are left in rather than normalized: the filesystem
+/// resolves them, and textual normalization across a value only known at compile time is where an
+/// off-by-one silently reads the wrong file.
+///
+/// Left alone: an already-absolutized `concat!(…)` form, and a path that is not a plain string
+/// literal.
+fn absolutize_includes(src: &str, file: &Path) -> String {
+    // The file's directory relative to the crate root — `src` for everything `build.rs` materializes,
+    // but derived rather than assumed, since `harvest_module` is not only called on those.
+    let manifest = file.ancestors().skip(1).find(|d| d.join("Cargo.toml").is_file());
+    let Some(manifest) = manifest else { return src.to_string() };
+    let Some(dir) = file.parent() else { return src.to_string() };
+    let Ok(rel_dir) = dir.strip_prefix(manifest) else { return src.to_string() };
+    let rel_dir = rel_dir.to_string_lossy().replace('\\', "/");
+    let prefix = if rel_dir.is_empty() { String::new() } else { format!("{rel_dir}/") };
+
+    let mut out = String::with_capacity(src.len());
+    let mut rest = src;
+    while let Some(hit) = ["include_str!", "include_bytes!"]
+        .iter()
+        .filter_map(|m| rest.find(m).map(|i| (i, *m)))
+        .min_by_key(|(i, _)| *i)
+    {
+        let (at, mac) = hit;
+        let after = &rest[at + mac.len()..];
+        let open = after.find('(');
+        // The argument, if it is a plain string literal: `(` then whitespace then `"…"`.
+        let literal = open.and_then(|o| {
+            let arg = after[o + 1..].trim_start();
+            let pad = after[o + 1..].len() - arg.len();
+            arg.strip_prefix('"')
+                .and_then(|r| r.find('"').map(|e| (o + 1 + pad, r[..e].to_string(), o + 1 + pad + 1 + e + 1)))
+        });
+        match literal {
+            // An absolute path, or one already rooted at an env var, is left exactly as it is.
+            Some((start, path, end)) if !path.starts_with('/') && !path.contains(':') => {
+                out.push_str(&rest[..at + mac.len() + start]);
+                out.push_str(&format!(
+                    "concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{prefix}{path}\")"
+                ));
+                rest = &rest[at + mac.len() + end..];
+            }
+            _ => {
+                out.push_str(&rest[..at + mac.len()]);
+                rest = &rest[at + mac.len()..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn absolutize_imports(code: &str, file: &Path, root: &Path) -> String {
     let dir = file.parent().unwrap_or(Path::new(".")).to_path_buf();
     let chars: Vec<char> = code.chars().collect();
@@ -649,10 +716,61 @@ fn module_specifiers(src: &str) -> Vec<String> {
     out
 }
 
+/// The id for a module record, derived from its ROOT-RELATIVE PATH rather than its file stem.
+///
+/// # Why the stem cannot be the id
+///
+/// A module record's id is a store KEY, and the store refuses a duplicate. Measured on this tree:
+/// **158 of 338 `.rs` files share a basename** — `lib.rs` x39, `cli.rs` x28, `mod.rs` x24. Under a
+/// stem-derived id exactly ONE crate's `cli.rs` can ever be a record, which is why `bsc-blueprint`
+/// migrated only with a hand-picked id. A naming convention applied by hand per module is not a scheme.
+///
+/// # The derivation
+///
+/// Drop the uninformative structural segments and join the rest with `--`:
+///
+/// ```text
+/// crates/bsc-blueprint/src/cli.rs   ->  bsc-blueprint--cli.rs
+/// crates/plandb/src/cli/nouns.rs    ->  plandb--cli--nouns.rs
+/// src-tauri/src/console/pty/job.rs  ->  src-tauri--console--pty--job.rs
+/// src/features/planner/lib/x.ts     ->  features--planner--lib--x.ts
+/// ```
+///
+/// Unique because the path is unique; readable because every segment survives, so a human seeing the id
+/// can say which file it is without a lookup. `crates/` and a `src/` component carry no information —
+/// every crate has them — so they are dropped, while the crate name is kept because it is the part that
+/// disambiguates.
+///
+/// # What this does NOT do
+///
+/// It does not rename anything. 683 records are keyed by their current ids and referenced by `composes`
+/// edges; a rename would break those silently. This applies to module records harvested from here on,
+/// and everything downstream already matches on `src` rather than on id — `build.rs` selects a crate's
+/// modules by path prefix, and both Tier-A exclusions do the same.
+pub fn module_id(src_rel: &str, ext: &str) -> String {
+    let path = src_rel.replace('\\', "/");
+    let path = path.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&path);
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|s| !s.is_empty())
+        // `crates/` and `src/` appear in nearly every path and distinguish nothing.
+        .filter(|s| *s != "crates" && *s != "src")
+        .collect();
+    // Each SEGMENT is kebabed and then joined — never the other way round. `kebab` collapses a run of
+    // separators, so kebabing the joined string turns the `--` boundary into a single `-` and
+    // `bsc-blueprint--cli` becomes `bsc-blueprint-cli`, silently reintroducing the ambiguity the double
+    // separator exists to prevent (a crate legitimately named `bsc-blueprint-cli` would collide).
+    let joined = segments.iter().map(|s| kebab(s)).collect::<Vec<_>>().join("--");
+    let joined = if joined.is_empty() { "module".to_string() } else { joined };
+    format!("{joined}.{ext}")
+}
+
 pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
     let (tech, src_bytes, _tree) = parse(file)?;
-    // The one place a lifted module is NOT verbatim — see `absolutize_imports`.
+    // The one place a lifted module is NOT verbatim — see `absolutize_imports`, and for Rust
+    // `absolutize_includes`, which is the same trade for the same reason.
     let code = absolutize_imports(&String::from_utf8_lossy(&src_bytes), file, root);
+    let code = if tech == "rust" { absolutize_includes(&code, file) } else { code };
     let src_rel = file
         .strip_prefix(root)
         .unwrap_or(file)
@@ -693,7 +811,23 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
     let mut edge_declined: Vec<String> = Vec::new();
     let tests = match found_test {
         Some((p, contents)) => {
-            let foreign = foreign_app_imports(&contents, stem);
+            // ONLY TYPESCRIPT HAS MODULE SPECIFIERS. `foreign_app_imports` scans raw text for a quote
+            // preceded by `from`/`import`, which is meaningless in Rust — and for a Rust module
+            // `test_path_for` returns THE FILE ITSELF (its tests are inline), so the scan runs over
+            // production source, not over a test file.
+            //
+            // It fires. `crates/bsc-files/src/cli.rs` implements `bsc files read --from 10`, so its
+            // source contains `"--from".into()`; the scanner treats the CLOSING quote of `"--from"` as
+            // an opening one, captures `.into(), ` as the "specifier", and concludes the test "imports
+            // the app module `./Foo`, so it cannot run in isolation". Every member was then declined,
+            // leaving a 0-member edge that the store correctly refused with "an edge needs at least two
+            // members" — an accurate error about a relationship that should never have been proposed.
+            //
+            // NOTE the scanner's closing-quote confusion is not Rust-specific; a TS module holding a
+            // string that ends in `from` would mis-scan the same way. Fixing that is a separate change
+            // (it could reclassify existing records); this one removes the whole question for Rust.
+            let foreign =
+                if tech == "rust" { Vec::new() } else { foreign_app_imports(&contents, stem) };
             if foreign.is_empty() {
                 vec![CandidateTest { name: bsc_util::test_display_name(&p, &contents), src: contents }]
             } else {
@@ -742,7 +876,9 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         // bindings come with it — recorded here so the record can say so rather than each caller
         // rediscovering it by reading the code.
         module_state: module_state(_tree.root_node(), &src_bytes),
-        id: format!("{}.{}", kebab(stem), ext_of(tech)),
+        // PATH-derived, not stem-derived: 158 of 338 .rs files share a basename, so a stem id lets
+        // exactly one crate own `cli.rs`. See `module_id`.
+        id: module_id(&src_rel, ext_of(tech)),
         name: stem.to_string(),
         tech: tech.to_string(),
         // A module is composed FROM parts rather than being one, so it is never the `primitive` tier.
@@ -1462,6 +1598,97 @@ export const lbl = createStoreLabel;
     /// A record must be verifiable ALONE — that is the precondition for running its tests in a sealed
     /// filesystem where no other app module exists (harvest-pairs-only-an-isolated-test).
     #[test]
+    fn a_relative_include_is_absolutized_against_the_crate_manifest() {
+        // `include_str!("../x")` resolves against the FILE, and the materialized file lives in
+        // `$OUT_DIR`. Absolutizing at harvest is what lets a module carrying one become a record —
+        // the largest single blocker in the crate migration (5 crates).
+        let root = std::env::temp_dir().join("bsc-graph-rel-include");
+        let manifest = root.join("crates").join("demo");
+        let dir = manifest.join("src");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(manifest.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+        let f = dir.join("release.rs");
+        std::fs::write(
+            &f,
+            concat!(
+                // The real shape, reaching ABOVE the crate root — `bsc-sound` does exactly this.
+                "pub const SIGNAL: &str = include_str!(\"../../../src-tauri/data/sounds/signal.json\");\n",
+                "pub const RAW: &[u8] = include_bytes!( \"../data/blob.bin\" );\n",
+                // Already absolutized: must be left exactly alone, so re-harvesting is idempotent.
+                "pub const GEN: &str = include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"));\n",
+            ),
+        )
+        .unwrap();
+
+        let c = harvest_module(&f, &root).expect("harvests");
+        assert!(
+            c.code.contains(
+                "include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/../../../src-tauri/data/sounds/signal.json\"))"
+            ),
+            "the include is rooted at the manifest: {}",
+            c.code,
+        );
+        // Whitespace inside the parens must not defeat it, and `include_bytes!` takes the same
+        // rewrite. Only the LITERAL is replaced, so the author's spacing survives — asserting on the
+        // argument rather than on the whole call is the difference between testing the behavior and
+        // pinning the formatting.
+        assert!(
+            c.code.contains("include_bytes!( concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/../data/blob.bin\") )"),
+            "include_bytes! is rewritten too, spacing intact: {}",
+            c.code,
+        );
+        assert!(c.code.contains("include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"))"), "an OUT_DIR include is untouched");
+        // IDEMPOTENT: harvesting the rewritten code again must not wrap it a second time.
+        assert_eq!(absolutize_includes(&c.code, &f), c.code, "already-absolutized code is a fixed point");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_rust_string_ending_in_from_is_not_read_as_a_module_specifier() {
+        // `crates/bsc-files` could not migrate because of this. Its CLI implements
+        // `bsc files read --from 10`, so the source contains `"--from".into()`; the specifier scanner
+        // treats the CLOSING quote of `"--from"` as an opening one and captures `.into(), ` as an
+        // imported module. Every "member" was then declined, leaving a 0-member edge that the store
+        // refused — a correct error about a relationship that should never have been proposed.
+        //
+        // Rust has no module specifiers, and for a Rust module `test_path_for` returns the FILE ITSELF
+        // (its tests are inline), so the scan was running over production source to begin with.
+        let root = std::env::temp_dir().join("bsc-graph-rust-from-literal");
+        let dir = root.join("src");
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("cli.rs");
+        std::fs::write(
+            &f,
+            concat!(
+                "pub fn parse_args(a: Vec<String>) -> Result<(), String> { let _ = a; Ok(()) }\n",
+                "#[cfg(test)]\n",
+                "mod tests {\n",
+                "    use super::*;\n",
+                "    #[test]\n",
+                "    fn reads_a_range() {\n",
+                "        assert!(parse_args(vec![\"--from\".into(), \"10\".into()]).is_ok());\n",
+                "    }\n",
+                "}\n",
+            ),
+        )
+        .unwrap();
+
+        let c = harvest_module(&f, &root).expect("harvests");
+        assert!(c.edge_members.is_empty(), "no edge is proposed: {:?}", c.edge_members);
+        assert!(c.edge_declined.is_empty(), "nothing is declined: {:?}", c.edge_declined);
+        assert!(
+            !c.classification.reasons.iter().any(|r| r.contains("imports the app module")),
+            "no fabricated import reason: {:?}",
+            c.classification.reasons,
+        );
+        // The inline tests ride along with the module, as they do for every other migrated crate.
+        assert!(!c.tests.is_empty(), "the module's own inline tests are paired");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn harvest_module_pairs_only_a_test_that_can_run_in_isolation() {
         let root = std::env::temp_dir().join("bsc-graph-isolation");
         let dir = root.join("src").join("features").join("demo");
@@ -1907,5 +2134,64 @@ mod edge_member_tests {
         // …but an alias with an interpolation in it is still not a specifier.
         assert_eq!(edge_member_for("@/features/${name}/lib/x", &dir, &root), None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// The module-record id derivation (`a-module-record-id-must-come-from-its-path`).
+///
+/// Its failure mode is not an error — it is a store REFUSING a second record with a message about
+/// duplicates, which reads as "this module cannot be a record" rather than "the id scheme is wrong".
+#[cfg(test)]
+mod module_id_tests {
+    use super::module_id;
+
+    /// The whole reason this derivation exists: two crates' `cli.rs` must be able to coexist.
+    #[test]
+    fn two_crates_cli_modules_get_distinct_ids() {
+        let a = module_id("crates/bsc-blueprint/src/cli.rs", "rs");
+        let b = module_id("crates/bsc-teams/src/cli.rs", "rs");
+        assert_eq!(a, "bsc-blueprint--cli.rs");
+        assert_eq!(b, "bsc-teams--cli.rs");
+        assert_ne!(a, b, "the collision this exists to remove");
+    }
+
+    #[test]
+    fn every_lib_rs_in_the_workspace_would_be_distinct() {
+        let ids: std::collections::BTreeSet<String> = ["bsc-util", "bsc-graph", "plandb", "cve"]
+            .iter()
+            .map(|c| module_id(&format!("crates/{c}/src/lib.rs"), "rs"))
+            .collect();
+        assert_eq!(ids.len(), 4, "39 lib.rs files must not collapse onto one id: {ids:?}");
+    }
+
+    /// `crates/` and `src/` are on nearly every path and distinguish nothing; the crate name does.
+    #[test]
+    fn structural_segments_are_dropped_and_the_crate_name_is_kept() {
+        assert_eq!(module_id("crates/plandb/src/cli/nouns.rs", "rs"), "plandb--cli--nouns.rs");
+        assert_eq!(module_id("src-tauri/src/console/pty/job.rs", "rs"), "src-tauri--console--pty--job.rs");
+    }
+
+    #[test]
+    fn a_nested_frontend_module_keeps_its_segments() {
+        assert_eq!(module_id("src/features/planner/lib/focusedPlan.ts", "ts"), "features--planner--lib--focused-plan.ts");
+    }
+
+    /// A path that is nothing BUT structural segments still has to produce a usable id.
+    #[test]
+    fn a_degenerate_path_does_not_produce_an_empty_id() {
+        let id = module_id("src/", "ts");
+        assert!(id.starts_with("module"), "{id}");
+        assert!(id.ends_with(".ts"));
+    }
+
+    #[test]
+    fn the_extension_comes_from_the_caller_not_the_path() {
+        // A .tsx module records a `ts` id — the file extension is not always the record's extension.
+        assert_eq!(module_id("src/app/App.tsx", "ts"), "app--app.ts");
+    }
+
+    #[test]
+    fn windows_separators_are_normalized() {
+        assert_eq!(module_id(r"crates\bsc-teams\src\cli.rs", "rs"), "bsc-teams--cli.rs");
     }
 }
