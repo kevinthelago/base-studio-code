@@ -145,6 +145,11 @@ schedule, never by waiting.
 **Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
 count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
 
+**A TEMPORARY SCRIPT IS A MISSING COMMAND**, and that trigger is wider than a command that errored. A
+helper you were about to write — to transform, migrate, repair, promote or generate something — is a
+capability this surface should expose and does not; file that, passing the script itself as `--cmd`.
+Reading is different: glancing at output you already have is inspection, not a workaround.
+
 ## Loops — you can open one yourself
 
 A **loop** (`bsc loop`) is a conversation between two participants that runs turn by turn until a signal,

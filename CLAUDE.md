@@ -507,6 +507,8 @@ accrues under `[Unreleased]`. The full version-by-version breakdown lives in
 > - **Approval becomes silence.** The global permits a `gh` write once approved; here there are **none** —
 >   no issues, no PRs, no pushed branches. Every migrated item keeps its origin number as a back-link, and
 >   that back-link is the only thing that should ever reconcile. Reads stay free, as they do globally.
+> - **A missing capability is filed, not improvised.** Reaching for a throwaway script is the signal to
+>   file a `bsc request` instead — see *A temporary script is a missing `bsc` command*, below.
 >
 > Everything else in the global file applies unchanged.
 
@@ -635,6 +637,67 @@ Reads are fine (`gh issue list`, `gh api` GET) — they are how the eventual syn
 **Writes are not**: no `gh issue create/close/edit`, no `gh pr create/merge`, no `git push`. If a
 change genuinely needs to reach GitHub, that is a decision for the maintainer, not a step in this
 loop.
+
+### A temporary script is a missing `bsc` command — file it, don't write it
+
+**When you catch yourself about to write a throwaway script — python, node, shell, `jq`, anything —
+stop and file a request against the `bsc` surface instead.** The need for the script IS the finding:
+it says a capability this system should expose is not exposed, and the script is a private workaround
+that hides that fact.
+
+```bash
+bsc request new "<what you needed and could not do>" \
+  --cmd "<the exact command that failed, or the script you were about to write>" \
+  --surface "<the bsc noun it belongs to>" --title "<a few words>"
+```
+
+`--cmd` is the part that matters — pass the pipeline or the script you were reaching for, verbatim.
+A request is **observed, not narrated**, and the session that closes it needs to see what you actually
+tried. `--title` labels the request's node in the Glance graph, so a good one keeps the queue readable.
+Do **not** pass `--from`: the filing session is stamped for you, which is what wires the request back
+to you in the graph.
+
+**Filing never blocks you.** `bsc request new` prints an id and returns. Do not wait for it, do not
+poll it, and do not stop working because a capability is missing — route around the gap with what the
+surface *can* do, and say in your report both what you did and what you filed.
+
+**Why this is a rule and not a preference.** Three things, and the last is the one that bites:
+
+- **The permission tier.** `src-tauri/data/permissions/base.json` puts `bsc` (with `git` and `gh`) in
+  the 3-command **mandatory** tier — auto-runnable by *every* role, no grant needed — while `node` and
+  `python` sit in the 50-command **build** tier. A capability that lives in a script is reachable by
+  the sessions least likely to hold that tier, and is flatly unreachable by an allow-list studio
+  session whose entire surface is one `bsc` noun.
+- **Discoverability.** `bsc help` advertises its nouns. `scripts/` advertises nothing — it is found by
+  `ls`, which is not a surface. That directory already holds **79** files for exactly this reason, and
+  `record-operations-belong-on-the-bsc-surface-not-in-scripts` exists to move the ~15 of them that
+  encode operations back onto `bsc`. Do not grow that backlog.
+- **The script does not survive, and the problem does.** A temp script is deleted with the worktree,
+  so the next session hits the same wall and writes it again. Nothing accumulates, and no measurement
+  of how often the wall is hit ever exists. A filed request is a durable, countable record of a real
+  gap.
+
+**Where the line is, drawn explicitly so the rule stays usable.** The trigger is authoring a *program
+that performs an operation* — a `.py`/`.mjs`/`.sh` file, or a heredoc piped into an interpreter, that
+transforms, migrates, promotes, repairs or generates something. It is **not**:
+
+- **Reading.** A one-off `grep`/`jq`/`wc` pipeline to answer a question you have right now is
+  ordinary inspection. Look freely; the rule is about operations, not about eyes.
+- **The build tree.** `scripts/gate*`, `gc`, `release`, `emit-records`, `stage-sidecar` and their kin
+  are npm's job and run in CI. They are not agent surface and they stay where they are — the split of
+  which scripts belong to `bsc` and which belong to npm is written down on the item above.
+- **A test.** A test is not a temp script; it is the deliverable, and it ships on the branch.
+
+**A studio session already lives by this rule** — the architect, designer, librarian and sound-designer
+charters all carry it, and their shells enforce it by refusing anything off the allow-list. A dev
+session in this repo holds the full build tier and so hits no wall at all, which is precisely why the
+rule has to be a deliberate choice here rather than a description of a refusal.
+
+> **A fleet session files on a different queue.** A **worker** is denied the global tooling queue on
+> purpose and files `bsc plan request new "<what you need>" --command "<the cmd>"`, which its
+> **director** closes — and the director is the only session that escalates a genuine base-studio-code
+> tooling gap onward with `bsc request new`. Do not flatten that lane; a worker's ask belongs to its
+> director.
 
 ### Parallel worktree agents
 

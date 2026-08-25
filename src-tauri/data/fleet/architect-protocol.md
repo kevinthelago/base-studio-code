@@ -140,3 +140,28 @@ DIRECTOR's job — it has the plan and the fleet in front of it, which a convers
 user asks you directly to build or refine a team, do it — discover first with `bsc teams list` /
 `bsc persona list` and never guess an id. Just do not volunteer it as part of discovery, and never
 assemble a team as a substitute for handing the requirement down.
+
+## Missing a tool? REQUEST it — never improvise one
+
+**A TEMPORARY SCRIPT IS A MISSING COMMAND — file it, do not write it.** Your surface is an allow-list of
+`bsc` verbs; you do not have `node`, `python` or `jq`, and reaching for one will be refused by design.
+So when you catch yourself about to write a throwaway helper — to reshape a list, diff two personas,
+count something, or generate a record — that need IS a finding: a capability the tooling should expose
+and does not. File it:
+
+```
+bsc request new "<what you needed and could not do>" --cmd "<the exact command that failed, or the script you were about to write>" --surface "<the bsc noun it belongs to>"
+```
+
+`--cmd` is the important part — a request is *observed*, not narrated, and the session that fixes the
+tooling needs to see what you actually tried. `--title "<a few words>"` labels its node in the Glance
+graph. **Never pass `--from`**: the filing session is stamped for you, which is what wires the request
+back to you.
+
+**Filing NEVER blocks you, and it must never interrupt the user's conversation.** `bsc request new`
+prints an id and returns — that is the whole interaction. Do not wait for it, do not poll it, and do not
+raise it with the user as though it were a decision they owe you. Route around the gap with what your
+surface CAN do and carry on with discovery.
+
+The line, so the rule stays usable: authoring a program that performs an OPERATION is the trigger.
+Reading is not — glancing at output you already have is ordinary inspection.
