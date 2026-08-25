@@ -56,6 +56,35 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   a clear name, a focused start prompt, the right ROLE (its permission floor) and its skills. Wire each
   position to the team with the relationship archetype that matches how they will actually communicate.
   VERIFY after every write by re-reading it back.
+
+  THE MODEL IS PART OF STAFFING. Every session launches on a tier -- haiku-4.5 (fast, cheap) /
+  sonnet-4.5 / opus-4.5 -- and naming NOTHING is the default: the claude CLI runs on its own. Two
+  verbs, and which one you want depends on how far the change should reach:
+
+      bsc persona model <id> <tier>          # this identity's default, in EVERY team that places it
+      bsc teams model <team> <node> <tier>   # THIS placement only -- how you make ONE team cheap
+
+  A persona is shared, so moving its default moves every team that places it; override the PLACEMENT
+  when a rehearsal or a test run should be cheap and the identity should not change. Precedence at
+  launch, nearest first: a stream's own model > the placement's > the persona's default > the CLI's.
+  `--clear` on either drops back to the next one out. An unknown tier is refused, not stored -- an
+  unrecognized model passes no `--model` at all, so a typo would read as the tier you named and bill
+  as whatever the harness defaults to.
+- READ THE PROJECT'S FAULTS WHEN A STREAM LOOKS STUCK -- do not wait to be told about one.
+
+      bsc errors list --unresolved            # what is broken on this project right now
+      bsc errors list --stage build           # …only the BUILD verdicts, apart from the app's runtime faults
+      bsc errors get <fingerprint>            # the diagnostic + the command that produced it
+      bsc errors resolve <fingerprint>        # when it is genuinely fixed
+
+  A fault is DURABLE and DEDUPED: repeats of the same break collapse onto one row with a rising count,
+  so `count` is the signal -- a build that has failed the same way thirty times is a stream that is
+  stuck, and one that failed once is a worker mid-edit.
+
+  THIS IS A READ, NOT AN INTERRUPT. Nothing pushes a red build at you and nothing should: workers break
+  their own builds constantly on the way to finishing, and routing each one would turn ordinary work
+  into a queue of false alarms. Consult it when a stream has gone quiet, when a worker parks, or before
+  you decide a lane is blocked -- the same way you sweep `bsc logs waiting`, and never instead of it.
 - AUTHOR THE WORKER CONTEXT FILES. The context each worker runs under is yours to write -- its kickoff
   (`prompts/<stream>-kickoff.md`) and the plan text they inherit. Write them from the requirement, so a
   worker can finish its lane without asking you what the user meant. This is the one place your

@@ -138,7 +138,7 @@ pub(crate) fn ingest_stage_files(dir: &std::path::Path, sections: &mut std::coll
 /// leading separator). A missing / unreadable file reads as empty. Written with a plain
 /// (non-atomic) `fs::write`, matching the hand-rolled append blocks this consolidates.
 ///
-/// The seam-normalizing sibling of [`crate::fleet::protocols::append_section_once`] (which appends
+/// The seam-normalizing sibling of [`crate::fleet::protocols::upsert_section`] (which writes
 /// its body verbatim, `format!("{cur}{body}")`, for callers whose block already carries its own
 /// leading separation). `is_present` is a caller-supplied predicate so both a section-heading marker
 /// (`|c| c.contains(MARKER)`) and a whole-line entry (`|c| c.lines().any(|l| l.trim() == entry)`)

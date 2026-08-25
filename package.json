@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/emit-records.mjs && vite",
-    "build": "node scripts/emit-records.mjs && tsc && vite build",
+    "build": "node scripts/emit-records.mjs && node scripts/record-run.mjs --stage typecheck --source npm-build:tsc --project studio-code -- tsc && node scripts/record-run.mjs --stage build --source npm-build:vite --project studio-code -- vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:plan": "node scripts/gc.mjs --quiet && cargo build --bin bsc --bin bsc-agent --bin bsc-hook && node scripts/verify-build-artifacts.mjs --quiet",
+    "dev:app": "node scripts/record-run.mjs --stage launch --source dev:app --project studio-code -- npm run tauri -- dev",
+    "build:plan": "node scripts/gc.mjs --quiet && node scripts/record-run.mjs --stage compile --source build:plan --project studio-code -- cargo build --bin bsc --bin bsc-agent --bin bsc-hook && node scripts/verify-build-artifacts.mjs --quiet && node scripts/publish-sidecars.mjs --quiet",
     "clean:incremental": "node scripts/prune-incremental.mjs",
     "clean:target": "node scripts/sweep-target.mjs",
     "gc": "node scripts/gc.mjs --force",

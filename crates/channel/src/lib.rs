@@ -16,7 +16,6 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 
-pub mod mock;
 
 /// The record sink for a mock channel: every tool call is appended to a JSONL log instead of being
 /// sent, and `get_metrics` reads it back. One line per call — `{ "tool": <name>, "args": <arguments> }`.
@@ -88,3 +87,15 @@ impl Recorder {
         Ok(json!({ "total": entries.len(), "by_tool": by_tool }))
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/mock.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get channel--<module>.rs
+//     bsc graph impl set --id channel--<module>.rs --code-file <f>
+//     bsc graph promote --id channel--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

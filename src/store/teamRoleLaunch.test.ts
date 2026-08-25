@@ -40,6 +40,34 @@ describe("team role-actor hub launch (#3103)", () => {
     expect(s.paneCwds[workerPane]).toBe("/wt/engine");
   });
 
+  // ── the model a role-actor launches on (a-model-cannot-be-chosen-from-the-command-surface) ────
+  //
+  // End to end, because the value crosses three hands — the team record, `teamRoleStreams`, and this
+  // launch — and the middle one is the only place a unit test would otherwise see it.
+
+  it("launches a role-actor on its placement's model, then the persona's, then the harness default", () => {
+    // A persona carrying its own default, placed once. The stream shape is what `teamRoleStreams`
+    // emits: the placement's override (when there is one) lands on `model`.
+    useAppStore.setState({
+      tabs: [], bscBaseDir: "/home/user/.base-studio-code", fleetPaneStreams: {}, paneModels: {},
+      personas: [{ ...curatorPersona, model: "opus-4.5" }],
+    });
+    useAppStore.getState().fleetStartProject(NAME, fleet([{ ...curatorStream, model: "haiku-4.5" }]), KEY, { hubPath: HUB });
+    // The placement wins over the persona's default — the point of the override.
+    expect(useAppStore.getState().paneModels[`${KEY}:curator`]).toBe("haiku-4.5");
+
+    // No override → the persona's own default.
+    useAppStore.setState({ tabs: [], fleetPaneStreams: {}, paneModels: {} });
+    useAppStore.getState().fleetStartProject(NAME, fleet([curatorStream]), KEY, { hubPath: HUB });
+    expect(useAppStore.getState().paneModels[`${KEY}:curator`]).toBe("opus-4.5");
+
+    // Neither → NO pane model at all, which is what makes the session launch with no `--model` and run
+    // on Claude Code's own default. An entry here would be the app choosing a tier on the user's behalf.
+    useAppStore.setState({ tabs: [], fleetPaneStreams: {}, paneModels: {}, personas: [curatorPersona] });
+    useAppStore.getState().fleetStartProject(NAME, fleet([curatorStream]), KEY, { hubPath: HUB });
+    expect(useAppStore.getState().paneModels[`${KEY}:curator`]).toBeUndefined();
+  });
+
   it("falls back to the derived hub dir when no absolute hubPath is passed (never a worktree path)", () => {
     useAppStore.getState().fleetStartProject(NAME, fleet([curatorStream]), KEY);
     const cwd = useAppStore.getState().paneCwds[`${KEY}:curator`];

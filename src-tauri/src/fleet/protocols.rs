@@ -18,20 +18,46 @@ pub(crate) fn injection_resistance_md() -> String {
 /// Heading marker for [`injection_resistance_md`], used to keep the append idempotent.
 pub(crate) const INJECTION_RESISTANCE_MARKER: &str = "## Untrusted input";
 
-/// Idempotently append a section to a markdown context file: append `body` verbatim only when
-/// `marker` is not already present in the file (a no-op otherwise), so re-runs converge to
-/// identical content. The file is created if absent (a missing/unreadable file reads as empty).
-/// `body` is appended exactly as given — the caller owns any leading/trailing whitespace — so the
-/// result is byte-identical to a manual read-modify-write of `format!("{cur}{body}")`.
+/// Write an auto-generated section into a markdown context file, REPLACING an existing one rather
+/// than leaving it frozen. The file is created if absent (a missing/unreadable file reads as empty).
 ///
 /// Returns the write's `io::Result` so a caller that must surface failures (e.g. a Tauri command)
 /// can propagate it, while best-effort callers can discard it with `let _ =`.
-pub(crate) fn append_section_once(path: &std::path::Path, marker: &str, body: &str) -> std::io::Result<()> {
+///
+/// `append_section_once` used to return early whenever `marker` was already in the file, which made
+/// an auto-added section write-once *forever*. That is how a director ran for twelve days on
+/// instructions nobody could update: the packaged protocol moved, the machine's config mirror was
+/// stale, and even after both were fixed a relaunch could not refresh the copy baked into the hub's
+/// `CLAUDE.local.md`, because the marker was already there. "Idempotent" was doing the wrong job —
+/// converging on the FIRST content written instead of on the CURRENT content.
+///
+/// `end_marker` bounds the section when another managed section follows it; `None` means it runs to
+/// end of file. The caller knows the order it writes them in, which is the only place that ordering
+/// is known — a section cannot see its own successor.
+///
+/// Everything outside the section is preserved byte-for-byte, so a plan, a kickoff or anything a
+/// human added around it survives. An unchanged body rewrites nothing, so a relaunch that changes
+/// nothing does not churn the file's mtime.
+pub(crate) fn upsert_section(
+    path: &std::path::Path,
+    marker: &str,
+    body: &str,
+    end_marker: Option<&str>,
+) -> std::io::Result<()> {
     let cur = std::fs::read_to_string(path).unwrap_or_default();
-    if cur.contains(marker) {
-        return Ok(());
+    let Some(start) = cur.find(marker) else {
+        return std::fs::write(path, format!("{cur}{body}"));
+    };
+    // The section ends where the NEXT managed section begins, or at end of file. Searched from the
+    // start of this one so a body that happens to quote the next marker cannot truncate it early.
+    let end = end_marker
+        .and_then(|m| cur[start..].find(m).map(|i| start + i))
+        .unwrap_or(cur.len());
+    let rebuilt = format!("{}{}{}", &cur[..start], body.trim_start_matches('\n'), &cur[end..]);
+    if rebuilt == cur {
+        return Ok(()); // already current — do not touch the file
     }
-    std::fs::write(path, format!("{cur}{body}"))
+    std::fs::write(path, rebuilt)
 }
 
 #[cfg(test)]
@@ -135,7 +161,55 @@ mod tests {
         }
     }
 
-    /// The WRITE half (#4254). Reading from the stores is only half the rule: a worker that reads a
+    /// A worker must know that a build verdict is RECORDABLE, and equally that its own loop is not
+    /// (a-workers-failing-build-is-invisible-to-its-director).
+    ///
+    /// Both halves are load-bearing and they pull opposite ways. Without the first, a worker's build
+    /// failure exists only in its own pane and dies with the session, so the director learns a stream
+    /// is stuck by noticing silence. Without the second, a worker wraps its iteration loop, every
+    /// half-finished edit files a fault, and the project's node sits red while nothing is wrong —
+    /// which is the same signal-destroying mistake #4008 avoided by scoping to supply blocks, and the
+    /// reason the repo's own gate is deliberately unwrapped.
+    #[test]
+    fn the_worker_protocol_records_a_build_verdict_and_not_its_own_loop() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-errors-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(md.contains("bsc errors run"), "the recorder must be named:\n{md}");
+        assert!(md.contains("--stage build"), "…with the stage that separates it from runtime faults");
+        // The exclusion, in the document rather than in someone's head.
+        assert!(
+            md.contains("Do NOT wrap your iteration loop"),
+            "the protocol must say which runs are NOT recorded:\n{md}",
+        );
+        // A rule with no reason gets dropped the first time it is inconvenient.
+        assert!(md.contains("not a defect"), "…and why: a mid-edit failure is work, not a fault");
+    }
+
+    /// The director's half: a fault is a READ it consults, never a push it waits for.
+    ///
+    /// The failure this guards against is a director that treats every red build as an interrupt.
+    /// Workers break their own builds constantly on the way to finishing, so routing each one turns
+    /// ordinary work into a queue of false alarms — and a director that learns to ignore that queue
+    /// ignores the real ones in it too.
+    #[test]
+    fn the_director_protocol_reads_faults_rather_than_waiting_to_be_told() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(p.contains("bsc errors list"), "the director must know the read verb");
+        assert!(p.contains("--stage build"), "…and how to separate build verdicts from runtime faults");
+        assert!(p.contains("bsc errors resolve"), "…and how to clear one it has fixed");
+        assert!(
+            p.contains("READ, NOT AN INTERRUPT"),
+            "the protocol must say a red build is not routed at it:\n{p}",
+        );
+        // The count is what distinguishes stuck from mid-edit; a director told only "there is a fault"
+        // would act on the first one.
+        assert!(p.contains("count"), "…and that the repeat count is the signal");
+    }
+
+    /// The WRITE half (#4254).    /// The WRITE half (#4254). Reading from the stores is only half the rule: a worker that reads a
     /// record and then edits the FILE writes the copy while the record keeps the old body — the drift
     /// #4246 measured at 22 modules.
     ///
@@ -255,5 +329,102 @@ mod tests {
             "the directive must not call auto-pr the default:
 {md}",
         );
+    }
+}
+
+// ── an auto-added section refreshes (an-auto-added-protocol-section-is-frozen-once-written) ──────
+//
+// `append_section_once` returned early whenever the marker was present, so an auto-generated
+// section was write-once forever. A director ran for twelve days on instructions nobody could
+// update: the packaged protocol moved, this machine's config mirror was stale, and even after both
+// were fixed a relaunch could not refresh the copy baked into the hub's CLAUDE.local.md.
+
+#[cfg(test)]
+mod upsert_tests {
+    use super::upsert_section;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let p = crate::testutil::unique_dir("bsc-upsert", tag);
+        std::fs::create_dir_all(&p).unwrap();
+        p.join("CLAUDE.local.md")
+    }
+
+    /// An absent section is appended — the original behaviour, unchanged.
+    #[test]
+    fn an_absent_section_is_appended() {
+        let f = tmp("absent");
+        std::fs::write(&f, "the plan\n").unwrap();
+        upsert_section(&f, "## Protocol", "\n## Protocol\nv1\n", None).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "the plan\n\n## Protocol\nv1\n");
+        std::fs::remove_dir_all(f.parent().unwrap()).ok();
+    }
+
+    /// THE regression: a section already present is REPLACED, not left frozen.
+    #[test]
+    fn a_stale_section_is_refreshed_rather_than_kept_forever() {
+        let f = tmp("stale");
+        std::fs::write(&f, "the plan\n\n## Protocol\nv1 — twelve days old\n").unwrap();
+        upsert_section(&f, "## Protocol", "\n## Protocol\nv2 — how to reach the architect\n", None).unwrap();
+
+        let got = std::fs::read_to_string(&f).unwrap();
+        assert!(got.contains("v2 — how to reach the architect"), "the new body must land: {got}");
+        assert!(!got.contains("twelve days old"), "and the old one must be gone: {got}");
+        assert!(got.starts_with("the plan\n"), "content OUTSIDE the section survives: {got}");
+        std::fs::remove_dir_all(f.parent().unwrap()).ok();
+    }
+
+    /// A section bounded by the NEXT managed one is replaced within its own bounds — the following
+    /// section is untouched. Without the bound, refreshing the first would eat the second.
+    #[test]
+    fn a_bounded_section_does_not_swallow_the_one_after_it() {
+        let f = tmp("bounded");
+        std::fs::write(&f, "## Protocol\nv1\n\n## Untrusted input\nrules\n").unwrap();
+        upsert_section(&f, "## Protocol", "## Protocol\nv2\n\n", Some("## Untrusted input")).unwrap();
+
+        let got = std::fs::read_to_string(&f).unwrap();
+        assert_eq!(got, "## Protocol\nv2\n\n## Untrusted input\nrules\n", "got: {got:?}");
+        std::fs::remove_dir_all(f.parent().unwrap()).ok();
+    }
+
+    /// An unchanged body rewrites NOTHING, so a relaunch that changes nothing does not churn the
+    /// file — the property "idempotent" was supposed to mean, now measured on content.
+    #[test]
+    fn an_unchanged_section_does_not_touch_the_file() {
+        let f = tmp("noop");
+        let body = "\n## Protocol\nv1\n";
+        std::fs::write(&f, format!("the plan\n{body}")).unwrap();
+        let before = std::fs::metadata(&f).unwrap().modified().unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        upsert_section(&f, "## Protocol", body, None).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&f).unwrap().modified().unwrap(),
+            before,
+            "an unchanged section must not rewrite the file",
+        );
+        std::fs::remove_dir_all(f.parent().unwrap()).ok();
+    }
+
+    /// A body that QUOTES the end marker must not truncate its own section — the search starts at
+    /// the section, so the first hit is the real boundary, not a mention inside the body.
+    #[test]
+    fn a_body_quoting_the_end_marker_still_replaces_the_whole_section() {
+        let f = tmp("quotes");
+        std::fs::write(&f, "## Protocol\nv1\n\n## Untrusted input\nrules\n").unwrap();
+        // v2 mentions the next section by name, as real protocol prose does.
+        upsert_section(
+            &f,
+            "## Protocol",
+            "## Protocol\nv2 — see \"## Untrusted input\" below\n\n",
+            Some("## Untrusted input"),
+        )
+        .unwrap();
+
+        let got = std::fs::read_to_string(&f).unwrap();
+        assert!(got.contains("see \"## Untrusted input\" below"), "the quote survives: {got}");
+        assert!(got.ends_with("## Untrusted input\nrules\n"), "and the real section still follows: {got}");
+        assert_eq!(got.matches("rules").count(), 1, "exactly once: {got}");
+        std::fs::remove_dir_all(f.parent().unwrap()).ok();
     }
 }

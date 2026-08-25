@@ -202,6 +202,12 @@ pub fn run() {
                 tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
                 tauri::async_runtime::spawn_blocking(fleet::teardown::gc_worktrees_on_boot);
             });
+            // Arm the LAUNCH watchdog (the-app-starts-and-never-mounts-and-nothing-says-so): from here
+            // the frontend has a deadline to acknowledge that it mounted, and silence past it is
+            // recorded as a `launch` fault on this app's own project. Armed at the END of setup, after
+            // the window exists — arming earlier would count native init against a deadline that is
+            // about the WEBVIEW, and every slow plugin load would eat into the frontend's budget.
+            observability::boot_watch::arm();
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
@@ -220,6 +226,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            observability::boot_watch::boot_mounted,
+            observability::boot_watch::boot_failed,
             crate::session::llm::llm_complete,
             crate::session::llm::ollama_models,
             github::github_request,

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::fleet::protocols::append_section_once;
+use crate::fleet::protocols::upsert_section;
 
 /// Director protocol (#375) appended to the project hub's CLAUDE.local.md so the
 /// async-integrator director always has its standing duties as authoritative context
@@ -10,17 +10,28 @@ pub(crate) fn director_protocol_md() -> String {
     crate::platform::config::load_str("fleet/director-protocol.md")
 }
 
-/// Ensure the project hub's CLAUDE.local.md carries the director protocol (#375). Idempotent.
+/// Ensure the project hub's CLAUDE.local.md carries the CURRENT director protocol (#375).
+///
+/// Idempotent, and — since `an-auto-added-protocol-section-is-frozen-once-written` — idempotent on
+/// the CURRENT content rather than on whatever was written first. Both sections are auto-generated,
+/// so a relaunch refreshes them; anything around them is preserved.
+///
+/// The order matters and is known only here: the director protocol runs until the
+/// injection-resistance marker, and that one runs to end of file.
 #[tauri::command]
 pub(crate) fn ensure_director_protocol(project_key: String) -> Result<(), String> {
     let local = project_dir(&project_key).join("CLAUDE.local.md");
     if let Some(parent) = local.parent() { let _ = std::fs::create_dir_all(parent); }
-    // Both sections are appended verbatim only when their marker is absent (idempotent), via the
-    // shared helper — no scattered read-modify-write blocks. Errors propagate (this is a command).
-    append_section_once(&local, "## Director protocol", &director_protocol_md()).str_err()?;
+    upsert_section(
+        &local,
+        "## Director protocol",
+        &director_protocol_md(),
+        Some(INJECTION_RESISTANCE_MARKER),
+    )
+    .str_err()?;
     // Injection-resistance preamble (#1167): the director reads issue/PR prose + authors kickoffs,
     // so it's a high-value injection target — give it the same untrusted-input rules as workers.
-    append_section_once(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md()).str_err()?;
+    upsert_section(&local, INJECTION_RESISTANCE_MARKER, &injection_resistance_md(), None).str_err()?;
     Ok(())
 }
 
@@ -85,6 +96,24 @@ mod relocated_tests {
             p.contains("reconciled, nothing to do"),
             "closing a brief that needed no change is the case a director will otherwise skip"
         );
+    }
+
+    /// Staffing includes WHICH MODEL, and the director is the one who staffs.
+    ///
+    /// Both verbs have to be named, because they are not interchangeable: `bsc persona model` moves an
+    /// identity's default in every team that places it, and `bsc teams model` overrides one placement.
+    /// A director told only about the first would make one team cheap by changing every team that
+    /// shares the persona — which is exactly the mistake the placement override exists to prevent.
+    #[test]
+    fn director_protocol_names_both_model_verbs_and_which_one_scopes_to_a_team() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(p.contains("bsc persona model"), "the identity-wide default verb must be named");
+        assert!(p.contains("bsc teams model"), "the per-placement override verb must be named");
+        // The tier vocabulary the CLI actually accepts — a protocol naming one it would refuse is
+        // worse than naming none.
+        for tier in bsc_util::model_ids() {
+            assert!(p.contains(tier), "the protocol names the tier `{tier}` the CLI accepts");
+        }
     }
 
     /// #fleet-list-cannot-see-a-stopped-worker.

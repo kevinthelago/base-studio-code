@@ -106,6 +106,12 @@ mod tests {
             "positions",      // the team model vocabulary
             "relationship",
             "role",           // a persona rides a role (its permission floor)
+            // The MODEL surface (a-model-cannot-be-chosen-from-the-command-surface): both verbs, and
+            // the fact that naming NOTHING is the default. An architect that knows only `persona set`
+            // would round-trip a whole record to change one tier, which is the loss `model` prevents.
+            "bsc persona model",
+            "bsc teams model",
+            "haiku-4.5",
         ] {
             assert!(seed.contains(needle), "architect seed must mention `{needle}`");
         }
