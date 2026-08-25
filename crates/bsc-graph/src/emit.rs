@@ -67,6 +67,22 @@ fn field<'a>(im: &'a Value, k: &str) -> Option<&'a str> {
 /// record one compilable file — and what keeps it clear of the shared `src` it was lifted from.
 fn emit_path(im: &Value) -> Option<String> {
     let id = field(im, "id")?;
+    // A MODULE record OWNS its `src` — it is the whole file, not a function lifted out of one — so it
+    // emits back over that path. The discriminator is the id itself: `module_id` derives an id FROM the
+    // path, so `module_id(src) == id` is exactly the statement "this record is that whole file".
+    //
+    // Without this a path-derived id would emit to `crates/bsc-teams/src/bsc-teams--cli.rs`: a stray
+    // file whose name Rust could never load as a module, sitting next to the source it was lifted from.
+    // The function-record guarantee is untouched — `unquote.rs` does not equal
+    // `module_id("crates/cve/src/install.rs")`, so it still emits beside its shared source rather than
+    // over it.
+    if let Some(src) = field(im, "src") {
+        let src = src.replace('\\', "/");
+        let ext = src.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
+        if crate::extract::module_id(&src, ext) == id {
+            return Some(src);
+        }
+    }
     let folder = field(im, "folder").map(str::to_string).or_else(|| {
         // No folder recorded, but `src` implies one (#4107 derives folder FROM src; this covers a
         // record written before that, so provenance is not wasted).
@@ -211,6 +227,26 @@ mod tests {
 
     /// A record with no folder still emits when `src` implies one — provenance written before #4107
     /// derived the folder is not wasted.
+    /// A MODULE record owns its file, so it emits back over it — and the test that it does is the same
+    /// statement as "its id was derived from that path".
+    #[test]
+    fn a_module_record_emits_back_over_the_file_it_is() {
+        let mut v = algo("bsc-teams--cli.rs", "pub fn run() {}", None, Some("crates/bsc-teams/src/cli.rs"));
+        v["tech"] = json!("rust");
+        let plan = plan_from(&[v], 2);
+        assert_eq!(plan.files[0].path, "crates/bsc-teams/src/cli.rs", "the module IS that file");
+    }
+
+    /// …and a FUNCTION record still does not, which is the guarantee this file was built around.
+    #[test]
+    fn a_function_record_still_never_emits_over_its_shared_source() {
+        let mut v = algo("unquote.rs", "pub fn unquote() {}", None, Some("crates/cve/src/install.rs"));
+        v["tech"] = json!("rust");
+        let plan = plan_from(&[v], 2);
+        assert_eq!(plan.files[0].path, "crates/cve/src/unquote.rs");
+        assert_ne!(plan.files[0].path, "crates/cve/src/install.rs", "must never overwrite the shared source");
+    }
+
     #[test]
     fn a_folderless_record_derives_its_directory_from_src() {
         let plan = plan_from(&[algo("merge.rs", "fn merge() {}", None, Some("crates/cve/src/install.rs"))], 2);

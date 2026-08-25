@@ -10,14 +10,14 @@
 //!
 //! # This crate's code is IN THE GRAPH, not in this directory
 //!
-//! `src/cli.rs` does not exist. It is the record `bsc-blueprint-cli.rs` in the committed
+//! `src/cli.rs` does not exist. It is the record `bsc-blueprint--cli.rs` in the committed
 //! `graph/algorithms.json`, materialized into `$OUT_DIR` by `build.rs` and pulled in below. To change
 //! it, edit the RECORD and promote it — editing a file here would be editing nothing:
 //!
 //! ```text
-//! bsc graph impl get bsc-blueprint-cli.rs          # read it
-//! bsc graph impl set --id bsc-blueprint-cli.rs --code-file <f>   # change it
-//! bsc graph promote --id bsc-blueprint-cli.rs      # reach the committed store the build reads
+//! bsc graph impl get bsc-blueprint--cli.rs          # read it
+//! bsc graph impl set --id bsc-blueprint--cli.rs --code-file <f>   # change it
+//! bsc graph promote --id bsc-blueprint--cli.rs      # reach the committed store the build reads
 //! ```
 //!
 //! This header stays a file because `include!` refuses crate-level `//!` docs and `#![…]` inner

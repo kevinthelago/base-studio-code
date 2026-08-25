@@ -65,20 +65,65 @@ fn main() {
 
     // Deterministic order: cargo reruns this on every store change and a shuffled output would recompile
     // the crate for no reason.
-    let mut mine: Vec<(&str, &str, &str)> = impls
+    let mut mine: Vec<(&str, &str, &str, String, Vec<String>)> = impls
         .iter()
         .filter_map(|i| {
             let src = i.get("src")?.as_str()?;
             let rest = src.strip_prefix(&prefix)?;
-            // Only direct children, and never lib.rs — it stays a file.
-            if rest.contains('/') || rest == "lib.rs" {
+            // Only direct children, and never the crate ROOT — it stays a file. `main.rs` counts as
+            // one: a BINARY crate declares its modules there and `include!`s the generated file there
+            // just as a lib does, so without this the root would try to materialize itself into a
+            // module named `main` — and the `include!` inside it would then recurse.
+            if rest.contains('/') || rest == "lib.rs" || rest == "main.rs" {
                 return None;
             }
             let module = rest.strip_suffix(".rs")?;
-            Some((i.get("id")?.as_str()?, module, i.get("code")?.as_str()?))
+            // ONLY THE MODULE RECORD, never a function lifted out of the same file. Both carry the same
+            // `src`: `unquote.rs` is 8 lines lifted out of `crates/cve/src/install.rs`, while
+            // `cve--install.rs` IS that file. Selecting on `src` alone saw two records claiming module
+            // `install` and stopped the build.
+            //
+            // The discriminator is the id, and it is the same one `bsc graph emit` uses: a module
+            // record's id is DERIVED from its path, so `<crate>--<module>.rs` is exactly the statement
+            // "this record is that whole file". Rust module names are snake_case, so kebabing is a
+            // `_` → `-` swap; the fuller `kebab` in `bsc_graph::extract` also splits camelCase, which
+            // no Rust module name has.
+            let expected = format!("{crate_dir}--{}.rs", module.replace('_', "-"));
+            let id = i.get("id")?.as_str()?;
+            if id != expected {
+                return None;
+            }
+            // HOW the module is declared travels on the record. `moduleVis` defaults to `pub` because
+            // that was the only shape before this existed; `private` emits a bare `mod`. `moduleAttrs`
+            // are emitted verbatim above the declaration, which is what keeps a `#[cfg(feature = "…")]`
+            // gate intact — materialising a gated module without it makes it unconditional, and that is
+            // a change to the program rather than to its formatting.
+            let vis = match i.get("moduleVis").and_then(|v| v.as_str()) {
+                Some("private") | Some("") => String::new(),
+                Some(v) => format!("{v} "),
+                None => "pub ".to_string(),
+            };
+            let attrs: Vec<String> = i
+                .get("moduleAttrs")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            Some((id, module, i.get("code")?.as_str()?, vis, attrs))
         })
         .collect();
-    mine.sort_by_key(|(_, module, _)| *module);
+    mine.sort_by_key(|(_, module, _, _, _)| *module);
+
+    // TWO RECORDS CLAIMING ONE MODULE is a hard error, not a last-one-wins. It happened: renaming a
+    // record onto the path-derived id scheme left the superseded id in the store with the same `src`,
+    // and this script emitted `pub mod cli` twice — E0428, "the name `cli` is defined multiple times".
+    // The compiler caught it, but only after a broken store had been committed; saying so HERE names the
+    // cause instead of leaving a reader to work back from a duplicate-definition error.
+    if let Some(dup) = mine.windows(2).find(|w| w[0].1 == w[1].1) {
+        panic!(
+            "two records claim module `{}` of crate `{crate_dir}`: `{}` and `{}`. One is superseded —              remove it from the store (`bsc graph impl remove <id>`) and re-promote.",
+            dup[0].1, dup[0].0, dup[1].0
+        );
+    }
 
     if mine.is_empty() {
         panic!(
@@ -97,12 +142,31 @@ fn main() {
          // A compiler error below points at THIS file; each module header gives the line offset back\n\
          // to its record.\n\n",
     );
-    for (id, module, code) in mine {
+    for (id, module, code, vis, attrs) in mine {
         // A module's own `//!` docs are legal here ONLY because this writes a LITERAL `mod { … }` block.
         // They do NOT survive an `include!`, even inside a mod block — measured, E0753. That is why the
         // bodies are concatenated rather than each pulled in by its own include, which would have made
         // line numbers match exactly at the cost of every module's documentation.
-        out.push_str(&format!("pub mod {module} {{\n"));
+        // ATTRIBUTES FIRST, then the declaration with its recorded visibility. Both come from the
+        // record because both are part of what the module MEANS: `#[cfg(feature = "duckdb-store")]` is
+        // what makes it conditional, and `pub` vs bare `mod` is the crate's API surface. An earlier cut
+        // of this loop widened the tuple to carry them and then still emitted a hard-coded
+        // `pub mod {module}` — it compiled, and silently un-gated three modules of `crates/data`.
+        for a in &attrs {
+            // SKIP an outer attribute the module body already states as an inner one. `crates/data`
+            // gated `meta` twice — `#[cfg(feature = "duckdb-store")]` on the declaration in lib.rs and
+            // `#![cfg(feature = "duckdb-store")]` at the top of meta.rs. Legal while they lived in two
+            // files; materialization puts both on ONE item, which rustc rejects with "item has both
+            // inner and outer attributes". The body's copy is inside the record and must not be
+            // rewritten, so the redundant outer one is the one that gives way.
+            let inner = a.trim().replacen("#[", "#![", 1);
+            if code.contains(&inner) {
+                continue;
+            }
+            out.push_str(a);
+            out.push('\n');
+        }
+        out.push_str(&format!("{vis}mod {module} {{\n"));
         let body_starts_at = out.lines().count() + 1; // the body begins after the header line below
         out.push_str(&format!("    // record `{id}` — line N here is line N-{body_starts_at} in the record.\n"));
         out.push_str(&format!("{code}\n}}\n"));

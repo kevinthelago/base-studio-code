@@ -17,9 +17,9 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 16] = [
+pub const VERBS: [&str; 17] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
-    "used-by", "merge", "emit", "promote", "build", "help",
+    "used-by", "merge", "emit", "promote", "build", "migrate-crate", "help",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -42,7 +42,7 @@ pub const BOOL_FLAGS: [&str; 11] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 41] = [
+pub const FLAGS: [&str; 43] = [
     "--pretty",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
@@ -79,6 +79,10 @@ pub const FLAGS: [&str; 41] = [
     "--folder",
     "--provides",
     "--module-state",
+    // How a materialized module is DECLARED — visibility and attributes ride on the record, because
+    // a mod declaration carries meaning the body does not (a cfg gate, a private visibility).
+    "--module-vis",
+    "--module-attrs-file",
     "--reads",
     "--writes",
     "--module",
@@ -938,6 +942,31 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // same field the component store already carries. Additive like `--domain`: written only
                 // when supplied, so no existing impl gains one by accident.
                 if let Some(p) = flag_value(&args, "--provides") { im["provides"] = Value::String(p); }
+                // HOW THIS MODULE IS DECLARED, for a record that a build materializes into a crate.
+                //
+                // A `mod` declaration carries meaning the module body does not, and materializing one
+                // without it changes the program. `crates/data` gated three modules behind
+                // `#[cfg(feature = "duckdb-store")]`; emitting an unconditional `pub mod` made all three
+                // unconditional — a correctness regression that clippy caught only by accident, because
+                // the orphaned attribute happened to be left behind. And 38 declarations across the
+                // workspace are PRIVATE, where `pub mod` would widen the crate's API.
+                //
+                // So the declaration rides on the record. `--module-attrs-file` rather than an inline
+                // flag for the same reason `--code-file` exists: `#[cfg(feature = "x")]` through a shell
+                // loses its quotes and brackets silently.
+                if let Some(v) = flag_value(&args, "--module-vis") {
+                    im["moduleVis"] = Value::String(v);
+                }
+                if let Some(p) = flag_value(&args, "--module-attrs-file") {
+                    let raw = std::fs::read_to_string(&p).map_err(|e| format!("cannot read {p}: {e}"))?;
+                    let attrs: Vec<Value> = raw
+                        .lines()
+                        .map(str::trim)
+                        .filter(|l| !l.is_empty())
+                        .map(|l| Value::String(l.to_string()))
+                        .collect();
+                    im["moduleAttrs"] = Value::Array(attrs);
+                }
                 // The module's own STATE, comma-separated. A module harvest sets this itself, but an
                 // impl written through THIS verb could not carry it at all — which stranded 27 of the
                 // 58 stateful modules with no record of what they hold, precisely because a colliding
@@ -1738,6 +1767,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // into the committed, build-readable repo store, or (with `--check`) report the drift for the
         // gate. See `crate::repo_store` for why the two stores exist and why the repo one is read
         // directly rather than through `load()`.
+        // The crate migration is a VERB, not a script (`record-operations-belong-on-the-bsc-surface-
+        // not-in-scripts`): `bsc` is the mandatory permission tier every role can auto-run, while
+        // `node scripts/…` needs the build tier the sessions that should drive a migration rarely hold.
+        // The logic lives in `migrate` — this arm is only the seam.
+        "migrate-crate" => {
+            let rest: Vec<String> = args.iter().skip(1).cloned().collect();
+            crate::migrate::run(&rest, &mut std::io::stdout())
+        }
         "promote" => {
             let check = args.iter().any(|a| a == "--check");
             let root = flag_value(&args, "--root")
@@ -1776,6 +1813,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let repo_impls = crate::repo_store::impls_of(&repo);
                 let mut differs = Vec::new();
                 let mut absent = Vec::new();
+                let mut behind = Vec::new();
                 for id in &ids {
                     match crate::repo_store::verdict_for(&upstream, &repo_impls, id) {
                         crate::repo_store::Verdict::Differs => differs.push(id.clone()),
@@ -1783,11 +1821,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // about whether the committed one is stale, and failing here would redden the
                         // gate for every agent who simply never authored it.
                         crate::repo_store::Verdict::MissingUpstream => absent.push(id.clone()),
+                        // The runtime store REGRESSED — same code, fewer fields. Nothing to promote, and
+                        // promoting would delete what the committed copy has. Reported, never a failure.
+                        crate::repo_store::Verdict::RuntimeBehind => behind.push(id.clone()),
                         crate::repo_store::Verdict::UpToDate => {}
                     }
                 }
                 emit(&serde_json::json!({
                     "checked": ids.len(), "drifted": differs, "notAuthoredHere": absent,
+                    "runtimeBehind": behind,
                     "store": path.to_string_lossy(), "ok": differs.is_empty(),
                 }))?;
                 // A gate that cannot fail is not a gate. Naming the ids is the whole point: the
@@ -1825,7 +1867,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }));
             }
 
-            let (next, missing) = crate::repo_store::promote_into(&repo, &runtime, &ids);
+            let (next, missing, refused) = crate::repo_store::promote_into(&repo, &runtime, &ids);
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)
                     .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
@@ -1836,7 +1878,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
             emit(&serde_json::json!({
                 "ok": true, "store": path.to_string_lossy(),
-                "promoted": ids.len() - missing.len(), "missingUpstream": missing,
+                "promoted": ids.len() - missing.len() - refused.len(), "missingUpstream": missing,
+                // REFUSED, not skipped: the runtime copy is a subset of the committed one, so writing it
+                // would delete fields. Named so a caller sees a decision rather than a silent no-op.
+                "refusedWouldLoseFields": refused,
                 "tracked": crate::repo_store::tracked_ids(&next).len(),
             }))
         }
@@ -2169,7 +2214,21 @@ fn source_flag(args: &[String], flag: &str) -> Result<Option<String>, String> {
             bsc_cli_util::require_harvestable_root(path)?;
             // An unreadable path is an ERROR, never an empty field: silently storing "" would erase
             // the record's source, which is the very corruption this flag exists to prevent.
-            std::fs::read_to_string(path).map(Some).map_err(|err| format!("cannot read {p}: {err}"))
+            let contents =
+                std::fs::read_to_string(path).map_err(|err| format!("cannot read {p}: {err}"))?;
+            // …AND SO IS AN EMPTY ONE, which the guard above misses because a 0-byte file reads fine.
+            // That gap erased a record: a script truncated its output file with `open(…, "w")` and then
+            // threw before writing, so `--code-file` stored an empty body over a 6,234-character module
+            // and it was promoted into the committed store before anything noticed. Writing nothing is
+            // never what a caller means by "set the code from this file".
+            if contents.trim().is_empty() {
+                return Err(format!(
+                    "{p} is empty — refusing to store an empty body. If you meant to clear the field, \
+                     say so explicitly with `--clear {}`.",
+                    flag.trim_start_matches("--")
+                ));
+            }
+            Ok(Some(contents))
         }
         (None, None) => Ok(None),
     }
@@ -2224,7 +2283,7 @@ fn help(prog: &str) -> String {
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
          {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
@@ -2237,6 +2296,7 @@ fn help(prog: &str) -> String {
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
+         {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest each top-level module as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has nested module directories, declares a module with no matching file, or declares a *_test/*_tests module harvest skips — and VERIFIES with a real build before it finishes\n\n\
          {prog} promote [--id a,b] [--check] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
          {prog} build <id> | build --all [--wasm] [--force]   # compile a Tier-R node from its own composes closure and STAMP the verdict onto it, so `impl get` answers 'does this compile?' without running anything. The hash covers the MATERIALIZED source + the toolchain + the flags, because all three change the answer; an unchanged hash is reported `cached` and recompiles nothing, unless the artifact it names is gone — a cache that vanished must re-derive, never be trusted. `--wasm` adds the wasm32 target and writes the artifact to a CONTENT-ADDRESSED sidecar (~/.base-studio-code/knowledge/artifacts/<sha>.wasm), never inline: the store is 8.74 MB and every reader parses it\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
@@ -2431,6 +2491,33 @@ mod tests {
             "a verb outside VERBS must be rejected — `neighbors` is one of the concept-ontology \
              verbs #2961 deleted; got: {err}",
         );
+    }
+
+    /// REGRESSION: `--code-file` pointed at an EMPTY file stored an empty body over a real one.
+    ///
+    /// A script truncated its output with `open(…, "w")` and threw before writing; the 0-byte file read
+    /// fine, so the existing unreadable-path guard never fired, and a 6,234-character module was erased
+    /// and promoted into the committed store. The compiler caught the consequence two steps later.
+    #[test]
+    fn a_code_file_that_is_empty_is_refused_rather_than_stored() {
+        let dir = std::env::temp_dir().join(format!("bsc-empty-code-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let empty = dir.join("empty.rs");
+        std::fs::write(&empty, "   
+	
+").unwrap();
+
+        let args = vec!["--code-file".to_string(), empty.to_string_lossy().into_owned()];
+        let err = source_flag(&args, "--code").unwrap_err();
+        assert!(err.contains("is empty"), "{err}");
+        assert!(err.contains("--clear code"), "names the explicit way to clear: {err}");
+
+        // A file with real content still reads through unchanged.
+        let full = dir.join("full.rs");
+        std::fs::write(&full, "pub fn f() {}").unwrap();
+        let args = vec!["--code-file".to_string(), full.to_string_lossy().into_owned()];
+        assert_eq!(source_flag(&args, "--code").unwrap().as_deref(), Some("pub fn f() {}"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// REGRESSION: a bare `promote` used to CREATE an empty store wherever the cwd was, so the test

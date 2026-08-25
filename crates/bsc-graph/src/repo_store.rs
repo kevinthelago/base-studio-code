@@ -98,6 +98,15 @@ pub enum Verdict {
     Differs,
     /// The runtime store has no such id — nothing to promote from.
     MissingUpstream,
+    /// The runtime record is a SUBSET of the committed one: same code, but missing fields the committed
+    /// copy carries. Promoting would DELETE those fields, so this is reported and never written.
+    ///
+    /// This is not hypothetical. On 2026-08-20 the running app rewrote the per-user runtime store from
+    /// 969 implementations to 726, stripping `domain`, `folder`, `kind`, `vizCode`, `src` and `tests`
+    /// from records the repo store had already captured. `--check` called that "the repo store is out of
+    /// date — run promote", and following its own advice would have destroyed the richer committed copy.
+    /// A check that cannot tell which side regressed must not assert a direction.
+    RuntimeBehind,
 }
 
 /// Compare one id between the runtime graph and the repo store.
@@ -110,10 +119,34 @@ pub fn verdict_for(runtime: &[Value], repo: &[Value], id: &str) -> Verdict {
         v.iter().find(|i| i.get("id").and_then(Value::as_str) == Some(id)).cloned()
     };
     let Some(up) = by_id(runtime) else { return Verdict::MissingUpstream };
-    match by_id(repo) {
-        Some(have) if content_of(&have) == content_of(&up) => Verdict::UpToDate,
-        _ => Verdict::Differs,
+    let Some(have) = by_id(repo) else { return Verdict::Differs };
+    let (a, b) = (content_of(&have), content_of(&up));
+    if a == b {
+        return Verdict::UpToDate;
     }
+    if loses_fields(&b, &a) {
+        return Verdict::RuntimeBehind;
+    }
+    Verdict::Differs
+}
+
+/// Would writing `fresh` over `existing` DROP a field `existing` carries?
+///
+/// Key PRESENCE, not value equality, and that distinction was learned the hard way. The first version
+/// asked "is fresh a subset of existing", which reclassified 6 of 9 regressed records correctly and left
+/// 3 as drift — because the app's reset had also rewritten their `summary`, so they were not a clean
+/// subset. But a record that both lost `vizCode` AND changed a summary is still a record that will lose
+/// `vizCode` if promoted. The risk that matters here is LOSS, and it does not stop mattering because
+/// something else moved too.
+pub fn loses_fields(fresh: &Value, existing: &Value) -> bool {
+    let (Some(fresh), Some(existing)) = (fresh.as_object(), existing.as_object()) else {
+        return false;
+    };
+    existing
+        .iter()
+        // An empty value is nothing to lose.
+        .filter(|(_, v)| !v.is_null() && v.as_str() != Some(""))
+        .any(|(k, _)| !fresh.contains_key(k))
 }
 
 /// A record stripped of write bookkeeping, so a promote compares CONTENT and not revision noise.
@@ -140,9 +173,10 @@ pub fn content_of(rec: &Value) -> Value {
 /// Ids absent upstream are reported rather than dropped — silently removing a record because the
 /// authoring machine happens not to have it is exactly the kind of quiet loss this store exists to
 /// prevent.
-pub fn promote_into(repo: &Value, runtime: &[Value], ids: &[String]) -> (Value, Vec<String>) {
+pub fn promote_into(repo: &Value, runtime: &[Value], ids: &[String]) -> (Value, Vec<String>, Vec<String>) {
     let mut out = repo.clone();
     let mut missing = Vec::new();
+    let mut refused = Vec::new();
     let mut list = impls_of(repo);
     for id in ids {
         let Some(up) = runtime
@@ -154,14 +188,23 @@ pub fn promote_into(repo: &Value, runtime: &[Value], ids: &[String]) -> (Value, 
         };
         let fresh = content_of(up);
         match list.iter().position(|i| i.get("id").and_then(Value::as_str) == Some(id.as_str())) {
-            Some(at) => list[at] = fresh,
+            Some(at) => {
+                // NEVER let a promote DELETE a field the committed copy carries. The same shape as
+                // `promote-records --adopt-seed` refusing to drop an export the seed declares: a
+                // regressed upstream must not be able to quietly strip the richer downstream copy.
+                if loses_fields(&fresh, &content_of(&list[at])) {
+                    refused.push(id.clone());
+                    continue;
+                }
+                list[at] = fresh
+            }
             None => list.push(fresh),
         }
     }
     if let Some(o) = out.as_object_mut() {
         o.insert("implementations".into(), Value::Array(list));
     }
-    (out, missing)
+    (out, missing, refused)
 }
 
 #[cfg(test)]
@@ -199,7 +242,7 @@ mod tests {
         assert_eq!(content_of(&bare), content_of(&stamped), "stamping a facet is not a source change");
         assert_eq!(verdict_for(std::slice::from_ref(&stamped), &[bare], "x.rs"), Verdict::UpToDate);
 
-        let (out, _) = promote_into(&empty(), &[stamped], &["x.rs".to_string()]);
+        let (out, _, _) = promote_into(&empty(), &[stamped], &["x.rs".to_string()]);
         assert!(impls_of(&out)[0].get("build").is_none(), "the facet must not reach the committed store");
     }
 
@@ -229,7 +272,7 @@ mod tests {
     fn promote_adds_a_new_id_and_replaces_an_existing_one() {
         let repo = json!({ "version": 1, "implementations": [rec("a.rs", "fn OLD() {}")] });
         let runtime = vec![rec("a.rs", "fn a() {}"), rec("b.rs", "fn b() {}")];
-        let (out, missing) =
+        let (out, missing, _) =
             promote_into(&repo, &runtime, &["a.rs".to_string(), "b.rs".to_string()]);
         assert!(missing.is_empty());
         let got = impls_of(&out);
@@ -243,7 +286,7 @@ mod tests {
     #[test]
     fn promote_reports_an_id_missing_upstream_instead_of_dropping_it() {
         let repo = json!({ "version": 1, "implementations": [rec("keep.rs", "fn k() {}")] });
-        let (out, missing) = promote_into(&repo, &[], &["keep.rs".to_string()]);
+        let (out, missing, _refused) = promote_into(&repo, &[], &["keep.rs".to_string()]);
         assert_eq!(missing, vec!["keep.rs".to_string()]);
         assert_eq!(impls_of(&out).len(), 1, "the record is still there");
     }
@@ -254,7 +297,7 @@ mod tests {
             "id": "a.rs", "code": "fn a() {}", "rev": 7,
             "history": [{ "rev": 7 }], "updatedAt": "2026-08-19T00:00:00Z", "updatedBy": "claude"
         })];
-        let (out, _) = promote_into(&empty(), &runtime, &["a.rs".to_string()]);
+        let (out, _, _) = promote_into(&empty(), &runtime, &["a.rs".to_string()]);
         let got = &impls_of(&out)[0];
         assert!(got.get("history").is_none(), "history must not be committed: {got}");
         assert!(got.get("rev").is_none());
@@ -306,5 +349,67 @@ mod tests {
         let s = p.to_string_lossy().replace('\\', "/");
         assert!(s.ends_with("graph/algorithms.json"), "{s}");
         assert!(!s.contains("src-tauri/data"), "must not live in the SHIPPED seed: {s}");
+    }
+
+    /// THE REGRESSION THIS EXISTS FOR. On 2026-08-20 the running app rewrote the runtime store from 969
+    /// implementations to 726, stripping `domain`/`folder`/`kind`/`vizCode`/`src`/`tests` while leaving
+    /// `code` byte-identical. The check called it "the repo store is out of date — run promote", and
+    /// obeying that would have deleted the richer committed copy.
+    #[test]
+    fn a_regressed_runtime_record_is_reported_behind_rather_than_drifted() {
+        let rich = json!({ "id": "x.rs", "code": "fn x() {}", "vizCode": "({})", "domain": "sorting" });
+        let thin = json!({ "id": "x.rs", "code": "fn x() {}" });
+        assert_eq!(
+            verdict_for(std::slice::from_ref(&thin), std::slice::from_ref(&rich), "x.rs"),
+            Verdict::RuntimeBehind,
+            "same code, fewer fields — the runtime regressed, the repo did not go stale"
+        );
+        // The other direction is still real drift: the runtime has something the repo lacks.
+        assert_eq!(
+            verdict_for(std::slice::from_ref(&rich), std::slice::from_ref(&thin), "x.rs"),
+            Verdict::Differs
+        );
+    }
+
+    #[test]
+    fn promote_refuses_to_write_a_record_that_would_lose_fields() {
+        let rich = json!({ "id": "x.rs", "code": "fn x() {}", "vizCode": "({})" });
+        let thin = json!({ "id": "x.rs", "code": "fn x() {}" });
+        let repo = json!({ "version": 1, "implementations": [rich] });
+        let (out, missing, refused) = promote_into(&repo, std::slice::from_ref(&thin), &["x.rs".to_string()]);
+        assert!(missing.is_empty());
+        assert_eq!(refused, vec!["x.rs".to_string()], "refused rather than silently stripping");
+        assert!(impls_of(&out)[0].get("vizCode").is_some(), "the field survived");
+    }
+
+    /// A genuine edit must still get through — the guard must not freeze the store.
+    #[test]
+    fn promote_still_writes_a_real_change() {
+        let repo = json!({ "version": 1, "implementations": [json!({ "id": "x.rs", "code": "old" })] });
+        let up = json!({ "id": "x.rs", "code": "new" });
+        let (out, _, refused) = promote_into(&repo, std::slice::from_ref(&up), &["x.rs".to_string()]);
+        assert!(refused.is_empty());
+        assert_eq!(impls_of(&out)[0]["code"], json!("new"));
+    }
+
+    #[test]
+    fn loss_is_about_key_presence_not_value_equality() {
+        assert!(loses_fields(&json!({ "a": 1 }), &json!({ "a": 1, "b": 2 })), "b would be dropped");
+        assert!(!loses_fields(&json!({ "a": 1, "b": 9 }), &json!({ "a": 1, "b": 2 })), "b changes, nothing lost");
+        assert!(!loses_fields(&json!({ "a": 1 }), &json!({ "a": 1 })));
+        // An empty value is nothing to lose.
+        assert!(!loses_fields(&json!({ "a": 1 }), &json!({ "a": 1, "b": "" })));
+    }
+
+    /// The 3 records the first (subset-based) rule missed: they lost fields AND had a summary rewritten,
+    /// so they were not a clean subset — but promoting them would still have deleted the lost fields.
+    #[test]
+    fn a_record_that_lost_fields_and_changed_one_is_still_behind() {
+        let rich = json!({ "id": "x.rs", "code": "fn x() {}", "vizCode": "({})", "summary": "long form" });
+        let thin = json!({ "id": "x.rs", "code": "fn x() {}", "summary": "short" });
+        assert_eq!(
+            verdict_for(std::slice::from_ref(&thin), std::slice::from_ref(&rich), "x.rs"),
+            Verdict::RuntimeBehind,
+        );
     }
 }
