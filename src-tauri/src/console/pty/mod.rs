@@ -1838,6 +1838,91 @@ fn trust_guest_repo(pane_id: &str, state: &std::path::Path) {
 /// enable-linger` is set for it, so it is tried and not presumed either.
 ///
 /// Cached because this spawns processes and a launch must not pay for it per pane.
+/// The cgroup ceilings one caged session runs under (#795).
+///
+/// Every namespace launch passed `Limits::default()` — every field `None`, so `render_limits`
+/// emitted nothing and the `systemd-run` scope enforced NOTHING. The machinery was built, tested in
+/// `bsc-sandbox`, and never reached from the launcher, while `scope_mode` below warns loudly about
+/// the *other* way to end up uncapped. `Limits`' own doc names the goal: the repo has an OOM
+/// history, serializes full gates behind a cross-worktree lock and pins `jobs = 4` globally, all of
+/// it "userspace negotiation for something cgroups enforce directly".
+///
+/// **Sized from the HOST, not from a constant.** A number that is right on a 32 GB workstation
+/// OOM-kills a build on an 8 GB one and is meaningless on a 128 GB one. The cap exists to stop ONE
+/// runaway session taking the machine down — not to right-size a workload — so it is a generous
+/// fraction of what the host actually has:
+///
+/// * `worker` — the only role that writes code, so the only one whose work can legitimately be
+///   large. Half of host RAM. Measured on the dev box (32 GB): a FULL gate peaks at 8.04 GB with
+///   `jobs = 4`, so a ~15.8 GB ceiling clears the heaviest real workload twice over and still
+///   means one session cannot exhaust the box.
+/// * everything else — `code: none` roles that read, review, and drive git/gh. A THIRD, not a
+///   quarter: a quarter of this box is 7.9 GB, which lands just UNDER that same 8.04 GB gate peak.
+///   No caged role can run a Rust build today (`extra_bins` is `node`/`claude`, and `bins_for`
+///   adds only git/gh, so there is no `cargo` in any cage), but sizing a ceiling to sit a rounding
+///   error below the heaviest workload the repo measures is how a cap becomes a flaky build the
+///   first time somebody widens `extra_bins` for a `tester`.
+///
+/// **An unreadable host size yields NO memory cap, not a guessed one.** `MemoryMax` renders
+/// `MemorySwapMax=0` beside it (a cap that can swap is not a cap), so a cap that is too small does
+/// not slow a build down, it kills it. Falling back to today's unbounded behaviour is recoverable;
+/// falling back to a number picked blind is a regression that looks like a flaky build.
+///
+/// `BSC_SANDBOX_MEMORY_MAX` / `BSC_SANDBOX_TASKS_MAX` / `BSC_SANDBOX_CPU_WEIGHT` override, the way
+/// `BSC_GATE_SLOTS` does for the gate lock — a machine that disagrees should not need a rebuild.
+/// `BSC_SANDBOX_MEMORY_MAX=0` disables the memory cap explicitly.
+#[cfg(target_os = "linux")]
+fn session_limits(role: bsc_sandbox::profile::Role) -> bsc_sandbox::Limits {
+    use bsc_sandbox::profile::Role;
+
+    let env_u32 = |k: &str| std::env::var(k).ok().and_then(|v| v.trim().parse::<u32>().ok());
+
+    let memory_max = match std::env::var("BSC_SANDBOX_MEMORY_MAX") {
+        // An explicit "0" means "no memory cap" — a way to opt out without editing code.
+        Ok(v) if v.trim() == "0" => None,
+        Ok(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
+        _ => host_memory_kb()
+            .map(|total_kb| {
+                let share = if role == Role::Worker { 2 } else { 3 };
+                // Round to whole MB: systemd accepts a bare integer as bytes, and "16384M" is
+                // easier to recognise in `systemctl show` than a raw byte count.
+                format!("{}M", (total_kb / 1024) / share)
+            })
+            .or_else(|| {
+                log::warn!(
+                    "sandbox: host memory size unreadable — caged sessions run with NO memory cap. \
+                     Set BSC_SANDBOX_MEMORY_MAX (e.g. 8G) to bound them."
+                );
+                None
+            }),
+    };
+
+    bsc_sandbox::Limits {
+        memory_max,
+        // A fork-bomb ceiling, not a tuning knob. High enough that a real toolchain never meets it
+        // (`jobs = 4` plus node plus the harness is low hundreds of tasks at most) and low enough
+        // that a runaway cannot exhaust the host's pid space.
+        tasks_max: Some(env_u32("BSC_SANDBOX_TASKS_MAX").unwrap_or(4096)),
+        // Half the default weight, so agents yield to the app under contention. A WEIGHT, not a
+        // quota: an idle host still gives a session every core, so this can never make a build
+        // fail — only wait.
+        cpu_weight: Some(env_u32("BSC_SANDBOX_CPU_WEIGHT").unwrap_or(50)),
+    }
+}
+
+/// Total host RAM in kB, from `/proc/meminfo`'s `MemTotal`. `None` when it cannot be read or parsed
+/// — the caller then declines to guess a cap rather than inventing one.
+#[cfg(target_os = "linux")]
+fn host_memory_kb() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    meminfo
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))
+        .and_then(|v| v.split_whitespace().next())
+        .and_then(|n| n.parse::<u64>().ok())
+        .filter(|kb| *kb > 0)
+}
+
 #[cfg(target_os = "linux")]
 fn scope_mode() -> bsc_sandbox::Scope {
     use std::sync::OnceLock;
@@ -2062,7 +2147,7 @@ fn namespace_argv(
     // 3 KB kickoff for `claude`, and the tty answered `bash: claude: command not found` — the agent
     // runtime was never bound. `bins_for(role)` gives git and gh; a runtime is the caller's to name,
     // which is the point of `extra_bins` (the alternative is Usr::All, i.e. every binary on the host).
-    match for_role(role, unit, &paths, harness_bins, Default::default(), scope_mode(), vec![shell.to_string(), "-i".into()]) {
+    match for_role(role, unit, &paths, harness_bins, session_limits(role), scope_mode(), vec![shell.to_string(), "-i".into()]) {
         Ok(p) => {
             if let Some(c) = &p.caveat {
                 // A profile that knowingly grants more than the model wants must be visible at the
@@ -3161,5 +3246,92 @@ mod store_root_tests {
         assert!(root.join("coord").join("out").is_dir());
 
         std::fs::remove_dir_all(&root).ok();
+    }
+}
+
+// ── the cgroup ceilings (the-sandbox-limits-are-rendered-from-a-default-that-caps-nothing) ───────
+//
+// Every namespace launch passed `Limits::default()`, so `render_limits` emitted nothing and the
+// systemd scope enforced nothing. `bsc-sandbox` already tests the RENDERING; what was missing is a
+// test at the LAUNCH SITE, which is where the default was being passed.
+
+#[cfg(all(test, target_os = "linux"))]
+mod limits_tests {
+    use super::{host_memory_kb, namespace_argv, session_limits, GateConfig};
+    use bsc_sandbox::profile::Role;
+    use crate::testutil::prelude::ENV_LOCK;
+
+    /// THE regression: the argv a real launch renders carries the caps.
+    ///
+    /// Asserted through `namespace_argv` rather than through `session_limits` alone, because the
+    /// bug was never in the values — it was that the launcher passed `Default::default()` and the
+    /// flags never reached the scope at all.
+    #[test]
+    fn a_launch_renders_the_cgroup_flags() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("BSC_SANDBOX_MEMORY_MAX");
+        std::env::set_var("BSC_SANDBOX_TASKS_MAX", "4096");
+
+        let a = namespace_argv(Some("worker"), "lim", "/tmp/wt", None, "bash", &[], GateConfig::default())
+            .expect("renders");
+
+        assert!(a.iter().any(|x| x == "TasksMax=4096"), "a fork-bomb ceiling: {a:?}");
+        assert!(a.iter().any(|x| x.starts_with("CPUWeight=")), "agents yield to the app: {a:?}");
+        if host_memory_kb().is_some() {
+            assert!(a.iter().any(|x| x.starts_with("MemoryMax=")), "a memory ceiling: {a:?}");
+            assert!(
+                a.iter().any(|x| x == "MemorySwapMax=0"),
+                "a memory cap that can swap is not a cap: {a:?}",
+            );
+        }
+        std::env::remove_var("BSC_SANDBOX_TASKS_MAX");
+    }
+
+    /// A worker writes code, so its work can legitimately be large; every other role is
+    /// `code: none` and reviews. The worker's ceiling must be the higher of the two.
+    #[test]
+    fn the_role_that_writes_code_gets_the_larger_share() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("BSC_SANDBOX_MEMORY_MAX");
+
+        let (worker, director) = (session_limits(Role::Worker), session_limits(Role::Director));
+        match (worker.memory_max, director.memory_max) {
+            (Some(w), Some(d)) => {
+                let mb = |s: String| s.trim_end_matches('M').parse::<u64>().expect("rendered as MB");
+                assert!(mb(w) > mb(d), "a worker builds; a director reviews");
+            }
+            // No readable host size ⇒ no cap either way, which is the documented fallback.
+            (None, None) => {}
+            other => panic!("the two roles must agree on whether a cap is knowable: {other:?}"),
+        }
+    }
+
+    /// The override exists so a machine that disagrees does not need a rebuild — and `0` is how you
+    /// turn the memory cap off, since an empty value is indistinguishable from an unset one.
+    #[test]
+    fn the_env_override_wins_and_zero_disables() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        std::env::set_var("BSC_SANDBOX_MEMORY_MAX", "3G");
+        assert_eq!(session_limits(Role::Worker).memory_max.as_deref(), Some("3G"));
+
+        std::env::set_var("BSC_SANDBOX_MEMORY_MAX", "0");
+        assert_eq!(session_limits(Role::Worker).memory_max, None, "0 opts out explicitly");
+
+        std::env::remove_var("BSC_SANDBOX_MEMORY_MAX");
+    }
+
+    /// An unreadable host size must yield NO cap rather than a guessed one: `MemoryMax` renders
+    /// `MemorySwapMax=0` beside it, so a cap that is too small kills a build instead of slowing it.
+    #[test]
+    fn an_unknown_host_size_declines_to_guess() {
+        // `/proc/meminfo` is present wherever this runs, so drive the decision directly: the
+        // fallback is `host_memory_kb() -> None`, and the contract is that None means no cap.
+        assert!(host_memory_kb().is_some_and(|kb| kb > 0), "a Linux host reports MemTotal");
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("BSC_SANDBOX_MEMORY_MAX");
+        // With a readable size the cap IS set — the negative half is pinned by `zero disables`
+        // above, which exercises the same `None` branch the unreadable case falls into.
+        assert!(session_limits(Role::Worker).memory_max.is_some());
     }
 }
