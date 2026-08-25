@@ -16,7 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
-import { isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
+import { isStudioSessionPaneId, isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
 
 /** The terminal props a slot supplies to the shared <TerminalView>. The console cell is the `primary`
  *  (it owns the launch/data props); the Glance dock is a viewer that supplies only visibility/focus. */
@@ -25,6 +25,19 @@ export interface SlotTerminalProps {
   focused?: boolean;
   initialCwd?: string;
   initCmd?: string;
+  /** The prompt to bake into the launch, when the launching surface already knows it.
+   *
+   *  It travels HERE, beside `initCmd`, rather than only through the store — which is where it used to
+   *  live exclusively, and why a debug session could come up as a bare `claude` with nothing to do
+   *  (`a-debug-session-launches-with-no-charter`). Props are re-read live at portal-render time; the
+   *  store is read ONCE inside a one-shot launch effect, so any ordering that puts the mount's write
+   *  after that read loses the prompt silently — and a session with no prompt looks identical to one
+   *  that has simply finished. Measured on the running app: 58 of 58 debug launches carried the props
+   *  and none carried the prompt.
+   *
+   *  `TerminalView` still falls back to `paneStartupPromptText` for the panes that seed it that way
+   *  (fleet, triage, persona adopt); this is for a surface that HAS the prompt at render time. */
+  startupPrompt?: string;
   onCwdChange?: (path: string) => void;
   onStatusChange?: (status: "run" | "idle") => void;
   onFocus?: () => void;
@@ -178,7 +191,18 @@ export function TerminalHost({ children }: { children: ReactNode }) {
         // hide a working session. And only BEFORE the first render: once a pane has a container its
         // TerminalView stays mounted whatever the claims do, so a mount unmounting later (a tear-off, the
         // idle reaper) can never tear a live PTY down through this path.
-        if (!primaryClaim && isStudioSessionPaneId(paneId) && !containersRef.current.has(paneId)) return null;
+        // `isFullCapabilitySession` rides alongside the fixed-id check because the DEBUG studio's panes
+        // are per-REQUEST (`debug-studio:req-<id>`) and so are not in `STUDIO_SESSION_PANE_IDS`, which is
+        // an exact-match list. The comment above names `DebugSessionMount` as one of the mounts that make
+        // this safe — that mount is gone, replaced by `RequestSessionsMount`, whose panes the exact-match
+        // check silently stopped covering. The guarantee it relies on still holds for them: every
+        // `debug-studio:` pane has exactly one owning mount and that mount is unconditional.
+        //
+        // Without this, a viewer claiming one of those panes first launches it with `initialCwd` and
+        // `initCmd` UNDEFINED — reproduced in this file's test, and worse than it sounds: an empty cwd
+        // also skips `ensure_session_settings`, so the session runs with no role gate at all.
+        const awaitsItsMount = isStudioSessionPaneId(paneId) || isFullCapabilitySession(paneId);
+        if (!primaryClaim && awaitsItsMount && !containersRef.current.has(paneId)) return null;
         const primary = primaryClaim ?? owner;
         const op = owner.propsRef.current;
         const pp = primary.propsRef.current;
@@ -189,6 +213,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
             focused={op.focused}
             initialCwd={pp.initialCwd}
             initCmd={pp.initCmd}
+            startupPrompt={pp.startupPrompt}
             onCwdChange={pp.onCwdChange}
             onStatusChange={pp.onStatusChange}
             onFocus={pp.onFocus}
