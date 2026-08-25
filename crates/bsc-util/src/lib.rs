@@ -21,6 +21,25 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod sidecars;
 pub use sidecars::{Sidecar, CHANNEL_MOCK_MCP, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
 
+/// **This app's own project key** — the hub its own faults and plan live under.
+///
+/// base-studio-code is developed as a project of itself: `projects/studio-code/` is a real hub with a
+/// real plan store, and the repo's whole workflow is written against that name. So when the app files
+/// a fault ABOUT ITSELF — a build that failed, a boot that never mounted — this is the project it
+/// belongs to, which is also what makes the existing pipeline carry it: Glance renders a project
+/// node's health from its unresolved faults, with no new machinery (#4008).
+///
+/// It is a constant rather than a literal because two independent producers write it — the boot
+/// watchdog in Rust and the `--project` flag in `package.json`'s wrapped build commands — and a
+/// disagreement between them would split the app's own faults across two stores, each looking empty
+/// from the other. `the_self_project_key_matches_the_wired_npm_scripts` pins them together.
+///
+/// OPEN QUESTION, deliberately not settled here: on an END USER's machine this mints a hub named
+/// `studio-code` for a project they never created. The fault is genuinely about the app, so it has to
+/// live somewhere; whether that somewhere should be a project node they can see is a product decision,
+/// not a mechanical one. Recorded on `epic-a-build-or-launch-failure-leaves-no-record`.
+pub const SELF_PROJECT_KEY: &str = "studio-code";
+
 /// The canonical observability log-stream registry (#1847) — ONE list shared by the app's env
 /// staging (`wire_bsc_env`) and the unified `bsc-logs` reader (`crates/logs`).
 pub mod log_streams;

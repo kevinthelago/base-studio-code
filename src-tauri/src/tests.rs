@@ -159,6 +159,46 @@
             assert!(
                 crate::session::launch::claude_model_flag(id).is_some(),
                 "the catalog offers '{id}', which the launch cannot map to a --model alias",
+    /// The app's own project key is written by TWO independent producers, and they must agree.
+    ///
+    /// Rust files the app's own faults under `bsc_util::SELF_PROJECT_KEY` (the boot watchdog); the
+    /// wrapped build commands in `package.json` pass `--project <key>` to `bsc errors run`. A
+    /// disagreement would split the app's faults across two stores, each looking EMPTY from the other
+    /// — a build failure recorded where nobody reads, and a `bsc errors projects` that says the app is
+    /// fine. Neither side can see the other, so nothing but this test can catch it.
+    ///
+    /// It reaches outside `src-tauri/` to read `package.json`, which Rust otherwise only does for the
+    /// cross-repo wire fixtures. That is the point: the drift being guarded is exactly the one that
+    /// crosses the boundary.
+    #[test]
+    fn the_self_project_key_matches_the_wired_npm_scripts() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let raw = std::fs::read_to_string(manifest.join("..").join("package.json")).expect("package.json");
+        let pkg: serde_json::Value = serde_json::from_str(&raw).expect("package.json parses");
+        let scripts = pkg["scripts"].as_object().expect("scripts is an object");
+
+        let wired: Vec<(&String, String)> = scripts
+            .iter()
+            .filter_map(|(name, v)| {
+                let s = v.as_str()?;
+                let at = s.find("--project ")?;
+                let key = s[at + "--project ".len()..].split_whitespace().next()?;
+                Some((name, key.to_string()))
+            })
+            .collect();
+
+        assert!(
+            !wired.is_empty(),
+            "no npm script passes `--project` any more — either the build/launch recording was unwired \
+             (see epic-a-build-or-launch-failure-leaves-no-record) or this guard is now pointing at nothing",
+        );
+        for (name, key) in wired {
+            assert_eq!(
+                key,
+                bsc_util::SELF_PROJECT_KEY,
+                "npm script `{name}` records into project `{key}`, but the app records its own faults \
+                 into `{}` — the two stores would each look empty from the other",
+                bsc_util::SELF_PROJECT_KEY,
             );
         }
     }

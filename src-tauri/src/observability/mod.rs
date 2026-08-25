@@ -3,6 +3,9 @@
 use std::sync::{Mutex, MutexGuard};
 
 pub mod attest;
+/// The LAUNCH watchdog (the-app-starts-and-never-mounts-and-nothing-says-so) — the boot failure no
+/// exit code can see: every process alive, the window open, and the UI never mounted.
+pub mod boot_watch;
 pub mod collector;
 pub mod graph_log;
 pub mod log_watch;

@@ -68,11 +68,48 @@ asked for. `npm run lint` **does** cover `e2e/`, so the dir is never unchecked b
 
 ```bash
 npm run dev               # Vite dev server — frontend only (hot-reload)
-npm run tauri -- dev      # Full Tauri app with native window + hot-reload
+npm run dev:app           # the FULL app, with build/launch failures recorded (see below)
+npm run tauri -- dev      # the same launch, unrecorded
 npm run tauri -- build    # Production build (creates platform installer)
 cargo test                # Run Rust backend tests
 npm run typecheck    # TypeScript type-check without emit
 ```
+
+### When a build or launch fails, it records itself
+
+A build or launch failure used to exist only as scrollback in whoever's shell ran it, and vanished with
+that shell. `npm run build:plan`, `npm run build` and `npm run dev:app` are wrapped in
+**`bsc errors run`**, which streams the command through untouched, exits with its exact code, and files
+one fingerprinted fault into `projects/studio-code/error.db` when it fails. A green run clears what its
+own command recorded, so the store is a list of what is broken NOW rather than a pile of fixed things.
+
+```bash
+bsc errors projects                       # which project broke — the entry point when you know nothing
+bsc errors list --project studio-code --unresolved
+bsc errors get <fingerprint> --project studio-code    # the diagnostic + its context
+bsc errors resolve <fingerprint> --project studio-code
+```
+
+`--project` matters more than it looks: every other path resolves the store from `$BSC_ERROR_DB`, which
+is set **per session at launch** — so the one reader who most needs these, a session outside the app
+after the app failed to start, is exactly the one without it.
+
+A wrapper can only see a launch that DIES. The one that hurts is the launch where every process stays
+alive — vite up, window open, **frontend never mounted** — and exit codes say nothing. So Rust arms a
+deadline at startup and the frontend acks (`boot_mounted`) when it mounts; silence past it becomes a
+`launch` fault, and a late ack clears it, so guessing the deadline too low costs a few seconds of amber
+rather than a standing lie. When the crash overlay can still reach the backend it hands over the real
+error; when it cannot — the case it exists for — the watchdog files the message-less one, which says
+so rather than inventing a cause.
+
+**A session inside the app cannot answer a LAUNCH failure, and that is structural, not a gap.** The
+panes that would host it are the app's own UI and the runtime collector lives in the app's process, so
+there is nothing running to do the work. Build failures are different — they happen while the app is up
+— and a fault is durable, so a launch failure at 03:00 is still there, and still amber in Glance, at
+09:00. Epic: `bsc plan get epic-a-build-or-launch-failure-leaves-no-record`.
+
+The **gate is deliberately not wired to this**: it already fails loudly in your own shell, and ten
+worktree agents gating in parallel would pin every node red and destroy the signal.
 
 ## Project Structure
 

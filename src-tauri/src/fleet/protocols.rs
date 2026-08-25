@@ -135,7 +135,55 @@ mod tests {
         }
     }
 
-    /// The WRITE half (#4254). Reading from the stores is only half the rule: a worker that reads a
+    /// A worker must know that a build verdict is RECORDABLE, and equally that its own loop is not
+    /// (a-workers-failing-build-is-invisible-to-its-director).
+    ///
+    /// Both halves are load-bearing and they pull opposite ways. Without the first, a worker's build
+    /// failure exists only in its own pane and dies with the session, so the director learns a stream
+    /// is stuck by noticing silence. Without the second, a worker wraps its iteration loop, every
+    /// half-finished edit files a fault, and the project's node sits red while nothing is wrong —
+    /// which is the same signal-destroying mistake #4008 avoided by scoping to supply blocks, and the
+    /// reason the repo's own gate is deliberately unwrapped.
+    #[test]
+    fn the_worker_protocol_records_a_build_verdict_and_not_its_own_loop() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-errors-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        assert!(md.contains("bsc errors run"), "the recorder must be named:\n{md}");
+        assert!(md.contains("--stage build"), "…with the stage that separates it from runtime faults");
+        // The exclusion, in the document rather than in someone's head.
+        assert!(
+            md.contains("Do NOT wrap your iteration loop"),
+            "the protocol must say which runs are NOT recorded:\n{md}",
+        );
+        // A rule with no reason gets dropped the first time it is inconvenient.
+        assert!(md.contains("not a defect"), "…and why: a mid-edit failure is work, not a fault");
+    }
+
+    /// The director's half: a fault is a READ it consults, never a push it waits for.
+    ///
+    /// The failure this guards against is a director that treats every red build as an interrupt.
+    /// Workers break their own builds constantly on the way to finishing, so routing each one turns
+    /// ordinary work into a queue of false alarms — and a director that learns to ignore that queue
+    /// ignores the real ones in it too.
+    #[test]
+    fn the_director_protocol_reads_faults_rather_than_waiting_to_be_told() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(p.contains("bsc errors list"), "the director must know the read verb");
+        assert!(p.contains("--stage build"), "…and how to separate build verdicts from runtime faults");
+        assert!(p.contains("bsc errors resolve"), "…and how to clear one it has fixed");
+        assert!(
+            p.contains("READ, NOT AN INTERRUPT"),
+            "the protocol must say a red build is not routed at it:\n{p}",
+        );
+        // The count is what distinguishes stuck from mid-edit; a director told only "there is a fault"
+        // would act on the first one.
+        assert!(p.contains("count"), "…and that the repeat count is the signal");
+    }
+
+    /// The WRITE half (#4254).    /// The WRITE half (#4254). Reading from the stores is only half the rule: a worker that reads a
     /// record and then edits the FILE writes the copy while the record keeps the old body — the drift
     /// #4246 measured at 22 modules.
     ///
