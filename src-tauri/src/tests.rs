@@ -441,3 +441,73 @@
             }
         }
     }
+
+    /// #a-temporary-script-is-a-missing-bsc-command — EVERY session charter the app ships must tell its
+    /// session that needing a temporary script is a MISSING COMMAND to be filed, not a puzzle to route
+    /// around, and must name the verb that files it.
+    ///
+    /// The rule is not new; its REACH was the defect. Four studio charters (architect, designer,
+    /// librarian, sound-designer) carried an identical hand-placed block and five other session classes
+    /// carried nothing — the integrator, the fleet worker, the director and the fleet architect. Nothing
+    /// checked any of it, so a fifth charter could ship with no rule and no failure, which is how the
+    /// gap opened in the first place.
+    ///
+    /// The subject is the SHIPPED SET, walked, not a list kept here: a hand-kept list can only assert
+    /// things about files someone remembered to add to it, so the one case it must catch — a NEW charter
+    /// without the rule — is precisely the case it would miss.
+    ///
+    /// ROUTING IS DELIBERATELY NOT UNIFORM, and the test encodes that rather than flattening it. A
+    /// worker is denied the global tooling queue on purpose (`worker-protocol.md` says so explicitly)
+    /// and files `bsc plan request` to its director; every other charter files the global `bsc request`.
+    /// Asserting one verb everywhere would push a command past a permission floor that refuses it, which
+    /// a model reads as a broken environment rather than as policy.
+    #[test]
+    fn every_session_charter_says_a_temporary_script_is_a_missing_command() {
+        // The canonical marker, identical in every charter so this test has one thing to look for.
+        const MARKER: &str = "A TEMPORARY SCRIPT IS A MISSING COMMAND";
+        // The worker's ask belongs to its director; everyone else files on the global tooling queue.
+        const WORKER_ONLY_LANE: &str = "fleet/worker-protocol.md";
+
+        let mut charters = crate::platform::config::embedded_paths_ending_with("claude.md");
+        charters.extend(crate::platform::config::embedded_paths_ending_with("-protocol.md"));
+        charters.sort();
+
+        // The walk must actually find the surface — an empty list would make every assertion below
+        // vacuous and the test would "pass" while checking nothing.
+        assert!(
+            charters.len() >= 8,
+            "expected the packaged charter set (5 studio claude.md + 3 fleet protocols), found {charters:?}",
+        );
+
+        for rel in &charters {
+            let md = crate::platform::config::embedded_str(rel);
+            assert!(!md.trim().is_empty(), "{rel} must be packaged and non-empty");
+            assert!(
+                md.contains(MARKER),
+                "{rel} must carry the rule verbatim as `{MARKER}` — a new charter does not get to ship without it:\n{md}",
+            );
+            // Naming the rule without naming the verb leaves a session knowing it may not improvise and
+            // not knowing what to do instead, which is worse than saying nothing.
+            let verb = if rel == WORKER_ONLY_LANE { "bsc plan request new" } else { "bsc request new" };
+            assert!(md.contains(verb), "{rel} must name `{verb}` as the way to file the gap:\n{md}");
+        }
+
+        // The worker's lane stays separate. `bsc plan request new` CONTAINS neither more nor less than
+        // itself, so the check is that the protocol never points a worker at the global queue as
+        // something it may file on — the deny sentence is allowed to mention it, and does.
+        let worker = crate::platform::config::embedded_str(WORKER_ONLY_LANE);
+        assert!(
+            worker.contains("denied to you"),
+            "the worker protocol must keep stating that the global tooling queue is not its lane:\n{worker}",
+        );
+
+        // The trigger is scoped, in every copy. Without this the rule reads as "never use a pipeline",
+        // which a session with a real shell would discard wholesale — taking the useful half with it.
+        for rel in &charters {
+            let md = crate::platform::config::embedded_str(rel);
+            assert!(
+                md.contains("OPERATION") || md.contains("inspection"),
+                "{rel} must draw the line between an operation (file it) and reading (fine):\n{md}",
+            );
+        }
+    }

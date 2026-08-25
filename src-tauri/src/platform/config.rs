@@ -136,6 +136,33 @@ pub(crate) fn embedded_dir_files(dir_rel: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// Every EMBEDDED file whose packaged path ends with `suffix`, as `data/`-relative forward-slash paths
+/// — for a test that must enumerate a packaged SURFACE rather than a hand-kept list of its members.
+///
+/// The distinction matters: a list written into a test can only assert things about the files someone
+/// remembered to add to it, so the one case it must catch — a NEW file of that kind shipping without
+/// the property — is exactly the case it misses. Walking the tree makes the test's subject the shipped
+/// set itself. Recursive because charters live one directory down (`designer/claude.md`), which
+/// [`embedded_dir_files`] (non-recursive, single dir) cannot reach.
+#[cfg(test)]
+pub(crate) fn embedded_paths_ending_with(suffix: &str) -> Vec<String> {
+    fn walk(d: &Dir<'_>, suffix: &str, out: &mut Vec<String>) {
+        for f in d.files() {
+            let p = f.path().to_string_lossy().replace('\\', "/");
+            if p.ends_with(suffix) {
+                out.push(p);
+            }
+        }
+        for sub in d.dirs() {
+            walk(sub, suffix, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&EMBEDDED, suffix, &mut out);
+    out.sort();
+    out
+}
+
 /// First-run seed: mirror the embedded tree into [`config_root`], writing only files that are ABSENT
 /// so a user edit is never clobbered. Idempotent — safe to call on every boot. Best-effort; on an I/O
 /// error the embedded fallback stays in force, so a seed failure is non-fatal.
