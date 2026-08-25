@@ -116,6 +116,31 @@ export async function loadComponentsGraph(): Promise<ComponentRecord[] | null> {
   }
 }
 
+/**
+ * The library as a NAME INDEX — enough to answer "does this id/name exist, and in which kit", and
+ * nothing more. `null` when either read is unreachable.
+ *
+ * Exists because the expensive read cannot be raced. `hydrateComponents` BLOCKS THE MAIN THREAD (the
+ * `--full` read plus its reconcile), so a `setTimeout` bound around it cannot fire until the thing it
+ * bounds has already finished — measured on the running app: a miss took 5.13s, and a `bsc navigate
+ * show` fired 1.0s into it took 8.0s and timed out, because the app answered nothing at all for the
+ * duration. The answer is to not pay the expensive read to decide a question the cheap one settles:
+ *
+ * | read | bytes |
+ * |---|---|
+ * | this (`ui list --graph` + `ui kit list --full`) | ~80 KB |
+ * | `hydrateComponents` (`ui list --full` + reconcile) | 5.9 MB |
+ *
+ * DELIBERATELY NOT WRITTEN INTO THE STORE. The projection carries no `srcText`, and setting it on a warm
+ * store makes every `GraphComponent` go real → "" → real, which unmounts each page's subtree and
+ * recompiles it — the remount `hydrateComponents` phase 1 guards against by running only on a cold
+ * store. This is a lookup, so it stays a value.
+ */
+export async function readLibraryIndex(): Promise<{ components: ComponentRecord[]; kits: Kit[] } | null> {
+  const [components, kits] = await Promise.all([loadComponentsGraph(), loadKits()]);
+  return components && kits ? { components, kits } : null;
+}
+
 /** Load every kit via `bsc ui kit list --full`; `null` when unreachable. */
 export async function loadKits(): Promise<Kit[] | null> {
   try {
