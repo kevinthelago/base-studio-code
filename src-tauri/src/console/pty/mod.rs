@@ -155,6 +155,49 @@ fn attach_job_and_track(
     job
 }
 
+/// Is there a session for `pane_id` worth reconnecting to — and if not, drop the dead one.
+///
+/// `true` means reconnect (the tab-switch case this gate exists for). `false` means the caller
+/// should create a real session; any tombstone has already been removed from `sessions`.
+///
+/// **Membership is not the question — liveness is.** `pty_kill` is the only other place that
+/// removes an entry, so a child that exits on its OWN leaves its `PtySession` in the map forever.
+/// That entry then shadows the pane: every relaunch takes the reconnect branch and returns, writing
+/// the init line into a PTY whose process is gone, while the frontend's resume keeps typing into
+/// nothing. Observed on a fleet director that exited 1 ten seconds after launch — five relaunches
+/// in ten minutes, every one refused, until the app was restarted. The pane cannot recover on its
+/// own because the thing that would fix it is the very call being refused.
+///
+/// Nothing else needs unwinding here: the pane's perf registration and its ledger entry are both
+/// keyed by `pane_id` and REPLACED by the create that follows (`attach_job_and_track` →
+/// `perf::register` / `ledger::record`, which retains-by-pane_id). Reaping them here as well would
+/// leave a window where a pane the app still shows is tracked by nothing.
+fn reconnect_or_reap(sessions: &mut HashMap<String, PtySession>, pane_id: &str) -> bool {
+    let Some(session) = sessions.get_mut(pane_id) else {
+        return false;
+    };
+    match session.child.try_wait() {
+        // Still running — the reconnect this gate is for.
+        Ok(None) => true,
+        // The child is gone. Reap the tombstone so the caller creates a fresh session.
+        Ok(Some(status)) => {
+            let code = status.exit_code();
+            log::info!(
+                "pty[{pane_id}] previous session had already exited (exit={code}) — recreating rather than reconnecting"
+            );
+            sessions.remove(pane_id);
+            false
+        }
+        // Unreadable status: treat it as ALIVE. Recreating over a session that is merely
+        // unreadable would abandon a running agent and its process tree; refusing to recreate
+        // costs a relaunch the user can retry. The cheap mistake is the one to make.
+        Err(e) => {
+            log::warn!("pty[{pane_id}] could not read child status ({e}) — assuming alive and reconnecting");
+            true
+        }
+    }
+}
+
 /// The session's resolved working directory (#367/#979/#1819/#1988) — the single place the scattered
 /// `into_sandbox` cwd re-tests collapse into. Normalizes the configured `cwd`, decides whether it is
 /// missing or empty, picks the `effective_cwd` the shell actually starts in, and logs the two loud
@@ -419,9 +462,10 @@ fn pty_create_inner(
     app: &AppHandle,
     state: &PtyState,
 ) -> Result<bool, String> {
-    // If a session already exists for this pane (e.g. user switched tabs and
-    // switched back), reconnect rather than recreating.
-    if state.0.lock().unwrap().contains_key(&pane_id) {
+    // If a LIVE session already exists for this pane (e.g. user switched tabs and
+    // switched back), reconnect rather than recreating. A DEAD one is reaped first — see
+    // `reconnect_or_reap` for why membership alone is not the question.
+    if reconnect_or_reap(&mut state.0.lock().unwrap_or_else(|e| e.into_inner()), &pane_id) {
         log::info!("pty[{pane_id}] reconnect to existing session");
         return Ok(false);
     }
@@ -2629,5 +2673,100 @@ mod dead_pane_tests {
         assert!(first_write_to_missing("dead-pane-tests:second:p0"));
         assert!(first_write_to_missing("dead-pane-tests:third:p0"));
         assert!(!first_write_to_missing("dead-pane-tests:second:p0"));
+    }
+}
+
+// ── the reconnect gate (a-pane-whose-child-exits-can-never-be-relaunched) ────────────────────────
+//
+// The gate that decides reconnect-vs-recreate used to ask `contains_key`, and `pty_kill` is the
+// only other place that removes an entry. So a child that exited on its own left a tombstone that
+// shadowed the pane permanently — every relaunch logged "reconnect to existing session" and
+// returned, and the pane could not recover, because the call that would fix it was the one being
+// refused. These drive REAL children through a real PTY: the whole failure was that a status
+// nobody read looked exactly like a healthy session.
+
+#[cfg(test)]
+mod reconnect_tests {
+    use super::{reconnect_or_reap, PtySession};
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::collections::HashMap;
+
+    /// A real session around `argv`, built the same way `pty_create` builds one.
+    fn session(argv: &[&str]) -> PtySession {
+        let pair = native_pty_system()
+            .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(argv[0]);
+        for a in &argv[1..] {
+            cmd.arg(a);
+        }
+        let child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+        let writer = pair.master.take_writer().expect("writer");
+        PtySession { writer, master: pair.master, child, _job: None }
+    }
+
+    /// A child that exits immediately, waited to completion so its status is readable.
+    fn exited_session() -> PtySession {
+        let mut s = if cfg!(windows) {
+            session(&["cmd", "/c", "exit 3"])
+        } else {
+            session(&["/bin/sh", "-c", "exit 3"])
+        };
+        s.child.wait().expect("the child exits on its own");
+        s
+    }
+
+    /// A child that stays up for the length of the test.
+    fn running_session() -> PtySession {
+        if cfg!(windows) {
+            session(&["cmd", "/c", "ping -n 60 127.0.0.1 > NUL"])
+        } else {
+            session(&["/bin/sh", "-c", "sleep 60"])
+        }
+    }
+
+    /// THE regression. A director exited 1 ten seconds after launch and every relaunch for the next
+    /// ten minutes was refused, because the map still held it.
+    #[test]
+    fn a_pane_whose_child_exited_is_recreated_not_reconnected_to() {
+        let mut sessions = HashMap::new();
+        sessions.insert("proj:director".to_string(), exited_session());
+
+        assert!(
+            !reconnect_or_reap(&mut sessions, "proj:director"),
+            "a dead child must not be reconnected to — that is the tombstone that shadowed the pane",
+        );
+        assert!(
+            !sessions.contains_key("proj:director"),
+            "and the tombstone must be REAPED, or the next call refuses all over again",
+        );
+    }
+
+    /// The case the gate exists for, which the fix must not cost: switching tabs away and back
+    /// reconnects to the running agent rather than starting a second one on top of it.
+    #[test]
+    fn a_pane_whose_child_is_running_is_still_reconnected_to() {
+        let mut sessions = HashMap::new();
+        sessions.insert("proj:worker".to_string(), running_session());
+
+        assert!(
+            reconnect_or_reap(&mut sessions, "proj:worker"),
+            "a live child is the reconnect case",
+        );
+        assert!(
+            sessions.contains_key("proj:worker"),
+            "and a live session is never dropped",
+        );
+
+        sessions.get_mut("proj:worker").unwrap().child.kill().ok();
+    }
+
+    /// A pane with no session at all is a plain create — no reconnect, nothing to reap.
+    #[test]
+    fn an_unknown_pane_creates() {
+        let mut sessions = HashMap::new();
+        assert!(!reconnect_or_reap(&mut sessions, "proj:never-launched"));
+        assert!(sessions.is_empty());
     }
 }
