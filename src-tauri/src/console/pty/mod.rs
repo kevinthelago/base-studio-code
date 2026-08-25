@@ -223,6 +223,16 @@ fn scaffold_store_root(pane_id: &str, root: &std::path::Path) -> Option<()> {
         log::warn!("pty[{pane_id}] no coordination outbox ({e}); the session cannot emit");
         return None;
     }
+    // ...and the PLAN outbox, so a session can record what it did. Non-fatal on its own: a session
+    // that can coordinate but not record is degraded, where one that cannot emit at all has no way
+    // to say so. The mountpoint has to exist on the host before bwrap can bind it, and the
+    // projection it lands in is read-only, so it cannot be created from inside.
+    if let Err(e) = std::fs::create_dir_all(root.join("plan").join("out")) {
+        log::warn!(
+            "pty[{pane_id}] no plan outbox ({e}); this session cannot open a change record, \
+             record gate evidence, move its item or file a request"
+        );
+    }
     // The emitter rc travels with the outbox: written on the host, bound read-only into the cage,
     // sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
     if let Err(e) = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc()) {
@@ -592,6 +602,10 @@ fn pty_create_inner(
             root.join("coord").join("out"),
             crate::platform::paths::bsc_base_dir().join("coord.log"),
         );
+        // ...and the same for the PLAN outbox, so the change record, the gate evidence, the status
+        // transition and the request lane have a path out of the cage.
+        #[cfg(target_os = "linux")]
+        spawn_plan_drain(pane_id.clone(), root.join("plan").join("out"), cwd.clone());
         Some(root.to_string_lossy().into_owned())
     });
 
@@ -1417,6 +1431,104 @@ fn spawn_outbox_drain(pane_id: String, outbox: std::path::PathBuf, coord_log: st
     });
 }
 
+/// Drain a caged session's `/plan/out` into the project's plan store, through the bundled `bsc`.
+///
+/// The mirror of [`spawn_outbox_drain`], and it applies entries by EXECING THE CLI rather than by
+/// opening plan.db here. That is the point: `bsc plan change note` already enforces append-only
+/// notes, `bsc plan status` already validates the status, and the projection on the read side
+/// (`project_stores_for`) already goes through the same binary. A second implementation of those
+/// semantics inside the launcher is exactly the "written twice and drifted" failure this repo keeps
+/// paying for — and it is what `dangerous.rs` in `bsc-hook` exists as a monument to.
+///
+/// The store stays unwritable from INSIDE the cage either way: `/plan` is a read-only mount, the
+/// binary is not bound, and this runs host-side on entries the agent could only append.
+///
+/// Every call is an ARGV, never a shell string, so a note containing a backtick or a `$(…)` is
+/// passed as data. `bsc_storefs::plan::accept_write` has already refused anything outside the
+/// vocabulary — notably `status verified`, which is the reviewer's verdict and not the author's.
+#[cfg(target_os = "linux")]
+fn spawn_plan_drain(pane_id: String, outbox: std::path::PathBuf, cwd: String) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            // The session is gone once its outbox is — the same stop signal the coord drain uses.
+            if !outbox.is_dir() {
+                return;
+            }
+            // Resolved every tick rather than once: a session can outlive a `bsc` restage, and a
+            // hub can gain its plan.db after launch (a fresh project is scaffolded, then planned).
+            let (Some(bsc), Some(db)) = (env::bsc_bin_path(), env::plan_db_for_cwd(&cwd)) else {
+                continue;
+            };
+            if !db.is_file() {
+                continue;
+            }
+
+            // One directory per entry, one file per field — the `/ui/out` shape, because a change
+            // note is prose and must not be escaped into a filename or a JSON blob.
+            let Ok(rd) = std::fs::read_dir(&outbox) else { continue };
+            let mut dirs: Vec<std::path::PathBuf> = rd.filter_map(Result::ok).map(|e| e.path()).collect();
+            dirs.sort(); // deterministic, so a drain applies in a stable order
+            let mut entries: Vec<(String, Vec<(String, String)>)> = Vec::new();
+            let mut consumed: Vec<std::path::PathBuf> = Vec::new();
+            for dir in dirs {
+                let Some(name) = dir.file_name().and_then(|n| n.to_str()) else { continue };
+                // `.rejected` is our own feedback, written back as a FILE beside the entry.
+                if name.starts_with('.') || name.ends_with(".rejected") || !dir.is_dir() {
+                    continue;
+                }
+                let Ok(fields_rd) = std::fs::read_dir(&dir) else { continue };
+                let mut fields: Vec<(String, String)> = Vec::new();
+                for f in fields_rd.filter_map(Result::ok) {
+                    let Some(k) = f.file_name().to_str().map(str::to_string) else { continue };
+                    if let Ok(v) = std::fs::read_to_string(f.path()) {
+                        fields.push((k, v));
+                    }
+                }
+                entries.push((name.to_string(), fields));
+                consumed.push(dir);
+            }
+            if entries.is_empty() {
+                continue;
+            }
+
+            let (writes, rejected) = bsc_storefs::plan::drain_writes(&entries);
+            for (entry, w) in &writes {
+                let argv = w.argv();
+                match std::process::Command::new(&bsc).args(&argv).env("BSC_PLAN_DB", &db).output() {
+                    Ok(o) if o.status.success() => {
+                        log::info!("pty[{pane_id}] plan drain: bsc {}", argv.join(" "));
+                    }
+                    // A REFUSAL BY THE CLI IS FEEDBACK, not a silent drop. The pure layer accepts
+                    // the shape; only the store knows whether the ref exists or the transition is
+                    // legal, and the agent has to be able to read that answer.
+                    Ok(o) => {
+                        let why = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                        log::warn!("pty[{pane_id}] plan drain refused ({}): {why}", o.status);
+                        let _ = std::fs::write(
+                            outbox.join(format!("{entry}.rejected")),
+                            format!("rejected by the plan store: {why}\n\nthe command was:\n  bsc {}\n", argv.join(" ")),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("pty[{pane_id}] plan drain could not exec bsc: {e}");
+                        // Leave the entries in place and retry on the next tick — an unrunnable
+                        // binary is transient (a restage), and dropping the record is not.
+                        continue;
+                    }
+                }
+            }
+            // Feedback the agent can READ: a rejection explains the fix rather than vanishing.
+            for (name, fix) in &rejected {
+                let _ = std::fs::write(outbox.join(name), fix);
+            }
+            for d in consumed {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+    });
+}
+
 /// Why this session cannot be sandboxed, if it cannot — the ONE implementation, shared by the
 /// refusal in [`namespace_argv`] and the notice the pane prints.
 ///
@@ -2128,7 +2240,7 @@ fn namespace_argv(
         // The writable holes, bound AFTER their read-only projections so each lands on top rather
         // than being overmounted. The mountpoint must already exist inside the projection — bwrap
         // cannot mkdir inside a read-only bind.
-        for (proj, guest) in [("coord", "/coord/out"), ("ui", "/ui/out")] {
+        for (proj, guest) in [("coord", "/coord/out"), ("ui", "/ui/out"), ("plan", "/plan/out")] {
             let out = root.join(proj).join("out");
             if out.is_dir() {
                 paths.outboxes.push((guest.to_string(), out));
@@ -2507,6 +2619,114 @@ mod namespace_tests {
         assert!(
             !text.contains("FAILED:"),
             "every command the protocol gives a caged worker must run there — {text:?}"
+        );
+    }
+
+    /// The WRITE half of the same guarantee: the commands the protocol gives a caged worker for
+    /// recording its work actually run in the cage, and what they leave behind is what the drain
+    /// accepts.
+    ///
+    /// A round trip, not two halves asserted separately. Running the commands proves `/plan/out` is
+    /// writable through the mount; feeding the result to `drain_writes` proves the shape the
+    /// protocol teaches is the shape the host applies. Either alone can pass while the pair is
+    /// broken — which is exactly how a worker ends up with a green gate and no record.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_protocols_caged_plan_writes_run_inside_the_cage_and_the_drain_accepts_them() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        // The EMBEDDED seed, so a stale local mirror cannot decide this.
+        let empty_cfg = std::env::temp_dir().join(format!("bsc-cagedw-cfg-{}", std::process::id()));
+        std::fs::create_dir_all(&empty_cfg).unwrap();
+        let md = crate::platform::config::with_config_root(&empty_cfg, crate::fleet::protocols::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty_cfg);
+
+        let block = md
+            .split_once("<!-- caged-plan-writes -->")
+            .and_then(|(_, rest)| rest.split_once("<!-- /caged-plan-writes -->"))
+            .map(|(b, _)| b.to_string())
+            .expect("the protocol carries a caged-plan-writes block");
+        let script: Vec<String> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("mkdir ") || l.starts_with("echo "))
+            .map(str::to_string)
+            .collect();
+        assert!(!script.is_empty(), "the block must contain runnable commands: {block}");
+
+        let base = std::env::temp_dir().join(format!("bsc-cagedw-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        // The read-only projection, and the WRITABLE hole inside it — exactly what the launcher
+        // builds: `scaffold_store_root` makes `plan/out` on the host because bwrap cannot mkdir
+        // inside a read-only bind.
+        let items = bsc_storefs::plan::from_json(
+            r#"[{"ref":"my-ref","title":"A demo","status":"open","body":"b","acceptance":["a"],"labels":[],"dependsOn":[]}]"#,
+        )
+        .expect("plan json parses");
+        bsc_storefs::materialize(&stores.join("plan"), &bsc_storefs::plan::project(&items, "2026-01-01T00:00:00Z"))
+            .expect("materialize plan");
+        std::fs::create_dir_all(stores.join("plan").join("out")).unwrap();
+
+        let argv = namespace_argv(
+            Some("worker"), "cagedw", wt.to_str().unwrap(),
+            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+            GateConfig::default(),
+        )
+        .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+
+        // `bsc` must be ABSENT — the premise the block is written for — and every line must run.
+        let sh = format!(
+            "command -v bsc >/dev/null && echo BSC-PRESENT; {}",
+            script.iter().map(|c| format!("{{ {c} ; }} || echo \"FAILED: {c}\"")).collect::<Vec<_>>().join("; ")
+        );
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", &sh]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+
+        assert!(
+            !text.contains("BSC-PRESENT"),
+            "the caged block is written for a cage WITHOUT bsc: {text:?}",
+        );
+        assert!(
+            !text.contains("FAILED:"),
+            "every write command the protocol gives a caged worker must run there — {text:?} / {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+
+        // ...and now the other half of the round trip: read back what the cage left on the host and
+        // put it through the real drain.
+        let outbox = stores.join("plan").join("out");
+        let mut entries: Vec<(String, Vec<(String, String)>)> = Vec::new();
+        for d in std::fs::read_dir(&outbox).expect("outbox exists").filter_map(Result::ok) {
+            let name = d.file_name().to_string_lossy().into_owned();
+            let mut fields = Vec::new();
+            for f in std::fs::read_dir(d.path()).expect("entry dir").filter_map(Result::ok) {
+                let k = f.file_name().to_string_lossy().into_owned();
+                fields.push((k, std::fs::read_to_string(f.path()).expect("field")));
+            }
+            entries.push((name, fields));
+        }
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(entries.len(), 4, "the block writes four entries: {entries:?}");
+        let (accepted, rejected) = bsc_storefs::plan::drain_writes(&entries);
+        assert!(rejected.is_empty(), "the protocol must not teach a shape the drain refuses: {rejected:?}");
+        assert_eq!(accepted.len(), 4, "every entry becomes a plan write: {accepted:?}");
+
+        // The four the protocol names, each becoming its `bsc plan …` call.
+        let argvs: Vec<Vec<String>> = accepted.iter().map(|(_, w)| w.argv()).collect();
+        assert!(argvs.iter().any(|a| a[..3] == ["plan", "change", "new"]), "{argvs:?}");
+        assert!(argvs.iter().any(|a| a[..3] == ["plan", "change", "note"]), "{argvs:?}");
+        assert!(argvs.iter().any(|a| a[..3] == ["plan", "change", "gate"]), "{argvs:?}");
+        assert!(
+            argvs.iter().any(|a| a[..2] == ["plan", "status"] && a.last().unwrap() == "complete"),
+            "the worker marks its own item COMPLETE, never verified: {argvs:?}",
         );
     }
 
@@ -3235,6 +3455,32 @@ mod store_root_tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    /// The plan outbox is created too, and it has to SURVIVE the projection that lands on top of
+    /// it. `scaffold_store_root` runs first and makes `plan/out`; `project_stores_for` then
+    /// materializes `plan/{README,schema,items/…}` into the same directory. That works only
+    /// because `materialize` is additive — a `remove_dir_all` added later "for freshness" would
+    /// delete the outbox, and bwrap cannot recreate it inside a read-only bind, so the session
+    /// would come up unable to record anything with nothing said anywhere.
+    #[test]
+    fn the_plan_outbox_survives_the_projection_landing_on_top_of_it() {
+        let root = crate::testutil::unique_dir("bsc-store-root", "plan-out");
+        scaffold_store_root("proj:worker", &root).expect("scaffold");
+        assert!(root.join("plan").join("out").is_dir(), "the mountpoint bwrap will bind");
+
+        let items = bsc_storefs::plan::from_json(
+            r#"[{"ref":"r","title":"t","status":"open","body":"b","acceptance":[],"labels":[],"dependsOn":[]}]"#,
+        )
+        .expect("parses");
+        bsc_storefs::materialize(&root.join("plan"), &bsc_storefs::plan::project(&items, "T"))
+            .expect("materialize");
+
+        assert!(root.join("plan").join("out").is_dir(), "the outbox must survive the projection");
+        assert!(root.join("plan").join("schema").is_file(), "...and the write contract lands beside it");
+        assert!(root.join("plan").join("items").join("r").is_dir(), "...and so does the snapshot");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     /// A relaunch re-scaffolds the same root without failing on what is already there.
     #[test]
     fn a_relaunch_over_an_existing_root_still_succeeds() {
@@ -3333,5 +3579,157 @@ mod limits_tests {
         // With a readable size the cap IS set — the negative half is pinned by `zero disables`
         // above, which exercises the same `None` branch the unreadable case falls into.
         assert!(session_limits(Role::Worker).memory_max.is_some());
+    }
+}
+
+// ── the plan outbox reaches the store (a-caged-worker-cannot-record-what-it-did) ─────────────────
+//
+// The pure layer is tested in `bsc-storefs`, and the cage-side write is tested by
+// `the_protocols_caged_plan_writes_run_inside_the_cage_and_the_drain_accepts_them`. What neither
+// covers is the JOIN: that the argv a `PlanWrite` renders is one the real `bsc plan` accepts. That
+// is the seam where a plausible-looking command silently records nothing.
+
+#[cfg(all(test, target_os = "linux"))]
+mod plan_drain_tests {
+    use bsc_storefs::plan::{accept_write, PlanWrite};
+
+    fn fields(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    /// The `bsc` binary, for a TEST process rather than for the app.
+    ///
+    /// `env::bsc_bin_path` resolves relative to `current_exe()`, which under nextest is
+    /// `target/<profile>/deps/<test>` — not a profile dir, so the staged-sidecar branch is skipped
+    /// and the candidates are `deps/bsc`, `debug/debug/bsc`, `debug/release/bsc`, none of which
+    /// exist. The first draft of this test therefore printed "no bundled bsc" and asserted nothing.
+    ///
+    /// So try the production resolver first, then the two places a developer's binary actually is:
+    /// this workspace's own `target/<profile>/`, and the staged copy the app boots from.
+    fn bsc_for_test() -> Option<std::path::PathBuf> {
+        if let Some(p) = super::env::bsc_bin_path() {
+            return Some(p);
+        }
+        let exe = if cfg!(windows) { "bsc.exe" } else { "bsc" };
+        let mut cands: Vec<std::path::PathBuf> = Vec::new();
+        // `target/` sits beside `src-tauri/`, whose manifest dir is where this crate is compiled.
+        if let Some(root) = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent() {
+            for profile in ["debug", "release"] {
+                cands.push(root.join("target").join(profile).join(exe));
+            }
+        }
+        cands.push(crate::platform::paths::bsc_base_dir().join("bin").join(exe));
+        // `is_file()` is NOT enough, and this is not hypothetical: `target/<profile>/bsc` is
+        // unlinked and rewritten by every `cargo build`, so between a build starting and the link
+        // finishing it is a 0-byte, mode-0644 placeholder. This test picked exactly that and failed
+        // with `PermissionDenied` — the same shape `stage_dev_sidecars`'s `source_is_plausible`
+        // exists to refuse. Require something that could actually exec.
+        cands.into_iter().find(|p| {
+            std::fs::metadata(p).is_ok_and(|md| {
+                #[cfg(unix)]
+                let runnable = {
+                    use std::os::unix::fs::PermissionsExt;
+                    md.permissions().mode() & 0o111 != 0
+                };
+                #[cfg(not(unix))]
+                let runnable = true;
+                md.is_file() && md.len() > 0 && runnable
+            })
+        })
+    }
+
+    /// A note written through the outbox reaches the change record, verbatim.
+    ///
+    /// Runs the REAL binary against a REAL plan.db — the same `bsc` and the same `BSC_PLAN_DB` the
+    /// drain uses — so a verb renamed or an argument reordered on either side fails here rather
+    /// than in a worker's session, where the only symptom is a record that never appears.
+    #[test]
+    fn a_note_from_the_outbox_lands_in_the_change_record() {
+        let Some(bsc) = bsc_for_test() else {
+            // Saying so out loud, because a test that quietly asserts nothing is the failure mode
+            // this repo keeps getting caught by.
+            eprintln!("no `bsc` binary found — `npm run build:plan` builds it; nothing asserted");
+            return;
+        };
+        let dir = crate::testutil::unique_dir("bsc-plandrain", "note");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("plan.db");
+
+        let run = |argv: Vec<String>| {
+            std::process::Command::new(&bsc).args(&argv).env("BSC_PLAN_DB", &db).output().expect("bsc runs")
+        };
+
+        // An item to hang the change off — the same shape `bsc plan add` takes elsewhere.
+        let add = std::process::Command::new(&bsc)
+            .args(["plan", "add"])
+            .env("BSC_PLAN_DB", &db)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut c| {
+                use std::io::Write;
+                c.stdin.as_mut().unwrap().write_all(
+                    br#"[{"ref":"caged-demo","title":"A caged demo","status":"open"}]"#,
+                )?;
+                c.wait_with_output()
+            })
+            .expect("bsc plan add runs");
+        assert!(add.status.success(), "seeding the item: {}", String::from_utf8_lossy(&add.stderr));
+
+        // Prose with the characters that make a shell dangerous — the reason it travels as argv.
+        let text = "tried `cargo build`, then $(which bsc) — neither exists in the cage";
+        for entry in [
+            ("c", fields(&[("verb", "change"), ("ref", "caged-demo"), ("title", "Doing the thing"), ("description", "why")])),
+            ("n", fields(&[("verb", "note"), ("ref", "caged-demo"), ("text", text), ("from", "worker")])),
+            ("g", fields(&[("verb", "gate"), ("ref", "caged-demo"), ("gate", "typecheck"), ("result", "pass")])),
+            ("s", fields(&[("verb", "status"), ("ref", "caged-demo"), ("status", "complete")])),
+        ] {
+            let w = accept_write(entry.0, &entry.1).expect("the outbox accepts it");
+            let out = run(w.argv());
+            assert!(
+                out.status.success(),
+                "the store must accept the argv the outbox renders — `bsc {}` failed: {}",
+                w.argv().join(" "),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+
+        let rendered = String::from_utf8_lossy(&run(vec!["plan".into(), "change".into(), "render".into(), "caged-demo".into()])
+            .stdout).to_string();
+        assert!(rendered.contains("Doing the thing"), "the change record exists: {rendered}");
+        assert!(rendered.contains(text), "the note survives byte-for-byte through argv: {rendered}");
+        assert!(rendered.contains("typecheck"), "the gate evidence is recorded: {rendered}");
+
+        let listed = String::from_utf8_lossy(&run(vec!["plan".into(), "list".into()]).stdout).to_string();
+        assert!(listed.contains("complete"), "and the item moved: {listed}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The refusal is enforced where it matters. `accept_write` never produces a `verified`
+    /// status, so there is no argv for the drain to run — the narrowing is structural, not a
+    /// string check somewhere downstream.
+    #[test]
+    fn there_is_no_argv_that_marks_an_item_verified() {
+        assert!(accept_write("s", &fields(&[("verb", "status"), ("ref", "r"), ("status", "verified")])).is_err());
+        // ...and nothing else in the vocabulary can reach that transition either.
+        for verb in bsc_storefs::plan::WRITE_VERBS {
+            let f = fields(&[
+                ("verb", verb), ("ref", "r"), ("text", "t"), ("title", "t"), ("description", "d"),
+                ("gate", "typecheck"), ("result", "pass"), ("status", "complete"),
+            ]);
+            if let Ok(w) = accept_write("e", &f) {
+                assert!(
+                    !w.argv().iter().any(|a| a == "verified" || a == "merged"),
+                    "{verb} must not be able to render a reviewer's verdict: {:?}",
+                    w.argv(),
+                );
+            }
+        }
+        // A sanity check on the enum itself, so a new variant cannot quietly add one.
+        assert!(matches!(
+            accept_write("s", &fields(&[("verb", "status"), ("ref", "r"), ("status", "complete")])),
+            Ok(PlanWrite::Status { .. }),
+        ));
     }
 }
