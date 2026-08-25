@@ -299,6 +299,47 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     style.remove();
   });
 
+  describe("the srcdoc's describeError (#108) — prefers the real error over the sanitized ErrorEvent.message", () => {
+    // Extracted and called directly rather than round-tripped through dispatchEvent/postMessage: every
+    // `it("the srcdoc handler applies a theme message LIVE …")`-style test in this file installs the SAME
+    // window listeners via eval and never removes them, so a later real dispatch would fan out to every
+    // prior test's leftover listener too. The real end-to-end wiring (listener -> postMessage -> host) is
+    // covered live in a real sandboxed iframe by e2e/previewErrorDetail.spec.ts, which is the only place
+    // that can also see the browser's actual module-script message sanitization jsdom doesn't reproduce.
+    function extractDescribeError(): (err: unknown) => string | null {
+      const doc = buildComponentSrcDoc("X", { themeCss: ":root{--a:1}", theme: "dark" });
+      const script = /<script>([\s\S]*?__bsc_theme[\s\S]*?)<\/script>/.exec(doc)?.[1];
+      expect(script).toBeTruthy();
+      const fnSrc = /function describeError\(err\) \{[\s\S]*?\n {2}\}/.exec(script!)?.[0];
+      expect(fnSrc).toBeTruthy();
+      return new Function(`return (${fnSrc});`)() as (err: unknown) => string | null;
+    }
+
+    it("reports name + message + stack for a real Error", () => {
+      const describeError = extractDescribeError();
+      const err = new Error("boom from a sandboxed API");
+      err.stack = "Error: boom from a sandboxed API\n    at fixture (file.js:1:1)";
+      expect(describeError(err)).toBe("Error: boom from a sandboxed API\nError: boom from a sandboxed API\n    at fixture (file.js:1:1)");
+    });
+
+    it("reports a DOMException's name + message even with no stack", () => {
+      const describeError = extractDescribeError();
+      const err = { name: "SecurityError", message: "localStorage is not allowed in a sandboxed iframe" };
+      expect(describeError(err)).toBe("SecurityError: localStorage is not allowed in a sandboxed iframe");
+    });
+
+    it("returns null (so the caller falls back to the bare message) when there is no error object", () => {
+      const describeError = extractDescribeError();
+      expect(describeError(null)).toBeNull();
+      expect(describeError(undefined)).toBeNull();
+    });
+
+    it("still yields a string for a reason object with no .name", () => {
+      const describeError = extractDescribeError();
+      expect(describeError({ message: "boom string-ish reason" })).toBe("boom string-ish reason");
+    });
+  });
+
   it("puts the animation classes on #root, or a bare #root when there are none (#2870)", () => {
     expect(buildComponentSrcDoc("X", { rootClass: "card-anim-fade-in" })).toContain('<div id="root" class="card-anim-fade-in">');
     expect(buildComponentSrcDoc("X")).toContain('<div id="root"></div>'); // no class attribute when empty

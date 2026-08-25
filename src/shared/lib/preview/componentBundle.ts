@@ -909,8 +909,21 @@ ${previewCspMeta()}
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}
 <script>
-  window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message) }, "*"));
-  window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason) }, "*"));
+  // #108: for SOME uncaught throws in here — a native API rejecting the opaque sandbox origin
+  // (e.g. \`localStorage\`, \`sessionStorage\`) is the case that sent a designer in blind — the browser
+  // hands ErrorEvent.message a near-empty stub ("Uncaught ") while the REAL DOMException/Error, name,
+  // message and stack all still ride on ErrorEvent.error. Prefer that when it's there; only a script the
+  // browser truly treats as cross-origin (message stays sanitized AND error is null) falls back to the
+  // bare message.
+  function describeError(err) {
+    if (err && typeof err === "object") {
+      var head = err.name ? (err.name + ": " + (err.message || "")) : String(err.message || err);
+      return err.stack ? (head + "\\n" + err.stack) : head;
+    }
+    return null;
+  }
+  window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: describeError(e.error) || String(e.message) }, "*"));
+  window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: describeError(e.reason) || String(e.reason) }, "*"));
   // #3556: apply a THEME change live — set the data-theme base + swap the token overrides — WITHOUT a
   // rebuild, so the in-iframe pan/zoom engine (and any other runtime state) survives a theme switch.
   window.addEventListener("message", (e) => {
