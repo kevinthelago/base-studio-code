@@ -103,11 +103,7 @@ pub fn apply(
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
         unregister(app, id); // don't leak the slot when nobody ever answers
-        format!(
-            "the frontend did not apply the navigation within {}ms — is a window open, or was it \
-             mid-reload? (the app IS running; this is not a 'no app' timeout)",
-            ACK_TIMEOUT.as_millis()
-        )
+        ack_timeout_message()
     })?;
     unregister(app, id);
 
@@ -128,6 +124,27 @@ pub fn apply(
         mount_error: ack.mount_error,
         dismissed: ack.dismissed,
     })
+}
+
+/// What to say when the ack never arrived. Extracted so a test can pin what it does — and does NOT —
+/// claim.
+///
+/// It used to assert a cause it had not established: *"is a window open, or was it mid-reload?"*. For
+/// every unknown component id the real cause was neither — the frontend's miss-retry hydrate (a 1.72 MB
+/// read measured at up to 8s) simply outran this budget, so the ack arrived after nobody was waiting.
+/// Designer request #104 read the sentence literally, concluded the preview was hanging, and debugged a
+/// component that was fine; it then filed the same symptom a second time. One message covered three
+/// different outcomes — unknown id, torn-down bridge, and a navigation that had actually LANDED with a
+/// late ack — and named none of them.
+///
+/// A timeout knows exactly one thing: no ack in time. So the message says that, says the navigation may
+/// still have landed, and names the command that settles which.
+fn ack_timeout_message() -> String {
+    format!(
+        "the frontend did not ack within {}ms. It may still have LANDED — check `bsc navigate show` \
+         before concluding it failed. (The app IS running; this is not a 'no app' timeout.)",
+        ACK_TIMEOUT.as_millis()
+    )
 }
 
 fn register(app: &tauri::AppHandle, id: &str) -> Receiver<NavAck> {
@@ -250,5 +267,25 @@ mod tests {
         // app for a request that is already dead.
         let pending = NavPending::default();
         assert!(pending.0.lock().unwrap().remove("ghost").is_none());
+    }
+
+    /// REGRESSION, designer request #104. The message asserted a cause — "is a window open, or was it
+    /// mid-reload?" — that a timeout cannot know, and for every unknown component id it was WRONG: the
+    /// frontend's miss-retry hydrate outran the budget and acked to nobody. The reporter believed the
+    /// sentence, went debugging a component that was fine, and filed the same symptom twice. What a
+    /// timeout may say is that no ack arrived, that the navigation may nevertheless have landed, and how
+    /// to find out.
+    #[test]
+    fn the_timeout_message_states_only_what_a_timeout_knows() {
+        let m = ack_timeout_message();
+        assert!(m.contains("5000ms"), "it names the budget it waited: {m}");
+        assert!(m.contains("bsc navigate show"), "…and the command that settles it: {m}");
+        assert!(
+            m.contains("may still have LANDED"),
+            "a late ack is one of the three outcomes this covers, so it must not read as failure: {m}"
+        );
+        for claim in ["is a window open", "mid-reload", "did not apply the navigation"] {
+            assert!(!m.contains(claim), "a timeout has not established '{claim}': {m}");
+        }
     }
 }
