@@ -94,6 +94,14 @@ bsc errors resolve <fingerprint> --project studio-code
 is set **per session at launch** — so the one reader who most needs these, a session outside the app
 after the app failed to start, is exactly the one without it.
 
+A wrapper can only see a launch that DIES. The one that hurts is the launch where every process stays
+alive — vite up, window open, **frontend never mounted** — and exit codes say nothing. So Rust arms a
+deadline at startup and the frontend acks (`boot_mounted`) when it mounts; silence past it becomes a
+`launch` fault, and a late ack clears it, so guessing the deadline too low costs a few seconds of amber
+rather than a standing lie. When the crash overlay can still reach the backend it hands over the real
+error; when it cannot — the case it exists for — the watchdog files the message-less one, which says
+so rather than inventing a cause.
+
 **A session inside the app cannot answer a LAUNCH failure, and that is structural, not a gap.** The
 panes that would host it are the app's own UI and the runtime collector lives in the app's process, so
 there is nothing running to do the work. Build failures are different — they happen while the app is up

@@ -4,7 +4,7 @@ import { addDbProject, listDbProjects, setDbTriaged } from "@/features/planner";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { worktreeChecks, reconcileMissingWorktrees } from "@/shared/lib/fleet/worktreeReconcile";
 import { useAppStore } from "@/store";
 import { accentVars } from "@/features/settings";
@@ -57,7 +57,20 @@ export function useAppBoot() {
 
   // Startup timing trace (#perf): mark the gate commit, then the first paint of the
   // real UI once the store rehydrates — logStartupTrace emits the breakdown once.
-  useEffect(() => { markBoot("mounted"); }, []);
+  //
+  // `boot_mounted` rides the same effect, and is NOT tracing: it is the ack the Rust launch watchdog
+  // is waiting on (the-app-starts-and-never-mounts-and-nothing-says-so). Silence past its deadline is
+  // recorded as a `launch` fault, because a window that opens and never mounts looks identical from
+  // Rust to a slow boot, a failed module fetch and a frozen page. This is the one signal that tells
+  // them apart, and it also CLEARS what the last boot recorded about itself.
+  //
+  // At `mounted`, not `hydrated`/`painted`: the failure being ruled out is "the UI never mounted", and
+  // acking at a later milestone would let a slow rehydrate file a fault about a boot that plainly
+  // worked. Fire-and-forget — a missing backend (the browser harness, a test) must not break boot.
+  useEffect(() => {
+    markBoot("mounted");
+    fireInvoke("boot_mounted");
+  }, []);
   useEffect(() => {
     if (!hasHydrated) return;
     markBoot("hydrated");
