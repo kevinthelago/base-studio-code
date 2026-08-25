@@ -78,18 +78,40 @@ if (existsSync(APP_RECORDS)) {
     if (!p.endsWith(".json")) return;
     const parsed: unknown = JSON.parse(readFileSync(p, "utf8"));
     for (const r of Array.isArray(parsed) ? parsed : [parsed]) {
-      const rec = r as { src?: string; srcText?: string; code?: string };
+      const rec = r as { src?: string; srcText?: string; code?: string; tests?: { src?: string }[] };
       const spec = specOf(rec?.src ?? "");
-      if (spec) note(spec, `${rec.srcText ?? ""}\n${rec.code ?? ""}`);
+      if (spec) {
+        note(spec, `${rec.srcText ?? ""}\n${rec.code ?? ""}`);
+        noteCarriedTests(spec, rec.tests);
+      }
     }
   });
 }
 
 // ── implementation records ────────────────────────────────────────────────────
 const impls = JSON.parse(readFileSync(IMPLS, "utf8")) as {
-  implementations: { provides?: string; code?: string }[];
+  implementations: { provides?: string; code?: string; tests?: { src?: string }[] }[];
 };
-for (const n of impls.implementations) if (n.provides) note(n.provides, n.code ?? "");
+for (const n of impls.implementations) {
+  if (!n.provides) continue;
+  note(n.provides, n.code ?? "");
+  noteCarriedTests(n.provides, n.tests);
+}
+
+/**
+ * A record's CARRIED TESTS are importers too (#algorithm-tests-live-on-their-records).
+ *
+ * A retired module's test lives on its record now, not beside it in `src/`, so a graph built only from
+ * module SOURCE cannot see it — and a module whose only importer was its own test reads as an orphan.
+ * That is not a hypothetical: migrating the algorithm tests onto their impls made 11 planner modules
+ * look dead in one step, all of them reachable the whole time.
+ *
+ * Registered under a synthetic `<spec>.test` key so `isTest` treats it as a root exactly as a colocated
+ * file was, which keeps "reachable from a test" meaning the same thing in both worlds.
+ */
+function noteCarriedTests(spec: string, tests: { src?: string }[] | undefined) {
+  for (const t of tests ?? []) if (t?.src) note(`${spec}.test`, t.src);
+}
 
 const isPlanner = (s: string) => s === "@/features/planner" || s.includes("/features/planner/");
 const isTest = (s: string) => /\.(test|spec)$/.test(s);

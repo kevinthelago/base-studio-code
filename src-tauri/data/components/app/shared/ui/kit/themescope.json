@@ -26,5 +26,11 @@
       "type": "string"
     }
   ],
-  "folder": "shared/ui/kit"
+  "folder": "shared/ui/kit",
+  "tests": [
+    {
+      "name": "ThemeScope",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { render } from \"@testing-library/react\";\nimport { ThemeScope } from \"@/shared/ui/kit/ThemeScope\";\n\ndescribe(\"ThemeScope\", () => {\n  it(\"applies the theme's token overrides to a wrapper and renders children\", () => {\n    const { getByText, container } = render(<ThemeScope theme=\"nord\">child</ThemeScope>);\n    expect(getByText(\"child\")).toBeInTheDocument();\n    const wrap = container.querySelector('[data-kit-theme=\"nord\"]') as HTMLElement;\n    expect(wrap).toBeTruthy();\n    expect(wrap.style.getPropertyValue(\"--accent\")).toBe(\"#88c0d0\");\n  });\n\n  it(\"scopes to a subtree without overrides for the default theme\", () => {\n    const { container } = render(<ThemeScope theme=\"default\">x</ThemeScope>);\n    const wrap = container.querySelector('[data-kit-theme=\"default\"]') as HTMLElement;\n    expect(wrap.style.getPropertyValue(\"--card-radius\")).toBe(\"\");\n  });\n});\n"
+    }
+  ]
 }

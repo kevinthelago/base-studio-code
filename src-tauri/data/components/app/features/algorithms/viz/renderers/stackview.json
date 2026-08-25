@@ -10,5 +10,11 @@
     "Text"
   ],
   "src": "src/features/algorithms/viz/renderers/StackView.tsx",
-  "folder": "features/algorithms/viz/renderers"
+  "folder": "features/algorithms/viz/renderers",
+  "tests": [
+    {
+      "name": "StackView (#3266)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { StackView } from \"@/features/algorithms/viz/renderers/StackView\";\nimport type { StackFrame } from \"@/features/algorithms/lib/trace\";\n\nconst frame = (over: Partial<StackFrame>): StackFrame => ({ structure: \"stack\", data: [1, 2, 3], ...over });\n\ndescribe(\"StackView (#3266)\", () => {\n  it(\"renders a cell per entry + a mode badge\", () => {\n    const { container } = render(<StackView frame={frame({ mode: \"queue\" })} />);\n    expect(container.querySelectorAll(\".stack-cell\").length).toBe(3);\n    expect(screen.getByText(/queue/)).toBeInTheDocument();\n  });\n\n  it(\"stamps push on the BACK/top cell and pop on the FRONT cell for a queue\", () => {\n    // push → the last entry (3) is the newly-enqueued back.\n    const pushed = render(<StackView frame={frame({ mode: \"queue\", ops: [{ op: \"push\" }] })} />).container;\n    expect(pushed.querySelector('.stack-cell[data-op=\"push\"]')?.textContent).toBe(\"3\");\n    // pop (queue) → the FRONT entry (1) is the one leaving.\n    const popped = render(<StackView frame={frame({ mode: \"queue\", ops: [{ op: \"pop\" }] })} />).container;\n    expect(popped.querySelector('.stack-cell[data-op=\"pop\"]')?.textContent).toBe(\"1\");\n  });\n\n  it(\"a STACK pops the TOP (last) entry, not the front\", () => {\n    const c = render(<StackView frame={frame({ mode: \"stack\", ops: [{ op: \"pop\" }] })} />).container;\n    expect(c.querySelector('.stack-cell[data-op=\"pop\"]')?.textContent).toBe(\"3\"); // top out\n  });\n\n  it(\"stamps peek on the inspected index\", () => {\n    const c = render(<StackView frame={frame({ ops: [{ op: \"peek\", at: 1 }] })} />).container;\n    expect(c.querySelector('.stack-cell[data-op=\"peek\"]')?.textContent).toBe(\"2\");\n  });\n\n  it(\"shows an empty state when the structure has drained\", () => {\n    render(<StackView frame={frame({ data: [] })} />);\n    expect(screen.getByText(\"(empty)\")).toBeInTheDocument();\n  });\n});\n"
+    }
+  ]
 }

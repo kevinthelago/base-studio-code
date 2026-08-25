@@ -7,5 +7,11 @@
   "srcText": "import { CardHead } from \"@/shared/ui/charts\";\nimport { Text } from \"@/shared/ui/typography/Text\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport function Placeholder({ title, hint, body }: { title: string; hint: string; body: string }) {\r\n  return (\r\n    <Card>\r\n      <CardHead title={title} hint={hint} />\r\n      <Text as=\"div\" mono size={11} tone=\"dim\" style={{ lineHeight: 1.6 }}>{body}</Text>\r\n    </Card>\r\n  );\r\n}",
   "composes": [],
   "src": "src/features/glance/fleet/WorkerDetailPlaceholder.tsx",
-  "folder": "features/glance/fleet"
+  "folder": "features/glance/fleet",
+  "tests": [
+    {
+      "name": "WorkerDetail Placeholder (#499)",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { Placeholder } from \"@/features/glance/fleet/WorkerDetailPlaceholder\";\n\ndescribe(\"WorkerDetail Placeholder (#499)\", () => {\n  it(\"renders its title, hint, and body copy\", () => {\n    render(<Placeholder title=\"Tokens & spend\" hint=\"not measured yet\" body=\"Per-session token accounting isn't wired up yet.\" />);\n    expect(screen.getByText(\"Tokens & spend\")).toBeInTheDocument();\n    expect(screen.getByText(\"not measured yet\")).toBeInTheDocument();\n    expect(screen.getByText(/Per-session token accounting/)).toBeInTheDocument();\n  });\n});\n"
+    }
+  ]
 }

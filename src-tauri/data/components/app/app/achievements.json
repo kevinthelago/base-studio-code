@@ -9,5 +9,11 @@
     "Achievement"
   ],
   "src": "src/app/Achievement.tsx",
-  "folder": "app"
+  "folder": "app",
+  "tests": [
+    {
+      "name": "Achievements",
+      "src": "import { describe, it, expect, beforeEach } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { useAppStore } from \"@/store\";\nimport { Achievements } from \"@/app/Achievement\";\n\n// The generic, registry-driven achievement toast. The super-user achievement (trigger\n// `liveAgents > 10`) stands in for \"any achievement\" here.\n// #3939: the toast is a real card now, not an <img> of a pre-rendered banner — so it is found by its\n// TITLE TEXT rather than alt text. That is the point of the change: the wording comes from the\n// registry, so a new achievement is one JSON file rather than a hand-rendered bitmap.\nconst TITLE = /Claude Super User/i;\n\ndescribe(\"Achievements\", () => {\n  beforeEach(() => {\n    // No tree is mounted during beforeEach, so don't wrap the store reset in act(): calling React's\n    // act() outside a test body corrupts the act environment for the next test (React 19 + RTL 16),\n    // which left the following render empty and the toast never firing.\n    useAppStore.setState({ achievements: {}, liveAgents: 0 });\n  });\n\n  it(\"stays hidden until an achievement's trigger fires\", () => {\n    render(<Achievements />);\n    expect(screen.queryByText(TITLE)).toBeNull();\n  });\n\n  it(\"swipes in and records the unlock when a trigger crosses\", async () => {\n    render(<Achievements />);\n    // Bare setState (no act): the subscribed component re-renders asynchronously under React 19, so\n    // await the toast via findBy rather than wrapping the store write in act() (which is flaky here).\n    useAppStore.setState({ liveAgents: 11 });\n    // The toast image appears …\n    expect(await screen.findByText(TITLE)).toBeTruthy();\n    // … and the unlock is persisted (once-ever) in the store.\n    expect(typeof useAppStore.getState().achievements[\"super-user\"]).toBe(\"number\");\n  });\n\n  it(\"does not re-fire once unlocked\", () => {\n    // Already unlocked from a prior session. Set state directly (no act) before mounting.\n    useAppStore.setState({ achievements: { \"super-user\": 123 } });\n    render(<Achievements />);\n    useAppStore.setState({ liveAgents: 11 });\n    // unlockAchievement is idempotent → returns false → no toast.\n    expect(screen.queryByText(TITLE)).toBeNull();\n  });\n});\n"
+    }
+  ]
 }

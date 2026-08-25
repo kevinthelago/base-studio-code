@@ -56,7 +56,14 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          include: ["src/**/lib/**/*.test.{ts,tsx}"],
+          // BOTH trees, because `lib/` is a statement about the CODE and not about where the file
+          // sits. A retired module's test is materialized into `.bsc-records/` beside it
+          // (`emit-records`), so `shared/lib/core/x.test.tsx` becomes
+          // `.bsc-records/shared/lib/core/x.test.tsx` — still pure domain logic, and matched by
+          // neither `src/**/lib/**` nor anything else here. Without the second pattern a test SILENTLY
+          // changes environment the moment its module is retired, and pays for a DOM it was written not
+          // to need: measured above at 488.56s of environment against 13.93s of tests on this subset.
+          include: ["src/**/lib/**/*.test.{ts,tsx}", ".bsc-records/**/lib/**/*.test.{ts,tsx}"],
           exclude: testExclude,
         },
       },
@@ -83,7 +90,13 @@ export default defineConfig({
           // `exclude` REPLACES rather than merges, so the worktree excludes have to be restated here
           // alongside the `lib/` handover — dropping them would let a root run walk nested worktrees
           // again, which is exactly #3379.
-          exclude: [...testExclude, "src/**/lib/**/*.test.{ts,tsx}"],
+          // The `lib/` handover, restated for BOTH trees so a materialized lib test is claimed by
+          // `node` alone. Overlapping includes across projects would run it twice and double-count.
+          exclude: [
+            ...testExclude,
+            "src/**/lib/**/*.test.{ts,tsx}",
+            ".bsc-records/**/lib/**/*.test.{ts,tsx}",
+          ],
         },
       },
     ],

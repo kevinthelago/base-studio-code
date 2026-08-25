@@ -74,5 +74,11 @@
       "type": "function"
     }
   ],
-  "folder": "features/glance/fleet"
+  "folder": "features/glance/fleet",
+  "tests": [
+    {
+      "name": "WorkerModals (#499)",
+      "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { WorkerModals } from \"@/features/glance/fleet/WorkerModals\";\nimport type { LiveWorker } from \"@/shared/lib/fleet/fleetLive\";\nimport type { StatusMeta } from \"@/shared/data/fleet\";\n\nconst worker: LiveWorker = {\n  id: \"t2p0\", name: \"api-stream\", repo: \"acme/api\", profileLabel: \"Build & test\",\n  profileColor: \"var(--accent)\", status: \"running\", issue: \"#12\", note: \"\", ownedTotal: 1,\n};\nconst st: StatusMeta = { label: \"running\", color: \"var(--accent)\" };\n\nfunction props(overrides: Partial<React.ComponentProps<typeof WorkerModals>> = {}) {\n  return {\n    modal: null, setModal: vi.fn(), worker, st, draft: \"\", setDraft: vi.fn(),\n    send: vi.fn(), stop: vi.fn(), agentProfiles: [], profileId: undefined,\n    setPaneProfile: vi.fn(), flash: vi.fn(), ...overrides,\n  } satisfies React.ComponentProps<typeof WorkerModals>;\n}\n\ndescribe(\"WorkerModals (#499)\", () => {\n  it(\"renders nothing when no modal is open\", () => {\n    const { container } = render(<WorkerModals {...props()} />);\n    expect(container).toBeEmptyDOMElement();\n  });\n\n  it(\"renders the stop & remove confirmation when modal='stop'\", () => {\n    render(<WorkerModals {...props({ modal: \"stop\" })} />);\n    expect(screen.getByText(\"Stop & remove worker\")).toBeInTheDocument();\n    expect(screen.getByText(/disables its pane/)).toBeInTheDocument();\n  });\n\n  it(\"renders the steer editor when modal='steer'\", () => {\n    render(<WorkerModals {...props({ modal: \"steer\" })} />);\n    expect(screen.getByText(/Steer api-stream/)).toBeInTheDocument();\n    expect(screen.getByText(/Typed straight into this worker's running session/)).toBeInTheDocument();\n  });\n});\n"
+    }
+  ]
 }

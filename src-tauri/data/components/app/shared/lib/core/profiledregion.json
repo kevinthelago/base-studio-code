@@ -23,5 +23,11 @@
       "type": "number"
     }
   ],
-  "folder": "shared/lib/core"
+  "folder": "shared/lib/core",
+  "tests": [
+    {
+      "name": "ProfiledRegion (#3618)",
+      "src": "/**\n * @vitest-environment jsdom\n *\n * This file lives under `lib/`, which vitest's `node` project covers, but it genuinely needs a DOM.\n * A per-file docblock beats the project's environment, so the requirement is stated where a reader\n * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.\n */\n// #3618 — ProfiledRegion is a transparent wrapper: it always renders its children (a React <Profiler>\n// around them) and only LOGS when a commit is slow AND metrics are on. The slow-commit log path depends\n// on React's own timing (not unit-testable in jsdom, where actualDuration is ~0); the timing/log logic it\n// shares with the graph layout is covered by the `timedSync` tests. This guards the render contract.\nimport { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { ProfiledRegion } from \"@/shared/lib/core/renderProfiler\";\n\ndescribe(\"ProfiledRegion (#3618)\", () => {\n  it(\"renders its children unchanged (a transparent profiling wrapper)\", () => {\n    render(\n      <ProfiledRegion id=\"graph-x\">\n        <div>graph-body</div>\n      </ProfiledRegion>,\n    );\n    expect(screen.getByText(\"graph-body\")).toBeTruthy();\n  });\n});\n"
+    }
+  ]
 }

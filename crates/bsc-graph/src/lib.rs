@@ -244,6 +244,18 @@ pub struct AlgoImpl {
 pub struct AlgoImplTest {
     pub name: String,
     pub src: String,
+    /// The extension the test's SOURCE FILE had (`.ts` / `.tsx`), when the record knows it.
+    ///
+    /// The emitter otherwise guesses from the body, and its guess reads an ordinary TypeScript generic
+    /// — `const last = <T>(a: readonly T[]): T => …` — as a JSX tag. It then writes `.tsx`, the parser
+    /// fails on `<T>`, and the file reports as a dead suite rather than a red test. That guess was wrong
+    /// on 177 of 376 tests when the algorithm corpus moved onto its records.
+    ///
+    /// Additive and optional like every facet above, so a record written before the field round-trips
+    /// unchanged and still falls back to the guess. It is carried here rather than inferred again in
+    /// Rust because a SECOND inference is a second thing to disagree with the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ext: Option<String>,
 }
 
 // ── EDGES (integration-tests-become-graph-edges) ─────────────────────────────────────────────────

@@ -50,3 +50,32 @@ describe("carried tests are verified, not trusted (#record-tests-execute-in-the-
     for (const u of plan.unresolvable) expect(emitted.has(u.spec)).toBe(false);
   });
 });
+
+// ── the carried extension (#algorithm-tests-live-on-their-records) ──────────────────────────────────
+describe("a carried test keeps the extension its source had", () => {
+  it("obeys a record's own `ext` instead of guessing from the source", () => {
+    // `extFor` treats any `<Word…>` as JSX, so `const last = <T>(a: readonly T[]): T => …` — an
+    // ordinary generic arrow, and test files are full of them — gets named `.tsx`. The parser then
+    // reads `<T>` as a JSX tag and the whole suite fails to transform. Measured at 177 of 376 files on
+    // the algorithm corpus: the guess is wrong about HALF the time there.
+    //
+    // So a record that knows its source extension states it, and this asserts the emitter obeys that
+    // rather than re-deriving it. Records predating the field still fall back to `extFor`, which is why
+    // this only checks the entries that carry one.
+    const carried = plan.tests.filter((t: { ext?: string }) => typeof t.ext === "string");
+    for (const t of carried as { spec: string; ext: string; rel: string }[]) {
+      expect(t.rel.endsWith(t.ext), `${t.spec} emitted as ${t.rel}, but its record carries ${t.ext}`).toBe(true);
+    }
+  });
+
+  it("emits a parseable file for every carried test — the failure this prevents is a TRANSFORM error", () => {
+    // A misnamed `.tsx` does not fail an assertion, it fails to COMPILE, which reports as a dead suite
+    // rather than a red test. Cheap structural proxy: a file emitted `.tsx` whose source has a generic
+    // arrow and no JSX element is the exact shape that breaks.
+    const suspicious = plan.tests.filter(
+      (t: { rel: string; src: string }) =>
+        t.rel.endsWith(".test.tsx") && /=\s*<[A-Z]\w*>\(/.test(t.src) && !/<[A-Z]\w*[\s/>]/.test(t.src.replace(/=\s*<[A-Z]\w*>\(/g, "")),
+    );
+    expect(suspicious.map((t: { spec: string }) => t.spec), "a generic arrow must not land in a .tsx").toEqual([]);
+  });
+});
