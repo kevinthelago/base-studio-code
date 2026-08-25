@@ -403,6 +403,30 @@ SCOPE: components only. An algorithm record is a function LIFTED OUT of a file a
 `src` (#4192), so a path-based gate cannot be honest about them yet.",
     },
     CmdDoc {
+        name: "library",
+        summary: "verify a `doctor` @bsc/algorithms/<name> library-reference finding (bsc request #118)",
+        usage: "USAGE:
+  bsc ui library get <name-or-spec> [--pretty]
+
+`doctor`'s `reimplementation`/`reimplemented-component`/`unresolvable-import` findings name a
+`@bsc/algorithms/<name>` LIBRARY reference (#3116) — a real node in the Algorithms knowledge graph, not
+a component. Verifying one used to mean `bsc graph impl get`, which is the librarian's surface, not the
+designer's: the Design Studio's designer session is confined to this one command surface and cannot run
+`bsc graph` at all, so it had no way to tell a real finding from a stale one — this verb answers the
+SAME question from inside that confinement, reading the identical live catalog `bsc graph impl list`
+does (never a separate, potentially-stale copy).
+
+Accepts a bare name (`fibonacci`), an exact id (`fibonacci.ts`), or the full spec doctor prints
+(`@bsc/algorithms/fibonacci`) — a bare name/id is always read as the `algorithms` segment, matching
+doctor's own wording. Prints `{ resolves: true, ...the full implementation record }` when it exists —
+composing it, per doctor's guidance, means importing FROM that record's `src`, not re-typing its `code`
+— or `{ resolves: false }` when it does not, meaning the finding IS the stale/wrong one the request
+warned about and should be reported rather than acted on.
+
+SCOPE: the `algorithms` segment only. `@bsc/sounds/<id>` is out of scope — a sound has no importable
+source to hand back (the preview vendors a generated player), so there is nothing here to verify.",
+    },
+    CmdDoc {
         name: "test",
         summary: "materialize a record + its CLOSURE + its paired tests into an EMPTY dir and run them there — a pass proves every dependency is a record or the declared platform",
         usage: "\
@@ -1499,6 +1523,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_backing(&args[1..])
+            }
+        }
+        // `library` (bsc request #118) — verify a `doctor` @bsc/algorithms/<name> finding from inside
+        // the designer's own `bsc ui` confinement, never touching the librarian's `bsc graph` surface.
+        Some("library") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "library"));
+                Ok(())
+            } else {
+                cmd_library(&args[1..])
             }
         }
         // `doctor` (#2678) is a custom read — the graph-health analyzer over the component store.
@@ -3854,6 +3888,46 @@ A kit describing ANOTHER project names paths this repo does not have — that is
 ")
         }
     });
+    Ok(())
+}
+
+/// `library get <name-or-spec> [--pretty]` (bsc request #118) — verify a `doctor`
+/// `@bsc/algorithms/<name>` LIBRARY-reference finding without the `bsc graph` grant the Design Studio's
+/// designer session never carries. A pure read over [`crate::graph_health::resolve_algorithm_library_node`],
+/// the SAME resolution `doctor`'s `reimplementation`/`unresolvable-import` findings judge a component
+/// against, so this verb's answer and doctor's finding can never disagree.
+fn cmd_library(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("get") => {}
+        Some(other) => return Err(format!("unknown `library` command '{other}' — try: get")),
+        None => return Err("usage: bsc ui library get <name-or-spec> [--pretty]".to_string()),
+    }
+    let (mut pretty, mut name) = (false, None::<&str>);
+    for a in &args[1..] {
+        match a.as_str() {
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if name.is_none() => name = Some(other),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let name = name.ok_or("usage: bsc ui library get <name-or-spec> [--pretty]")?;
+    let record = crate::graph_health::resolve_algorithm_library_node(name);
+    let payload = match &record {
+        Some(im) => {
+            let mut obj = im.clone();
+            if let Some(map) = obj.as_object_mut() {
+                map.insert("resolves".to_string(), serde_json::Value::Bool(true));
+            }
+            obj
+        }
+        None => serde_json::json!({ "resolves": false, "queried": name }),
+    };
+    let json = if pretty { serde_json::to_string_pretty(&payload) } else { serde_json::to_string(&payload) };
+    // Through the SHARED emitter, not `println!` — byte-identical when nothing is capturing, but it
+    // lets a warm `bsc serve` child answer this READ off the same stdout it speaks its protocol on
+    // (see `cmd_scan_cache`'s `get` arm, the other JSON read that already does this).
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -7390,13 +7464,42 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
             assert!(!c.usage.contains("bsc component"), "{}'s usage teaches `bsc ui`, not the alias", c.name);
         }
+    }
+
+    #[test]
+    fn library_get_verifies_a_doctor_finding_from_the_designer_own_permitted_surface() {
+        // bsc request #118: the designer's whole auto-runnable surface is `bsc ui`/`bsc component`, never
+        // `bsc graph` — so this verb must resolve a real algorithm and reject a made-up one WITHOUT any
+        // `--dir` component-store setup (it never touches the component store at all).
+        let (r, out) =
+            bsc_util::capture_output(|| cmd_library(&["get".to_string(), "fibonacci".to_string()]));
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).expect("prints JSON");
+        assert_eq!(v["resolves"], true, "the packaged fibonacci algorithm resolves: {v}");
+        assert_eq!(v["name"], "fibonacci");
+
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_library(&["get".to_string(), "totallyMadeUpNode".to_string()])
+        });
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).expect("prints JSON");
+        assert_eq!(v["resolves"], false, "a fabricated name never resolves: {v}");
+
+        assert!(run(vec!["library".into()], "bsc ui").is_err(), "no subcommand");
+        assert!(run(vec!["library".into(), "wat".into()], "bsc ui").is_err(), "unknown subcommand");
+        assert!(run(vec!["library".into(), "get".into()], "bsc ui").is_err(), "missing name");
+        assert!(run(vec!["library".into(), "get".into(), "--nope".into()], "bsc ui").is_err(), "unknown flag");
+        assert!(
+            run(vec!["library".into(), "help".into()], "bsc ui").is_ok(),
+            "help reachable, and never touches the store"
+        );
     }
 
     #[test]
