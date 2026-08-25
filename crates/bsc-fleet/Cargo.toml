@@ -14,3 +14,8 @@ bsc-util = { path = "../bsc-util" }
 bsc-cli-util = { path = "../bsc-cli-util" }
 # The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`, so there is no second transport.
 bsc-appchan = { path = "../bsc-appchan" }
+# plan.db is the SOLE fleet store (#1805), so it is where fleet MEMBERSHIP comes from: the launched-
+# session ledger + the planned streams. The app is asked only for LIVENESS, which is the one fact no
+# file on disk holds. (SQLite only — plandb takes bsc-data with default-features off, so this does not
+# drag DuckDB into `bsc fleet`'s build.)
+plandb = { path = "../plandb" }

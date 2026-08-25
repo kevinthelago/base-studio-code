@@ -75,8 +75,9 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
     permission  stopped at a permission prompt   -> the USER must click; do not try to clear it
   Drive it to empty, then go back to your own work. An empty queue is the normal state, not a
   sign there is nothing to do.
-- KNOW YOUR FLEET. `bsc fleet list --json` is the roster and the only authority on who is
-  actually running -- see "Your workers' sessions" below for how to read its two flags. The PANE
+- KNOW YOUR FLEET. `bsc fleet list --json` is the roster -- every worker you have, running or
+  NOT -- and the only authority on who is actually running. See "Your workers' sessions" below
+  for the four states and the move each one implies. The PANE
   id (e.g. `myproject:api`) is the `<session>` argument for bsc-answer / bsc-assign / bsc fleet
   wake, so this is how you know which worker to reach. (The older `bsc-fleet` shell helper is
   SUPERSEDED: it needs a `fleet.roster.tsv` in the hub and predates both the request lane and the
@@ -191,16 +192,28 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
 
 ## Your workers' sessions (`bsc fleet`)
 
-- `bsc fleet list --json` is the roster: for every pane, whether its session is `live`, whether it is
-  `busy`, and its pid. This is the ONLY authority on that — a worker that answered you an hour ago may
-  since have been parked or reclaimed, and the transcript cannot tell you.
-- READ THE TWO FLAGS TOGETHER — they name three different states, and the middle one is easy to miss:
-  - `live: true, busy: true` — the shell is up and the AGENT IS RUNNING. Leave it alone (and a wake
-    refuses it without `--force`, on purpose: waking kills the session first).
-  - `live: true, busy: false` — the shell is up but **the agent has exited**. `busy` means "this shell
-    has a live child process", and the agent is that child, so its absence is what this tells you. The
-    pane looks alive and does nothing. THIS IS A WAKE CASE: `bsc fleet wake <pane-id> --prompt "…"`.
-  - `live: false` — no session at all (reaped, or never launched). Also a wake case.
+- `bsc fleet list` is your whole fleet — EVERY worker this project has, running or not. It reads
+  membership from plan.db (the streams your plan names + the ledger of everything ever launched) and
+  asks the app for liveness, so a worker with no session still gets a row. This is the ONLY authority
+  on who is running: a worker that answered you an hour ago may since have been parked or reclaimed,
+  and the transcript cannot tell you.
+- EVERY ROW CARRIES A `state`, AND EACH STATE IS ONE MOVE. The middle two are the ones that hide —
+  a stopped worker is silent, and an idle one looks alive:
+  - `running` (`live: true, busy: true`) — the shell is up and the AGENT IS RUNNING. Leave it alone
+    (and a wake refuses it without `--force`, on purpose: waking kills the session first).
+  - `idle` (`live: true, busy: false`) — the shell is up but **the agent has exited**. `busy` means
+    "this shell has a live child process", and the agent is that child, so its absence is what this
+    tells you. The pane looks alive and does nothing. A WAKE CASE:
+    `bsc fleet wake <pane-id> --prompt "…"`.
+  - `stopped` (`live: false`, launched before) — parked or reclaimed. Also a wake case. THIS IS THE
+    ORDINARY STATE OF MOST OF YOUR FLEET between waves; do not read a table of them as a healthy fleet.
+  - `never-launched` — your plan names the stream and nothing ever ran it. There is no session to
+    wake: that one needs `bsc fleet start <projectKey>`.
+- The tally under the table counts each state, because a long fleet's stopped rows scroll past.
+- THE `ISSUES` COLUMN IS THAT WORKER'S PROGRESS — its stream's plan issues done/total. Read it WITH
+  the state: `stopped 7/7` finished and needs nothing; `stopped 0/7` never started and is the one to
+  wake first. A stream that owns no issues shows `-`. Blocked and failed issues cannot appear in a
+  ratio, so the streams holding them are named under the table — those are yours to route, not to wake.
 - `bsc fleet wake <pane-id> --prompt "<what to do>"` brings a stopped worker back and hands it that task.
   Use it when a stream still has open issues but its session is not `live` — that worker is not coming
   back on its own.

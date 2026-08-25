@@ -24,6 +24,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod cli;
+/// Who the fleet IS — plan.db's membership, kept separate from the app's liveness (see the module docs).
+pub mod membership;
 
 /// This verb's routing key in the shared channel.
 pub const KIND: &str = "fleet";
