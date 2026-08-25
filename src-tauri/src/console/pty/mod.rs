@@ -233,6 +233,16 @@ fn scaffold_store_root(pane_id: &str, root: &std::path::Path) -> Option<()> {
              record gate evidence, move its item or file a request"
         );
     }
+    // ...and the COMPONENT outbox, which nothing has ever created.
+    //
+    // `namespace_argv` only binds an outbox whose host directory already exists (bwrap cannot mkdir
+    // inside a read-only projection), so `("ui", "/ui/out")` has been in the bind list and silently
+    // skipped on every launch — a real one logged `1 outbox(es)`, which is coord alone. The
+    // designer's whole WRITE surface, the thing `/ui/out` names in the worker protocol and in
+    // `bsc_storefs::ui`'s own docs, has never existed in any cage.
+    if let Err(e) = std::fs::create_dir_all(root.join("ui").join("out")) {
+        log::warn!("pty[{pane_id}] no component outbox ({e}); this session cannot author a component");
+    }
     // The emitter rc travels with the outbox: written on the host, bound read-only into the cage,
     // sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
     if let Err(e) = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc()) {
@@ -606,6 +616,11 @@ fn pty_create_inner(
         // transition and the request lane have a path out of the cage.
         #[cfg(target_os = "linux")]
         spawn_plan_drain(pane_id.clone(), root.join("plan").join("out"), cwd.clone());
+        // ...and `/ui/out`, which has been a mount with NOTHING behind it: the bind existed, the
+        // pure drain existed in `bsc-storefs`, and the only caller was an example. A designer
+        // authoring into it wrote into a directory nobody read.
+        #[cfg(target_os = "linux")]
+        spawn_ui_drain(pane_id.clone(), root.join("ui").join("out"));
         Some(root.to_string_lossy().into_owned())
     });
 
@@ -1529,7 +1544,101 @@ fn spawn_plan_drain(pane_id: String, outbox: std::path::PathBuf, cwd: String) {
     });
 }
 
-/// Why this session cannot be sandboxed, if it cannot — the ONE implementation, shared by the
+/// Drain a caged session's `/ui/out` into the component store, through the bundled `bsc`.
+///
+/// The third of the three, and the one that was MISSING RATHER THAN WRONG: the bind existed, the
+/// pure `bsc_storefs::ui::drain_writes` existed and was tested, and the only thing that ever called
+/// it was `crates/bsc-storefs/examples/ui-drain.rs`. So a designer authoring a component into
+/// `/ui/out` wrote into a directory nothing read — the writes did not fail, they just never
+/// happened, which is worse than an error.
+///
+/// The JSON goes in on STDIN, never as an argument. `srcText` is TSX; a backtick or a `${…}` in it
+/// is content, and that is the same reason it travels as its own FILE in the outbox. The example
+/// already made this call correctly and is where the shape comes from.
+#[cfg(target_os = "linux")]
+fn spawn_ui_drain(pane_id: String, outbox: std::path::PathBuf) {
+    std::thread::spawn(move || {
+        use std::io::Write;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            if !outbox.is_dir() {
+                return; // the session is gone — same stop signal the other two drains use
+            }
+            let Some(bsc) = env::bsc_bin_path() else { continue };
+
+            let Ok(rd) = std::fs::read_dir(&outbox) else { continue };
+            let mut dirs: Vec<std::path::PathBuf> = rd.filter_map(Result::ok).map(|e| e.path()).collect();
+            dirs.sort();
+            let mut entries: Vec<(String, Vec<(String, String)>)> = Vec::new();
+            let mut consumed: Vec<std::path::PathBuf> = Vec::new();
+            for dir in dirs {
+                let Some(name) = dir.file_name().and_then(|n| n.to_str()) else { continue };
+                if name.starts_with('.') || name.ends_with(".rejected") || !dir.is_dir() {
+                    continue;
+                }
+                let Ok(fields_rd) = std::fs::read_dir(&dir) else { continue };
+                let mut fields: Vec<(String, String)> = Vec::new();
+                for f in fields_rd.filter_map(Result::ok) {
+                    let Some(k) = f.file_name().to_str().map(str::to_string) else { continue };
+                    // Source is read VERBATIM: no trim, no normalization. Its leading and trailing
+                    // whitespace is the author's.
+                    if let Ok(v) = std::fs::read_to_string(f.path()) {
+                        fields.push((k, v));
+                    }
+                }
+                fields.sort();
+                entries.push((name.to_string(), fields));
+                consumed.push(dir);
+            }
+            if entries.is_empty() {
+                continue;
+            }
+
+            let (writes, rejected) = bsc_storefs::ui::drain_writes(&entries);
+            for w in &writes {
+                let child = std::process::Command::new(&bsc)
+                    .args(["ui", "set"])
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn();
+                let out = child.and_then(|mut c| {
+                    if let Some(si) = c.stdin.as_mut() {
+                        si.write_all(w.to_json().as_bytes())?;
+                    }
+                    c.wait_with_output()
+                });
+                match out {
+                    Ok(o) if o.status.success() => {
+                        log::info!("pty[{pane_id}] ui drain: set {}", w.id);
+                    }
+                    // A store-side refusal is FEEDBACK. The pure layer accepts the shape; only the
+                    // store knows whether the kit exists or the id collides.
+                    Ok(o) => {
+                        let why = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                        log::warn!("pty[{pane_id}] ui drain refused ({}): {why}", o.status);
+                        let _ = std::fs::write(
+                            outbox.join(format!("{}.rejected", w.id)),
+                            format!("rejected by the component store: {why}\n"),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("pty[{pane_id}] ui drain could not exec bsc: {e}");
+                        continue; // leave the entries; a restage is transient, losing work is not
+                    }
+                }
+            }
+            for (name, fix) in &rejected {
+                let _ = std::fs::write(outbox.join(name), fix);
+            }
+            for d in consumed {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+    });
+}
+
+/// Why this session cannot be sandboxed, if it cannot — the ONE implementation, shared by the/// Why this session cannot be sandboxed, if it cannot — the ONE implementation, shared by the
 /// refusal in [`namespace_argv`] and the notice the pane prints.
 ///
 /// Two callers for the same question is how they drift, and the drift here would be the worst kind:
@@ -1687,7 +1796,12 @@ fn link_shared_graph(pane_id: &str, root: &std::path::Path) {
 fn project_ui_for(pane_id: &str, root: &std::path::Path) {
     let Some(bsc) = env::bsc_bin_path() else { return };
 
-    let json = match std::process::Command::new(&bsc).args(["ui", "list"]).output() {
+    // `--full`, so the projection carries SOURCE. The recorded reason not to — "pulling it would
+    // mean one `bsc ui get` per record" — is obsolete: `--full` is ONE call, measured at 5.7 MB in
+    // 47 ms against 0.08 MB for the summary. And the value it was waiting on is established, by the
+    // designer having to be let OUT of its cage: without source a caged designer can see that a
+    // component exists and cannot read the thing it was asked to edit.
+    let json = match std::process::Command::new(&bsc).args(["ui", "list", "--full"]).output() {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
         Ok(o) => {
             log::warn!(
@@ -3789,5 +3903,165 @@ mod reap_tests {
     /// whitespace. Naming it here rather than inlining a bare `")"` so the reason travels with it.
     fn would_be_comm_end() -> &'static str {
         ")"
+    }
+}
+
+// ── the designer's surface actually exists (complete-the-caged-designer-surface) ─────────────────
+//
+// Three gaps, and only two were in the item. `/ui` projected no source, so a caged designer could
+// not READ what it was asked to edit. `/ui/out` had a bind entry, a tested pure drain, and no
+// caller — so a write went into a directory nothing read. And the outbox directory was never
+// created, so `namespace_argv` skipped the bind entirely: a real launch logged `1 outbox(es)`, and
+// that one was coord.
+
+#[cfg(all(test, target_os = "linux"))]
+mod designer_surface_tests {
+    use super::{namespace_argv, scaffold_store_root, GateConfig};
+
+    /// THE bind that never happened. An outbox is bound only if its host directory exists, and
+    /// nothing created this one.
+    #[test]
+    fn the_component_outbox_is_created_and_therefore_bound() {
+        let root = crate::testutil::unique_dir("bsc-designer", "outbox");
+        scaffold_store_root("studio:designer", &root).expect("scaffold");
+        assert!(root.join("ui").join("out").is_dir(), "the mountpoint bwrap will bind");
+
+        // The projection lands on top of it, exactly as /plan/out's does.
+        let comps = bsc_storefs::ui::from_json(
+            r#"[{"id":"card","name":"Card","role":"composite","folder":"shared/ui","kitId":"k","srcText":"export const Card = () => null;"}]"#,
+        )
+        .expect("parses");
+        bsc_storefs::materialize(&root.join("ui"), &bsc_storefs::ui::project(&comps, "T"))
+            .expect("materialize");
+        assert!(root.join("ui").join("out").is_dir(), "and survives the projection");
+
+        let argv = namespace_argv(
+            Some("worker"), "d", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default(),
+        )
+        .expect("renders");
+        let host = root.join("ui").join("out").to_string_lossy().to_string();
+        assert!(
+            argv.windows(3).any(|w| w[0] == "--bind" && w[1] == host && w[2] == "/ui/out"),
+            "the component outbox must be bound READ-WRITE at /ui/out: {argv:?}",
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The spec's own caged commands, EXECUTED in a real cage against a real projection.
+    ///
+    /// The same guarantee the worker protocol gets: what the document tells a session to run has to
+    /// run there. The designer's spec was the counter-example — it taught `bsc ui`, the cage has no
+    /// `bsc`, and every caged designer session died on its first instructed command.
+    #[test]
+    fn the_designer_specs_caged_commands_run_inside_the_cage() {
+        if std::process::Command::new("bwrap").arg("--version").output().is_err() {
+            panic!("bubblewrap is required for the namespace launch path — install it");
+        }
+        let cfg = std::env::temp_dir().join(format!("bsc-dsgncfg-{}", std::process::id()));
+        std::fs::create_dir_all(&cfg).unwrap();
+        let md = crate::platform::config::with_config_root(&cfg, || {
+            crate::platform::config::load_str("designer/claude.md")
+        });
+        let _ = std::fs::remove_dir_all(&cfg);
+
+        let block = md
+            .split_once("<!-- caged-designer-commands -->")
+            .and_then(|(_, r)| r.split_once("<!-- /caged-designer-commands -->"))
+            .map(|(b, _)| b.to_string())
+            .expect("the spec carries a caged-designer-commands block");
+        let cmds: Vec<String> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("ls ") || l.starts_with("cat "))
+            .map(|l| l.split('#').next().unwrap_or(l).trim().replace("<id>", "card"))
+            .collect();
+        assert!(!cmds.is_empty(), "the block must contain runnable commands: {block}");
+
+        let base = std::env::temp_dir().join(format!("bsc-dsgnrun-{}", std::process::id()));
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        let comps = bsc_storefs::ui::from_json(
+            r#"[{"id":"card","name":"Card","role":"composite","folder":"shared/ui","kitId":"k","srcText":"export const Card = () => null;"}]"#,
+        )
+        .expect("parses");
+        bsc_storefs::materialize(&stores.join("ui"), &bsc_storefs::ui::project(&comps, "T"))
+            .expect("materialize ui");
+        std::fs::create_dir_all(stores.join("ui").join("out")).unwrap();
+
+        let argv = namespace_argv(
+            Some("worker"), "dsgn", wt.to_str().unwrap(),
+            Some(stores.to_str().unwrap()), "/bin/sh", &[], GateConfig::default(),
+        )
+        .expect("renders");
+        let sep = argv.iter().rposition(|x| x == "--").unwrap();
+
+        // Every read command runs, AND the write path the spec teaches is actually writable.
+        let script = format!(
+            "command -v bsc >/dev/null && echo BSC-PRESENT; {}; \
+             mkdir -p /ui/out/mycard && echo x > /ui/out/mycard/srcText || echo \"FAILED: author\"",
+            cmds.iter()
+                .map(|c| format!("{c} >/dev/null 2>&1 || echo \"FAILED: {c}\""))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        let mut cmd = std::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..=sep]);
+        cmd.args(["/usr/bin/sh", "-c", &script]);
+        let out = cmd.output().expect("executes");
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let authored = stores.join("ui").join("out").join("mycard").join("srcText").is_file();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(!text.contains("BSC-PRESENT"), "the caged block is written for a cage WITHOUT bsc: {text:?}");
+        assert!(
+            !text.contains("FAILED:"),
+            "every command the spec gives a caged designer must run there — {text:?} / {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(authored, "and the authored component must land on the HOST side of /ui/out");
+    }
+
+    /// The SOURCE tier. Without it a caged designer can see that a component exists and cannot read
+    /// the thing it was asked to edit — which is why the designer had to be let out of its cage.
+    #[test]
+    fn a_components_source_is_readable_from_the_projection() {
+        let src = "export const Card = () => <div>{`a ${tricky} one`}</div>;";
+        let comps = bsc_storefs::ui::from_json(&format!(
+            r#"[{{"id":"card","name":"Card","role":"composite","folder":"shared/ui","kitId":"k","srcText":{}}}]"#,
+            serde_json::to_string(src).unwrap(),
+        ))
+        .expect("parses");
+        let tree = bsc_storefs::ui::project(&comps, "T");
+
+        assert_eq!(
+            tree.get("components/card/srcText").map(String::as_str),
+            Some(src),
+            "byte-for-byte, backticks and ${{…}} included — it is TSX, and those are content",
+        );
+        assert!(
+            tree["README"].contains("srcText"),
+            "and the README says the tier is here: {}",
+            tree["README"],
+        );
+    }
+
+    /// A SUMMARY read must still say plainly that there is no source, rather than leaving a reader
+    /// to conclude the component has none.
+    #[test]
+    fn a_summary_projection_says_it_carries_no_source() {
+        let comps = bsc_storefs::ui::from_json(
+            r#"[{"id":"card","name":"Card","role":"composite","folder":"shared/ui","kitId":"k"}]"#,
+        )
+        .expect("parses");
+        let tree = bsc_storefs::ui::project(&comps, "T");
+
+        assert!(!tree.contains_key("components/card/srcText"));
+        assert!(
+            tree["README"].contains("NOT projected"),
+            "the absence has to be stated, not inferred: {}",
+            tree["README"],
+        );
     }
 }
