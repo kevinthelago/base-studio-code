@@ -14,6 +14,10 @@
 //! for later producers (see #2258) — this crate does not build the other stages.
 
 pub mod cli;
+/// Turning a failed command's OUTPUT into a fault title + detail the fingerprint can dedup on.
+pub mod detect;
+/// `bsc errors run` — the tee that records a failing build or launch without changing it.
+pub mod run;
 mod schema;
 
 use rusqlite::types::Value;
@@ -23,9 +27,22 @@ use std::path::Path;
 
 /// The severity levels a fault carries, low → high. A re-record keeps the highest level seen.
 pub const LEVELS: [&str; 3] = ["warn", "error", "fatal"];
-/// The lifecycle-stage taxonomy (#2258). Only `runtime` has a producer today; the rest are the seam.
-pub const STAGES: [&str; 9] =
-    ["install", "compile", "typecheck", "lint", "test", "build", "package", "deploy", "runtime"];
+/// The lifecycle-stage taxonomy (#2258) — every stage a producer actually writes.
+///
+/// It is a CLOSED list because `is_valid_stage` gates the CLI's `add`, and it went stale the moment a
+/// producer wrote around it: the supply-chain hook (#4008) records `stage: "supply"` straight through
+/// [`Store::record`], which no validator sees. The result was a taxonomy the store's own contents did
+/// not satisfy — `bsc errors list --stage supply` documented and working while `bsc errors add --stage
+/// supply` was refused as invalid. A list that lies about what the store holds is worse than no list,
+/// so a new producer belongs HERE, in the same change that starts writing its stage.
+///
+/// `launch` is the app-START stage (the-app-starts-and-never-mounts-and-nothing-says-so), deliberately
+/// distinct from `runtime`: a fault at launch means the app never got far enough to HAVE a runtime, and
+/// that difference is the whole reason an internal session cannot answer one.
+pub const STAGES: [&str; 11] = [
+    "install", "compile", "typecheck", "lint", "test", "build", "package", "deploy", "launch",
+    "runtime", "supply",
+];
 pub const DEFAULT_STAGE: &str = "runtime";
 pub const DEFAULT_LEVEL: &str = "error";
 /// At most this many `events` rows are kept per fingerprint (older occurrences are pruned on insert),
@@ -247,6 +264,30 @@ impl Store {
         )?;
         Ok(n > 0)
     }
+
+    /// Resolve every unresolved fault at `stage` that `source` recorded, returning how many moved.
+    ///
+    /// This is what keeps a build-stage store from becoming a pile of already-fixed faults. A producer
+    /// that only ever RECORDS leaves its first failure standing after the fix lands, and a reader then
+    /// cannot tell a live break from a repaired one — which this repo has already shipped once, in
+    /// `a-preview-that-renders-never-clears-the-error-it-once-had`, where the doctor kept reporting
+    /// failures that were already fixed.
+    ///
+    /// Keyed on (stage, source) rather than fingerprint deliberately: the caller that clears is a
+    /// command that just SUCCEEDED, and it cannot know which fingerprints its earlier failure produced
+    /// — only that whatever it recorded is no longer true. `source_hint` is the producer's identity for
+    /// exactly this reason, and it is NOT part of the fingerprint, so keying on it cannot affect dedup.
+    ///
+    /// A fault some other source recorded is untouched, so one producer clearing its own can never
+    /// resolve another's.
+    pub fn resolve_by_source(&self, stage: &str, source: &str, ts: i64) -> rusqlite::Result<usize> {
+        let n = self.conn.execute(
+            "UPDATE faults SET resolved_at = ?3
+               WHERE stage = ?1 AND source_hint = ?2 AND resolved_at IS NULL",
+            params![stage, source, ts],
+        )?;
+        Ok(n)
+    }
 }
 
 /// The column list `row_to_fault` decodes, kept in one place so the SELECTs can't drift from the mapper.
@@ -275,6 +316,70 @@ mod tests {
 
     fn input(title: &str, stack: Option<&str>, ts: i64) -> FaultInput {
         FaultInput { title: title.into(), stack: stack.map(Into::into), ts, ..Default::default() }
+    }
+
+    /// The drift this taxonomy had, pinned so it cannot come back.
+    ///
+    /// The supply-chain hook (#4008) writes `stage: "supply"` straight through `record`, which no
+    /// validator sees — so `bsc errors list --stage supply` was documented and working while
+    /// `bsc errors add --stage supply` was refused as an invalid stage. Any stage a producer in this
+    /// workspace writes must be a stage the CLI accepts, or the list is describing something other
+    /// than the store.
+    #[test]
+    fn every_stage_a_producer_writes_is_a_stage_the_cli_accepts() {
+        for stage in ["supply", "launch", "build", "compile", "typecheck", "runtime"] {
+            assert!(is_valid_stage(stage), "a producer writes `{stage}` — the CLI must accept it");
+        }
+        assert!(!is_valid_stage("nonsense"));
+    }
+
+    /// `resolve_by_source` is what keeps a build store from becoming a pile of fixed faults — and it
+    /// must be narrow: only this source, only this stage, only what is still open.
+    #[test]
+    fn resolve_by_source_clears_only_its_own_stage_and_source() {
+        let s = Store::open_in_memory().unwrap();
+        let f = |stage: &str, source: &str, title: &str| FaultInput {
+            stage: stage.into(),
+            level: "error".into(),
+            title: title.into(),
+            source_hint: Some(source.into()),
+            ts: 1,
+            ..Default::default()
+        };
+        s.record(&f("build", "mine", "a")).unwrap();
+        s.record(&f("build", "mine", "b")).unwrap();
+        s.record(&f("build", "theirs", "c")).unwrap();
+        s.record(&f("typecheck", "mine", "d")).unwrap();
+
+        assert_eq!(s.resolve_by_source("build", "mine", 99).unwrap(), 2, "both of mine, at this stage");
+        let open = s.list(&Filter { unresolved: true, ..Default::default() }).unwrap();
+        let mut titles: Vec<&str> = open.iter().map(|x| x.title.as_str()).collect();
+        titles.sort();
+        assert_eq!(titles, vec!["c", "d"], "another source and another stage are untouched");
+
+        // Idempotent: nothing left to clear reports 0 rather than erroring.
+        assert_eq!(s.resolve_by_source("build", "mine", 100).unwrap(), 0);
+        // A source that recorded nothing clears nothing.
+        assert_eq!(s.resolve_by_source("build", "never-seen", 100).unwrap(), 0);
+    }
+
+    /// A cleared fault that RECURS re-opens, so clearing is not a way to lose a live break. (The
+    /// behaviour belongs to `record`; this pins that the new clear path composes with it.)
+    #[test]
+    fn a_cleared_fault_reopens_when_it_happens_again() {
+        let s = Store::open_in_memory().unwrap();
+        let input = FaultInput {
+            stage: "build".into(),
+            level: "error".into(),
+            title: "boom".into(),
+            source_hint: Some("mine".into()),
+            ts: 1,
+            ..Default::default()
+        };
+        s.record(&input).unwrap();
+        assert_eq!(s.resolve_by_source("build", "mine", 2).unwrap(), 1);
+        let again = s.record(&FaultInput { ts: 3, ..input }).unwrap();
+        assert!(again.resolved_at.is_none(), "a recurrence re-opens the fault");
     }
 
     #[test]
