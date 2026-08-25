@@ -148,7 +148,15 @@ pub(super) fn build_bash_init_line(
     };
     // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
     // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
-    let cd_prefix = if cwd.is_empty() {
+    let cd_prefix = if sandboxed {
+        // NOTHING. bwrap's `--chdir` has already put the shell at `bsc_sandbox::REPO_GUEST_PATH`,
+        // and `cwd` is a HOST path that exists nowhere inside the cage — so the cd could only fail,
+        // silently, on every caged launch. It was harmless purely by accident: the shell was in the
+        // right place because of `--chdir`, not because of this line. An always-failing step that
+        // says nothing is what makes the NEXT cage bug hard to read, and it leaked the host's
+        // directory layout into the guest for nothing.
+        String::new()
+    } else if cwd.is_empty() {
         String::new()
     } else if cwd_missing {
         // Sit in the nearest existing ancestor (not $HOME); the warning prints post-clear (above).
@@ -171,7 +179,15 @@ pub(super) fn build_bash_init_line(
     // Source the checkpoint helper into the interactive shell too: BASH_ENV only
     // covers non-interactive subshells (the agent's Bash tool), so a human typing
     // `bsc-checkpoint` in the console pane would otherwise not have it.
-    let helpers_src = format!("source \"{}\" 2>/dev/null; ", rc_bash);
+    // ...and NOT for a namespaced session, where `rc_bash` is `~/.base-studio-code/bsc-env.sh` — a
+    // second host-only path, invisible in the cage, failing exactly as silently as the cd did. The
+    // caged session's helpers come from the guest rc bound at `RC_GUEST_PATH`, sourced above; there
+    // is nothing here for it to add.
+    let helpers_src = if sandboxed {
+        String::new()
+    } else {
+        format!("source \"{}\" 2>/dev/null; ", rc_bash)
+    };
     // #3937: an inert warning shell must NOT report its cwd. `__bsc_osc7` echoes `$(pwd)`, which the
     // frontend writes straight back into `paneCwds` — so a session sitting in the fallback ancestor
     // OVERWRITES the pane's configured cwd with that ancestor. For a fleet worker that ancestor is
@@ -210,6 +226,45 @@ mod tests {
     // two panes, relaunched several times, and every launch produced an ordinary uncaged shell with
     // no /plan, no /ui and no explanation — three exchanges spent on a condition the app had already
     // decided. New panes default to $HOME, so this is the DEFAULT path, not a corner case.
+
+    /// A caged session's init line must contain NO host-only path.
+    ///
+    /// Both leaks were silent by construction — `cd "<host cwd>" 2>/dev/null` and
+    /// `source "<host bsc-env.sh>" 2>/dev/null` — so each failed on every caged launch and said
+    /// nothing. The cd was harmless only by accident: bwrap's `--chdir` had already put the shell
+    /// at /repo, so the shell was correct because of the launcher, not because of this line.
+    ///
+    /// Asserted as "the host paths are absent" rather than "the line looks like X": what makes
+    /// this a bug is a path the guest cannot resolve, whatever else the line grows later.
+    #[test]
+    fn a_caged_init_line_carries_no_host_path() {
+        let host_cwd = "/home/u/.base-studio-code/projects/demoproj";
+        let host_rc = "/home/u/.base-studio-code/bsc-env.sh";
+        let line = super::build_bash_init_line(
+            host_cwd, false, host_cwd, Some("claude $'go'"), "claude() { :; }; ", host_rc, true, None,
+        );
+
+        assert!(!line.contains(host_cwd), "the cwd is a HOST path; bwrap --chdir already set it: {line}");
+        assert!(!line.contains(host_rc), "the host rc does not exist in the cage: {line}");
+        assert!(!line.contains("cd \""), "no cd at all for a caged session: {line}");
+
+        // What must SURVIVE: the guest rc carries the coordination emitters, and it is sourced
+        // exactly once — the acceptance criterion this item names.
+        let guest = format!("source \"{}\"", bsc_sandbox::RC_GUEST_PATH);
+        assert_eq!(line.matches(&guest).count(), 1, "the guest rc, exactly once: {line}");
+        assert!(line.contains("claude $'go'"), "and the session still launches: {line}");
+    }
+
+    /// The UNCAGED line is untouched — it needs both, and dropping either there would be the real
+    /// regression. Pinned beside the caged case so the two cannot drift apart.
+    #[test]
+    fn an_uncaged_init_line_still_cds_and_sources_the_host_rc() {
+        let line = super::build_bash_init_line(
+            "/home/u/wt", false, "/home/u/wt", Some("claude"), "", "/home/u/.base-studio-code/bsc-env.sh", false, None,
+        );
+        assert!(line.starts_with("cd \"/home/u/wt\" 2>/dev/null; "), "{line}");
+        assert!(line.contains("source \"/home/u/.base-studio-code/bsc-env.sh\""), "{line}");
+    }
 
     #[test]
     fn a_refused_sandbox_prints_why_where_the_user_is_looking() {
