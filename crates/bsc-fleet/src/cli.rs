@@ -319,6 +319,47 @@ fn project_key_from_db(db: &std::path::Path) -> Option<String> {
     db.file_stem().map(|s| s.to_string_lossy().into_owned()).filter(|k| !k.is_empty())
 }
 
+/// A non-empty credential from `var`, or `None`. Blank-but-set is treated as absent: an exported
+/// `GH_TOKEN=""` is how a shell says "no token", and passing it on would rebuild the anonymous URL
+/// this fallback exists to avoid.
+fn env_token(var: &str) -> Option<String> {
+    std::env::var(var).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+/// Turn git's credential-prompt failure into something the reader can act on.
+///
+/// Cloning a private repo with no credential does not fail with "unauthorized" — git tries to PROMPT,
+/// finds no terminal, and reports `could not read Username for 'https://github.com': No such device
+/// or address`. That sentence has sent a maintainer looking for a missing PERMISSION twice: the role
+/// gate already grants a director `github: read`, and the actual state was that no GitHub account was
+/// connected at all, so there was no token to inject or to read.
+fn explain_clone_failure(prog: &str, repo: &str, had_token: bool, err: &str) -> String {
+    let auth_prompt = err.contains("could not read Username")
+        || err.contains("Authentication failed")
+        || err.contains("terminal prompts disabled");
+    if !auth_prompt {
+        return format!("{prog} clone: {err}");
+    }
+    if had_token {
+        format!(
+            "{prog} clone: {repo} refused the credential this session carries. It may not grant \
+             access to that repo, or it may have expired — reconnect the account in Settings → \
+             GitHub. (original: {err})"
+        )
+    } else {
+        format!(
+            "{prog} clone: no GitHub credential, so {repo} could only be tried anonymously and git \
+             asked for a username with no terminal to ask on.\n\
+             \n\
+             If the repo is PRIVATE: connect an account in Settings → GitHub — a session is handed \
+             that token as $GH_TOKEN automatically — or pass `--token <t>` for this one call.\n\
+             If a checkout is already on this machine: `{prog} clone --source <path>`, which needs \
+             no network and no credential at all.\n\
+             (original: {err})"
+        )
+    }
+}
+
 /// `clone` — materialize the hub's repo clones, the prerequisite every worker has.
 ///
 /// Deliberately NOT folded into `ensure_worktree`. A clone is minutes and `bsc fleet wake`'s CLI
@@ -357,13 +398,28 @@ fn cmd_clone(args: &Args, prog: &str) -> Result<(), String> {
         ));
     }
 
-    let token = args.token.clone().unwrap_or_default();
+    // THE SESSION IS ALREADY HOLDING A CREDENTIAL, and this used to ignore it.
+    //
+    // `session-launch` puts the app's GitHub token in every session that has any git/gh capability
+    // (`if (ghToken && !noGitOrGithub) e.GH_TOKEN = ghToken`), precisely so `gh` and git-over-https
+    // work. This verb defaulted `--token` to EMPTY instead of reading it, so a director with a
+    // perfectly good token in its environment still cloned anonymously — and a private repo answered
+    // with git's prompt failure, `could not read Username for 'https://github.com'`, which names
+    // neither the cause nor the fix.
+    //
+    // `GH_TOKEN` first (what the app injects), then `GITHUB_TOKEN` (what CI and `gh` also honour).
+    let token = args
+        .token
+        .clone()
+        .or_else(|| env_token("GH_TOKEN"))
+        .or_else(|| env_token("GITHUB_TOKEN"))
+        .unwrap_or_default();
     let mut rows = Vec::new();
     for repo in &repos {
         // FAIL CLOSED on the first repo that cannot be cloned, naming it. A partial clone reported as
         // success is the state where half the fleet starts and the other half fails one wake at a time.
         let (path, outcome) = bsc_project::ensure_clone(&key, repo, &token, args.source.as_deref())
-            .map_err(|e| format!("{prog} clone: {e}"))?;
+            .map_err(|e| explain_clone_failure(prog, repo, !token.is_empty(), &e))?;
         rows.push(serde_json::json!({
             "repo": repo,
             "path": path.to_string_lossy(),
@@ -1647,5 +1703,57 @@ mod director_tests {
         // out — the colon is load-bearing, so this pins it.
         assert!("studio-code:director".ends_with(DIRECTOR_SUFFIX));
         assert!(!"studio-code:art-director".ends_with(DIRECTOR_SUFFIX));
+    }
+}
+
+#[cfg(test)]
+mod clone_credential_tests {
+    use super::*;
+
+    /// The failure a maintainer actually met, twice read as a missing PERMISSION.
+    ///
+    /// Git does not say "unauthorized" when it has no credential — it tries to PROMPT and fails on
+    /// the absent terminal. The message must name the cause (no credential) and both ways out.
+    #[test]
+    fn a_credential_prompt_failure_names_the_cause_and_the_ways_out() {
+        let raw = "Cloning into '/hub/repo'...\nfatal: could not read Username for \
+                   'https://github.com': No such device or address";
+        let m = explain_clone_failure("bsc fleet", "acme/private", false, raw);
+        assert!(m.contains("no GitHub credential"), "names the cause: {m}");
+        assert!(m.contains("acme/private"), "names the repo: {m}");
+        assert!(m.contains("Settings → GitHub"), "names where a token comes from: {m}");
+        assert!(m.contains("$GH_TOKEN"), "says the token reaches a session automatically: {m}");
+        assert!(m.contains("--source"), "names the no-network way out: {m}");
+        assert!(m.contains(raw) || m.contains("could not read Username"), "keeps the original: {m}");
+    }
+
+    /// HAVING a token and being REFUSED is a different problem with a different fix, so it must not
+    /// tell the reader to go connect an account they already connected.
+    #[test]
+    fn a_refusal_with_a_token_in_hand_reads_differently() {
+        let m = explain_clone_failure("bsc fleet", "acme/private", true, "fatal: Authentication failed");
+        assert!(m.contains("refused the credential"), "{m}");
+        assert!(!m.contains("no GitHub credential"), "must not claim there is no token: {m}");
+    }
+
+    /// Anything that is NOT an auth prompt passes through untouched — a disk-full or bad-path clone
+    /// failure must not be relabelled as a credential problem.
+    #[test]
+    fn a_non_auth_failure_is_not_dressed_up_as_one() {
+        let m = explain_clone_failure("bsc fleet", "acme/pub", false, "fatal: destination path exists");
+        assert_eq!(m, "bsc fleet clone: fatal: destination path exists");
+    }
+
+    /// A set-but-blank variable is how a shell says "no token"; passing it on would rebuild the
+    /// anonymous URL this fallback exists to avoid.
+    #[test]
+    fn a_blank_env_token_counts_as_absent() {
+        // Distinct names per case: nextest gives each test its own process, but these still must not
+        // depend on each other's ordering within one.
+        std::env::set_var("BSC_TEST_TOKEN_BLANK", "   ");
+        assert_eq!(env_token("BSC_TEST_TOKEN_BLANK"), None);
+        std::env::set_var("BSC_TEST_TOKEN_REAL", "  ghp_example  ");
+        assert_eq!(env_token("BSC_TEST_TOKEN_REAL").as_deref(), Some("ghp_example"));
+        assert_eq!(env_token("BSC_TEST_TOKEN_ABSENT_XYZ"), None);
     }
 }
