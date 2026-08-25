@@ -156,12 +156,25 @@ export const PREVIEW_DATA_NAMESPACE = "bsc-data";
  * ## Why these two directories are excluded
  *
  * Vendoring every imported `@data` JSON would be 8.88 MB, and 8.7 MB of that is two files:
- * `components/react-ui.json` (4.80 MB) and `knowledge/algorithms.json` (3.91 MB). Both are already
- * reachable in a preview by their proper routes — the kit ARTIFACT and the library resolver — so as raw
- * JSON they would be a second copy of something the bundle already has. Excluding them leaves ~171 KB.
+ * `components/react-ui.json` (4.80 MB) and `knowledge/algorithms.json` (3.91 MB). Excluding them
+ * leaves ~171 KB.
  *
- * The one record importing either is `componentpreviewframe`, the preview HOST, which is not a thing
- * previewed inside a preview.
+ * `components/react-ui.json` is genuinely safe to exclude: nothing imports it as a static ES module —
+ * the kit artifact is threaded into the bundler as `source`/`runtime` params instead — so the only
+ * record that names it is `componentpreviewframe`, the preview HOST, which is not a thing previewed
+ * inside a preview.
+ *
+ * `knowledge/algorithms.json` is NOT the same case, and excluding it on the same assumption was
+ * request #106: `features/algorithms/lib/knowledge.ts` does `import RAW from
+ * "@data/knowledge/algorithms.json"` at MODULE TOP LEVEL and `store/index.ts` composes the algorithms
+ * slice, so the import is reachable from `@/store` itself — not just from the Algorithms feature UI.
+ * 103 of 138 render-doctor findings (StatusBar, PaneMenu/PaneShell, TeamsInspector, …) were every
+ * component that merely calls `useAppStore`, none of them rendering anything algorithm-related.
+ * {@link DATA_JSON_EMPTY_DEFAULTS} answers this the same way #79 answered `import.meta.glob` a few
+ * lines below and #85 answered `?raw`: the honest degradation is the empty value of the right SHAPE,
+ * not a Proxy that throws three frames from the real cause. A component that genuinely renders the
+ * Algorithms feature in preview shows an empty knowledge graph rather than the real one — degraded,
+ * not broken, and still a fraction of the 3.91 MB this was avoiding vendoring in the first place.
  */
 const DATA_JSON: Record<string, unknown> = Object.fromEntries(
   Object.entries(
@@ -186,15 +199,29 @@ export function dataJsonSpec(spec: string): boolean {
 }
 
 /**
- * The module a `@data/…json` import resolves to — the REAL parsed value as the default export.
+ * Honest empty-shaped fallbacks for `@data/**` JSON specs deliberately excluded from {@link DATA_JSON}
+ * (too large to vendor whole) but imported at MODULE TOP LEVEL by something `@/store` composes — see
+ * "Why these two directories are excluded" above (request #106). Keyed by spec so a shape stays paired
+ * with the one import site it degrades; each value is exactly what that site's own "defaulted to
+ * empty" logic already tolerates (`buildKnowledge` in `knowledge.ts` maps a missing `implementations`
+ * to `[]`), so a preview reaching it sees a real, valid, empty document — never a Proxy.
+ */
+const DATA_JSON_EMPTY_DEFAULTS: Record<string, unknown> = {
+  "@data/knowledge/algorithms.json": { implementations: [] },
+};
+
+/**
+ * The module a `@data/…json` import resolves to — the REAL parsed value as the default export, or an
+ * {@link DATA_JSON_EMPTY_DEFAULTS} entry's honest empty shape.
  *
- * A specifier the bundle does not carry (the two excluded directories, or a typo) gets a module that
- * THROWS NAMING ITSELF on first access. That is the whole improvement over the universal stub: a Proxy
- * answers every property and fails somewhere else entirely — `MODEL_IDS.find` three frames away — while
- * this says which specifier was missing, at the moment it is touched.
+ * A specifier neither carries (an excluded directory with no registered default, or a typo) gets a
+ * module that THROWS NAMING ITSELF on first access. That is the whole improvement over the universal
+ * stub: a Proxy answers every property and fails somewhere else entirely — `MODEL_IDS.find` three
+ * frames away — while this says which specifier was missing, at the moment it is touched.
  */
 export function dataJsonModule(spec: string): string {
   if (spec in DATA_JSON) return `export default ${JSON.stringify(DATA_JSON[spec])};\n`;
+  if (spec in DATA_JSON_EMPTY_DEFAULTS) return `export default ${JSON.stringify(DATA_JSON_EMPTY_DEFAULTS[spec])};\n`;
   return (
     `const missing = ${JSON.stringify(spec)};\n` +
     "export default new Proxy({}, { get() { throw new Error(" +
