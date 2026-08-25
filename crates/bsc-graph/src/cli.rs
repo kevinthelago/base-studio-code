@@ -802,7 +802,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let verb = positional.first().copied().unwrap_or("help");
     let emit = |v: &Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
-        println!("{}", s.map_err(|e| e.to_string())?);
+        // Through `bsc_util::emit_line`, NOT `println!`
+        // (#request-list-cannot-be-warm-served-until-it-stops-using-println).
+        //
+        // `emit_line` is identical to `println!` when nothing is capturing, so one-shot CLI output is
+        // unchanged byte for byte. It differs only inside a capture — and TWO things needed that. The
+        // warm server (#4152) runs a verb under `capture_output`, so a raw `println!` writes into the
+        // protocol stream and made every `bsc graph` verb structurally unservable. And `migrate-crate`
+        // delegates to these same arms: with a raw `println!` its capture was a no-op, so one migration
+        // buried its own report under 295 KB of record JSON.
+        bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
         Ok(())
     };
     match verb {
