@@ -191,8 +191,15 @@ export function planRecords() {
       tests.push({
         spec,
         name,
+        ext: typeof t?.ext === "string" && /^\.[jt]sx?$/.test(t.ext) ? t.ext : undefined,
         src: rewriteRelativeImports(src, dir),
-        rel: rel + suffix + ".test" + extFor(src),
+        // The CARRIED extension wins over the guess. `extFor` reads `<T>(a: readonly T[])` — an
+        // ordinary TypeScript generic, and test files are full of them — as a JSX tag, names the file
+        // `.tsx`, and the parser then fails on it: "Unexpected token. Did you mean `{'>'}`?". Measured
+        // at 177 of 376 algorithm-subject tests, so the guess is wrong about HALF the time on this
+        // corpus. A record that knows its source extension states it; `extFor` stays the fallback for
+        // the records that predate the field, whose behaviour is unchanged.
+        rel: rel + suffix + ".test" + (typeof t?.ext === "string" && /^\.[jt]sx?$/.test(t.ext) ? t.ext : extFor(src)),
         detail: `${spec} → ${name}`,
       });
     });
