@@ -3310,7 +3310,7 @@ fn analyze_kit(
             node_ids: vec![n.id.clone()],
             node_names: vec![n.name.clone()],
             why: format!(
-                "`{}` exports {} component{} beyond itself ({}) — {} item{} in a record whose id names one. An exported sibling is reachable by import but invisible to everything keyed on the id: it has no record, never previews, is never a `composes` edge, and `pickComponent` mounts whichever exported function comes FIRST, so the export ORDER decides what renders",
+                "`{}` exports {} component{} beyond itself ({}) — {} item{} in a record whose id names one. An exported sibling is reachable by import but invisible to everything keyed on the id: it has no record, never previews on its own, and is never a `composes` edge — even though the id-only mount now self-corrects, matching the export to the record's own name (#121-pickComponent-mounts-wrong-export) rather than picking whichever comes first in source order",
                 n.name,
                 foreign.len(),
                 if foreign.len() == 1 { "" } else { "s" },
@@ -4952,6 +4952,15 @@ export function X(){ return <i>{nope}</i>; }"
         assert!(me[0].why.contains("TextField") && me[0].why.contains("SelectField"), "{}", me[0].why);
         assert!(!me[0].why.contains("FieldProps"), "a props type decorates Field — not a second item: {}", me[0].why);
         assert_eq!(me[0].severity, 2);
+        // #121-pickComponent-mounts-wrong-export: GraphComponent now defaults an id-only mount's export
+        // name to the record's own name, so the finding must not claim export ORDER still decides what
+        // renders — that claim went stale the moment the runtime self-corrected.
+        assert!(
+            !me[0].why.contains("mounts whichever exported function comes FIRST"),
+            "the render-order claim is stale once the runtime resolves by name: {}",
+            me[0].why
+        );
+        assert!(me[0].why.contains("self-corrects"), "{}", me[0].why);
 
         // The other direction: `ttscard` DEFINES three components and exports one. `multi-component`
         // has something to say (below its bar here, but it is the check that sees it); `multi-export`
