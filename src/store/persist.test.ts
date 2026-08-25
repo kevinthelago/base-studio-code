@@ -92,3 +92,42 @@ describe("migrateAutoResumeOff (persist v1 → v2)", () => {
     expect(migrateAutoResumeOff({}, 1)).toEqual({});
   });
 });
+
+// ── the role must be as durable as everything derived from it ────────────────────────────────────
+//
+// `a-fleet-pane-comes-back-uncaged-after-an-app-restart`. `paneRoles` and `panePersonas` were the
+// only pane-identity fields left OUT of the allowlist, while every value derived from the role —
+// the profile, the write globs, the flow, the repo, the stream, the cwd — was persisted beside
+// them. After a restart `paneRole()` resolved undefined, `sandboxPlanFor` computed backend "none",
+// and a fleet pane relaunched on the host with no cage and no role gate. MEASURED: a director came
+// back as `claude --model sonnet` with `/proc/<pid>/ns/mnt` equal to the host's.
+//
+// A studio pane survived the same restart caged, which is what hid this: `paneRole()` falls back to
+// `studioRoleForPaneId`, so a studio role is derivable from the pane id. A fleet role is not.
+
+describe("persistedState — a pane's isolation survives a restart", () => {
+  it("persists the ROLE, not only the things derived from it", () => {
+    const snap = persistedState(useAppStore.getState());
+    // The pairing IS the invariant: each derived field is only meaningful alongside the role that
+    // produced it, so persisting one without the other is what made the set incoherent.
+    for (const derived of ["paneProfiles", "paneRoleGlobs", "paneFlows", "paneRepos"]) {
+      expect(derived in snap, `${derived} is persisted, so the role that produced it must be too`).toBe(true);
+    }
+    expect("paneRoles" in snap, "the role decides whether the pane gets a cage at all").toBe(true);
+    expect("panePersonas" in snap, "a persona may narrow the role's floor; losing it widens the session").toBe(true);
+  });
+
+  it("carries a fleet pane's role across a persist round-trip", () => {
+    // The end-to-end shape of the failure: assign a director, serialize the way zustand does,
+    // and read the role back. Undefined here is exactly what produced an uncaged director.
+    useAppStore.setState({
+      paneRoles: { "network-monitor:director": "director" },
+      panePersonas: { "network-monitor:director": "director" },
+    } as never);
+
+    const rehydrated = JSON.parse(JSON.stringify(persistedState(useAppStore.getState())));
+
+    expect(rehydrated.paneRoles?.["network-monitor:director"]).toBe("director");
+    expect(rehydrated.panePersonas?.["network-monitor:director"]).toBe("director");
+  });
+});
