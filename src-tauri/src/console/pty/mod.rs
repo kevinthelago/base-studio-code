@@ -155,6 +155,40 @@ fn attach_job_and_track(
     job
 }
 
+/// Create a caged pane's store root: the coordination outbox first, then the emitter rc inside it.
+/// `None` means the outbox could not be made, so the caller gives the session no store root at all.
+///
+/// **The ORDER is the fix.** The rc write used to come first, against a `root` that nothing had
+/// created yet — so on a pane's FIRST launch it failed ENOENT and `let _ =` swallowed it. The bind
+/// is then skipped (`namespace_argv` sets `paths.rc_file` only `if rc.is_file()`), and the init
+/// line's `source "/bsc-rc" 2>/dev/null` is a silent no-op: the session comes up with no `bsc-ask`,
+/// no `bsc-wait`, no `bsc-answer`, and none of the `bsc-landed/merged/closed/failed` completion
+/// emitters — the entire coordination surface, missing, with nothing said anywhere.
+///
+/// The SECOND launch of the same pane worked, because by then the directory existed. That is why it
+/// survived so long: on a machine with real sessions every sandbox store had an rc except the one
+/// pane that had only ever launched once.
+///
+/// A failed rc write is now LOGGED rather than swallowed. It stays non-fatal — a session that can
+/// read its stores but not emit is still worth having — but "the agent silently cannot coordinate"
+/// is not a state anyone should have to discover by listing directories.
+fn scaffold_store_root(pane_id: &str, root: &std::path::Path) -> Option<()> {
+    let outbox = root.join("coord").join("out");
+    if let Err(e) = std::fs::create_dir_all(&outbox) {
+        log::warn!("pty[{pane_id}] no coordination outbox ({e}); the session cannot emit");
+        return None;
+    }
+    // The emitter rc travels with the outbox: written on the host, bound read-only into the cage,
+    // sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
+    if let Err(e) = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc()) {
+        log::warn!(
+            "pty[{pane_id}] no coordination emitters ({e}); bsc-ask / bsc-wait / bsc-answer and the \
+             completion emitters will be undefined in this session"
+        );
+    }
+    Some(())
+}
+
 /// The session's resolved working directory (#367/#979/#1819/#1988) — the single place the scattered
 /// `into_sandbox` cwd re-tests collapse into. Normalizes the configured `cwd`, decides whether it is
 /// missing or empty, picks the `effective_cwd` the shell actually starts in, and logs the two loud
@@ -475,9 +509,10 @@ fn pty_create_inner(
             .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
             .collect();
         let root = crate::platform::paths::bsc_base_dir().join("sandbox-stores").join(safe);
-        // The emitter rc travels with the outbox: written on the host, bound read-only into the
-        // cage, sourced by the init line. See `sandbox_emitter_rc` for why it is a file.
-        let _ = std::fs::write(root.join("bsc-rc"), launch::sandbox_emitter_rc());
+        // The outbox + the emitter rc, in that order — see `scaffold_store_root` for why the
+        // order is the whole fix. `None` means no outbox, and a session that cannot emit at all
+        // does not get a store root.
+        scaffold_store_root(&pane_id, &root)?;
         // ...and the store projections the agent READS. Without these the launch logged
         // `0 store(s)` and a worker told to consult its plan had no way to.
         #[cfg(target_os = "linux")]
@@ -496,13 +531,7 @@ fn pty_create_inner(
             root.join("coord").join("out"),
             crate::platform::paths::bsc_base_dir().join("coord.log"),
         );
-        match std::fs::create_dir_all(root.join("coord").join("out")) {
-            Ok(()) => Some(root.to_string_lossy().into_owned()),
-            Err(e) => {
-                log::warn!("pty[{pane_id}] no coordination outbox ({e}); the session cannot emit");
-                None
-            }
-        }
+        Some(root.to_string_lossy().into_owned())
     });
 
     let harness_bins: &[&str] = match provider_id.as_deref() {
@@ -2629,5 +2658,61 @@ mod dead_pane_tests {
         assert!(first_write_to_missing("dead-pane-tests:second:p0"));
         assert!(first_write_to_missing("dead-pane-tests:third:p0"));
         assert!(!first_write_to_missing("dead-pane-tests:second:p0"));
+    }
+}
+
+// ── the caged pane's store root (the-emitter-rc-is-written-before-its-directory-exists) ──────────
+//
+// The rc write used to precede the `create_dir_all` that makes its directory, so a pane's FIRST
+// caged session silently got no coordination emitters at all. The second launch worked, which is
+// exactly why nobody noticed. These tests run against a root that does NOT exist, because a root
+// that already exists is the case that always passed.
+
+#[cfg(test)]
+mod store_root_tests {
+    use super::scaffold_store_root;
+
+    /// THE regression: a first launch, into a store root nothing has created yet.
+    #[test]
+    fn a_first_launch_gets_its_emitter_rc() {
+        let root = crate::testutil::unique_dir("bsc-store-root", "first-launch");
+        assert!(!root.exists(), "the point of the test is that nothing has created it");
+
+        assert!(scaffold_store_root("proj:director", &root).is_some(), "the scaffold succeeds");
+
+        assert!(
+            root.join("bsc-rc").is_file(),
+            "the rc must exist on the FIRST launch — namespace_argv binds it only `if rc.is_file()`, \
+             so a missing one means the session has no bsc-ask / bsc-wait / completion emitters",
+        );
+        assert!(root.join("coord").join("out").is_dir(), "and the outbox it is written beside");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The rc has to be the real one, not an empty file that satisfies `is_file()`.
+    #[test]
+    fn the_rc_written_is_the_emitter_rc() {
+        let root = crate::testutil::unique_dir("bsc-store-root", "contents");
+        scaffold_store_root("proj:worker", &root).expect("scaffold");
+
+        let written = std::fs::read_to_string(root.join("bsc-rc")).expect("readable");
+        assert_eq!(written, super::launch::sandbox_emitter_rc(), "verbatim, not a truncated write");
+        assert!(!written.is_empty(), "and not empty");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A relaunch re-scaffolds the same root without failing on what is already there.
+    #[test]
+    fn a_relaunch_over_an_existing_root_still_succeeds() {
+        let root = crate::testutil::unique_dir("bsc-store-root", "relaunch");
+        scaffold_store_root("proj:director", &root).expect("first launch");
+        scaffold_store_root("proj:director", &root).expect("second launch");
+
+        assert!(root.join("bsc-rc").is_file());
+        assert!(root.join("coord").join("out").is_dir());
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }
