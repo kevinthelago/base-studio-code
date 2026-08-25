@@ -8,7 +8,7 @@
     "build": "node scripts/emit-records.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:plan": "node scripts/gc.mjs --quiet && cargo build --bin bsc --bin bsc-agent",
+    "build:plan": "node scripts/gc.mjs --quiet && cargo build --bin bsc --bin bsc-agent --bin bsc-hook",
     "clean:incremental": "node scripts/prune-incremental.mjs",
     "clean:target": "node scripts/sweep-target.mjs",
     "gc": "node scripts/gc.mjs --force",

@@ -88,7 +88,13 @@ fn readme(count: usize, generated_at: &str) -> String {
          THIS IS A SNAPSHOT, NOT A LIVE VIEW.\n\
          {count} item(s), projected at {generated_at}. It does not change when the store does.\n\
          It is mounted read-only, so a write is refused by the mount rather than being lost.\n\
-         For live reads or any write, use the bsc plan CLI.\n"
+         \n\
+         THERE IS NO `bsc` IN THIS SESSION. That is the point of the projection, not an oversight:\n\
+         a read surface can exist here precisely because no writable database is bound into the\n\
+         namespace. This snapshot is the whole of what you can read of the plan.\n\
+         There is no plan WRITE path from inside the cage yet — no /plan/out to match /coord/out.\n\
+         To raise something you cannot do from here, emit it on the coordination outbox\n\
+         (bsc-ask); the host is what reaches the store.\n"
     )
 }
 
@@ -97,6 +103,29 @@ pub fn from_json(s: &str) -> Result<Vec<PlanItem>, serde_json::Error> {
     serde_json::from_str(s)
 }
 
+
+#[cfg(test)]
+mod readme_tests {
+    /// The README used to close with "For live reads or any write, use the bsc plan CLI" — in the
+    /// only place this projection is ever mounted, there is no `bsc`. It is not bound on purpose:
+    /// a writable store inside the namespace is the ambient authority the isolation exists to
+    /// remove, which is the same reason the projection exists at all.
+    #[test]
+    fn the_readme_does_not_send_a_caged_reader_to_a_cli_it_lacks() {
+        let readme = super::readme(3, "2026-01-01T00:00:00Z");
+        assert!(
+            readme.contains("NO `bsc` IN THIS SESSION"),
+            "the reader must be told the CLI is absent: {readme}",
+        );
+        assert!(
+            !readme.contains("use the bsc plan CLI"),
+            "and must not be sent to it anyway: {readme}",
+        );
+        // The plan store has no /plan/out to match /coord/out, so the honest answer is the
+        // coordination channel — not silence, and not a command that cannot run.
+        assert!(readme.contains("bsc-ask"), "name the escalation that DOES work: {readme}");
+    }
+}
 
 #[cfg(test)]
 mod tests {
