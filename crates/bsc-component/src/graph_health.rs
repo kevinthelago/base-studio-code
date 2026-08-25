@@ -576,6 +576,23 @@ fn resolves_library(spec: &str, sounds: &BTreeSet<String>) -> bool {
     }
 }
 
+/// The outcome of [`resolve_algorithm_library_node`] — three answers, not two, because a bare NAME
+/// (unlike an id) is not unique: `bsc graph impl get` already learned this the hard way (#118's own
+/// history — `index` alone names 20+ unrelated modules in the real store) and refuses to guess rather
+/// than silently hand back an arbitrary one of several candidates. This verb makes the same call for
+/// the same reason: a designer trusting a wrong silent pick would misjudge a `doctor` finding exactly
+/// as often as they would correctly verify one.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LibraryLookup {
+    /// Exactly one typescript algorithm matches — the unambiguous case.
+    Found(Value),
+    /// The bare NAME matches several typescript algorithms; here are their (unique) ids, so the
+    /// caller can retry with the exact one it means.
+    Ambiguous(Vec<String>),
+    /// Nothing matches.
+    NotFound,
+}
+
 /// Resolve a `@bsc/algorithms/<name>` reference to its full implementation record (`bsc ui library get`,
 /// bsc request #118) — the SAME `algorithms` arm [`resolves_library`] judges a `doctor` finding by, so a
 /// verified name here is guaranteed to be the reason a `reimplementation`/`unresolvable-import` finding
@@ -584,27 +601,42 @@ fn resolves_library(spec: &str, sounds: &BTreeSet<String>) -> bool {
 /// inside its own permitted shell instead of having no way to verify the report at all. Accepts a bare
 /// name/id (`fibonacci`) OR the full spec (`@bsc/algorithms/fibonacci`); a bare name is always read as
 /// the `algorithms` segment, matching the exact wording doctor's guidance prints ("import
-/// `@bsc/algorithms/<name>`"). `None` when it does not resolve — including a `@bsc/sounds/…` or
-/// non-library spec, which this verb does not judge (sounds have no importable source to hand back;
-/// `doctor`'s own reimplementation guardrail is algorithms-only for the same reason, see
-/// [`reimpl_targets`]).
-pub fn resolve_algorithm_library_node(name_or_spec: &str) -> Option<Value> {
-    let name = match name_or_spec.strip_prefix("@bsc/") {
-        Some(rest) => rest.strip_prefix("algorithms/")?,
-        None => name_or_spec,
+/// `@bsc/algorithms/<name>`"). [`LibraryLookup::NotFound`] also covers a `@bsc/sounds/…` or non-library
+/// spec, which this verb does not judge (sounds have no importable source to hand back; `doctor`'s own
+/// reimplementation guardrail is algorithms-only for the same reason, see [`reimpl_targets`]).
+///
+/// An EXACT id always wins outright (ids are unique by construction, so there is nothing to
+/// disambiguate); only a bare-NAME match can come back [`LibraryLookup::Ambiguous`].
+pub fn resolve_algorithm_library_node(name_or_spec: &str) -> LibraryLookup {
+    let Some(name) = (match name_or_spec.strip_prefix("@bsc/") {
+        Some(rest) => rest.strip_prefix("algorithms/"),
+        None => Some(name_or_spec),
+    }) else {
+        return LibraryLookup::NotFound;
     };
-    if name.is_empty() || !algo_library_names().contains(name) {
-        return None;
+    if name.is_empty() {
+        return LibraryLookup::NotFound;
     }
-    // Re-apply the SAME `is_ts_algorithm_impl` filter `algo_library_names()` indexed under, not just
-    // the id/name match — the id or bare name can collide with another language's kit (e.g. a `rust`
-    // `fibonacci` alongside the `typescript` one), and only the typescript record is what
-    // `@bsc/algorithms/<name>` actually resolves to.
-    bsc_graph::implementations().into_iter().find(|im| {
-        is_ts_algorithm_impl(im)
-            && (im.get("id").and_then(Value::as_str) == Some(name)
-                || im.get("name").and_then(Value::as_str) == Some(name))
-    })
+    // Re-apply the SAME `is_ts_algorithm_impl` filter `algo_library_names()` indexed under — the id or
+    // bare name can collide with another language's kit (e.g. a `rust` `fibonacci` alongside the
+    // `typescript` one), and only the typescript record is what `@bsc/algorithms/<name>` resolves to.
+    let impls = bsc_graph::implementations();
+    let ts_impls: Vec<&Value> = impls.iter().filter(|im| is_ts_algorithm_impl(im)).collect();
+    if let Some(by_id) = ts_impls.iter().find(|im| im.get("id").and_then(Value::as_str) == Some(name)) {
+        return LibraryLookup::Found((*by_id).clone());
+    }
+    let by_name: Vec<&&Value> =
+        ts_impls.iter().filter(|im| im.get("name").and_then(Value::as_str) == Some(name)).collect();
+    match by_name.as_slice() {
+        [] => LibraryLookup::NotFound,
+        [only] => LibraryLookup::Found((**only).clone()),
+        many => {
+            let mut ids: Vec<String> =
+                many.iter().filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_string)).collect();
+            ids.sort();
+            LibraryLookup::Ambiguous(ids)
+        }
+    }
 }
 
 /// Is `s` a single valid JS identifier (so it COULD be a declared symbol)? Excludes empty, a leading
@@ -4232,17 +4264,68 @@ function C() {}
     fn resolve_algorithm_library_node_returns_the_real_record_by_bare_name_id_or_full_spec() {
         // `bsc ui library get` (bsc request #118): a designer session confined to `bsc ui` must get the
         // SAME answer `bsc graph impl get fibonacci` would, in every form doctor's own guidance prints.
-        let by_name = resolve_algorithm_library_node("fibonacci").expect("bare name resolves");
+        let found = |v: LibraryLookup| match v {
+            LibraryLookup::Found(im) => im,
+            other => panic!("expected Found, got {other:?}"),
+        };
+        let by_name = found(resolve_algorithm_library_node("fibonacci"));
         assert_eq!(by_name.get("name").and_then(Value::as_str), Some("fibonacci"));
-        let by_id = resolve_algorithm_library_node("fibonacci.ts").expect("exact id resolves");
+        let by_id = found(resolve_algorithm_library_node("fibonacci.ts"));
         assert_eq!(by_id.get("id").and_then(Value::as_str), Some("fibonacci.ts"));
-        let by_spec = resolve_algorithm_library_node("@bsc/algorithms/fibonacci").expect("full spec resolves");
+        let by_spec = found(resolve_algorithm_library_node("@bsc/algorithms/fibonacci"));
         assert_eq!(by_spec.get("id").and_then(Value::as_str), Some("fibonacci.ts"));
-        assert!(resolve_algorithm_library_node("nope").is_none(), "a missing name resolves to nothing");
-        assert!(
-            resolve_algorithm_library_node("@bsc/sounds/click").is_none(),
+        assert_eq!(
+            resolve_algorithm_library_node("nope"),
+            LibraryLookup::NotFound,
+            "a missing name resolves to nothing"
+        );
+        assert_eq!(
+            resolve_algorithm_library_node("@bsc/sounds/click"),
+            LibraryLookup::NotFound,
             "the sounds segment is out of scope for this verb — it has no importable source to hand back"
         );
+    }
+
+    #[test]
+    fn resolve_algorithm_library_node_refuses_to_guess_among_a_bare_names_collisions() {
+        // bsc request #118's own history: `index` alone names 20+ unrelated typescript algorithms in
+        // the real store. `bsc graph impl get` refuses to silently pick one for exactly this reason,
+        // and this verb must make the SAME call — a wrong silent pick on a verification read would
+        // make a designer trust the wrong record just as often as the right one.
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-component-graph-health-ambiguous-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        std::fs::write(
+            &store_path,
+            r#"{"implementations":[
+                {"id":"dup-a.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"},
+                {"id":"dup-b.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"},
+                {"id":"only-one.ts","tech":"typescript","role":"algorithm","name":"onlyOne","code":"export function onlyOne(){}"}
+            ]}"#,
+        )
+        .unwrap();
+        std::env::set_var("BSC_GRAPH_STORE", &store_path);
+
+        let ambiguous = resolve_algorithm_library_node("dup");
+        let unambiguous = resolve_algorithm_library_node("onlyOne");
+        let by_exact_id = resolve_algorithm_library_node("dup-a.ts");
+
+        std::env::remove_var("BSC_GRAPH_STORE");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        match ambiguous {
+            LibraryLookup::Ambiguous(ids) => {
+                assert_eq!(ids, vec!["dup-a.ts".to_string(), "dup-b.ts".to_string()]);
+            }
+            other => panic!("expected Ambiguous, got {other:?}"),
+        }
+        assert!(matches!(unambiguous, LibraryLookup::Found(_)), "an unambiguous name still resolves");
+        // An EXACT id is never ambiguous, even when its bare name collides — ids are unique.
+        assert!(matches!(by_exact_id, LibraryLookup::Found(_)), "an exact id resolves outright");
     }
 
     #[test]

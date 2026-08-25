@@ -3912,16 +3912,28 @@ fn cmd_library(args: &[String]) -> Result<(), String> {
         }
     }
     let name = name.ok_or("usage: bsc ui library get <name-or-spec> [--pretty]")?;
-    let record = crate::graph_health::resolve_algorithm_library_node(name);
-    let payload = match &record {
-        Some(im) => {
-            let mut obj = im.clone();
+    let payload = match crate::graph_health::resolve_algorithm_library_node(name) {
+        crate::graph_health::LibraryLookup::Found(im) => {
+            let mut obj = im;
             if let Some(map) = obj.as_object_mut() {
                 map.insert("resolves".to_string(), serde_json::Value::Bool(true));
             }
             obj
         }
-        None => serde_json::json!({ "resolves": false, "queried": name }),
+        crate::graph_health::LibraryLookup::NotFound => {
+            serde_json::json!({ "resolves": false, "queried": name })
+        }
+        // A bare NAME naming several typescript algorithms is refused rather than guessed — the same
+        // call `bsc graph impl get` makes, and for the same reason (#118): a wrong silent pick on a
+        // verification read is worse than the miss `resolves: false` already covers as a normal answer.
+        crate::graph_health::LibraryLookup::Ambiguous(ids) => {
+            return Err(format!(
+                "'{name}' names {} implementations — pass the exact id instead (e.g. `@bsc/algorithms/{}`): {}",
+                ids.len(),
+                ids.first().map(String::as_str).unwrap_or(name),
+                ids.join(", ")
+            ));
+        }
     };
     let json = if pretty { serde_json::to_string_pretty(&payload) } else { serde_json::to_string(&payload) };
     // Through the SHARED emitter, not `println!` — byte-identical when nothing is capturing, but it
@@ -7565,6 +7577,35 @@ export const P = () => <X />;"
             run(vec!["library".into(), "help".into()], "bsc ui").is_ok(),
             "help reachable, and never touches the store"
         );
+    }
+
+    #[test]
+    fn library_get_refuses_an_ambiguous_bare_name_instead_of_guessing() {
+        // bsc request #118's own history: a bare NAME like `index` can name 20+ unrelated typescript
+        // algorithms in the real store, and `bsc graph impl get` already refuses to guess among them.
+        // `bsc ui library get` must make the same call, since it answers the exact same question for a
+        // session that cannot fall back to `bsc graph` to sort out the ambiguity itself.
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-component-cli-library-ambiguous-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        std::fs::write(
+            &store_path,
+            r#"{"implementations":[
+                {"id":"dup-a.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"},
+                {"id":"dup-b.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"}
+            ]}"#,
+        )
+        .unwrap();
+        std::env::set_var("BSC_GRAPH_STORE", &store_path);
+        let err = cmd_library(&["get".to_string(), "dup".to_string()]).unwrap_err();
+        std::env::remove_var("BSC_GRAPH_STORE");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(err.contains("dup-a.ts") && err.contains("dup-b.ts"), "{err}");
     }
 
     #[test]
