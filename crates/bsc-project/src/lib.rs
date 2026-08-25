@@ -12,8 +12,6 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc project …`), dispatched by the unified `bsc` binary
 //! (#1877) and by the legacy `bsc-project` shim.
 
-pub mod cli;
-pub mod store;
 
 use std::path::PathBuf;
 
@@ -884,3 +882,15 @@ mod slug_tests {
         }
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/store.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-project--<module>.rs
+//     bsc graph impl set --id bsc-project--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-project--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

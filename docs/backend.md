@@ -164,7 +164,8 @@ cwd-keyed `--continue` history) stays stable.
 
 Both peers dial *out* to a Cloudflare relay (`relay/`); the relay forwards only opaque
 `{ room, ciphertext }`. The payload is an end-to-end **Noise IK** session
-(`Noise_IK_25519_ChaChaPoly_BLAKE2s`, [`noise.rs`](../crates/bsc-tunnel/src/noise.rs)) — the
+(`Noise_IK_25519_ChaChaPoly_BLAKE2s`, the graph record `bsc-tunnel--noise.rs` —
+`bsc graph impl get bsc-tunnel--noise.rs`) — the
 desktop is the **responder** with a long-lived static keypair; the mobile is the **initiator** and
 learns the desktop's static public key from the **QR**. `TunnelState`
 ([`mod.rs`](../src-tauri/src/mobile/tunnel/mod.rs)) is the in-process bus that tees PTY output, holds

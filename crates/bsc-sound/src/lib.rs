@@ -17,8 +17,6 @@
 //! `id@version` artifacts under `~/.base-studio-code/sound-kits/`, content-addressed by sha256 — what a
 //! blueprint PINS). The release store mirrors the UI-kit one (`bsc_ui::kit`, #2465) contract-for-contract.
 
-pub mod cli;
-pub mod release;
 
 #[cfg(test)]
 mod tests {
@@ -60,3 +58,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/release.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-sound--<module>.rs
+//     bsc graph impl set --id bsc-sound--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-sound--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
