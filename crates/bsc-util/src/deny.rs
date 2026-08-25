@@ -84,7 +84,7 @@ fn collect_programs<'a>(cmd: &'a str, depth: usize, out: &mut Vec<&'a str>) {
         if SHELLS.contains(&prog) {
             let mut rest = toks;
             while let Some(t) = rest.next() {
-                if t == "-c" {
+                if is_command_flag(t) {
                     if let Some(payload) = rest.next() {
                         collect_programs(payload, depth + 1, out);
                     }
@@ -93,6 +93,19 @@ fn collect_programs<'a>(cmd: &'a str, depth: usize, out: &mut Vec<&'a str>) {
             }
         }
     }
+}
+
+/// Does this token mean "the NEXT argument is a command string"?
+///
+/// `-c`, but also the CLUSTERED short flags a real command line uses — `bash -lc '…'`,
+/// `sh -ic '…'`, `bash -xc '…'`. An exact `t == "-c"` check missed every one of them, so
+/// `bash -lc 'jq …'` laundered a deny that `sh -c 'jq …'` was caught by: a one-line bypass of
+/// exactly the kind this recursion exists to close, in the flag form people actually type.
+///
+/// A long option (`--command`) is NOT this: bash has no such flag, and matching one would let an
+/// unrelated tool's `--config <file>` be read as a command payload.
+fn is_command_flag(t: &str) -> bool {
+    t.starts_with('-') && !t.starts_with("--") && t.len() > 1 && t.ends_with('c')
 }
 
 fn strip_quotes(t: &str) -> &str {
@@ -191,5 +204,78 @@ mod tests {
         assert_eq!(command_programs("cat a | tee b && ls"), vec!["cat", "tee", "ls"]);
         assert_eq!(command_programs("FOO=1 /usr/local/bin/node x.js"), vec!["node"]);
         assert!(command_programs("").is_empty());
+    }
+}
+
+// ── a piped interpreter is the shape a workaround takes ─────────────────────────────────────────
+//
+// The restricted studio specs forbid "pipe into an interpreter", and the deny that now enforces it
+// is written as a bare program name. That only works if a bare name matches inside a PIPELINE —
+// which is where the observed misuse lived: `bsc ui get x | python3 -c '…'`, 37 times in one
+// session. A prefix rule (`python3 *`) would have matched none of them.
+
+#[cfg(test)]
+mod piped_interpreter_tests {
+    use super::deny_matches;
+
+    /// The exact commands a designer session actually ran, taken from its transcript.
+    #[test]
+    fn the_real_workarounds_are_caught_by_a_bare_program_name() {
+        let observed = [
+            r#"bsc ui get ui-tree --field props --raw 2>&1 | python3 -c "import json,sys; d=json.load(sys.stdin)""#,
+            r#"bsc graph impl get trace.ts 2>&1 | python3 -c " import json,sys; print(len(code)) ""#,
+            r#"for id in a b c; do bsc ui get "$id" --pretty 2>&1 | python3 -c "..."; done"#,
+        ];
+        for cmd in observed {
+            assert!(deny_matches(cmd, "python3"), "must be denied: {cmd}");
+        }
+    }
+
+    /// The one-line bypass a program-token rule has to close: wrapping it in a shell.
+    ///
+    /// `-lc` is the case that was open. The recursion matched an exact `-c` token, so
+    /// `sh -c 'jq …'` was caught and `bash -lc 'jq …'` was not — and `-lc` is the form people
+    /// actually type. Found by this test, which was written expecting it to pass.
+    #[test]
+    fn a_shell_wrapper_does_not_launder_it() {
+        assert!(deny_matches(r#"sh -c "bsc ui list | python3 -c 'x'""#, "python3"));
+        for wrapped in [
+            r#"bash -lc 'jq . < f.json'"#,
+            r#"bash -ic 'jq . < f.json'"#,
+            r#"sh -xc 'jq . < f.json'"#,
+            r#"bash -c 'jq . < f.json'"#,
+        ] {
+            assert!(deny_matches(wrapped, "jq"), "must not launder: {wrapped}");
+        }
+    }
+
+    /// ...but a LONG option is not a command flag. bash has no `--command`, and reading one as a
+    /// payload would let an unrelated tool's `--config <file>` be inspected as a command.
+    #[test]
+    fn a_long_option_is_not_read_as_a_command_payload() {
+        assert!(!deny_matches("bsc ui set --config jq.json", "jq"));
+    }
+
+    /// ...and the allowed surface is untouched. A deny that also blocked the session's own store CLI
+    /// would be worse than the gap it closes.
+    #[test]
+    fn the_stores_own_verbs_are_not_denied() {
+        for cmd in [
+            "bsc ui get card --pretty",
+            "bsc ui set --file scratch/card.json",
+            "bsc shot preview card",
+        ] {
+            for pat in ["python", "python3", "node", "jq", "perl", "ruby"] {
+                assert!(!deny_matches(cmd, pat), "{pat} must not match {cmd}");
+            }
+        }
+    }
+
+    /// A component NAMED like an interpreter is content, not a program — the token rule is what
+    /// keeps `bsc ui get node-card` runnable while `| node` is not.
+    #[test]
+    fn a_name_that_merely_contains_an_interpreter_is_not_a_program() {
+        assert!(!deny_matches("bsc ui get node-card", "node"));
+        assert!(!deny_matches("bsc ui get python-logo", "python"));
     }
 }

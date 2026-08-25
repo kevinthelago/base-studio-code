@@ -303,3 +303,59 @@ describe("the architect's plan surface is exactly its handoff", () => {
     }
   });
 });
+
+// ── the restricted spec's "you do not have python" is now ENFORCED ───────────────────────────────
+//
+// The designer's spec says: "You do **not** have `node`, `python`, `jq` … and reaching for one will
+// be refused — not as a mistake, but by design: your shell surface is an allow-list." That was PROSE
+// ONLY. Nothing denied an interpreter; it simply was not in the allow-list, so it PROMPTED and was
+// approved. Measured on a real session before writing this: 555 Bash calls, 37 of them python, every
+// one post-processing `bsc` JSON — and it had run `which python3 node jq` first, so it went looking.
+//
+// A promise the environment does not keep teaches the opposite of what it says.
+describe("roleDeniedCommands — a restricted role has no interpreter", () => {
+  const INTERPRETERS = ["python", "python3", "node", "jq"];
+
+  it("denies the interpreters the designer's own spec says it does not have", () => {
+    const denies = roleDeniedCommands(roleCapability("designer"));
+    for (const prog of INTERPRETERS) {
+      expect(denies, `${prog} must be DENIED, not merely un-allowed`).toContain(prog);
+    }
+  });
+
+  it("leaves a worker's interpreters alone — it legitimately builds and tests", () => {
+    const denies = roleDeniedCommands(roleCapability("worker"));
+    for (const prog of INTERPRETERS) {
+      expect(denies, `${prog} must stay available to a worker`).not.toContain(prog);
+    }
+  });
+
+  it("applies to every restricted role, not just the designer", () => {
+    // The rule is derived from `isRestrictedRole`, so a studio added later inherits it rather than
+    // being remembered individually — which is how `designer` ended up the only one of five caged.
+    for (const role of Object.values(ROLE_DEFAULTS).map((c) => c.role)) {
+      if (restrictedRoleCommands(role).length === 0) continue;
+      const denies = roleDeniedCommands(roleCapability(role));
+      expect(denies, `${role} is restricted, so it must inherit the interpreter deny`).toContain("python3");
+    }
+  });
+
+  it("denies them as bare PROGRAM NAMES, so a piped interpreter is caught", () => {
+    // `deny_matches` gives a bare name program-token semantics across pipeline segments and recurses
+    // into `sh -c`. A `python3 *` prefix rule would have matched NONE of the observed misuse, which
+    // was almost entirely `bsc ui get … | python3 -c '…'`.
+    const denies = roleDeniedCommands(roleCapability("designer"));
+    for (const d of denies.filter((x) => INTERPRETERS.includes(x))) {
+      expect(d, "a bare program name, not a prefix pattern").not.toContain(" ");
+      expect(d).not.toContain("*");
+    }
+  });
+
+  it("still leaves the route it is pushing the session TOWARD", () => {
+    // The whole point is `bsc request new` instead of a workaround, so that must not be denied —
+    // and neither must its own store CLI.
+    const denies = roleDeniedCommands(roleCapability("designer"));
+    expect(denies).not.toContain("bsc request");
+    expect(denies).not.toContain("bsc ui");
+  });
+});
