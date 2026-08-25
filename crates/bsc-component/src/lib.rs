@@ -21,6 +21,9 @@ pub mod cli;
 /// `provides` resolution chain, so a composing component can be verified and not just a leaf.
 pub(crate) mod closure;
 /// A record's PUBLIC SURFACE — what its module exports, grouped into the ITEMS those exports name.
+/// The cross-pillar reference METER (`store-the-three-cross-pillar-edges`) — the number
+/// `epic-one-record-core-across-the-graphs` rested its one-record-type decision on, kept checkable.
+pub mod crossgraph;
 pub mod exports;
 pub mod folder;
 pub mod graph_health;

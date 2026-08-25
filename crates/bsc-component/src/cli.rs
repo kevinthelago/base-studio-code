@@ -653,6 +653,29 @@ WHAT IT DOES NOT FIX: measured against the 156 dead roots, mounts clear 8 and `p
 92 survive both. The report says so rather than implying the category is cleared.",
     },
     CmdDoc {
+        name: "crossgraph",
+        summary: "the CROSS-PILLAR reference meter — every `@bsc/<segment>/<name>` a record actually imports, derived not stored",
+        usage: "\
+USAGE:
+  bsc ui crossgraph [--dir D] [--pretty]      # every cross-pillar reference, with per-direction counts
+
+How many nodes in one graph reference a node in ANOTHER — a component importing an algorithm, an
+algorithm importing a sound. Scans every component record's `srcText` and every algorithm record's
+`code` for the reserved `@bsc/<segment>/<name>` root (#3116, the third import-resolution class).
+
+DERIVED, NEVER STORED. The reference is already stated by the record's source, so a stored edge would
+be a second copy of it — and a copy that is not re-derived when the source changes is simply wrong,
+with nothing to say so. Recomputing cannot drift.
+
+WHY THE NUMBER MATTERS. `epic-one-record-core-across-the-graphs` rejected ONE record type across the
+pillars on the strength of this count being 3, against ~39,000 LOC of pillar-specific readers. This
+verb is what keeps that decision checkable — and it is the trigger to REOPEN it if the count climbs.
+
+It reads IMPORTS, not the token: the ~16 records that implement the URN grammar mention `@bsc/…` in
+prose and string literals without importing anything, and counting those would report 19 where there
+are 3.",
+    },
+    CmdDoc {
         name: "used-by",
         summary: "a component's REAL graph usage — how many kit components compose it (composes-inverse, #3584)",
         usage: "\
@@ -1549,6 +1572,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
         }
         // `used-by` (#3584) — the graph-usage read (composes-inverse); a READ, never scope-gated.
+        Some("crossgraph") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "crossgraph"));
+                Ok(())
+            } else {
+                cmd_crossgraph(&args[1..])
+            }
+        }
         Some("used-by") => {
             if args.get(1).map(String::as_str) == Some("help") {
                 print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "used-by"));
@@ -3185,6 +3216,38 @@ fn warn_jsx_text_escapes(item: &serde_json::Value) {
 
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
 /// (`~/.base-studio-code/components/`) precedence as the shared store CLI, for the custom reads.
+/// `crossgraph [--dir D] [--pretty]` — the cross-pillar reference meter (see
+/// [`crate::crossgraph`] for why it derives rather than stores).
+fn cmd_crossgraph(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty) = (None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other => {
+                return Err(format!("unknown flag '{other}' — usage: bsc ui crossgraph [--dir D] [--pretty]"))
+            }
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let components: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|raw| serde_json::from_str(raw).ok())
+        .collect();
+    // The LIVE algorithms store, not the packaged seed: the meter must report what this machine
+    // actually holds, and a seed-only read would miss every curated record.
+    let implementations = bsc_graph::implementations();
+    let out = crate::crossgraph::report(&components, &implementations);
+    println!("{}", if pretty {
+        serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?
+    } else {
+        serde_json::to_string(&out).map_err(|e| e.to_string())?
+    });
+    Ok(())
+}
+
 fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
     let dir = bsc_cli_util::resolve_store_path(dir, COMPONENT_SPEC.dir_env, || {
         bsc_util::bsc_base_dir()
@@ -7390,7 +7453,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "test", "doctor", "dupes", "similar", "usage-scan", "crossgraph", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
