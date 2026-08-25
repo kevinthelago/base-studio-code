@@ -2,9 +2,14 @@
 name = "bsc-cli-util"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Shared scaffold for the base-studio-code state CLIs (#1762) — the byte-identical `main` wrapper (`cli_main`), the flag→env→default store-path resolver (`resolve_store_path`), and the lean-vs-JSON output dispatch (`emit`). NOT SQLite-specific (bsc-data is DuckDB, bsc-project is fs), so it lives beside `bsc-sqlite-util` rather than inside it. The hyphenated package name maps to the `bsc_cli_util` crate name."
 
 # Lib only — no binaries. The hyphenated package name maps to the `bsc_cli_util` crate name.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "bsc_cli_util"
 

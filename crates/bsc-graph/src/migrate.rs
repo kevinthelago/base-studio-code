@@ -172,6 +172,38 @@ pub struct CrateShape<'a> {
     pub nested_count: usize,
     /// `lib.rs` or `main.rs`, whichever this crate has.
     pub root_name: &'a str,
+    /// Each declared module's source, by module name. Empty is allowed — the include check simply
+    /// finds nothing — so a caller that cannot read a file does not turn into a false refusal.
+    pub module_sources: &'a [(String, String)],
+}
+
+/// Every path literal passed to an `include_str!` in `src`.
+///
+/// Deliberately a text scan, not a parse: the shapes in this tree are `include_str!("x.rs")` and
+/// `include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs"))`, and both are answered by taking the
+/// LAST string literal before the closing paren. A parser would be more correct and would not change a
+/// single verdict here.
+fn include_str_targets(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (at, _) in src.match_indices("include_str!") {
+        let rest = &src[at..];
+        let end = rest.find(')').unwrap_or(rest.len());
+        let head = &rest[..end];
+        // The last quoted literal in the macro call is the path in both shapes above.
+        let mut last: Option<String> = None;
+        let mut it = head.char_indices().peekable();
+        while let Some((i, c)) = it.next() {
+            if c != '"' { continue; }
+            if let Some(close) = head[i + 1..].find('"') {
+                last = Some(head[i + 1..i + 1 + close].to_string());
+                while let Some(&(j, _)) = it.peek() {
+                    if j <= i + close + 1 { it.next(); } else { break; }
+                }
+            }
+        }
+        if let Some(l) = last { out.push(l); }
+    }
+    out
 }
 
 /// Why this crate cannot be migrated by this tool, or `None` when it can.
@@ -224,6 +256,32 @@ pub fn refuse_reason(shape: &CrateShape<'_>) -> Option<String> {
              #4136) — the record cannot be created, so the file cannot be retired",
             test_only.join(", ")
         ));
+    }
+    // A module that reads a file THIS MIGRATION DELETES cannot survive it, and `absolutize_includes`
+    // makes that failure quieter rather than louder: it faithfully rewrites the path so it resolves from
+    // `$OUT_DIR`, which turns "cannot resolve" into "No such file or directory" four steps later, at
+    // compile time, naming a generated file in `target/`.
+    //
+    // REAL: `bsc-persona/src/cli.rs` carried `include_str!("cli.rs")` — a test reading ITS OWN SOURCE to
+    // assert that `run` intercepts `remove` but not `set`. Perfectly reasonable as a file; impossible as
+    // a record, because the file is the thing being retired.
+    //
+    // Narrow on purpose. `bsc-agent` includes `../data/agent-instructions.md`, which SURVIVES — that is
+    // exactly the case `absolutize_includes` was written for, and refusing it would put back the blocker
+    // that change removed. So the test is not "does it include anything", it is "does it include one of
+    // the files this migration is about to delete".
+    let doomed: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
+    for (module, src) in shape.module_sources {
+        for target in include_str_targets(src) {
+            let stem = target.rsplit('/').next().unwrap_or(&target).trim_end_matches(".rs");
+            if target.ends_with(".rs") && doomed.contains(&stem) {
+                return Some(format!(
+                    "src/{module}.rs reads `{target}` with include_str!, and src/{stem}.rs is one of the \
+                     files this migration deletes — the record cannot read a file that no longer exists. \
+                     Rewrite that read (or move what it asserts onto the record) first"
+                ));
+            }
+        }
     }
     // A relative `include_str!` USED TO BE REFUSED HERE and was the single largest blocker (5 crates).
     // It is not one any more: `absolutize_includes` rewrites it at harvest to
@@ -426,12 +484,23 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         }
     }
 
+    // Read each declared module's source so the include check can see it. A file that cannot be read
+    // contributes an empty string rather than an error: the refusal below is a guard, and a guard that
+    // fails the whole migration because one file was unreadable would be worse than the gap it closes.
+    let module_sources: Vec<(String, String)> = module_decls(&lib_src)
+        .iter()
+        .map(|d| {
+            let body = std::fs::read_to_string(src_dir.join(format!("{}.rs", d.name))).unwrap_or_default();
+            (d.name.clone(), body)
+        })
+        .collect();
     let shape = CrateShape {
         cargo_toml: &cargo_toml,
         lib_src: &lib_src,
         top_files: &top_files,
         nested_count,
         root_name: &root_name,
+        module_sources: &module_sources,
     };
     if let Some(why) = refuse_reason(&shape) {
         return Err(format!("REFUSED {krate}: {why}"));
@@ -735,7 +804,10 @@ mod tests {
     }
 
     fn shape<'a>(cargo: &'a str, lib: &'a str, files: &'a [String], nested: usize) -> CrateShape<'a> {
-        CrateShape { cargo_toml: cargo, lib_src: lib, top_files: files, nested_count: nested, root_name: "lib.rs" }
+        CrateShape {
+            cargo_toml: cargo, lib_src: lib, top_files: files, nested_count: nested,
+            root_name: "lib.rs", module_sources: &[],
+        }
     }
 
     #[test]
@@ -764,6 +836,41 @@ mod tests {
 
         // …and a crate it CAN do is not refused.
         assert!(refuse_reason(&shape(plain, lib, &files, 0)).is_none());
+    }
+
+    /// REGRESSION, from Slice D. `bsc-persona/src/cli.rs` carried `include_str!("cli.rs")` — a test
+    /// reading ITS OWN SOURCE to assert that `run` intercepts `remove` but not `set`. The migration
+    /// happily took it, and the crate then failed to compile with `couldn't read …/src/cli.rs`, pointing
+    /// at a GENERATED file under `target/` four steps from the cause.
+    ///
+    /// `absolutize_includes` makes this quieter, not louder: it faithfully rewrites the relative path to
+    /// `CARGO_MANIFEST_DIR + "/src/cli.rs"`, so the error is a missing FILE rather than an unresolvable
+    /// path. Nothing about it says "this module read something you deleted".
+    #[test]
+    fn refuses_a_module_that_reads_a_file_the_migration_deletes() {
+        let files = vec!["lib.rs".to_string(), "cli.rs".to_string()];
+        let plain = "[package]\nedition = \"2021\"\n";
+        let sources = vec![("cli".to_string(), "fn t() { let s = include_str!(\"cli.rs\"); }".to_string())];
+        let shape = CrateShape {
+            cargo_toml: plain, lib_src: "pub mod cli;\n", top_files: &files,
+            nested_count: 0, root_name: "lib.rs", module_sources: &sources,
+        };
+        let why = refuse_reason(&shape).expect("a self-read must be refused");
+        assert!(why.contains("include_str!"), "names the mechanism: {why}");
+        assert!(why.contains("src/cli.rs"), "names the file that goes away: {why}");
+
+        // …and the case this must NOT catch: `bsc-agent` includes ../data/agent-instructions.md, which
+        // SURVIVES the migration. Refusing that would restore the blocker `absolutize_includes` removed.
+        let survives = vec![(
+            "agent".to_string(),
+            "const I: &str = include_str!(\"../data/agent-instructions.md\");".to_string(),
+        )];
+        let ok = CrateShape {
+            cargo_toml: plain, lib_src: "pub mod agent;\n",
+            top_files: &["lib.rs".to_string(), "agent.rs".to_string()],
+            nested_count: 0, root_name: "lib.rs", module_sources: &survives,
+        };
+        assert!(refuse_reason(&ok).is_none(), "a data file that survives is not a refusal");
     }
 
     /// REGRESSION. `cargo build -p <dir>` never ran for `crates/data`, whose package is `bsc-data` —
