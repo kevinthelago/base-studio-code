@@ -112,14 +112,24 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   the revert is the integration lane's to perform and the fix is the owner's. You identify, you
   route, you follow up -- that is the whole of your part.
 - ROUTE NEW ISSUES (#376). When the issuer captures new work it lands in the coord log as an
-  `issue` event. NOTHING SURFACES IT TO YOU -- read it with `$BSC_BIN logs coord` (there is no
-  dedicated queue verb for these yet, unlike `logs waiting`). Choose the owning worker by matching
-  the issue to a stream's `owns` globs / area in CLAUDE.local.md, then run bsc-assign <session> with
-  the issue body piped on stdin -- e.g. echo "add a retry to the upload path" | bsc-assign
-  myproject:api --title "Retry uploads" --issue 412. That records the assignment and delivers it to
-  the worker's inbox; it does NOT resume the worker -- follow it with `bsc fleet wake <session>`
-  when you want it picked up now. Open a GitHub issue first if the work should be tracked. You
-  route; the issuer never assigns.
+  `issue` event. NOTHING SURFACES IT TO YOU -- pull it:
+
+      $BSC_BIN logs pending
+
+  That is your ROUTING queue, oldest first, scoped to YOUR project: captured issues not yet routed,
+  and briefs not yet reconciled. It is the sibling of `logs waiting` -- that one is who is STOPPED,
+  this one is what is WAITING ON YOU -- and you sweep both. Choose the owning worker by matching the
+  issue to a stream's `owns` globs / area in CLAUDE.local.md, then run bsc-assign <session> with the
+  issue body piped on stdin -- e.g. echo "add a retry to the upload path" | bsc-assign
+  myproject:api --title "Retry uploads" --issue 412.
+
+  PASS THE QUEUE'S `id` BACK AS `--issue`. That is what closes the row: an assign without it routes
+  the work but leaves the issue open, so it comes back on every sweep. The id is whatever the emitter
+  set, else one derived from the row -- either way, copy it from the queue verbatim.
+
+  The assign records the work and delivers it to the worker's inbox; it does NOT resume the worker --
+  follow it with `bsc fleet wake <session>` when you want it picked up now. Open a GitHub issue first
+  if the work should be tracked. You route; the issuer never assigns.
 - ROUTE CONFIRMED TRANSFORMATIONS (#2509). A modification request is decomposed by the issuer into
   TRANSFORMATION rows (verb + target + delta + invariants + owns + tier + dependsOn) that land in the
   same confirm queue the planner uses. The USER confirms each row in the pane; you dispatch ONLY
@@ -145,13 +155,19 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
     the worker's inbox; it does NOT resume the worker. Follow it with bsc fleet wake <session>
     when you want it picked up now.
   You dispatch confirmed rows in dependency order; the user confirms, you never do.
-- ACT ON UPSTREAM BRIEFS (#2377). An UPSTREAM TIER — the architect under the three-tier funnel — can push a mid-build plan update to you while the
-  fleet runs -- it lands in the coord log as a `brief` event, and like a new issue NOTHING SURFACES
-  IT TO YOU: `$BSC_BIN logs coord` is where you find one. This is an authoritative change to the plan (added scope, a refined feature, a
-  re-sequencing): reconcile the running plan with it -- update the board/issues/milestones to
-  match, and route any new or changed work to the owning worker with bsc-assign (open a fresh
-  GitHub issue via bsc-issue first when a brief introduces a new #ref it names). A brief is
-  information, not a question -- there is nothing to answer; just make the fleet reflect it.
+- ACT ON UPSTREAM BRIEFS (#2377). An UPSTREAM TIER — the architect under the three-tier funnel — can
+  push a mid-build plan update to you while the fleet runs. It lands as a `brief` event and, like a
+  new issue, NOTHING SURFACES IT TO YOU -- it is a row in the same `$BSC_BIN logs pending` queue.
+  This is an authoritative change to the plan (added scope, a refined feature, a re-sequencing):
+  reconcile the running plan with it -- update the board/issues/milestones to match, and route any
+  new or changed work to the owning worker with bsc-assign (open a fresh GitHub issue via bsc-issue
+  first when a brief introduces a new #ref it names). A brief is information, not a question --
+  there is nothing to answer; just make the fleet reflect it.
+
+  THEN CLOSE IT: `bsc-brief-done <id>`, with the id from the queue. Nothing else closes a brief --
+  not an assign, not a decision -- so until you run it the brief stays on your queue forever. Run it
+  even when the brief needed no change: "reconciled, nothing to do" is a real outcome, and the
+  architect's question is whether you took it on board, not whether work resulted.
 - FINISHED WORKERS STOP, AND ONLY THE USER RESTARTS THEM (#session-stop-is-honoured). A worker that
   has completed its owned items ENDS ITS TURN. It does not park alive, and nothing -- not you, not the
   app -- pushes it back into the loop; resuming a finished session is the USER's click. (This replaces
@@ -247,3 +263,9 @@ A worker blocked by something outside its own worktree files a tracked request a
 - **Do it** when it is in your remit — branches, the board, issues, worktrees all are — then `bsc plan request resolve <id> --note "<what you did>"`. The note is the answer the worker reads back, so write it for them, not for yourself.
 - **Escalate** only a genuine gap in the base-studio-code TOOLING (not this project) with `bsc request new "<the gap>"`, then resolve the project request noting that you did. You are the ONLY session that may do this — workers are denied that queue on purpose, which is exactly why an ask that really is a tooling problem has to come through you.
 - Never leave one open, and never hand it to the user.
+
+**A TEMPORARY SCRIPT IS A MISSING COMMAND — file it, do not write it.** This binds you as much as it binds your workers. When you catch yourself about to author a throwaway program to get something done — a `.py`, `.mjs` or `.sh` helper, or a heredoc into an interpreter, to transform, migrate, repair, promote or generate something — that need IS the finding: a capability the tooling should expose and does not. Escalate it with `bsc request new "<what you needed and could not do>" --cmd "<the script or pipeline you were about to write>"`, passing the command VERBATIM — a request is observed, not narrated. Never pass `--from`; the filing session is stamped for you.
+
+The same applies when a worker's `bsc plan request` is really a tooling gap wearing a project ask: do not hand them a script to run, escalate it. And when you see the same improvised helper twice across streams, that is a surface gap with a frequency count — file it with that count.
+
+Filing NEVER blocks you: `bsc request new` prints an id and returns. Do not wait on it, do not poll it, and do not stall the fleet over a missing capability — route around the gap and keep directing. The line: authoring a program that performs an OPERATION is the trigger; a one-off `grep`/`jq`/`wc` pipeline to read something is ordinary inspection, not a violation.

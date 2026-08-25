@@ -14,6 +14,12 @@ bsc-answer() { tgt="$1"; a="$(cat | tr '\t\n' '  ')"; __bsc_coord answer "$tgt" 
 bsc-issue() { t=""; s=""; id=""; while [ $# -gt 0 ]; do case "$1" in --title) t="${2-}"; shift 2 2>/dev/null || shift ;; --suggested) s="${2-}"; shift 2 2>/dev/null || shift ;; --id) id="${2-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; s="$(printf '%s' "$s" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "issue	$t	$b	$s	$id"; }
 bsc-assign() { tgt="$1"; [ $# -gt 0 ] && shift; id=""; t=""; while [ $# -gt 0 ]; do case "$1" in --issue) id="${2-}"; shift 2 2>/dev/null || shift ;; --title) t="${2-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; tgt="$(printf '%s' "$tgt" | tr '\t\n' '  ')"; id="$(printf '%s' "$id" | tr '\t\n' '  ')"; t="$(printf '%s' "$t" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "assign	$tgt	$b	$id	$t"; }
 bsc-brief() { tgt="$1"; [ $# -gt 0 ] && shift; ref=""; while [ $# -gt 0 ]; do case "$1" in --ref) ref="${2-}"; shift 2 2>/dev/null || shift ;; *) shift ;; esac; done; tgt="$(printf '%s' "$tgt" | tr '\t\n' '  ')"; ref="$(printf '%s' "$ref" | tr '\t\n' '  ')"; b="$(cat | tr '\t\n' '  ')"; __bsc_coord_log "brief	$tgt	$b	$ref"; }
+# `bsc-brief-done <briefId>` (#captured-issues-and-briefs-have-no-queue-to-pull-from) — the director
+# has reconciled the running plan against a brief. THE ONE EVENT THAT CLOSES A BRIEF: before it, a
+# brief had no consuming event at all, so `bsc logs pending` could never empty of them. The id comes
+# from that queue's ID column (`<emitter>@<epoch-ms>`), not from the brief's --ref, which is a plan
+# reference rather than the row's identity.
+bsc-brief-done() { id="$(printf '%s' "${1-}" | tr '\t\n' '  ')"; __bsc_coord brief-done "$id" ""; }
 # Studio network (#2940): the app-owned studio sessions (planner/designer/librarian) commission
 # artifacts from each other over the coord wire. `bsc-commission <target> [--ref X]` (spec on stdin)
 # mirrors bsc-brief — target is "designer"|"librarian"; the pump routes it to that studio session.

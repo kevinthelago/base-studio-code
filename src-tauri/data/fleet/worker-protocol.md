@@ -24,7 +24,7 @@ ls /ui/components              # the component library; cat /ui/components/<id>/
 Two limits worth knowing before you hit them, because both look like breakage and are not:
 
 - **`/ui` is the SUMMARY tier.** It tells you a component exists, its role, folder and kit — it does NOT carry the source. There is no caged equivalent of `bsc ui get <id>`; if you need a component's source, ask the director with `bsc plan request new` rather than assuming it is missing.
-- **Everything under `/plan`, `/graph`, `/ui` and `/coord` is read-only by the MOUNT**, so a write fails with `Read-only file system` no matter what your role allows. Your own worktree at `/repo` is writable, and so is any outbox the launch gave you (`/coord/out` to emit coordination, `/ui/out` to author a component).
+- **Everything under `/plan`, `/graph`, `/ui` and `/coord` is read-only by the MOUNT**, so a write fails with `Read-only file system` no matter what your role allows. Your own worktree at `/repo` is writable, and so is any outbox the launch gave you (`/coord/out` to emit coordination, `/ui/out` to author a component, `/plan/out` to record what you did).
 
 **A COMPONENT file is generated — edit its record, not the file (#4193).** Some source files are the emitted artifact of a component record: the graph holds the source of truth and the file is regenerated from it, so editing the file loses your change (the record keeps the old body, and the app renders the record).
 
@@ -45,6 +45,10 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 
 - `echo "your one-line question" | bsc-ask` — parks you and routes the question to the director. You STAY parked until someone resumes you: the director with `bsc fleet wake`, or the user from the Coordination inbox. The answer will be waiting when you come back, so end your turn cleanly rather than spinning — nothing is lost by stopping.
 - `bsc plan request new "<what you need>" --command "<the command that failed>"` — for something you cannot do from your own worktree at all: no integration branch to target, a kickoff pointing at a path that does not exist, a glob you own that no repo contains. Unlike `bsc-ask` this is a tracked contract, so it survives your session and the director closes it with an answer you can read back (`bsc plan request list`). Always pass `--command`: the exact command that failed is what makes the ask actionable without a conversation. Do NOT reach for the global `bsc request` — that is the base-studio-code tooling queue, it is denied to you, and your ask belongs to the director.
+
+**A TEMPORARY SCRIPT IS A MISSING COMMAND — file it, do not write it.** When you catch yourself about to author a throwaway program to get something done — a `.py`, `.mjs` or `.sh` helper, or a heredoc piped into an interpreter, to transform, migrate, repair, promote or generate something — that is not a puzzle to solve locally. It is a capability the tooling should expose and does not, and the script is a private workaround that hides the finding. File it with `bsc plan request new "<what you needed>" --command "<the script or pipeline you were about to write>"` and let the director route it; a genuine base-studio-code tooling gap is escalated onward by them, never by you. Then carry on with what your surface CAN do — filing never blocks you, and never ends your turn.
+
+The line, so the rule stays usable: the trigger is authoring a program that performs an OPERATION. Reading is not — a one-off `grep`/`jq`/`wc` pipeline to answer a question you have right now is ordinary inspection, and the TESTS you ship with your item are the deliverable, not a temp script.
 - `echo "what you decided" | bsc-note` — for a micro-decision, pick the option that best serves the planned solution (a reversible one when you're genuinely unsure), record it, and move on; do not ask, and do not default to the minimal thing.
 
 **HOW YOUR WORK IS RECORDED — the change record is your PR (`bsc plan change`).** The item says what to DO; the change says what was DONE, and it lives in the same plan.db under the same ref, so one name reaches the item, your branch, your worktree and your record.
@@ -56,6 +60,25 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 **Under the default LOCAL policy you never push and never open a PR.** Run the full gate, make it green, commit to your branch, record the gate evidence, then `bsc plan status <ref> complete` and pick up your next owned item. The integration stream merges your branch; you do not merge it yourself.
 
 `complete` is your half — it means "I did my part", NOT "this is done". Do not mark an item `verified`, do not stamp your change `merged`, and do not fill in a reviewer: the actor that wrote a change does not get to declare it correct.
+
+**IN THE CAGE, the same record is written through `/plan/out`.** Every `bsc plan` command above needs a binary you do not have, so the write path is an outbox the host drains into the same plan.db. One DIRECTORY per entry, one file per field, and prose goes in its own file so a backtick or a `$(…)` in a note survives byte-for-byte. `cat /plan/schema` is the full contract; these are the four you need:
+
+<!-- caged-plan-writes -->
+```sh
+mkdir -p /plan/out/c1 && echo change > /plan/out/c1/verb && echo my-ref > /plan/out/c1/ref
+echo "what I am doing" > /plan/out/c1/title && echo "and why" > /plan/out/c1/description
+mkdir -p /plan/out/n1 && echo note > /plan/out/n1/verb && echo my-ref > /plan/out/n1/ref
+echo "what I learned" > /plan/out/n1/text && echo worker > /plan/out/n1/from
+mkdir -p /plan/out/g1 && echo gate > /plan/out/g1/verb && echo my-ref > /plan/out/g1/ref
+echo typecheck > /plan/out/g1/gate && echo pass > /plan/out/g1/result
+mkdir -p /plan/out/s1 && echo status > /plan/out/s1/verb && echo my-ref > /plan/out/s1/ref
+echo complete > /plan/out/s1/status
+```
+<!-- /caged-plan-writes -->
+
+Replace `my-ref` with your item's ref, and pick your own entry names — they only have to be unique until the next drain, which is about a second. A refused entry comes back as `<name>.rejected`, and its text names the fix; read it rather than guessing.
+
+`bsc plan request new` has the same shape here — `verb` = `request`, `text`, and an optional `command` — and it is the lane for anything the cage cannot do: a component's source that `/ui` does not carry, a merge, a `verified`. The outbox accepts `open in_progress blocked complete failed` and **refuses `verified`** outright, for the reason in the paragraph above: it is not yours to set.
 
 (If your kickoff names a policy that DOES push: under **auto-pr** you open a PR and the DIRECTOR reviews, merges and closes it — never run `gh pr merge` or `gh pr close` on your own PR; then stop, because CI is watched for you. Under **self-merge** you integrate to develop yourself — full gate → rebase → re-gate → push — and open no PR. GitHub PR/issue writes are the director's job, never yours.)
 

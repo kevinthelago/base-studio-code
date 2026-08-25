@@ -81,6 +81,43 @@ mod tests {
         );
     }
 
+    /// The WRITE half of the caged surface. The read block told a worker where the stores are and
+    /// left it with no way to record anything — the state that ends in a green gate, a commit, and
+    /// an item still reading `in_progress`.
+    ///
+    /// Shape only; the commands themselves are EXECUTED in a real cage (and put through the drain)
+    /// by `the_protocols_caged_plan_writes_run_inside_the_cage_and_the_drain_accepts_them`.
+    #[test]
+    fn the_worker_protocol_tells_a_caged_worker_how_to_record_what_it_did() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-write-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        let block = md
+            .split_once("<!-- caged-plan-writes -->")
+            .and_then(|(_, rest)| rest.split_once("<!-- /caged-plan-writes -->"))
+            .map(|(b, _)| b)
+            .expect("the caged write block is delimited so a test can run exactly what it says");
+        // Every verb the protocol's own record-keeping section demands must have a caged form, or
+        // the worker is told to do something it cannot.
+        for verb in ["change", "note", "gate", "status"] {
+            assert!(block.contains(verb), "the caged write block must cover {verb}: {block}");
+        }
+        assert!(block.contains("/plan/out"), "and name the outbox: {block}");
+
+        // The outbox is listed with the others a worker is given, so it is discoverable from the
+        // read section too — that paragraph is where a caged worker learns what IS writable.
+        assert!(md.contains("`/plan/out` to record what you did"), "listed beside the other outboxes: {md}");
+        // The narrowing, said before the worker meets the refusal.
+        assert!(
+            md.contains("refuses `verified`"),
+            "a worker must learn `verified` is not its to set HERE, not by being rejected: {md}"
+        );
+        // And the contract it can read in full rather than working from this excerpt.
+        assert!(md.contains("/plan/schema"), "points at the readable contract: {md}");
+    }
+
     #[test]
     fn the_worker_protocol_names_the_stores_and_their_precedence() {
         let empty = std::env::temp_dir().join(format!("bsc-proto-seed-{}", std::process::id()));

@@ -55,6 +55,39 @@ An integration is not done when it first returns rows. Maintenance is the larger
 - Prefer a narrow, correct manifest over a broad, speculative one. Resources you have not verified with
   `try` do not belong in the store.
 
+## Missing a tool? REQUEST it — never improvise one
+
+Your toolbox is `bsc data connector` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`
+or `cat`, and reaching for one will be refused — not as a mistake, but by design: your shell surface is
+an allow-list, and anything outside it cannot be permitted.
+
+So when that surface cannot do something you need, that is **a gap in the tool, not a puzzle to route
+around**. File it:
+
+```
+bsc request new "bsc data connector try has no way to sample a single resource" --cmd "bsc data connector try --project p --source s | python3 -c \"...\"" --surface "bsc data connector"
+```
+
+`--cmd` is the important part — pass the EXACT command that failed, or the script you were about to
+write. A request is *observed*, not narrated, and the session that fixes the tooling needs to see what
+you actually tried. `--title "<a few words>"` labels the request's node in the Glance graph; leave it
+off and one is derived from your text.
+
+**A TEMPORARY SCRIPT IS A MISSING COMMAND.** The trigger is not only a command that errored. If you
+catch yourself about to write a helper to reshape a `probe` draft, diff two manifests, count rows out
+of a `try` result, or generate a mapping — that need IS the finding, and it belongs in the queue rather
+than in a scratch file that dies with your session. Reading is different: a glance at output you
+already have is ordinary inspection.
+
+**You do NOT say who you are.** The request records the filing session automatically, so a debug
+session opens it already knowing it is unblocking *you* — and can reply on the thread
+(`bsc request get <id>` shows any replies). Never pass `--from`; it is for a human filing from a shell.
+
+**Filing a request NEVER blocks you.** It is a note to another session, not a question you are waiting
+on. `bsc request new` prints an id and returns — that is the whole interaction. Do not wait for it to
+be resolved, do not poll for an answer, and do not stop working because a tool is missing. Route around
+the gap with what your surface CAN do, and report both what you did and what you filed.
+
 ## Verify before you claim
 
 After every `add`, read it back with `bsc data connector get <id>` and confirm it is what you intended.
