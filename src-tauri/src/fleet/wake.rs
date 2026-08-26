@@ -182,13 +182,49 @@ fn resolve_stream(pane_id: &str) -> Result<Option<serde_json::Value>, String> {
     let Ok(store) = plandb::Store::open(&crate::platform::paths::plan_db_path(key)) else {
         return Ok(None);
     };
-    let Some(mut row) = store
-        .fleet_stream_list()
-        .unwrap_or_default()
-        .into_iter()
-        .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(stream_id))
-    else {
-        return Ok(None);
+    let streams = store.fleet_stream_list().unwrap_or_default();
+    let mut row = match streams.iter().find(|r| r.get("id").and_then(|v| v.as_str()) == Some(stream_id)) {
+        Some(r) => r.clone(),
+        None => {
+            // ON-DEMAND LANE PROVISIONING (#132). `commons`/`integration` (bare, or per-repo
+            // `--<slug>` suffixed) are ORDINARY streams `commonsLanesFor` materializes at launch —
+            // but only inside `fleetStartProject`, a frontend action, and only when it derives a
+            // non-empty stack from `planStages`, a field nothing in the shipped app still writes
+            // (see `fleet::commons` module docs). So a plan can go its whole life with no commons
+            // lane, and a director that discovers this mid-run — exactly what happened on
+            // network-monitor, filing #132 — has no OTHER lever: `bsc plan fleet stream set` exists,
+            // but the protocol never told a director to reach for it, and doing so by hand means
+            // re-deriving the stack detection this module already centralizes.
+            //
+            // So a wake for a RECOGNIZABLY lane-shaped id, that plan.db does not (yet) name, does not
+            // take the silent refusal every other unplanned stream takes: it provisions the pair (a
+            // commons lane never comes without its integration lane, `commonsLanesFor`) and proceeds
+            // as if it had always been there. Any OTHER unplanned id still resolves silently, below.
+            if !crate::fleet::commons::is_lane_stream(stream_id) {
+                return Ok(None);
+            }
+            let known_repos: Vec<String> = streams
+                .iter()
+                .filter_map(|r| r.get("repo").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+                .collect();
+            let repo = crate::fleet::commons::resolve_lane_repo(stream_id, &known_repos)
+                .map_err(|e| format!("fleet wake: cannot provision the lane '{stream_id}': {e}"))?;
+            let (commons_id, integration_id) = crate::fleet::commons::lane_id_pair(stream_id);
+            let (commons_row, integration_row) =
+                crate::fleet::commons::build_lane_rows(&commons_id, &integration_id, &repo);
+            store.fleet_stream_set(&commons_id, &commons_row).map_err(|e| {
+                format!("fleet wake: could not provision the commons lane '{commons_id}': {e}")
+            })?;
+            store.fleet_stream_set(&integration_id, &integration_row).map_err(|e| {
+                format!("fleet wake: could not provision the integration lane '{integration_id}': {e}")
+            })?;
+            log::info!(
+                "fleet wake: provisioned the '{commons_id}'/'{integration_id}' lanes for '{key}' \
+                 (repo {repo}) — plan.db had neither yet, and '{stream_id}' asked for one"
+            );
+            if stream_id == commons_id { commons_row } else { integration_row }
+        }
     };
 
     // From here the stream IS real, so every failure is nameable and none of them may be silent.
@@ -296,6 +332,68 @@ mod tests {
         let _lock = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = crate::testutil::temp_home("wake-unplanned");
         assert!(matches!(resolve_stream("nobody-planned-this:api"), Ok(None)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_stream_provisions_the_lane_pair_in_plan_db_on_first_wake() {
+        // THE REGRESSION (#132, network-monitor): a plan that never got a commons/integration lane
+        // gave its director no lever to create one — `bsc fleet wake <key>:commons--<slug>` used to
+        // resolve silently (no plan row), which the caller read as "it resolved to no open tab, or is
+        // disabled". Waking a recognizably lane-shaped id that plan.db does not yet name must now
+        // PROVISION the pair — proven here against a real `plandb::Store`, not just the pure helpers
+        // in `commons.rs`.
+        let _lock = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = crate::testutil::temp_home("wake-lane-provision");
+
+        let store = plandb::Store::open(&crate::platform::paths::plan_db_path("proj")).unwrap();
+        store
+            .fleet_stream_set(
+                "domain-model",
+                &serde_json::json!({
+                    "id": "domain-model", "repo": "kevinthelago/networkmonitor",
+                    "owns": ["src/**"], "dependsOn": [],
+                }),
+            )
+            .unwrap();
+        assert!(
+            store.fleet_stream_list().unwrap().iter().all(|r| r.get("id").and_then(|v| v.as_str()) != Some("commons--kevinthelago-networkmonitor")),
+            "the lane must not exist yet — that absence is the bug"
+        );
+
+        // The repo is named but never cloned in this test, so cwd resolution genuinely fails
+        // downstream — real and expected with no git fixture. What matters is that provisioning
+        // already landed in plan.db before that failure.
+        let err = resolve_stream("proj:commons--kevinthelago-networkmonitor").unwrap_err();
+        assert!(err.contains("repo not cloned"), "the downstream cwd failure is real, not swallowed: {err}");
+
+        let streams = store.fleet_stream_list().unwrap();
+        let commons = streams
+            .iter()
+            .find(|r| r.get("id").and_then(|v| v.as_str()) == Some("commons--kevinthelago-networkmonitor"))
+            .expect("the commons lane was provisioned into plan.db");
+        let integration = streams
+            .iter()
+            .find(|r| r.get("id").and_then(|v| v.as_str()) == Some("integration--kevinthelago-networkmonitor"))
+            .expect("the integration lane was provisioned alongside it");
+        assert_eq!(commons["repo"], serde_json::json!("kevinthelago/networkmonitor"));
+        let owns = commons["owns"].as_array().unwrap();
+        assert!(owns.iter().any(|v| v == "Cargo.toml"), "the commons lane owns the manifest #132 was filed over");
+        assert_eq!(
+            integration["dependsOn"],
+            serde_json::json!(["commons--kevinthelago-networkmonitor"]),
+            "the integration lane gates on its own commons lane"
+        );
+
+        // A second wake for the same lane must not mint a duplicate row.
+        let before = store.fleet_stream_list().unwrap().len();
+        let _ = resolve_stream("proj:commons--kevinthelago-networkmonitor");
+        assert_eq!(
+            store.fleet_stream_list().unwrap().len(),
+            before,
+            "waking an already-provisioned lane does not duplicate it"
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

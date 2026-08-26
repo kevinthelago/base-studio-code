@@ -1,4 +1,6 @@
 pub(crate) mod wake;
+/// On-demand commons/integration lane provisioning `wake` falls back to (#132).
+pub(crate) mod commons;
 /// `bsc fleet director new` — the architect's create into the project tier
 /// (#architect-creates-a-director-with-discovery). Sibling to `wake`: the same emit-and-ack shape,
 /// because creating a pane is frontend state Rust cannot touch.
