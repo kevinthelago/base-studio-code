@@ -38,6 +38,24 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     expect(s.tabs[0].runId).toBe(1); // the remount lever
   });
 
+  // END SESSION vs PAUSE — the distinction the Glance End button got wrong.
+  //
+  // `killPane` used to set `disabledPanes`, the "the user turned this cell off" flag that `wakePane`
+  // refuses outright. So ending a session was a one-way door: the director could see the worker and
+  // never bring it back. It reaps instead now, and these two assert the pair — a wake revives what a
+  // user CLOSED and still refuses what a user PAUSED.
+  it("wakes a pane that End session closed (dormant), so ending is not permanent", () => {
+    useAppStore.setState({ dormantPanes: { [PANE]: true }, disabledPanes: {} });
+    expect(useAppStore.getState().wakePane(PANE, "pick it back up")).toBe(true);
+    expect(useAppStore.getState().dormantPanes[PANE]).toBeUndefined();
+    expect(useAppStore.getState().paneStartupPromptText[PANE]).toBe("pick it back up");
+  });
+
+  it("still refuses a pane the user PAUSED — a director must not override that", () => {
+    useAppStore.setState({ disabledPanes: { [PANE]: true }, dormantPanes: {} });
+    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(false);
+  });
+
   it("clears dormant so a REAPED pane comes back as a terminal, not the placeholder", () => {
     // Without this the runId bump remounts the DormantConsole card, no PTY is created, and the baked
     // prompt never runs — the assignment would vanish exactly for the panes reaping targets.
