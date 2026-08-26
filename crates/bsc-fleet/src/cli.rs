@@ -25,12 +25,18 @@ USAGE:
 One row per pane in this project's fleet — INCLUDING the ones that are not running. Each row carries
 the state, and each state is one move:
 
-  running          a session exists and its agent is working        leave it alone
-  idle             the shell is up but its agent has EXITED         wake it
+  running          a session exists and its AGENT is working        leave it alone
+  idle             the shell is up but its agent is NOT running     wake it
   stopped          it launched before; no session now               wake it
   never-launched   the plan names the stream, nothing ever ran it   start the fleet
 
-  LIVE / BUSY / PID are the app's raw answer behind that state.
+  LIVE / AGENT / PID are the app's raw answer behind that state.
+
+AGENT is a real probe for `claude` / `bsc-agent` (or a wrapper hosting one) among the pane's processes
+— NOT `the shell has a child`. Those differ exactly where it matters: a SANDBOXED pane's own `bwrap`
+plumbing and the shell inside it are its descendants, so a bare prompt in a cage looked like work and
+could never report `idle`. A shell mid-build is the same mistake the other way round. `--json` still
+carries `busy` (is anything in flight) for a caller that wants that separate question.
 
 ISSUES is that stream's PROGRESS — its plan issues done/total — because liveness alone does not say
 which stopped worker to wake: stopped-having-finished and stopped-at-issue-one look identical
@@ -873,6 +879,9 @@ struct Row {
     state: membership::State,
     live: bool,
     busy: bool,
+    /// An agent process is running for this pane. What `STATE` is derived from — `busy` is the broader
+    /// "something is in flight", which is a different question (see `PaneLive`).
+    agent: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pid: Option<u32>,
     /// The UNLANDED upstreams this stream is waiting on
@@ -958,12 +967,16 @@ fn list_from_plan(
         .into_iter()
         .map(|m| {
             let p = res.panes.iter().find(|p| p.pane_id == m.pane_id);
-            let state = membership::State::classify(&m, p.map(|p| (p.live, p.busy)));
+            // AGENT, not busy (#fleet-list-reports-whether-the-agent-is-running). `busy` is "something
+            // is in flight", which a sandboxed pane satisfies at a bare prompt — `bwrap` and the shell
+            // inside it are its own descendants — so it could never read `idle`.
+            let state = membership::State::classify(&m, p.map(|p| (p.live, p.agent)));
             let held = waiting.get(m.stream.as_str());
             Row {
                 state,
                 live: p.map(|p| p.live).unwrap_or(false),
                 busy: p.map(|p| p.busy).unwrap_or(false),
+                agent: p.map(|p| p.agent).unwrap_or(false),
                 pid: p.and_then(|p| p.pid),
                 waiting_on: held.map(|h| h.waiting_on.clone()).unwrap_or_default(),
                 deadlocked: held.is_some_and(|h| h.deadlocked),
@@ -995,13 +1008,13 @@ fn render_plan_table(rows: &[Row]) -> String {
     let mut out = if show_deps {
         format!(
             "{:<w$}  {:<9} {:<14} {:<8} {:<dw$} {:<5} {:<5} PID\n",
-            "PANE", "ROLE", "STATE", "ISSUES", "WAITING ON", "LIVE", "BUSY",
+            "PANE", "ROLE", "STATE", "ISSUES", "WAITING ON", "LIVE", "AGENT",
             w = w, dw = dw.max("WAITING ON".len())
         )
     } else {
         format!(
             "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
-            "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "BUSY",
+            "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "AGENT",
             w = w
         )
     };
@@ -1017,7 +1030,10 @@ fn render_plan_table(rows: &[Row]) -> String {
         let tail = format!(
             "{:<5} {:<5} {}",
             if r.live { "yes" } else { "no" },
-            if r.busy { "yes" } else { "no" },
+            // The column shows the AGENT, because that is what STATE is derived from and what the
+            // reader is actually asking. `busy` is still in `--json` for anything that wants "is
+            // something in flight" — they differ on a sandboxed pane at a bare prompt.
+            if r.agent { "yes" } else { "no" },
             r.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
         );
         if show_deps {
@@ -1253,6 +1269,7 @@ mod tests {
             state: membership::State::Stopped,
             live: false,
             busy: false,
+            agent: false,
             pid: None,
             waiting_on: waiting.iter().map(|s| s.to_string()).collect(),
             deadlocked,
@@ -1443,6 +1460,7 @@ mod tests {
             state,
             live,
             busy,
+            agent: busy,
             pid: if live { Some(42) } else { None },
             waiting_on: Vec::new(),
             deadlocked: false,
@@ -1714,7 +1732,9 @@ mod director_tests {
     }
 
     fn pane(id: &str, live: bool, busy: bool) -> PaneLive {
-        PaneLive { pane_id: id.into(), live, busy, pid: if live { Some(7) } else { None } }
+        // `agent` mirrors `busy` in these fixtures: they were written when the two were one signal,
+        // and the cases here are about JOINING liveness onto membership, not about telling them apart.
+        PaneLive { pane_id: id.into(), live, busy, agent: busy, pid: if live { Some(7) } else { None } }
     }
 
     /// The table must show a stopped director as a ROW — that row is the point — and say plainly how
