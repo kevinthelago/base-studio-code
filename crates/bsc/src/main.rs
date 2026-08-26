@@ -100,6 +100,7 @@ const COMMANDS: &[Surface] = &[
     active("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)", None),
     active("navigate", "steer the RUNNING app to a view — so a capture can target something", None),
     active("fleet", "which fleet panes are ACTUALLY alive — real liveness + pid from the running app", None),
+    active("sandbox", "a caged session's rendered launch argv: inspect or replay it outside the app (#135)", Some("the pane's sandbox-stores dir — per-session, cleared with the pane")),
     active("session", "the app-owned SYSTEM SESSIONS: start · stop · list (designer, librarian, …)", None),
     active("metrics", "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project", Some("the unified log / perf / cost engine")),
     // #command-surface-catalog-is-one-source: `perf` DISPATCHED but was absent from this catalog, so
@@ -243,6 +244,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
         "navigate" => bsc_navigate::cli::run(rest, "bsc navigate"),
         "fleet" => bsc_fleet::cli::run(rest, "bsc fleet"),
+        "sandbox" => bsc_sandbox::cli::run(rest, "bsc sandbox"),
         "session" => bsc_session::cli::run(rest, "bsc session"),
         "debug" => bsc_debug::cli::run(rest, "bsc debug"),
         "loop" => bsc_loop::cli::run(rest, "bsc loop"),
