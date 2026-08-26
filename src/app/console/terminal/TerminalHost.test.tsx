@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TerminalHost } from "./TerminalHost";
+import { TerminalHost, ownerClaim, type SlotTerminalProps } from "./TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 
 // #2378 guardrail: there is exactly ONE <TerminalView> per paneId (one xterm, one PTY listener), owned by
@@ -228,5 +228,57 @@ describe("TerminalHost parked holding claims (#3357)", () => {
     expect(tv.closest("[data-testid='holding']")).toBeTruthy();
     expect(tv.getAttribute("data-visible")).toBe("false"); // parked ⇒ the mount's visibility now applies
     expect(rec.unmounts).toEqual([]);
+  });
+});
+
+/** A claim in registration order — the shape `ownerClaim` reads. */
+const claim = (slotId: string, p: Partial<SlotTerminalProps>) => ({
+  slotId,
+  propsRef: { current: { visible: false, ...p } as SlotTerminalProps },
+});
+
+describe("ownerClaim — a hidden surface must not steal a visible one's terminal", () => {
+  it("gives the terminal to the only visible claim", () => {
+    expect(ownerClaim([claim("console", { visible: false }), claim("morph", { visible: true })])?.slotId)
+      .toBe("morph");
+  });
+
+  // THE BUG. A console card remount re-registers its slot at the END of the claim list, and under
+  // plain last-wins that HIDDEN cell became the owner — the terminal was re-parented into a background
+  // tab and the Glance morph the user was looking at was left an empty div. Nothing had to change on
+  // screen for it to happen, which is why it read as "terminals randomly go blank"; a `runId` bump
+  // remounts every card in a tab at once, blanking every open morph together.
+  it("does NOT let a hidden claim registered LAST steal from a visible one", () => {
+    expect(ownerClaim([claim("morph", { visible: true }), claim("console", { visible: false })])?.slotId)
+      .toBe("morph");
+  });
+
+  it("still prefers the LAST visible claim when more than one is visible", () => {
+    expect(ownerClaim([claim("a", { visible: true }), claim("b", { visible: true })])?.slotId).toBe("b");
+  });
+
+  it("falls back to the last non-parked claim when nothing is visible", () => {
+    expect(ownerClaim([claim("a", { visible: false }), claim("b", { visible: false })])?.slotId).toBe("b");
+  });
+
+  // The pre-existing #3357 exception, which must survive: a parked holding mount keeps the PTY alive
+  // and must never take ownership from a real surface — visible or not.
+  it("never hands ownership to a parked holding claim while a real claim exists", () => {
+    const parked = claim("parked", { visible: false, parked: true });
+    expect(ownerClaim([claim("cell", { visible: false }), parked])?.slotId).toBe("cell");
+    expect(ownerClaim([claim("morph", { visible: true }), parked])?.slotId).toBe("morph");
+  });
+
+  it("a parked claim owns it only when it is all that is left", () => {
+    expect(ownerClaim([claim("parked", { visible: false, parked: true })])?.slotId).toBe("parked");
+  });
+
+  it("parked beats visible — a visible holding mount is still a holding mount", () => {
+    expect(ownerClaim([claim("parked", { visible: true, parked: true }), claim("cell", { visible: false })])?.slotId)
+      .toBe("cell");
+  });
+
+  it("no claims ⇒ no owner", () => {
+    expect(ownerClaim([])).toBeUndefined();
   });
 });
