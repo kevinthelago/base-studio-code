@@ -733,6 +733,7 @@ dependencies = [
  "bsc-publish",
  "bsc-request",
  "bsc-runtime",
+ "bsc-sandbox",
  "bsc-session",
  "bsc-shot",
  "bsc-sound",
@@ -1042,7 +1043,10 @@ dependencies = [
 name = "bsc-sandbox"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

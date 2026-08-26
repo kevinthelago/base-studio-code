@@ -585,11 +585,9 @@ fn pty_create_inner(
     let sandbox_stores = sandbox_stores.or_else(|| {
         let role = sandbox_role.as_deref().filter(|r| !r.is_empty())?;
         let _ = role;
-        let safe: String = pane_id
-            .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
-            .collect();
-        let root = crate::platform::paths::bsc_base_dir().join("sandbox-stores").join(safe);
+        // Shared with `bsc sandbox replay` (`bsc_sandbox::sandbox_stores_root`) so a replay
+        // computes the SAME path from a bare pane id — see that function's doc comment.
+        let root = bsc_sandbox::sandbox_stores_root(&crate::platform::paths::bsc_base_dir(), &pane_id);
         // The outbox + the emitter rc, in that order — see `scaffold_store_root` for why the
         // order is the whole fix. `None` means no outbox, and a session that cannot emit at all
         // does not get a store root.
@@ -2503,6 +2501,15 @@ fn namespace_argv(
                         paths.stores.len(),
                         paths.outboxes.len()
                     );
+                    // Persist the exact argv so a LATER `bsc sandbox replay <pane-id>` can
+                    // reconstruct this same cage outside the app — see `write_launch_argv`'s doc
+                    // comment for why this exists (request #135). Best-effort: a session that
+                    // cannot be replayed later still launches fine right now.
+                    if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
+                        if let Err(e) = bsc_sandbox::write_launch_argv(std::path::Path::new(root), &argv) {
+                            log::warn!("pty[{pane_id}] could not persist the launch argv for replay: {e}");
+                        }
+                    }
                     Some(argv)
                 }
                 Err(e) => {
@@ -2678,6 +2685,27 @@ mod namespace_tests {
         let coord = a.iter().position(|x| x == "/coord").unwrap();
         let out = a.iter().position(|x| x == "/coord/out").unwrap();
         assert!(out > coord);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Request #135: a dev session had no way to reproduce a real caged launch outside the app and
+    /// resorted to grepping `journalctl` for an argv that was never logged there. `namespace_argv`
+    /// itself does not persist the record (that happens one call frame up, in `pty_create`, where
+    /// `stores_root` is the real per-pane directory) — this pins that the render this function
+    /// produces is exactly what `bsc sandbox replay` would need, byte for byte, if it were handed
+    /// the same stores root.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_rendered_argv_is_exactly_what_a_replay_would_persist_and_read_back() {
+        let root = std::env::temp_dir().join(format!("bsc-ns-replay-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default())
+            .unwrap();
+
+        bsc_sandbox::write_launch_argv(&root, &a).expect("the launcher's own write path");
+        assert_eq!(bsc_sandbox::read_launch_argv(&root).unwrap(), a, "a replay reads back the exact argv the launch rendered");
+
         let _ = std::fs::remove_dir_all(&root);
     }
 
