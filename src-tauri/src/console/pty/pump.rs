@@ -62,6 +62,99 @@ pub(crate) struct SessionEnd {
     pub sandbox_role: Option<String>,
     /// One sentence, already phrased for a human. The banner shows this verbatim.
     pub detail: String,
+    /// What the session last PRINTED, when it ended badly — sanitized and bounded by `last_words`.
+    ///
+    /// Only ever populated for a fault. Quoting a clean session's output would make the notice noise,
+    /// and there is nothing to explain about an ending that went fine. `None` on a fault means the
+    /// session printed nothing legible at all, which the caller reports rather than hides.
+    pub last_output: Option<String>,
+}
+
+/// How much of the session's own final output travels with a fault, in characters.
+///
+/// Small on purpose. This rides a Tauri event and lands in a BANNER: the whole value is the last
+/// line or two the session printed, and a bigger slice buys a taller banner rather than a better
+/// answer. The full buffer is already in the pane for whoever is looking at it.
+const LAST_WORDS_CAP: usize = 400;
+
+/// How many non-empty lines of it to keep.
+const LAST_WORDS_LINES: usize = 4;
+
+/// The session's final output, made readable — what the pane last printed, with the terminal taken
+/// out of it.
+///
+/// A TUI's buffer is mostly escape sequences: cursor moves, colour, erase-line, the redraw of a
+/// frame. Quoting it raw gives a banner a wall of `\x1b[2K\x1b[1G` with the one line that matters
+/// buried in it — the reported worker printed 18116 bytes on its way out and essentially all of it
+/// was redraw. So this strips the terminal control layer, keeps the last few lines that actually
+/// carry text, and bounds the result.
+///
+/// PURE, so the shape of a real TUI tail is testable without a PTY.
+///
+/// Returns `None` when nothing legible survives. That is a DIFFERENT answer from a short one and the
+/// caller says so: a session that printed nothing at all before dying is itself a finding, where an
+/// empty quote in a banner just reads as a broken banner.
+pub(super) fn last_words(tail: &str) -> Option<String> {
+    // CSI / OSC and friends. Hand-rolled rather than a crate: the grammar we actually meet here is
+    // `ESC [ … final-byte` and `ESC ] … BEL|ST`, and a dependency for that is not worth the audit.
+    let mut out = String::with_capacity(tail.len());
+    let mut chars = tail.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            // Keep newline and tab; drop every other C0/C7 control, which is what makes a banner
+            // render the text rather than the terminal's intentions.
+            if c == '\n' || c == '\t' || !c.is_control() {
+                out.push(if c == '\t' { ' ' } else { c });
+            }
+            continue;
+        }
+        match chars.next() {
+            // CSI: parameters/intermediates, then a final byte in @..~
+            Some('[') => {
+                for f in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&f) {
+                        break;
+                    }
+                }
+            }
+            // OSC: runs to BEL or ST (ESC \).
+            Some(']') => {
+                while let Some(f) = chars.next() {
+                    if f == '\u{7}' {
+                        break;
+                    }
+                    if f == '\u{1b}' {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            // Any other two-byte escape — consume the second byte and move on.
+            Some(_) => {}
+            None => break,
+        }
+    }
+
+    let mut lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    // The LAST lines: a dying process says the useful thing on the way out, not on the way in.
+    if lines.len() > LAST_WORDS_LINES {
+        lines.drain(..lines.len() - LAST_WORDS_LINES);
+    }
+    let mut text = lines.join(" / ");
+    if text.chars().count() > LAST_WORDS_CAP {
+        // Keep the END, and cut on a char boundary — this is decoded UTF-8 and a byte slice would
+        // panic on the box-drawing a TUI is full of.
+        let skip = text.chars().count() - LAST_WORDS_CAP;
+        text = format!("…{}", text.chars().skip(skip).collect::<String>());
+    }
+    Some(text)
 }
 
 /// Decode the shell's 128+N fatal-signal convention. Bounded because a plain exit code can also
@@ -105,7 +198,18 @@ pub(super) fn classify_end(
             (None, _) => (EndReason::Unknown, "The terminal closed but the exit status could not be read.".to_string()),
         }
     };
-    SessionEnd { pane_id: pane_id.to_string(), reason, exit_code: exit, signal, sandbox_role: role, detail }
+    // The tail is only quoted for a FAULT. It is already in hand either way — `cage_death_notice`
+    // greps the same buffer — so this costs nothing but says nothing when nothing is wrong.
+    let last_output = if reason.is_fault() { last_words(tail) } else { None };
+    SessionEnd {
+        pane_id: pane_id.to_string(),
+        reason,
+        exit_code: exit,
+        signal,
+        sandbox_role: role,
+        detail,
+        last_output,
+    }
 }
 
 /// The `exit=…` phrase the session-ending log line has always carried. Kept byte-identical so the
@@ -451,7 +555,11 @@ pub(super) fn spawn_emitter(
         // is exactly the shape that was previously indistinguishable at a glance.
         let phrase = child_status_phrase(&end);
         if end.reason.is_fault() {
-            log::warn!("pty[{pane_id}] session ended ({total} bytes) · {phrase} · {}", end.detail);
+            // The last words go in the LOG too, not just the banner — the banner lasts five seconds
+            // and this is the copy that is still there tomorrow. `printed nothing` is stated rather
+            // than left as an absence, because a session that died silently is itself the finding.
+            let words = end.last_output.as_deref().unwrap_or("(printed nothing)");
+            log::warn!("pty[{pane_id}] session ended ({total} bytes) · {phrase} · {} · last output: {words}", end.detail);
         } else {
             log::info!("pty[{pane_id}] session ended ({total} bytes) · {phrase}");
         }
@@ -551,6 +659,86 @@ mod end_tests {
         assert_eq!(e.reason, EndReason::Unknown);
         assert!(e.reason.is_fault());
         assert_eq!(child_status_phrase(&e), "exit=unknown");
+    }
+
+    // ── the LAST WORDS (#a-stopped-session-shows-its-last-words) ───────────────────────────────
+
+    /// A TUI's dying buffer is mostly redraw. The reported worker printed 18116 bytes on its way out
+    /// and essentially all of it was escape sequences — quoting that raw gives a banner a wall of
+    /// control codes with the one useful line buried inside.
+    #[test]
+    fn the_terminal_is_stripped_out_of_the_last_words() {
+        let tail = "\u{1b}[2K\u{1b}[1G\u{1b}[32mWelcome\u{1b}[0m\r\n\u{1b}[31mError: credentials expired\u{1b}[0m\r\n";
+        let w = last_words(tail).expect("something legible");
+        assert!(w.contains("Error: credentials expired"), "{w}");
+        assert!(!w.contains('\u{1b}'), "no escapes survive: {w:?}");
+        assert!(!w.contains("[31m"), "no CSI bodies survive: {w:?}");
+        assert!(!w.contains('\r'), "no bare control chars: {w:?}");
+    }
+
+    /// An OSC sequence (a title set, the OSC-7 cwd report the shell rc emits) runs to BEL or ST and
+    /// must not swallow the rest of the buffer with it.
+    #[test]
+    fn an_osc_sequence_is_consumed_without_eating_the_message() {
+        let bel = last_words("\u{1b}]0;a title\u{7}the real message").expect("text");
+        assert_eq!(bel, "the real message");
+        let st = last_words("\u{1b}]7;file://host/repo\u{1b}\\after").expect("text");
+        assert_eq!(st, "after");
+    }
+
+    /// The LAST lines, because a dying process says the useful thing on its way out.
+    #[test]
+    fn only_the_final_lines_are_kept_and_blanks_are_dropped() {
+        let tail = "one\n\n\ntwo\nthree\nfour\nfive\nsix\n";
+        let w = last_words(tail).expect("text");
+        assert!(w.starts_with("three"), "{w}");
+        assert!(w.ends_with("six"), "{w}");
+        assert!(!w.contains("one"), "older lines are dropped: {w}");
+    }
+
+    /// Bounded, because this rides an event into a BANNER — a bigger slice buys a taller banner
+    /// rather than a better answer.
+    #[test]
+    fn the_last_words_are_capped_and_keep_the_end() {
+        let tail = format!("{}TAILEND", "x".repeat(5_000));
+        let w = last_words(&tail).expect("text");
+        assert!(w.chars().count() <= LAST_WORDS_CAP + 1, "capped: {}", w.chars().count());
+        assert!(w.ends_with("TAILEND"), "the END is what matters: {w}");
+        assert!(w.starts_with('…'), "and the cut is marked: {w}");
+    }
+
+    /// Cutting DECODED UTF-8 by bytes would panic on the box-drawing a TUI is full of.
+    #[test]
+    fn a_multibyte_tail_is_cut_on_a_char_boundary() {
+        let tail = "─".repeat(5_000);
+        let w = last_words(&tail).expect("text");
+        assert!(w.chars().count() <= LAST_WORDS_CAP + 1);
+    }
+
+    /// A session that printed NOTHING legible is its own finding — `None` rather than an empty
+    /// string, so the caller can say "printed nothing" instead of showing an empty quote.
+    #[test]
+    fn a_tail_with_no_text_is_none_not_an_empty_string() {
+        assert_eq!(last_words(""), None);
+        assert_eq!(last_words("\u{1b}[2K\u{1b}[1G\r\n   \n"), None, "pure redraw is nothing");
+    }
+
+    /// Only a FAULT quotes the output. A clean ending has nothing to explain, and quoting it is how
+    /// the notice becomes noise the user learns to scroll past.
+    #[test]
+    fn only_a_fault_carries_the_last_words() {
+        let tail = "Error: something broke";
+        assert_eq!(end(Some(1), false, None, tail).last_output.as_deref(), Some("Error: something broke"));
+        assert_eq!(end(Some(0), false, None, tail).last_output, None, "a clean exit explains nothing");
+        assert_eq!(end(Some(1), true, None, tail).last_output, None, "the app closing it explains nothing");
+    }
+
+    /// The wire shape again, now that the payload grew a field the banner reads.
+    #[test]
+    fn the_last_words_reach_the_wire() {
+        let json = serde_json::to_value(end(Some(1), false, Some("worker"), "boom")).unwrap();
+        assert_eq!(json["lastOutput"], "boom");
+        assert!(serde_json::to_value(end(Some(0), false, None, "boom")).unwrap()["lastOutput"].is_null());
     }
 
     /// The payload crosses to the frontend, so its wire shape is part of the contract — a renamed

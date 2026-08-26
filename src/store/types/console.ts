@@ -214,7 +214,7 @@ export interface ConsoleState {
    *  Called from the stop actions themselves — `reapPane`, `markPaneEnded`, `markQuarantine`,
    *  `setPaneDisabled` — because the action that ran IS the reason, so one edit covers every caller.
    *  The PROCESS-ended reasons come from Rust on the `pty_exit` payload instead. */
-  notePaneStopped: (paneId: string, reason: StopReason, detail: string) => void;
+  notePaneStopped: (paneId: string, reason: StopReason, detail: string, lastOutput?: string) => void;
   /** Clear a pane's dormant state so the view relaunches it (resume on focus). */
   resumePane: (paneId: string) => void;
   /** Resume a single dormant fleet/agent session in place (#glance-resume): clears the pane's
