@@ -39,6 +39,8 @@ export type WorkerEndState = "done" | "needs-attention" | "blocked";
 
 /** A fleet worker auto-ended after its PTY exited (#920). Persisted so a restart never
  *  re-opens/relaunches a finished worker; the view renders a resting card with a reopen action. */
+import type { PaneStop, StopReason } from "@/app/console/lib/paneStops";
+
 export interface EndedInfo {
   /** Done / needs-attention / blocked, from the owned-issue status (not the worker's say-so). */
   state: WorkerEndState;
@@ -201,6 +203,18 @@ export interface ConsoleState {
   idleReaper: ReaperConfig;
   /** Mark a pane dormant after its PTY was reaped (the hook calls pty_kill alongside). */
   reapPane: (paneId: string) => void;
+  // ── Why a pane stopped (#a-stopped-session-says-why) ──
+  /** Recent pane stops, newest last — what the transient banner renders and what the log records.
+   *  TRANSIENT (absent from `partialize`): a notice that survives a restart is a notice about a
+   *  session the user is no longer looking at. Bounded + self-pruning; see `paneStops.ts`. */
+  paneStops: PaneStop[];
+  /** Record WHY a pane stopped: appends to {@link paneStops} (replacing any earlier entry for the
+   *  same pane) and ALWAYS writes a log line, faults at warn.
+   *
+   *  Called from the stop actions themselves — `reapPane`, `markPaneEnded`, `markQuarantine`,
+   *  `setPaneDisabled` — because the action that ran IS the reason, so one edit covers every caller.
+   *  The PROCESS-ended reasons come from Rust on the `pty_exit` payload instead. */
+  notePaneStopped: (paneId: string, reason: StopReason, detail: string) => void;
   /** Clear a pane's dormant state so the view relaunches it (resume on focus). */
   resumePane: (paneId: string) => void;
   /** Resume a single dormant fleet/agent session in place (#glance-resume): clears the pane's
