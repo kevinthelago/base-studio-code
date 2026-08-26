@@ -276,6 +276,27 @@ the known set is adjudicated. `delta` is SIGNED: the drift runs both ways, and a
 store holding source the seed never had. A READ — no `ui` write scope required.",
     },
     CmdDoc {
+        name: "sync-seed",
+        summary: "write a store record's current body back into its packaged seed file, by id (#139)",
+        usage: "\
+USAGE:
+  bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]
+
+The store-to-seed sync `bsc ui parity` diagnoses and nothing could act on: an edit to a component
+record lands in the store, and the app keeps SHIPPING the seed's old body until something writes the
+seed back. `export` dumps a record VERBATIM (by design, so it round-trips through `import`) — including
+store bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/`seedHash`/`used`) no seed file has
+ever carried — so its output can't be dropped straight into <dir>. This strips those fields and writes
+the rest over the EXISTING seed file matching <id> (found by walking --seed-dir and reading each
+record's own `id`; a kit bundle with no top-level `id` is not a target).
+
+Deliberately BY ID, never a sweep — seed and store drift both ways, so a mass re-stamp would as often
+overwrite real seed content with stale store content. Dry run by default; pass --apply to write. Skips
+(reported, not erroring) an id absent from the store, an id with no matching seed file (that is a
+PROMOTION — a new file — not a sync), and an id already identical. A READ of the store — no `ui` write
+scope required, since only the on-disk seed file changes (like `bsc ui export`).",
+    },
+    CmdDoc {
         name: "import",
         summary: "load a folder tree of component records into the store — the seed half (#3606)",
         usage: "\
@@ -1711,8 +1732,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
         Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
         Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
+        Some("sync-seed") if args.get(1).map(String::as_str) != Some("help") => cmd_sync_seed(&args[1..]),
         Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
-        Some(v @ ("export" | "import")) => {
+        Some(v @ ("export" | "import" | "sync-seed")) => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
@@ -2887,6 +2909,106 @@ fn cmd_import(args: &[String]) -> Result<(), String> {
     let report = serde_json::json!({ "imported": ids.len(), "dir": inp, "ids": ids });
     let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// The store's bookkeeping fields a packaged SEED never carries (#139, verified against all 73
+/// `features/settings/cards/*.json` seeds): the change-history stamp (`history`/`rev`/`updatedAt`/
+/// `updatedBy`, #3164), the reconcile fingerprint (`seedHash`), and the runtime-computed flags
+/// (`builtin`/`used`). `bsc ui export` dumps a record VERBATIM (by design — it round-trips through
+/// `bsc ui import`), so its output carries every one of these and cannot be dropped straight into
+/// `src-tauri/data/components/app/**`; `sync-seed` strips them before it writes.
+const SEED_BOOKKEEPING_FIELDS: &[&str] = &["history", "rev", "updatedAt", "updatedBy", "builtin", "seedHash", "used"];
+
+/// `bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]` (#139) — the
+/// store-to-seed sync `bsc ui parity` diagnoses (123 of 337 drifted, measured) and nothing could act on:
+/// `export` dumps EVERY field, including store bookkeeping no seed file has ever carried, so its output
+/// can't be dropped into the packaged tree. `sync-impl-seed.mjs` already solves this for algorithm
+/// IMPLEMENTATIONS, one id at a time; this is that fix's counterpart for COMPONENTS, mounted on `bsc ui`
+/// instead of left as a script per this repo's rule that a capability lives on the `bsc` surface.
+///
+/// Deliberately BY ID, never a sweep — `parity`'s `delta` is signed because drift runs BOTH ways, so a
+/// mass re-stamp would as often overwrite real seed content with stale store content as the reverse. A
+/// read-only DRY RUN by default (matching `sync-impl-seed.mjs`'s own default); `--apply` writes. A READ
+/// of the store — no `ui` write scope required, since only the on-disk seed file changes (exactly like
+/// `bsc ui export`, which also writes files under a read-only gate).
+fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
+    let (mut seed_dir, mut dir, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut ids: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--seed-dir" => seed_dir = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => ids.push(other.to_string()),
+        }
+    }
+    let usage = "usage: bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]";
+    let seed_dir = seed_dir.ok_or(usage)?;
+    if ids.is_empty() {
+        return Err(usage.into());
+    }
+    let store = open_component_store(&dir)?;
+
+    // Index the seed tree ONCE by id. A kit BUNDLE (`{"components":[…]}`, no top-level `id`) is skipped —
+    // this fix targets the one-record-per-file layout `bsc ui export`/`import` already use.
+    let mut files = Vec::new();
+    collect_json_files(std::path::Path::new(&seed_dir), &mut files)
+        .map_err(|e| format!("cannot read {seed_dir}: {e}"))?;
+    let mut seed_by_id: std::collections::HashMap<String, std::path::PathBuf> = std::collections::HashMap::new();
+    for f in &files {
+        let Ok(raw) = std::fs::read_to_string(f) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+        if let Some(id) = v.get("id").and_then(serde_json::Value::as_str) {
+            seed_by_id.insert(id.to_string(), f.clone());
+        }
+    }
+
+    let (mut synced, mut up_to_date, mut missing_from_store, mut missing_from_seed) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for id in &ids {
+        let Some(raw) = store.get(id)? else {
+            missing_from_store.push(id.clone());
+            continue;
+        };
+        let Some(path) = seed_by_id.get(id) else {
+            // Mirrors `sync-impl-seed.mjs`'s own SKIP wording: a record with no seed file needs
+            // PROMOTING (a new file), not syncing (an existing one).
+            missing_from_seed.push(id.clone());
+            continue;
+        };
+        let mut stored: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+        let obj = stored.as_object_mut().ok_or_else(|| format!("stored record '{id}' is not a JSON object"))?;
+        for field in SEED_BOOKKEEPING_FIELDS {
+            obj.remove(*field);
+        }
+        let seed_raw = std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let seed: serde_json::Value =
+            serde_json::from_str(&seed_raw).map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+        if seed == stored {
+            up_to_date.push(id.clone());
+            continue;
+        }
+        if apply {
+            let text = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
+            std::fs::write(path, format!("{text}\n")).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        }
+        synced.push(serde_json::json!({ "id": id, "path": path.display().to_string() }));
+    }
+
+    let report = serde_json::json!({
+        "seedDir": seed_dir, "applied": apply,
+        "synced": synced, "upToDate": up_to_date,
+        "missingFromStore": missing_from_store, "missingFromSeed": missing_from_seed,
+    });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    // Through the SHARED emitter (unlike `export`/`parity`/`import`'s plain `println!`) so a warm `bsc
+    // serve` child can answer this read too, and so the report is capturable in tests.
+    bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -7141,6 +7263,89 @@ export const Card = () => <Button />;",
         let _ = std::fs::remove_dir_all(&seed);
     }
 
+    /// #139 — `sync-seed` writes a store record's CURRENT body back into its packaged seed file, by id,
+    /// stripping the store-only bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/
+    /// `seedHash`/`used`) no seed file has ever carried — the gap `bsc ui export`'s own doc note names
+    /// (it dumps a record verbatim, so its output can't be dropped straight into the packaged tree).
+    #[test]
+    fn sync_seed_writes_store_back_into_the_matching_seed_file_by_id() {
+        let dir = tmp_store_dir("sync-seed");
+        let seed = std::env::temp_dir().join(format!("bsc-sync-seed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&seed);
+        std::fs::create_dir_all(&seed).unwrap();
+
+        // Three seed files: one the store agrees with, one the store has drifted from (carrying store
+        // bookkeeping a seed never had), one the store has never seen.
+        for (id, src) in [
+            ("agree", "export const A = 1;"),
+            ("drifted", "export const B = 1; // the SEED copy, stale"),
+            ("seed-only", "export const C = 1;"),
+        ] {
+            std::fs::write(
+                seed.join(format!("{id}.json")),
+                serde_json::json!({ "id": id, "name": id, "role": "primitive", "srcText": src }).to_string(),
+            )
+            .unwrap();
+        }
+
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        store.set("agree", &serde_json::json!({ "id": "agree", "name": "agree", "role": "primitive", "srcText": "export const A = 1;" }).to_string()).unwrap();
+        store
+            .set(
+                "drifted",
+                &serde_json::json!({
+                    "id": "drifted", "name": "drifted", "role": "primitive",
+                    "srcText": "export const B = 1; // the STORE copy, current",
+                    "history": [{ "rev": 1 }], "rev": 4, "updatedAt": "2026-08-01T00:00:00Z",
+                    "updatedBy": "designer", "builtin": true, "seedHash": "abc123", "used": true,
+                })
+                .to_string(),
+            )
+            .unwrap();
+        store.set("store-only", &serde_json::json!({ "id": "store-only", "name": "store-only", "role": "primitive", "srcText": "export const D = 1;" }).to_string()).unwrap();
+
+        let seed_s = seed.to_string_lossy().into_owned();
+
+        // Dry run (no --apply): reports the would-be sync, touches nothing on disk.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_sync_seed(&["agree".into(), "drifted".into(), "seed-only".into(), "store-only".into(), "ghost".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["applied"], false);
+        let synced: Vec<&str> = report["synced"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert_eq!(synced, vec!["drifted"], "only the genuinely diverged id needs writing");
+        assert_eq!(report["upToDate"], serde_json::json!(["agree"]));
+        assert_eq!(report["missingFromSeed"], serde_json::json!(["store-only"]), "in the store, no seed file — a PROMOTION, not a sync");
+        assert_eq!(report["missingFromStore"], serde_json::json!(["seed-only", "ghost"]));
+        let drifted_seed_untouched: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(seed.join("drifted.json")).unwrap()).unwrap();
+        assert_eq!(drifted_seed_untouched["srcText"], "export const B = 1; // the SEED copy, stale", "dry run wrote nothing");
+
+        // --apply writes the store's CURRENT body, minus store-only bookkeeping.
+        cmd_sync_seed(&["drifted".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone(), "--apply".into()]).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(seed.join("drifted.json")).unwrap()).unwrap();
+        assert_eq!(written["srcText"], "export const B = 1; // the STORE copy, current");
+        for field in SEED_BOOKKEEPING_FIELDS {
+            assert!(written.get(*field).is_none(), "seed must not carry store bookkeeping field '{field}': {written}");
+        }
+
+        // A second sync of the now-synced id is a no-op — reported up to date, not re-written.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_sync_seed(&["drifted".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["upToDate"], serde_json::json!(["drifted"]));
+        assert_eq!(report["synced"], serde_json::json!([]));
+
+        assert!(cmd_sync_seed(&["agree".into(), "--dir".into(), dir.clone()]).is_err(), "--seed-dir is required");
+        assert!(cmd_sync_seed(&["--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()]).is_err(), "at least one id is required");
+
+        let _ = std::fs::remove_dir_all(&seed);
+    }
+
     /// `write-gate-blind-to-merge-writes` — the page gate must judge what will be STORED.
     ///
     /// A write MERGES by default (#4197), so the ordinary payload is `{id, srcText}` and carries no
@@ -7545,7 +7750,7 @@ export const P = () => <X />;"
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
+                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
