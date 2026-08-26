@@ -23,9 +23,18 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     expect(useAppStore.getState().wakePane(PANE, "do the thing")).toBe(true);
     const s = useAppStore.getState();
     expect(s.paneStartupPromptText[PANE]).toBe("do the thing");
-    // The prompt must be baked into a FRESH launch, not a --continue reconnect: `actuateWake` has
-    // already killed the PTY, so a resumed conversation is not what comes back.
-    expect(s.paneContinue[PANE]).toBe(false);
+    // A WAKE RESUMES. This asserted `false`, reasoning that "`actuateWake` has already killed the PTY,
+    // so a resumed conversation is not what comes back" — which conflates the PROCESS with the
+    // CONVERSATION. Killing the shell ends the process; `--continue` resumes from a transcript on
+    // disk, which the kill does not touch. Observed directly: a caged worker whose PTY died eight
+    // times still had its transcripts, and once the launch looked in the right place a later launch
+    // appended to the existing conversation rather than opening a fifth one.
+    //
+    // So the kill and the resume are not in tension — killing the shell and continuing the
+    // conversation is exactly the combination a wake wants. `plan_launch` computes
+    // `resume: continue_session && has_history`, so with nothing to continue this still starts fresh
+    // and still delivers the baked prompt.
+    expect(s.paneContinue[PANE]).toBe(true);
     expect(s.tabs[0].runId).toBe(1); // the remount lever
   });
 
