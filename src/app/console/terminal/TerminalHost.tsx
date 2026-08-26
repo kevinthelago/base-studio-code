@@ -53,9 +53,37 @@ export interface SlotTerminalProps {
   parked?: boolean;
 }
 
-/** The claim that visually HOSTS the terminal: the last non-parked claim, else the last claim (every
- *  remaining claim is a parked holding mount). Pure — exported for the unit test. */
+/** The claim that visually HOSTS the terminal.
+ *
+ * Order of preference: the last VISIBLE non-parked claim · else the last non-parked claim · else the
+ * last claim (every remaining one is a parked holding mount). Pure — exported for the unit tests.
+ *
+ * ## Why visibility outranks registration order
+ *
+ * This used to be "last non-parked claim wins", and that quietly made a HIDDEN surface able to steal
+ * the terminal from a visible one. A console grid cell claims its pane whenever its card is mounted
+ * and passes `visible={view === "console" && !hidden}` — so a cell in a background tab is a live,
+ * non-parked claim that simply is not on screen. Register it after a Glance morph and the terminal was
+ * re-parented into that hidden cell, leaving the morph the user was looking at with an empty div.
+ *
+ * Nothing had to change on screen for that to happen, which is why it read as "terminals randomly go
+ * blank": ANY remount of a console card re-registers its slot at the END of the claim list. A `runId`
+ * bump remounts every card in a tab at once (`key={runId-i}`), so one `bsc fleet wake` could blank
+ * every open morph simultaneously — reported, and mis-attributed at the time to the morph grid's
+ * anchor.
+ *
+ * `parked` was already an exception to last-wins for exactly this shape of bug ("a holding claim can
+ * register at an arbitrary time ... without this it could land AFTER a visible dock and park the
+ * terminal off-screen"). That reasoning was right and simply did not go far enough: a hidden console
+ * cell is not parked, and steals just the same.
+ *
+ * Ties are impossible in practice — the console grid and the Glance canvas are different Workspaces,
+ * so at most one is on screen — and where two visible claims did coexist, last-wins still decides. */
 export function ownerClaim<T extends { propsRef: { readonly current: SlotTerminalProps } }>(claims: readonly T[]): T | undefined {
+  for (let i = claims.length - 1; i >= 0; i--) {
+    const p = claims[i].propsRef.current;
+    if (!p.parked && p.visible) return claims[i];
+  }
   for (let i = claims.length - 1; i >= 0; i--) if (!claims[i].propsRef.current.parked) return claims[i];
   return claims[claims.length - 1];
 }
