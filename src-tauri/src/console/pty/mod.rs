@@ -771,7 +771,25 @@ fn pty_create_inner(
     // still delivers the prompt.
     // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
     // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
-    let has_history = harness.detect_history(&cwd);
+    // A CAGED session's transcripts are NOT where the host would look for them, and looking in the
+    // wrong place made every caged session start over.
+    //
+    // `detect_history` resolves `~/.claude/projects/<slug(cwd)>` on the HOST, from the HOST cwd. Inside
+    // the namespace the harness writes to its private HOME, whose `.claude/projects` is bound to this
+    // pane's `history_dir` (`<stores_root>/home/projects`), and it keys the directory by the GUEST cwd
+    // — always `/repo`, hence `-repo`. The two can never agree: the host check asks about a path the
+    // caged harness never writes to, so `has_history` was false on EVERY caged launch and the launch
+    // plan resolved to a fresh session every time.
+    //
+    // Observed on `network-monitor:domain-model-and-adapter-traits`: FOUR separate conversations in its
+    // cage (4, 11, 19 and 0 assistant turns), one per launch, each starting from nothing while the log
+    // recorded `has_history=false · resumed=false` — with three prior transcripts sitting right there.
+    // A worker that is relaunched loses everything it learned, which is most of what makes a relaunch
+    // look like a session that was killed for no reason.
+    let has_history = match caged_history_dir(sandbox_stores.as_deref(), ns_argv.is_some()) {
+        Some(dir) => harness.detect_history_at(&dir),
+        None => harness.detect_history(&cwd),
+    };
     let plan = plan_launch(
         startup_prompt.as_deref(),
         init_cmd.as_deref(),
@@ -1942,6 +1960,27 @@ fn credential_for_harness() -> Option<std::path::PathBuf> {
 ///
 /// Best-effort: a session that cannot get one still launches and simply cannot resume, which is
 /// strictly better than refusing to start.
+/// Where a CAGED session's transcripts actually live, or `None` when this launch is not caged.
+///
+/// The harness inside the namespace writes to `<home>/.claude/projects/<slug(guest cwd)>`, and the
+/// guest cwd is always [`bsc_sandbox::REPO_GUEST_PATH`] — so the directory name is fixed, not derived
+/// from the host path. `history_dir_for` binds `<stores_root>/home/projects` over that `projects` dir,
+/// which makes the transcripts durable; this resolves the ONE subdirectory inside it that a resume
+/// would continue from.
+///
+/// Gated on `caged` (an actual namespace argv) rather than on `stores_root` alone: the stores root is
+/// prepared for a pane before we know the launch will be sandboxed, and answering "yes, look in the
+/// cage" for a session that then runs on the host would break resume in the opposite direction.
+#[cfg(target_os = "linux")]
+fn caged_history_dir(stores_root: Option<&str>, caged: bool) -> Option<std::path::PathBuf> {
+    if !caged {
+        return None;
+    }
+    let root = stores_root.filter(|r| !r.is_empty())?;
+    let slug = crate::session::launch::claude_project_dir_name(bsc_sandbox::REPO_GUEST_PATH);
+    Some(std::path::Path::new(root).join("home").join("projects").join(slug))
+}
+
 #[cfg(target_os = "linux")]
 fn history_dir_for(pane_id: &str, stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
     let dir = stores_root.join("home").join("projects");
@@ -4100,5 +4139,58 @@ mod designer_surface_tests {
             "the absence has to be stated, not inferred: {}",
             tree["README"],
         );
+    }
+}
+
+/// A caged session must resume from ITS OWN transcripts, not from a host path it never writes to.
+#[cfg(all(test, target_os = "linux"))]
+mod caged_resume_tests {
+    use super::*;
+
+    #[test]
+    fn an_uncaged_launch_still_asks_the_host() {
+        // `None` is what routes the caller back to `detect_history(&cwd)` — the host rule, unchanged.
+        assert_eq!(caged_history_dir(Some("/stores/pane"), false), None, "not caged ⇒ host lookup");
+        assert_eq!(caged_history_dir(None, true), None, "no stores root ⇒ nothing to look in");
+        assert_eq!(caged_history_dir(Some(""), true), None, "an empty root is not a root");
+    }
+
+    /// The directory the CAGED harness actually writes to: `<stores_root>/home/projects/<slug(/repo)>`.
+    /// The slug is fixed because the guest cwd is fixed — it is never derived from the host path, which
+    /// is exactly why the host lookup could not find it.
+    #[test]
+    fn a_caged_launch_points_at_the_bound_transcripts_dir() {
+        let dir = caged_history_dir(Some("/stores/pane"), true).expect("caged ⇒ a path");
+        assert_eq!(dir, std::path::Path::new("/stores/pane/home/projects/-repo"));
+        // …and it agrees with where `history_dir_for` BINDS, or the resume would read a different
+        // directory from the one the harness writes into.
+        let bound = std::path::Path::new("/stores/pane").join("home").join("projects");
+        assert!(dir.starts_with(&bound), "{dir:?} must sit inside the bound dir {bound:?}");
+    }
+
+    /// The rule itself — a `.jsonl` present means there is something to continue.
+    #[test]
+    fn a_transcript_in_the_caged_dir_is_what_makes_it_resumable() {
+        let root = std::env::temp_dir().join(format!("bsc-caged-hist-{}", std::process::id()));
+        let dir = root.join("home").join("projects").join("-repo");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let resolved = caged_history_dir(Some(&root.to_string_lossy()), true).expect("caged");
+        assert_eq!(resolved, dir);
+
+        assert!(
+            !crate::session::launch::dir_holds_a_transcript(&resolved),
+            "an empty cage has nothing to continue — it must start fresh so the kickoff is delivered",
+        );
+        std::fs::write(dir.join("a-session.jsonl"), "{}\n").expect("write");
+        assert!(
+            crate::session::launch::dir_holds_a_transcript(&resolved),
+            "with a transcript present the caged launch must resume instead of starting over",
+        );
+        // A non-transcript file is not a conversation.
+        let other = root.join("home").join("projects").join("-repo-2");
+        std::fs::create_dir_all(&other).expect("mkdir2");
+        std::fs::write(other.join("notes.txt"), "x").expect("write2");
+        assert!(!crate::session::launch::dir_holds_a_transcript(&other));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
