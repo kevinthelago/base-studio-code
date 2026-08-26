@@ -1820,6 +1820,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             crate::migrate::run(&rest, &mut std::io::stdout())
         }
         "promote" => {
+            // `promote help` asked for help, not to adopt/refresh a record literally named "help" — and
+            // unlike `--id`/`--check`, a bare positional was silently ignored rather than rejected, so
+            // this fell through into a REAL bare promote (refreshing every tracked id) instead of
+            // printing usage. Every other verb's `help` positional is a no-op read (#136); this is the
+            // one place it was a write. Mirrors the `harvest help` / `emit help` precedent above.
+            if positional.get(1) == Some(&"help") {
+                print!("{}", help(prog));
+                return Ok(());
+            }
             let check = args.iter().any(|a| a == "--check");
             let root = flag_value(&args, "--root")
                 .map(std::path::PathBuf::from)
@@ -2580,6 +2589,30 @@ mod tests {
         assert!(
             !crate::repo_store::path_under(&dir).exists(),
             "a promote with nothing to promote must not create a store file",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// REGRESSION (#136): `bsc graph promote help` ran a REAL bare promote instead of printing usage —
+    /// `help` was silently accepted as a no-op positional rather than routed to the help arm, so the
+    /// discovery gesture every charter teaches ("run `<verb> help` first") was actively unsafe here. It
+    /// mirrors the `emit help` / `harvest help` guard just above it.
+    #[test]
+    fn promote_help_prints_usage_and_does_not_promote() {
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-promote-help-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let args = vec!["promote".to_string(), "help".to_string(), "--root".to_string(), dir.to_string_lossy().into_owned()];
+        run(args, "bsc graph").expect("`promote help` must succeed");
+
+        assert!(
+            !crate::repo_store::path_under(&dir).exists(),
+            "`promote help` must print usage, not run a promote — it must not create a store file",
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
