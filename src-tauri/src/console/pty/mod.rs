@@ -1960,6 +1960,47 @@ fn credential_for_harness() -> Option<std::path::PathBuf> {
 ///
 /// Best-effort: a session that cannot get one still launches and simply cannot resume, which is
 /// strictly better than refusing to start.
+/// The SHARED git directory a worktree at `cwd` depends on, or `None` when it needs no extra bind.
+///
+/// An ordinary clone keeps `.git` as a DIRECTORY inside the tree, so binding the tree carries it and
+/// there is nothing to add. A WORKTREE keeps a `.git` FILE holding `gitdir: <absolute host path>`, and
+/// the objects/refs live back in the parent clone — so the namespace has the pointer and not the
+/// target, and every git command fails with `fatal: not a git repository: <that path>`.
+///
+/// Resolved the way git itself does: follow the `gitdir:` pointer, then read its `commondir` (normally
+/// `../..`) rather than assuming a depth. A linked worktree of a linked worktree is a shape the
+/// two-levels-up guess gets wrong and `commondir` gets right.
+///
+/// Returns the path only when it EXISTS: binding a source bwrap cannot find fails the whole launch,
+/// and a repo whose parent clone has been removed should degrade to today's behaviour (git broken in
+/// the cage) rather than to no session at all.
+#[cfg(target_os = "linux")]
+fn git_common_dir_for(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    let dot_git = std::path::Path::new(cwd).join(".git");
+    // A real directory ⇒ an ordinary clone; it rides along inside the tree bind.
+    if dot_git.is_dir() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&dot_git).ok()?;
+    let pointer = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
+    let gitdir = std::path::Path::new(pointer);
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        // `commondir` is relative TO the gitdir, and may be absolute in exotic setups.
+        Ok(rel) => {
+            let rel = rel.trim();
+            let p = std::path::Path::new(rel);
+            if p.is_absolute() { p.to_path_buf() } else { gitdir.join(p) }
+        }
+        // No `commondir` — an older layout. `<clone>/.git/worktrees/<name>` ⇒ two up.
+        Err(_) => gitdir.parent()?.parent()?.to_path_buf(),
+    };
+    let common = std::fs::canonicalize(&common).unwrap_or(common);
+    common.is_dir().then_some(common)
+}
+
 /// Where a CAGED session's transcripts actually live, or `None` when this launch is not caged.
 ///
 /// The harness inside the namespace writes to `<home>/.claude/projects/<slug(guest cwd)>`, and the
@@ -2397,6 +2438,9 @@ fn namespace_argv(
         // `None` (not built yet) leaves the session with path confinement only — what it already
         // had — rather than refusing to launch. `hook_env` keys the gate's config off this same
         // Option, so nothing declares BSC_REPO_ROOT for a gate that is not there.
+        // The shared git dir a worktree needs. Without it the cage carries the tree and not the
+        // objects, and every git command in a worker session fails — see `git_common_dir_for`.
+        git_common_dir: git_common_dir_for(cwd),
         hook_bin: bsc_hook_bin_path(),
         // ...and the gate's config. Without these the hook is bound and answers Allow to
         // everything: `scope_verdict` treats empty globs as unrestricted, so the write-scope half
@@ -4192,5 +4236,119 @@ mod caged_resume_tests {
         std::fs::write(other.join("notes.txt"), "x").expect("write2");
         assert!(!crate::session::launch::dir_holds_a_transcript(&other));
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// A caged worker must be able to use git — the tree alone is not a repository.
+#[cfg(all(test, target_os = "linux"))]
+mod caged_git_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("bsc-cagedgit-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("mkdir");
+        d
+    }
+
+    #[test]
+    fn an_ordinary_clone_needs_no_extra_bind() {
+        let root = tmp("clone");
+        std::fs::create_dir_all(root.join("repo").join(".git")).expect("mkdir .git");
+        assert_eq!(
+            git_common_dir_for(&root.join("repo").to_string_lossy()),
+            None,
+            "a real .git DIRECTORY rides along inside the tree bind",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shape that actually broke: `.git` is a FILE pointing at the parent clone.
+    #[test]
+    fn a_worktree_resolves_the_shared_git_dir_through_commondir() {
+        let root = tmp("wt");
+        let common = root.join("clone").join(".git");
+        let gitdir = common.join("worktrees").join("w1");
+        std::fs::create_dir_all(&gitdir).expect("mkdir gitdir");
+        // git writes `commondir` relative to the gitdir.
+        std::fs::write(gitdir.join("commondir"), "../..\n").expect("commondir");
+        let wt = root.join("w1");
+        std::fs::create_dir_all(&wt).expect("mkdir wt");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).expect(".git");
+
+        let got = git_common_dir_for(&wt.to_string_lossy()).expect("a worktree needs the shared dir");
+        assert_eq!(
+            std::fs::canonicalize(&got).unwrap(),
+            std::fs::canonicalize(&common).unwrap(),
+            "it must resolve to the parent clone's .git, where the objects live",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// No `commondir` (older layout) ⇒ two levels up from the gitdir.
+    #[test]
+    fn a_worktree_without_commondir_falls_back_to_two_levels_up() {
+        let root = tmp("nocommon");
+        let common = root.join("clone").join(".git");
+        let gitdir = common.join("worktrees").join("w1");
+        std::fs::create_dir_all(&gitdir).expect("mkdir");
+        let wt = root.join("w1");
+        std::fs::create_dir_all(&wt).expect("mkdir wt");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).expect(".git");
+        let got = git_common_dir_for(&wt.to_string_lossy()).expect("still resolvable");
+        assert_eq!(std::fs::canonicalize(&got).unwrap(), std::fs::canonicalize(&common).unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A DANGLING pointer degrades to today's behaviour rather than taking the launch down: bwrap
+    /// fails the whole session if a bind source is missing, and a broken git beats no session at all.
+    #[test]
+    fn a_missing_target_binds_nothing_rather_than_failing_the_launch() {
+        let root = tmp("dangle");
+        let wt = root.join("w1");
+        std::fs::create_dir_all(&wt).expect("mkdir");
+        std::fs::write(wt.join(".git"), "gitdir: /nowhere/at/all/.git/worktrees/w1\n").expect(".git");
+        assert_eq!(git_common_dir_for(&wt.to_string_lossy()), None);
+        assert_eq!(git_common_dir_for(""), None, "no cwd, nothing to resolve");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The bind itself: at its OWN path, read-write, because the pointer git reads is absolute and
+    /// committing writes objects and refs back into it.
+    #[test]
+    fn the_shared_git_dir_is_bound_at_its_own_path_and_writable() {
+        use bsc_sandbox::profile::{for_role, Role, SessionPaths};
+        use bsc_sandbox::{Limits, Scope};
+        let git = std::path::PathBuf::from("/host/clone/.git");
+        let paths = SessionPaths {
+            root: std::path::PathBuf::from("/host/wt/repo--stream"),
+            git_common_dir: Some(git.clone()),
+            ..Default::default()
+        };
+        let a = for_role(Role::Worker, "u", &paths, &[], Limits::default(), Scope::User, vec!["bash".into()])
+            .unwrap()
+            .spec
+            .render()
+            .unwrap();
+        let i = a
+            .windows(3)
+            .position(|w| w[0] == "--bind" && w[1] == git.to_string_lossy() && w[2] == git.to_string_lossy())
+            .expect("the shared git dir must be bound at its own path, read-write");
+        // …and it must not ALSO appear read-only, which would refuse every commit.
+        let _ = i;
+        assert!(
+            !a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == git.to_string_lossy()),
+            "read-only would refuse every commit: {a:?}",
+        );
+    }
+
+    #[test]
+    fn no_git_dir_means_no_such_bind() {
+        use bsc_sandbox::profile::{for_role, Role, SessionPaths};
+        use bsc_sandbox::{Limits, Scope};
+        let paths = SessionPaths { root: std::path::PathBuf::from("/host/wt/r"), ..Default::default() };
+        let a = for_role(Role::Worker, "u", &paths, &[], Limits::default(), Scope::User, vec!["bash".into()])
+            .unwrap().spec.render().unwrap();
+        assert!(!a.iter().any(|x| x.ends_with("/.git")), "nothing to bind: {a:?}");
     }
 }
