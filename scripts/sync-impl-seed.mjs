@@ -9,8 +9,12 @@
 // the before/after sizes so the direction of the change is visible before it is trusted.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-const BSC = process.env.BSC_BIN ?? "C:/Users/Kevin/Projects/rust/base-studio-code/target/release/bsc.exe";
+// #139: the Windows dev-box fallback path was dead since the linux-host migration — this repo's own
+// scripts run with $BSC_BIN set, so the fallback only ever fires from a bare shell, where the bundled
+// binary's real home (`census-claims.mjs`'s own fallback) is the honest guess.
+const BSC = process.env.BSC_BIN ?? join(process.env.HOME ?? "", ".base-studio-code", "bin", "bsc");
 const SEED = "src-tauri/data/knowledge/algorithms.json";
 const APPLY = process.argv.includes("--apply");
 const IDS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
