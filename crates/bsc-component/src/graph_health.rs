@@ -1489,6 +1489,86 @@ fn signature_props(src: &str, name: &str) -> Option<SignatureProps> {
     Some(SignatureProps { names, has_rest })
 }
 
+/// Every `import { a, b, … } from "spec"` statement in `source`, paired as (spec, bound names) — the
+/// evidence [`reimplemented-component`] (#130) uses to tell a genuine local re-declaration from a node
+/// that legitimately AGGREGATES sibling declarations under its own registered `provides`: if some OTHER
+/// component in the graph demonstrably imports the colliding name from THIS node's own `provides`, this
+/// node is the graph's VERIFIED provider of that name, not a stub competing with the real thing —
+/// exactly backwards from what the finding accuses it of.
+///
+/// `Foo as Bar` binds the EXPORTED name (`Foo`), not the local alias, since it's the exported identifier
+/// a collision is keyed on. A default or `* as X` namespace import contributes nothing — only a named
+/// (braced) clause can unambiguously name a single symbol.
+///
+/// Same statement-detection rule as [`imported_identifiers`] (line-initial `import `, then the first
+/// ` from `) — deliberately loose in the same direction: a missed pairing only costs a name-only finding
+/// staying as conservative as it always was, never a false suppression from thin air.
+fn named_import_clauses(source: &str) -> Vec<(String, BTreeSet<String>)> {
+    let mut out = Vec::new();
+    for line_start in source.match_indices("import ").map(|(i, _)| i) {
+        let before = source[..line_start].chars().rev().take_while(|c| !matches!(c, '\n')).all(char::is_whitespace);
+        if !before {
+            continue;
+        }
+        let rest = &source[line_start..];
+        let Some(from_at) = rest.find(" from ") else { continue };
+        let header = &rest[..from_at];
+        let (Some(open), Some(close)) = (header.find('{'), header.rfind('}')) else {
+            continue; // no named clause — a default/namespace-only import names nothing to compare
+        };
+        let names: BTreeSet<String> = header[open + 1..close]
+            .split(',')
+            .filter_map(|entry| {
+                let entry = entry.trim().strip_prefix("type ").unwrap_or(entry.trim()).trim();
+                entry.split_whitespace().next().map(str::to_string)
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
+        if names.is_empty() {
+            continue;
+        }
+        let after_from = &rest[from_at + " from ".len()..];
+        let Some(quote) = after_from.chars().next().filter(|c| matches!(c, '"' | '\'')) else { continue };
+        let Some(end) = after_from[1..].find(quote) else { continue };
+        out.push((after_from[1..1 + end].to_string(), names));
+    }
+    out
+}
+
+/// The minimum prop-name Jaccard overlap for a name collision to read as the SAME component rather than
+/// two different components that happen to share a generic English word (#130). Mirrors `near-duplicate`'s
+/// own contract bar (`DUPLICATE_CONTRACT`, similarity.rs) at the same value: below it, two colliding
+/// declarations disagree on their contract more than they agree, which reads as "different component,
+/// coincidental name" rather than "the same thing, redeclared".
+const REIMPL_CONTRACT_MIN: f64 = 0.5;
+
+/// Prop-name Jaccard between the LOCAL redeclaration of `name` inside `src` and `target_props` (the
+/// colliding node's own recorded signature) — the second dimension [`reimplemented-component`] (#130)
+/// needs so a bare identifier match on a generic word (`Avatar`, `Field`, `Card`, …) doesn't fire just
+/// because two UNRELATED components happen to share it: the chart/bot-glyph `Avatar({login,size,bot})`
+/// and the GitHub-login `Avatar({login,size,palette,bordered,ml,fontScale})` share a name and little else
+/// (2/7 ≈ 0.29, well under the bar).
+///
+/// `None` when either side carries no confident signal — an unparseable local declaration, a confidently
+/// no-prop local stub, or a target with no recorded `props` (most composite/aggregate records don't carry
+/// prop metadata at all) — so the caller falls back to the old name-only behavior rather than guess.
+/// Conservative in the SAME direction as the rest of this check: a missing signal must never manufacture
+/// a suppression, only a genuinely LOW-overlap comparison does.
+fn contract_overlap(src: &str, name: &str, target_props: &[(String, String)]) -> Option<f64> {
+    if target_props.is_empty() {
+        return None;
+    }
+    let local = signature_props(src, name)?;
+    if local.names.is_empty() {
+        return None;
+    }
+    let target_names: BTreeSet<&str> = target_props.iter().map(|(n, _)| n.as_str()).collect();
+    let local_names: BTreeSet<&str> = local.names.iter().map(String::as_str).collect();
+    let inter = local_names.intersection(&target_names).count() as f64;
+    let union = local_names.union(&target_names).count() as f64;
+    Some(if union == 0.0 { 0.0 } else { inter / union })
+}
+
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
     let s = src_text.trim();
     if s.is_empty() || !contains_word(s, "export") || has_code_elision(s) {
@@ -2825,12 +2905,38 @@ fn analyze_kit(
     // Conservative, matching its sibling: EXACT whole-identifier declaration, on the source the preview
     // builds, never self, and SKIPPED when the source already imports that identifier (a component may
     // legitimately re-export or alias). Mirrors graphHealth.ts.
+    //
+    // NAME ALONE IS TOO WEAK A SIGNAL (#130, filed by the react designer after investigating all 6 live
+    // findings in depth): 5 of 6 were a name COINCIDENCE, not a re-declaration. Two further guards, each
+    // independently sufficient to clear a candidate:
+    //   • VERIFIED PROVIDER — some OTHER node in the graph demonstrably imports the exact colliding name
+    //     from `n`'s own `provides`. That's the ConsoleStates/Charts shape: a multi-export module
+    //     concatenates (or aggregates) sibling declarations that are ALSO catalogued as their own separate
+    //     nodes, and `PaneAt`/`fleetpage`/etc. genuinely import `DisabledConsole`/`Avatar`/`ItemBars`/…
+    //     from the aggregate's own specifier — so the aggregate IS the real, resolved provider, not a stub
+    //     competing with one.
+    //   • CONTRACT MISMATCH — the local declaration's own prop signature and the colliding node's recorded
+    //     `props` disagree more than they agree (`contract_overlap` < [`REIMPL_CONTRACT_MIN`]), the
+    //     RangeToggle/SoundsInspector shape: a chart's bot-glyph `Avatar` and a key-value row's `Field` are
+    //     different components that happen to share a generic English word with an unrelated sibling.
     {
+        // Real-import evidence, computed ONCE across the whole graph rather than re-scanned per
+        // candidate: every named binding `{ a, b } from "spec"` any node's own source carries.
+        let mut named_imports_by_spec: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for t in nodes {
+            for (spec, names) in named_import_clauses(&t.src_text) {
+                named_imports_by_spec.entry(spec).or_default().extend(names);
+            }
+        }
         for n in nodes {
             let Some(src) = own_module_source(n, &kit_targets) else {
                 continue;
             };
             let imported = imported_identifiers(src);
+            let verified_provider = |name: &str| {
+                !n.provides.is_empty()
+                    && named_imports_by_spec.get(&n.provides).is_some_and(|names| names.contains(name))
+            };
             // SAME-FILE siblings are not stubs (#3895). Several nodes are routinely extracted from ONE
             // module — `AgentFace` and `TeamsCanvas` both come from TeamsCanvas.tsx — so that module's
             // closure legitimately CONTAINS both declarations. Flagging them would demand an import of the
@@ -2838,8 +2944,10 @@ fn analyze_kit(
             let mut recoded: Vec<&str> = nodes
                 .iter()
                 .filter(|t| t.name != n.name && (n.src.is_empty() || t.src != n.src))
+                .filter(|t| declares_symbol(src, &t.name) && !imported.contains(t.name.as_str()))
+                .filter(|t| !verified_provider(&t.name))
+                .filter(|t| contract_overlap(src, &t.name, &t.props).is_none_or(|o| o >= REIMPL_CONTRACT_MIN))
                 .map(|t| t.name.as_str())
-                .filter(|name| declares_symbol(src, name) && !imported.contains(*name))
                 .collect();
             if recoded.is_empty() {
                 continue;
@@ -4603,6 +4711,79 @@ export function TeamsCanvas(){ return <AgentFace/>; }" }),
         assert!(
             !analyze(&comps).iter().any(|f| f.category == "reimplemented-component"),
             "a same-file extraction is not a stub"
+        );
+    }
+
+    #[test]
+    fn does_not_flag_an_aggregate_whose_local_names_are_demonstrably_imported_from_its_own_provides() {
+        // bsc request #130 (ConsoleStates/Charts): a multi-export module concatenates (or aggregates)
+        // sibling declarations that are ALSO catalogued as their own separate nodes with a DIFFERENT
+        // `src` (so the same-file guard above cannot see it). That alone used to false-positive — but
+        // some OTHER real component demonstrably imports the exact colliding name from the aggregate's
+        // own `provides`, which makes the aggregate the graph's VERIFIED provider, not a stub.
+        let comps = [
+            json!({ "id":"console-states", "name":"ConsoleStates", "kitId":"react-ui", "role":"composite",
+                    "used":1, "provides":"@/components/console-states",
+                    "srcText":"export function DisabledConsole({onEnable}){ return <button onClick={onEnable}/>; }" }),
+            json!({ "id":"disabledconsole", "name":"DisabledConsole", "kitId":"react-ui", "role":"primitive",
+                    "used":1, "provides":"@/components/disabledconsole",
+                    "props":[{"name":"onEnable","type":"function"}] }),
+            json!({ "id":"pane-at", "name":"PaneAt", "kitId":"react-ui", "role":"composite", "used":1,
+                    "composes":["ConsoleStates"],
+                    "srcText":"import { DisabledConsole } from \"@/components/console-states\";
+export function PaneAt(){ return <DisabledConsole onEnable={()=>{}}/>; }" }),
+        ];
+        assert!(
+            !analyze(&comps).iter().any(|f| f.category == "reimplemented-component"),
+            "a real import from the aggregate's own `provides` clears it: {:?}",
+            analyze(&comps)
+        );
+    }
+
+    #[test]
+    fn does_not_flag_a_name_collision_with_a_different_prop_contract() {
+        // bsc request #130 (RangeToggle/SoundsInspector): a locally-declared `Avatar({login,size,bot})`
+        // — the chart's bot-glyph avatar — shares a generic name with an unrelated `Avatar` sibling
+        // (the GitHub-login avatar, `{login,size,palette,bordered,ml,fontScale}`), but nothing imports
+        // that name from either component's `provides`. Investigating all 6 live findings against the
+        // real library found 5 of 6 were exactly this: a name coincidence, not a re-declaration — so a
+        // confidently LOW prop-name overlap must clear the finding too.
+        let comps = [
+            json!({ "id":"ui-avatar", "name":"Avatar", "kitId":"react-ui", "role":"primitive", "used":3,
+                    "provides":"@/components/ui-avatar",
+                    "props":[{"name":"login","type":"string"},{"name":"size","type":"number"},
+                             {"name":"palette","type":"boolean"},{"name":"bordered","type":"boolean"},
+                             {"name":"ml","type":"number"},{"name":"fontScale","type":"number"}] }),
+            json!({ "id":"rangetoggle", "name":"RangeToggle", "kitId":"react-ui", "role":"primitive", "used":2,
+                    "provides":"@/shared/ui/charts/primitives",
+                    "srcText":"function Avatar({login,size,bot}){ return <span>{login}{size}{bot}</span>; }
+export function RangeToggle(){ return <Avatar login=\"x\" size={20} bot/>; }" }),
+        ];
+        let fs = analyze(&comps);
+        assert!(
+            !fs.iter().any(|f| f.category == "reimplemented-component"),
+            "a confidently different prop contract reads as a name coincidence, not a duplicate: {fs:?}"
+        );
+    }
+
+    #[test]
+    fn still_flags_a_high_contract_overlap_with_no_verified_provider() {
+        // The contract check must only SUPPRESS on a confident MISMATCH — a colliding name whose props
+        // genuinely agree (and that nothing else demonstrably imports from the redeclaring node's own
+        // `provides`) stays a real reimplemented-component finding, exactly as before #130.
+        let comps = [
+            json!({ "id":"ui-field", "name":"Field", "kitId":"react-ui", "role":"primitive", "used":3,
+                    "provides":"@/components/ui-field",
+                    "props":[{"name":"label","type":"ReactNode"},{"name":"value","type":"string"}] }),
+            json!({ "id":"other-inspector", "name":"OtherInspector", "kitId":"react-ui", "role":"composite",
+                    "used":2, "provides":"@/features/other/OtherInspector",
+                    "srcText":"function Field({label,value}){ return <span>{label}{value}</span>; }
+export function OtherInspector(){ return <Field label=\"k\" value=\"v\"/>; }" }),
+        ];
+        let fs = analyze(&comps);
+        assert!(
+            fs.iter().any(|f| f.category == "reimplemented-component" && f.node_names == ["OtherInspector"]),
+            "a matching contract with no verified provider is still a real duplicate: {fs:?}"
         );
     }
 
