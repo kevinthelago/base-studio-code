@@ -131,13 +131,28 @@ pub fn apply(
     }
     if !ack.woke {
         // The whole point of carrying the boolean: the PTY is already dead by now.
-        return Err(format!(
-            "fleet wake: the app could not wake '{}' — it resolved to no open tab, or is disabled. \
-             Its session may now be stopped; `bsc fleet list` shows the current state.",
-            req.pane_id
-        ));
+        return Err(unresolved_wake_message(&req.pane_id));
     }
     Ok(bsc_fleet::WakeResult { pane_id: req.pane_id.clone(), woke: true, was_busy })
+}
+
+/// The FALLBACK refusal message — reached only when the frontend answered `woke: false` with no
+/// `ack.error`, i.e. it could not name a reason (an app build older than
+/// `a-refused-wake-must-name-which-condition-refused-it`, or a bridge exception before it reached
+/// `refusalReason`). The named-cause path is normal now; this is what is left over.
+///
+/// Request #133 (network-monitor:director) is this string, quoted verbatim, from a director stuck
+/// retrying a wake for five-plus minutes: "the app could not wake ... it resolved to no open tab, or is
+/// disabled". `a-wake-revives-a-disabled-pane` fixed the *cause* — DISABLED no longer refuses a wake, it
+/// revives one — but left this sentence still claiming disabled panes as a possible cause, which is now
+/// simply wrong and would send the next reader chasing a condition that cannot happen. Say what remains
+/// instead: no owning tab to recreate, or a stream neither the roster nor plan.db names.
+fn unresolved_wake_message(pane_id: &str) -> String {
+    format!(
+        "fleet wake: the app could not wake '{pane_id}' and did not say why — it resolved to no open \
+         tab it could recreate, or to a stream neither the roster nor plan.db names. `bsc fleet list` \
+         shows the current state; `bsc plan fleet get` shows what plan.db knows about this stream."
+    )
 }
 
 /// Split a WORKER pane id into `(project key, stream id)`, or `None` when it is not one.
@@ -413,6 +428,22 @@ mod tests {
         // Worded to match `fleet start`'s error for the identical failure, so one cause does not read
         // as two different bugs depending on which verb hit it.
         assert!(msg.contains("could not create the worktree for stream"));
+    }
+
+    // ── the fallback refusal must not claim a cause that can no longer happen (#133) ──
+
+    #[test]
+    fn the_fallback_wake_message_no_longer_blames_a_disabled_pane() {
+        // `a-wake-revives-a-disabled-pane` made DISABLED a REVIVED case, not a refused one, so a
+        // sentence that still lists it as a possible reason a wake failed is actively misleading —
+        // exactly what sent request #133's director in circles for five-plus minutes.
+        let msg = unresolved_wake_message("network-monitor:domain-model-and-adapter-traits");
+        assert!(
+            !msg.to_lowercase().contains("disabled"),
+            "a disabled pane is revived, not refused, so the fallback must not name it: {msg}"
+        );
+        assert!(msg.contains("network-monitor:domain-model-and-adapter-traits"), "names the pane");
+        assert!(msg.contains("bsc fleet list"), "points at how to check current state");
     }
 
     /// An ack delivers to exactly its own waiter and is consumed — two wakes in flight must not cross,

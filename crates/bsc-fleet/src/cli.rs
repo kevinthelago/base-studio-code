@@ -225,9 +225,13 @@ REFUSES a BUSY pane unless --force. Waking KILLS the PTY before relaunching, so 
 that is mid-task is a deliberate act, not something to do by accident. `bsc fleet list` shows which
 panes are busy.
 
-The reply carries whether the wake actually landed. A pane the app cannot resolve (or one the user
-disabled) reports an ERROR rather than success — the wake path kills first, so a false success would
-leave a dead worker behind a caller that believes it is running.
+A DISABLED pane (one a person turned off via the Console pane menu, or that a session-end used to set)
+is REVIVED, not refused — ending a session no longer keeps the director from waking it back up.
+
+The reply carries whether the wake actually landed. A pane the app cannot resolve — no open tab left to
+recreate it in, or a stream neither the roster nor plan.db names — reports an ERROR rather than success,
+naming which of the two it was. The wake path kills first, so a false success would leave a dead worker
+behind a caller that believes it is running.
 
 Requires the desktop app: waking is frontend state, so only the app can do it.",
 }];

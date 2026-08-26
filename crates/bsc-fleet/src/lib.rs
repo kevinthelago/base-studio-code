@@ -235,10 +235,12 @@ pub struct WakeRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WakeResult {
     pub pane_id: String,
-    /// `wakePane`'s own verdict. FALSE means the pane could not be resolved or is disabled — and it
-    /// must reach the caller as an error, because the wake path kills the PTY BEFORE relaunching: a
-    /// false reported as success leaves a dead worker and a caller who believes it is running. That
-    /// was #4025, where the Wake button killed every parked worker silently for exactly this reason.
+    /// `wakePane`'s own verdict. FALSE means the pane could not be resolved — no open tab left to
+    /// recreate it in, or a stream neither the roster nor plan.db names. (A DISABLED pane is REVIVED,
+    /// not a cause of FALSE — `a-wake-revives-a-disabled-pane`.) It must reach the caller as an error,
+    /// because the wake path kills the PTY BEFORE relaunching: a false reported as success leaves a
+    /// dead worker and a caller who believes it is running. That was #4025, where the Wake button
+    /// killed every parked worker silently for exactly this reason.
     pub woke: bool,
     /// Whether the pane had something running when the wake landed — so an interrupt is visible in the
     /// reply rather than inferred.
