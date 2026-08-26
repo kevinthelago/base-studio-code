@@ -980,11 +980,18 @@ pub(crate) fn pane_liveness(pane_ids: Vec<String>, state: &PtyState) -> Vec<bsc_
         ids.iter().map(|id| sessions.contains_key(id)).collect()
     };
     let busy = busy::shells_with_descendants(&pids);
+    // A SECOND, narrower probe (#fleet-list-reports-whether-the-agent-is-running). `busy` answers "may
+    // I type here" and stays broad on purpose; this answers "is the agent working", which is what the
+    // fleet table reports. They differ on exactly the panes that matter: a sandboxed pane is `busy` at
+    // a bare prompt (its own `bwrap` and the shell inside are descendants), and a shell mid-build is
+    // busy with no agent at all.
+    let agent = busy::shells_with_agents(&pids);
     ids.into_iter()
         .zip(live)
         .zip(busy)
+        .zip(agent)
         .zip(pids)
-        .map(|(((pane_id, live), busy), pid)| bsc_fleet::PaneLive { pane_id, live, busy, pid })
+        .map(|((((pane_id, live), busy), agent), pid)| bsc_fleet::PaneLive { pane_id, live, busy, agent, pid })
         .collect()
 }
 

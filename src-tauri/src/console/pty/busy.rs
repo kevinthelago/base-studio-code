@@ -81,6 +81,75 @@ fn is_descendant_of(start: Pid, root: Pid, procs: &HashMap<Pid, Process>) -> boo
 ///
 /// Returns a parallel `Vec<bool>` so the caller can zip it back onto its own keys. Refreshes the
 /// full process table once — the whole point of taking a batch.
+/// Is this process an AGENT — the thing whose absence makes a pane idle to a director?
+///
+/// A DIFFERENT QUESTION from [`shells_with_descendants`], deliberately kept apart. That one asks "may
+/// I type at this prompt", and its answer must stay broad: a shell mid-build has no prompt to type at
+/// either. This one asks "is the work actually being done", which is what `bsc fleet list` reports and
+/// what it was getting wrong — its help claimed "the agent is that child", and on a sandboxed pane the
+/// child is `bwrap`, then another `bwrap`, then a bare `/bin/bash -i`.
+///
+/// Matched on the NAME and on argv, because a real install is one of several shapes. Observed on this
+/// machine and on the survey `IGNORED_DESCENDANTS` came from:
+///
+///   claude --model sonnet --continue        a direct binary        → name
+///   node …/@anthropic-ai/claude-code/cli.js an npx-style install   → argv
+///   bsc-agent …                             the model-agnostic run → name
+///
+/// The argv arm is what makes the wrapper case work, and it is why this is not simply a name test: a
+/// node-hosted agent presents as `node`, which no name list can distinguish from any other node.
+///
+/// PURE, over `(name, argv)`, so every shape above is unit-testable without a live process table.
+pub(crate) fn is_agent_process(name: &str, argv: &[String]) -> bool {
+    let base = |s: &str| {
+        s.rsplit(['/', '\\']).next().unwrap_or(s).trim_end_matches(".exe").to_ascii_lowercase()
+    };
+    const AGENTS: &[&str] = &["claude", "bsc-agent"];
+    if AGENTS.contains(&base(name).as_str()) {
+        return true;
+    }
+    // A wrapper: the agent is named in the ARGUMENTS rather than in the process name. `cli.js` alone
+    // is far too generic to match on, so it counts only under a claude-ish path — and argv[0] is
+    // skipped because it is the interpreter, which is exactly what we already failed to recognise.
+    argv.iter().skip(1).any(|a| {
+        let b = base(a);
+        AGENTS.contains(&b.as_str()) || (b == "cli.js" && a.to_ascii_lowercase().contains("claude"))
+    })
+}
+
+/// Which shells have an AGENT among their descendants — the fleet table's `running` vs `idle`.
+///
+/// Same walk as [`shells_with_descendants`] and the same cost, on the same refreshed snapshot when the
+/// caller asks for both. The ROOT is included in the test, unlike the busy walk: a pane launched
+/// straight into the agent (no wrapping shell) has the agent AS its session process, and excluding the
+/// root would report that pane idle while it works.
+pub(crate) fn shells_with_agents(shell_pids: &[Option<u32>]) -> Vec<bool> {
+    if shell_pids.iter().all(|p| p.is_none()) {
+        return vec![false; shell_pids.len()];
+    }
+    let mut sys = System::new();
+    // `cmd()` is needed here (the wrapper arm reads argv), so this refresh asks for more than the busy
+    // walk's `nothing()` — still no memory or CPU sampling.
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always));
+    let procs = sys.processes();
+
+    shell_pids
+        .iter()
+        .map(|maybe| {
+            let Some(pid) = maybe else { return false };
+            let root = Pid::from(*pid as usize);
+            procs.iter().any(|(&p, proc_)| {
+                if p != root && !is_descendant_of(p, root, procs) {
+                    return false;
+                }
+                let argv: Vec<String> =
+                    proc_.cmd().iter().map(|s| s.to_string_lossy().into_owned()).collect();
+                is_agent_process(&proc_.name().to_string_lossy(), &argv)
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
     // Nothing to ask about — skip the (comparatively expensive) process walk entirely.
     if shell_pids.iter().all(|p| p.is_none()) {
@@ -108,6 +177,66 @@ pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── the AGENT predicate (#fleet-list-reports-whether-the-agent-is-running) ──────────────────
+    //
+    // Every shape below was READ OFF THIS MACHINE while the bug was live, not invented: the director
+    // pane ran `claude --model sonnet --continue`, and the worker pane that reported `running` was
+    // `bwrap → bwrap → /bin/bash -i` with no agent anywhere in it.
+
+    fn argv(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_direct_agent_is_recognised_by_name() {
+        assert!(is_agent_process("claude", &argv(["claude", "--model", "sonnet", "--continue"].as_ref())));
+        assert!(is_agent_process("claude.exe", &argv(["claude.exe"].as_ref())));
+        assert!(is_agent_process("bsc-agent", &argv(["bsc-agent", "--provider", "openai"].as_ref())));
+    }
+
+    #[test]
+    fn a_wrapper_hosting_the_agent_is_recognised_by_its_arguments() {
+        // The npx-style install the `IGNORED_DESCENDANTS` survey found: the process is `node`, which
+        // no name list can tell from any other node — the agent is named in argv.
+        assert!(is_agent_process(
+            "node",
+            &argv(["node", "/home/u/.npm/_npx/@anthropic-ai/claude-code/cli.js", "--continue"].as_ref()),
+        ));
+        assert!(is_agent_process("node", &argv(["node", "/opt/bin/claude"].as_ref())));
+    }
+
+    #[test]
+    fn the_shells_and_the_sandbox_plumbing_are_not_agents() {
+        // THE REPORTED BUG, as a unit test. A sandboxed pane is `bwrap → bwrap → bash -i`; every one
+        // of those is a descendant, so `shells_with_descendants` says busy and the table said running.
+        assert!(!is_agent_process("bwrap", &argv(["/usr/bin/bwrap", "--unshare-all", "--share-net"].as_ref())));
+        assert!(!is_agent_process("bash", &argv(["/bin/bash", "-i"].as_ref())));
+        assert!(!is_agent_process("bash", &argv(["/bin/bash"].as_ref())));
+    }
+
+    #[test]
+    fn an_ordinary_workload_is_busy_but_is_not_an_agent() {
+        // The other half of why these are two probes: a shell mid-build must stay BUSY (Resume must
+        // not type into it) while reading as no-agent (a director should see `idle` and wake it).
+        assert!(!is_agent_process("cargo", &argv(["cargo", "build", "--release"].as_ref())));
+        assert!(!is_agent_process("git", &argv(["git", "push"].as_ref())));
+        assert!(!is_agent_process("node", &argv(["node", "scripts/emit-records.mjs"].as_ref())));
+    }
+
+    #[test]
+    fn a_generic_cli_js_does_not_pass_on_its_name_alone() {
+        // `cli.js` is far too common to match by itself — it counts only under a claude-ish path.
+        assert!(!is_agent_process("node", &argv(["node", "/home/u/some-tool/cli.js"].as_ref())));
+    }
+
+    #[test]
+    fn the_interpreter_in_argv0_never_makes_a_process_an_agent() {
+        // argv[0] is skipped on purpose: matching it would make `/usr/bin/claude-something` or a shell
+        // invoked FROM a claude path read as the agent itself.
+        assert!(!is_agent_process("sh", &argv(["/home/u/claude/bin/sh", "-c", "echo hi"].as_ref())));
+    }
+
 
     /// Both directions, against the SAME spawned process, in one test.
     ///
