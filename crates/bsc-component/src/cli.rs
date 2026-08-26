@@ -4104,6 +4104,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // mentioning four live collisions. Reported in BOTH places now; `dupes` keeps it because that is
     // where the keeper recommendation belongs.
     findings.extend(crate::similarity::provides_collision_findings(&comps));
+    // #129: the mirror case — records that disagree about a shared `src_path`'s specifier rather than
+    // colliding on one. Same rationale for appearing in both `dupes` and `doctor` as the collision
+    // finding above: `dupes` is the propose-a-merge surface, `doctor` is the health check people run.
+    findings.extend(crate::similarity::provides_split_findings(&comps));
     if motion {
         // #3163: append the motion findings (re-ranked with the render errors below).
         findings.extend(crate::graph_health::analyze_motion(&comps));
@@ -4200,6 +4204,7 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
     // Conflicts first (#4138 — a `provides` collision has a definite answer), then exact duplicates
     // (certain — shared wraps / byte-identical), then the ranked near-duplicates.
     let mut findings: Vec<crate::graph_health::Finding> = crate::similarity::provides_collision_findings(&comps);
+    findings.extend(crate::similarity::provides_split_findings(&comps));
     findings.extend(
         crate::graph_health::analyze(&comps).into_iter().filter(|f| f.category == "duplicate"),
     );
@@ -4316,16 +4321,17 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
             if into.is_empty() { String::new() } else { format!(", superseded by `{into}`") },
         );
     }
-    // A record harvested from the target's own source file is withheld from the ranking (it is the same
-    // file, not something to merge into — `similarity::module_and_its_harvest`). SAY SO: an unexplained
-    // absence in a ranked list reads as "nothing resembles it", which is the same failure the retired-
-    // record note above exists to prevent. Shape mode scores a different measure and does not withhold.
+    // A record harvested from the target's own source file — or from a barrel/submodule the target is
+    // (transitively) part of — is withheld from the ranking (it is the same module wearing another id,
+    // not something to merge into — `similarity::harvest_families`). SAY SO: an unexplained absence in a
+    // ranked list reads as "nothing resembles it", which is the same failure the retired-record note
+    // above exists to prevent. Shape mode scores a different measure and does not withhold.
     if !shape && !json {
         let held = crate::similarity::harvest_siblings_of(&id, &comps);
         if !held.is_empty() {
             println!(
-                "note: {} record(s) harvested from the same source file are not listed ({}) — they are \
-                 views of one module, not duplicates of it.",
+                "note: {} record(s) in the same module/harvest family are not listed ({}) — they are \
+                 views of one module (or of a barrel that re-exports it), not duplicates of it.",
                 held.len(),
                 held.join(", "),
             );
