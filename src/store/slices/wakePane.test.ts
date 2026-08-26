@@ -51,9 +51,16 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     expect(useAppStore.getState().paneStartupPromptText[PANE]).toBe("pick it back up");
   });
 
-  it("still refuses a pane the user PAUSED — a director must not override that", () => {
+  it("revives a pane that was DISABLED, and clears the flag", () => {
+    // Maintainer's call (2026-08-26) after being blocked three times: "end session simply closes it
+    // and doesn't prevent the director from re-starting it". The refusal's rationale — "the user
+    // turned that cell off deliberately" — did not survive how the flag is actually reached: the
+    // Glance End button set it, it persists across restarts, and only a Console pane-menu toggle
+    // clears it, which a director cannot reach. A wake is one explicit, targeted act; if a pane
+    // should stay off, do not wake it.
     useAppStore.setState({ disabledPanes: { [PANE]: true }, dormantPanes: {} });
-    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(false);
+    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(true);
+    expect(useAppStore.getState().disabledPanes[PANE]).toBeUndefined();
   });
 
   it("clears dormant so a REAPED pane comes back as a terminal, not the placeholder", () => {
@@ -72,8 +79,13 @@ describe("wakePane resolves a pane by IDENTITY (#4025)", () => {
     expect(useAppStore.getState().wakePane("other-project:ghost", "x")).toBe(false);
   });
 
-  it("refuses a DISABLED pane — the user turned that cell off deliberately", () => {
+  it("revives a DISABLED pane rather than refusing it", () => {
+    // The original rationale — "the user turned that cell off deliberately" — is superseded
+    // (maintainer, 2026-08-26). It made `disabledPanes` a permanent state no director could leave:
+    // the Glance End button set it, it survives restarts, and only a Console pane-menu toggle clears
+    // it. A wake is one explicit, targeted act; if a pane should stay off, do not wake it.
     useAppStore.setState({ disabledPanes: { [PANE]: true } });
-    expect(useAppStore.getState().wakePane(PANE, "x")).toBe(false);
+    expect(useAppStore.getState().wakePane(PANE, "x")).toBe(true);
+    expect(useAppStore.getState().disabledPanes[PANE]).toBeUndefined();
   });
 });
