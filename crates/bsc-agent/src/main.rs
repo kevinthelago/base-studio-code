@@ -288,8 +288,9 @@ async fn main() {
     };
     let provider = llm::build_provider(kind, base_url, ollama_profile, num_ctx_cap);
     // Tell the agent loop the model's context budget so it can compact older turns to fit (#1831).
-    std::env::set_var("BSC_AGENT_CONTEXT_BUDGET", provider.context_budget_tokens().to_string());
-    let result = run_with_provider(provider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path).await;
+    let context_budget = provider.context_budget_tokens();
+    std::env::set_var("BSC_AGENT_CONTEXT_BUDGET", context_budget.to_string());
+    let result = run_with_provider(provider, &api_key, &model, &system, &task, mcp_tools, &perms, &tele, &prior, session_path, context_budget).await;
 
     if let Err(e) = result {
         eprintln!("bsc-agent: {e}");
@@ -313,6 +314,7 @@ async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
     tele: &Telemetry,
     prior: &[Msg],
     session_path: Option<&Path>,
+    context_budget: usize,
 ) -> Result<String, String> {
     let provider = Arc::new(provider);
     let mut tools = default_tools(
@@ -330,6 +332,34 @@ async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
     // never echoed at all). Dim, like the rest of the startup banner.
     let tool_names: Vec<&str> = tools.iter().map(|t| t.def.name.as_str()).collect();
     eprintln!("\x1b[2m▸ {} tool(s) available: {}\x1b[0m", tool_names.len(), tool_names.join(", "));
+    // Context-fit check — the ONE place a silent truncation becomes visible.
+    //
+    // Done HERE, after the tools exist, because the tool schemas are part of the fixed prompt and
+    // counting them as free is half of how this was missed. The other half is that the loss is
+    // invisible: Ollama truncates an over-window prompt to HALF the window and answers normally, so
+    // the session looks fine while the model has lost its CLAUDE.md. Nothing downstream can detect
+    // that, which is why the check has to happen before the first request rather than be inferred
+    // from a bad answer later. Not fatal — a truncated session still runs, and refusing to start
+    // would be worse than starting with a warning the user can act on.
+    let tool_defs: Vec<llm::ToolDef> = tools.iter().map(|t| t.def.clone()).collect();
+    let fixed_tokens = llm::estimate_tokens(system) + llm::estimate_tool_tokens(&tool_defs);
+    if let Some(o) = llm::check_context_fit(fixed_tokens, context_budget) {
+        eprintln!(
+            "\x1b[33m▸ WARNING: this session's context does not fit its window — ~{} tokens of system \
+             prompt + tool schemas against a {}-token window.\x1b[0m",
+            o.prompt_tokens, o.window,
+        );
+        eprintln!(
+            "\x1b[33m  The runtime will keep only the LAST ~{} tokens and DISCARD the head — which is \
+             where CLAUDE.md is. Expect the model not to know the project.\x1b[0m",
+            o.kept_tokens,
+        );
+        eprintln!(
+            "\x1b[33m  Fix: raise the per-agent context cap (Settings → LLM provider, or \
+             $BSC_AGENT_NUM_CTX) above ~{}, or trim the session's CLAUDE.md / skills.\x1b[0m",
+            o.prompt_tokens,
+        );
+    }
     // The root session runs in a PTY, so it's INTERACTIVE: after the initial task settles it keeps
     // the session alive and reads further user turns from stdin (Claude-REPL parity), instead of the
     // process exiting after one response and ending the pane. (#1078 interactive mode)
