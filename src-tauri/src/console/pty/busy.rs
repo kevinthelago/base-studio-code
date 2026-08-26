@@ -56,6 +56,64 @@ fn ignored_name(name: &str) -> bool {
     IGNORED_DESCENDANTS.iter().any(|ign| name.eq_ignore_ascii_case(ign))
 }
 
+/// The sandbox's own wrapper processes, which sit BETWEEN the PTY's session process and the pane's
+/// real shell. Compared case-insensitively against the process name.
+///
+/// These are NOT ignorable descendants in the [`IGNORED_DESCENDANTS`] sense — they are not plumbing
+/// hanging off the shell, they are the shell's ANCESTORS, and a pane that has them has them for its
+/// whole life. That is why they need their own treatment: `PtyState` records the pid it spawned,
+/// which for a caged pane is the outermost wrapper, so "does the session process have a descendant"
+/// is answered `true` by the cage itself, before any work exists. MEASURED on the live desktop, on a
+/// pane sitting at an idle prompt with no agent in it:
+///
+/// ```text
+/// 2384280 bwrap                  <- the session pid, what shells_with_descendants was asked about
+///  \_ 2384283 bwrap
+///      \_ 2384284 /bin/bash -i   <- the prompt the user was actually looking at
+/// ```
+///
+/// Two descendants, no work. `planResume` read that as `already-running`, declined to type the
+/// resume in, and `TerminalView` then marked the pane claude-active — so Resume did nothing and the
+/// UI painted a live agent over a bare shell. The sibling predicate [`is_agent_process`] was already
+/// fixed for this exact chain (see its doc, which names it); this is the same blindness in the busy
+/// walk, which is the one Resume consults.
+const SANDBOX_WRAPPERS: &[&str] = &["bwrap", "systemd-run"];
+
+/// Name test for [`SANDBOX_WRAPPERS`], split out so the descent below is unit-testable.
+fn is_wrapper_name(name: &str) -> bool {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name).trim_end_matches(".exe");
+    SANDBOX_WRAPPERS.iter().any(|w| base.eq_ignore_ascii_case(w))
+}
+
+/// Descend from a pane's session process past the cage's wrapper chain to the shell that actually
+/// holds the prompt. Returns `root` unchanged for an uncaged pane, so the host path is untouched.
+///
+/// PURE over two lookups (name, children) so every shape is testable without a live process table.
+///
+/// Stops at the first non-wrapper, and refuses to descend through a wrapper with anything other than
+/// exactly one child: the cage's chain is strictly linear, so a fork means this is not the chain we
+/// think it is, and treating the wrapper as the shell keeps the answer CONSERVATIVE — it reports
+/// busy, so Resume declines rather than typing into something mid-flight, which is the safe
+/// direction the module doc names.
+fn descend_past_wrappers(
+    root: Pid,
+    name_of: impl Fn(Pid) -> Option<String>,
+    children_of: impl Fn(Pid) -> Vec<Pid>,
+) -> Pid {
+    let mut cur = root;
+    for _ in 0..MAX_DEPTH {
+        match name_of(cur) {
+            Some(name) if is_wrapper_name(&name) => {}
+            _ => return cur,
+        }
+        match children_of(cur).as_slice() {
+            [only] => cur = *only,
+            _ => return cur,
+        }
+    }
+    cur
+}
+
 /// Is this process one of the ignored console-plumbing helpers?
 fn is_ignored(procs: &HashMap<Pid, Process>, pid: Pid) -> bool {
     procs.get(&pid).is_some_and(|p| ignored_name(&p.name().to_string_lossy()))
@@ -166,7 +224,13 @@ pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
         .iter()
         .map(|maybe| {
             let Some(pid) = maybe else { return false };
-            let root = Pid::from(*pid as usize);
+            // The pane's REAL shell, which for a caged pane is NOT the pid we spawned — see
+            // `SANDBOX_WRAPPERS`. Uncaged, this is the session pid unchanged.
+            let root = descend_past_wrappers(
+                Pid::from(*pid as usize),
+                |p| procs.get(&p).map(|q| q.name().to_string_lossy().into_owned()),
+                |p| procs.iter().filter(|(_, q)| q.parent() == Some(p)).map(|(&k, _)| k).collect(),
+            );
             procs
                 .keys()
                 .any(|&p| p != root && !is_ignored(procs, p) && is_descendant_of(p, root, procs))
@@ -304,5 +368,119 @@ mod tests {
         let out = shells_with_descendants(&[None, Some(own), None]);
         assert_eq!(out.len(), 3);
         assert!(!out[0] && !out[2]);
+    }
+
+    // ── the CAGE descent (#a-session-with-history-always-resumes) ───────────────────────────────
+    //
+    // The fixture is the real tree, read off the live desktop while the pane the maintainer was
+    // looking at sat at a bare `bash-5.2$`:
+    //
+    //     2384280 bwrap  ->  2384283 bwrap  ->  2384284 /bin/bash -i
+    //
+    // `PtyState` recorded 2384280, so the busy walk asked about the OUTERMOST wrapper and found two
+    // descendants — the cage itself. Resume declined on a pane that had nothing running in it.
+
+    /// A tiny (pid, parent, name) table, so the descent is exercised without a live process table.
+    fn tree(rows: &[(usize, Option<usize>, &str)]) -> Vec<(Pid, Option<Pid>, String)> {
+        rows.iter()
+            .map(|(pid, parent, name)| {
+                (Pid::from(*pid), parent.map(Pid::from), (*name).to_string())
+            })
+            .collect()
+    }
+
+    /// Run the pure descent over a fixture table.
+    fn descend(root: usize, rows: &[(Pid, Option<Pid>, String)]) -> usize {
+        let got = descend_past_wrappers(
+            Pid::from(root),
+            |p| rows.iter().find(|(pid, _, _)| *pid == p).map(|(_, _, n)| n.clone()),
+            |p| rows.iter().filter(|(_, parent, _)| *parent == Some(p)).map(|(pid, _, _)| *pid).collect(),
+        );
+        usize::from(got)
+    }
+
+    #[test]
+    fn the_descent_walks_the_cage_chain_to_the_real_shell() {
+        let t = tree(&[
+            (2384280, None, "bwrap"),
+            (2384283, Some(2384280), "bwrap"),
+            (2384284, Some(2384283), "bash"),
+        ]);
+        assert_eq!(descend(2384280, &t), 2384284, "the prompt is below two bwraps, not at the session pid");
+    }
+
+    /// The systemd scope arm (`sandbox: cgroup caps via the USER systemd scope`) puts one more
+    /// wrapper on top, so the chain length is not something the descent may assume.
+    #[test]
+    fn the_descent_handles_a_systemd_scope_above_the_cage() {
+        let t = tree(&[
+            (100, None, "systemd-run"),
+            (101, Some(100), "bwrap"),
+            (102, Some(101), "bwrap"),
+            (103, Some(102), "bash"),
+        ]);
+        assert_eq!(descend(100, &t), 103);
+    }
+
+    /// An UNCAGED pane must take the exact path it always did — the host session process IS its shell.
+    #[test]
+    fn the_descent_is_a_no_op_for_an_uncaged_pane() {
+        let t = tree(&[(200, None, "bash"), (201, Some(200), "claude")]);
+        assert_eq!(descend(200, &t), 200, "a host shell is never descended past");
+    }
+
+    /// A wrapper that has FORKED is not the linear chain this understands, so the descent stops and
+    /// the walk reports busy — Resume declines rather than typing into something mid-flight.
+    #[test]
+    fn the_descent_refuses_to_guess_through_a_forked_wrapper() {
+        let t = tree(&[
+            (300, None, "bwrap"),
+            (301, Some(300), "bash"),
+            (302, Some(300), "bash"),
+        ]);
+        assert_eq!(descend(300, &t), 300, "ambiguous chain stays conservative");
+    }
+
+    /// A wrapper whose child is gone (the cage tearing down) must not walk off the end.
+    #[test]
+    fn the_descent_stops_at_a_childless_wrapper() {
+        let t = tree(&[(400, None, "bwrap")]);
+        assert_eq!(descend(400, &t), 400);
+    }
+
+    /// The wrapper names are matched the same way the agent names are — basename, case-insensitive,
+    /// `.exe` trimmed — so a path-qualified `/usr/bin/bwrap` is recognised.
+    #[test]
+    fn wrapper_names_are_matched_by_basename() {
+        assert!(is_wrapper_name("bwrap"));
+        assert!(is_wrapper_name("/usr/bin/bwrap"));
+        assert!(is_wrapper_name("BWRAP"));
+        assert!(is_wrapper_name("systemd-run"));
+        for shell in ["bash", "claude", "node", "sh", "zsh", ""] {
+            assert!(!is_wrapper_name(shell), "{shell} is not a cage wrapper");
+        }
+    }
+
+    /// THE REGRESSION, end to end over the pure descent: a caged pane at a prompt has no descendant
+    /// BELOW its real shell, which is what makes `planResume` return `started` for it. Asking about
+    /// the session pid instead finds the cage and calls it busy — the bug.
+    #[test]
+    fn a_caged_pane_at_a_prompt_is_idle_below_its_real_shell() {
+        let t = tree(&[
+            (2384280, None, "bwrap"),
+            (2384283, Some(2384280), "bwrap"),
+            (2384284, Some(2384283), "bash"),
+        ]);
+        let shell = Pid::from(descend(2384280, &t));
+        let has_work = t.iter().any(|(pid, parent, _)| *pid != shell && *parent == Some(shell));
+        assert!(!has_work, "no agent under the shell => the pane is resumable");
+
+        // …and the same tree WITH an agent still reads busy, so the fix cannot make Resume type into
+        // a working session.
+        let mut busy_tree = t.clone();
+        busy_tree.push((Pid::from(2384999), Some(Pid::from(2384284)), "claude".to_string()));
+        let shell = Pid::from(descend(2384280, &busy_tree));
+        let has_work = busy_tree.iter().any(|(pid, parent, _)| *pid != shell && *parent == Some(shell));
+        assert!(has_work, "an agent under the shell => leave it alone");
     }
 }
