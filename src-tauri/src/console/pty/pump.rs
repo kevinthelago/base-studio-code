@@ -7,6 +7,122 @@ use crate::split_utf8_at_boundary;
 use std::io::Read;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// WHY a session ended, in the vocabulary a reader has to act on differently
+/// (#a-stopped-session-says-why).
+///
+/// The distinction that matters is not "did it stop" — the pane going quiet already says that — but
+/// whose problem it is. A launcher failure is the HOST's (a stale scope unit, a bind whose source is
+/// gone, no user systemd); a non-zero exit is the SESSION's; a signal is something outside both; and
+/// an app-closed session is nobody's, because it was deliberate.
+///
+/// Serialized in camelCase because it crosses to the frontend on `pty_exit_<pane>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum EndReason {
+    /// Exit 0. A session that FINISHED. Deliberately its own arm: reporting this as a fault is how
+    /// an observability feature becomes noise the user learns to ignore.
+    Finished,
+    /// A non-zero exit from the thing that ran. The session's own problem.
+    Failed,
+    /// Killed by a fatal signal (the shell's 128+N). Outside the session and outside the app.
+    Signalled,
+    /// `bwrap` / `systemd-run` failed before the shell ever ran — the agent never started.
+    LauncherFailed,
+    /// The app removed the session first: `pty_kill`, a project teardown, app exit.
+    AppClosed,
+    /// The pty closed and we could not learn the status. Named rather than guessed.
+    Unknown,
+}
+
+impl EndReason {
+    /// Is this an outcome the user should be TOLD about, rather than one that is simply normal?
+    /// A finished session and a deliberate close are not faults.
+    pub(crate) fn is_fault(self) -> bool {
+        matches!(self, Self::Failed | Self::Signalled | Self::LauncherFailed | Self::Unknown)
+    }
+}
+
+/// How a session ended — the ONE computation behind the log line, the in-pane cage notice and the
+/// `pty_exit_<pane>` payload.
+///
+/// It used to be three: `reap` read the status, `cage_death_notice` re-derived the signal decode from
+/// it, and `child_outcome` called `try_wait` a SECOND time to build a string for the log. The event
+/// the frontend actually receives carried `()`, so the one consumer that could have shown the user
+/// anything got nothing at all.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionEnd {
+    pub pane_id: String,
+    pub reason: EndReason,
+    /// The raw exit code, when there was one.
+    pub exit_code: Option<u32>,
+    /// The fatal signal, decoded from the shell's 128+N convention.
+    pub signal: Option<u32>,
+    /// The cage this pane ran in, if any — a caged death reads differently from a host one.
+    pub sandbox_role: Option<String>,
+    /// One sentence, already phrased for a human. The banner shows this verbatim.
+    pub detail: String,
+}
+
+/// Decode the shell's 128+N fatal-signal convention. Bounded because a plain exit code can also
+/// exceed 128 — 255 is not "signal 127". The one definition; `child_status_phrase` and
+/// `classify_end` both read it, so the log line and the banner can never disagree.
+pub(super) fn signal_from_code(code: u32) -> Option<u32> {
+    code.checked_sub(128).filter(|n| (1..=64).contains(n))
+}
+
+/// Classify a finished session from the facts the emitter already holds. PURE, so every arm is
+/// testable without a Tauri handle or a real child — which is what `child_outcome` never was.
+///
+/// `removed` means the session was gone from the registry before we looked, which only happens when
+/// the app took it out: that is the answer, not a missing one.
+pub(super) fn classify_end(
+    pane_id: &str,
+    exit: Option<u32>,
+    removed: bool,
+    sandbox_role: Option<&str>,
+    tail: &str,
+) -> SessionEnd {
+    let role = sandbox_role.filter(|r| !r.is_empty()).map(str::to_string);
+    let launcher = role.is_some() && LAUNCHER_MARKERS.iter().any(|m| tail.contains(m));
+    let signal = exit.and_then(signal_from_code);
+
+    let (reason, detail) = if launcher {
+        (EndReason::LauncherFailed, format!(
+            "The sandbox failed to start{}, so the agent never ran. This is a host problem, not a session one.",
+            role.as_deref().map(|r| format!(" for this {r} session")).unwrap_or_default(),
+        ))
+    } else if removed {
+        (EndReason::AppClosed, "Closed by the app — a kill, a project teardown, or app exit.".to_string())
+    } else {
+        match (exit, signal) {
+            (_, Some(sig)) => (EndReason::Signalled, format!("Killed by signal {sig}.")),
+            (Some(0), _) => (EndReason::Finished, "Finished — the agent exited cleanly.".to_string()),
+            (Some(code), _) => (EndReason::Failed, format!(
+                "The agent exited with status {code}{}.",
+                role.as_deref().map(|r| format!(" inside its {r} sandbox")).unwrap_or_default(),
+            )),
+            (None, _) => (EndReason::Unknown, "The terminal closed but the exit status could not be read.".to_string()),
+        }
+    };
+    SessionEnd { pane_id: pane_id.to_string(), reason, exit_code: exit, signal, sandbox_role: role, detail }
+}
+
+/// The `exit=…` phrase the session-ending log line has always carried. Kept byte-identical so the
+/// existing log shape (and anything grepping it) is unchanged, now derived from the classification
+/// rather than from a second `try_wait`.
+pub(super) fn child_status_phrase(end: &SessionEnd) -> String {
+    match end.reason {
+        EndReason::AppClosed => "exit=n/a (session already removed — the app closed it)".into(),
+        EndReason::Unknown => "exit=unknown".into(),
+        _ => match (end.exit_code, end.signal) {
+            (Some(code), Some(sig)) => format!("exit={code} (killed by signal {sig})"),
+            (Some(code), None) => format!("exit={code}"),
+            _ => "exit=unknown".into(),
+        },
+    }
+}
+
 /// How the session's child actually ended, for the one log line that reports a session ending.
 ///
 /// ## The gap this closes
@@ -27,31 +143,18 @@ use tauri::{AppHandle, Emitter, Manager};
 ///
 /// Never panics and never blocks the teardown — every failure degrades to a phrase, because this is
 /// a diagnostic and must not become a way for a session to fail to end.
-fn child_outcome(app: &AppHandle, pane_id: &str) -> String {
-    let Some(state) = app.try_state::<super::PtyState>() else {
-        return "exit=unknown (no session registry)".into();
-    };
-    // Recover from a poisoned lock rather than giving up: a diagnostic that goes silent exactly when
-    // something else has already panicked is worse than useless. Matches `kill_all_pty_sessions`.
-    let mut sessions = state.0.lock().unwrap_or_else(|e| e.into_inner());
-    let Some(session) = sessions.get_mut(pane_id) else {
-        // The session was already removed — `pty_kill`, or a teardown that got here first. That is
-        // itself the answer: the app ended this one deliberately.
-        return "exit=n/a (session already removed — the app closed it)".into();
-    };
-    match session.child.try_wait() {
-        Ok(Some(status)) => {
-            let code = status.exit_code();
-            // A shell reports a fatal signal as 128+N; naming the signal is what turns "137" into
-            // "something SIGKILLed it", which is the distinction this whole helper exists for.
-            match code.checked_sub(128).filter(|n| (1..=64).contains(n)) {
-                Some(sig) => format!("exit={code} (killed by signal {sig})"),
-                None => format!("exit={code}"),
-            }
-        }
-        Ok(None) => "exit=none (child still running at EOF — the pty closed, the process did not)".into(),
-        Err(e) => format!("exit=unknown ({e})"),
-    }
+/// Was this pane's session STILL REGISTERED when we came to report it?
+///
+/// `false` means the app took it out first — `pty_kill`, a project teardown, app exit — which is the
+/// answer rather than a missing one, and is why `classify_end` takes it as a fact instead of
+/// inferring "deliberate" from an absent status.
+///
+/// Recovers from a poisoned lock rather than giving up: a diagnostic that goes silent exactly when
+/// something else has already panicked is worse than useless. Matches `kill_all_pty_sessions`.
+fn session_present(app: &AppHandle, pane_id: &str) -> bool {
+    let Some(state) = app.try_state::<super::PtyState>() else { return false };
+    let sessions = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.contains_key(pane_id)
 }
 
 /// Reader thread: decode PTY bytes and forward complete UTF-8 chunks over `tx`. The `leftover` buffer
@@ -210,7 +313,7 @@ pub(super) fn cage_death_notice(
     let status = match exit {
         // 128+N is how a shell reports a fatal signal; naming it turns 137 into something a reader
         // can act on. Same decode as `child_outcome`, and the test below pins them together.
-        Some(code) => match code.checked_sub(128).filter(|n| (1..=64).contains(n)) {
+        Some(code) => match signal_from_code(code) {
             Some(sig) => format!("exit={code} (killed by signal {sig})"),
             None => format!("exit={code}"),
         },
@@ -324,14 +427,156 @@ pub(super) fn spawn_emitter(
         // launch that died left `[bwrap] <defunct>` for the app's whole lifetime), and it is what
         // makes an exit status readable at all.
         let exit = reap(&app, &pane_id);
+        // ONE classification, three consumers (#a-stopped-session-says-why). The registry probe
+        // happens here, before anything else can remove the session, so "the app closed it" is a
+        // fact observed at the right moment rather than inferred later from a missing status.
+        let end = classify_end(&pane_id, exit, !session_present(&app, &pane_id), sandbox_role.as_deref(), &tail);
         // ...and say so in the pane. A refusal to cage was already legible (`NOT sandboxed: …`);
         // a cage that was built, launched and died was not.
+        //
+        // This stays, and is NOT what the user reads. It lives in the buffer of the thing that just
+        // died: the reported worker was recreated seconds later and the notice went with the old
+        // terminal. It is for whoever is looking AT the pane when it happens; the payload below is
+        // for everyone else.
         if let Some(notice) = cage_death_notice(sandbox_role.as_deref(), exit, &tail) {
             let _ = app.emit(&evt, notice);
         }
-        let _ = app.emit(&format!("pty_exit_{}", pane_id), ());
-        log::info!("pty[{pane_id}] session ended ({total} bytes) · {}", child_outcome(&app, &pane_id));
+        // The payload the frontend needs to say WHY. This used to be `()` — the emitter had the exit
+        // status in hand, spent it on one log line, and handed the one consumer that could show a
+        // user anything an empty tuple.
+        let _ = app.emit(&format!("pty_exit_{}", pane_id), &end);
+        // A FAULT logs at warn, a clean finish at info. The app log is the record that outlives the
+        // banner's five seconds, so the level is what makes `grep WARN` a list of sessions that died
+        // rather than a list of sessions that ended — and 15 endings in one run, 9 of them failures,
+        // is exactly the shape that was previously indistinguishable at a glance.
+        let phrase = child_status_phrase(&end);
+        if end.reason.is_fault() {
+            log::warn!("pty[{pane_id}] session ended ({total} bytes) · {phrase} · {}", end.detail);
+        } else {
+            log::info!("pty[{pane_id}] session ended ({total} bytes) · {phrase}");
+        }
     });
+}
+
+#[cfg(test)]
+mod end_tests {
+    use super::*;
+
+    fn end(exit: Option<u32>, removed: bool, role: Option<&str>, tail: &str) -> SessionEnd {
+        classify_end("proj:stream", exit, removed, role, tail)
+    }
+
+    /// THE REPORTED SHAPE. Nine of the fifteen session endings in one run were `exit=1` on ONE
+    /// worker — not a kill, not a reap, not a signal. The app knew the status every time and the
+    /// event carried `()`, so the user was told nothing.
+    #[test]
+    fn a_nonzero_exit_is_a_failure_that_names_its_status() {
+        let e = end(Some(1), false, Some("worker"), "");
+        assert_eq!(e.reason, EndReason::Failed);
+        assert_eq!(e.exit_code, Some(1));
+        assert_eq!(e.signal, None);
+        assert!(e.reason.is_fault());
+        assert!(e.detail.contains("status 1"), "{}", e.detail);
+        assert!(e.detail.contains("worker sandbox"), "a caged death says so: {}", e.detail);
+    }
+
+    /// A session that FINISHED is not a fault. This is the arm that keeps the banner from becoming
+    /// noise the user learns to ignore — every clean end would otherwise pop one.
+    #[test]
+    fn a_clean_exit_is_finished_not_failed() {
+        let e = end(Some(0), false, Some("worker"), "");
+        assert_eq!(e.reason, EndReason::Finished);
+        assert!(!e.reason.is_fault());
+        assert_eq!(child_status_phrase(&e), "exit=0");
+    }
+
+    /// 128+N is how a shell reports a fatal signal. Naming it is what turns 137 into something a
+    /// reader can act on — and it must beat the plain-failure arm, or every signal would read as
+    /// "exited with status 137".
+    #[test]
+    fn a_signal_is_named_and_outranks_the_plain_failure_arm() {
+        let e = end(Some(137), false, None, "");
+        assert_eq!(e.reason, EndReason::Signalled);
+        assert_eq!(e.signal, Some(9));
+        assert!(e.detail.contains("signal 9"), "{}", e.detail);
+        assert_eq!(child_status_phrase(&e), "exit=137 (killed by signal 9)");
+    }
+
+    /// A plain exit code can exceed 128 — 255 is not "signal 127". The band is bounded, and this is
+    /// the same rule the log line has always used.
+    #[test]
+    fn a_high_exit_code_is_not_mistaken_for_a_signal() {
+        assert_eq!(signal_from_code(255), None);
+        assert_eq!(signal_from_code(128), None);
+        assert_eq!(signal_from_code(129), Some(1));
+        assert_eq!(signal_from_code(192), Some(64));
+        assert_eq!(signal_from_code(193), None);
+        assert_eq!(end(Some(255), false, None, "").reason, EndReason::Failed);
+    }
+
+    /// A LAUNCHER failure is the host's problem and the agent never ran — a different fix from a
+    /// session that started and died, which is the whole reason the two are told apart. It outranks
+    /// the exit code, because bwrap's own status says nothing about the agent.
+    #[test]
+    fn a_launcher_failure_outranks_the_exit_code_and_says_the_agent_never_ran() {
+        let e = end(Some(1), false, Some("worker"), "bwrap: Can't bind mount /nope\n");
+        assert_eq!(e.reason, EndReason::LauncherFailed);
+        assert!(e.detail.contains("never ran"), "{}", e.detail);
+        assert!(e.detail.contains("host problem"), "{}", e.detail);
+    }
+
+    /// A launcher marker only means anything for a CAGED pane. An uncaged session that happens to
+    /// print the word `bwrap:` must not be reported as a sandbox failure it never had.
+    #[test]
+    fn an_uncaged_session_never_reports_a_launcher_failure() {
+        let e = end(Some(1), false, None, "bwrap: not that it matters here\n");
+        assert_eq!(e.reason, EndReason::Failed);
+    }
+
+    /// The app taking the session out first IS the answer, not a missing one — and it must not be
+    /// dressed up as a fault, or every deliberate close would alarm the user.
+    #[test]
+    fn a_session_the_app_removed_is_reported_as_deliberate() {
+        let e = end(Some(1), true, Some("worker"), "");
+        assert_eq!(e.reason, EndReason::AppClosed);
+        assert!(!e.reason.is_fault());
+        assert_eq!(child_status_phrase(&e), "exit=n/a (session already removed — the app closed it)");
+    }
+
+    /// An unreadable status is NAMED rather than guessed. It is still a fault: the pty closed and we
+    /// cannot say the session finished.
+    #[test]
+    fn an_unreadable_status_is_named_not_guessed() {
+        let e = end(None, false, None, "");
+        assert_eq!(e.reason, EndReason::Unknown);
+        assert!(e.reason.is_fault());
+        assert_eq!(child_status_phrase(&e), "exit=unknown");
+    }
+
+    /// The payload crosses to the frontend, so its wire shape is part of the contract — a renamed
+    /// field or a re-spelled variant silently stops the banner from rendering.
+    #[test]
+    fn the_payload_wire_shape_is_stable() {
+        let json = serde_json::to_value(end(Some(137), false, Some("worker"), "")).unwrap();
+        assert_eq!(json["paneId"], "proj:stream");
+        assert_eq!(json["reason"], "signalled");
+        assert_eq!(json["exitCode"], 137);
+        assert_eq!(json["signal"], 9);
+        assert_eq!(json["sandboxRole"], "worker");
+        assert!(json["detail"].as_str().is_some_and(|d| !d.is_empty()));
+        assert_eq!(serde_json::to_value(end(Some(1), false, Some("w"), "bwrap: x")).unwrap()["reason"],
+                   "launcher-failed", "kebab-case, as the frontend union spells it");
+    }
+
+    /// The log phrase is unchanged from what `child_outcome` produced, so anything grepping the app
+    /// log still matches. Pinned because the string moved to a new derivation.
+    #[test]
+    fn the_log_phrase_is_byte_identical_to_what_it_replaced() {
+        assert_eq!(child_status_phrase(&end(Some(1), false, None, "")), "exit=1");
+        assert_eq!(child_status_phrase(&end(Some(137), false, None, "")), "exit=137 (killed by signal 9)");
+        assert_eq!(child_status_phrase(&end(Some(1), true, None, "")),
+                   "exit=n/a (session already removed — the app closed it)");
+    }
 }
 
 #[cfg(test)]
@@ -444,23 +689,41 @@ mod cage_death_tests {
         assert!(n.contains("exit=137 (killed by signal 9)"), "{n}");
     }
 
-    /// The decode must match `child_outcome`'s, or the pane and the log disagree about the same
-    /// death. Pinned against the shipped source, the way `outcome_tests` already does.
+    /// The signal decode must exist ONCE, and every consumer must call it.
     ///
-    /// Asserted PER FUNCTION rather than by counting occurrences: the first draft counted them and
-    /// got 5, not 2, because the test's own string literals count too. A guard whose number is
-    /// tuned to include itself is one nobody can reason about later.
+    /// This used to assert the opposite — that the same expression appeared in BOTH `child_outcome`
+    /// and `cage_death_notice` — because the decode was genuinely duplicated and the risk was that
+    /// the two would drift and describe the same death differently. #a-stopped-session-says-why
+    /// removed the duplication: `signal_from_code` is the one definition, and the pane notice, the
+    /// log phrase and the `pty_exit` payload all read it. So the guard flips from "these two agree"
+    /// to "there is only one of them", which is the stronger claim.
+    ///
+    /// Asserted PER FUNCTION over bounded source slices rather than by counting occurrences: the
+    /// first draft of the old guard counted them and got 5, not 2, because the test's own string
+    /// literals count too. A guard whose number is tuned to include itself is one nobody can reason
+    /// about later — and the slices below stop well short of this module for the same reason.
     #[test]
-    fn the_notice_decodes_signals_the_same_way_the_log_does() {
+    fn the_signal_decode_has_exactly_one_definition_and_every_consumer_calls_it() {
         let src = include_str!("pump.rs");
-        const DECODE: &str = "code.checked_sub(128).filter(|n| (1..=64).contains(n))";
-        for f in ["fn child_outcome", "fn cage_death_notice"] {
-            let body = &src[src.find(f).expect("the function is here")..];
-            let body = &body[..body.len().min(2_000)];
+        const DECODE: &str = "checked_sub(128).filter(|n| (1..=64).contains(n))";
+        let body_of = |f: &str| {
+            let at = src.find(f).unwrap_or_else(|| panic!("{f} is here"));
+            let rest = &src[at..];
+            &rest[..rest.len().min(1_500)]
+        };
+
+        assert!(body_of("fn signal_from_code").contains(DECODE), "the one definition lives here");
+        for f in ["fn classify_end", "fn cage_death_notice"] {
             assert!(
-                body.contains(DECODE),
-                "{f} must decode a fatal signal the same way as the other — the pane and the log \
-                 describe the SAME death, and a divergence makes them disagree about it",
+                // By NAME, not `name(` — `classify_end` passes it as a function value
+                // (`and_then(signal_from_code)`), which is a call site just as much as a paren is.
+                body_of(f).contains("signal_from_code"),
+                "{f} must CALL the shared decode, not carry its own — the pane, the log and the \
+                 banner describe the SAME death, and a second copy is how they start disagreeing",
+            );
+            assert!(
+                !body_of(f).contains(DECODE),
+                "{f} re-implements the decode instead of calling it",
             );
         }
     }
