@@ -43,8 +43,12 @@ describe("endedPanes — auto-end a finished worker (#920)", () => {
       });
 
       const count = useAppStore.getState().restoreSessionsFromCrash();
-      expect(count).toBe(2); // both were claude panes…
-      vi.advanceTimersByTime(1000); // …but the staggered relaunch runs the gate
+      // ONE, not two. This used to assert 2 — "both were claude panes" — and then rely on the
+      // staggered relaunch to drop the ended one at fire time. That gap is the bug the banner
+      // exposed: the count and the act disagreed, so the offer advertised work it would not do.
+      // The return value now means "how many will actually be restored".
+      expect(count).toBe(1);
+      vi.advanceTimersByTime(1000); // the staggered relaunch still runs, and still gates
 
       const restore = useAppStore.getState().restoreRequested;
       expect(restore["t0p0"]).toBe(true);       // live worker → relaunched
