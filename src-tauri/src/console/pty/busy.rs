@@ -166,10 +166,37 @@ pub(crate) fn is_agent_process(name: &str, argv: &[String]) -> bool {
     if AGENTS.contains(&base(name).as_str()) {
         return true;
     }
-    // A wrapper: the agent is named in the ARGUMENTS rather than in the process name. `cli.js` alone
-    // is far too generic to match on, so it counts only under a claude-ish path — and argv[0] is
-    // skipped because it is the interpreter, which is exactly what we already failed to recognise.
-    argv.iter().skip(1).any(|a| {
+    // Scan what the process RUNS, never what it merely mentions.
+    //
+    // A `bsc-sandbox` cage is the case that forced this distinction. `bwrap` CONFIGURES with paths and
+    // RUNS what follows `--`, and its configuration names the agent binary as both bind-mount source
+    // and target — `--ro-bind-try /usr/bin/claude /usr/bin/claude`, plus the versioned install bound
+    // over the same path. MEASURED: `claude` appears NINE times in one caged pane's own argv while its
+    // real tree was `bwrap → bwrap → bash` with no agent at all. Scanning the whole argv therefore made
+    // every caged pane report an agent PERMANENTLY, since that argv never changes — so `bsc fleet list`
+    // showed `running` for panes sitting at a bare prompt and the director never had anything to wake.
+    //
+    // Splitting at `--` keeps the case that matters in the other direction: a pane launched straight
+    // into a caged agent (`bwrap … -- claude --model sonnet`) has `bwrap` as its session process, and
+    // reporting THAT idle while it works would be the same failure inverted.
+    //
+    // Split at the LAST `--`, not the first, because wrappers NEST. `SANDBOX_WRAPPERS` carries
+    // `systemd-run` as well as `bwrap`, and a systemd scope above a cage puts the entire bwrap command
+    // line — bind mounts and all — after its own separator. Taking the last one lands on the command
+    // in both shapes, and on `bwrap … -- timeout 600 -- claude` it still lands on the agent.
+    let words: &[String] = if is_wrapper_name(name) {
+        match argv.iter().rposition(|a| a == "--") {
+            Some(i) => &argv[i + 1..],
+            // A wrapper with no command to run is plumbing and nothing else.
+            None => &[],
+        }
+    } else {
+        // A wrapper: the agent is named in the ARGUMENTS rather than in the process name. argv[0] is
+        // skipped because it is the interpreter, which is exactly what we already failed to recognise.
+        argv.get(1..).unwrap_or(&[])
+    };
+    // `cli.js` alone is far too generic to match on, so it counts only under a claude-ish path.
+    words.iter().any(|a| {
         let b = base(a);
         AGENTS.contains(&b.as_str()) || (b == "cli.js" && a.to_ascii_lowercase().contains("claude"))
     })
@@ -277,6 +304,103 @@ mod tests {
         assert!(!is_agent_process("bwrap", &argv(["/usr/bin/bwrap", "--unshare-all", "--share-net"].as_ref())));
         assert!(!is_agent_process("bash", &argv(["/bin/bash", "-i"].as_ref())));
         assert!(!is_agent_process("bash", &argv(["/bin/bash"].as_ref())));
+    }
+
+    /// The cage's own CONFIGURATION names the agent binary, and that must not read as a running agent.
+    ///
+    /// THE ABBREVIATION IS WHY THIS SURVIVED. The test above says the sandbox plumbing is not an
+    /// agent, and it passes — but it asserts on THREE arguments. A real cage carries ~200, and the
+    /// ones that were trimmed for readability are exactly the ones that break it: `bsc-sandbox` binds
+    /// the agent binary into the namespace, so `/usr/bin/claude` appears in the argv as both source
+    /// and target, plus once more for the versioned install bound over the same path.
+    ///
+    /// MEASURED on the live network-monitor fleet: pane `domain-model-and-adapter-traits` (pid 598682)
+    /// was `bwrap → bwrap → bash` with no agent, its argv mentioned `claude` NINE times, and the table
+    /// reported `running / AGENT yes`. Because the argv of a running cage never changes, that pane
+    /// could never become `idle` — `bsc fleet list` returned `idle: []` for a fleet that was entirely
+    /// parked, and the director had nothing to wake.
+    ///
+    /// So this test keeps the bind-mount arguments verbatim. Shortening them is what hid the bug.
+    #[test]
+    fn a_cages_bind_mounts_do_not_make_it_an_agent() {
+        let caged_shell = argv([
+            "/usr/bin/bwrap", "--unshare-all", "--share-net", "--die-with-parent", "--clearenv",
+            "--ro-bind", "/usr/lib", "/usr/lib",
+            "--ro-bind-try", "/usr/bin/bash", "/usr/bin/bash",
+            // The three that matter — the agent bound in by path, twice as a pair and once versioned.
+            "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--ro-bind", "/home/u/.local/share/claude/versions/2.1.247", "/usr/bin/claude",
+            "--ro-bind", "/home/u/.base-studio-code/bin/bsc-hook", "/bsc-hook",
+            "--bind", "/home/u/.base-studio-code/worktrees/p/r--stream", "/repo",
+            "--chdir", "/repo", "--setenv", "HOME", "/home/agent",
+            // ...and the command it ACTUALLY runs: a bare interactive shell.
+            "--", "/bin/bash", "-i",
+        ].as_ref());
+        assert!(
+            !is_agent_process("bwrap", &caged_shell),
+            "a cage running a bare shell has no agent, however many times its bind mounts say 'claude'",
+        );
+
+        // The other direction, which the fix must not break: a pane launched STRAIGHT into a caged
+        // agent has `bwrap` as its session process, and calling that idle while it works would be the
+        // same mistake inverted.
+        let caged_agent = argv([
+            "/usr/bin/bwrap", "--unshare-all",
+            "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "claude", "--model", "sonnet", "--continue",
+        ].as_ref());
+        assert!(is_agent_process("bwrap", &caged_agent), "a cage RUNNING the agent is working");
+
+        // A caged agent reached through the node wrapper still counts, for the same reason.
+        let caged_wrapper = argv([
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "node", "/home/agent/.npm/@anthropic-ai/claude-code/cli.js", "--continue",
+        ].as_ref());
+        assert!(is_agent_process("bwrap", &caged_wrapper));
+
+        // A cage that wraps nothing is plumbing, even with the binds present.
+        let no_command = argv([
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+        ].as_ref());
+        assert!(!is_agent_process("bwrap", &no_command));
+
+        // NESTED wrappers, which is why the split takes the LAST `--` rather than the first.
+        // `SANDBOX_WRAPPERS` carries `systemd-run` too, and a scope above a cage puts the whole
+        // bwrap command line — bind mounts included — after its own separator. Splitting at the
+        // first would hand back exactly the configuration this fix exists to stop reading.
+        let scoped_shell = argv([
+            "systemd-run", "--scope", "--user", "--",
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "/bin/bash", "-i",
+        ].as_ref());
+        assert!(!is_agent_process("systemd-run", &scoped_shell), "a scoped cage at a prompt is idle");
+
+        let scoped_agent = argv([
+            "systemd-run", "--scope", "--user", "--",
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "claude", "--continue",
+        ].as_ref());
+        assert!(is_agent_process("systemd-run", &scoped_agent), "a scoped cage running the agent works");
+
+        // And a command that carries its own `--` still resolves to the agent beyond it.
+        let via_timeout = argv([
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "timeout", "600", "--", "claude",
+        ].as_ref());
+        assert!(is_agent_process("bwrap", &via_timeout));
+    }
+
+    #[test]
+    fn a_non_cage_still_scans_its_whole_argv() {
+        // The `--` split is scoped to the sandbox wrapper on purpose. Everything else keeps the old
+        // rule, so an ordinary wrapper that names the agent anywhere in its arguments still counts.
+        //
+        // (Not asserted here: `npx --yes @anthropic-ai/claude-code`. Its basename is `claude-code`,
+        // which has never been in AGENTS, so it did not match before this change either. Widening the
+        // predicate to catch it would be a separate decision, not a side effect of this fix.)
+        assert!(is_agent_process("sh", &argv(["sh", "-c", "exec", "bsc-agent"].as_ref())));
+        // ...and a bare `--` in a non-cage argv is just an argument, not a command boundary.
+        assert!(is_agent_process("timeout", &argv(["timeout", "600", "--", "claude"].as_ref())));
     }
 
     #[test]
