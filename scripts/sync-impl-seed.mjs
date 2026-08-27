@@ -83,6 +83,21 @@ export function diffFields(existing, fresh) {
   return [...keys].filter((k) => !isEqual(existing[k], fresh[k])).sort();
 }
 
+// Merge the two store tiers (impls + edges, request #151) into one id → record lookup. They share one
+// id space by construction (an edge id joins its members with `--`, an impl id is a bare file/name), so
+// a genuine collision is a data problem worth failing loudly on rather than silently picking a side.
+export function mergeStores(implRecords, edgeRecords) {
+  const byId = new Map();
+  for (const r of implRecords) byId.set(r.id, r);
+  for (const r of edgeRecords) {
+    if (byId.has(r.id)) {
+      throw new Error(`id '${r.id}' exists as BOTH an impl and an edge in the store — ambiguous sync target`);
+    }
+    byId.set(r.id, r);
+  }
+  return byId;
+}
+
 // One id's sync verdict: "skip-not-in-store" | "skip-not-in-seed" | "up-to-date" | "would-lose-fields" | "sync".
 export function planOne(seedImpls, storeById, id) {
   const s = storeById.get(id);
@@ -101,18 +116,27 @@ export function planOne(seedImpls, storeById, id) {
 function main() {
   const APPLY = process.argv.includes("--apply");
   const IDS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-  if (!IDS.length) { console.error("usage: node sync-impl-seed.mjs <impl-id>… [--apply]"); process.exit(2); }
+  if (!IDS.length) { console.error("usage: node sync-impl-seed.mjs <impl-id-or-edge-id>… [--apply]"); process.exit(2); }
 
-  const storeById = new Map(
-    JSON.parse(execFileSync(BSC, ["graph", "impl", "list"], { encoding: "utf8", maxBuffer: 1 << 28 }))
-      .map((r) => [r.id, r]),
-  );
+  // Request #151: an EDGE (the relationship tier, `bsc graph edge …`) carries `tests` the same way an
+  // impl does, but the store map used to come from `impl list` only — so an edge id always reported
+  // "not in the store", with no path to the packaged seed at all. Both tiers share one id space and one
+  // record shape here, so they are merged into a single lookup rather than making the caller say which
+  // tier an id belongs to.
+  const implRecords = JSON.parse(execFileSync(BSC, ["graph", "impl", "list"], { encoding: "utf8", maxBuffer: 1 << 28 }));
+  const edgeRecords = JSON.parse(execFileSync(BSC, ["graph", "edge", "list"], { encoding: "utf8", maxBuffer: 1 << 28 }));
+  const storeById = mergeStores(implRecords, edgeRecords);
+
   const seed = JSON.parse(readFileSync(SEED, "utf8"));
   const seedImpls = seed.implementations ?? [];
+  const seedEdges = seed.edges ?? [];
+  // Object references, not copies — mutating a record found through this array mutates the same object
+  // `seedImpls`/`seedEdges` holds, so the write below lands in whichever tier the id actually belongs to.
+  const seedRecords = [...seedImpls, ...seedEdges];
 
   let changed = 0;
   for (const id of IDS) {
-    const plan = planOne(seedImpls, storeById, id);
+    const plan = planOne(seedRecords, storeById, id);
     switch (plan.verdict) {
       case "skip-not-in-store":
         console.log(`SKIP ${id} — not in the store`);
@@ -130,7 +154,7 @@ function main() {
         );
         break;
       case "sync": {
-        const t = seedImpls.find((im) => im.id === id);
+        const t = seedRecords.find((im) => im.id === id);
         console.log(`${APPLY ? "SYNC" : "would sync"} ${id}  fields: ${plan.fields.join(", ")}`);
         if (APPLY) {
           for (const k of Object.keys(plan.fresh)) t[k] = plan.fresh[k];
