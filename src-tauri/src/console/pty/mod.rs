@@ -325,6 +325,44 @@ fn must_be_gated(pane_id: &str) -> bool {
     parts.len() >= 2 && !parts[0].is_empty() && parts[1..].iter().any(|p| !p.is_empty())
 }
 
+/// Is the role gate actually on disk for this launch cwd?
+///
+/// `.claude/settings.json` is per-DIRECTORY and durable, so this is a question about the DIRECTORY,
+/// not about the pane — a recovered cwd inherits whatever a previous launch wrote there.
+pub(crate) fn gate_file_present(effective_cwd: &str) -> bool {
+    !effective_cwd.is_empty()
+        && std::path::Path::new(effective_cwd).join(".claude").join("settings.json").is_file()
+}
+
+/// Why an agent auto-launch would be REFUSED for this pane at this cwd, or `None` if it is admitted.
+///
+/// Extracted so the refusal can be asked BEFORE anything destructive happens, by exactly the
+/// predicate that will apply at launch. `a-wake-kills-a-pane-it-cannot-relaunch-and-reports-success`:
+/// a wake kills the PTY first (deliberately — otherwise the remount reconnects and the baked prompt
+/// is dropped), and the store's verdict only answers whether a tab and a grid seat could be resolved.
+/// So a pane whose worktree has no gate file was killed, then refused here, and the director was told
+/// `woke: true`. FOUR network-monitor worktrees were in that state.
+///
+/// Two callers, one answer, on purpose. A second copy of this test — even a correct one — could drift
+/// and would fail in the worst direction: a pre-check that says "admitted" while the launch refuses
+/// puts us back to killing a session that cannot come back.
+pub(crate) fn launch_gate_refusal(pane_id: &str, effective_cwd: &str) -> Option<String> {
+    if gate_file_present(effective_cwd) || !must_be_gated(pane_id) {
+        return None;
+    }
+    Some(format!(
+        "pty[{pane_id}] refusing to auto-launch claude at {} — no .claude/settings.json, so the role gate and shell allowlist were never written and the session would run permission-less (#1819). Relaunch the pane from its project so the settings are written first.",
+        if effective_cwd.is_empty() { "<no cwd>" } else { effective_cwd }
+    ))
+}
+
+/// Ask [`launch_gate_refusal`] from the frontend, so a destructive action can decline BEFORE it
+/// destroys. Returns `None` when the launch would be admitted.
+#[tauri::command]
+pub(crate) fn pty_launch_refusal(pane_id: String, cwd: String) -> Option<String> {
+    launch_gate_refusal(&pane_id, &cwd)
+}
+
 fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
     // #1819 recovery. Only for a HOST session: a sandbox cwd is a distro path, and the hub/repo dirs
     // resolved here are Windows paths that mean nothing inside the cage.
@@ -585,11 +623,9 @@ fn pty_create_inner(
     let sandbox_stores = sandbox_stores.or_else(|| {
         let role = sandbox_role.as_deref().filter(|r| !r.is_empty())?;
         let _ = role;
-        let safe: String = pane_id
-            .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
-            .collect();
-        let root = crate::platform::paths::bsc_base_dir().join("sandbox-stores").join(safe);
+        // Shared with `bsc sandbox replay` (`bsc_sandbox::sandbox_stores_root`) so a replay
+        // computes the SAME path from a bare pane id — see that function's doc comment.
+        let root = bsc_sandbox::sandbox_stores_root(&crate::platform::paths::bsc_base_dir(), &pane_id);
         // The outbox + the emitter rc, in that order — see `scaffold_store_root` for why the
         // order is the whole fix. `None` means no outbox, and a session that cannot emit at all
         // does not get a store root.
@@ -730,6 +766,23 @@ fn pty_create_inner(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
+    // Count this session's skill ATTACH (#A), for the non-Claude harness.
+    //
+    // `record_skill_uses` lives in `ensure_session_settings`, which its own doc calls "the single
+    // backend chokepoint both manual launches and fleet workers funnel through, so usage is counted
+    // UNIFORMLY + model-agnostically". That was not true: a bsc-agent pane never reaches that command
+    // (TerminalView gates it on `isClaudeProvider`), so the counter under-counted precisely the
+    // non-Claude sessions the comment claimed to cover. The skills now arrive here as
+    // `$BSC_AGENT_SKILLS`, so this is where the local half of that promise gets kept.
+    //
+    // Same function, so a skill counts once per launch on either harness and the two cannot drift.
+    // Best-effort throughout — a launch is never blocked by telemetry.
+    if let Some(raw) = env_map.get("BSC_AGENT_SKILLS") {
+        match serde_json::from_str::<Vec<crate::extensions::cfg::SkillCfg>>(raw) {
+            Ok(skills) => crate::extensions::skills::record_skill_uses(&skills),
+            Err(e) => log::warn!("pty[{pane_id}] BSC_AGENT_SKILLS unparseable, not counted: {e}"),
+        }
+    }
     // Wire every per-session BSC_* env var the bsc-* shell helpers read (checkpoint doc, the
     // BASH_ENV rc, the analytics logs, the plan/skill/data stores + their CLIs, the planner skill
     // group, and the bsc-agent sidecar/session). Returns the bash-style rc path so the interactive
@@ -771,7 +824,25 @@ fn pty_create_inner(
     // still delivers the prompt.
     // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
     // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
-    let has_history = harness.detect_history(&cwd);
+    // A CAGED session's transcripts are NOT where the host would look for them, and looking in the
+    // wrong place made every caged session start over.
+    //
+    // `detect_history` resolves `~/.claude/projects/<slug(cwd)>` on the HOST, from the HOST cwd. Inside
+    // the namespace the harness writes to its private HOME, whose `.claude/projects` is bound to this
+    // pane's `history_dir` (`<stores_root>/home/projects`), and it keys the directory by the GUEST cwd
+    // — always `/repo`, hence `-repo`. The two can never agree: the host check asks about a path the
+    // caged harness never writes to, so `has_history` was false on EVERY caged launch and the launch
+    // plan resolved to a fresh session every time.
+    //
+    // Observed on `network-monitor:domain-model-and-adapter-traits`: FOUR separate conversations in its
+    // cage (4, 11, 19 and 0 assistant turns), one per launch, each starting from nothing while the log
+    // recorded `has_history=false · resumed=false` — with three prior transcripts sitting right there.
+    // A worker that is relaunched loses everything it learned, which is most of what makes a relaunch
+    // look like a session that was killed for no reason.
+    let has_history = match caged_history_dir(sandbox_stores.as_deref(), ns_argv.is_some()) {
+        Some(dir) => harness.detect_history_at(&dir),
+        None => harness.detect_history(&cwd),
+    };
     let plan = plan_launch(
         startup_prompt.as_deref(),
         init_cmd.as_deref(),
@@ -808,19 +879,14 @@ fn pty_create_inner(
     //
     // Skipped under sandbox: the gate lives inside the distro, not at a host path.
     if launch_claude && into_sandbox.is_none() {
-        let gated = !effective_cwd.is_empty()
-            && std::path::Path::new(&effective_cwd).join(".claude").join("settings.json").is_file();
-        if !gated {
-            // A pane with a PROJECT identity is refused outright. Running one of these ungated is the
-            // one outcome worse than not starting: a director is `code: none`, a worker is scoped to
-            // its owned globs, and permission-less it has neither. A manual console is the user's own
-            // shell and they are the principal, so it keeps the loud warning instead.
-            if must_be_gated(&pane_id) {
-                return Err(format!(
-                    "pty[{pane_id}] refusing to auto-launch claude at {} — no .claude/settings.json, so the role gate and shell allowlist were never written and the session would run permission-less (#1819). Relaunch the pane from its project so the settings are written first.",
-                    if effective_cwd.is_empty() { "<no cwd>" } else { &effective_cwd }
-                ));
-            }
+        // A pane with a PROJECT identity is refused outright. Running one of these ungated is the
+        // one outcome worse than not starting: a director is `code: none`, a worker is scoped to
+        // its owned globs, and permission-less it has neither. A manual console is the user's own
+        // shell and they are the principal, so it keeps the loud warning instead.
+        if let Some(msg) = launch_gate_refusal(&pane_id, &effective_cwd) {
+            return Err(msg);
+        }
+        if !gate_file_present(&effective_cwd) {
             log::error!("pty[{pane_id}] launching claude with NO settings.json at {} — permission-less session: the role gate + shell allowlist were never written (#1819)", if effective_cwd.is_empty() { "<no cwd>" } else { &effective_cwd });
         }
     }
@@ -846,13 +912,43 @@ fn pty_create_inner(
     #[cfg(not(target_os = "linux"))]
     let ns_refused: Option<String> = None;
 
+    // A floor that cannot run must SAY SO. Read the settings this session will actually obey and
+    // compare its hook list against the cage it actually got — see `hook_floor_mismatch` for why one
+    // launch-time decision does not make these agree across launches.
+    //
+    // Reported on TWO surfaces on purpose. `log::error!` because the original failure existed only as
+    // transient text in a transcript — grepping every app log for it returned nothing, so "the gates
+    // are not running" had no durable trace at all. The pane notice because the person who can act on
+    // it is looking at the pane, not at a log.
+    let hook_mismatch: Option<String> = (!cwd_empty)
+        .then(|| {
+            let cfg = crate::platform::fsx::read_json_object_or_default(
+                &std::path::Path::new(&cwd).join(".claude").join("settings.json"),
+            );
+            crate::session::settings::hook_floor_mismatch(&cfg, ns_argv.is_some())
+        })
+        .flatten();
+    if let Some(msg) = &hook_mismatch {
+        log::error!("pty[{pane_id}] UNGATED: {msg}");
+    }
+
     let init_line = build_session_init_line(
         into_sandbox.is_some(),
         ns_argv.is_some(), resolved_shell.kind, &cwd, cwd_missing, &effective_cwd,
         launch.as_deref(), launch_claude, &claude_fn, &rc_bash, model_alias.as_deref(), &env_map,
         // Only when a namespace was actually REQUESTED and did not happen. A pane with no role was
         // never going to be caged, and a notice there would be noise rather than information.
-        ns_refused.as_deref(),
+        //
+        // The dead-hook-floor notice rides the same channel: it is the same class of fact (a gate the
+        // session is missing) and the same audience. A refusal already implies the floor is dead, so
+        // the two are joined rather than printed twice.
+        match (ns_refused.as_deref(), hook_mismatch.as_deref()) {
+            (Some(r), Some(h)) => Some(format!("{r}\n{h}")),
+            (Some(r), None) => Some(r.to_string()),
+            (None, Some(h)) => Some(h.to_string()),
+            (None, None) => None,
+        }
+        .as_deref(),
     );
     writer.write_all(init_line.as_bytes()).ok();
 
@@ -980,11 +1076,18 @@ pub(crate) fn pane_liveness(pane_ids: Vec<String>, state: &PtyState) -> Vec<bsc_
         ids.iter().map(|id| sessions.contains_key(id)).collect()
     };
     let busy = busy::shells_with_descendants(&pids);
+    // A SECOND, narrower probe (#fleet-list-reports-whether-the-agent-is-running). `busy` answers "may
+    // I type here" and stays broad on purpose; this answers "is the agent working", which is what the
+    // fleet table reports. They differ on exactly the panes that matter: a sandboxed pane is `busy` at
+    // a bare prompt (its own `bwrap` and the shell inside are descendants), and a shell mid-build is
+    // busy with no agent at all.
+    let agent = busy::shells_with_agents(&pids);
     ids.into_iter()
         .zip(live)
         .zip(busy)
+        .zip(agent)
         .zip(pids)
-        .map(|(((pane_id, live), busy), pid)| bsc_fleet::PaneLive { pane_id, live, busy, pid })
+        .map(|((((pane_id, live), busy), agent), pid)| bsc_fleet::PaneLive { pane_id, live, busy, agent, pid })
         .collect()
 }
 
@@ -1253,6 +1356,48 @@ mod tests {
         assert!(!super::must_be_gated("man:tab_abc:p2"), "a manual console is not refused");
         assert!(!super::must_be_gated("t0p1"), "a legacy positional pane is not refused");
         assert!(!super::must_be_gated("pane"), "a bare id has no project identity");
+    }
+
+    /// The refusal a WAKE can ask about before it destroys anything.
+    ///
+    /// `a-wake-kills-a-pane-it-cannot-relaunch-and-reports-success`: the wake kills the PTY first —
+    /// deliberately, or the remount reconnects and drops the baked prompt — and the store's verdict
+    /// only answers whether a tab and a grid seat resolved. So a pane this predicate refuses was
+    /// killed anyway, and the director was told `woke: true`. MEASURED: four network-monitor
+    /// worktrees had no `.claude/settings.json`, complete in every other respect.
+    ///
+    /// The point of the extraction is that ONE function answers for both callers. A second copy —
+    /// even a correct one — could drift, and it would fail in the worst direction: a pre-check saying
+    /// "admitted" while the launch refuses is exactly the state this fixes.
+    #[test]
+    fn the_launch_refusal_is_the_same_answer_the_wake_pre_check_gets() {
+        let dir = std::env::temp_dir().join(format!("bsc-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.to_string_lossy().to_string();
+
+        // No gate file yet — a fleet pane is REFUSED, and the message names the cause and the cure.
+        assert!(!super::gate_file_present(&cwd));
+        let msg = super::launch_gate_refusal("network-monitor:omada-controller-adapter", &cwd)
+            .expect("a fleet pane with no gate file must be refused");
+        assert!(msg.contains(".claude/settings.json"), "names what is missing: {msg}");
+        assert!(msg.contains("permission-less"), "names why it matters: {msg}");
+
+        // The same directory, once the gate exists — admitted.
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        std::fs::write(dir.join(".claude").join("settings.json"), "{}").unwrap();
+        assert!(super::gate_file_present(&cwd));
+        assert_eq!(super::launch_gate_refusal("network-monitor:omada-controller-adapter", &cwd), None);
+
+        // A manual console is never refused — the user is the principal there, so it warns instead.
+        let _ = std::fs::remove_dir_all(dir.join(".claude"));
+        assert_eq!(super::launch_gate_refusal("man:tab_abc:p2", &cwd), None);
+
+        // An EMPTY cwd is the #1819 shape and must refuse a fleet pane rather than launch it nowhere.
+        assert!(super::launch_gate_refusal("network-monitor:api", "").is_some());
+        assert!(!super::gate_file_present(""));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1935,6 +2080,68 @@ fn credential_for_harness() -> Option<std::path::PathBuf> {
 ///
 /// Best-effort: a session that cannot get one still launches and simply cannot resume, which is
 /// strictly better than refusing to start.
+/// The SHARED git directory a worktree at `cwd` depends on, or `None` when it needs no extra bind.
+///
+/// An ordinary clone keeps `.git` as a DIRECTORY inside the tree, so binding the tree carries it and
+/// there is nothing to add. A WORKTREE keeps a `.git` FILE holding `gitdir: <absolute host path>`, and
+/// the objects/refs live back in the parent clone — so the namespace has the pointer and not the
+/// target, and every git command fails with `fatal: not a git repository: <that path>`.
+///
+/// Resolved the way git itself does: follow the `gitdir:` pointer, then read its `commondir` (normally
+/// `../..`) rather than assuming a depth. A linked worktree of a linked worktree is a shape the
+/// two-levels-up guess gets wrong and `commondir` gets right.
+///
+/// Returns the path only when it EXISTS: binding a source bwrap cannot find fails the whole launch,
+/// and a repo whose parent clone has been removed should degrade to today's behaviour (git broken in
+/// the cage) rather than to no session at all.
+#[cfg(target_os = "linux")]
+fn git_common_dir_for(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    let dot_git = std::path::Path::new(cwd).join(".git");
+    // A real directory ⇒ an ordinary clone; it rides along inside the tree bind.
+    if dot_git.is_dir() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&dot_git).ok()?;
+    let pointer = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
+    let gitdir = std::path::Path::new(pointer);
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        // `commondir` is relative TO the gitdir, and may be absolute in exotic setups.
+        Ok(rel) => {
+            let rel = rel.trim();
+            let p = std::path::Path::new(rel);
+            if p.is_absolute() { p.to_path_buf() } else { gitdir.join(p) }
+        }
+        // No `commondir` — an older layout. `<clone>/.git/worktrees/<name>` ⇒ two up.
+        Err(_) => gitdir.parent()?.parent()?.to_path_buf(),
+    };
+    let common = std::fs::canonicalize(&common).unwrap_or(common);
+    common.is_dir().then_some(common)
+}
+
+/// Where a CAGED session's transcripts actually live, or `None` when this launch is not caged.
+///
+/// The harness inside the namespace writes to `<home>/.claude/projects/<slug(guest cwd)>`, and the
+/// guest cwd is always [`bsc_sandbox::REPO_GUEST_PATH`] — so the directory name is fixed, not derived
+/// from the host path. `history_dir_for` binds `<stores_root>/home/projects` over that `projects` dir,
+/// which makes the transcripts durable; this resolves the ONE subdirectory inside it that a resume
+/// would continue from.
+///
+/// Gated on `caged` (an actual namespace argv) rather than on `stores_root` alone: the stores root is
+/// prepared for a pane before we know the launch will be sandboxed, and answering "yes, look in the
+/// cage" for a session that then runs on the host would break resume in the opposite direction.
+#[cfg(target_os = "linux")]
+fn caged_history_dir(stores_root: Option<&str>, caged: bool) -> Option<std::path::PathBuf> {
+    if !caged {
+        return None;
+    }
+    let root = stores_root.filter(|r| !r.is_empty())?;
+    let slug = crate::session::launch::claude_project_dir_name(bsc_sandbox::REPO_GUEST_PATH);
+    Some(std::path::Path::new(root).join("home").join("projects").join(slug))
+}
+
 #[cfg(target_os = "linux")]
 fn history_dir_for(pane_id: &str, stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
     let dir = stores_root.join("home").join("projects");
@@ -2264,11 +2471,37 @@ fn namespace_argv(
     // Falling back to "no sandbox" here would be worse than failing — the caller asked for
     // isolation and would silently not get it.
     let Some(role) = Role::parse(role_name) else {
-        log::error!(
-            "pty[{pane_id}] sandbox role {role_name:?} is not recognised — refusing to launch \
-             UNSANDBOXED. Known roles: planner worker director triage tester reviewer issuer \
-             juror documentor designer"
-        );
+        // TWO DIFFERENT THINGS REACHED THIS BRANCH and it reported both as an error, in wording that
+        // described neither. A role in `UNCAGED_ROLES` does not parse ON PURPOSE — that is the
+        // decision, not a fault — and returning `None` here does not "refuse to launch": the caller
+        // falls through to a plain shell, so the session runs UNCAGED. The designer logged this as an
+        // ERROR on every launch while working exactly as designed, and the hardcoded role list named
+        // `director` and `designer`, neither of which parses.
+        if let Some((_, store, blocker)) =
+            bsc_sandbox::profile::UNCAGED_ROLES.iter().find(|(n, _, _)| *n == role_name)
+        {
+            log::info!(
+                "pty[{pane_id}] {role_name} runs UNCAGED by decision — its surface is {store}, and \
+                 the cage cannot host it yet ({blocker}). Launching without a namespace."
+            );
+        } else {
+            log::error!(
+                "pty[{pane_id}] sandbox role {role_name:?} is not a role at all — launching \
+                 UNCAGED. Caged roles: {caged}. Uncaged by decision: {uncaged}.",
+                caged = bsc_sandbox::profile::ALL_ROLES
+                    .iter()
+                    .copied()
+                    .filter(|r| Role::parse(r.as_str()).is_some())
+                    .map(|r| r.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                uncaged = bsc_sandbox::profile::UNCAGED_ROLES
+                    .iter()
+                    .map(|(n, _, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
         return None;
     };
     if cwd.is_empty() {
@@ -2325,6 +2558,9 @@ fn namespace_argv(
         // `None` (not built yet) leaves the session with path confinement only — what it already
         // had — rather than refusing to launch. `hook_env` keys the gate's config off this same
         // Option, so nothing declares BSC_REPO_ROOT for a gate that is not there.
+        // The shared git dir a worktree needs. Without it the cage carries the tree and not the
+        // objects, and every git command in a worker session fails — see `git_common_dir_for`.
+        git_common_dir: git_common_dir_for(cwd),
         hook_bin: bsc_hook_bin_path(),
         // ...and the gate's config. Without these the hook is bound and answers Allow to
         // everything: `scope_verdict` treats empty globs as unrestricted, so the write-scope half
@@ -2387,6 +2623,15 @@ fn namespace_argv(
                         paths.stores.len(),
                         paths.outboxes.len()
                     );
+                    // Persist the exact argv so a LATER `bsc sandbox replay <pane-id>` can
+                    // reconstruct this same cage outside the app — see `write_launch_argv`'s doc
+                    // comment for why this exists (request #135). Best-effort: a session that
+                    // cannot be replayed later still launches fine right now.
+                    if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
+                        if let Err(e) = bsc_sandbox::write_launch_argv(std::path::Path::new(root), &argv) {
+                            log::warn!("pty[{pane_id}] could not persist the launch argv for replay: {e}");
+                        }
+                    }
                     Some(argv)
                 }
                 Err(e) => {
@@ -2562,6 +2807,27 @@ mod namespace_tests {
         let coord = a.iter().position(|x| x == "/coord").unwrap();
         let out = a.iter().position(|x| x == "/coord/out").unwrap();
         assert!(out > coord);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Request #135: a dev session had no way to reproduce a real caged launch outside the app and
+    /// resorted to grepping `journalctl` for an argv that was never logged there. `namespace_argv`
+    /// itself does not persist the record (that happens one call frame up, in `pty_create`, where
+    /// `stores_root` is the real per-pane directory) — this pins that the render this function
+    /// produces is exactly what `bsc sandbox replay` would need, byte for byte, if it were handed
+    /// the same stores root.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_rendered_argv_is_exactly_what_a_replay_would_persist_and_read_back() {
+        let root = std::env::temp_dir().join(format!("bsc-ns-replay-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default())
+            .unwrap();
+
+        bsc_sandbox::write_launch_argv(&root, &a).expect("the launcher's own write path");
+        assert_eq!(bsc_sandbox::read_launch_argv(&root).unwrap(), a, "a replay reads back the exact argv the launch rendered");
+
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3289,7 +3555,9 @@ mod hook_floor_tests {
     /// is meaningful in a checkout that has built the sidecar and in one that has not.
     #[test]
     fn the_gate_is_bound_exactly_when_the_launcher_resolved_one() {
-        let a = namespace_argv(Some("director"), "pane-1", "/tmp/hub", None, "bash", &[], GateConfig::default())
+        // `worker`, not `director` — the director joined `UNCAGED_ROLES` on 2026-08-25 and no longer
+        // resolves to a namespace profile. Any still-caged role exercises this bind identically.
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/hub", None, "bash", &[], GateConfig::default())
             .expect("a known role with a cwd renders");
         let bound = a.windows(3).any(|w| w[0] == "--ro-bind" && w[2] == bsc_sandbox::HOOK_GUEST_PATH);
         let configured =
@@ -3387,7 +3655,9 @@ mod gate_config_tests {
         if super::bsc_hook_bin_path().is_none() {
             return;
         }
-        let a = argv("director", bsc_util::scope::DENY_ALL, "");
+        // `triage` is the code:none role that is still CAGED — `director` was code:none too but is
+        // uncaged now, so it renders no argv at all.
+        let a = argv("triage", bsc_util::scope::DENY_ALL, "");
         assert_eq!(setenv(&a, "BSC_SCOPE_GLOBS").as_deref(), Some(bsc_util::scope::DENY_ALL));
     }
 
@@ -4063,5 +4333,172 @@ mod designer_surface_tests {
             "the absence has to be stated, not inferred: {}",
             tree["README"],
         );
+    }
+}
+
+/// A caged session must resume from ITS OWN transcripts, not from a host path it never writes to.
+#[cfg(all(test, target_os = "linux"))]
+mod caged_resume_tests {
+    use super::*;
+
+    #[test]
+    fn an_uncaged_launch_still_asks_the_host() {
+        // `None` is what routes the caller back to `detect_history(&cwd)` — the host rule, unchanged.
+        assert_eq!(caged_history_dir(Some("/stores/pane"), false), None, "not caged ⇒ host lookup");
+        assert_eq!(caged_history_dir(None, true), None, "no stores root ⇒ nothing to look in");
+        assert_eq!(caged_history_dir(Some(""), true), None, "an empty root is not a root");
+    }
+
+    /// The directory the CAGED harness actually writes to: `<stores_root>/home/projects/<slug(/repo)>`.
+    /// The slug is fixed because the guest cwd is fixed — it is never derived from the host path, which
+    /// is exactly why the host lookup could not find it.
+    #[test]
+    fn a_caged_launch_points_at_the_bound_transcripts_dir() {
+        let dir = caged_history_dir(Some("/stores/pane"), true).expect("caged ⇒ a path");
+        assert_eq!(dir, std::path::Path::new("/stores/pane/home/projects/-repo"));
+        // …and it agrees with where `history_dir_for` BINDS, or the resume would read a different
+        // directory from the one the harness writes into.
+        let bound = std::path::Path::new("/stores/pane").join("home").join("projects");
+        assert!(dir.starts_with(&bound), "{dir:?} must sit inside the bound dir {bound:?}");
+    }
+
+    /// The rule itself — a `.jsonl` present means there is something to continue.
+    #[test]
+    fn a_transcript_in_the_caged_dir_is_what_makes_it_resumable() {
+        let root = std::env::temp_dir().join(format!("bsc-caged-hist-{}", std::process::id()));
+        let dir = root.join("home").join("projects").join("-repo");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let resolved = caged_history_dir(Some(&root.to_string_lossy()), true).expect("caged");
+        assert_eq!(resolved, dir);
+
+        assert!(
+            !crate::session::launch::dir_holds_a_transcript(&resolved),
+            "an empty cage has nothing to continue — it must start fresh so the kickoff is delivered",
+        );
+        std::fs::write(dir.join("a-session.jsonl"), "{}\n").expect("write");
+        assert!(
+            crate::session::launch::dir_holds_a_transcript(&resolved),
+            "with a transcript present the caged launch must resume instead of starting over",
+        );
+        // A non-transcript file is not a conversation.
+        let other = root.join("home").join("projects").join("-repo-2");
+        std::fs::create_dir_all(&other).expect("mkdir2");
+        std::fs::write(other.join("notes.txt"), "x").expect("write2");
+        assert!(!crate::session::launch::dir_holds_a_transcript(&other));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// A caged worker must be able to use git — the tree alone is not a repository.
+#[cfg(all(test, target_os = "linux"))]
+mod caged_git_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("bsc-cagedgit-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("mkdir");
+        d
+    }
+
+    #[test]
+    fn an_ordinary_clone_needs_no_extra_bind() {
+        let root = tmp("clone");
+        std::fs::create_dir_all(root.join("repo").join(".git")).expect("mkdir .git");
+        assert_eq!(
+            git_common_dir_for(&root.join("repo").to_string_lossy()),
+            None,
+            "a real .git DIRECTORY rides along inside the tree bind",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shape that actually broke: `.git` is a FILE pointing at the parent clone.
+    #[test]
+    fn a_worktree_resolves_the_shared_git_dir_through_commondir() {
+        let root = tmp("wt");
+        let common = root.join("clone").join(".git");
+        let gitdir = common.join("worktrees").join("w1");
+        std::fs::create_dir_all(&gitdir).expect("mkdir gitdir");
+        // git writes `commondir` relative to the gitdir.
+        std::fs::write(gitdir.join("commondir"), "../..\n").expect("commondir");
+        let wt = root.join("w1");
+        std::fs::create_dir_all(&wt).expect("mkdir wt");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).expect(".git");
+
+        let got = git_common_dir_for(&wt.to_string_lossy()).expect("a worktree needs the shared dir");
+        assert_eq!(
+            std::fs::canonicalize(&got).unwrap(),
+            std::fs::canonicalize(&common).unwrap(),
+            "it must resolve to the parent clone's .git, where the objects live",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// No `commondir` (older layout) ⇒ two levels up from the gitdir.
+    #[test]
+    fn a_worktree_without_commondir_falls_back_to_two_levels_up() {
+        let root = tmp("nocommon");
+        let common = root.join("clone").join(".git");
+        let gitdir = common.join("worktrees").join("w1");
+        std::fs::create_dir_all(&gitdir).expect("mkdir");
+        let wt = root.join("w1");
+        std::fs::create_dir_all(&wt).expect("mkdir wt");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).expect(".git");
+        let got = git_common_dir_for(&wt.to_string_lossy()).expect("still resolvable");
+        assert_eq!(std::fs::canonicalize(&got).unwrap(), std::fs::canonicalize(&common).unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A DANGLING pointer degrades to today's behaviour rather than taking the launch down: bwrap
+    /// fails the whole session if a bind source is missing, and a broken git beats no session at all.
+    #[test]
+    fn a_missing_target_binds_nothing_rather_than_failing_the_launch() {
+        let root = tmp("dangle");
+        let wt = root.join("w1");
+        std::fs::create_dir_all(&wt).expect("mkdir");
+        std::fs::write(wt.join(".git"), "gitdir: /nowhere/at/all/.git/worktrees/w1\n").expect(".git");
+        assert_eq!(git_common_dir_for(&wt.to_string_lossy()), None);
+        assert_eq!(git_common_dir_for(""), None, "no cwd, nothing to resolve");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The bind itself: at its OWN path, read-write, because the pointer git reads is absolute and
+    /// committing writes objects and refs back into it.
+    #[test]
+    fn the_shared_git_dir_is_bound_at_its_own_path_and_writable() {
+        use bsc_sandbox::profile::{for_role, Role, SessionPaths};
+        use bsc_sandbox::{Limits, Scope};
+        let git = std::path::PathBuf::from("/host/clone/.git");
+        let paths = SessionPaths {
+            root: std::path::PathBuf::from("/host/wt/repo--stream"),
+            git_common_dir: Some(git.clone()),
+            ..Default::default()
+        };
+        let a = for_role(Role::Worker, "u", &paths, &[], Limits::default(), Scope::User, vec!["bash".into()])
+            .unwrap()
+            .spec
+            .render()
+            .unwrap();
+        let i = a
+            .windows(3)
+            .position(|w| w[0] == "--bind" && w[1] == git.to_string_lossy() && w[2] == git.to_string_lossy())
+            .expect("the shared git dir must be bound at its own path, read-write");
+        // …and it must not ALSO appear read-only, which would refuse every commit.
+        let _ = i;
+        assert!(
+            !a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == git.to_string_lossy()),
+            "read-only would refuse every commit: {a:?}",
+        );
+    }
+
+    #[test]
+    fn no_git_dir_means_no_such_bind() {
+        use bsc_sandbox::profile::{for_role, Role, SessionPaths};
+        use bsc_sandbox::{Limits, Scope};
+        let paths = SessionPaths { root: std::path::PathBuf::from("/host/wt/r"), ..Default::default() };
+        let a = for_role(Role::Worker, "u", &paths, &[], Limits::default(), Scope::User, vec!["bash".into()])
+            .unwrap().spec.render().unwrap();
+        assert!(!a.iter().any(|x| x.ends_with("/.git")), "nothing to bind: {a:?}");
     }
 }

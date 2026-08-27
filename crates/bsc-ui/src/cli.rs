@@ -399,15 +399,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
-        // `regroup` is the DEPRECATED alias of `refolder` (#4107 slice B). It is deliberately absent
-        // from `command_docs()` — help must advertise one name — so it is matched here explicitly;
-        // otherwise this gate rejects it before the component dispatcher ever sees it.
         // #4223 — `backing relink <dir>` lives HERE, not in the mounted component CLI, because it needs
         // the HARVEST: `bsc-ui` depends on `bsc-component`, so the component crate cannot reach back up
         // for it. The pure planner (`bsc_component::backing::relink_plan`) stays down there where the
         // rest of `backing` is; only the half that needs a harvest is intercepted.
         Some("backing") if args.get(1).map(String::as_str) == Some("relink") => cmd_relink(&args[2..]),
-        Some(v) if v == "regroup" || bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
+        Some(v) if bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
             bsc_component::cli::run(args, prog)
         }
         Some(other) => Err(bsc_cli_util::unknown_command(prog, TAGLINE, &merged, other)),
