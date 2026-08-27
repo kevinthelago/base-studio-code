@@ -60,12 +60,18 @@ describe("wakePane reaches a stream whose pane does not exist", () => {
     expect(useAppStore.getState().tabs[0].runId).toBe(2);
   });
 
-  it("bakes the prompt and clears --continue, exactly as an existing-pane wake does", () => {
+  it("bakes the prompt and asks to RESUME, exactly as an existing-pane wake does", () => {
+    // This asserted `false` — describing the behaviour rather than justifying it, and the two wake
+    // paths agreed on the wrong thing. `plan_launch` computes `resume: continue_session &&
+    // has_history`, so a cleared flag meant a woken worker could never continue however much history
+    // it had: it re-read its kickoff and started over. Waking a parked worker is by definition
+    // "pick this back up", and with no history the launch still starts fresh and still delivers the
+    // prompt, because `resume` needs both halves.
     arm([]);
     useAppStore.getState().wakePane(PANE, "pick up #12");
     const st = useAppStore.getState();
     expect(st.paneStartupPromptText[PANE]).toBe("pick up #12");
-    expect(st.paneContinue[PANE]).toBe(false);
+    expect(st.paneContinue[PANE]).toBe(true);
   });
 
   it("fills a FREE cell before extending the grid", () => {
@@ -92,10 +98,15 @@ describe("wakePane reaches a stream whose pane does not exist", () => {
     expect(useAppStore.getState().wakePane(PANE, "go")).toBe(false);
   });
 
-  it("still refuses a DISABLED pane, and does not seat one behind the refusal", () => {
+  it("SEATS a disabled pane and clears the flag — a wake revives, it does not refuse", () => {
+    // This asserted the opposite. Maintainer's call (2026-08-26), after being blocked three times:
+    // ending a session must not prevent the director from restarting it. The old refusal made
+    // `disabledPanes` a permanent, director-unreachable state — only a Console pane-menu toggle
+    // clears it — so "paused" and "ended twenty minutes ago" were the same thing, forever.
     arm([], { disabledPanes: { [PANE]: true } });
-    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(false);
-    expect(useAppStore.getState().tabs[0].paneIds).toEqual([]);
+    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(true);
+    expect(useAppStore.getState().tabs[0].paneIds).toContain(PANE);
+    expect(useAppStore.getState().disabledPanes[PANE]).toBeUndefined();
   });
 
   it("leaves the EXISTING-pane path exactly as it was (#4025 must not regress)", () => {

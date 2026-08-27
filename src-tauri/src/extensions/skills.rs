@@ -83,6 +83,42 @@ mod relocated_tests {
     use super::*;
     use crate::testutil::prelude::*;
 
+    /// The `$BSC_AGENT_SKILLS` payload and the `SkillCfg` the Claude path writes are THE SAME SHAPE,
+    /// which is the property that lets one resolver feed both harnesses.
+    ///
+    /// This is a contract test, not a formality: the frontend serializes one array
+    /// (`sessionSkillCfgs`) and it is consumed in two places — written to `.claude/skills` here, and
+    /// parsed for the attach count in `pty_create`. If the payload ever stopped deserializing into
+    /// `SkillCfg`, the local half would silently stop being counted, which is the exact failure this
+    /// item was filed about: a channel that goes quiet and looks like an empty set.
+    #[test]
+    fn the_bsc_agent_skills_payload_deserializes_as_the_same_skillcfg_claude_gets() {
+        // The literal JSON `sessionSkillCfgs` produces (toSkillCfgs → id/name/description/prompt/tools).
+        let payload = r#"[
+            {"id":"open-pr","name":"Open a clean PR","description":"Open a tidy pull request",
+             "prompt":"Do the PR steps.","tools":["create_pr","git_diff"]}
+        ]"#;
+        let parsed: Vec<SkillCfg> =
+            serde_json::from_str(payload).expect("the env payload must parse as SkillCfg");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "open-pr");
+        assert_eq!(parsed[0].name, "Open a clean PR");
+        assert_eq!(parsed[0].prompt, "Do the PR steps.");
+        assert_eq!(parsed[0].tools, vec!["create_pr", "git_diff"]);
+
+        // And it round-trips through the writer, so a skill delivered by env is byte-identical to one
+        // delivered the Claude way — the two harnesses cannot be handed different content.
+        let dir = std::env::temp_dir().join(format!("bsc-skills-env-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        write_session_skills(&dir, &parsed).unwrap();
+        let written = std::fs::read_to_string(
+            dir.join(".claude").join("skills").join("open-a-clean-pr").join("SKILL.md"),
+        ).unwrap();
+        assert!(written.contains("Do the PR steps."));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn write_session_skills_writes_skill_files() {
         let dir = std::env::temp_dir().join(format!("bsc-skills-{}", std::process::id()));

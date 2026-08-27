@@ -3642,6 +3642,92 @@ fn has_transform_attr(markup: &str) -> bool {
 /// renders) · (b) `motion-dash-no-pathlength` (a stroke-dash keyframe on a component with no `pathLength`)
 /// · (c) `motion-transform-attr` (a CSS `transform` keyframe on a component using an SVG `transform=`
 /// attribute) · (d) `motion-name-collision` (an inline animation NAME declared by 2+ components in a kit).
+/// **name-collision** (#a-composes-target-can-name-two-records) — two or more records in ONE kit answer
+/// to the same name, so a `composes` entry naming it is AMBIGUOUS.
+///
+/// # Why this needs its own detector
+///
+/// Nothing else can see it. `composes` resolution is a MEMBERSHIP test, not a lookup: `handles_by_kit`
+/// builds a per-kit set of `{lowercased name} ∪ {lowercased id}` and `dangling_composes` only asks
+/// whether a handle EXISTS, while [`analyze_with`]'s `dangling-composes-reference` flags a target that
+/// "matches neither a name nor an id". A name owned by TWO records answers "yes, that resolves" to both
+/// — and no caller ever learns there were two answers.
+///
+/// Where something must pick, the tie-break is arbitrary: `closure::Index::new` keeps the FIRST match,
+/// matching the `components.find(…)` the runtime resolver runs over the same store order. So the winner
+/// is whichever record store order happens to yield, which is not a decision anyone made.
+///
+/// And `duplicate`/`near-duplicate` cannot substitute, which is the trap worth naming: those detect
+/// CONTENT similarity, while a name collision is dangerous precisely when the two records DIFFER.
+/// Measured on the live library 2026-08-25 — 39 colliding names, of which `bsc ui dupes` reported 6.
+///
+/// # Scope
+///
+/// Per KIT, because `composes` only ever resolves within one kit — the same rule
+/// `dangling-composes-reference` applies. Two kits may each carry a `Card`; that is not a collision.
+///
+/// SUPPRESSION TOMBSTONES ARE EXCLUDED. A `{id, suppressed: true}` row occupies an id so the seed
+/// reconcile stops re-adding it; it is not a component and can never be the target of a `composes`
+/// edge, so counting it would invent collisions that cannot be acted on.
+///
+/// Propose-only, and deliberately never fed to `--fix`: resolving a pair is curation (merge one into
+/// the other, rename one, or keep both under distinct names) and needs judgement per pair.
+pub fn analyze_name_collisions(components: &[Value]) -> Vec<Finding> {
+    // (kit, lowercased name) -> the records answering to it, in store order.
+    let mut by_handle: BTreeMap<(String, String), Vec<(String, String)>> = BTreeMap::new();
+    for c in components {
+        if c.get("suppressed").and_then(Value::as_bool).unwrap_or(false) {
+            continue;
+        }
+        let Some(name) = c.get("name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else {
+            continue;
+        };
+        let Some(id) = c.get("id").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else {
+            continue;
+        };
+        let kit = c.get("kitId").and_then(Value::as_str).unwrap_or_default().to_string();
+        by_handle
+            .entry((kit, name.to_lowercase()))
+            .or_default()
+            .push((id.to_string(), name.to_string()));
+    }
+
+    let mut out = Vec::new();
+    for ((kit, _lc), members) in by_handle {
+        if members.len() < 2 {
+            continue;
+        }
+        let ids: Vec<String> = members.iter().map(|(i, _)| i.clone()).collect();
+        let names: Vec<String> = members.iter().map(|(_, n)| n.clone()).collect();
+        // The winner TODAY, stated rather than left to be discovered: first in store order.
+        let winner = ids[0].clone();
+        let display = names.first().cloned().unwrap_or_default();
+        out.push(Finding {
+            category: "name-collision",
+            // Sev 3: it silently mis-resolves an edge rather than failing, so it outranks the
+            // report-only findings and sits with the correctness class.
+            severity: 3,
+            kit: kit.clone(),
+            node_ids: ids.clone(),
+            node_names: names,
+            why: format!(
+                "{} records in kit '{}' answer to the name '{}' ({}), so a `composes` entry naming it is \
+                 AMBIGUOUS — it resolves, but to whichever record comes first in store order ('{}'), which \
+                 is not a decision anyone made. `dupes` cannot see this: it detects CONTENT similarity, and \
+                 a name collision is most dangerous when the records DIFFER.",
+                ids.len(), kit, display, ids.join(", "), winner
+            ),
+            suggested_action: format!(
+                "decide which record owns the name '{display}': `bsc ui merge <from> <into>` if they are \
+                 one component, `bsc ui rename <id> <NewName>` if they are two — then re-run to confirm \
+                 zero. Inspect with `bsc ui similar {}`.",
+                ids[0]
+            ),
+        });
+    }
+    out
+}
+
 pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
     let mut out: Vec<Finding> = Vec::new();
     // (d) per-kit collision groups: (kit, animName) → owners [(id, name)], deduped by id, insertion order.
@@ -6295,5 +6381,91 @@ export function X(){ return <i>{nope}</i>; }"
         assert!(dd.why.contains("threw when the preview rendered it"));
         assert!(!dd.why.contains("render:"), "the kind prefix is stripped");
         assert!(dd.suggested_action.contains("bsc ui preview-props"));
+    }
+}
+
+#[cfg(test)]
+mod name_collision_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn c(id: &str, name: &str, kit: &str) -> Value {
+        json!({ "id": id, "name": name, "kitId": kit })
+    }
+    fn cats(fs: &[Finding]) -> Vec<&str> {
+        fs.iter().map(|f| f.category).collect()
+    }
+
+    #[test]
+    fn flags_two_records_in_one_kit_answering_to_one_name() {
+        // The live shape this exists for: `accentcolorcard` and `settings-accentcolorcard`, both named
+        // AccentColorCard, both in base-studio-code, and NOT duplicates (2469 vs 1816 bytes).
+        let fs = analyze_name_collisions(&[
+            c("accentcolorcard", "AccentColorCard", "base-studio-code"),
+            c("settings-accentcolorcard", "AccentColorCard", "base-studio-code"),
+            c("unrelated", "Sparkline", "base-studio-code"),
+        ]);
+        assert_eq!(cats(&fs), vec!["name-collision"], "exactly one finding: {fs:?}");
+        assert_eq!(fs[0].node_ids, vec!["accentcolorcard", "settings-accentcolorcard"]);
+        assert_eq!(fs[0].kit, "base-studio-code");
+        assert!(fs[0].why.contains("first in store order"), "names the arbitrary winner: {}", fs[0].why);
+    }
+
+    #[test]
+    fn one_name_per_kit_is_not_a_collision() {
+        // `composes` only ever resolves within one kit, so two kits each carrying a `Card` is fine —
+        // the same scoping rule `dangling-composes-reference` applies.
+        let fs = analyze_name_collisions(&[
+            c("card", "Card", "base-studio-code"),
+            c("m-card", "Card", "mobile-studio-code"),
+        ]);
+        assert!(fs.is_empty(), "cross-kit same-name is not ambiguous: {fs:?}");
+    }
+
+    #[test]
+    fn a_suppression_tombstone_never_creates_a_collision() {
+        // A `{id, suppressed: true}` row occupies an id so the seed reconcile stops re-adding it. It is
+        // not a component and can never be a `composes` target, so counting it would invent a collision
+        // nobody can act on. The live store holds 12 such rows.
+        let fs = analyze_name_collisions(&[
+            c("card", "Card", "base-studio-code"),
+            json!({ "id": "old-card", "name": "Card", "kitId": "base-studio-code", "suppressed": true }),
+        ]);
+        assert!(fs.is_empty(), "a tombstone is not a second answer: {fs:?}");
+    }
+
+    #[test]
+    fn the_match_is_case_insensitive_because_composes_entries_arrive_lowercased() {
+        // `handles_by_kit` folds both sides to lowercase (composes entries arrive lowercased via
+        // `str_array`), so a collision that differs only in case is still a collision at resolve time.
+        let fs = analyze_name_collisions(&[
+            c("a", "SettingsRow", "k"),
+            c("b", "settingsrow", "k"),
+        ]);
+        assert_eq!(cats(&fs), vec!["name-collision"], "case-folded: {fs:?}");
+    }
+
+    #[test]
+    fn three_records_report_as_one_finding_naming_every_member() {
+        let fs = analyze_name_collisions(&[c("a", "Row", "k"), c("b", "Row", "k"), c("c", "Row", "k")]);
+        assert_eq!(fs.len(), 1, "N colliding records are ONE finding, not N-1 pairs");
+        assert_eq!(fs[0].node_ids.len(), 3, "and it names every member: {:?}", fs[0].node_ids);
+    }
+
+    #[test]
+    fn a_record_missing_a_name_or_id_is_skipped_rather_than_grouped_under_empty() {
+        let fs = analyze_name_collisions(&[
+            json!({ "id": "a", "kitId": "k" }),
+            json!({ "id": "b", "kitId": "k" }),
+            json!({ "name": "NoId", "kitId": "k" }),
+            json!({ "name": "NoId2", "kitId": "k" }),
+        ]);
+        assert!(fs.is_empty(), "absent handles must not collide with each other: {fs:?}");
+    }
+
+    #[test]
+    fn a_clean_library_reports_nothing() {
+        let fs = analyze_name_collisions(&[c("a", "Alpha", "k"), c("b", "Beta", "k")]);
+        assert!(fs.is_empty());
     }
 }

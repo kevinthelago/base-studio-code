@@ -688,16 +688,78 @@ fn module_and_its_harvest(a: &Comp, b: &Comp) -> bool {
         && (!a.provides.trim().is_empty() || !b.provides.trim().is_empty())
 }
 
-/// The ids `bsc ui similar <target>` WITHHELD as module/harvest siblings — so the CLI can say so rather
-/// than let them vanish from the ranking. An unexplained absence in a ranked list is indistinguishable
-/// from "nothing resembles it", which is the same reason the retired-record note exists.
+/// A BARREL and one of its SUBMODULES — two records whose `provides` sit one path segment apart, e.g.
+/// `@/shared/ui/charts` above `@/shared/ui/charts/telemetry`. `src/shared/ui/charts/index.ts` takes this
+/// shape literally: one barrel file re-exporting several sibling files under one specifier, each with
+/// its own harvested record (#129 — the "chart-primitives family").
+///
+/// Distinct from [`module_and_its_harvest`]: the two sides here are DIFFERENT source files by
+/// construction — a concatenated barrel and one of the files it concatenates — so `src_path` never
+/// matches and the relation lives entirely in `provides`. Prefix-matched at a `/` boundary so
+/// `@/shared/ui/chart` (a shorter, unrelated specifier) cannot false-positive against
+/// `@/shared/ui/charts/…`. Checked against the whole live store: exactly 6 pairs in ~250
+/// `provides`-bearing records take this shape, all genuine barrel/submodule splits — this one and
+/// `@/features/mcp` over its three submodules.
+fn barrel_and_submodule(a: &Comp, b: &Comp) -> bool {
+    fn is_submodule_of(parent: &str, child: &str) -> bool {
+        !parent.is_empty()
+            && child.len() > parent.len()
+            && child.starts_with(parent)
+            && child.as_bytes()[parent.len()] == b'/'
+    }
+    let (ap, bp) = (a.provides.trim(), b.provides.trim());
+    is_submodule_of(ap, bp) || is_submodule_of(bp, ap)
+}
+
+/// Either [`module_and_its_harvest`] (same source file) or [`barrel_and_submodule`] (a barrel directly
+/// above a submodule) — the two DIRECT ways a pair can be one module wearing two record ids.
+fn harvest_related(a: &Comp, b: &Comp) -> bool {
+    module_and_its_harvest(a, b) || barrel_and_submodule(a, b)
+}
+
+/// The TRANSITIVE closure of [`harvest_related`] over `comps` — every component's family id (the lowest
+/// index reachable in its connected component; unrelated to anything ⇒ its own index).
+///
+/// A pairwise check under-withholds a chain: `itembars` shares no `src` or `provides` relation with
+/// `ui-charts` directly, but shares its FILE with `telemetry-module` (`module_and_its_harvest`), which
+/// IS a submodule of the `ui-charts` barrel (`barrel_and_submodule`). Only the transitive closure
+/// recognizes `itembars` as part of `ui-charts`'s family — exactly the "6+ overlapping duplicate
+/// records" #129 was filed about.
+fn harvest_families(comps: &[Comp]) -> Vec<usize> {
+    let mut parent: Vec<usize> = (0..comps.len()).collect();
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        if parent[x] != x {
+            parent[x] = find(parent, parent[x]);
+        }
+        parent[x]
+    }
+    for i in 0..comps.len() {
+        for j in (i + 1)..comps.len() {
+            if harvest_related(&comps[i], &comps[j]) {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj {
+                    parent[ri.max(rj)] = ri.min(rj);
+                }
+            }
+        }
+    }
+    (0..comps.len()).map(|i| find(&mut parent, i)).collect()
+}
+
+/// The ids `bsc ui similar <target>` WITHHELD as module/harvest family members — so the CLI can say so
+/// rather than let them vanish from the ranking. An unexplained absence in a ranked list is
+/// indistinguishable from "nothing resembles it", which is the same reason the retired-record note
+/// exists. Transitive (see [`harvest_families`]): a sibling reached only through a chain is still named.
 pub fn harvest_siblings_of(target_id: &str, components: &[Value]) -> Vec<String> {
     let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
-    let Some(target) = comps.iter().find(|c| c.id == target_id) else { return Vec::new() };
+    let Some(ti) = comps.iter().position(|c| c.id == target_id) else { return Vec::new() };
+    let family = harvest_families(&comps);
+    let root = family[ti];
     let mut out: Vec<String> = comps
         .iter()
-        .filter(|c| c.id != target_id && live(c) && module_and_its_harvest(target, c))
-        .map(|c| c.id.clone())
+        .enumerate()
+        .filter(|(i, c)| *i != ti && live(c) && family[*i] == root)
+        .map(|(_, c)| c.id.clone())
         .collect();
     out.sort();
     out
@@ -794,6 +856,69 @@ pub fn provides_collision_findings(components: &[Value]) -> Vec<Finding> {
         .collect()
 }
 
+/// `provides` SPLITS (#129) — every `src_path` whose live records disagree about WHICH specifier it
+/// stands in for.
+///
+/// Distinct from [`provides_collision_findings`], which is the mirror case: there, several records
+/// claim the SAME specifier and the loader picks one arbitrarily. Here each record claims a DIFFERENT
+/// one off the SAME file — which [`module_and_its_harvest`]'s own doc comment already states can never
+/// be legitimate ("one source file is one module, so two records from it cannot legitimately claim two
+/// different specifiers"), but nothing acted on that until now. Because the pair disagrees rather than
+/// collides, it fails every existing check silently: not a `provides-collision` (the specifiers
+/// differ), not a `near-duplicate` (`module_and_its_harvest` deliberately excludes it — retiring the
+/// `provides` side is destructive, so it is withheld from merge proposals), and not a
+/// `reimplemented-component` (the same-file-sibling filter treats same-`src` records as one closure's
+/// legitimate co-exports). A file that was harvested once, then re-harvested after a later refactor
+/// split it into submodules, leaves exactly this shape: the stale whole-file record still claims the
+/// old barrel specifier while the fresh per-submodule record claims its own — filed as request #129
+/// (`ui-charts` vs `charts-module`, both off `Charts.tsx`).
+///
+/// PROPOSE-ONLY, like its sibling: which specifier is actually live is a question about the current
+/// import graph, not something this measure can answer from the records alone.
+pub fn provides_split_findings(components: &[Value]) -> Vec<Finding> {
+    let comps: Vec<Comp> = components.iter().filter_map(parse).filter(live).collect();
+    let mut by_src: std::collections::BTreeMap<String, Vec<&Comp>> = Default::default();
+    for c in &comps {
+        if !c.src_path.trim().is_empty() {
+            by_src.entry(c.src_path.clone()).or_default().push(c);
+        }
+    }
+    by_src
+        .into_iter()
+        .filter_map(|(src, mut group)| {
+            let specs: std::collections::BTreeSet<&str> = group
+                .iter()
+                .filter_map(|c| {
+                    let spec = c.provides.trim();
+                    (!spec.is_empty()).then_some(spec)
+                })
+                .collect();
+            if specs.len() < 2 {
+                return None;
+            }
+            group.sort_by(|a, b| a.id.cmp(&b.id));
+            Some(Finding {
+                category: "provides-split",
+                severity: 4,
+                kit: group.iter().map(|c| c.kit.clone()).collect::<std::collections::BTreeSet<_>>()
+                    .into_iter().collect::<Vec<_>>().join(" ↔ "),
+                node_ids: group.iter().map(|c| c.id.clone()).collect(),
+                node_names: group.iter().map(|c| c.name.clone()).collect(),
+                why: format!(
+                    "{} records all trace to `{src}` but disagree about the specifier it stands in for: {}",
+                    group.len(),
+                    specs.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", "),
+                ),
+                suggested_action: format!(
+                    "one file cannot legitimately serve {} specifiers — check `{src}`'s real importers (or its barrel) for which one is actually live, then clear `provides` on the rest ({})",
+                    specs.len(),
+                    group.iter().map(|c| format!("`{}`", c.id)).collect::<Vec<_>>().join(", "),
+                ),
+            })
+        })
+        .collect()
+}
+
 /// Library-wide near-duplicate findings (#3544) — every component pair scoring at or above `threshold`,
 /// EXCLUDING pairs the exact `duplicate` detector already catches. Cross-kit by design (the whole point is
 /// consolidating overlapping kits). PROPOSE-ONLY: emitted here, never fed to the `--fix` planners. Ranked
@@ -802,11 +927,12 @@ pub fn near_duplicate_findings(components: &[Value], threshold: f64) -> Vec<Find
     let comps: Vec<Comp> = components.iter().filter_map(parse).filter(live).collect();
     let handles = handles_by_kit(&comps);
     let dangling: Vec<BTreeSet<String>> = comps.iter().map(|c| dangling_composes(c, &handles)).collect();
+    let family = harvest_families(&comps);
     let mut scored: Vec<(f64, Finding)> = Vec::new();
     for i in 0..comps.len() {
         for j in (i + 1)..comps.len() {
             let (a, b) = (&comps[i], &comps[j]);
-            if exactly_caught(a, b) || module_and_its_harvest(a, b) {
+            if exactly_caught(a, b) || family[i] == family[j] {
                 continue;
             }
             let Some(sc) = score(a, b) else { continue };
@@ -1255,16 +1381,22 @@ pub fn rank_shape_similar(target_id: &str, components: &[Value], top: usize, flo
 
 pub fn rank_similar(target_id: &str, components: &[Value], top: usize, floor: f64) -> Vec<Value> {
     let comps: Vec<Comp> = components.iter().filter_map(parse).collect();
-    let Some(target) = comps.iter().find(|c| c.id == target_id) else {
+    let Some(ti) = comps.iter().position(|c| c.id == target_id) else {
         return Vec::new();
     };
+    let family = harvest_families(&comps);
+    let root = family[ti];
+    let target = &comps[ti];
     let mut rows: Vec<(f64, Value)> = comps
         .iter()
-        .filter(|c| c.id != target_id)
-        .filter(|c| live(c)) // a tombstone is never an actionable candidate — see `rank_shape_similar`
-        // A record harvested from the target's own source file is the same file, not a candidate to
-        // merge into — see `module_and_its_harvest`. The CLI names what this withheld.
-        .filter(|c| !module_and_its_harvest(target, c))
+        .enumerate()
+        .filter(|(i, _)| *i != ti)
+        .filter(|(_, c)| live(c)) // a tombstone is never an actionable candidate — see `rank_shape_similar`
+        // A record harvested from the target's own file, OR from a barrel/submodule the target is
+        // (transitively) part of, is the same module wearing another id — not a candidate to merge
+        // into. See `harvest_families`; the CLI names what this withheld.
+        .filter(|(i, _)| family[*i] != root)
+        .map(|(_, c)| c)
         .filter_map(|c| {
             let sc = score(target, c)?;
             if sc.overall < floor {
@@ -2000,6 +2132,107 @@ mod tests {
         );
     }
 
+    /// #129 — a BARREL and one of the files it re-exports are different source files by construction
+    /// (`src/shared/ui/charts/index.ts` re-exporting `Charts.tsx` / `primitives.tsx` / `telemetry.tsx`
+    /// under one specifier each), so `module_and_its_harvest`'s shared-`src` check can never relate them.
+    /// Only `provides` says the pair is one barrel and one of its submodules.
+    #[test]
+    fn a_barrel_and_its_submodule_are_not_a_duplicate() {
+        let body = |extra: &str| {
+            format!(
+                "export function RangeToggle({{ value, onChange, options = [\"7d\", \"14d\", \"30d\"] }}) {{\n  \
+                 {extra}return (\n    <div className=\"seg\">\n      {{options.map(o => (\n        \
+                 <button key={{o}} className={{o === value ? \"on\" : \"\"}} onClick={{() => onChange(o)}}>{{o}}</button>\n      \
+                 ))}}\n    </div>\n  );\n}}"
+            )
+        };
+        let barrel = comp_with("ui-charts", "Charts", "base-studio-code", fields! {
+            "src": "src/shared/ui/charts/Charts.tsx", "provides": "@/shared/ui/charts",
+        });
+        let mut barrel = barrel;
+        barrel["srcText"] = json!(body("const noop = 1; "));
+        let submodule = comp_with("rangetoggle", "RangeToggle", "base-studio-code", fields! {
+            "src": "src/shared/ui/charts/primitives.tsx", "provides": "@/shared/ui/charts/primitives",
+        });
+        let mut submodule = submodule;
+        submodule["srcText"] = json!(body(""));
+
+        // Sanity: WITHOUT the rule this pair scores well past the bar.
+        assert!(
+            contract_similarity(&barrel, &submodule) >= 0.7,
+            "the pair must be genuinely near-identical for this test to mean anything: {}",
+            contract_similarity(&barrel, &submodule),
+        );
+
+        let pair = vec![barrel.clone(), submodule.clone()];
+        assert!(
+            near_duplicate_findings(&pair, 0.55).is_empty(),
+            "a barrel and its own submodule are one family, not two implementations: {:?}",
+            near_duplicate_findings(&pair, 0.55),
+        );
+        assert!(rank_similar("ui-charts", &pair, 10, 0.0).is_empty(), "barrel -> submodule");
+        assert!(rank_similar("rangetoggle", &pair, 10, 0.0).is_empty(), "submodule -> barrel");
+        assert_eq!(harvest_siblings_of("ui-charts", &pair), vec!["rangetoggle".to_string()]);
+        assert_eq!(harvest_siblings_of("rangetoggle", &pair), vec!["ui-charts".to_string()]);
+
+        // The relation is prefix-matched at a `/` boundary — a SHORTER, unrelated specifier that merely
+        // starts with the same characters must not false-positive as a barrel over this submodule.
+        let mut unrelated = comp_with("chart-thing", "ChartThing", "base-studio-code", fields! {
+            "src": "src/shared/ui/chart.tsx", "provides": "@/shared/ui/chart",
+        });
+        unrelated["srcText"] = json!(body(""));
+        assert!(
+            harvest_siblings_of("rangetoggle", &[submodule.clone(), unrelated]).is_empty(),
+            "`@/shared/ui/chart` is a different, shorter specifier — not a barrel over `.../charts/primitives`",
+        );
+    }
+
+    /// A pairwise check under-withholds a CHAIN: a component harvested out of a submodule file shares no
+    /// direct `src` or `provides` relation with the barrel two hops away, only with the submodule in
+    /// between. #129 ("chart-primitives family") is exactly this shape — `itembars` (harvested from
+    /// `telemetry.tsx`) relates to `ui-charts` (the `@/shared/ui/charts` barrel) only via `telemetry-
+    /// module` (`provides: @/shared/ui/charts/telemetry`), which sits between them.
+    #[test]
+    fn harvest_family_is_transitive_across_a_chain() {
+        let body = |extra: &str| {
+            format!("export function ItemBars({{ rows }}) {{ {extra}return <div />; }}")
+        };
+        let barrel = {
+            let mut v = comp_with("ui-charts", "Charts", "base-studio-code", fields! {
+                "src": "src/shared/ui/charts/Charts.tsx", "provides": "@/shared/ui/charts",
+            });
+            v["srcText"] = json!(body("const noop = 1; "));
+            v
+        };
+        let telemetry_module = {
+            let mut v = comp_with("telemetry-module", "TelemetryPanel", "base-studio-code", fields! {
+                "src": "src/shared/ui/charts/telemetry.tsx", "provides": "@/shared/ui/charts/telemetry",
+            });
+            v["srcText"] = json!(body("const noop = 2; "));
+            v
+        };
+        let itembars = {
+            // Same file as `telemetry_module`, no `provides` of its own — a pure harvested view.
+            let mut v = comp_with("itembars", "ItemBars", "base-studio-code", fields! {
+                "src": "src/shared/ui/charts/telemetry.tsx",
+            });
+            v["srcText"] = json!(body(""));
+            v
+        };
+        let all = vec![barrel, telemetry_module, itembars];
+
+        assert_eq!(
+            harvest_siblings_of("ui-charts", &all),
+            vec!["itembars".to_string(), "telemetry-module".to_string()],
+            "itembars is reachable from ui-charts only through telemetry-module — a pairwise check misses it",
+        );
+        assert!(
+            rank_similar("ui-charts", &all, 10, 0.0).is_empty(),
+            "the whole two-hop family must be withheld from the ranking, not just the direct submodule",
+        );
+        assert!(near_duplicate_findings(&all, 0.55).is_empty());
+    }
+
     #[test]
     fn a_provides_collision_is_its_own_finding_not_a_similarity_score() {
         // The loader resolves a specifier to ONE record; the rest are dead overrides that still read as
@@ -2013,6 +2246,48 @@ mod tests {
         assert!(f[0].suggested_action.contains("keep `b`"), "the most-used record is the keeper: {}", f[0].suggested_action);
         // A lone provider is not a collision.
         assert!(provides_collision_findings(&[mk("a", 1)]).is_empty());
+    }
+
+    /// #129: same `src`, two DIFFERENT specifiers — the mirror of a `provides-collision` and the exact
+    /// shape `near_duplicate_findings`'s "1 · Same file, BOTH claiming a specifier" case (above) proves
+    /// is withheld from merge scoring. That withholding is correct (retiring either side is destructive),
+    /// but it means the defect needs its OWN finding or it is invisible everywhere — which is what request
+    /// #129 was filed against (`ui-charts` vs `charts-module`, both harvested from `Charts.tsx`).
+    #[test]
+    fn a_provides_split_is_flagged_even_though_near_duplicate_withholds_it() {
+        const SRC: &str = "src/shared/ui/charts/Charts.tsx";
+        let whole_file = comp_with("ui-charts", "Charts", "base-studio-code", fields! {
+            "src": SRC, "provides": "@/shared/ui/charts",
+        });
+        let submodule = comp_with("charts-module", "LineArea", "base-studio-code", fields! {
+            "src": SRC, "provides": "@/shared/ui/charts/Charts",
+        });
+
+        // Confirmed silent everywhere else: not a collision (specifiers differ)...
+        assert!(provides_collision_findings(&[whole_file.clone(), submodule.clone()]).is_empty());
+        // ... and withheld from near-duplicate scoring (module_and_its_harvest).
+        assert!(near_duplicate_findings(&[whole_file.clone(), submodule.clone()], 0.0).is_empty());
+
+        // ... but IS its own finding.
+        let splits = provides_split_findings(&[whole_file, submodule]);
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0].category, "provides-split");
+        assert_eq!(splits[0].severity, 4);
+        assert_eq!(splits[0].node_ids, vec!["charts-module".to_string(), "ui-charts".to_string()]);
+        assert!(splits[0].why.contains("@/shared/ui/charts"));
+        assert!(splits[0].why.contains("@/shared/ui/charts/Charts"));
+
+        // Same file, only ONE side claims a specifier — not a split, just an ordinary module/harvest pair.
+        let unclaimed = comp_with("sibling", "Sibling", "base-studio-code", fields! { "src": SRC });
+        let one_claim = comp_with("owner", "Owner", "base-studio-code", fields! {
+            "src": SRC, "provides": "@/shared/ui/charts/Charts",
+        });
+        assert!(provides_split_findings(&[unclaimed, one_claim]).is_empty());
+
+        // No `src` at all must never group records together by an empty string.
+        let no_src_a = comp_with("a", "A", "k", fields! { "provides": "@/x/A" });
+        let no_src_b = comp_with("b", "B", "k", fields! { "provides": "@/x/B" });
+        assert!(provides_split_findings(&[no_src_a, no_src_b]).is_empty());
     }
 
     #[test]

@@ -171,6 +171,31 @@ pub fn widenings(child: &Value, ancestor: &Value) -> Vec<String> {
         _ => {}
     }
 
+    // surfaces — the `bsc` COMMAND SURFACES this persona drives
+    // (`a-persona-declares-its-command-surfaces`). Judged by the SAME inverted rule as `allow`, and
+    // for the same reason: `bsc` is in the permission model's mandatory tier, so a persona that
+    // declares no surfaces reaches every one of them. Absence is therefore the WIDEST value, and
+    // dropping the list promotes a worker pinned to five stores into one driving the whole CLI.
+    //
+    // A plain subset test would wave that through — which is exactly the case the `allow` check above
+    // exists for, so the two are deliberately the same shape rather than sharing a helper that would
+    // make the inversion easy to miss when reading either one.
+    let want_surfaces = str_list(child, "surfaces");
+    let have_surfaces = str_list(ancestor, "surfaces");
+    match (&want_surfaces, &have_surfaces) {
+        (None, Some(have)) if !have.is_empty() => {
+            out.push("surfaces: dropping the list would lift the declared command-surface set entirely".into());
+        }
+        (Some(want), Some(have)) if !have.is_empty() => {
+            for surface in want {
+                if !have.contains(surface) {
+                    out.push(format!("surfaces: '{surface}' is not one the ancestor drives"));
+                }
+            }
+        }
+        _ => {}
+    }
+
     out
 }
 
@@ -297,5 +322,62 @@ mod tests {
             let child = json!({ axis: "read" });
             assert_eq!(widenings(&child, &closed_floor()).len(), 1, "axis {axis} escaped the closed floor");
         }
+    }
+
+    /// A persona that DECLARES command surfaces (`a-persona-declares-its-command-surfaces`). The
+    /// worker's real shape: unconfined (no `allow`, so it keeps its baseline command tiers) but held
+    /// to a named set of `bsc` surfaces.
+    fn declaring_ancestor() -> Value {
+        json!({
+            "github": "read", "git": "write", "code": "write", "net": "read", "ui": "read",
+            "surfaces": ["plan", "graph", "ui", "files", "errors"]
+        })
+    }
+
+    #[test]
+    fn dropping_the_declared_surfaces_is_a_widening_not_a_no_op() {
+        // The case a subset test waves through: `bsc` is in the mandatory tier, so a persona with no
+        // `surfaces` reaches EVERY surface. Omission is the widest value, exactly as for `allow`.
+        let child = json!({ "github": "read", "git": "write", "code": "write", "net": "read", "ui": "read" });
+        let out = widenings(&child, &declaring_ancestor());
+        assert_eq!(
+            out,
+            vec!["surfaces: dropping the list would lift the declared command-surface set entirely"]
+        );
+    }
+
+    #[test]
+    fn a_declared_surface_the_ancestor_does_not_drive_is_refused() {
+        let child = json!({ "surfaces": ["plan", "fleet"] });
+        let out = widenings(&child, &declaring_ancestor());
+        assert_eq!(out, vec!["surfaces: 'fleet' is not one the ancestor drives"]);
+    }
+
+    #[test]
+    fn narrowing_the_declared_surfaces_is_allowed() {
+        let child = json!({ "surfaces": ["plan"] });
+        assert!(widenings(&child, &declaring_ancestor()).is_empty());
+    }
+
+    #[test]
+    fn an_undeclared_ancestor_may_gain_surfaces_because_that_narrows_it() {
+        // The direction every still-undeclared role will travel: triage/tester/reviewer declare for
+        // the first time, which is a restriction, not an escalation.
+        let anc = json!({ "github": "read", "git": "read", "code": "none", "net": "read", "ui": "read" });
+        let child = json!({ "surfaces": ["plan"] });
+        assert!(widenings(&child, &anc).is_empty());
+    }
+
+    #[test]
+    fn the_surfaces_rule_is_independent_of_the_allow_rule() {
+        // Both are inverted, and an earlier draft checked only one. A persona can be unconfined
+        // (no `allow`) AND declaring (`surfaces`), which is exactly the worker — so a child dropping
+        // `surfaces` must be caught even though there is no `allow` anywhere in the comparison.
+        let child = json!({ "allow": ["bsc plan"] });
+        let out = widenings(&child, &declaring_ancestor());
+        assert!(
+            out.iter().any(|w| w.starts_with("surfaces:")),
+            "the surfaces drop was missed: {out:?}"
+        );
     }
 }

@@ -8,7 +8,14 @@
     "git": "write",
     "code": "write",
     "net": "read",
-    "ui": "read"
+    "ui": "read",
+    "surfaces": [
+      "plan",
+      "graph",
+      "ui",
+      "files",
+      "errors"
+    ]
   },
   "blurb": "Executes one assigned issue in its own worktree, then opens a PR.",
   "startPrompt": "",

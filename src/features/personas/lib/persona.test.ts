@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BUILTIN_PERSONAS, makeBuiltinPersonas, blankPersona, personaSlug, reconcilePersonas, type Persona } from "@/features/personas/lib/persona";
+import { BUILTIN_PERSONAS, makeBuiltinPersonas, blankPersona, personaSlug, reconcilePersonas, proseFingerprint, type Persona } from "@/features/personas/lib/persona";
 import architectProtocolMd from "@data/fleet/architect-protocol.md?raw";
 
 describe("persona built-ins (#2094 / externalized #2185)", () => {
@@ -140,14 +140,19 @@ describe("reconcilePersonas (#2094)", () => {
 
   it("preserves user edits to a built-in but restores its builtin identity", () => {
     // A persisted built-in the user renamed + (maliciously or via stale state) marked non-builtin.
+    // SEALED, because that is what a record written by this app now looks like: the seal is what says
+    // "the prose diverged from packaged deliberately". See the bootstrap test below for the unsealed
+    // case, which is the pre-seal upgrade and behaves differently on purpose.
     const persisted: Persona[] = [
       { id: "persona-worker", name: "My Worker", blurb: "custom", role: "worker",
-        startPrompt: "edited", skills: ["s1"], builtin: false },
+        startPrompt: "edited", skills: ["s1"], builtin: false,
+        proseSeal: { startPrompt: "deadbeef", blurb: "deadbeef", responsibilities: "deadbeef" } },
     ];
     const out = reconcilePersonas(persisted);
     const worker = out.find((p) => p.id === "persona-worker")!;
     expect(worker.name).toBe("My Worker");        // edit kept
     expect(worker.startPrompt).toBe("edited");    // edit kept
+    expect(worker.blurb).toBe("custom");          // edit kept
     expect(worker.skills).toEqual(["s1"]);        // edit kept
     expect(worker.builtin).toBe(true);            // identity restored — cannot become deletable
   });
@@ -191,5 +196,111 @@ describe("reconcilePersonas (#2094)", () => {
     const mine = out.find((p) => p.id === "persona-mine")!;
     expect(mine).toBeTruthy();
     expect(mine.builtin).toBe(false);
+  });
+});
+
+// ── The prose seal ──────────────────────────────────────────────────────────────────────────────
+//
+// THE BUG IT FIXES. A packaged persona's prose was unreachable once seeded: the merge preferred the
+// persisted value for every field except an EMPTY `startPrompt`. So when discovery was moved onto the
+// architect and its packaged protocol was rewritten to say so, every already-seeded store kept serving
+// the old teams-only prompt — the one that tells it to refuse anything but teams and personas and to
+// send the user to a planner that no longer exists. Its POWERS moved (those are computed from the
+// packaged JSON, not the store) and its instructions did not, so the session held the funnel's
+// capability and the previous job's charter. Measured on a real store: the architect was the ONLY
+// built-in whose prose diverged from packaged — director and worker both carried theirs.
+describe("reconcilePersonas — packaged prose reaches an already-seeded store", () => {
+  const packagedArchitect = () => BUILTIN_PERSONAS.find((p) => p.id === "persona-architect")!;
+
+  /** A persisted built-in as an OLDER app wrote it: real prose, no seal. */
+  const unsealed = (over: Partial<Persona> = {}): Persona => ({
+    id: "persona-architect", name: "Team architect", blurb: "the old teams-only blurb",
+    role: "architect", startPrompt: "You are the team architect — teams and personas only.",
+    skills: [], builtin: true, ...over,
+  });
+
+  it("re-seeds a stale unsealed built-in — the architect gets its funnel protocol", () => {
+    const out = reconcilePersonas([unsealed()]).find((p) => p.id === "persona-architect")!;
+    expect(out.startPrompt).toBe(packagedArchitect().startPrompt);
+    expect(out.startPrompt).toContain("tier 1 of the funnel");
+    expect(out.blurb).toBe(packagedArchitect().blurb);
+  });
+
+  it("keeps the displaced prose recoverable rather than destroying it", () => {
+    // The one-time bootstrap is the only thing that can displace text the app did not write, so it is
+    // the only thing that records a replacement. Nothing reads this; it exists so an upgrade the user
+    // did not ask for cannot be a deletion.
+    const out = reconcilePersonas([unsealed()]).find((p) => p.id === "persona-architect")!;
+    expect(out.replacedProse?.startPrompt).toContain("teams and personas only");
+    expect(out.replacedProse?.blurb).toBe("the old teams-only blurb");
+  });
+
+  it("NEVER clobbers a sealed edit, however many times a packaged bump lands", () => {
+    // The promise from the seal forward: once a record has been through reconcile, a prose value that
+    // no longer fingerprints as what we wrote is the user's, permanently.
+    const edited = unsealed({ startPrompt: "MY OWN PROMPT", proseSeal: { startPrompt: "0000dead" } });
+    let out = reconcilePersonas([edited]).find((p) => p.id === "persona-architect")!;
+    expect(out.startPrompt).toBe("MY OWN PROMPT");
+    expect(out.replacedProse?.startPrompt).toBeUndefined();   // nothing was displaced
+    out = reconcilePersonas([out]).find((p) => p.id === "persona-architect")!;
+    expect(out.startPrompt).toBe("MY OWN PROMPT");            // and again, and again
+  });
+
+  it("re-seeds a field whose seal says we wrote it, and only that field", () => {
+    // The exact mechanism: the fingerprint matches what reconcile last wrote ⇒ untouched ⇒ ours.
+    // The user's edited blurb beside it must survive the same pass.
+    const stale = unsealed({
+      startPrompt: "OLD PACKAGED PROSE",
+      blurb: "a blurb I wrote myself",
+      proseSeal: { startPrompt: proseFingerprint("OLD PACKAGED PROSE"), blurb: "0000dead" },
+    });
+    const out = reconcilePersonas([stale]).find((p) => p.id === "persona-architect")!;
+    expect(out.startPrompt).toBe(packagedArchitect().startPrompt);   // ours → re-seeded
+    expect(out.blurb).toBe("a blurb I wrote myself");                // theirs → kept
+  });
+
+  it("stamps a seal on every reconciled built-in, so the NEXT edit is already protected", () => {
+    // Without this a user's first edit would land on an unsealed record and be re-seeded away by the
+    // following packaged bump — the bootstrap firing twice for one user.
+    const fresh = reconcilePersonas([]).find((p) => p.id === "persona-architect")!;
+    expect(fresh.proseSeal?.startPrompt).toBe(proseFingerprint(packagedArchitect().startPrompt));
+
+    const theirEdit = { ...fresh, startPrompt: "changed by the user" };
+    const after = reconcilePersonas([theirEdit]).find((p) => p.id === "persona-architect")!;
+    expect(after.startPrompt).toBe("changed by the user");
+  });
+
+  it("is idempotent — a reconciled record reconciles to itself", () => {
+    const once = reconcilePersonas([unsealed()]).find((p) => p.id === "persona-architect")!;
+    const twice = reconcilePersonas([once]).find((p) => p.id === "persona-architect")!;
+    expect(twice.startPrompt).toBe(once.startPrompt);
+    expect(twice.proseSeal).toEqual(once.proseSeal);
+    expect(twice.replacedProse).toEqual(once.replacedProse);
+  });
+
+  it("leaves user-authored personas entirely alone — they are never re-seeded", () => {
+    const mine: Persona = { id: "persona-mine-1", name: "Mine", blurb: "b", role: "reviewer",
+      startPrompt: "my prompt", skills: [] };
+    const out = reconcilePersonas([mine]).find((p) => p.id === "persona-mine-1")!;
+    expect(out.startPrompt).toBe("my prompt");
+    expect(out.builtin).toBe(false);
+    expect(out.proseSeal).toBeUndefined();
+  });
+});
+
+describe("proseFingerprint", () => {
+  it("separates values that differ, and agrees with itself", () => {
+    expect(proseFingerprint("a")).toBe(proseFingerprint("a"));
+    expect(proseFingerprint("a")).not.toBe(proseFingerprint("b"));
+  });
+
+  it("treats absent and empty alike — an unset field is not a different field", () => {
+    expect(proseFingerprint(undefined)).toBe(proseFingerprint(""));
+  });
+
+  it("does not confuse an array's joins — the separator cannot occur in the prose", () => {
+    // `responsibilities` is a string[]; joining on a character that CAN appear in a responsibility
+    // would make ["a b"] and ["a", "b"] fingerprint alike, and a real change would read as none.
+    expect(proseFingerprint(["a b"])).not.toBe(proseFingerprint(["a", "b"]));
   });
 });

@@ -116,24 +116,42 @@ mod tests {
             assert!(seed.contains(needle), "architect seed must mention `{needle}`");
         }
 
-        // The scope guard, pinned by WHAT IT SAYS rather than by a word's casing
-        // (#the-architect-seed-test-pins-a-word-not-the-guard). This asserted the bare literal `ONLY`
-        // as a stand-in for "a guard exists", so rewriting the guard's prose — which is a thing this
-        // seed is MEANT to allow — turned it red while the guard itself never moved. A needle like that
-        // pins typography, and its failure invites re-adding a stray word instead of checking anything.
+        // THE GUARD IS A BOUNDARY, NOT A REFUSAL — and getting that backwards is what broke the
+        // architect (`the-architect-runs-discovery-and-spawns-a-director`).
         //
-        // What actually bounds an architect session is the READ FIRST block: the stores it may touch,
-        // and the refusal for everything else. Those are the claims worth breaking a build over.
+        // This block used to pin a scope guard reading "you work on these stores and nothing else …
+        // if asked for anything outside those stores, refuse briefly and point the user back to the
+        // appropriate surface (the planner for planning)". Every one of those assertions passed while
+        // the session was doing the wrong thing: discovery had been moved ONTO the architect, and the
+        // guard was still telling it to decline discovery and redirect to a session that no longer
+        // exists. A user arriving to plan an application was refused, correctly, by a stale rule.
+        //
+        // So what is pinned now is the boundary that is actually true: the architect's job is the
+        // conversation, and what it must not do is write the plan itself. The old redirect is asserted
+        // ABSENT, because its presence is the regression.
         assert!(seed.contains("READ FIRST"), "the guard must lead the file — it is read top-down");
-        assert!(seed.contains("scope guard"), "the guard must name itself");
         for bounded in ["bsc project link", "bsc project architect"] {
             assert!(seed.contains(bounded), "the guard must name the `{bounded}` surface it bounds");
         }
         assert!(
-            seed.contains("do **not** write code files"),
+            seed.contains("do not write") || seed.contains("do **not** write"),
             "the guard must state what is OUT of scope, not only what is in it",
         );
-        assert!(seed.contains("refuse"), "the guard must say what to DO when asked out of scope");
+        // The whole arc, so the seed cannot describe a tier that stops before the handoff.
+        for step in ["bsc plan requirement set", "bsc plan classify", "bsc project new", "bsc fleet director new"] {
+            assert!(seed.contains(step), "the architect seed must name `{step}` — it is its own job");
+        }
+        // The research surface it actually has. Both servers are in the session's `.mcp.json`; the seed
+        // used to mention neither and to claim it had no network, so a shipped capability was
+        // disclaimed in prose and the "propose, don't interrogate" method had nothing to stand on.
+        for server in ["Research", "Compliance"] {
+            assert!(seed.contains(server), "the seed must name the `{server}` MCP server it is given");
+        }
+        // The regressions, asserted as ABSENCES. Each of these sentences was individually true once and
+        // is now the bug: they send the user to a deleted planner, or deny a capability that is wired.
+        for gone in ["the planner for planning", "you have no network", "No project planning"] {
+            assert!(!seed.contains(gone), "the architect seed must not still say `{gone}`");
+        }
     }
 
     /// #3376 — the read-side companion to "Authoring: write, then apply". The seed must name the lean

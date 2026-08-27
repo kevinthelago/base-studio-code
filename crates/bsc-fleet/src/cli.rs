@@ -2,6 +2,7 @@
 
 use crate::gate;
 use crate::membership;
+use crate::doctor;
 use crate::{
     DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
     StartOutcome, StartRequest, StartResult, WakeRequest, WakeResult, DIRECTOR_KIND, KIND,
@@ -25,12 +26,18 @@ USAGE:
 One row per pane in this project's fleet — INCLUDING the ones that are not running. Each row carries
 the state, and each state is one move:
 
-  running          a session exists and its agent is working        leave it alone
-  idle             the shell is up but its agent has EXITED         wake it
+  running          a session exists and its AGENT is working        leave it alone
+  idle             the shell is up but its agent is NOT running     wake it
   stopped          it launched before; no session now               wake it
   never-launched   the plan names the stream, nothing ever ran it   start the fleet
 
-  LIVE / BUSY / PID are the app's raw answer behind that state.
+  LIVE / AGENT / PID are the app's raw answer behind that state.
+
+AGENT is a real probe for `claude` / `bsc-agent` (or a wrapper hosting one) among the pane's processes
+— NOT `the shell has a child`. Those differ exactly where it matters: a SANDBOXED pane's own `bwrap`
+plumbing and the shell inside it are its descendants, so a bare prompt in a cage looked like work and
+could never report `idle`. A shell mid-build is the same mistake the other way round. `--json` still
+carries `busy` (is anything in flight) for a caller that wants that separate question.
 
 ISSUES is that stream's PROGRESS — its plan issues done/total — because liveness alone does not say
 which stopped worker to wake: stopped-having-finished and stopped-at-issue-one look identical
@@ -168,6 +175,38 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "doctor",
+    summary: "the claims this fleet makes about itself that do not hold",
+    usage: "\
+USAGE:
+  bsc fleet doctor [--db <plan.db>] [--strict] [--json|--pretty]
+
+One finding per claim that does not hold, each naming the pane, what is wrong, WHAT IT COSTS, and the
+fix. Prints nothing when the fleet is clean — a doctor whose normal output is a wall of `ok` is one
+nobody reads, and then the one real line scrolls past.
+
+NEEDS NO APP, unlike `fleet list`. Every check is a filesystem fact about a worktree, so this answers
+when the app is DOWN — which is exactly when a director most needs it.
+
+  no-gate       the worktree has no `.claude/settings.json`, so the pane has no role gate and no shell
+                allow-list. A launch or wake of it is REFUSED (#1819) — and a wake KILLS the session
+                before it finds that out, which is how four workers were destroyed by being woken.
+  caged-floor   its PreToolUse hooks invoke `/bsc-hook`, which exists only inside a mount namespace.
+                Launched uncaged, those gates cannot execute and fail NON-BLOCKING — the session runs
+                with no write-scope and no dangerous-command floor, looking exactly like one that is
+                gated and permitting.
+
+WHY THIS EXISTS. Four bugs in one day shared one signature: an answer that was wrong in the
+SAFE-LOOKING direction and left NO DURABLE TRACE — a parked fleet reported as `running`, a dead
+permission floor, a wake that killed what it could not relaunch, a prompt silently truncated to half.
+Each was found by hand, by reading process trees and server logs. This is the same shape as
+`bsc graph doctor` and `bsc ui parity`: compare TWO INDEPENDENT SOURCES that must agree, and report
+where they do not. A check that re-derives its answer from the code that produced it proves nothing,
+so every check here names its two sources.
+
+Reports and exits 0 by default; `--strict` exits non-zero on any finding. Opt-in for the reason
+`bsc ui parity`'s is: a guard that lands red protects nothing.",
+}, CmdDoc {
     name: "clone",
     summary: "clone the project's linked repos into its hub — the prerequisite for any worker",
     usage: "\
@@ -219,9 +258,13 @@ REFUSES a BUSY pane unless --force. Waking KILLS the PTY before relaunching, so 
 that is mid-task is a deliberate act, not something to do by accident. `bsc fleet list` shows which
 panes are busy.
 
-The reply carries whether the wake actually landed. A pane the app cannot resolve (or one the user
-disabled) reports an ERROR rather than success — the wake path kills first, so a false success would
-leave a dead worker behind a caller that believes it is running.
+A DISABLED pane (one a person turned off via the Console pane menu, or that a session-end used to set)
+is REVIVED, not refused — ending a session no longer keeps the director from waking it back up.
+
+The reply carries whether the wake actually landed. A pane the app cannot resolve — no open tab left to
+recreate it in, or a stream neither the roster nor plan.db names — reports an ERROR rather than success,
+naming which of the two it was. The wake path kills first, so a false success would leave a dead worker
+behind a caller that believes it is running.
 
 Requires the desktop app: waking is frontend state, so only the app can do it.",
 }];
@@ -233,6 +276,9 @@ struct Args {
     db: Option<String>,
     prompt: Option<String>,
     force: bool,
+    /// `doctor --strict`: exit non-zero when anything is found, so it can be a gate. Plain runs
+    /// report and exit 0 — a guard that lands red protects nothing (see `bsc ui parity`).
+    strict: bool,
     timeout_ms: Option<i64>,
     /// `clone`: the PAT for a private repo. Never echoed — a failed clone redacts it.
     token: Option<String>,
@@ -244,7 +290,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -254,6 +300,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
+            "--strict" => a.strict = true,
             "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
             "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
             "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
@@ -315,6 +362,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "start" => cmd_start(&args, prog),
         "wake" => cmd_wake(&args, prog),
         "clone" => cmd_clone(&args, prog),
+        "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -838,6 +886,46 @@ fn choose_membership(args: &Args) -> Option<(String, Vec<membership::Member>)> {
     plan_membership(&args.db)
 }
 
+/// `bsc fleet doctor` — the claims this fleet makes about itself that do not hold.
+///
+/// APP-FREE. Every check here is a filesystem fact about a worktree, so it answers with the app
+/// down — which is exactly when a director most needs it and exactly when `fleet list`, which asks
+/// the running app, can say nothing at all.
+///
+/// Prints NOTHING when the fleet is clean. A doctor whose normal output is a wall of "ok" is one
+/// nobody reads, and then the one real line scrolls past.
+fn cmd_doctor(args: &Args) -> Result<(), String> {
+    let Some((key, members)) = choose_membership(args) else {
+        return Err("bsc fleet doctor: no plan store — pass --db or set $BSC_PLAN_DB".into());
+    };
+    let base = bsc_util::bsc_base_dir().ok_or("bsc fleet doctor: no base dir")?;
+
+    let findings: Vec<doctor::Finding> = members
+        .iter()
+        .flat_map(|m| {
+            let wt = doctor::find_worktree(&base, &key, &m.stream);
+            doctor::findings_for(&m.pane_id, doctor::read_facts(wt.as_deref()))
+        })
+        .collect();
+
+    if args.json || args.pretty {
+        bsc_cli_util::emit(args.pretty, args.json, &findings, String::new);
+    } else {
+        for f in &findings {
+            println!("{}  {}", f.pane_id, f.category);
+            println!("    {}", f.detail);
+            println!("    → {}", f.consequence);
+            println!("    fix: {}", f.fix);
+        }
+    }
+    // `--strict` is opt-in for the same reason `bsc ui parity`'s is: a guard that lands red protects
+    // nothing. Reporting exits 0 so this can be run habitually; gating is a deliberate choice.
+    if args.strict && !findings.is_empty() {
+        return Err(format!("bsc fleet doctor: {} finding(s)", findings.len()));
+    }
+    Ok(())
+}
+
 fn cmd_list(args: &Args) -> Result<(), String> {
     if let Some((key, members)) = choose_membership(args) {
         return list_from_plan(args, &key, members);
@@ -873,6 +961,9 @@ struct Row {
     state: membership::State,
     live: bool,
     busy: bool,
+    /// An agent process is running for this pane. What `STATE` is derived from — `busy` is the broader
+    /// "something is in flight", which is a different question (see `PaneLive`).
+    agent: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pid: Option<u32>,
     /// The UNLANDED upstreams this stream is waiting on
@@ -958,12 +1049,16 @@ fn list_from_plan(
         .into_iter()
         .map(|m| {
             let p = res.panes.iter().find(|p| p.pane_id == m.pane_id);
-            let state = membership::State::classify(&m, p.map(|p| (p.live, p.busy)));
+            // AGENT, not busy (#fleet-list-reports-whether-the-agent-is-running). `busy` is "something
+            // is in flight", which a sandboxed pane satisfies at a bare prompt — `bwrap` and the shell
+            // inside it are its own descendants — so it could never read `idle`.
+            let state = membership::State::classify(&m, p.map(|p| (p.live, p.agent)));
             let held = waiting.get(m.stream.as_str());
             Row {
                 state,
                 live: p.map(|p| p.live).unwrap_or(false),
                 busy: p.map(|p| p.busy).unwrap_or(false),
+                agent: p.map(|p| p.agent).unwrap_or(false),
                 pid: p.and_then(|p| p.pid),
                 waiting_on: held.map(|h| h.waiting_on.clone()).unwrap_or_default(),
                 deadlocked: held.is_some_and(|h| h.deadlocked),
@@ -995,13 +1090,13 @@ fn render_plan_table(rows: &[Row]) -> String {
     let mut out = if show_deps {
         format!(
             "{:<w$}  {:<9} {:<14} {:<8} {:<dw$} {:<5} {:<5} PID\n",
-            "PANE", "ROLE", "STATE", "ISSUES", "WAITING ON", "LIVE", "BUSY",
+            "PANE", "ROLE", "STATE", "ISSUES", "WAITING ON", "LIVE", "AGENT",
             w = w, dw = dw.max("WAITING ON".len())
         )
     } else {
         format!(
             "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
-            "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "BUSY",
+            "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "AGENT",
             w = w
         )
     };
@@ -1017,7 +1112,10 @@ fn render_plan_table(rows: &[Row]) -> String {
         let tail = format!(
             "{:<5} {:<5} {}",
             if r.live { "yes" } else { "no" },
-            if r.busy { "yes" } else { "no" },
+            // The column shows the AGENT, because that is what STATE is derived from and what the
+            // reader is actually asking. `busy` is still in `--json` for anything that wants "is
+            // something in flight" — they differ on a sandboxed pane at a bare prompt.
+            if r.agent { "yes" } else { "no" },
             r.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
         );
         if show_deps {
@@ -1253,6 +1351,7 @@ mod tests {
             state: membership::State::Stopped,
             live: false,
             busy: false,
+            agent: false,
             pid: None,
             waiting_on: waiting.iter().map(|s| s.to_string()).collect(),
             deadlocked,
@@ -1443,6 +1542,7 @@ mod tests {
             state,
             live,
             busy,
+            agent: busy,
             pid: if live { Some(42) } else { None },
             waiting_on: Vec::new(),
             deadlocked: false,
@@ -1714,7 +1814,9 @@ mod director_tests {
     }
 
     fn pane(id: &str, live: bool, busy: bool) -> PaneLive {
-        PaneLive { pane_id: id.into(), live, busy, pid: if live { Some(7) } else { None } }
+        // `agent` mirrors `busy` in these fixtures: they were written when the two were one signal,
+        // and the cases here are about JOINING liveness onto membership, not about telling them apart.
+        PaneLive { pane_id: id.into(), live, busy, agent: busy, pid: if live { Some(7) } else { None } }
     }
 
     /// The table must show a stopped director as a ROW — that row is the point — and say plainly how

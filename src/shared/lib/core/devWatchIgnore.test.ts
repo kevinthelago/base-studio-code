@@ -53,3 +53,43 @@ describe("devWatchIgnored", () => {
     expect(ignored(at("src/features/wt-experiment/index.ts"))).toBe(false);
   });
 });
+
+// ── the DEBUG sessions' worktrees (#a-record-write-restarts-the-app-the-user-is-using) ─────────────
+//
+// `wt-*` is the maintainer's convention. The debugger charter tells every debug session to work in
+// `.claude/worktrees/<branch>/` instead, and only the first was listed — so the worktrees driven by a
+// process that runs CONTINUOUSLY were the ones being watched. 27 of them when this was found, 36,742
+// files inside the watched root.
+describe("devWatchIgnored — the debug sessions' worktrees", () => {
+  const ignored = (p: string) => picomatch(devWatchIgnored(ROOT))(p);
+
+  it("ignores a debug worktree and its sources", () => {
+    expect(ignored(at(".claude/worktrees/129-chart-primitives"))).toBe(true);
+    expect(ignored(at(".claude/worktrees/129-chart-primitives/src/app/App.tsx"))).toBe(true);
+  });
+
+  it("ignores the worktree DIRECTORY itself, which is what prunes its `.bsc-records/`", () => {
+    // The same rule the `wt-*` case above states, and the reason it matters more here: 1,346 files per
+    // worktree in `.bsc-records/`, rewritten by every typecheck and every test run. The MATCHER does not
+    // exclude that path — a `.`-prefixed segment is not matched under `dot: false` — so the exclusion
+    // has to come from chokidar never descending into the directory at all.
+    expect(ignored(at(".claude/worktrees/129-chart-primitives"))).toBe(true);
+    expect(
+      ignored(at(".claude/worktrees/129-chart-primitives/.bsc-records/store/slices/projects.tsx")),
+      "contents-only would MISS this — the directory entry is what excludes it",
+    ).toBe(false);
+  });
+
+  it("does NOT ignore the rest of `.claude/`, which is real repo content", () => {
+    // Only the worktrees are a second copy of the repo. Settings, agents and skills are source the
+    // maintainer edits, and silently unwatching them would read as "HMR is broken".
+    expect(ignored(at(".claude/settings.json"))).toBe(false);
+    expect(ignored(at(".claude/agents/reviewer.md"))).toBe(false);
+  });
+
+  it("is anchored, so a source file whose path merely contains the word still watches", () => {
+    expect(ignored(at("src/features/glance/worktrees.ts"))).toBe(false);
+    expect(ignored("/elsewhere/.claude/worktrees/x/src/app/App.tsx")).toBe(false);
+  });
+});
+

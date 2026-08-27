@@ -30,6 +30,9 @@ pub mod membership;
 /// are waiting on an upstream, and which sit in a cycle. Shares one CONTRACT FIXTURE with the app's
 /// `streamGate.ts`, so the reporter and the launcher cannot answer differently.
 pub mod gate;
+/// The claims a fleet makes about itself that do not hold (`bsc fleet doctor`) — the divergence
+/// detector for this domain, alongside `bsc graph doctor` and `bsc ui parity`. App-free.
+pub mod doctor;
 
 /// This verb's routing key in the shared channel.
 pub const KIND: &str = "fleet";
@@ -186,7 +189,19 @@ pub struct PaneLive {
     pub live: bool,
     /// Its shell has at least one live descendant, i.e. something is actually running in it. Distinct
     /// from `live`: an idle-but-open session is `live: true, busy: false`.
+    ///
+    /// ANSWERS "may I type at this prompt", NOT "is the agent working". A shell mid-build is busy and
+    /// has no agent; a sandboxed pane is busy at a bare prompt, because its own `bwrap` plumbing and
+    /// the shell inside it are both descendants. Use `agent` for the second question.
     pub busy: bool,
+    /// An AGENT process is running for this pane — `claude`, `bsc-agent`, or a wrapper hosting one.
+    ///
+    /// This is what makes `bsc fleet list` say `running` rather than `idle`, and it is a different
+    /// probe from `busy` for the reason above. `#[serde(default)]` so an older app answering a newer
+    /// CLI degrades to "no agent seen" rather than failing to parse — and the table then says `idle`,
+    /// which is the safe direction: it prompts a wake rather than suppressing one.
+    #[serde(default)]
+    pub agent: bool,
     /// The session's OS process id, when the app has one. Answers the original report's "diagnosing
     /// this required dropping out to tasklist" without a second tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -223,10 +238,12 @@ pub struct WakeRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WakeResult {
     pub pane_id: String,
-    /// `wakePane`'s own verdict. FALSE means the pane could not be resolved or is disabled — and it
-    /// must reach the caller as an error, because the wake path kills the PTY BEFORE relaunching: a
-    /// false reported as success leaves a dead worker and a caller who believes it is running. That
-    /// was #4025, where the Wake button killed every parked worker silently for exactly this reason.
+    /// `wakePane`'s own verdict. FALSE means the pane could not be resolved — no open tab left to
+    /// recreate it in, or a stream neither the roster nor plan.db names. (A DISABLED pane is REVIVED,
+    /// not a cause of FALSE — `a-wake-revives-a-disabled-pane`.) It must reach the caller as an error,
+    /// because the wake path kills the PTY BEFORE relaunching: a false reported as success leaves a
+    /// dead worker and a caller who believes it is running. That was #4025, where the Wake button
+    /// killed every parked worker silently for exactly this reason.
     pub woke: bool,
     /// Whether the pane had something running when the wake landed — so an interrupt is visible in the
     /// reply rather than inferred.
@@ -250,8 +267,8 @@ mod tests {
 
         let res = FleetResult {
             panes: vec![
-                PaneLive { pane_id: "k:director".into(), live: true, busy: true, pid: Some(4242) },
-                PaneLive { pane_id: "k:worker".into(), live: false, busy: false, pid: None },
+                PaneLive { pane_id: "k:director".into(), live: true, busy: true, agent: true, pid: Some(4242) },
+                PaneLive { pane_id: "k:worker".into(), live: false, busy: false, agent: false, pid: None },
             ],
         };
         let json = serde_json::to_string(&res).unwrap();

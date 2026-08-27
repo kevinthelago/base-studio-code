@@ -310,12 +310,13 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   and the transcript cannot tell you.
 - EVERY ROW CARRIES A `state`, AND EACH STATE IS ONE MOVE. The middle two are the ones that hide —
   a stopped worker is silent, and an idle one looks alive:
-  - `running` (`live: true, busy: true`) — the shell is up and the AGENT IS RUNNING. Leave it alone
+  - `running` (`live: true, agent: true`) — the shell is up and the AGENT IS RUNNING. Leave it alone
     (and a wake refuses it without `--force`, on purpose: waking kills the session first).
-  - `idle` (`live: true, busy: false`) — the shell is up but **the agent has exited**. `busy` means
-    "this shell has a live child process", and the agent is that child, so its absence is what this
-    tells you. The pane looks alive and does nothing. A WAKE CASE:
-    `bsc fleet wake <pane-id> --prompt "…"`.
+  - `idle` (`live: true, agent: false`) — the shell is up but **the agent is not running**. The pane
+    looks alive and does nothing. A WAKE CASE: `bsc fleet wake <pane-id> --prompt "…"`.
+    The `AGENT` column is a real probe for `claude`/`bsc-agent` among the pane's processes, not "the
+    shell has a child" — a sandboxed pane's own cage plumbing and the shell inside it are children, so
+    the old signal called a bare prompt `running` and you could never see this state for one.
   - `stopped` (`live: false`, launched before) — parked or reclaimed. Also a wake case. THIS IS THE
     ORDINARY STATE OF MOST OF YOUR FLEET between waves; do not read a table of them as a healthy fleet.
   - `never-launched` — your plan names the stream and nothing ever ran it. ALSO A WAKE CASE:

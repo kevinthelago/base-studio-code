@@ -699,6 +699,55 @@ impl SandboxSpec {
     }
 }
 
+/// The pane's per-session stores directory: `<base>/sandbox-stores/<safe(pane_id)>`.
+///
+/// Pulled out of the launcher so a REPLAY (`bsc sandbox replay <pane-id>`) computes the SAME path
+/// from a bare pane id — the sanitizer (alnum/`-` kept, everything else folded to `_`) has to be
+/// byte-identical on both sides, or a replay looks in a directory the launcher never wrote to.
+pub fn sandbox_stores_root(base: &Path, pane_id: &str) -> PathBuf {
+    let safe: String = pane_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+    base.join("sandbox-stores").join(safe)
+}
+
+/// Where [`write_launch_argv`] persists a rendered namespace launch, inside [`sandbox_stores_root`].
+pub const LAUNCH_ARGV_FILE: &str = "launch-argv";
+
+/// Persist a rendered argv so a LATER `bsc sandbox replay <pane-id>` can reconstruct the exact same
+/// cage a launch actually used.
+///
+/// This exists because nothing else does: the launcher only ever logged a SUMMARY ("N store(s), N
+/// outbox(es)"), never the argv itself, so reproducing a real cage outside the app meant grepping
+/// `journalctl` for a debug line that was never written there — a real dev session tried exactly
+/// that and had no way to get the argv back out (request #135).
+///
+/// NUL-joined, one trailing NUL per element: an argv element is a C string and can therefore never
+/// itself CONTAIN a NUL, which makes this the one separator that needs no quoting layer at all — the
+/// same reasoning [`SandboxSpec::render`] leans on for returning an argv rather than a shell string.
+pub fn write_launch_argv(stores_root: &Path, argv: &[String]) -> std::io::Result<()> {
+    let mut buf = Vec::new();
+    for a in argv {
+        buf.extend_from_slice(a.as_bytes());
+        buf.push(0);
+    }
+    std::fs::write(stores_root.join(LAUNCH_ARGV_FILE), buf)
+}
+
+/// The inverse of [`write_launch_argv`].
+pub fn read_launch_argv(stores_root: &Path) -> std::io::Result<Vec<String>> {
+    let raw = std::fs::read(stores_root.join(LAUNCH_ARGV_FILE))?;
+    let mut parts: Vec<String> =
+        raw.split(|&b| b == 0).map(|s| String::from_utf8_lossy(s).into_owned()).collect();
+    // The writer's trailing NUL splits into one final EMPTY element — drop exactly that one, not
+    // every empty element, so a genuinely empty argv entry in the middle survives the round trip.
+    if parts.last().map(String::is_empty).unwrap_or(false) {
+        parts.pop();
+    }
+    Ok(parts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1081,6 +1130,39 @@ mod clear_env_tests {
         let i = a.iter().position(|x| x == "--setenv").unwrap();
         assert_eq!(a[i + 1], "HOME");
         assert_eq!(a[i + 2], "/repo");
+    }
+}
+
+#[cfg(test)]
+mod launch_argv_tests {
+    use super::*;
+
+    #[test]
+    fn the_stores_root_sanitizes_the_pane_id_like_the_launcher_does() {
+        // Byte-identical to the launcher's own sanitizer (console/pty/mod.rs) — a replay computes
+        // this path from a bare pane id, with no access to what the launcher actually used.
+        let root = sandbox_stores_root(Path::new("/base"), "studio:worker-1/x");
+        assert_eq!(root, PathBuf::from("/base/sandbox-stores/studio_worker-1_x"));
+    }
+
+    #[test]
+    fn a_written_argv_round_trips_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let argv: Vec<String> = vec![
+            "bwrap".into(),
+            "--bind".into(),
+            "/home/agent work".into(), // a space, to prove there is no shell-quoting layer
+            "".into(),                 // a genuinely empty element, mid-argv
+            "/repo".into(),
+        ];
+        write_launch_argv(dir.path(), &argv).unwrap();
+        assert_eq!(read_launch_argv(dir.path()).unwrap(), argv);
+    }
+
+    #[test]
+    fn reading_a_launch_that_was_never_written_is_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_launch_argv(dir.path()).is_err());
     }
 }
 

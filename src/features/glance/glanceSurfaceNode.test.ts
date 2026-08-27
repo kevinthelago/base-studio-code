@@ -14,6 +14,8 @@ import {
   mcpNodeId, serviceNodeId, usesMcpEdgeId,
 } from "@/features/glance/lib/glanceGraph";
 import { buildGlanceData } from "@/features/glance/lib/glanceData";
+import { withCommandSurfaces } from "@/features/glance/lib/glanceFleet";
+import { roleCapability, roleDeniedCommands } from "@/shared/lib/session/sessionRoles";
 
 describe("the command-surface node kind", () => {
   it("namespaces its id so it can never collide with a project key or another band node", () => {
@@ -65,53 +67,118 @@ describe("the command-surface node kind", () => {
 });
 
 // ── EMISSION ──────────────────────────────────────────────────────────────────────────────────────
-// The vocabulary above is inert until something builds nodes with it. These pin the builder's actual
-// behaviour, including the two decisions that are easy to mistake for bugs later: deprecated aliases
-// are skipped, and no `invokes` edge is emitted at L0.
-describe("buildGlanceData — command-surface nodes", () => {
+// The vocabulary above is inert until something builds nodes with it. The band is emitted in the
+// PROJECT DRILL (`withCommandSurfaces`), not at L0 — see `a-persona-declares-its-command-surfaces`.
+describe("buildGlanceData — L0 no longer draws the surface band", () => {
   const p = [{ id: "app-a", name: "App A" }];
 
-  it("emits one fenced-band node per active surface, generated from the catalog", () => {
-    const d = buildGlanceData(p, [], [], [], [], [], [], [
-      { name: "plan", status: "active", store: "plan.db" },
-      { name: "ui", status: "active" },
-    ]);
-    const surfaces = d.rawNodes.filter((n) => n.kind === "surface");
-    expect(surfaces.map((n) => n.id)).toEqual([surfaceNodeId("plan"), surfaceNodeId("ui")]);
-    // A band node lifts out of the project DAG, which is what puts it in the fence rather than the graph.
-    expect(surfaces.every((n) => isBandNode(n))).toBe(true);
-    // The display name is the subcommand token an operator actually types.
-    expect(surfaces.map((n) => n.slug)).toEqual(["plan", "ui"]);
-  });
-
-  it("SKIPS a deprecated alias, so one store is never drawn as two surfaces", () => {
-    // `bsc org` is a deprecated alias for `bsc teams` over the same store. Drawing both would put two
-    // nodes on one store and overstate the surface area — and the catalog already carries the status,
-    // so this reads it instead of keeping a skip-list that would need its own maintenance.
-    const d = buildGlanceData(p, [], [], [], [], [], [], [
-      { name: "teams", status: "active" },
-      { name: "org", status: "deprecated" },
-    ]);
-    expect(d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug)).toEqual(["teams"]);
-  });
-
-  it("emits NO invokes edge at L0 — the session nodes it would leave from are not here", () => {
-    // Not an omission: system-session nodes MOVED into the architect node's drill-in
-    // (#architect-node-expands-into-system-sessions), so at L0 there is no session for a session→surface
-    // edge to start from. Emitting one anyway would dangle, or invent a project→surface relationship the
-    // epic explicitly rejected. This test is what stops someone "fixing" that later.
-    const d = buildGlanceData(p, [], [], [], [], [], [], [{ name: "plan", status: "active" }]);
+  it("emits no surface node and no invokes edge", () => {
+    // It used to emit one node per catalog row and — as its own comment conceded — no edge, because
+    // the `invokes` edge runs session→surface and L0 has no session node. That left 33 permanently
+    // unconnected nodes beside the project network: an inventory of the CLI drawn as if it were part
+    // of the project graph.
+    const d = buildGlanceData(p, [], [], [], [], [], []);
+    expect(d.rawNodes.filter((n) => n.kind === "surface")).toEqual([]);
     expect(d.rawEdges.filter((e) => e.kind === "invokes")).toEqual([]);
   });
 
-  it("is additive — no catalog means a byte-identical graph", () => {
-    const without = buildGlanceData(p, [], [], [], [], [], []);
-    const withEmpty = buildGlanceData(p, [], [], [], [], [], [], []);
-    expect(withEmpty).toEqual(without);
+  it("no longer TAKES a catalog at all", () => {
+    // The parameter is gone rather than kept and ignored. A positional argument every caller still
+    // passes and nothing reads is exactly how a future reader concludes L0 still draws these — so the
+    // arity is the assertion.
+    expect(buildGlanceData).toHaveLength(1); // only `projects` is required; the rest are defaulted
+    const src = buildGlanceData.toString();
+    expect(src).not.toMatch(/surfaceNodeId/);
+  });
+});
+
+describe("withCommandSurfaces — the band in the project drill", () => {
+  /** A drilled fleet: a director and a worker, as `buildOrgFleetData` shapes them. */
+  const drill = () => ({
+    sample: false,
+    rawNodes: [
+      { id: "director", slug: "director", role: "infra" as const, roleLabel: "director", health: "off" as const, activity: "idle" as const },
+      { id: "api", slug: "api", role: "service" as const, roleLabel: "worker", health: "off" as const, activity: "idle" as const },
+    ],
+    rawEdges: [],
+  });
+  const CATALOG = [
+    { name: "plan", status: "active" }, { name: "graph", status: "active" }, { name: "ui", status: "active" },
+    { name: "files", status: "active" }, { name: "errors", status: "active" }, { name: "fleet", status: "active" },
+    { name: "publish", status: "active" }, { name: "teams", status: "active" }, { name: "persona", status: "active" },
+    { name: "logs", status: "active" }, { name: "request", status: "active" }, { name: "atlas", status: "active" },
+  ];
+
+  it("draws one node per surface the drill's agents DECLARE, and no others", () => {
+    const d = withCommandSurfaces(drill(), CATALOG);
+    const drawn = d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug).sort();
+    // The union of the worker's five and the director's eight.
+    expect(drawn).toEqual(["errors", "files", "fleet", "graph", "logs", "persona", "plan", "publish", "request", "teams", "ui"]);
+    // `atlas` is in the catalog and declared by nobody here, so the project's band does not carry it.
+    expect(drawn).not.toContain("atlas");
   });
 
-  it("treats a surface with no status as active, since the catalog omits it for the common case", () => {
-    const d = buildGlanceData(p, [], [], [], [], [], [], [{ name: "cad" }]);
-    expect(d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug)).toEqual(["cad"]);
+  it("edges each agent to its OWN surfaces — the band is per node, not per graph", () => {
+    const d = withCommandSurfaces(drill(), CATALOG);
+    const from = (id: string) => d.rawEdges.filter((e) => e.kind === "invokes" && e.from === id).map((e) => surfaceNameOfNode(e.to)).sort();
+    expect(from("api")).toEqual(["errors", "files", "graph", "plan", "ui"]);
+    expect(from("director")).toEqual(["errors", "fleet", "logs", "persona", "plan", "publish", "request", "teams"]);
+  });
+
+  it("points the edge session→surface, the consumer→provider direction every band uses", () => {
+    const d = withCommandSurfaces(drill(), CATALOG);
+    const e = d.rawEdges.find((x) => x.id === invokesEdgeId("api", "plan"))!;
+    expect(e).toBeDefined();
+    expect([e.from, e.to]).toEqual(["api", surfaceNodeId("plan")]);
+  });
+
+  it("SHARES one node between two agents that both declare a surface", () => {
+    // The director and the worker both drive `plan`; two nodes would say they are different things.
+    const d = withCommandSurfaces(drill(), CATALOG);
+    expect(d.rawNodes.filter((n) => n.id === surfaceNodeId("plan"))).toHaveLength(1);
+    expect(d.rawEdges.filter((e) => e.to === surfaceNodeId("plan"))).toHaveLength(2);
+  });
+
+  it("SKIPS a deprecated alias, so one store is never drawn as two surfaces", () => {
+    // `bsc org` serves the same store as `bsc teams`; drawing both overstates the surface area.
+    const d = withCommandSurfaces(drill(), [...CATALOG, { name: "org", status: "deprecated" }]);
+    expect(d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug)).not.toContain("org");
+  });
+
+  it("treats a catalog row with no status as active, since the catalog omits it for the common case", () => {
+    const d = withCommandSurfaces(drill(), [{ name: "plan" }]);
+    expect(d.rawNodes.filter((n) => n.kind === "surface").map((n) => n.slug)).toEqual(["plan"]);
+  });
+
+  it("draws NOTHING for an undeclared role rather than every surface", () => {
+    // An undeclared role genuinely reaches the whole CLI, but 33 edges from it would bury the roles
+    // that ARE constrained. An edgeless agent node is the visible TODO.
+    const undeclared = { ...drill(), rawNodes: [{ id: "t", slug: "t", role: "client" as const, roleLabel: "triage", health: "off" as const, activity: "idle" as const }] };
+    const d = withCommandSurfaces(undeclared, CATALOG);
+    expect(d.rawNodes.filter((n) => n.kind === "surface")).toEqual([]);
+    expect(d.rawEdges).toEqual([]);
+  });
+
+  it("is a no-op on an empty catalog, so a drill is byte-identical until both halves are present", () => {
+    expect(withCommandSurfaces(drill(), [])).toEqual(drill());
+    expect(withCommandSurfaces(drill())).toEqual(drill());
+  });
+
+  it("is IDEMPOTENT — re-running never doubles a node", () => {
+    const once = withCommandSurfaces(drill(), CATALOG);
+    const twice = withCommandSurfaces(once, CATALOG);
+    expect(twice.rawNodes.filter((n) => n.kind === "surface")).toHaveLength(
+      once.rawNodes.filter((n) => n.kind === "surface").length,
+    );
+  });
+
+  it("never draws a surface the permission gate would deny — one source, two consumers", () => {
+    // The band reads `personaSurfaces`, which is what `roleDeniedCommands` complements into the deny
+    // list. If these could disagree, the graph would advertise a reach the session does not have.
+    const d = withCommandSurfaces(drill(), CATALOG);
+    const denied = new Set(roleDeniedCommands(roleCapability("worker"), CATALOG.map((c) => c.name)));
+    for (const e of d.rawEdges.filter((x) => x.from === "api")) {
+      expect(denied.has(`bsc ${surfaceNameOfNode(e.to)}`)).toBe(false);
+    }
   });
 });
