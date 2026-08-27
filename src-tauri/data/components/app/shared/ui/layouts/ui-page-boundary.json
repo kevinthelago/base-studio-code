@@ -44,5 +44,6 @@
       "req": false,
       "type": "string"
     }
-  ]
+  ],
+  "feature": "core"
 }

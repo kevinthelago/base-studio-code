@@ -12,5 +12,6 @@
     "Text"
   ],
   "folder": "features/automations",
-  "srcRetired": "src/features/automations/History.tsx"
+  "srcRetired": "src/features/automations/History.tsx",
+  "feature": "automations"
 }

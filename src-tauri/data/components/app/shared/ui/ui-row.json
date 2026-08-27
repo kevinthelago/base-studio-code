@@ -63,5 +63,6 @@
       "name": "Row",
       "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { Row } from \"./Row\";\r\n\r\ndescribe(\"Row\", () => {\r\n  it(\"renders a flex row centered by default with the resolved gap\", () => {\r\n    render(<Row gap=\"sm\" data-testid=\"r\"><span>a</span></Row>);\r\n    const el = screen.getByTestId(\"r\");\r\n    expect(el.style.display).toBe(\"flex\");\r\n    expect(el.style.flexDirection).toBe(\"\"); // row is the flex default — not forced to column\r\n    expect(el.style.alignItems).toBe(\"center\");\r\n    expect(el.style.gap).toBe(\"8px\");\r\n  });\r\n\r\n  it(\"honors an explicit align, justify, and wrap\", () => {\r\n    render(<Row align=\"baseline\" justify=\"between\" wrap gap=\"md\" data-testid=\"r\">x</Row>);\r\n    const el = screen.getByTestId(\"r\");\r\n    expect(el.style.alignItems).toBe(\"baseline\");\r\n    expect(el.style.justifyContent).toBe(\"space-between\");\r\n    expect(el.style.flexWrap).toBe(\"wrap\");\r\n  });\r\n\r\n  it(\"passes through className/style and lets style override the computed values\", () => {\r\n    render(<Row align=\"center\" className=\"c\" style={{ alignItems: \"flex-end\" }} data-testid=\"r\">x</Row>);\r\n    const el = screen.getByTestId(\"r\");\r\n    expect(el.classList.contains(\"c\")).toBe(true);\r\n    expect(el.style.alignItems).toBe(\"flex-end\");\r\n  });\r\n});\r\n"
     }
-  ]
+  ],
+  "feature": "core"
 }

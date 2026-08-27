@@ -13,5 +13,6 @@
     "Text"
   ],
   "folder": "features/glance/fleet",
-  "srcRetired": "src/features/planner/fleet/FleetHealth.tsx"
+  "srcRetired": "src/features/planner/fleet/FleetHealth.tsx",
+  "feature": "glance"
 }

@@ -10,5 +10,6 @@
     "Stack"
   ],
   "src": "src/features/settings/pages/McpPage.tsx",
-  "folder": "features/settings/pages"
+  "folder": "features/settings/pages",
+  "feature": "settings"
 }

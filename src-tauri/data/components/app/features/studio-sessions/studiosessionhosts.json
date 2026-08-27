@@ -7,5 +7,6 @@
   "srcText": "import { useAppStore } from \"@/store\";\nimport { StudioSessionMount } from \"@/features/studio-sessions/StudioSessionMount\";\nimport { useStudioReaper } from \"@/features/studio-sessions/useStudioReaper\";\nimport { orderedWantedStudios } from \"@/features/studio-sessions/store\";\nimport { studioDetached } from \"@/features/studio-sessions/lib/studioSessions\";\n\nexport function StudioSessionHosts() {\r\n  useStudioReaper();\r\n  const wantedStudios = useAppStore((s) => s.wantedStudios);\r\n  const detachedSections = useAppStore((s) => s.detachedSections);\r\n  const mounted = orderedWantedStudios(wantedStudios).filter((id) => !studioDetached(id, detachedSections));\r\n  return <>{mounted.map((id) => <StudioSessionMount key={id} studio={id} />)}</>;\r\n}",
   "composes": [],
   "src": "src/features/studio-sessions/StudioSessionHosts.tsx",
-  "folder": "features/studio-sessions"
+  "folder": "features/studio-sessions",
+  "feature": "studio-sessions"
 }

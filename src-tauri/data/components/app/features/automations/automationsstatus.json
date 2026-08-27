@@ -7,5 +7,6 @@
   "srcText": "import { useAppStore } from \"@/store\";\nimport { armedSummary } from \"@/features/automations/format\";\nimport { fmtClock } from \"@/shared/lib/core/format\";\nimport { Box } from \"@/shared/ui/layout/Box\";\nimport { StatusDot } from \"@/shared/ui/feedback/StatusDot\";\n\n/**\n * Live armed-schedules summary for the app status bar (Automations page) — replaces the\n * old hardcoded \"4 schedules armed · next at 02:00\" mock. Reads the real automations and\n * shows how many are armed + the soonest next run.\n */\nexport function AutomationsStatus() {\n  const automations = useAppStore((s) => s.automations);\n  const { count, nextAt } = armedSummary(automations);\n\n  if (count === 0) {\n    return (\n      <Box as=\"span\" className=\"s\" style={{ color: \"var(--fg-dim)\" }}>\n        <StatusDot color=\"var(--fg-dim)\" size={7} /> no schedules armed\n      </Box>\n    );\n  }\n  return (\n    <Box as=\"span\" className=\"s\">\n      <StatusDot color=\"var(--accent)\" size={7} /> {count} {count === 1 ? \"schedule\" : \"schedules\"} armed\n      {nextAt != null && ` · next at ${fmtClock(nextAt)}`}\n    </Box>\n  );\n}",
   "composes": [],
   "src": "src/features/automations/AutomationsStatus.tsx",
-  "folder": "features/automations"
+  "folder": "features/automations",
+  "feature": "automations"
 }

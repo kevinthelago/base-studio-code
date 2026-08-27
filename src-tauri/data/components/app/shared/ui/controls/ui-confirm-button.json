@@ -24,5 +24,6 @@
     "danger",
     "sm",
     "pending"
-  ]
+  ],
+  "feature": "core"
 }

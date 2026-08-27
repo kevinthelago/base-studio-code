@@ -33,6 +33,11 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     // this projection is the ONE place a raw record becomes a Component, so the fallback belongs here
     // rather than scattered across every consumer.
     folder: (c as { folder?: string }).folder,
+    // The OWNERSHIP axis — which feature owns this record (`the-ownership-axis-is-feature-on-both-graphs`).
+    // Rides verbatim beside `folder`, and MUST: a field missing from this allow-list is dropped on every
+    // hydrate and then on write-back, which is how request #63 destroyed 38 records. It is also what the
+    // ownership gate reads, so losing it here would make that rule silently see less.
+    feature: (c as { feature?: string }).feature,
     version: c.version ?? "",
     used: typeof c.used === "number" ? c.used : 0,
     tags: c.tags ?? [],

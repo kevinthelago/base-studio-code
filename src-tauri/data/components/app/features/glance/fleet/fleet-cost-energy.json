@@ -15,5 +15,6 @@
     "Text"
   ],
   "folder": "features/glance/fleet",
-  "srcRetired": "src/features/planner/fleet/CostEnergy.tsx"
+  "srcRetired": "src/features/planner/fleet/CostEnergy.tsx",
+  "feature": "glance"
 }

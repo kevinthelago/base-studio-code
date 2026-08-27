@@ -9,5 +9,6 @@
     "Box",
     "Text"
   ],
-  "folder": "features/settings/cards"
+  "folder": "features/settings/cards",
+  "feature": "settings"
 }

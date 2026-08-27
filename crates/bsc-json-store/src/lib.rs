@@ -451,3 +451,35 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod preserve_order_tests {
+    /// `preserve_order` is on, and this is what it buys.
+    ///
+    /// Without it `serde_json::Value`'s Map is a BTreeMap, so EVERY re-serialization re-sorts keys
+    /// alphabetically. That makes a one-field edit rewrite a whole record file: placing `feature` on
+    /// 294 packaged component seeds churned the key order in 280 of them, and the single line that
+    /// actually changed was unreviewable inside the diff.
+    ///
+    /// The feature is declared in this crate's manifest and applies WORKSPACE-WIDE by cargo's feature
+    /// unification. This test is the guard: if the feature is ever dropped — directly, or by a
+    /// dependency change that stops unifying it — a round trip starts reordering and this fails,
+    /// rather than the next seed sync producing a 300-file diff nobody can read.
+    #[test]
+    fn record_key_order_is_preserved() {
+        // Deliberately NOT alphabetical: under a BTreeMap this comes back as composes/feature/id/name.
+        let src = r#"{"id":"button","name":"Button","feature":"core","composes":["Box"]}"#;
+        let v: serde_json::Value = serde_json::from_str(src).unwrap();
+        let out = serde_json::to_string(&v).unwrap();
+        assert_eq!(out, src, "a round trip must not reorder a record's keys");
+    }
+
+    /// Inserting a field APPENDS it rather than sorting it into place, so the diff is one added line.
+    #[test]
+    fn an_added_field_lands_at_the_end_and_disturbs_nothing() {
+        let mut v: serde_json::Value =
+            serde_json::from_str(r#"{"id":"button","name":"Button"}"#).unwrap();
+        v.as_object_mut().unwrap().insert("feature".into(), serde_json::Value::String("core".into()));
+        assert_eq!(serde_json::to_string(&v).unwrap(), r#"{"id":"button","name":"Button","feature":"core"}"#);
+    }
+}

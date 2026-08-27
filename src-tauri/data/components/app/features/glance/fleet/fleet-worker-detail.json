@@ -19,5 +19,6 @@
     "Text"
   ],
   "props": [],
-  "srcRetired": "src/features/planner/fleet/WorkerDetail.tsx"
+  "srcRetired": "src/features/planner/fleet/WorkerDetail.tsx",
+  "feature": "glance"
 }

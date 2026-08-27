@@ -9,5 +9,6 @@
     "Chip"
   ],
   "src": "src/features/personas/PersonasPanel.tsx",
-  "folder": "features/personas"
+  "folder": "features/personas",
+  "feature": "personas"
 }

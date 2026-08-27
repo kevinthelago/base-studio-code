@@ -23,5 +23,6 @@
   ],
   "folder": "features/glance/fleet",
   "props": [],
-  "srcRetired": "src/features/planner/fleet/FleetPage.tsx"
+  "srcRetired": "src/features/planner/fleet/FleetPage.tsx",
+  "feature": "glance"
 }

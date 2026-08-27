@@ -7,5 +7,6 @@
   "srcText": "import { useAppStore } from \"@/store\";\nimport { ToggleRow } from \"@/features/settings/pages/SettingsControls\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\n/** Settings → Appearance toggle for the opt-in coord-event notification sounds (#3082). */\nexport function SoundNotificationsCard() {\n  const { soundNotifications, setSoundNotifications } = useAppStore();\n  return (\n    <Card title=\"Notification sounds\" hint=\"opt-in — off by default\">\n      <ToggleRow\n        on={soundNotifications}\n        onToggle={() => setSoundNotifications(!soundNotifications)}\n        title=\"Play a sound on fleet events\"\n      >\n        Plays a short cue from the built-in <b>Signal</b> sound kit on key coordination events — a\n        landing or merge chimes <code>success</code>, a failure chimes <code>error</code>, and a worker\n        pausing for you chimes <code>notify</code>. Nothing plays until you enable it.\n      </ToggleRow>\n    </Card>\n  );\n}\n",
   "composes": [],
   "src": "src/features/settings/cards/SoundNotificationsCard.tsx",
-  "folder": "features/settings/cards"
+  "folder": "features/settings/cards",
+  "feature": "settings"
 }

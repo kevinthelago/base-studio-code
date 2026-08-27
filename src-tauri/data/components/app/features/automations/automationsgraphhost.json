@@ -13,5 +13,6 @@
       "type": "string"
     }
   ],
-  "folder": "features/automations"
+  "folder": "features/automations",
+  "feature": "automations"
 }

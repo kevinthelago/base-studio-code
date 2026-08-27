@@ -63,5 +63,6 @@
       "type": "(e: KeyboardEvent<HTMLInputElement>) => void"
     }
   ],
-  "folder": "shared/ui/controls"
+  "folder": "shared/ui/controls",
+  "feature": "core"
 }

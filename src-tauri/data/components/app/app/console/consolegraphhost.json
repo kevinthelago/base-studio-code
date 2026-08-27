@@ -13,5 +13,6 @@
       "type": "number"
     }
   ],
-  "folder": "app/console"
+  "folder": "app/console",
+  "feature": "shell"
 }

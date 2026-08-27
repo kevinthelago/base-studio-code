@@ -14,5 +14,6 @@
   ],
   "whenUse": [],
   "whenNot": [],
-  "tags": []
+  "tags": [],
+  "feature": "shell"
 }

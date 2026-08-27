@@ -16,5 +16,6 @@
       "name": "GraphLegend",
       "src": "// GraphLegend (#2909) — the shared on-canvas graph legend.\r\nimport { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { GraphLegend } from \"./GraphLegend\";\r\n\r\ndescribe(\"GraphLegend\", () => {\r\n  it(\"renders node + edge rows for non-empty sections\", () => {\r\n    render(\r\n      <GraphLegend\r\n        sections={[\r\n          { label: \"Roles\", nodes: [{ label: \"Primitive\", color: \"var(--violet)\" }] },\r\n          { label: \"Relationships\", edges: [{ label: \"composes\" }, { label: \"pairs\", dashed: true }] },\r\n        ]}\r\n      />,\r\n    );\r\n    expect(screen.getByText(\"Roles\")).toBeTruthy();\r\n    expect(screen.getByText(\"Primitive\")).toBeTruthy();\r\n    expect(screen.getByText(\"composes\")).toBeTruthy();\r\n    expect(screen.getByText(\"pairs\")).toBeTruthy();\r\n  });\r\n\r\n  it(\"renders nothing when every section is empty\", () => {\r\n    const { container } = render(<GraphLegend sections={[{ label: \"Empty\" }, { label: \"Also\", nodes: [] }]} />);\r\n    expect(container.querySelector(\".graph-legend\")).toBeNull();\r\n  });\r\n});\r\n"
     }
-  ]
+  ],
+  "feature": "core"
 }

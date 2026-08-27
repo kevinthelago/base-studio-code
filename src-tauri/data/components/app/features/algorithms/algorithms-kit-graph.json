@@ -10,5 +10,6 @@
   ],
   "src": "src/features/algorithms/AlgorithmsKitGraph.tsx",
   "props": [],
-  "folder": "features/algorithms"
+  "folder": "features/algorithms",
+  "feature": "algorithms"
 }

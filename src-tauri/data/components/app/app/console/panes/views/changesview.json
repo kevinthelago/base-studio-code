@@ -11,5 +11,6 @@
   ],
   "folder": "app/console/panes/views",
   "provides": "@/app/console/panes/views/ChangesView",
-  "srcRetired": "src/app/console/panes/views/ChangesView.tsx"
+  "srcRetired": "src/app/console/panes/views/ChangesView.tsx",
+  "feature": "shell"
 }

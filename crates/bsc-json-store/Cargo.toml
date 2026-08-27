@@ -20,7 +20,19 @@ bsc-util = { path = "../bsc-util" }
 bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold (#1762): `CmdDoc`/`handle_help`/`unknown_command` help system + `resolve_store_path`.
 bsc-cli-util = { path = "../bsc-cli-util" }
-serde_json = "1"
+# `preserve_order` — serde_json's Map becomes an insertion-ordered IndexMap instead of a BTreeMap.
+#
+# WHY IT IS HERE, AND WHY IT IS WORKSPACE-WIDE. This crate is the one whose job is reading and writing
+# JSON records, so how a record SERIALIZES is its concern. But cargo unifies features per build, and 47
+# crates in this workspace declare serde_json — so enabling it here enables it for all of them. That is
+# the intended effect, stated out loud, because the alternative is it being switched on somewhere
+# incidental and nobody knowing why key order suddenly matters.
+#
+# WHAT IT FIXES. Without it every re-serialization re-sorts keys alphabetically, so writing ONE field
+# onto a seed record rewrites the whole file. Measured: placing `feature` on 294 packaged component
+# seeds churned the key order in 280 of them, and the one line that actually changed was unreviewable
+# inside the diff. `record_key_order_is_preserved` in this crate pins the behaviour.
+serde_json = { version = "1", features = ["preserve_order"] }
 # The SQLite backend (#2983): `bundled` compiles SQLite from source (matches plandb/skilldb/compliance)
 # for cross-platform reliability. Same version as the sibling SQLite stores so the workspace shares one build.
 rusqlite = { version = "0.40", features = ["bundled"] }

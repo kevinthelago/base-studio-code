@@ -30,5 +30,6 @@
     "org-chart",
     "grid",
     "canvas"
-  ]
+  ],
+  "feature": "teams"
 }

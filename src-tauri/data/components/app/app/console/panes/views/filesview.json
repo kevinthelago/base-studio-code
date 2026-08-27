@@ -11,5 +11,6 @@
   ],
   "folder": "app/console/panes/views",
   "provides": "@/app/console/panes/views/FilesView",
-  "srcRetired": "src/app/console/panes/views/FilesView.tsx"
+  "srcRetired": "src/app/console/panes/views/FilesView.tsx",
+  "feature": "shell"
 }

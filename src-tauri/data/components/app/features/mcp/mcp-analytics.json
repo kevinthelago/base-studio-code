@@ -16,5 +16,6 @@
     "Text"
   ],
   "folder": "features/mcp",
-  "srcRetired": "src/features/mcp/McpAnalytics.tsx"
+  "srcRetired": "src/features/mcp/McpAnalytics.tsx",
+  "feature": "mcp"
 }

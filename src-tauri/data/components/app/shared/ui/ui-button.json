@@ -33,5 +33,6 @@
       "name": "Button",
       "src": "import { describe, it, expect, vi } from \"vitest\";\r\nimport { render, screen, fireEvent } from \"@testing-library/react\";\r\nimport { Button } from \"./Button\";\r\n\r\ndescribe(\"Button\", () => {\r\n  it(\"renders the base .btn class and the label\", () => {\r\n    render(<Button>Save</Button>);\r\n    const b = screen.getByRole(\"button\", { name: \"Save\" });\r\n    expect(b.className).toBe(\"btn\");\r\n    expect(b.getAttribute(\"type\")).toBe(\"button\");\r\n  });\r\n\r\n  it(\"composes variant / danger / size into the .btn modifier classes\", () => {\r\n    render(<Button variant=\"primary\" size=\"sm\">Go</Button>);\r\n    expect(screen.getByText(\"Go\").className).toBe(\"btn primary sm\");\r\n    render(<Button variant=\"ghost\" danger>Del</Button>);\r\n    expect(screen.getByText(\"Del\").className).toBe(\"btn ghost danger\");\r\n  });\r\n\r\n  it(\"passes through onClick, disabled, and a caller className\", () => {\r\n    const onClick = vi.fn();\r\n    render(<Button className=\"x\" onClick={onClick}>Hit</Button>);\r\n    const b = screen.getByText(\"Hit\");\r\n    expect(b.className).toBe(\"btn x\");\r\n    fireEvent.click(b);\r\n    expect(onClick).toHaveBeenCalledOnce();\r\n  });\r\n\r\n  it(\"honors an explicit type (e.g. submit)\", () => {\r\n    render(<Button type=\"submit\">Send</Button>);\r\n    expect(screen.getByText(\"Send\").getAttribute(\"type\")).toBe(\"submit\");\r\n  });\r\n});\r\n"
     }
-  ]
+  ],
+  "feature": "core"
 }

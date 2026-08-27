@@ -12,5 +12,6 @@
   ],
   "folder": "app/console/panes/views",
   "provides": "@/app/console/panes/views/BranchesView",
-  "srcRetired": "src/app/console/panes/views/BranchesView.tsx"
+  "srcRetired": "src/app/console/panes/views/BranchesView.tsx",
+  "feature": "shell"
 }

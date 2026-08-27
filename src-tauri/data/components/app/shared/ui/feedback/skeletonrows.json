@@ -8,5 +8,6 @@
   "composes": [
     "Skeleton"
   ],
-  "folder": "shared/ui/feedback"
+  "folder": "shared/ui/feedback",
+  "feature": "core"
 }
