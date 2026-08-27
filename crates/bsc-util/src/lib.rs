@@ -809,3 +809,105 @@ pub fn is_servable_warm(args: &[String]) -> bool {
     }
     args.first().is_some_and(|c| c == "ui") && args.get(1).is_some_and(|s| UI_SUBS.contains(&s.as_str()))
 }
+
+/// The OWNERSHIP baseline — the group everything may depend on, in BOTH graphs.
+pub const FEATURE_CORE: &str = "core";
+
+/// The app SHELL's own group: it composes every feature and belongs to none.
+///
+/// Separate from [`FEATURE_CORE`] on purpose. The shell may depend on features (it mounts them), which
+/// is exactly what the baseline may not do — folding the two together would make that legal for `core`
+/// and lose the one asymmetry the ownership rule rests on.
+pub const FEATURE_SHELL: &str = "shell";
+
+/// Derive which FEATURE owns a record from its folder path, or `None` when the folder does not say.
+///
+/// ONE definition, shared by both graphs — the components store (`bsc ui features`) and the algorithms
+/// store (`bsc graph features`) — for the same reason [`folder_from_src`] is shared: two copies of a
+/// derivation are two answers waiting to disagree. Both stores organize by the same tree, measured:
+/// components under `shared/ui/controls`, `features/glance`; impls under `shared/lib/fleet`,
+/// `features/designs/lib`, `app/console/lib`.
+///
+/// - `shared/**`, `components/**`, `src/components/**` → [`FEATURE_CORE`] — usable anywhere
+/// - `app/**`                                          → [`FEATURE_SHELL`]
+/// - `features/<x>/**`                                 → `<x>`
+///
+/// `None` for anything else, INCLUDING an empty folder — and that is the important half. Records with
+/// no folder exist in both stores (44 hollow components; 36 impls), and bucketing them under a default
+/// would hide a data-quality question inside a migration. An unplaced record is reported, never guessed.
+pub fn feature_from_folder(folder: &str) -> Option<String> {
+    let f = folder.trim().trim_start_matches("./").replace('\\', "/");
+    let f = f.trim_start_matches('/');
+    if f.is_empty() {
+        return None;
+    }
+    // `src/` is a root, not a segment: `src/components/ui` is the same place as `components/ui`.
+    let f = f.strip_prefix("src/").unwrap_or(f);
+    let mut segs = f.split('/').filter(|s| !s.is_empty());
+    match segs.next()? {
+        "shared" | "components" => Some(FEATURE_CORE.to_string()),
+        "app" => Some(FEATURE_SHELL.to_string()),
+        // `store/**` is a top-level architectural directory beside app/features/shared — the Zustand
+        // COMPOSITION layer (`store/slices`, `store/types`). It is not `core` (features depend on it,
+        // but it also composes their slices) and not `shell` (it is state, not chrome), so it owns
+        // itself. 22 impls sat unplaced until this line, which is how it was found: by running the
+        // backfill and reading what it could not place.
+        "store" => Some("store".to_string()),
+        // `features/<x>` — the feature IS the second segment. `features` alone names no feature, so it
+        // is unplaced rather than a feature called "features".
+        "features" => segs.next().map(str::to_owned),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod feature_from_folder_tests {
+    use super::*;
+
+    #[test]
+    fn maps_the_baseline_the_shell_and_each_feature() {
+        for f in ["shared/ui/controls", "shared/lib/fleet", "components/ui", "src/components/ui"] {
+            assert_eq!(feature_from_folder(f).as_deref(), Some(FEATURE_CORE), "{f}");
+        }
+        for f in ["app", "app/console/lib"] {
+            assert_eq!(feature_from_folder(f).as_deref(), Some(FEATURE_SHELL), "{f}");
+        }
+        assert_eq!(feature_from_folder("features/designs/lib").as_deref(), Some("designs"));
+        assert_eq!(feature_from_folder("features/glance").as_deref(), Some("glance"));
+    }
+
+    #[test]
+    fn the_shell_is_not_the_baseline() {
+        // The asymmetry the ownership rule rests on: the shell composes features, the baseline may not.
+        assert_ne!(feature_from_folder("app").as_deref(), Some(FEATURE_CORE));
+    }
+
+    #[test]
+    fn an_absent_or_unrecognised_folder_is_unplaced_never_defaulted() {
+        for f in ["", "   ", "/", "features", "vendor/thing", "ui/data"] {
+            assert_eq!(feature_from_folder(f), None, "{f:?}");
+        }
+    }
+
+    #[test]
+    fn normalizes_separators_and_the_src_root() {
+        assert_eq!(feature_from_folder("src/shared/lib").as_deref(), Some(FEATURE_CORE));
+        assert_eq!(feature_from_folder("./features/logs").as_deref(), Some("logs"));
+        assert_eq!(feature_from_folder("features\\teams").as_deref(), Some("teams"));
+    }
+}
+
+#[cfg(test)]
+mod feature_from_folder_store_tests {
+    use super::*;
+
+    #[test]
+    fn the_store_layer_owns_itself() {
+        // Found by running the backfill: 22 impls under `store/**` were unplaced because the mapping
+        // only knew app/features/shared. The store is a fourth top-level directory, and it is neither
+        // the baseline (it composes feature slices) nor the shell (it is state, not chrome).
+        for f in ["store", "store/slices", "store/types", "src/store/slices"] {
+            assert_eq!(feature_from_folder(f).as_deref(), Some("store"), "{f}");
+        }
+    }
+}

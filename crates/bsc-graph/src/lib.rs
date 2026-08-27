@@ -212,6 +212,21 @@ pub struct AlgoImpl {
     /// (`features/<x>` → `<x>`) for a cross-language filter, where the folder keeps the full nesting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
+    /// The OWNERSHIP axis (`the-ownership-axis-is-feature-on-both-graphs`) — which FEATURE owns this
+    /// record, and so which worker may write it. `core` is the shared baseline usable anywhere;
+    /// `reference` is library content owned by no application feature.
+    ///
+    /// THREE NEARBY FIELDS, THREE QUESTIONS, and confusing them is how this axis got named twice:
+    /// - [`Self::folder`] is PROVENANCE — where the code lives, derived from `src`.
+    /// - [`Self::domain`] is the curated cross-language COLLECTION facet (#3120), and it is PARTIAL by
+    ///   design: general-purpose algorithms and primitives are excluded on purpose.
+    /// - `feature` is OWNERSHIP, and it is TOTAL — every record is placed.
+    ///
+    /// Single-valued, because it answers which ONE worker may write the record; a record owned by
+    /// three features has no answer. USAGE is the many-to-many relation and lives elsewhere: `requires`
+    /// on a plan feature, mirrored here as `requiredBy`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
     /// Free-form tags (#3120) — additive keywords for cross-cutting collections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,

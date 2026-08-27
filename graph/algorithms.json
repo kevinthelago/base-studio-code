@@ -6,6 +6,7 @@
         "rust.vec",
         "rust.slice"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "merge.rs",
       "kind": "transform",
@@ -22,6 +23,7 @@
         "rust.vec",
         "rust.slice"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "merge-sort.rs",
       "kind": "sort",
@@ -205,6 +207,7 @@
         "typescript.number"
       ],
       "domain": "base-studio-code-frontend",
+      "feature": "algorithms",
       "folder": "features/algorithms/viz/examples",
       "id": "fibonacci.ts",
       "kind": "accumulate",
@@ -227,6 +230,7 @@
         "rust.vec",
         "rust.slice"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "bubble-sort.rs",
       "kind": "sort",
@@ -242,6 +246,7 @@
         "rust.vec",
         "rust.slice"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "heap-sort.rs",
       "kind": "sort",
@@ -258,6 +263,7 @@
         "rust.slice",
         "rust.iterator"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "quick-sort.rs",
       "kind": "sort",
@@ -273,6 +279,7 @@
         "rust.slice",
         "rust.option"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "binary-search.rs",
       "kind": "search",
@@ -289,6 +296,7 @@
         "rust.iterator",
         "rust.option"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "linear-search.rs",
       "kind": "search",
@@ -303,6 +311,7 @@
       "composes": [
         "rust.i64"
       ],
+      "feature": "reference",
       "folder": "core",
       "id": "fibonacci.rs",
       "kind": "accumulate",
@@ -1126,6 +1135,7 @@
         "launch-rules.ts"
       ],
       "domain": "session",
+      "feature": "core",
       "folder": "shared/lib/session",
       "id": "session-roles.ts",
       "name": "sessionRoles",
@@ -1150,6 +1160,7 @@
       "code": "// The charter a request session launches with (#one-request-one-debug-session) — kept out of the\n// component file so it is directly testable and so the mount stays a component-only module.\nexport { requestPaneId } from \"@/shared/lib/session/requestSpawn\";\n\n// ── The debug-session constants (#debug-nodes-hang-off-the-session-that-filed-them) ────────────────\n//\n// These used to live in `DebugSessionMount`, the STANDING debug session's component. That session and\n// its node are gone — every request draws its own — but the two constants below are not about the\n// standing session at all: they are what ANY debug session launches with. They moved here, beside the\n// only thing that still uses them, rather than being kept alive by a component that no longer mounts.\n//\n// `DEBUG_START_PROMPT` did NOT move. It was the standing session's queue-serving half (\"claim the next\n// request\"), and a per-request session must never claim — the app claimed for it, and a second claim\n// would take a request another session already holds.\n\nexport const DEBUG_INIT_CMD = \"claude\";\n\n/** The shared DEBUG-session prose: who the session is, what it may touch, and the workflow + git rules\n *  every one of them follows. It deliberately says NOTHING about how the session gets its work — the\n *  charter below supplies that, naming the one request this session was spawned for.\n *\n *  ⚠️ ITS SCOPE IS THE WHOLE APP, and this prose said otherwise for a long time. It opened with \"your\n *  job: improve the `bsc ui` surface so the Design Studio's designer session never needs permissions\n *  outside it\" — true when the queue was the designer's alone, and false since every studio, the\n *  architect and the fleet started filing onto it. Measured on the live queue when this was fixed: the\n *  open requests named `bsc navigate`, `bsc ui`, `bsc graph`, `bsc plan` and `bsc fleet`, resolving to\n *  five different crates. The prompt even contradicted itself one sentence later (\"implement the fix\n *  in the owning crate\"), which is the instruction that was always right.\n *\n *  Keep it surface-agnostic. Naming a crate here re-scopes every debug session to whichever gap\n *  happened to be common the week it was written. */\nexport const DEBUG_ROLE_PROMPT =\n  \"You are the base-studio-code DEBUG session. You have full read/write access to THIS repository and \" +\n  \"run the normal dev workflow. Your job is the WHOLE APPLICATION'S `bsc` surface: every session that \" +\n  \"hits a wall files onto one queue — the architect, the designer, the librarian, the sound designer, \" +\n  \"a director, a dev session — so a request can name any noun and land in any crate. Take the request \" +\n  \"you were given and follow it to whatever owns it. \" +\n  \"Reproduce the cited `bsc` command, implement the fix IN THE OWNING CRATE with tests, verify the gate \" +\n  \"with `npm run gate -- --full`, then `bsc request resolve <id> --note \\\"<what changed>\\\"` and \" +\n  \"rebuild the sidecar with \" +\n  \"`cargo build --bin bsc` (the DEV profile — release is the slow one and nothing local needs it). The app \" +\n  \"re-stages that binary and retires its warm `bsc` on its own the moment your request resolves, so the fix \" +\n  \"is live for the next call with NO restart — do not ask for one. \" +\n  \"Track the work the way every slice here is tracked: `bsc plan add` the item if there is not one \" +\n  \"already, `bsc plan change new <ref>` at the START, and `bsc plan change gate <ref> <name> <result>` \" +\n  \"with what each gate ACTUALLY did. \" +\n  \"Work in a git worktree at the REPO ROOT as `wt-<short>` (nested there it needs no npm install, and \" +\n  \"`.claude/worktrees/` is write-denied mid-session) on a branch off develop. \" +\n  \"THIS REPO IS LOCAL-FIRST: never push, never open a PR, never write to GitHub — integration is a \" +\n  \"local `git merge --no-ff` into develop once the work is verified. NEVER commit to develop or main \" +\n  \"directly, and never switch the main checkout off develop.\";\n\n/** What a request session needs to know about the request it was spawned for. A subset of the\n *  `bsc request` row (snake_case from the Rust store), so a caller passes the row through. */\nexport interface RequestBrief {\n  id: number;\n  /** WHO filed it — the filing session's pane id (#debug-request-carries-its-origin), e.g.\n   *  `designer-studio:react`. Absent when the request was filed outside a session. */\n  origin?: string | null;\n  /** The label form of the request, always populated by the store (explicit `--title`, else derived\n   *  from the text). */\n  display_title?: string | null;\n}\n\n/** The ROLES a studio pane id can name, longest first so `sound-designer` is matched before `designer`\n *  could ever claim its tail. Each maps to how the charter says it in prose. */\nconst ORIGIN_ROLES: readonly (readonly [string, string])[] = [\n  [\"sound-designer\", \"sound designer\"],\n  [\"designer\", \"designer\"],\n  [\"librarian\", \"librarian\"],\n  [\"architect\", \"architect\"],\n  [\"integrator\", \"integrator\"],\n];\n\n/** The human name for a filing session's pane id — `design-studio:designer-react` → \"the react designer\".\n *\n *  READ THE TAIL, NOT THE STUDIO. The first version of this split on `:` and treated the left half as the\n *  role (`<role>-studio`), which is wrong for every session: the studio is named for the SURFACE\n *  (`design-studio`, `algorithms-studio`, `teams-studio`, `sound-studio`, `integration-studio`) and the\n *  role lives in the tail (`designer-react`, `librarian-typescript`, `architect`). It cost nothing to\n *  write and would have mislabelled every request, because the tests quoted the same invented shape.\n *\n *  Derived rather than looked up: the id is the only thing the request carries, and importing the session\n *  registry here would make the charter depend on a store-touching module to phrase one sentence. An\n *  unrecognised shape falls back to the raw id — a project director's `myproject:director` reads as\n *  itself, which is more use to a debug session than no attribution at all. */\nexport function originLabel(origin: string): string {\n  const tail = (origin ?? \"\").split(\":\")[1] ?? \"\";\n  for (const [role, human] of ORIGIN_ROLES) {\n    if (tail === role) return `the ${human}`;\n    if (tail.startsWith(`${role}-`)) return `the ${tail.slice(role.length + 1)} ${human}`;\n  }\n  return origin;\n}\n\n/**\n * The charter for the session working request `req`.\n *\n * It names the request instead of telling the session to go and find one. Under #3535 every pool\n * session launched generic and ran `bsc request claim` on startup, because a slot had no request until\n * it won the race; now the APP claims first and spawns a session for what it got, so the session starts\n * already knowing its job. That removes the whole warming/losing-the-race state — and with it the\n * reaper that existed to clean up after it.\n *\n * The session does NOT claim: its request is already `claimed` (the app did that atomically to obtain\n * the id), and one session exists per request by construction, so there is nothing left to race for.\n *\n * IT ALSO NAMES WHO FILED IT (#debug-request-carries-its-origin). A debug session is spawned BY a\n * studio session hitting a gap, and the fix is only right if it unblocks THAT session's actual workflow\n * — a `bsc ui` gap the React designer hit is a different fix from the same message arriving from\n * nowhere. The origin is on the request, so the charter states it and tells the session it may reply on\n * the thread; without that the relationship exists only in the graph, where the session working the\n * request cannot see it.\n *\n * The closing instruction is deliberate and carried over unchanged: a request must never be left open\n * with no explanation — \"filed and silently unworked\" is the failure this whole feature exists to\n * remove — and the resolve note IS the change log the maintainer reads back.\n */\nexport function requestCharter(req: RequestBrief): string {\n  const { id } = req;\n  const title = req.display_title?.trim();\n  const origin = req.origin?.trim();\n  const heading = title ? `YOUR REQUEST IS #${id} — \"${title}\".` : `YOUR REQUEST IS #${id}.`;\n  const filedBy = origin\n    ? `It was filed by ${originLabel(origin)} (\\`${origin}\\`) — a session that hit this gap in real work, ` +\n      `not a hypothetical. Fix it so THAT session is unblocked: the failing command on the request is what ` +\n      `it actually tried. If you need something from them, or the fix changes how the surface is used, ` +\n      `reply on the request's thread — \\`bsc request note ${id} \"<what you found>\" --from debugger\\` — which ` +\n      `they read back with \\`bsc request get ${id}\\`.\\n\\n`\n    : \"\";\n  return (\n    `${DEBUG_ROLE_PROMPT}\\n\\n` +\n    `${heading} It is already claimed for you — do not run \\`bsc request claim\\`. ` +\n    `Read it, then work ONLY that one:\\n` +\n    `  bsc request get ${id}\\n\\n` +\n    filedBy +\n    `Reproduce the failing command, implement the fix in the owning crate with tests, verify the gate, ` +\n    `then:\\n` +\n    `  bsc request resolve ${id} --note \"<what you changed>\"\\n\\n` +\n    `The note is the change log — always leave one, even if it turns out NOT to be a defect (resolve it ` +\n    `anyway with a note saying why; a request must never be left open with no explanation). Then STOP — ` +\n    `your session is done and will be closed once #${id} reads resolved.`\n  );\n}\n",
       "composes": [],
       "domain": "debug",
+      "feature": "debug",
       "folder": "features/debug",
       "id": "request-session.ts",
       "name": "requestSession",

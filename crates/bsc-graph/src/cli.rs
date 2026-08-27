@@ -2203,9 +2203,61 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // record, not how often it is composed. Raw usage cannot tell shared infrastructure from one
         // feature's popular helper; the number of distinct callers-across-a-boundary can.
         "features" => {
-            let g = crate::load();
-            let impls = crate::implementations_of(&g);
-            let owned: Vec<Value> = impls.into_iter().collect();
+            let mut g = crate::load();
+            let owned: Vec<Value> = crate::implementations_of(&g).into_iter().collect();
+
+            // `--apply` BACKFILLS `feature` from `folder`, using the derivation both graphs share
+            // (`bsc_util::feature_from_folder`). Dry by default, like `bsc ui features`: this writes a
+            // field across the whole library on a mapping a human should read first, so the report is
+            // the default and the write is the opt-in.
+            //
+            // It never OVERWRITES a feature already set. The derivation is a starting point, not an
+            // authority — a record deliberately placed by hand (a shared module living under one
+            // feature's folder, say) has to survive every later re-run, or the backfill quietly undoes
+            // curation each time someone invokes it.
+            if args.iter().any(|a| a == "--apply") {
+                // `tech` and `role` ride along because `set_impl_by` validates them on the SUBMITTED
+                // value — it merges everything else, but those two are identity and it refuses an input
+                // without them. Both are READ FROM THE RECORD, never restated from memory: guessing an
+                // identity field is what renamed 21 records on the first attempt at this placement.
+                let derived: Vec<(String, String, String, String)> = owned
+                    .iter()
+                    .filter(|im| im.get("feature").and_then(Value::as_str).unwrap_or_default().trim().is_empty())
+                    .filter_map(|im| {
+                        let id = im.get("id").and_then(Value::as_str)?.to_string();
+                        let tech = im.get("tech").and_then(Value::as_str)?.to_string();
+                        let role = im.get("role").and_then(Value::as_str)?.to_string();
+                        let folder = im.get("folder").and_then(Value::as_str).unwrap_or_default();
+                        bsc_util::feature_from_folder(folder).map(|f| (id, tech, role, f))
+                    })
+                    .collect();
+                for (id, tech, role, feature) in &derived {
+                    // The DELTA plus the two identity fields — never the round-tripped record. The
+                    // write merges, so the two look equivalent until a stored field is `null`, which
+                    // resubmitted reads as a CLEAR. That cost `terminalhost.provides` on the component
+                    // backfill: 448 records in, one field silently gone.
+                    crate::set_impl_by(
+                        &mut g,
+                        serde_json::json!({ "id": id, "tech": tech, "role": role, "feature": feature }),
+                        "features-backfill",
+                        Some("feature: ownership axis derived from folder"),
+                    )?;
+                }
+                if !derived.is_empty() {
+                    crate::save(&g)?;
+                }
+                let after = crate::features::measure(
+                    &crate::implementations_of(&crate::load()).into_iter().collect::<Vec<_>>(),
+                );
+                return emit(&serde_json::json!({
+                    "applied": derived.len(),
+                    "byFeature": after.by_feature,
+                    "featureless": after.featureless.len(),
+                    "crossFeatureEdges": after.cross_feature_edges,
+                    "edgesIntoCore": after.edges_into_core,
+                }));
+            }
+
             let r = crate::features::measure(&owned);
             let top: usize = flag_value(&args, "--top")
                 .map(|v| v.parse::<usize>().map_err(|_| "--top needs a number".to_string()))
@@ -2224,9 +2276,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .collect();
             emit(&serde_json::json!({
                 "total": r.total,
-                "byDomain": r.by_feature,
-                "domainless": r.featureless,
-                "crossDomainEdges": r.cross_feature_edges,
+                "byFeature": r.by_feature,
+                "featureless": r.featureless,
+                "crossFeatureEdges": r.cross_feature_edges,
                 "edgesIntoCore": r.edges_into_core,
                 "coreCandidates": candidates,
             }))
@@ -2467,7 +2519,7 @@ fn help(prog: &str) -> String {
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
-         {prog} features [--top N] [--pretty]           # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY: it ranks, it never assigns. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
+         {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--required-by p:f,q:g] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --required-by is the USAGE mirror of a plan feature's `requires` — which features, in which projects, need this record; entries are `<projectKey>:<feature>` and an unqualified one is REFUSED, since a bare slug is ambiguous across projects. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
