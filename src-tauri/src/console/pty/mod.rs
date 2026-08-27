@@ -343,9 +343,30 @@ pub(crate) fn gate_file_present(effective_cwd: &str) -> bool {
 /// So a pane whose worktree has no gate file was killed, then refused here, and the director was told
 /// `woke: true`. FOUR network-monitor worktrees were in that state.
 ///
-/// Two callers, one answer, on purpose. A second copy of this test — even a correct one — could drift
-/// and would fail in the worst direction: a pre-check that says "admitted" while the launch refuses
-/// puts us back to killing a session that cannot come back.
+/// Two callers were the design at first — this same function, asked before the kill AND inside the
+/// real spawn (`pty_create_inner`, below) — reasoning that a second copy could drift and fail in the
+/// worst direction: a pre-check saying "admitted" while the launch refuses.
+///
+/// That held for every cause except one, and requests #142 (network-monitor) and #150 (studio-code) are
+/// what it looks like in practice: a worktree whose `.claude/settings.json` was NEVER written — either
+/// because `ensure_worktree` made the directory but no launch ever completed for this stream, or because
+/// the stream is materializing for the very first time via a wake — can never self-heal under a shared
+/// predicate. The ONLY code that writes that file is `ensure_session_settings`, called by
+/// `TerminalView`'s mount effect immediately BEFORE `pty_create` — which means the sole way it could
+/// ever get written is for a wake's kill+remount to actually happen. A precheck that refuses on a
+/// missing gate file forecloses that remount forever: every wake refuses, nothing ever writes the file,
+/// every future wake refuses again. `bsc fleet wake` had no lever to break the loop, and neither did
+/// `bsc fleet start` (refuses on an already-running fleet without `--force`, which would relaunch every
+/// OTHER pane too, disruptively, just to fix or materialize this one).
+///
+/// So the precheck ([`pty_launch_refusal`]) and the real launch-time check (`pty_create_inner`'s own
+/// call to THIS function) now differ in exactly one case: a real, existing cwd directory with no gate
+/// file yet. The precheck admits it — the imminent remount's own `ensure_session_settings` will write
+/// the file before `pty_create` ever runs, so refusing here can never come true, only permanent. The
+/// real spawn-time check stays exactly this function, unchanged and strict: by the time IT runs, the
+/// settings write has already happened (or genuinely failed, in which case refusing is still correct —
+/// this is not a case a precheck should launder). An EMPTY cwd, or a cwd that is not a real directory,
+/// is still refused by both — there is no remount coming that could ever write anything into it.
 pub(crate) fn launch_gate_refusal(pane_id: &str, effective_cwd: &str) -> Option<String> {
     if gate_file_present(effective_cwd) || !must_be_gated(pane_id) {
         return None;
@@ -356,11 +377,26 @@ pub(crate) fn launch_gate_refusal(pane_id: &str, effective_cwd: &str) -> Option<
     ))
 }
 
-/// Ask [`launch_gate_refusal`] from the frontend, so a destructive action can decline BEFORE it
+/// The WAKE precheck's answer — [`launch_gate_refusal`], relaxed for the one case that predicate
+/// cannot resolve on its own: a real, existing cwd directory whose gate file has simply never been
+/// written. See the doc on `launch_gate_refusal` for why (requests #142/#150).
+///
+/// Only the "recoverable" shape is relaxed. Everything else — an empty cwd, a cwd that is not a real
+/// directory, a pane that is not gated, a gate file already present — answers exactly as
+/// `launch_gate_refusal` does, because none of those are fixed by letting the wake through.
+pub(crate) fn wake_precheck_refusal(pane_id: &str, cwd: &str) -> Option<String> {
+    let recoverable = !cwd.is_empty() && std::path::Path::new(cwd).is_dir();
+    if recoverable && !gate_file_present(cwd) && must_be_gated(pane_id) {
+        return None;
+    }
+    launch_gate_refusal(pane_id, cwd)
+}
+
+/// Ask [`wake_precheck_refusal`] from the frontend, so a destructive action can decline BEFORE it
 /// destroys. Returns `None` when the launch would be admitted.
 #[tauri::command]
 pub(crate) fn pty_launch_refusal(pane_id: String, cwd: String) -> Option<String> {
-    launch_gate_refusal(&pane_id, &cwd)
+    wake_precheck_refusal(&pane_id, &cwd)
 }
 
 fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
@@ -1366,11 +1402,8 @@ mod tests {
     /// killed anyway, and the director was told `woke: true`. MEASURED: four network-monitor
     /// worktrees had no `.claude/settings.json`, complete in every other respect.
     ///
-    /// The point of the extraction is that ONE function answers for both callers. A second copy —
-    /// even a correct one — could drift, and it would fail in the worst direction: a pre-check saying
-    /// "admitted" while the launch refuses is exactly the state this fixes.
     #[test]
-    fn the_launch_refusal_is_the_same_answer_the_wake_pre_check_gets() {
+    fn the_real_launch_refusal_stays_strict_on_a_missing_gate_file() {
         let dir = std::env::temp_dir().join(format!("bsc-gate-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -1396,6 +1429,52 @@ mod tests {
         // An EMPTY cwd is the #1819 shape and must refuse a fleet pane rather than launch it nowhere.
         assert!(super::launch_gate_refusal("network-monitor:api", "").is_some());
         assert!(!super::gate_file_present(""));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Requests #142 (network-monitor, `opnsense-config-adapter`) and #150 (studio-code, `surface` /
+    /// `mobile-orphan-clearance`): a worktree whose gate file was never written sat permanently
+    /// `stopped`/unmaterializable because every `bsc fleet wake` precheck refused it before the remount
+    /// that would have written it ever got to run. `wake_precheck_refusal` is the fix — it ADMITS
+    /// exactly this shape, because the imminent remount's own `ensure_session_settings` writes the gate
+    /// file before `pty_create` is ever called.
+    #[test]
+    fn a_wake_precheck_admits_a_real_directory_that_has_never_been_gated() {
+        let dir = std::env::temp_dir().join(format!("bsc-wake-precheck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.to_string_lossy().to_string();
+
+        // THE FIX: a real, existing worktree with no gate file yet is ADMITTED by the precheck — where
+        // the real launch-time check (above) still refuses the identical input.
+        assert!(!super::gate_file_present(&cwd));
+        assert_eq!(
+            super::wake_precheck_refusal("network-monitor:opnsense-config-adapter", &cwd),
+            None,
+            "a real cwd with no gate file yet must be admitted — the remount will write it",
+        );
+        assert!(
+            super::launch_gate_refusal("network-monitor:opnsense-config-adapter", &cwd).is_some(),
+            "the real spawn-time check stays strict for the identical input",
+        );
+
+        // Once the gate file exists, both agree (admitted) — no divergence in the ordinary case.
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        std::fs::write(dir.join(".claude").join("settings.json"), "{}").unwrap();
+        assert_eq!(super::wake_precheck_refusal("network-monitor:opnsense-config-adapter", &cwd), None);
+        assert_eq!(super::launch_gate_refusal("network-monitor:opnsense-config-adapter", &cwd), None);
+
+        // An EMPTY cwd is still refused by both — no remount can ever write a gate file into nothing.
+        assert!(super::wake_precheck_refusal("network-monitor:api", "").is_some());
+
+        // A cwd that is not a real directory at all is still refused too — recovering to some other
+        // ancestor at spawn time is not something the precheck can promise will end up gated either.
+        let ghost = dir.join("never-existed").to_string_lossy().to_string();
+        assert!(super::wake_precheck_refusal("network-monitor:api", &ghost).is_some());
+
+        // A manual console is never refused by either — the user is the principal there.
+        assert_eq!(super::wake_precheck_refusal("man:tab_abc:p2", &cwd), None);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2453,6 +2532,221 @@ fn is_host_shaped_glob(g: &str) -> bool {
         || g.chars().nth(1) == Some(':') && g.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
 }
 
+/// The directories a Rust-project scan does not need to see into — build output and dependency
+/// trees are exactly where a `*.rs`/`Cargo.toml` match would be noise, not signal, and `target/` on
+/// a warm worktree can hold tens of thousands of files a launch must not stat.
+#[cfg(target_os = "linux")]
+const RUST_SCAN_SKIP: &[&str] = &["target", "node_modules", ".git", ".claude"];
+
+/// A bounded directory walk under `root`: depth-capped and file-count-capped, so a huge or deeply
+/// nested tree cannot make a launch hang on a stat. Best-effort — a directory this cannot read
+/// (permissions, a dangling symlink) is simply skipped rather than failing the scan.
+#[cfg(target_os = "linux")]
+fn shallow_listing(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    const MAX_DEPTH: usize = 4;
+    const MAX_FILES: usize = 4000;
+
+    let mut out = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if out.len() >= MAX_FILES {
+            break;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            if out.len() >= MAX_FILES {
+                break;
+            }
+            let path = entry.path();
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let skip = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| RUST_SCAN_SKIP.contains(&n));
+                if depth < MAX_DEPTH && !skip {
+                    stack.push((path, depth + 1));
+                }
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// A directory looks like a RUST project when a shallow scan turns up a `Cargo.toml` or any `*.rs`
+/// file. Deliberately NOT gated on a manifest existing at the root — request #143 was filed from a
+/// worktree shaped `crates/<name>/Cargo.toml` with no manifest at `cwd`, and the source lives under
+/// `src/` regardless of where the nearest manifest sits.
+#[cfg(target_os = "linux")]
+fn looks_like_rust(cwd: &std::path::Path) -> bool {
+    shallow_listing(cwd).iter().any(|p| {
+        p.file_name().is_some_and(|n| n == "Cargo.toml") || p.extension().is_some_and(|e| e == "rs")
+    })
+}
+
+/// The host's rustup layout, resolved into a bindable [`bsc_sandbox::Toolchain`] — `None` when the
+/// host paths this needs do not exist. Pure past the two existence checks, so the interesting shape
+/// (which paths get bound where) is covered by `bsc-sandbox`'s own tests; this function only decides
+/// WHETHER the host has something to offer.
+#[cfg(target_os = "linux")]
+fn rust_toolchain_for_paths(
+    host_cargo_home: &std::path::Path,
+    host_rustup_home: &std::path::Path,
+    session_cargo_home: &std::path::Path,
+) -> Option<bsc_sandbox::Toolchain> {
+    let host_cargo_bin = host_cargo_home.join("bin");
+    if !host_cargo_bin.join("cargo").is_file() || !host_rustup_home.is_dir() {
+        return None;
+    }
+    Some(bsc_sandbox::rust_toolchain(&host_cargo_bin, host_rustup_home, session_cargo_home))
+}
+
+/// The Rust toolchain to bind into a caged launch, resolved from THIS host's rustup layout.
+///
+/// `CARGO_HOME`/`RUSTUP_HOME` are read from the environment first, falling back to rustup's own
+/// defaults (`~/.cargo`, `~/.rustup`) — the same precedence `rustup` itself uses. `None` means the
+/// host has no rustup toolchain to offer: the cage cannot fetch one itself, by design (`apt`/`curl`
+/// are deliberately not in the curated set), so this is a real dead end, not a smaller grant — the
+/// caller logs it rather than silently launching a session that cannot build.
+///
+/// The session's own `CARGO_HOME` is created under `stores_root` (never the host's — see
+/// [`bsc_sandbox::rust_toolchain`]'s docs for why) so it persists across relaunches of the same pane
+/// without being writable from any OTHER pane.
+#[cfg(target_os = "linux")]
+fn rust_toolchain_for(pane_id: &str, stores_root: &std::path::Path) -> Option<bsc_sandbox::Toolchain> {
+    let home = crate::platform::paths::home_dir();
+    let host_cargo_home = std::env::var_os("CARGO_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".cargo"));
+    let host_rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".rustup"));
+    let session_cargo_home = stores_root.join("cargo");
+    if let Err(e) = std::fs::create_dir_all(&session_cargo_home) {
+        log::warn!("pty[{pane_id}] no session CARGO_HOME ({e}); the Rust toolchain will not be bound");
+        return None;
+    }
+    rust_toolchain_for_paths(&host_cargo_home, &host_rustup_home, &session_cargo_home)
+}
+
+// request #143 (network-monitor:director): a Rust-only project's caged workers had no way to build
+// or test what they wrote, and no way to signal it beyond a `bsc-ask` a human had to notice.
+#[cfg(all(test, target_os = "linux"))]
+mod rust_toolchain_detection_tests {
+    use super::{looks_like_rust, rust_toolchain_for_paths};
+    use crate::testutil::unique_dir;
+    use std::fs;
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let dir = unique_dir("bsc-rust-detect", tag);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_root_manifest_is_detected() {
+        let dir = scratch("root-manifest");
+        fs::write(dir.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+        assert!(looks_like_rust(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_manifest_only_in_a_nested_crate_is_still_detected() {
+        // Request #143's own worktree: `crates/<name>/Cargo.toml` with nothing at the root — a
+        // check gated on a root manifest would have missed exactly this project.
+        let dir = scratch("nested-manifest");
+        fs::create_dir_all(dir.join("crates/netcon-core")).unwrap();
+        fs::write(dir.join("crates/netcon-core/Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+        assert!(looks_like_rust(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_bare_rs_file_with_no_manifest_anywhere_is_still_detected() {
+        let dir = scratch("bare-rs");
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/lib.rs"), "// nothing").unwrap();
+        assert!(looks_like_rust(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_project_with_neither_signal_is_not_detected() {
+        let dir = scratch("not-rust");
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/index.ts"), "export {}").unwrap();
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        assert!(!looks_like_rust(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_scan_does_not_descend_into_target() {
+        // target/ on a warm worktree can hold tens of thousands of files, and `*.rs` there is noise:
+        // it does not tell you whether the SOURCE is Rust, and walking it can cost real time on
+        // every launch.
+        let dir = scratch("skip-target");
+        fs::create_dir_all(dir.join("target/debug/build")).unwrap();
+        fs::write(dir.join("target/debug/build/generated.rs"), "// build output").unwrap();
+        assert!(!looks_like_rust(&dir));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn no_host_toolchain_is_a_clean_none_not_a_panic() {
+        let dir = scratch("no-toolchain");
+        let cargo_home = dir.join("cargo-home-that-does-not-exist");
+        let rustup_home = dir.join("rustup-home-that-does-not-exist");
+        let session = dir.join("session-cargo");
+        assert!(rust_toolchain_for_paths(&cargo_home, &rustup_home, &session).is_none());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_present_host_toolchain_is_described() {
+        let dir = scratch("has-toolchain");
+        let cargo_bin = dir.join("cargo-home/bin");
+        fs::create_dir_all(&cargo_bin).unwrap();
+        fs::write(cargo_bin.join("cargo"), "#!/bin/sh\n").unwrap();
+        let rustup_home = dir.join("rustup-home");
+        fs::create_dir_all(&rustup_home).unwrap();
+        let session = dir.join("session-cargo");
+
+        let tc = rust_toolchain_for_paths(&dir.join("cargo-home"), &rustup_home, &session)
+            .expect("a real cargo + rustup layout must be described, not skipped");
+        assert!(tc.env.iter().any(|(k, v)| k == "CARGO_HOME" && v == bsc_sandbox::RUST_CARGO_HOME_GUEST_PATH));
+        assert!(tc.env.iter().any(|(k, v)| k == "RUSTUP_HOME" && v == bsc_sandbox::RUSTUP_GUEST_PATH));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_cargo_binary_refuses_even_with_a_rustup_home() {
+        // The directory existing is not enough — this is what the director's own project hit:
+        // a host CARGO_HOME with no cargo shim inside it must not be described as a working
+        // toolchain.
+        let dir = scratch("empty-cargo-home");
+        fs::create_dir_all(dir.join("cargo-home/bin")).unwrap();
+        let rustup_home = dir.join("rustup-home");
+        fs::create_dir_all(&rustup_home).unwrap();
+        assert!(rust_toolchain_for_paths(&dir.join("cargo-home"), &rustup_home, &dir.join("session-cargo")).is_none());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_shallow_scan_is_bounded_so_a_huge_tree_cannot_hang_a_launch() {
+        let dir = scratch("bounded");
+        // Deeper than MAX_DEPTH (4) — a manifest past the bound must not be found, proving the
+        // walk actually stops rather than merely being slow.
+        let deep = dir.join("a/b/c/d/e/f");
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("Cargo.toml"), "[package]\n").unwrap();
+        assert!(!looks_like_rust(&dir), "a manifest past MAX_DEPTH must not be found");
+        fs::remove_dir_all(&dir).ok();
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn namespace_argv(
     role: Option<&str>,
@@ -2610,12 +2904,41 @@ fn namespace_argv(
     // runtime was never bound. `bins_for(role)` gives git and gh; a runtime is the caller's to name,
     // which is the point of `extra_bins` (the alternative is Usr::All, i.e. every binary on the host).
     match for_role(role, unit, &paths, harness_bins, session_limits(role), scope_mode(), vec![shell.to_string(), "-i".into()]) {
-        Ok(p) => {
+        Ok(mut p) => {
             if let Some(c) = &p.caveat {
                 // A profile that knowingly grants more than the model wants must be visible at the
                 // point of launch, not only in a doc comment.
                 log::warn!("pty[{pane_id}] sandbox caveat: {c}");
             }
+
+            // The PROJECT's toolchain, on top of the role's fixed bin set — request #143
+            // (network-monitor:director): a Rust-only project's workers had no `cargo`/`rustc` in
+            // the cage, and no way to fetch one (the curated set has no `apt`/`curl` on purpose), so
+            // every stream's gate could mark `complete` and never `verified`. `harness_bins` names
+            // the RUNTIME (node/claude); this is the same idea one layer up, for the PROJECT.
+            if looks_like_rust(std::path::Path::new(cwd)) {
+                match stores_root.filter(|r| !r.is_empty()) {
+                    Some(root) => match rust_toolchain_for(pane_id, std::path::Path::new(root)) {
+                        Some(tc) => {
+                            log::info!(
+                                "pty[{pane_id}] {role_name} looks like a Rust project — binding the host's cargo/rustc"
+                            );
+                            p.spec.add_toolchain(tc);
+                        }
+                        None => log::warn!(
+                            "pty[{pane_id}] {role_name} looks like a Rust project but this host has \
+                             no rustup toolchain to bind (checked $CARGO_HOME/$RUSTUP_HOME and their \
+                             defaults, ~/.cargo and ~/.rustup) — cargo/rustc will be unavailable \
+                             inside the cage"
+                        ),
+                    },
+                    None => log::warn!(
+                        "pty[{pane_id}] {role_name} looks like a Rust project but has no stores root \
+                         to hold a session CARGO_HOME — cargo/rustc will be unavailable inside the cage"
+                    ),
+                }
+            }
+
             match p.spec.render() {
                 Ok(argv) => {
                     log::info!(

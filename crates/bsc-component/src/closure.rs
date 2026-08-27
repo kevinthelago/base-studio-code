@@ -203,7 +203,11 @@ impl<'a> Index<'a> {
     }
 
     /// Resolve one `@/…` specifier through the loader's chain. `base` is the specifier minus the alias.
-    fn lookup(&self, spec: &str, base: &str) -> Option<(String, Origin, String, &'static str)> {
+    ///
+    /// `pub(crate)`, not private: [`crate::import_symbols::resolved_export_names`] (#149) reuses this
+    /// exact resolution order to find a specifier's SOURCE (to read its exports) rather than to write it
+    /// into a materialization mirror — same lookup, different consumer.
+    pub(crate) fn lookup(&self, spec: &str, base: &str) -> Option<(String, Origin, String, &'static str)> {
         if let Some(id) = base.strip_prefix("components/") {
             if let Some(c) = self.by_id.get(id) {
                 return Some((id_of(c).to_string(), Origin::Sibling, text(c, "srcText"), ext_of(c, "tsx")));

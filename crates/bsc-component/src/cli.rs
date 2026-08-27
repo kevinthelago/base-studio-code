@@ -510,6 +510,7 @@ USAGE:
   bsc ui doctor --sound-kit id@version [--json]   # judge @bsc/sounds/… against a PINNED sound kit (#3412)
   bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
   bsc ui doctor --runtime [--kit K] [--json]      # ALSO report what the app OBSERVED while running
+  bsc ui doctor --imports [--kit K] [--json]      # ALSO walk each record's import CLOSURE for a symbol the target never exports (#149)
   bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
 
 --sound-kit (#3412) names the project's PINNED sound kit (its blueprint's `soundKit`, as `id@version` in the
@@ -535,6 +536,16 @@ broken record hides), RUNTIME-FELL-BACK (an older version rendered instead), RUN
 then threw), RUNTIME-RECOMPILE-LOOP and RUNTIME-SLOW-COMPILE. With no attestations recorded it emits ONE
 finding saying so rather than calling every record dead — an empty store means nothing was MEASURED, which
 is not the same as nothing having run.
+
+--imports (bsc request #149) ADDS UNRESOLVED-IMPORT-SYMBOL: `unresolvable-import` above only asks whether a
+`@/…` specifier resolves to SOME record; this asks the sharper question — once it resolves, does the target
+actually EXPORT the name being imported? Follows `export * from` barrels (and `export type * from`) through
+the SAME resolution chain `bsc ui test`'s closure walker uses (sibling by id → component `provides` → algorithm
+impl `provides`), and reads every comma-separated declarator in a `const`/`let`/`var` export, not just the
+first — a checker that stops at either of those reports a record clean on exactly the drift that breaks it at
+runtime with no typecheck error and no failing test (tsc/vitest compile the SEED file; the app loads the STORE
+record, and the two can drift apart). Skips a specifier that resolves to no record at all — that gap is
+UNRESOLVABLE-IMPORT's finding, not this one's, so the two never double-report the same defect.
 
 Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
 dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
@@ -714,6 +725,27 @@ overlap, then fold the LESS-used component into the more-used one.
 
 <id> form prints { id, name, kit, usedBy: [composer names], count }. --all prints every component as
 { id, name, kit, count }, most-used first (--kit scopes to one kit). A READ — never scope-gated.",
+    },
+    CmdDoc {
+        name: "refs",
+        summary: "literal srcText cross-references to a component's NAME across every other component (#113)",
+        usage: "\
+USAGE:
+  bsc ui refs <id> [--json] [--pretty]
+
+The complement to `used-by`: `used-by` reads the DECLARED `composes` graph, so a component that is
+genuinely referenced in another's JSX or import but never added to `composes` reads as an orphan there
+— indistinguishable from one that is actually dead. This scans every OTHER live component's raw
+`srcText`/`source` for literal whole-word occurrences of <id>'s NAME, so a missing edge and a genuinely
+dead root stop looking identical before either gets deleted.
+
+Each hit is classified: a JSX tag (`<Name`/`</Name`), an import-clause binding (`import { Name } from
+…` / `import Name from …`), or a bare mention (anywhere else — a type annotation, `Name.thing`, a plain
+reference). Deliberately loose (no AST, whole-word only, comments/strings skipped) — over-inclusion is
+harmless here, since a hit only tells the caller to LOOK FURTHER, never authorizes a delete on its own.
+
+--json emits { id, name, refs: [{ id, name, kit, jsx, importClause, bare, total }], count }, most-
+referenced first. A READ — never scope-gated.",
     },
     CmdDoc {
         name: "exports",
@@ -911,6 +943,30 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).",
     },
     CmdDoc {
+        name: "domains",
+        summary: "report (and with --apply, backfill) each component's FEATURE domain from its folder",
+        usage: "\
+USAGE:
+  bsc ui domains [--kit <id>] [--apply] [--pretty]
+
+The FEATURE axis (epic-the-graphs-are-split-by-feature-over-a-core). `domain` says what a component
+BELONGS TO; `folder` stays what it was — where it came from, derived from `src`, and what emit paths
+read. Two fields, two questions; overloading one would make this backfill fight `bsc ui regroup`.
+
+The mapping, applied once:
+  shared/**, components/**, src/components/**  ->  core     (the baseline, usable anywhere)
+  app/**                                       ->  shell    (composes features; belongs to none)
+  features/<x>/**                              ->  <x>
+
+REPORTS ONLY UNLESS --apply — the inverse of `refolder`'s --dry-run, because this INTRODUCES a field
+across the whole store on a mapping you should read first. The report carries `changed` (from/to per
+record), `byDomain` (the resulting shape of the split), and `unmapped` — records the mapping cannot
+place, listed by id and folder and NEVER given a default. Re-running after an --apply is a no-op.
+
+`bsc ui list --domain <d>` then reads one feature back. That is a SELECTION, not a partition: a
+component may still compose across domains, and the graph still shows those edges.",
+    },
+    CmdDoc {
         name: "refolder",
         summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
         usage: "\
@@ -1096,7 +1152,11 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     dir_segment: "components",
     tagline: TAGLINE,
     commands: COMPONENT_COMMANDS,
-    meta_fields: &["id", "name", "kitId", "role", "folder", "shapes"],
+    // `domain` (epic-the-graphs-are-split-by-feature-over-a-core) is the FEATURE axis, beside `folder`
+    // rather than replacing it: folder is derived from `src` and names emit paths, domain is stored and
+    // says what the record belongs to. It rides the lean projection so "what is in this feature" is one
+    // read, the same shape `bsc graph impl list` already answers for algorithms.
+    meta_fields: &["id", "name", "kitId", "role", "folder", "domain", "shapes"],
     // #4072 — exactly what the Design Studio's composition graph renders: the node card
     // (name/role/group/×used) plus `composes`, which `buildComposesEdges` turns into the edges.
     // Deliberately NOT `srcText` (77.6% of the full payload) / `tests` / `history` / `props`: the
@@ -1167,7 +1227,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("domains") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
         // `usage-scan` is a READ until `--apply`, which writes `used`/`usageAssessed` onto every examined
         // record. Gate on the flag, not the verb, so the diagnosis stays available to a read-scoped session.
@@ -1617,6 +1677,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_used_by(&args[1..])
             }
         }
+        // `refs` (#113) — literal srcText cross-references to a component's NAME; a READ, never scope-gated.
+        Some("refs") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refs"));
+                Ok(())
+            } else {
+                cmd_refs(&args[1..])
+            }
+        }
         Some("exports") => {
             if args.get(1).map(String::as_str) == Some("help") {
                 print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "exports"));
@@ -1733,6 +1802,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // one thing stay alive indefinitely. `unknown_command` names the near miss, so a session that
         // types the old verb is told the new one rather than left guessing.
         Some("refolder") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
+        Some("domains") if args.get(1).map(String::as_str) != Some("help") => cmd_domains(&args[1..]),
         Some("refolder") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
             Ok(())
@@ -1813,6 +1883,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // still delegates unchanged. Without it, comparing two kits' membership meant a full-store dump
         // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
         Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
+        Some("list") if args.iter().any(|a| a == "--domain") => cmd_list_domain(&args[1..]),
         // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
@@ -2748,6 +2819,105 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+
+/// `bsc ui domains [--kit <id>] [--apply] [--pretty]` — the FEATURE-axis backfill
+/// (`epic-the-graphs-are-split-by-feature-over-a-core`), and the report of what it would do.
+///
+/// DRY BY DEFAULT, the inverse of `refolder`'s `--dry-run`. `refolder` re-derives a field it already
+/// owns; this one INTRODUCES a field across the whole store on a mapping a human has to agree with
+/// first, so the safe direction is opposite: you read the plan, then pass `--apply`.
+///
+/// It reports three groups, and the third is the point:
+/// - `changed`  — records whose domain would be set (or corrected), with from/to.
+/// - `byDomain` — the resulting per-domain counts, so the shape of the split is visible BEFORE it lands.
+/// - `unmapped` — records the mapping cannot place, listed by id and never given a default.
+///
+/// The unmapped list is why this is not a sweep. 44 of 448 records are hollow — no folder, no `kitId`
+/// and no `name` — and a backfill that quietly bucketed them would bury a data-quality problem inside a
+/// migration and call it done. They surface here, every run, until someone decides what they are.
+///
+/// A record whose stored domain already matches is left alone, so re-running is a no-op.
+fn cmd_domains(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other => {
+                return Err(format!(
+                    "unknown flag '{other}' — usage: bsc ui domains [--kit <id>] [--apply] [--pretty] \
+                     (reports only unless --apply)"
+                ))
+            }
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let (mut scanned, mut already) = (0usize, 0usize);
+    let (mut changed, mut unmapped, mut updated) = (Vec::new(), Vec::new(), Vec::new());
+    let mut by_domain: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for raw in store.list() {
+        let rec: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
+        if let Some(k) = &kit {
+            if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(k.as_str()) {
+                continue;
+            }
+        }
+        scanned += 1;
+        let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let folder = record_folder(&rec).unwrap_or_default().to_string();
+        let old = rec.get("domain").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let Some(new) = crate::domain_from_folder(&folder) else {
+            // Report the folder we could not place ALONGSIDE the id: "which records are unmapped" and
+            // "what shapes is the mapping missing" are different questions and this answers both.
+            unmapped.push(serde_json::json!({ "id": id, "folder": folder }));
+            if !old.is_empty() {
+                *by_domain.entry(old).or_default() += 1;   // an already-set domain still counts
+            }
+            continue;
+        };
+        *by_domain.entry(new.clone()).or_default() += 1;
+        if old == new {
+            already += 1;
+            continue;
+        }
+        changed.push(serde_json::json!({ "id": id, "folder": folder, "from": old, "to": new }));
+        // Submit ONLY {id, domain}, never the round-tripped record.
+        //
+        // The write MERGES, so the two are equivalent — right up until a stored field is `null`. A
+        // resubmitted explicit `null` reads as a CLEAR, so round-tripping the whole record deletes
+        // every null field it carries. Measured on the real store before this line existed: 448
+        // records went in, 401 fields came out where 402 should have, and the missing one was
+        // `terminalhost.provides` — a stored null, silently dropped by a backfill that was only
+        // supposed to ADD a field.
+        //
+        // Sending just the delta makes that unreachable: a field this command never names is a field
+        // it cannot lose.
+        updated.push(serde_json::json!({ "id": id, "domain": new }));
+    }
+    let applied = if apply && !updated.is_empty() {
+        let writer = crate::record::resolve_writer(None);
+        let plan = WritePlan { replace: false, clear: &[] };
+        set_stamped(&store, &updated, None, &writer, "component", Some("domains: feature axis from folder"), plan)?;
+        true
+    } else {
+        false
+    };
+    let report = serde_json::json!({
+        "scanned": scanned,
+        "alreadyCorrect": already,
+        "changed": changed,
+        "unmapped": unmapped,
+        "byDomain": by_domain,
+        "applied": applied,
+    });
+    let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
 /// `bsc ui export <dir> [--dir <store>] [--pretty]` (#3606) — dump the component store to a folder tree,
 /// `<dir>/<group>/<id>.json`, so components-as-data round-trips: the seed half `bsc ui import` reads it back.
 /// Files are written pretty (readable git diffs); `--pretty` also indents the stdout report.
@@ -3887,6 +4057,64 @@ fn cmd_list_kit(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// `list --domain <d> [--full] [--raw] [--pretty] [--dir D]` — the component list scoped to ONE FEATURE
+/// (`epic-the-graphs-are-split-by-feature-over-a-core`).
+///
+/// Mirrors [`cmd_list_kit`] exactly, for the same reason it exists: `domain` is a components-only field,
+/// so filtering here keeps it out of the dispatch every other store shares. `--domain core` answers "what
+/// may I build on anywhere", which is the read this axis was added for.
+///
+/// A SELECTION, NOT A PARTITION. This narrows what is LISTED; it never narrows what a listed record may
+/// reference. A `glance` component composing a `core` one keeps that edge, and it stays visible in the
+/// graph projection — 577 of 927 component edges point at the baseline, so a filter that hid them would
+/// misrepresent the library rather than scope it.
+///
+/// An UNKNOWN domain yields an empty list rather than an error, matching `--kit`: asking what is in a
+/// feature that turns out to hold nothing is a legitimate question, and during the backfill it is the
+/// common one.
+fn cmd_list_domain(args: &[String]) -> Result<(), String> {
+    let (mut domain, mut dir) = (None::<String>, None::<String>);
+    let (mut pretty, mut full, mut raw) = (false, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--domain" => domain = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--full" => full = true,
+            "--raw" => raw = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => {}
+        }
+    }
+    let domain = domain.ok_or("--domain needs a value (e.g. `core`, `glance`; see `bsc ui domains`)")?;
+    let store = open_component_store(&dir)?;
+    let stored = store.list();
+    let selected: Vec<&String> = stored
+        .iter()
+        .filter(|j| {
+            serde_json::from_str::<serde_json::Value>(j)
+                .ok()
+                .and_then(|v| v.get("domain").and_then(|d| d.as_str().map(str::to_owned)))
+                .as_deref()
+                == Some(domain.as_str())
+        })
+        .collect();
+    if raw {
+        let ids: Vec<String> = selected.iter().filter_map(|j| bsc_json_store::cli::id_field(j)).collect();
+        bsc_cli_util::print_raw_lines(&ids);
+        return Ok(());
+    }
+    let out: Vec<serde_json::Value> = if full {
+        selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
+    } else {
+        selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
+    };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
 /// `doctor [--kit K] [--sound-kit id@version] [--json] [--pretty]` (#2678) — the graph-health report.
 /// Reads the component store, runs the pure analyzer ([`crate::graph_health::analyze_with`]), and prints
 /// the ranked findings as JSON (`--json`, LLM-consumable) or a human summary. `--kit` scopes the OUTPUT to
@@ -4196,6 +4424,7 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
     let (mut fix, mut yes, mut motion) = (false, false, false);
     let mut runtime = false;
+    let mut imports = false;
     let mut sound_kit = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -4216,6 +4445,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             // what the app OBSERVED while running (declined / never-ran / stale / fell-back /
             // recompile-loop / slow-compile), read from runtime.db.
             "--runtime" => runtime = true,
+            // #149: ADD the record-CLOSURE symbol check — walks each record's `@/…` imports through
+            // `unresolvable-import`'s SAME resolution chain (sibling → component `provides` → impl
+            // `provides`, barrels followed) and reports a name the target resolves to but never exports.
+            "--imports" => imports = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -4289,6 +4522,38 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // having run. A store with no attestations says so once rather than calling every record dead.
     if runtime {
         findings.extend(runtime_findings(&comps)?);
+    }
+    // #149: the record-CLOSURE symbol lens. Behind a flag like `--runtime`/`--motion` — it needs the
+    // WHOLE algorithms store (`bsc_graph::implementations()`) to resolve a `provides` target, a real
+    // read `analyze_with`'s pure per-kit pass never makes, and it is a different KIND of question from
+    // module-level `unresolvable-import`: does the specifier resolve to something that names THIS symbol.
+    if imports {
+        let impls = bsc_graph::implementations();
+        let platform = crate::graph_health::platform_modules();
+        let index = crate::closure::Index::new(&comps, &impls, platform, None);
+        let mut records: Vec<(String, String, String, String)> = comps
+            .iter()
+            .filter_map(|c| {
+                let id = c.get("id").and_then(serde_json::Value::as_str)?.to_string();
+                let src = c.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+                if src.trim().is_empty() {
+                    return None;
+                }
+                let kit = c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+                let name = c.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id).to_string();
+                Some((kit, id, name, src.to_string()))
+            })
+            .collect();
+        records.extend(impls.iter().filter_map(|im| {
+            let id = im.get("id").and_then(serde_json::Value::as_str)?.to_string();
+            let src = im.get("code").and_then(serde_json::Value::as_str).unwrap_or_default();
+            if src.trim().is_empty() {
+                return None;
+            }
+            let name = im.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id).to_string();
+            Some((String::new(), id, name, src.to_string()))
+        }));
+        findings.extend(crate::import_symbols::unresolved_import_symbol_findings(&records, &index));
     }
     // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
     // `analyze` uses). Render errors (severity 5) sort to the top.
@@ -4664,12 +4929,19 @@ fn cmd_usage_scan(args: &[String]) -> Result<(), String> {
             if rec.is_null() {
                 continue;
             }
+            let kit = rec.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
             rec["used"] = serde_json::Value::from(row.used);
             if row.used > 0 {
                 rec["usageAssessed"] = serde_json::Value::Bool(true);
                 assessed += 1;
             }
             stamped_set(&store, &row.id, rec, &writer)?;
+            // #110: every other write path emits this right after its `store.set` so the Design Studio's
+            // live-focus poll (`useUiActivity`) re-hydrates and the orphan/dangling-branch badges stop
+            // lagging the store — this loop was the one write path that never did, so `used`/`usageAssessed`
+            // could flip a record from orphan to composed on disk while the running app kept showing the
+            // stale badge until a full relaunch.
+            bsc_util::emit_ui_activity_in("component", &row.id, &kit);
         }
     }
 
@@ -4838,6 +5110,101 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
         println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
     } else {
         println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
+    }
+    Ok(())
+}
+
+/// `bsc ui refs <id>` (#113) — literal srcText cross-references to a component's NAME, across every
+/// OTHER live component in the store. The complement to `used-by`: `used-by` reads the DECLARED
+/// composes graph, so a component actually used in another's JSX/import but never added to `composes`
+/// reads as an orphan there, indistinguishable from a genuinely dead root. This scans raw srcText for
+/// the name itself instead, so the two stop looking identical.
+fn cmd_refs(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut id) = (None::<String>, false, false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui refs <id> [--json] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let target = comps
+        .iter()
+        .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| format!("no component with id '{id}' (see `bsc ui list --raw`)"))?;
+    let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    if name.is_empty() {
+        return Err(format!("component '{id}' has no name to search for"));
+    }
+
+    let mut hits: Vec<serde_json::Value> = Vec::new();
+    for c in &comps {
+        let cid = c.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if cid == id || cid.is_empty() {
+            continue; // never a reference to itself
+        }
+        if c.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true) {
+            continue; // a tombstone's content is gone; it can only ever dilute
+        }
+        let mut text = String::new();
+        for f in ["srcText", "source"] {
+            if let Some(t) = c.get(f).and_then(serde_json::Value::as_str) {
+                text.push_str(t);
+                text.push('\n');
+            }
+        }
+        if text.trim().is_empty() {
+            continue;
+        }
+        let mentions = crate::usage_scan::name_mentions(&text, &name);
+        if mentions.is_empty() {
+            continue;
+        }
+        let jsx = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::JsxTag)).count();
+        let import_clause = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::ImportClause)).count();
+        let bare = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::Bare)).count();
+        hits.push(serde_json::json!({
+            "id": cid,
+            "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "jsx": jsx,
+            "importClause": import_clause,
+            "bare": bare,
+            "total": mentions.len(),
+        }));
+    }
+    hits.sort_by(|a, b| {
+        b["total"].as_u64().cmp(&a["total"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+    });
+
+    if json {
+        let out = serde_json::json!({ "id": id, "name": name, "refs": hits, "count": hits.len() });
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        bsc_util::emit_line(&text.map_err(|e| e.to_string())?);
+    } else if hits.is_empty() {
+        bsc_util::emit_line(&format!(
+            "'{name}' ({id}) — no literal srcText reference found in any other component. Genuinely unreferenced, not just missing a `composes` edge.",
+        ));
+    } else {
+        bsc_util::emit_line(&format!("'{name}' ({id}) is literally referenced in {} component(s):", hits.len()));
+        for h in &hits {
+            bsc_util::emit_line(&format!(
+                "  {} ({})  [jsx {} · import {} · bare {}]",
+                h["name"].as_str().unwrap_or(""),
+                h["id"].as_str().unwrap_or(""),
+                h["jsx"].as_u64().unwrap_or(0),
+                h["importClause"].as_u64().unwrap_or(0),
+                h["bare"].as_u64().unwrap_or(0),
+            ));
+        }
     }
     Ok(())
 }
@@ -7522,8 +7889,9 @@ export const P = () => <X />;"
     fn specs_are_the_two_collections_with_the_right_lean_fields() {
         assert_eq!(COMPONENT_SPEC.noun, "component");
         assert_eq!(COMPONENT_SPEC.dir_segment, "components");
-        // `folder` (#3048/#4107) + `shapes` (#2475) ride the lean list projection so `list`/`list --shape` expose the axes.
-        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "folder", "shapes"]);
+        // `folder` (#3048/#4107) + `domain` (the FEATURE axis) + `shapes` (#2475) ride the lean list
+        // projection so `list` / `list --shape` / `list --domain` expose the axes without `--full`.
+        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "folder", "domain", "shapes"]);
         assert_eq!(KIT_SPEC.noun, "kit");
         assert_eq!(KIT_SPEC.dir_segment, "kits");
         assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "tech", "style", "stack"]);
@@ -7792,8 +8160,8 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
+                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "set-src", "patch", "domains", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
@@ -9183,11 +9551,15 @@ export const P = () => <X />;"
         });
         set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None, WritePlan::default()).unwrap();
 
-        // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still project.
+        // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still
+        // project. `domain` reads as "" here because this fixture predates the FEATURE axis: `lean_meta`
+        // renders an ABSENT meta field as the empty string rather than omitting it, so a record with no
+        // domain still has the same SHAPE as one that has it. That is what keeps a consumer parsing a
+        // fixed set of keys instead of branching on presence.
         let meta = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.meta_fields);
         assert_eq!(
             meta,
-            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "shapes": ["list"] })
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "domain": "", "shapes": ["list"] })
         );
         // get / list / list --full still run clean end-to-end over a stamped store.
         assert!(run(vec!["get".into(), "card".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -9549,6 +9921,78 @@ export const P = () => <X />;"
         });
     }
 
+    /// #113: a component genuinely referenced in another's JSX but never added to `composes` reads as
+    /// an orphan under `used-by` — `refs` is the srcText scan that tells the two apart.
+    #[test]
+    fn refs_finds_a_jsx_reference_used_by_cannot_see() {
+        let store = tmp_component_store("refs");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for rec in [
+            serde_json::json!({
+                "id": "widget", "name": "Widget", "kitId": "react-ui", "role": "primitive", "composes": [],
+                "srcText": "export const Widget = () => <div />;",
+            }),
+            // References Widget in JSX, and separately imports it — but never lists it in `composes`.
+            serde_json::json!({
+                "id": "page", "name": "Page", "kitId": "react-ui", "role": "composite", "composes": [],
+                "srcText": "import { Widget } from \"@/x/Widget\";\nexport const Page = () => <Widget />;",
+            }),
+            // Shares no reference at all.
+            serde_json::json!({
+                "id": "unrelated", "name": "Unrelated", "kitId": "react-ui", "role": "primitive", "composes": [],
+                "srcText": "export const Unrelated = () => <span />;",
+            }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+
+        // `used-by` sees NOTHING — there is no `composes` edge — which is exactly the false "orphan"
+        // #113 filed against. `used-by` itself prints via plain `println!`, so its human output is not
+        // capturable here; going straight at the composes-inverse index proves the same fact.
+        let comps: Vec<serde_json::Value> =
+            store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+        let idx = used_by_index(&comps);
+        assert!(
+            !idx.contains_key(&("react-ui".to_string(), "Widget".to_string())),
+            "used-by is blind to the JSX reference: no `composes` edge names Widget"
+        );
+
+        // `refs` finds it: `page` shows both a JSX hit and an import-clause hit, `unrelated` does not appear.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "widget", "--json"]), "bsc ui"));
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["name"], "Widget");
+        assert_eq!(v["count"], 1);
+        assert_eq!(v["refs"][0]["id"], "page");
+        assert_eq!(v["refs"][0]["jsx"], 1);
+        assert_eq!(v["refs"][0]["importClause"], 1);
+
+        // The text form names the referencer and never mentions `unrelated`.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "widget"]), "bsc ui"));
+        r.unwrap();
+        assert!(out.contains("Page"), "{out}");
+        assert!(!out.contains("Unrelated"), "{out}");
+
+        // A component nothing references at all — the genuinely-dead case `refs` exists to confirm.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "unrelated"]), "bsc ui"));
+        r.unwrap();
+        assert!(out.contains("no literal srcText reference found"), "{out}");
+
+        assert!(run(vec!["refs".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        let err = run(d(&["refs", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("no component with id 'ghost'"), "{err}");
+
+        // A READ — in the catalog, never a scoped mutation, and runs under a read-only ui scope.
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "refs"));
+        assert!(!is_scoped_mutation(&["refs".to_string(), "widget".to_string()]), "refs is a read");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(run(d(&["refs", "widget"]), "bsc ui").is_ok(), "refs works read-scoped");
+        });
+    }
+
     #[test]
     fn similar_folds_in_each_candidate_usage() {
         // #3584: `similar` still ranks by name+contract, but each row now carries `usedBy` so a combine
@@ -9790,6 +10234,49 @@ export const P = () => <X />;"
         )
         .expect_err("a missing root must refuse");
         assert!(err.contains("does not exist"), "{err}");
+    }
+
+    /// #110: `usage-scan --apply` is a real mutation path (it flips `used`/`usageAssessed`, which is
+    /// exactly what moves a record off `doctor`'s orphan/dangling-branch findings) but it wrote through
+    /// `stamped_set` directly and never called `emit_ui_activity`, unlike every other write verb (`set`,
+    /// `remove`, `rename`, `merge`, `import`, …). The Design Studio's live-focus poll (`useUiActivity`)
+    /// re-hydrates the library on a `ui-touch` line and nothing else — so a component `usage-scan --apply`
+    /// rescued from a false orphan kept showing the stale badge in the running app until a full relaunch,
+    /// because the ONE signal that tells it to reload never fired. Filed as request 110 (DeployToggle).
+    #[test]
+    fn usage_scan_apply_emits_a_ui_touch_per_written_record_so_the_studio_rehydrates() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        bsc_cli_util::with_scopes(None, || {
+            let act = std::env::temp_dir().join(format!("bsc-component-uiact-usagescan-{}.log", std::process::id()));
+            let _ = std::fs::remove_file(&act);
+            std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+            std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+            let store = tmp_component_store("usage-scan-emit");
+            let dir = store.dir().to_string_lossy().into_owned();
+            let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+            put("child", serde_json::json!({ "id": "child", "name": "Child", "kitId": "base-studio-code", "role": "primitive", "composes": [] }));
+            put("parent", serde_json::json!({ "id": "parent", "name": "Parent", "kitId": "base-studio-code", "role": "composite", "composes": ["Child"] }));
+
+            // A READ never emits — nothing changed for the Studio to reload.
+            run(vec!["usage-scan".into(), "--dir".into(), dir.clone()], "bsc ui").expect("read");
+            assert!(!act.is_file() || std::fs::read_to_string(&act).unwrap().is_empty(), "a read must not touch the activity log");
+
+            run(vec!["usage-scan".into(), "--apply".into(), "--dir".into(), dir], "bsc ui").expect("apply");
+            let text = std::fs::read_to_string(&act).unwrap();
+            assert!(
+                text.contains("\tui-touch\tcomponent\tchild") && text.contains("\tbase-studio-code"),
+                "the rescued (now-used) record touches, carrying its kit: {text:?}",
+            );
+            assert!(
+                text.contains("\tui-touch\tcomponent\tparent"),
+                "every applied record touches, not just the one that changed orphan status: {text:?}",
+            );
+
+            std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+            std::env::remove_var("BSC_AUDIT_PANE");
+            let _ = std::fs::remove_file(&act);
+        });
     }
 
     /// `--apply` writes, so it must be scope-gated like every other write — while the READ stays
@@ -10144,5 +10631,151 @@ mod tempdir_shim {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.0).ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod domain_tests {
+    use super::*;
+
+    /// A store shaped like the real one at the split: a baseline, two features, the shell, and a
+    /// HOLLOW record (no folder, no kitId, no name) — 44 of 448 live records look exactly like that,
+    /// and they are the reason this backfill reports rather than defaults.
+    fn seeded() -> (tempdir_shim::Dir, String) {
+        let dir = tempdir_shim::Dir::new("bsc-domains");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store.set("button", r#"{"id":"button","name":"Button","kitId":"k","folder":"shared/ui/controls"}"#).unwrap();
+        store.set("glancepage", r#"{"id":"glancepage","name":"GlancePage","kitId":"k","folder":"features/glance"}"#).unwrap();
+        store.set("settingscard", r#"{"id":"settingscard","name":"Card","kitId":"k","folder":"features/settings/cards"}"#).unwrap();
+        store.set("rail", r#"{"id":"rail","name":"Rail","kitId":"k","folder":"app/chrome"}"#).unwrap();
+        store.set("hollow", r#"{"id":"hollow"}"#).unwrap();
+        let p = dir.path();
+        (dir, p)
+    }
+
+    fn run_domains(path: &str, extra: &[&str]) -> serde_json::Value {
+        // Drive the mapping the command drives, over the same store, so the assertions are about the
+        // backfill's DECISIONS rather than about stdout capture.
+        let store = open_component_store(&Some(path.to_string())).unwrap();
+        let apply = extra.contains(&"--apply");
+        let mut changed = Vec::new();
+        let mut unmapped = Vec::new();
+        let mut by: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut updated = Vec::new();
+        for raw in store.list() {
+            let rec: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            let id = rec.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let folder = record_folder(&rec).unwrap_or_default().to_string();
+            let old = rec.get("domain").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            match crate::domain_from_folder(&folder) {
+                None => unmapped.push(id),
+                Some(new) => {
+                    *by.entry(new.clone()).or_default() += 1;
+                    if old != new {
+                        changed.push(id.clone());
+                        // The DELTA, exactly as the command sends it — see the null-clear note there.
+                        updated.push(serde_json::json!({ "id": id, "domain": new }));
+                    }
+                }
+            }
+        }
+        if apply && !updated.is_empty() {
+            let writer = crate::record::resolve_writer(None);
+            let plan = WritePlan { replace: false, clear: &[] };
+            set_stamped(&store, &updated, None, &writer, "component", Some("domains"), plan).unwrap();
+        }
+        changed.sort();
+        unmapped.sort();
+        serde_json::json!({ "changed": changed, "unmapped": unmapped, "byDomain": by })
+    }
+
+    #[test]
+    fn maps_the_baseline_the_shell_and_each_feature() {
+        let (_d, p) = seeded();
+        let r = run_domains(&p, &[]);
+        assert_eq!(r["byDomain"]["core"], 1, "shared/** is the baseline");
+        assert_eq!(r["byDomain"]["shell"], 1, "app/** is the shell, NOT the baseline");
+        assert_eq!(r["byDomain"]["glance"], 1);
+        assert_eq!(r["byDomain"]["settings"], 1, "the feature is the segment after `features/`");
+    }
+
+    #[test]
+    fn a_hollow_record_is_reported_unmapped_and_never_given_a_default() {
+        // THE POINT OF THE REPORT. 44 live records carry no folder, kitId or name. Bucketing them
+        // under core (or anything) would hide a data-quality problem inside a migration.
+        let (_d, p) = seeded();
+        let r = run_domains(&p, &[]);
+        assert_eq!(r["unmapped"].as_array().unwrap(), &[serde_json::json!("hollow")]);
+        assert!(!r["changed"].as_array().unwrap().contains(&serde_json::json!("hollow")));
+        for d in ["core", "shell", "glance", "settings"] {
+            assert_eq!(r["byDomain"][d], 1, "an unmapped record inflated no domain");
+        }
+    }
+
+    #[test]
+    fn reports_without_writing_until_apply() {
+        let (_d, p) = seeded();
+        run_domains(&p, &[]);   // no --apply
+        let store = open_component_store(&Some(p.clone())).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("button").unwrap().unwrap()).unwrap();
+        assert!(rec.get("domain").is_none(), "a report must not write — --apply is the write");
+    }
+
+    #[test]
+    fn apply_writes_the_domain_and_re_running_is_a_no_op() {
+        let (_d, p) = seeded();
+        let first = run_domains(&p, &["--apply"]);
+        assert_eq!(first["changed"].as_array().unwrap().len(), 4);
+        let store = open_component_store(&Some(p.clone())).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("glancepage").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["domain"], "glance");
+        // Idempotence is what makes the backfill safe to re-run after adjudicating the unmapped ones.
+        let second = run_domains(&p, &["--apply"]);
+        assert!(second["changed"].as_array().unwrap().is_empty(), "second run changed nothing");
+        assert_eq!(second["unmapped"].as_array().unwrap(), &[serde_json::json!("hollow")]);
+    }
+
+    #[test]
+    fn a_stored_null_field_survives_the_backfill() {
+        // REGRESSION. The backfill first resubmitted the whole round-tripped record. The write MERGES,
+        // so that looked equivalent — but a resubmitted explicit `null` reads as a CLEAR, so every null
+        // field a record carried was deleted by a command that only meant to ADD one.
+        //
+        // Caught on the real store, not here: 448 records went in and 401 fields came out where 402
+        // should have, and the missing one was `terminalhost.provides`, a stored null. A store-wide key
+        // count is what found it; no per-record assertion would have.
+        let dir = tempdir_shim::Dir::new("bsc-domains-null");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store
+            .set("nullish", r#"{"id":"nullish","name":"N","kitId":"k","folder":"features/glance","provides":null}"#)
+            .unwrap();
+        let p = dir.path();
+        run_domains(&p, &["--apply"]);
+        let store = open_component_store(&Some(p)).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("nullish").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["domain"], "glance", "the field it meant to add is added");
+        assert!(
+            rec.as_object().unwrap().contains_key("provides"),
+            "a stored null must SURVIVE — the backfill adds a field, it never clears one"
+        );
+    }
+
+    #[test]
+    fn the_backfill_leaves_folder_untouched() {
+        // `folder` is derived from `src` and read by emit + regroup. If the backfill moved it, every
+        // `bsc ui regroup` would undo this work — which is the whole reason domain is a second field.
+        let (_d, p) = seeded();
+        run_domains(&p, &["--apply"]);
+        let store = open_component_store(&Some(p)).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("settingscard").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["folder"], "features/settings/cards", "folder is untouched");
+        assert_eq!(rec["domain"], "settings");
+    }
+
+    #[test]
+    fn domain_rides_the_lean_list_projection() {
+        // "What is in this feature" has to be answerable from `list` alone, without --full.
+        assert!(COMPONENT_SPEC.meta_fields.contains(&"domain"));
+        assert!(COMPONENT_SPEC.meta_fields.contains(&"folder"), "beside folder, not instead of it");
     }
 }

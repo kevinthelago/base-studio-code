@@ -192,6 +192,102 @@ pub fn glob_reaches(pattern: &str, spec: &str) -> bool {
     !prefix.is_empty() && spec.starts_with(prefix)
 }
 
+/// How a literal occurrence of a component NAME appeared in a scanned source — [`name_mentions`]'s
+/// per-hit classification, for #113: distinguishing a genuinely-dead dangling-branch root from one
+/// that's really referenced but just missing a `composes` edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MentionKind {
+    /// `<Name` or `</Name` — a JSX tag.
+    JsxTag,
+    /// The name appears inside an `import … from …` / `export … from …` clause (a named or default
+    /// import binding), e.g. `import { Name } from "..."` or `import Name from "..."`.
+    ImportClause,
+    /// Anywhere else an identifier `Name` is used — a plain reference, type annotation, `Name.thing`.
+    Bare,
+}
+
+/// Every literal whole-word occurrence of the identifier `name` in `source`, classified by how it
+/// appears. A hand scanner (no regex dep), like the others in this module: comments and string
+/// contents are skipped so a mention inside a comment or an unrelated string literal is never
+/// counted, and matches are WHOLE-WORD (`Name` never matches inside `NameField`).
+///
+/// This is the complement to [`scan`]'s `Provides`/`Path` sources, which key off a declared
+/// specifier or `src` alias. Neither one sees a component referenced by NAME in another's JSX or
+/// import clause without ALSO being added to `composes` — the exact gap #113 filed: `bsc ui used-by`
+/// reads only the declared composes graph, so a component actually used but missing that edge reads
+/// as an orphan indistinguishable from one that is genuinely dead. This scans the raw text instead,
+/// so the caller can tell the two apart before deleting anything.
+///
+/// Deliberately loose, like [`mount_ids`]/[`glob_patterns`]: over-inclusion (e.g. a same-named local
+/// variable) is harmless because the caller uses this to decide whether to LOOK FURTHER, never to
+/// authorize a delete on its own — under-inclusion is the failure mode that matters here.
+pub fn name_mentions(source: &str, name: &str) -> Vec<MentionKind> {
+    if name.is_empty() || !name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$') {
+        return Vec::new();
+    }
+    let chars: Vec<char> = source.chars().collect();
+    let n = chars.len();
+    let is_id = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    // Whether we are between an `import`/`export` keyword and the `from`/`;` that ends its clause —
+    // mirrors the clause tracking in `graph_health::scan_imports`.
+    let mut in_clause = false;
+    while i < n {
+        let c = chars[i];
+        if c == '/' && i + 1 < n && chars[i + 1] == '/' {
+            i += 2;
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && i + 1 < n && chars[i + 1] == '*' {
+            i += 2;
+            while i < n && !(chars[i] == '*' && i + 1 < n && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i += 2;
+        } else if c == '"' || c == '\'' || c == '`' {
+            let quote = c;
+            i += 1;
+            while i < n && chars[i] != quote {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            i += 1;
+        } else if c == ';' {
+            in_clause = false;
+            i += 1;
+        } else if is_id(c) {
+            let start = i;
+            let mut w = String::new();
+            while i < n && is_id(chars[i]) {
+                w.push(chars[i]);
+                i += 1;
+            }
+            if w == "import" || w == "export" {
+                in_clause = true;
+            } else if w == "from" {
+                in_clause = false;
+            } else if w == name {
+                let prev = if start > 0 { Some(chars[start - 1]) } else { None };
+                let prev2 = if start > 1 { Some(chars[start - 2]) } else { None };
+                if prev == Some('<') || (prev == Some('/') && prev2 == Some('<')) {
+                    out.push(MentionKind::JsxTag);
+                } else if in_clause {
+                    out.push(MentionKind::ImportClause);
+                } else {
+                    out.push(MentionKind::Bare);
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 /// A `src` path as the import BASE it is reachable by — `src/app/App.tsx` → `app/App`, which
 /// `tsconfig`'s `@/*` → `src/*` makes `@/app/App`. Empty when the path is not under `src/`.
 pub fn src_base(src: &str) -> String {
@@ -482,5 +578,53 @@ mod tests {
         ];
         let r = scan(&comps, &corpus(&[]));
         assert_eq!(row(&r, "mine").used, 0, "a composer in another kit is not a composer: {:?}", r.rows);
+    }
+
+    /// #113: a JSX tag, a named import, and a default import are each classified — the three shapes a
+    /// missing-`composes`-edge reference actually takes.
+    #[test]
+    fn name_mentions_classifies_jsx_and_import_and_bare() {
+        assert_eq!(name_mentions("<Widget prop={1} />", "Widget"), vec![MentionKind::JsxTag]);
+        assert_eq!(name_mentions("<Widget>text</Widget>", "Widget"), vec![MentionKind::JsxTag, MentionKind::JsxTag]);
+        assert_eq!(
+            name_mentions("import { Widget } from \"@/x/Widget\";", "Widget"),
+            vec![MentionKind::ImportClause],
+            "a named import binding",
+        );
+        assert_eq!(
+            name_mentions("import Widget from \"@/x/Widget\";", "Widget"),
+            vec![MentionKind::ImportClause],
+            "a default import binding",
+        );
+        assert_eq!(name_mentions("const x: Widget = make();", "Widget"), vec![MentionKind::Bare], "a bare type reference");
+        assert_eq!(name_mentions("Widget.Variant.Compact", "Widget"), vec![MentionKind::Bare], "dot access");
+    }
+
+    /// Whole-word only — `Name` must never match inside `NameField`, in either direction.
+    #[test]
+    fn name_mentions_is_whole_word_only() {
+        assert!(name_mentions("<WidgetField />", "Widget").is_empty());
+        assert!(name_mentions("<BigWidget />", "Widget").is_empty());
+        assert!(name_mentions("const WidgetFactory = 1;", "Widget").is_empty());
+    }
+
+    /// A mention inside a comment or an unrelated string literal is noise, not a reference — skipped
+    /// exactly like `mount_ids`/`glob_patterns` skip them.
+    #[test]
+    fn name_mentions_skips_comments_and_strings() {
+        assert!(name_mentions("// uses Widget somewhere\nconst x = 1;", "Widget").is_empty());
+        assert!(name_mentions("/* Widget */ const x = 1;", "Widget").is_empty());
+        assert!(name_mentions("const label = \"Widget\";", "Widget").is_empty());
+    }
+
+    /// The clause tracker resets at `;` so a mention in the NEXT statement is never misread as still
+    /// being inside the previous import clause.
+    #[test]
+    fn name_mentions_clause_tracking_resets_at_semicolon() {
+        assert_eq!(
+            name_mentions("import { X } from \"@/x\";\nconst Widget = 1;", "Widget"),
+            vec![MentionKind::Bare],
+            "a later statement is never read as still inside the import clause",
+        );
     }
 }

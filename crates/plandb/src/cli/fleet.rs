@@ -27,6 +27,11 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
+        // `fleet get --kind cleanup` (#152) filters the streams array to one lifecycle kind — the
+        // way a director finds every temporary/cleanup stream across a project without reading each
+        // one's free-text name. Validated against `STREAM_KINDS` up front so a typo fails loudly
+        // instead of silently matching nothing. Not applied to `fleet get <stream-id>`, which already
+        // names exactly one stream.
         "get" | "list" => match s.fleet_get().map_err(|e| e.to_string())? {
             None => {
                 println!("{}", if args.json { "null" } else { "(no fleet)" });
@@ -43,11 +48,17 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
                         Some(st) => print_json(st, args.pretty),
                         None => return Err(format!("no stream with id '{id}' in the fleet")),
                     }
-                } else if args.full {
-                    print_json(&f, args.pretty);
                 } else {
-                    // Lean default: id/name/dependsOn per stream; `--full` for the permissions/flows.
-                    print_json(&fleet_lean(&f), args.pretty);
+                    let f = match &args.kind {
+                        Some(k) => filter_fleet_by_kind(&f, k)?,
+                        None => f,
+                    };
+                    if args.full {
+                        print_json(&f, args.pretty);
+                    } else {
+                        // Lean default: id/name/kind/dependsOn per stream; `--full` for the rest.
+                        print_json(&fleet_lean(&f), args.pretty);
+                    }
                 }
                 Ok(())
             }
@@ -214,8 +225,12 @@ fn is_claude_tier(model: &str) -> bool {
     CLAUDE_TIERS.contains(&m) || CLAUDE_TIERS.iter().any(|t| t.split('-').next() == Some(m))
 }
 
-/// Reduce a full FleetPlan JSON to the lean per-stream view (`id` / `name` / `dependsOn`). The
-/// permission/flow/kickoff detail is reached with `fleet get <stream-id>` (one stream) or `--full`.
+/// Reduce a full FleetPlan JSON to the lean per-stream view (`id` / `name` / `kind` / `dependsOn`).
+/// The permission/flow/kickoff detail is reached with `fleet get <stream-id>` (one stream) or
+/// `--full`. `kind` is carried through the DEFAULTED value (#152, [`crate::validate::stream_kind`])
+/// rather than the raw field, so a stream with no `kind` set reads as `"feature"` here too — the lean
+/// view is where a director scans for lifecycle, and an absent value there would look unset rather
+/// than defaulted.
 fn fleet_lean(f: &serde_json::Value) -> serde_json::Value {
     let streams: Vec<serde_json::Value> = f
         .get("streams")
@@ -226,6 +241,7 @@ fn fleet_lean(f: &serde_json::Value) -> serde_json::Value {
                     serde_json::json!({
                         "id": st.get("id").cloned().unwrap_or(serde_json::Value::Null),
                         "name": st.get("name").cloned().unwrap_or(serde_json::Value::Null),
+                        "kind": crate::validate::stream_kind(st),
                         "dependsOn": st.get("dependsOn").cloned().unwrap_or_else(|| serde_json::json!([])),
                     })
                 })
@@ -233,6 +249,31 @@ fn fleet_lean(f: &serde_json::Value) -> serde_json::Value {
         })
         .unwrap_or_default();
     serde_json::json!({ "streams": streams })
+}
+
+/// Filter a FleetPlan's `streams` array to those whose (defaulted) [`crate::validate::stream_kind`]
+/// matches `kind` (case-insensitive) — the meta fields (director/topology/recommended/…) pass through
+/// unchanged. `kind` must be one of [`crate::validate::STREAM_KINDS`]; an unrecognized value is
+/// rejected rather than silently matching zero streams, since that would look identical to "no
+/// streams of that kind exist yet".
+fn filter_fleet_by_kind(f: &serde_json::Value, kind: &str) -> Result<serde_json::Value, String> {
+    let kind = kind.trim().to_lowercase();
+    if !crate::validate::STREAM_KINDS.contains(&kind.as_str()) {
+        return Err(format!(
+            "--kind must be one of: {} (got '{kind}')",
+            crate::validate::STREAM_KINDS.join(", ")
+        ));
+    }
+    let mut out = f.clone();
+    if let Some(obj) = out.as_object_mut() {
+        let filtered: Vec<serde_json::Value> = obj
+            .get("streams")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter(|st| crate::validate::stream_kind(st) == kind).cloned().collect())
+            .unwrap_or_default();
+        obj.insert("streams".into(), serde_json::Value::Array(filtered));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -339,5 +380,57 @@ mod tests {
         assert_eq!(streams[0]["dependsOn"], serde_json::json!(["core"]));
         assert!(streams[0].get("permissions").is_none(), "lean fleet drops the heavy detail");
         assert_eq!(streams[1]["dependsOn"], serde_json::json!([])); // missing → empty
+    }
+
+    #[test]
+    fn fleet_lean_carries_the_defaulted_kind_per_stream() {
+        // #152: the lean view is where a director scans for lifecycle, so an absent "kind" must show
+        // up as its default ("feature"), not go missing — a missing field there would look unset
+        // rather than defaulted.
+        let full = serde_json::json!({
+            "streams": [
+                { "id": "auth", "repo": "o/r" },
+                { "id": "cleanup-orphans", "repo": "o/r", "kind": "cleanup" },
+            ]
+        });
+        let lean = fleet_lean(&full);
+        let streams = lean["streams"].as_array().unwrap();
+        assert_eq!(streams[0]["kind"], serde_json::json!("feature"));
+        assert_eq!(streams[1]["kind"], serde_json::json!("cleanup"));
+    }
+
+    #[test]
+    fn filter_fleet_by_kind_keeps_meta_and_only_matching_streams() {
+        // #152: the concrete case on the request — finding every "cleanup"/"temporary" stream across
+        // a fleet without reading each one's free-text name.
+        let full = serde_json::json!({
+            "recommended": 3,
+            "director": { "enabled": true },
+            "streams": [
+                { "id": "kernel", "repo": "o/r" },                              // defaults to "feature"
+                { "id": "mobile-orphan-clearance", "repo": "o/r", "kind": "cleanup" },
+                { "id": "ui", "repo": "o/r", "kind": "feature" },
+            ]
+        });
+        let filtered = filter_fleet_by_kind(&full, "cleanup").unwrap();
+        let streams = filtered["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0]["id"], serde_json::json!("mobile-orphan-clearance"));
+        // meta survives untouched
+        assert_eq!(filtered["recommended"], serde_json::json!(3));
+        assert_eq!(filtered["director"]["enabled"], serde_json::json!(true));
+
+        // case-insensitive
+        let filtered = filter_fleet_by_kind(&full, "CLEANUP").unwrap();
+        assert_eq!(filtered["streams"].as_array().unwrap().len(), 1);
+
+        // an unfiltered kind with zero matches returns an empty streams array, not an error
+        let filtered = filter_fleet_by_kind(&full, "temporary").unwrap();
+        assert!(filtered["streams"].as_array().unwrap().is_empty());
+
+        // an unrecognized kind is rejected — it would otherwise silently match nothing, which is
+        // indistinguishable from "no streams of that kind exist"
+        let err = filter_fleet_by_kind(&full, "urgent").unwrap_err();
+        assert!(err.contains("--kind must be one of"), "{err}");
     }
 }
