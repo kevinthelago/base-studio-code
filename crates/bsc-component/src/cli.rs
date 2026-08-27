@@ -510,6 +510,7 @@ USAGE:
   bsc ui doctor --sound-kit id@version [--json]   # judge @bsc/sounds/… against a PINNED sound kit (#3412)
   bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
   bsc ui doctor --runtime [--kit K] [--json]      # ALSO report what the app OBSERVED while running
+  bsc ui doctor --imports [--kit K] [--json]      # ALSO walk each record's import CLOSURE for a symbol the target never exports (#149)
   bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
 
 --sound-kit (#3412) names the project's PINNED sound kit (its blueprint's `soundKit`, as `id@version` in the
@@ -535,6 +536,16 @@ broken record hides), RUNTIME-FELL-BACK (an older version rendered instead), RUN
 then threw), RUNTIME-RECOMPILE-LOOP and RUNTIME-SLOW-COMPILE. With no attestations recorded it emits ONE
 finding saying so rather than calling every record dead — an empty store means nothing was MEASURED, which
 is not the same as nothing having run.
+
+--imports (bsc request #149) ADDS UNRESOLVED-IMPORT-SYMBOL: `unresolvable-import` above only asks whether a
+`@/…` specifier resolves to SOME record; this asks the sharper question — once it resolves, does the target
+actually EXPORT the name being imported? Follows `export * from` barrels (and `export type * from`) through
+the SAME resolution chain `bsc ui test`'s closure walker uses (sibling by id → component `provides` → algorithm
+impl `provides`), and reads every comma-separated declarator in a `const`/`let`/`var` export, not just the
+first — a checker that stops at either of those reports a record clean on exactly the drift that breaks it at
+runtime with no typecheck error and no failing test (tsc/vitest compile the SEED file; the app loads the STORE
+record, and the two can drift apart). Skips a specifier that resolves to no record at all — that gap is
+UNRESOLVABLE-IMPORT's finding, not this one's, so the two never double-report the same defect.
 
 Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
 dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
@@ -4226,6 +4237,7 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
     let (mut fix, mut yes, mut motion) = (false, false, false);
     let mut runtime = false;
+    let mut imports = false;
     let mut sound_kit = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -4246,6 +4258,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             // what the app OBSERVED while running (declined / never-ran / stale / fell-back /
             // recompile-loop / slow-compile), read from runtime.db.
             "--runtime" => runtime = true,
+            // #149: ADD the record-CLOSURE symbol check — walks each record's `@/…` imports through
+            // `unresolvable-import`'s SAME resolution chain (sibling → component `provides` → impl
+            // `provides`, barrels followed) and reports a name the target resolves to but never exports.
+            "--imports" => imports = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -4319,6 +4335,38 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // having run. A store with no attestations says so once rather than calling every record dead.
     if runtime {
         findings.extend(runtime_findings(&comps)?);
+    }
+    // #149: the record-CLOSURE symbol lens. Behind a flag like `--runtime`/`--motion` — it needs the
+    // WHOLE algorithms store (`bsc_graph::implementations()`) to resolve a `provides` target, a real
+    // read `analyze_with`'s pure per-kit pass never makes, and it is a different KIND of question from
+    // module-level `unresolvable-import`: does the specifier resolve to something that names THIS symbol.
+    if imports {
+        let impls = bsc_graph::implementations();
+        let platform = crate::graph_health::platform_modules();
+        let index = crate::closure::Index::new(&comps, &impls, platform, None);
+        let mut records: Vec<(String, String, String, String)> = comps
+            .iter()
+            .filter_map(|c| {
+                let id = c.get("id").and_then(serde_json::Value::as_str)?.to_string();
+                let src = c.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+                if src.trim().is_empty() {
+                    return None;
+                }
+                let kit = c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+                let name = c.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id).to_string();
+                Some((kit, id, name, src.to_string()))
+            })
+            .collect();
+        records.extend(impls.iter().filter_map(|im| {
+            let id = im.get("id").and_then(serde_json::Value::as_str)?.to_string();
+            let src = im.get("code").and_then(serde_json::Value::as_str).unwrap_or_default();
+            if src.trim().is_empty() {
+                return None;
+            }
+            let name = im.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id).to_string();
+            Some((String::new(), id, name, src.to_string()))
+        }));
+        findings.extend(crate::import_symbols::unresolved_import_symbol_findings(&records, &index));
     }
     // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
     // `analyze` uses). Render errors (severity 5) sort to the top.

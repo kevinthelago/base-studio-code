@@ -62,7 +62,10 @@ pub struct Finding {
     /// `phantom-compose` | `no-empty-state` |
     /// `multi-component` (#doctor-flags…, sev-2) | `multi-export` (#a-record-holds-one-item…, sev-2 —
     /// its EXPORTED counterpart; see the loop for why both exist) |
-    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `no-loading-state` | `no-error-state` (#3555) | `no-analytics` (#3810) | `no-tests` (#3878) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]) |
+    /// `unresolved-import-symbol` (bsc request #149, sev-4, CLI-only, behind `--imports` — see
+    /// [`crate::import_symbols::unresolved_import_symbol_findings`]: the specifier resolves but does not
+    /// export the imported name, even through an `export * from` barrel).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
