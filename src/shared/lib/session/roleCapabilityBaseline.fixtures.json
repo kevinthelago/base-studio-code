@@ -1,5 +1,6 @@
 {
   "_comment": "FROZEN BASELINE of the role capability table, captured when its source inverted from data/permissions/role-capabilities.json onto the persona floors (epic the-persona-is-the-whole-agent). Proven equal to the deleted file on every field at capture time. CHANGING A ROW HERE IS A DELIBERATE ACT: this fixture exists so that a capability change — above all a WIDENING — shows up as an explicit diff on a reviewable file rather than as a silent consequence of editing a persona. If a test fails against this, do not update the fixture to make it pass without first deciding that the capability change is intended.",
+  "_amendments": ["the-architect-runs-discovery-and-spawns-a-director (2026-08-27): architect.allow += `bsc plan classify` and `bsc fleet directors`. DELIBERATE, and both were already the architect's documented job. `bsc plan classify` records the usesGithub DECISION — the architect is the only tier that talks to the user, so it is the only tier that can take it; its own charter instructed it twice while the floor denied it. `bsc fleet directors` is the pre-brief check the protocol already told it to run: the emitted rules are Bash(bsc fleet director) and Bash(bsc fleet director *), and the `*` sits behind a literal space, so `directors` matched NEITHER and was refused. No access axis moved — github/git/code/net/ui all stay `none` — and `bsc plan` / `bsc fleet` bare prefixes remain ungranted."],
   "roles": {
     "architect": {
       "role": "architect",
@@ -16,7 +17,9 @@
         "bsc persona",
         "bsc plan brief",
         "bsc plan requirement",
+        "bsc plan classify",
         "bsc fleet director",
+        "bsc fleet directors",
         "bsc session",
         "bsc project new",
         "bsc project link",
@@ -99,7 +102,17 @@
       "git": "read",
       "code": "write",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "surfaces": [
+        "plan",
+        "fleet",
+        "errors",
+        "publish",
+        "teams",
+        "persona",
+        "logs",
+        "request"
+      ]
     },
     "documentor": {
       "role": "documentor",
@@ -271,7 +284,14 @@
       "git": "write",
       "code": "write",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "surfaces": [
+        "plan",
+        "graph",
+        "ui",
+        "files",
+        "errors"
+      ]
     }
   }
 }
