@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn but_a_shared_domain_is_still_a_feature_when_it_DEPENDS() {
+    fn but_a_shared_domain_is_still_a_feature_when_it_depends_outward() {
         // Being published does not make it a baseline. `planner -> logs` is still a crossing.
         let v = violations(&[e("p.ts", "planner", "l.ts", "logs")], &[]);
         assert_eq!(v.len(), 1, "a shared domain may be depended ON, not depend outward freely");
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn an_allowed_edge_is_matched_exactly_so_a_stale_entry_cannot_cover_a_different_one() {
         let edge = e("p.ts", "planner", "l.ts", "logs");
-        assert!(violations(&[edge.clone()], &["p.ts -> l.ts"]).is_empty());
+        assert!(violations(std::slice::from_ref(&edge), &["p.ts -> l.ts"]).is_empty());
         // A near-miss must NOT be covered — an allow-list that matched loosely would hide the next
         // real violation behind a decision made about a different edge.
         assert_eq!(violations(&[edge], &["p.ts -> other.ts"]).len(), 1);

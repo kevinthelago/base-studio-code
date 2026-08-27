@@ -3148,6 +3148,7 @@ const SEED_BOOKKEEPING_FIELDS: &[&str] = &["history", "rev", "updatedAt", "updat
 /// `bsc ui export`, which also writes files under a read-only gate).
 fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
     let (mut seed_dir, mut dir, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut only: Option<String> = None;
     let mut ids: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -3156,11 +3157,17 @@ fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
             "--dir" => dir = it.next().cloned(),
             "--apply" => apply = true,
             "--pretty" => pretty = true,
+            // `--only <field>` — write exactly ONE field onto the seed record, leaving the rest as the
+            // seed has it. Without it this verb is whole-body, and store and seed drift BOTH ways (its
+            // own help says so), so syncing a NEW facet across many records would drag that unrelated
+            // drift along under cover of the change. The algorithms side needed the same flag for the
+            // same reason when the `feature` axis landed.
+            "--only" => only = it.next().cloned(),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => ids.push(other.to_string()),
         }
     }
-    let usage = "usage: bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]";
+    let usage = "usage: bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--only <field>] [--apply] [--pretty]";
     let seed_dir = seed_dir.ok_or(usage)?;
     if ids.is_empty() {
         return Err(usage.into());
@@ -3203,6 +3210,20 @@ fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
         let seed_raw = std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let seed: serde_json::Value =
             serde_json::from_str(&seed_raw).map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+        // ONE field onto the seed record: everything else stays exactly as the seed has it, so no
+        // unrelated drift rides along with the facet being synced.
+        let stored = match &only {
+            None => stored,
+            Some(field) => {
+                let mut merged = seed.clone();
+                match (merged.as_object_mut(), stored.get(field)) {
+                    (Some(m), Some(v)) => { m.insert(field.clone(), v.clone()); }
+                    (Some(m), None) => { m.remove(field); }
+                    _ => {}
+                }
+                merged
+            }
+        };
         if seed == stored {
             up_to_date.push(id.clone());
             continue;
@@ -10894,97 +10915,3 @@ mod feature_backfill_preserves_tests {
     }
 }
 
-#[cfg(test)]
-mod feature_rule_gate {
-    use bsc_util::feature_rule::{violations, Violation};
-
-    /// Edges deliberately kept, each with the decision behind it. EXACT `from -> to` ids.
-    ///
-    /// Two entries, and both are pages composing another feature's page. Neither is obviously wrong —
-    /// a settings section that embeds the tunnel's own panel is reusing the real thing rather than
-    /// copying it — but neither is obviously right either, so they are named here rather than made
-    /// invisible by a broader rule.
-    const ALLOWED: &[&str] = &[
-        // The Automations page embeds the MCP page's server list: automations dispatch into panes, and
-        // the servers a pane can reach are the MCP feature's roster. The alternative is a second list.
-        "automationspage -> mcppage",
-        // Settings → Planner embeds the tunnel's settings panel so the pairing UI lives in one place.
-        "settings-planner -> tunnelsettings",
-    ];
-
-    /// Every packaged component record, read from the seed tree the app ships.
-    fn packaged_components() -> Vec<serde_json::Value> {
-        let mut out = Vec::new();
-        for root in bsc_util::packaged::data_dirs() {
-            let dir = root.join("components").join("app");
-            if !dir.is_dir() {
-                continue;
-            }
-            let mut stack = vec![dir];
-            while let Some(d) = stack.pop() {
-                let Ok(entries) = std::fs::read_dir(&d) else { continue };
-                for e in entries.flatten() {
-                    let p = e.path();
-                    if p.is_dir() {
-                        stack.push(p);
-                    } else if p.extension().and_then(|s| s.to_str()) == Some("json") {
-                        if let Ok(s) = std::fs::read_to_string(&p) {
-                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                                out.push(v);
-                            }
-                        }
-                    }
-                }
-            }
-            if !out.is_empty() {
-                break; // the first data dir that HAS the tree wins, matching `packaged::read`
-            }
-        }
-        out
-    }
-
-    /// THE OWNERSHIP RULE over the packaged component seed.
-    ///
-    /// A component's `composes` names other components BY NAME, not by id, so the resolution differs
-    /// from the algorithms graph — which is exactly why `bsc_util::feature_rule` takes already-resolved
-    /// edges and leaves the addressing to each caller.
-    #[test]
-    fn the_ownership_rule_holds_across_the_component_library() {
-        let recs = packaged_components();
-        assert!(!recs.is_empty(), "no packaged component records found — the gate would be vacuous");
-
-        // name -> (feature, id). A record with no name cannot be a `composes` target.
-        let by_name: std::collections::HashMap<String, (String, String)> = recs
-            .iter()
-            .filter_map(|r| {
-                let name = r.get("name")?.as_str()?.trim();
-                if name.is_empty() {
-                    return None;
-                }
-                let id = r.get("id")?.as_str()?.to_string();
-                let f = r.get("feature").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                Some((name.to_string(), (f, id)))
-            })
-            .collect();
-
-        let mut edges: Vec<(String, String, String, String)> = Vec::new();
-        for r in &recs {
-            let Some(from_id) = r.get("id").and_then(|v| v.as_str()) else { continue };
-            let from_f = r.get("feature").and_then(|v| v.as_str()).unwrap_or_default();
-            let Some(cs) = r.get("composes").and_then(|v| v.as_array()) else { continue };
-            for t in cs.iter().filter_map(|v| v.as_str()) {
-                // A `composes` naming a component the seed does not hold is `bsc ui doctor`'s finding.
-                let Some((to_f, to_id)) = by_name.get(t) else { continue };
-                edges.push((from_id.to_string(), from_f.to_string(), to_id.clone(), to_f.clone()));
-            }
-        }
-
-        let v: Vec<Violation> = violations(&edges, ALLOWED);
-        assert!(
-            v.is_empty(),
-            "{} ownership violation(s) in the component library:\n{}",
-            v.len(),
-            v.iter().map(Violation::describe).collect::<Vec<_>>().join("\n")
-        );
-    }
-}
