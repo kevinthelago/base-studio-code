@@ -1535,6 +1535,67 @@ mod tests {
         assert_eq!(plan_db_for_cwd(&elsewhere.to_string_lossy()), None);
     }
 
+    /// #request-128 — a cwd that resolves to NO project must CLEAR the per-project store vars, not
+    /// merely skip setting them.
+    ///
+    /// This is the whole bug, and it is invisible at the call site. `CommandBuilder::new` seeds
+    /// `envs` from `get_base_env()` — a copy of the APP PROCESS's own environment — so an
+    /// `if let Some(db) = … { cmd.env(…) }` that does not fire leaves whatever the app's launching
+    /// shell exported. This repo's own workflow tells a developer to
+    /// `export BSC_PLAN_DB=…/studio-code.db`, so a director opened for an unrelated project
+    /// inherited studio-code's plan store and read and wrote the WRONG project's issues, silently.
+    ///
+    /// The assertion only means something because the var is SET first: a value that was never set
+    /// and one that was cleared both read as `None`, so a bare `is_none()` on a clean environment
+    /// would pass against the unfixed code. Setting it makes `None` provable evidence of a clear.
+    #[test]
+    fn a_cwd_with_no_project_clears_the_inherited_store_vars_rather_than_inheriting_them() {
+        use super::CommandBuilder;
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Stand in for the leak: the app's own shell exported another project's stores.
+        let leaked = [
+            ("BSC_PLAN_DB", "/somewhere/else/plans/studio-code.db"),
+            ("BSC_ERROR_DB", "/somewhere/else/error.db"),
+            ("BSC_USAGE_DB", "/somewhere/else/usage.db"),
+            ("BSC_DATA_DB", "/somewhere/else/data.duckdb"),
+        ];
+        for (k, v) in leaked {
+            std::env::set_var(k, v);
+        }
+        // A plain repo is not a project session, so none of the four can resolve.
+        let mut cmd = CommandBuilder::new("bash");
+        let _ = super::wire_bsc_env(&mut cmd, "t0p1", "C:/code/some-unrelated-repo", None, None);
+        for (k, v) in leaked {
+            assert_eq!(
+                cmd.get_env(k),
+                None,
+                "{k} must be CLEARED for a non-project session — it was inherited as {v:?}, and a \
+                 session scoped to one project must never silently read or write another's store",
+            );
+            std::env::remove_var(k);
+        }
+    }
+
+    /// The other half of the same contract: when the cwd DOES resolve, the var is set to that
+    /// project's store — so the clear above cannot be "clear it always", which would break every
+    /// fleet session's `bsc plan`.
+    #[test]
+    fn a_project_cwd_still_gets_its_own_plan_db() {
+        use super::CommandBuilder;
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("BSC_PLAN_DB", "/somewhere/else/plans/studio-code.db");
+        let hub = bsc_base_dir().join("projects").join("my-app");
+        let mut cmd = CommandBuilder::new("bash");
+        let _ = super::wire_bsc_env(&mut cmd, "t0p1", &hub.to_string_lossy(), None, None);
+        let got = cmd.get_env("BSC_PLAN_DB").map(|s| s.to_string_lossy().to_string());
+        assert!(got.is_some(), "a project session must still get its own BSC_PLAN_DB");
+        assert!(
+            got.as_deref().is_some_and(|g| g.contains("my-app")),
+            "and it must be THIS project's store, not the inherited one: {got:?}",
+        );
+        std::env::remove_var("BSC_PLAN_DB");
+    }
+
     // ── #3959: staging must survive a locked destination ────────────────────────────────────────
     //
     // The staged dir exists so a live session locks IT instead of `target/<profile>/bsc.exe` (#3457).
