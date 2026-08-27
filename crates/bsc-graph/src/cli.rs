@@ -36,14 +36,17 @@ pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
-pub const BOOL_FLAGS: [&str; 12] = [
+pub const BOOL_FLAGS: [&str; 13] = [
     "--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run",
-    "--check", "--wasm", "--force", "--raw",
+    "--check", "--wasm", "--force", "--raw", "--seed",
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 50] = [
+pub const FLAGS: [&str; 51] = [
     "--pretty",
+    // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
+    // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
+    "--seed",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
     "--check",
@@ -805,11 +808,12 @@ fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, Str
     None
 }
 
-/// `tests set --id <id> --src <test-file> [--name <name>]` (#140) — pair ONE record's test without a
-/// whole-tree `harvest`. See the usage note on the `"tests"` match arm in [`run`] for why this exists
-/// alongside `harvest` rather than folding into it.
+/// `tests set --id <id> --src <test-file> [--name <name>] [--seed]` (#140/#141) — pair ONE record's
+/// test without a whole-tree `harvest`. See the usage note on the `"tests"` match arm in [`run`] for
+/// why this exists alongside `harvest` rather than folding into it.
 fn tests_set(args: &[String]) -> Result<Value, String> {
-    let usage = "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--pretty]";
+    let usage =
+        "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--seed] [--pretty]";
     let id = flag_value(args, "--id").ok_or(usage)?;
     let src_path = flag_value(args, "--src").ok_or(usage)?;
     let path = std::path::Path::new(&src_path);
@@ -817,6 +821,20 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
     let contents = std::fs::read_to_string(path).map_err(|e| format!("cannot read {src_path}: {e}"))?;
     let name =
         flag_value(args, "--name").unwrap_or_else(|| bsc_util::test_display_name(path, &contents));
+    let tests = serde_json::json!([{ "name": name, "src": contents }]);
+    let want_seed = args.iter().any(|a| a == "--seed");
+
+    // `--seed` (#141): a store-only write to a SEEDED record is TRANSIENT — reconcile_seed never
+    // touches an id the seed already carries, so nothing here re-derives it, but the seed is what
+    // ships and what a fresh clone reads. Before this, landing a moved/harvested test on both shapes
+    // meant `tests set` for the store and a hand-written `jq` patch for
+    // `src-tauri/data/knowledge/algorithms.json` — see `component-tests-live-in-the-seed` for the
+    // component-library twin of this rule.
+    //
+    // Loaded (and its id checked) BEFORE the store is touched: the id-not-in-the-seed case is the
+    // likely failure here (a typo, or a genuinely custom record that was never seeded), and it must
+    // not leave the store half-written while the seed half silently never happens.
+    let seed_doc = want_seed.then(|| load_seed_doc(&id)).transpose()?;
 
     let mut g = crate::load();
     let mut next = crate::implementations_of(&g)
@@ -829,10 +847,66 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
                  with `impl set`"
             )
         })?;
-    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+    next["tests"] = tests.clone();
     crate::set_impl(&mut g, next)?;
     crate::save(&g)?;
-    Ok(serde_json::json!({ "id": id, "name": name, "src": src_path }))
+
+    if let Some((path, mut doc)) = seed_doc {
+        write_seed_tests(&path, &mut doc, &id, tests)?;
+    }
+    Ok(serde_json::json!({ "id": id, "name": name, "src": src_path, "seeded": want_seed }))
+}
+
+/// Resolve and parse the packaged seed, confirming `id` is in it — the read half of
+/// `tests set --seed` (#141), split from [`write_seed_tests`] so the id check runs BEFORE the store
+/// is touched. Reads `bsc_graph::seed_path()` fresh off disk, deliberately bypassing [`crate::seed`]'s
+/// cached [`std::sync::OnceLock`]: this must see the file exactly as it is right now, not a snapshot
+/// from whenever this process first happened to read it.
+///
+/// Refuses an id the seed does not carry rather than deferring to an insert later — mirroring
+/// `tests_set`'s own existing-record-only rule, and for the same reason: a record invented here would
+/// not be the one the frontend and every fresh clone actually ship.
+fn load_seed_doc(id: &str) -> Result<(std::path::PathBuf, Value), String> {
+    let path = crate::seed_path().ok_or(
+        "packaged seed `knowledge/algorithms.json` not found — set BSC_DATA_DIR to the directory \
+         holding the packaged `data/` tree, or run from a dev checkout",
+    )?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let doc: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+    let has_id = doc
+        .get("implementations")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{} has no `implementations` array", path.display()))?
+        .iter()
+        .any(|im| im.get("id").and_then(Value::as_str) == Some(id));
+    if !has_id {
+        return Err(format!(
+            "no implementation with id '{id}' in the packaged seed ({}) — `tests set --seed` pairs an \
+             EXISTING seed record, it does not create one",
+            path.display()
+        ));
+    }
+    Ok((path, doc))
+}
+
+/// Write `tests` onto `id`'s record in an already-loaded (and already id-checked) seed `doc`, and
+/// persist it back to `path` — `tests set --seed`'s write half, kept separate from
+/// [`load_seed_doc`] so the check-then-write split is explicit rather than implicit in call order.
+fn write_seed_tests(path: &std::path::Path, doc: &mut Value, id: &str, tests: Value) -> Result<(), String> {
+    let impls = doc
+        .get_mut("implementations")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| format!("{} has no `implementations` array", path.display()))?;
+    let rec = impls
+        .iter_mut()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id))
+        .ok_or_else(|| format!("id '{id}' vanished from {} between check and write", path.display()))?;
+    rec["tests"] = tests;
+    let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 /// `tests harvest <dir> [--dry-run]` (#4126) — carry each impl's COLOCATED test file onto its node,
@@ -1959,7 +2033,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&tests_harvest(dir, dry)?)
             }
             _ => Err(
-                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>]"
+                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed]"
                     .to_string(),
             ),
         },
@@ -2857,6 +2931,7 @@ fn help(prog: &str) -> String {
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
+  \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
@@ -3874,6 +3949,168 @@ mod tests {
         assert!(err.contains("not-a-real-id.ts") && err.contains("does not create one"), "{err}");
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+
+    /// `tests set --seed` (#141) — the fix under test. Before this, `tests set` alone left a seeded
+    /// record's test STORE-ONLY (transient per `component-tests-live-in-the-seed`), and landing it on
+    /// the packaged copy too needed a hand-written `jq` patch to
+    /// `src-tauri/data/knowledge/algorithms.json`. This pins that `--seed` writes the SAME test onto
+    /// the packaged seed file directly, verified by reading that file back off disk (not through
+    /// `crate::seed()`, which caches its first read for the process and would not see this write).
+    #[test]
+    fn tests_set_seed_lands_the_test_on_the_packaged_seed_record_too() {
+        let dir = crate::unique_temp("testsset-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = dir.join("store.json");
+        let data_dir = dir.join("data");
+        let seed_path = data_dir.join("knowledge").join("algorithms.json");
+        std::fs::create_dir_all(seed_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &seed_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": 2,
+                "implementations": [
+                    { "id": "seeded.rs", "role": "algorithm", "tech": "rust", "name": "seeded",
+                      "code": "fn seeded() {}" },
+                ],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        // SAFETY: single-threaded test setup, before any other thread reads either var.
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        // The runtime store needs the SAME id before `tests set` can pair it — this mirrors a real
+        // seeded record, which `reconcile_seed` would already have copied into a fresh store.
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "rust".into(),
+                "--id".into(), "seeded.rs".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "seeded".into(),
+                "--code".into(), "fn seeded() {}".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-seed-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("seeded.test.rs");
+        let contents = "#[test]\nfn it_works() { seeded(); }\n";
+        std::fs::write(&test_file, contents).unwrap();
+
+        let out = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "seeded.rs".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--seed".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        assert!(out.is_ok(), "{out:?}");
+
+        // The RUNTIME store carries it too — `--seed` is additive, never a substitute for it.
+        let stored = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("seeded.rs"))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(stored, Some(serde_json::json!([{ "name": "seeded.test.rs", "src": contents }])));
+
+        // The PACKAGED SEED FILE itself now carries it, read straight off disk.
+        let seed_after: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let seed_tests = seed_after
+            .get("implementations")
+            .and_then(Value::as_array)
+            .and_then(|arr| arr.iter().find(|i| i.get("id").and_then(Value::as_str) == Some("seeded.rs")))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(
+            seed_tests,
+            Some(serde_json::json!([{ "name": "seeded.test.rs", "src": contents }])),
+            "the packaged seed's OWN copy must carry the test, not just the runtime store"
+        );
+
+        // An id that does not exist ANYWHERE is refused by the runtime-store lookup first, exactly
+        // as plain `tests set` already refuses one.
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "not-in-the-seed.rs".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--seed".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("no implementation with id 'not-in-the-seed.rs'"),
+            "the runtime-store lookup should fail first: {err}"
+        );
+
+        // A CUSTOM record — real in the runtime store, absent from the packaged seed — is exactly
+        // where `--seed` has nothing to write onto, and must say so rather than inventing a seed
+        // record or silently writing only the store half.
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "rust".into(),
+                "--id".into(), "custom.rs".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "custom".into(),
+                "--code".into(), "fn custom() {}".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "custom.rs".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--seed".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("no implementation with id 'custom.rs' in the packaged seed"),
+            "{err}"
+        );
+        // The id-in-seed check runs BEFORE the store is touched, so a `--seed` refusal must not leave
+        // the record half-updated (store written, seed not) — `custom.rs` keeps its original `tests`.
+        let stored_after_refusal = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("custom.rs"))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(
+            stored_after_refusal, None,
+            "a `--seed` refusal must not leave the store half-written"
+        );
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&src_dir);
     }

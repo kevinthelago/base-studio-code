@@ -65,6 +65,19 @@ pub fn seed() -> Value {
     serde_json::from_str(graph_json()).expect("packaged algorithms.json is valid JSON")
 }
 
+/// The on-disk path the packaged seed [`graph_json`] resolves to — the same file [`seed`] parses, but
+/// as a PATH rather than cached contents. `None` when no candidate resolves (a shipped build whose
+/// resources are missing, or `BSC_DATA_DIR` pointed somewhere empty).
+///
+/// Unlike [`graph_json`]/[`seed`], which cache the first successful read for the process's lifetime
+/// (so a later on-disk edit is invisible to them within the same run), this re-resolves on every call
+/// — a caller that wants to WRITE the seed back in place (`tests set --seed`, #141) needs the CURRENT
+/// path, and landing a test onto the packaged copy is optional curation, not something every boot
+/// depends on, so an ordinary error is right here where [`seed`] would rather panic.
+pub fn seed_path() -> Option<PathBuf> {
+    bsc_util::packaged::resolved_path("knowledge/algorithms.json")
+}
+
 /// The writable store path — `BSC_GRAPH_STORE` if set, else `~/.base-studio-code/knowledge/algorithms.json`.
 /// `None` when no home dir resolves (reads then fall back to the embedded seed; writes error).
 pub fn store_path() -> Option<PathBuf> {
