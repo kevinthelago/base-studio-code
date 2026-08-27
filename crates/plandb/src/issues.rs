@@ -227,6 +227,72 @@ impl Store {
     }
 }
 
+/// Fields `amend`'s patch may never carry (#request-107): identity (`ref`) or state a DIFFERENT
+/// verb/actor owns — `status` (workers/director, `bsc plan status`) and the `gh*` identity
+/// (publish/sync, `bsc plan link`). Named in the camelCase `PlanIssue`'s own `Serialize` emits, since
+/// that is the shape a patch is written against. Paired with the reason so a caller is told where the
+/// field actually lives, not just refused.
+pub const AMEND_OWNED_ELSEWHERE: &[(&str, &str)] = &[
+    ("ref", "an issue's ref is its identity — remove and re-add it to rename"),
+    ("status", "owned by execution — use `bsc plan status <ref> <status>`"),
+    ("ghNumber", "owned by publish/sync — use `bsc plan link <ref>`"),
+    ("ghNodeId", "owned by publish/sync — use `bsc plan link <ref>`"),
+    ("syncedAt", "owned by publish/sync — use `bsc plan link <ref>`"),
+];
+
+/// The fields `amend` may actually change — every `PlanIssue` key that isn't in
+/// {@link AMEND_OWNED_ELSEWHERE}. A patch key outside this set is a typo (`"tittle"`,
+/// `"acceptence"`), and without this check `merge_patch` would insert it into the JSON object,
+/// `serde` would silently ignore the unrecognized key on the way back out, and the caller would see
+/// its write succeed having changed nothing — exactly the kind of quiet no-op this crate's own gate
+/// discipline exists to catch elsewhere. Named once so the error can list them.
+const AMENDABLE_FIELDS: &[&str] =
+    &["title", "phase", "repo", "stream", "parent", "body", "acceptance", "owns", "dependsOn", "labels"];
+
+/// Merge a partial JSON `patch` onto `existing`, returning the resulting issue WITHOUT writing it
+/// (the caller — the CLI — applies scope + validation, then `upsert`s).
+///
+/// This is what `amend` exists for (#request-107): `add`/`upsert` need the WHOLE issue object, so
+/// correcting one acceptance criterion meant a read-the-whole-JSON, mutate-in-an-interpreter,
+/// write-it-back dance — and a transcription slip during that dance silently destroys the rest of a
+/// long-lived body, since the object being re-authored by hand is the same one carrying the history.
+///
+/// A field the patch does not mention is left exactly as `existing` had it. A `null` value REMOVES an
+/// optional field — the same explicit-deletion convention `bsc graph impl set`'s `--clear` uses,
+/// because a merging write can no longer express deletion by omission. An array field (`acceptance`,
+/// `owns`, `dependsOn`, `labels`) is replaced whole when supplied — there is no per-element patch, so
+/// correcting one entry means sending the whole corrected array, which is still only ONE field of the
+/// issue rather than the entire object.
+///
+/// Refuses outright to touch anything in {@link AMEND_OWNED_ELSEWHERE}, so this function is safe to
+/// call directly even if a caller skips its own pre-check.
+pub fn merge_patch(
+    existing: &PlanIssue, patch: &serde_json::Map<String, serde_json::Value>,
+) -> Result<PlanIssue, String> {
+    for (key, hint) in AMEND_OWNED_ELSEWHERE {
+        if patch.contains_key(*key) {
+            return Err(format!("amend cannot change `{key}`: {hint}"));
+        }
+    }
+    for key in patch.keys() {
+        if !AMENDABLE_FIELDS.contains(&key.as_str()) {
+            return Err(format!(
+                "amend: unknown field `{key}` — expected one of {AMENDABLE_FIELDS:?} (a typo here would otherwise be silently ignored)"
+            ));
+        }
+    }
+    let mut value = serde_json::to_value(existing).map_err(|e| e.to_string())?;
+    let obj = value.as_object_mut().expect("PlanIssue serializes to a JSON object");
+    for (k, v) in patch {
+        if v.is_null() {
+            obj.remove(k);
+        } else {
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+    serde_json::from_value(value).map_err(|e| format!("amend produced an invalid issue: {e}"))
+}
+
 // ── JSON (de)serialization + list-query helpers ───────────────────────────────────
 // `arr_to_json` / `json_to_arr` are shared with skilldb via `bsc_sqlite_util` (#1621); the
 // phase-column codec lives in the crate root (shared with features).
@@ -614,5 +680,103 @@ mod tests {
         // the full path applies the same since filter
         let full = s.list_filtered(None, None, None, Some(t - 1)).unwrap();
         assert!(full.iter().any(|r| r.r#ref == "F2"));
+    }
+
+    // ── merge_patch (#request-107: amend one field without clobbering the rest) ──────────────
+
+    fn mk_full(r: &str) -> PlanIssue {
+        PlanIssue {
+            r#ref: r.into(), title: "original title".into(),
+            body: Some("a long body with real history".into()),
+            acceptance: vec!["a".into(), "b".into(), "c".into()],
+            owns: vec!["src/x/".into()], labels: vec!["scope:core".into()],
+            stream: Some("auth".into()), status: "in_progress".into(),
+            gh_number: Some(42), gh_node_id: Some("I_x".into()), synced_at: Some(1_700_000_000),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn merge_patch_changes_only_the_supplied_field() {
+        let existing = mk_full("F1");
+        let patch = serde_json::json!({ "acceptance": ["a", "b", "CORRECTED"] });
+        let merged = merge_patch(&existing, patch.as_object().unwrap()).unwrap();
+        assert_eq!(merged.acceptance, vec!["a", "b", "CORRECTED"]);
+        // everything else survives byte-for-byte — the whole point of a merge over a replace.
+        assert_eq!(merged.title, existing.title);
+        assert_eq!(merged.body, existing.body);
+        assert_eq!(merged.owns, existing.owns);
+        assert_eq!(merged.labels, existing.labels);
+        assert_eq!(merged.stream, existing.stream);
+        assert_eq!(merged.status, existing.status);
+        assert_eq!(merged.gh_number, existing.gh_number);
+    }
+
+    #[test]
+    fn merge_patch_null_clears_an_optional_field() {
+        let existing = mk_full("F1");
+        let patch = serde_json::json!({ "body": null });
+        let merged = merge_patch(&existing, patch.as_object().unwrap()).unwrap();
+        assert!(merged.body.is_none());
+        assert_eq!(merged.title, existing.title, "clearing one field touches no other");
+    }
+
+    #[test]
+    fn merge_patch_refuses_ref_status_and_gh_identity() {
+        let existing = mk_full("F1");
+        for (key, value) in [
+            ("ref", serde_json::json!("F2")),
+            ("status", serde_json::json!("complete")),
+            ("ghNumber", serde_json::json!(99)),
+            ("ghNodeId", serde_json::json!("I_y")),
+            ("syncedAt", serde_json::json!(1)),
+        ] {
+            let patch = serde_json::json!({ key: value });
+            let err = merge_patch(&existing, patch.as_object().unwrap()).unwrap_err();
+            assert!(err.contains(key), "{err}");
+        }
+    }
+
+    /// A typo'd field name must be rejected, not silently dropped. Without this guard `merge_patch`
+    /// would insert `"tittle"` into the JSON object, `serde` would ignore the unrecognized key
+    /// deserializing back to `PlanIssue`, and the write would report success having changed nothing —
+    /// the exact silent no-op #request-107's own investigation flagged in a different form (status
+    /// being ignored on an `add` update with no error).
+    #[test]
+    fn merge_patch_rejects_an_unknown_field_instead_of_silently_ignoring_it() {
+        let existing = mk_full("F1");
+        let patch = serde_json::json!({ "tittle": "typo'd title" });
+        let err = merge_patch(&existing, patch.as_object().unwrap()).unwrap_err();
+        assert!(err.contains("tittle"), "{err}");
+        // ...and did not sneak the correctly-named field's old value into a differently-cased slot.
+        let existing2 = mk_full("F1");
+        assert_eq!(existing2.title, "original title");
+    }
+
+    #[test]
+    fn merge_patch_leaves_the_original_untouched_on_a_write_failure() {
+        // A refused patch must not have partially mutated anything the caller could mistake for
+        // a successful (if incomplete) merge — merge_patch works on a CLONE, never `existing`.
+        let existing = mk_full("F1");
+        let patch = serde_json::json!({ "title": "new title", "status": "complete" });
+        assert!(merge_patch(&existing, patch.as_object().unwrap()).is_err());
+        assert_eq!(existing.title, "original title");
+    }
+
+    #[test]
+    fn merge_patch_then_upsert_roundtrips_through_the_store() {
+        // The end-to-end shape `amend` uses: fetch, merge, write back.
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk_full("F1")).unwrap();
+        let existing = s.get("F1").unwrap().unwrap();
+        let patch = serde_json::json!({ "acceptance": ["a", "b", "CORRECTED"] });
+        let merged = merge_patch(&existing, patch.as_object().unwrap()).unwrap();
+        s.upsert(&merged).unwrap();
+        let after = s.get("F1").unwrap().unwrap();
+        assert_eq!(after.acceptance, vec!["a", "b", "CORRECTED"]);
+        assert_eq!(after.body, existing.body, "amend must not clobber a field it never mentioned");
+        // status/identity are untouched by upsert's CONFLICT branch regardless — belt and braces.
+        assert_eq!(after.status, "in_progress");
+        assert_eq!(after.gh_number, Some(42));
     }
 }

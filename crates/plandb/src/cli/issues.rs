@@ -1,11 +1,11 @@
-//! The core issue-table verbs of `bsc plan` (#1864): `add`/`get`/`summary`/`list`/`mine`/`status`/
-//! `remove`/`render`. Split out of `cli.rs` as a pure move — the dispatch in [`super::run`] calls
+//! The core issue-table verbs of `bsc plan` (#1864): `add`/`amend`/`get`/`summary`/`list`/`mine`/
+//! `status`/`remove`/`render`. Split out of `cli.rs` as a pure move — the dispatch in [`super::run`] calls
 //! each `cmd_*` here; the shared arg/store/emit plumbing stays in the parent module and the pure
 //! renderers live in [`super::render`]. Output is byte-for-byte what `cli.rs` emitted before the split.
 
 use super::{emit_set_result, open_store, Args};
 use super::render::{compute_overview, overview_json, render_fields_tsv, render_issue, render_overview_text, render_summary_tsv};
-use crate::{is_valid_status, PlanIssue, Store, STATUSES};
+use crate::{is_valid_status, merge_patch, PlanIssue, Store, STATUSES};
 use bsc_sqlite_util::{print_json, read_stdin_json, read_stdin_json_one};
 
 /// `add` — upsert issues from JSON on stdin, echo the assigned ref(s).
@@ -13,6 +13,37 @@ pub(crate) fn cmd_add_cmd(args: &Args) -> Result<(), String> {
     let s = open_store(&args.db)?;
     let refs = cmd_add(&s, args.force)?;
     emit_set_result(args.json, &refs, "");
+    Ok(())
+}
+
+/// `amend <ref>` — merge a partial JSON object (only the fields to change) onto an existing issue, on
+/// stdin. This is the verb #request-107 asked for: every other content write (`add`) takes the WHOLE
+/// issue object, so correcting a single acceptance criterion meant a read-the-whole-JSON,
+/// mutate-in-an-interpreter, write-it-back dance through a scratch script — and a transcription slip
+/// during that dance silently destroys the rest of a long-lived body, since the object being
+/// re-authored by hand is the very one carrying the history. `amend` changes only the fields the
+/// patch names; `null` clears an optional one (mirrors `bsc graph impl set --clear`).
+pub(crate) fn cmd_amend(args: &Args) -> Result<(), String> {
+    let r = args.positional.get(1).ok_or("usage: bsc plan amend <ref>  (a JSON object of fields to merge on stdin)")?;
+    let patch: serde_json::Value = read_stdin_json_one("amend JSON")?;
+    let patch = patch.as_object().ok_or("amend JSON must be an object of the fields to change, not an array")?;
+    let s = open_store(&args.db)?;
+    let existing = s.get(r).map_err(|e| e.to_string())?.ok_or_else(|| format!("no issue with ref '{r}'"))?;
+    // #3279: same single-issue scope boundary as `status`/`link`/`remove` — a scoped worker may amend
+    // only its own stream's issues.
+    let own = crate::scope::env_stream();
+    crate::scope::check_access(own.as_deref(), r, existing.stream.as_deref())?;
+    let mut merged = merge_patch(&existing, patch)?;
+    // A scoped worker may not use `amend` to move the issue to another stream either — same rule
+    // `add` enforces on write via `resolve_write_stream`.
+    merged.stream = crate::scope::resolve_write_stream(own.as_deref(), r, merged.stream.as_deref())?;
+    crate::validate::validate_issue(&merged, args.force)?;
+    s.upsert(&merged).map_err(|e| e.to_string())?;
+    if args.json {
+        print_json(&serde_json::to_value(&merged).unwrap_or_default(), args.pretty);
+    } else {
+        print!("{}", render_issue(&merged));
+    }
     Ok(())
 }
 
