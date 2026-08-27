@@ -220,15 +220,23 @@ USAGE:
 USAGE:
   bsc plan fleet set [--force]        # replace the fleet from a FleetPlan JSON on stdin
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
+  bsc plan fleet get --kind <k>       # filter to streams of one lifecycle kind (see below)
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
   bsc plan fleet model <id> <model>   # the model ONE stream launches on (--clear to unset)
   bsc plan fleet remove <stream-id>   # drop one stream
 
-`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.
+`fleet get` is lean by default (id/name/kind/dependsOn per stream); add --full for permissions/flows.
 Writes are validated at set-time (#2395): `set` needs a \"streams\" array (an absent one would
 silently wipe the fleet) and every stream a non-empty, unique \"id\" + a \"repo\"; `stream set`'s
 blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.
+
+Each stream carries an optional \"kind\" (#152): \"feature\" (default, a durable lane) | \"cleanup\" |
+\"temporary\" (a one-shot lane meant to be REMOVED once its work lands — e.g. a stream that deletes
+orphaned code and has nothing left to own once those paths are gone). Absent reads as \"feature\", so
+existing streams need no backfill. `fleet get --kind cleanup` filters the streams array to that one
+kind (case-insensitive) — the way a director finds every temporary/cleanup stream across a project
+without reading each one's free-text name. An unrecognized --kind is rejected, not silently empty.
 
 `fleet model` is the DIRECTOR's level of the model precedence chain, nearest-first:
     a fleet stream's own model > a team placement's (`bsc teams model`) >
@@ -658,6 +666,9 @@ struct Args {
     /// Unset an optional field instead of setting it (`fleet model <id> --clear`), so a stream can
     /// fall back to the next level of the precedence chain rather than being pinned forever.
     clear: bool,
+    /// `fleet get --kind cleanup` (#152) — filter the streams array to one lifecycle kind, so a
+    /// director can find every temporary/cleanup stream without reading each one's free-text name.
+    kind: Option<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -666,7 +677,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false, force: false, clear: false,
+        since: None, pretty: false, force: false, clear: false, kind: None,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -696,6 +707,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             // `--clear` removes an optional field rather than setting it — the counterpart every
             // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).
             "--clear" => a.clear = true,
+            "--kind" => a.kind = Some(it.next().ok_or("--kind needs a value")?),
             "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
             "--limit" => {
                 let v = it.next().ok_or("--limit needs a number")?;
@@ -1247,6 +1259,16 @@ mod tests {
         assert!(b.force);
         let c = parse_args(vec!["deploy".into(), "set".into()]).unwrap();
         assert!(!c.force);
+    }
+
+    #[test]
+    fn parse_args_reads_kind() {
+        // #152: `fleet get --kind cleanup` — the flag is generic on Args (parsed once, read by the
+        // `fleet` noun handler), so this only pins the parse, not the filter behavior.
+        let a = parse_args(vec!["fleet".into(), "get".into(), "--kind".into(), "cleanup".into()]).unwrap();
+        assert_eq!(a.kind.as_deref(), Some("cleanup"));
+        let b = parse_args(vec!["fleet".into(), "get".into()]).unwrap();
+        assert!(b.kind.is_none());
     }
 
     #[test]

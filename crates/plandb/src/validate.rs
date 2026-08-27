@@ -897,8 +897,21 @@ pub fn validate_fleet_plan(v: &Value) -> Result<(), String> {
     if errs.is_empty() { Ok(()) } else { Err(reject(noun, errs)) }
 }
 
+/// The recognized `kind` values for a fleet stream (#152): whether it is a permanent feature lane or
+/// one meant to be removed once its work lands. A stream carrying no `kind` at all defaults to
+/// `"feature"` (see [`stream_kind`]) — existing streams stay valid unchanged.
+pub const STREAM_KINDS: [&str; 3] = ["feature", "cleanup", "temporary"];
+
+/// The stream's `kind`, lower-cased and defaulted to `"feature"` when absent — the one place that
+/// default is applied, so validation, `fleet get`/`list`'s lean view, and `--kind` filtering all agree
+/// on what "unset" means.
+pub fn stream_kind(s: &Value) -> String {
+    str_of(s, "kind").map(|k| k.to_lowercase()).unwrap_or_else(|| "feature".to_string())
+}
+
 /// The per-stream floor: an object with a non-empty `id` and `repo` (anything less is silently
-/// dropped by the store + the frontend parser, and that worker never launches).
+/// dropped by the store + the frontend parser, and that worker never launches), plus — if present —
+/// a `kind` drawn from [`STREAM_KINDS`].
 fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
     if !s.is_object() {
         errs.push(format!("{at}: each stream must be a JSON object"));
@@ -913,6 +926,14 @@ fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
     }
     if str_of(s, "repo").is_none() {
         errs.push(format!(r#"{at}: missing non-empty "repo" ("owner/repo") — a stream without a repo is silently dropped by the fleet reader"#));
+    }
+    if let Some(k) = str_of(s, "kind") {
+        if !STREAM_KINDS.contains(&k.to_lowercase().as_str()) {
+            errs.push(format!(
+                r#"{at}: "kind" is "{k}", not one of {} — a director filters/lists by this value, so an unrecognized one would silently never match"#,
+                STREAM_KINDS.join(" | "),
+            ));
+        }
     }
 }
 
@@ -1681,6 +1702,30 @@ mod tests {
         // non-object root / non-array streams
         assert!(validate_fleet_plan(&json!([1])).is_err());
         assert!(validate_fleet_plan(&json!({ "streams": "x" })).is_err());
+    }
+
+    #[test]
+    fn fleet_stream_kind_defaults_to_feature_and_rejects_an_unrecognized_value() {
+        // #152: a stream with no "kind" at all reads as "feature" — existing streams stay valid
+        // and readable exactly as before, with no backfill required.
+        assert_eq!(stream_kind(&json!({ "id": "a", "repo": "o/r" })), "feature");
+        assert_eq!(stream_kind(&json!({ "id": "a", "repo": "o/r", "kind": "cleanup" })), "cleanup");
+        // case-insensitive, so "Cleanup"/"CLEANUP" from a human-typed blob still resolves
+        assert_eq!(stream_kind(&json!({ "kind": "Cleanup" })), "cleanup");
+
+        let good = json!({ "streams": [
+            { "id": "a", "repo": "o/r", "kind": "cleanup" },
+            { "id": "b", "repo": "o/r", "kind": "temporary" },
+            { "id": "c", "repo": "o/r", "kind": "feature" },
+            { "id": "d", "repo": "o/r" }, // absent kind is still valid
+        ]});
+        assert!(validate_fleet_plan(&good).is_ok());
+
+        // an unrecognized kind is rejected rather than silently accepted — it would never match any
+        // `--kind` filter, which is a worse failure than refusing the write up front.
+        let err = validate_fleet_plan(&json!({ "streams": [{ "id": "a", "repo": "o/r", "kind": "urgent" }] })).unwrap_err();
+        assert!(err.contains(r#""kind" is "urgent""#) && err.contains("feature") && err.contains("cleanup"), "{err}");
+        assert!(validate_fleet_stream("a", &json!({ "id": "a", "repo": "o/r", "kind": "bogus" })).is_err());
     }
 
     #[test]
