@@ -1495,9 +1495,31 @@ mod tests {
         assert!(impls.len() >= 16, "the seed carries the Rust kit");
         // No abstract concept ontology (#2961) — a node IS its implementation.
         assert!(g.get("nodes").is_none(), "the abstract `nodes` array is gone");
-        assert!(g.get("edges").is_none(), "the abstract `edges` array is gone");
+        // `edges` is NOT forbidden outright any more, and the distinction is the whole point of the
+        // original assertion rather than a loosening of it. #2961 removed an abstract CONCEPT ONTOLOGY —
+        // a layer of ideas floating above the implementations. The edge tier
+        // (integration-tests-become-graph-edges) reuses the key for the opposite thing: concrete evidence
+        // ABOUT implementations, naming them by id and carrying the tests that verify them together.
+        //
+        // So the guard now checks the intent it always meant — every edge is grounded in two or more real
+        // impls — instead of the key's absence, which happened to imply it while the tier was empty and
+        // silently forbade populating it.
         let ids: std::collections::HashSet<String> =
             impls.iter().filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_owned)).collect();
+        for e in edges_of(&g) {
+            let members: Vec<&str> = e
+                .get("members")
+                .and_then(Value::as_array)
+                .map(|m| m.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            assert!(
+                members.len() >= 2,
+                "an edge spans 2+ impls — one member is a node test and belongs on the node: {e:?}",
+            );
+            for m in members {
+                assert!(ids.contains(m), "edge member '{m}' is a real impl id, not an abstract concept");
+            }
+        }
         let mut has_primitive = false;
         for im in &impls {
             let role = im.get("role").and_then(Value::as_str).expect("impl.role is set");
@@ -2306,6 +2328,60 @@ mod merge_tests {
         assert!(!inserted, "a new id inserts");
         let r = implementations_of(&g).into_iter().find(|i| i["id"] == "n.ts").unwrap().clone();
         assert_eq!(r["composes"], json!([]));
+    }
+
+    /// WRITE AN EDGE AND READ IT BACK, in one process.
+    ///
+    /// This is the test the tier did not have, and its absence is the whole finding of
+    /// `the-edge-tier-is-empty-integration-tests-were-never-routed-onto-edges`: the verbs shipped,
+    /// `doctor` learned to report missing/pending/dangling edges, and the store held NOTHING. Every
+    /// check that existed asked whether the code was correct; none asked whether it had ever run. So
+    /// "the verbs exist" was read as "the tier has data" for weeks.
+    ///
+    /// A round trip cannot prove the tier is populated — only a census can — but it does pin the one
+    /// thing that would make an empty store unexplainable: that a write is readable afterwards.
+    #[test]
+    fn an_edge_written_is_an_edge_read_back() {
+        let mut g = json!({ "version": 2, "implementations": [] });
+        assert!(edges_of(&g).is_empty(), "a fresh graph has no edges");
+
+        let created = set_edge(
+            &mut g,
+            json!({ "id": "a--b", "members": ["a.ts", "b.ts"], "src": "src/x/ab.test.ts" }),
+        )
+        .expect("a two-member edge is accepted");
+        assert!(!created, "the first write reports NEW (not an update)");
+
+        let back = edges_of(&g);
+        assert_eq!(back.len(), 1, "the write is visible to the very next read: {g}");
+        assert_eq!(back[0]["members"], json!(["a.ts", "b.ts"]));
+        assert_eq!(back[0]["src"], json!("src/x/ab.test.ts"));
+
+        // MERGING, like every other store write (#4154): a later `--src`-only update must not have to
+        // resupply the members, and must not silently drop them.
+        let updated = set_edge(&mut g, json!({ "id": "a--b", "src": "src/x/moved.test.ts" }))
+            .expect("an update needs no members");
+        assert!(updated, "the second write reports an UPDATE");
+        let back = edges_of(&g);
+        assert_eq!(back.len(), 1, "an update is not a second edge");
+        assert_eq!(back[0]["members"], json!(["a.ts", "b.ts"]), "unsupplied keys are PRESERVED");
+        assert_eq!(back[0]["src"], json!("src/x/moved.test.ts"));
+
+        assert!(remove_edge(&mut g, "a--b"), "and it can be removed by the id it was written under");
+        assert!(edges_of(&g).is_empty());
+    }
+
+    /// A one-member edge is a NODE test wearing the wrong shape, and is refused rather than stored —
+    /// otherwise the isolation the node tier gets from `bsc graph test <id>` is quietly lost.
+    #[test]
+    fn an_edge_over_one_record_is_refused() {
+        let mut g = json!({ "version": 2, "implementations": [] });
+        let err = set_edge(&mut g, json!({ "id": "solo", "members": ["a.ts"] })).unwrap_err();
+        assert!(err.contains("two"), "the refusal says what is wrong: {err}");
+        assert!(edges_of(&g).is_empty(), "and nothing is stored: {g}");
+        // A NEW edge with no members at all is refused for the same reason, rather than stored blank.
+        assert!(set_edge(&mut g, json!({ "id": "empty" })).is_err());
+        assert!(edges_of(&g).is_empty());
     }
 }
 

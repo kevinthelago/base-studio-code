@@ -50,8 +50,18 @@ pub(crate) fn has_claude_history(cwd: &str) -> bool {
     if cwd.is_empty() {
         return false;
     }
-    let dir = claude_project_transcripts_dir(cwd);
-    let Ok(entries) = std::fs::read_dir(&dir) else { return false };
+    dir_holds_a_transcript(&claude_project_transcripts_dir(cwd))
+}
+
+/// Whether `dir` is a Claude Code transcripts directory holding at least one conversation.
+///
+/// Split out because a SANDBOXED session's transcripts are not at the path
+/// [`claude_project_transcripts_dir`] computes: the caged harness writes into its private HOME under
+/// the GUEST cwd, and the launcher binds that directory to a per-pane host dir. The rule for "is there
+/// something to continue" is the same either way — a `.jsonl` in the directory — so it lives here once
+/// and both callers ask it about their own path.
+pub(crate) fn dir_holds_a_transcript(dir: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
     entries
         .flatten()
         .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))

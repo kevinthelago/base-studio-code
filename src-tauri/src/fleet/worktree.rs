@@ -90,7 +90,15 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
     let _perf = PerfSpan::new("ensure_worktree");
     let clone = repo_dir(&project_key, &repo);
     if !clone.join(".git").exists() {
-        return Err(format!("ensure_worktree: repo not cloned: {}", clone.display()));
+        // NAME THE FIX. Every worker runs in a worktree cut from this clone, so a hub without one
+        // cannot start a single stream — and "repo not cloned: <path>" left the reader to work out
+        // both what makes a clone and who is allowed to. `bsc fleet clone` is that, and a director can
+        // run it (#the-director-can-clone-its-projects-repos); before it existed the only door was a
+        // click in the desktop UI, which a shell session cannot reach.
+        return Err(format!(
+            "ensure_worktree: repo not cloned: {}. Run `bsc fleet clone` to materialize this              project's linked repos (add `--source <local-checkout>` to clone from a copy already on              this machine instead of re-downloading it).",
+            clone.display()
+        ));
     }
     let slug  = worktree_slug(&agent_id);
     let wt    = worktrees_dir(&project_key).join(worktree_dir_name(&repo, &agent_id));

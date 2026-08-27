@@ -17,13 +17,9 @@
 //! The request/response channel is [`bsc_appchan`] — the ONE channel, shared with `bsc navigate` (#3274).
 //! This crate owns only the shot's own request/result shapes; the platform capture lives in the desktop app.
 
-/// Visual comparison — how much a render changed and WHERE
-/// (#shot-baseline-and-diff-a-measured-visual-verdict). Scalars only: no pixels cross this boundary.
-pub mod compare;
 
 use serde::{Deserialize, Serialize};
 
-pub mod cli;
 
 /// This verb's routing key in the shared channel.
 pub const KIND: &str = "shot";
@@ -145,3 +141,15 @@ mod tests {
         assert!(!is_png(b"not-an-image"));
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/compare.rs, src/cli.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-shot--<module>.rs
+//     bsc graph impl set --id bsc-shot--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-shot--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

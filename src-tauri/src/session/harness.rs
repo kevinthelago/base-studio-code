@@ -10,6 +10,18 @@
 pub trait HarnessAdapter {
     /// Whether this harness has a resumable conversation for `cwd` (drives the resume flag).
     fn detect_history(&self, cwd: &str) -> bool;
+    /// Whether there is a resumable conversation in an EXPLICIT transcripts directory.
+    ///
+    /// A sandboxed session's history is not under the host's per-cwd path — the caged harness writes
+    /// into its private HOME keyed by the GUEST cwd, and the launcher binds that to a per-pane host
+    /// directory. The launcher resolves that path and asks here, rather than every harness having to
+    /// know how the cage is wired.
+    ///
+    /// Defaults to `false`: a harness whose caged transcripts are not durable cannot resume, and
+    /// saying so is better than resuming from something that is not there.
+    fn detect_history_at(&self, _dir: &std::path::Path) -> bool {
+        false
+    }
     /// The shell command that launches the harness, baking the startup `prompt` and requesting
     /// `resume` when supported.
     fn launch_command(&self, prompt: &str, resume: bool) -> String;
@@ -34,6 +46,10 @@ pub struct ClaudeCodeAdapter;
 impl HarnessAdapter for ClaudeCodeAdapter {
     fn detect_history(&self, cwd: &str) -> bool {
         crate::has_claude_history(cwd)
+    }
+
+    fn detect_history_at(&self, dir: &std::path::Path) -> bool {
+        crate::session::launch::dir_holds_a_transcript(dir)
     }
 
     fn launch_command(&self, prompt: &str, resume: bool) -> String {

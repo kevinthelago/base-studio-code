@@ -73,7 +73,32 @@ USAGE:
 Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.
 Validated at set-time (#2395): a non-empty ref + title per issue, and a known \"status\" when set
 (open | in_progress | blocked | complete | verified | failed). A bad batch is rejected whole —
-nothing is written. --force skips validation.",
+nothing is written. --force skips validation.
+
+WARNING (#request-107): on an EXISTING ref this REPLACES the content fields — any field the object
+omits (body, acceptance, owns, dependsOn, labels, …) is cleared, not left as-is. For a partial edit
+(fix one acceptance criterion, append to a body) use `bsc plan amend <ref>` instead, which merges.
+\"status\" and the gh* identity are the two fields `add` never touches on an existing ref even when
+the object carries them — they're owned by `bsc plan status` / `bsc plan link`.",
+    },
+    CmdDoc {
+        name: "amend",
+        summary: "merge partial JSON onto ONE issue, preserving every other field",
+        usage: "\
+USAGE:
+  bsc plan amend <ref>   # a JSON object of just the fields to change, on stdin
+
+Merges the patch onto the existing issue: a field the patch does not name is left exactly as it was,
+a `null` value CLEARS an optional field (mirrors `bsc graph impl set --clear`), and any other value
+overwrites that one field. Array fields (acceptance/owns/dependsOn/labels) replace whole when supplied
+— correcting one entry means sending the corrected array, still only ONE field of the issue.
+
+Use this instead of `add` when changing part of an existing issue: `add` needs the WHOLE object, so a
+one-field correction otherwise means reading the full record, editing it in an interpreter, and
+writing it back — and a slip in that round trip can silently drop the rest of a long body.
+
+Refuses to touch \"ref\" / \"status\" / \"ghNumber\" / \"ghNodeId\" / \"syncedAt\" — each is owned by a
+different verb (`status`, `link`) or is the issue's identity; the error names which one to use.",
     },
     CmdDoc {
         name: "get",
@@ -125,6 +150,18 @@ USAGE:
   bsc plan status <ref> <status>
 
 Sets one issue's status. <status> is one of: open | in_progress | blocked | complete | verified | failed.",
+    },
+    CmdDoc {
+        name: "note",
+        summary: "append an observation to an issue (no change record needed)",
+        usage: "\
+USAGE:
+  bsc plan note <ref> <text> [--from AUTHOR]
+
+Appends an append-only observation directly to the issue (#146) — unlike `bsc plan change note`, this
+never requires a change record to already exist. Opening a change on an issue nobody has started work
+on would misrepresent it as in-flight; `note` is where an observation goes before that, or when no
+change will ever exist for it. `--from` names the author; omitted is recorded as empty, never guessed.",
     },
     CmdDoc {
         name: "link",
@@ -183,14 +220,32 @@ USAGE:
 USAGE:
   bsc plan fleet set [--force]        # replace the fleet from a FleetPlan JSON on stdin
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
+  bsc plan fleet get --kind <k>       # filter to streams of one lifecycle kind (see below)
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
+  bsc plan fleet model <id> <model>   # the model ONE stream launches on (--clear to unset)
   bsc plan fleet remove <stream-id>   # drop one stream
 
-`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.
+`fleet get` is lean by default (id/name/kind/dependsOn per stream); add --full for permissions/flows.
 Writes are validated at set-time (#2395): `set` needs a \"streams\" array (an absent one would
 silently wipe the fleet) and every stream a non-empty, unique \"id\" + a \"repo\"; `stream set`'s
-blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.",
+blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.
+
+Each stream carries an optional \"kind\" (#152): \"feature\" (default, a durable lane) | \"cleanup\" |
+\"temporary\" (a one-shot lane meant to be REMOVED once its work lands — e.g. a stream that deletes
+orphaned code and has nothing left to own once those paths are gone). Absent reads as \"feature\", so
+existing streams need no backfill. `fleet get --kind cleanup` filters the streams array to that one
+kind (case-insensitive) — the way a director finds every temporary/cleanup stream across a project
+without reading each one's free-text name. An unrecognized --kind is rejected, not silently empty.
+
+`fleet model` is the DIRECTOR's level of the model precedence chain, nearest-first:
+    a fleet stream's own model > a team placement's (`bsc teams model`) >
+    the persona's default (`bsc persona model`) > the harness's own default
+Unset is the default and means Claude Code decides — nothing changes for a fleet you never touch.
+A Claude tier (haiku-4.5 | sonnet-4.5 | opus-4.5) becomes `claude --model <tier>`; any other value
+is passed to whatever harness the session runs, so a local (bsc-agent) worker can be pointed at an
+installed model by name. The verb REFUSES an unknown stream id rather than creating one — a stream
+holding only an id and a model is a stream the fleet would try to launch.",
     },
     CmdDoc {
         name: "deploy",
@@ -608,6 +663,12 @@ struct Args {
     /// Skip set-time validation on a structured write (#2395) — the deliberate
     /// store-a-work-in-progress-blob escape hatch. Validation is otherwise strict-reject.
     force: bool,
+    /// Unset an optional field instead of setting it (`fleet model <id> --clear`), so a stream can
+    /// fall back to the next level of the precedence chain rather than being pinned forever.
+    clear: bool,
+    /// `fleet get --kind cleanup` (#152) — filter the streams array to one lifecycle kind, so a
+    /// director can find every temporary/cleanup stream without reading each one's free-text name.
+    kind: Option<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -616,7 +677,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false, force: false,
+        since: None, pretty: false, force: false, clear: false, kind: None,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -643,6 +704,10 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
             "--force" | "--no-validate" => a.force = true,
+            // `--clear` removes an optional field rather than setting it — the counterpart every
+            // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).
+            "--clear" => a.clear = true,
+            "--kind" => a.kind = Some(it.next().ok_or("--kind needs a value")?),
             "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
             "--limit" => {
                 let v = it.next().ok_or("--limit needs a number")?;
@@ -680,12 +745,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // helpers below.
     match cmd.as_str() {
         "add" => issues::cmd_add_cmd(&args),
+        "amend" => issues::cmd_amend(&args),
         "get" => issues::cmd_get(&args),
         "summary" => issues::cmd_summary(&args),
         "list" | "mine" => issues::cmd_list(&args),
         // #3842: the BATCHED read — every artifact the planner poll needs in one spawn.
         "snapshot" => snapshot::cmd_snapshot(&args),
         "status" => issues::cmd_status(&args),
+        "note" => issues::cmd_note(&args),
         "link" => issues::cmd_link(&args),
         "remove" => issues::cmd_remove(&args),
         "render" => issues::cmd_render(&args),
@@ -821,15 +888,130 @@ fn cmd_blob_noun(
 /// Resolve the plan.db path via the shared `--db` → `$BSC_PLAN_DB` → default precedence
 /// ([`bsc_cli_util::resolve_store_path`]). There is no default location for a project's plan.db, so
 /// the default is a hard error.
+/// The project key a path sits inside, or `None` for a path outside every project.
+///
+/// Mirrors the app's `project_key_from_cwd`: an ALLOW-LIST of the two project roots — `projects/`
+/// (the hub, where a director and the studio sessions run) and `worktrees/` (where every worker runs)
+/// — then the first component beneath it. Not "anything under the base dir", because a session in the
+/// base dir itself belongs to no project and must resolve to nothing rather than to a guess.
+///
+/// Pure over `(path, base)` so both roots and the negative cases are testable without a project on disk.
+fn project_key_at(path: &std::path::Path, base: &std::path::Path) -> Option<String> {
+    [base.join("projects"), base.join("worktrees")]
+        .iter()
+        .find_map(|root| path.strip_prefix(root).ok())
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .filter(|k| !k.is_empty())
+}
+
+/// The plan store for the project the CWD sits in — the fallback when nothing was passed or exported.
+///
+/// WHY THIS EXISTS. `resolve_db` was `--db` → `$BSC_PLAN_DB` → error, so the one actor standing IN the
+/// project directory was the one that had to be told where the project is. Reported: a director having
+/// to `export BSC_PLAN_DB=…` before `bsc plan` would run.
+///
+/// The env var does not always arrive. The app sets it only when `plan_db_for_cwd` resolves, so an
+/// empty or recovered cwd yields none (see `an-empty-cwd-launches-the-director-permission-less-in-the-app-home`);
+/// a shell opened by hand never had it; and a namespace-caged session gets neither the var nor the
+/// `bsc` binary, since the cage projects the stores as `/plan` instead. A single missing export should
+/// not be a wall when the answer is derivable from where the process is standing.
+///
+/// Deliberately LAST in the chain: `--db` and `$BSC_PLAN_DB` still win, so this can only add an answer
+/// where there was an error, never override an explicit one.
+fn plan_db_from_cwd() -> Option<PathBuf> {
+    let base = bsc_util::bsc_base_dir()?;
+    let cwd = std::env::current_dir().ok()?;
+    let key = project_key_at(&cwd, &base)?;
+    Some(base.join("plans").join(format!("{key}.db")))
+}
+
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     bsc_cli_util::resolve_store_path(flag, "BSC_PLAN_DB", || {
-        Err("no plan.db: pass --db <path> or set BSC_PLAN_DB".to_string())
+        plan_db_from_cwd().ok_or_else(|| {
+            // Still names both explicit routes: the derivation covers a session inside a project, and
+            // this is what is left — a cwd that belongs to no project, where guessing would be worse.
+            "no plan.db: this directory is not inside a project (…/projects/<key> or \
+             …/worktrees/<key>), so pass --db <path> or set BSC_PLAN_DB"
+                .to_string()
+        })
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A session standing IN a project must not have to be told where the project is.
+    ///
+    /// Reported: a director having to `export BSC_PLAN_DB=…/plans/network-monitor.db` before
+    /// `bsc plan` would run. `resolve_db` was `--db` → `$BSC_PLAN_DB` → error, and the env var does
+    /// not always arrive — the app sets it only when the launch cwd resolves under a project root, a
+    /// shell opened by hand never had it, and a caged session gets neither the var nor the binary.
+    #[test]
+    fn a_project_key_is_derived_from_either_project_root() {
+        let base = std::path::Path::new("/home/u/.base-studio-code");
+
+        // The hub — where a director runs.
+        assert_eq!(
+            project_key_at(std::path::Path::new("/home/u/.base-studio-code/projects/network-monitor"), base).as_deref(),
+            Some("network-monitor"),
+        );
+        // ...and deeper inside it, since a session may `cd` into a linked repo.
+        assert_eq!(
+            project_key_at(std::path::Path::new("/home/u/.base-studio-code/projects/network-monitor/networkmonitor/crates/x"), base).as_deref(),
+            Some("network-monitor"),
+        );
+        // A worktree — where every worker runs. The whole fleet shares the project's ONE store, so
+        // this must resolve to the same key the hub does.
+        assert_eq!(
+            project_key_at(std::path::Path::new("/home/u/.base-studio-code/worktrees/network-monitor/networkmonitor--switch-cli-adapter"), base).as_deref(),
+            Some("network-monitor"),
+        );
+    }
+
+    #[test]
+    fn a_path_outside_every_project_resolves_to_nothing_rather_than_a_guess() {
+        let base = std::path::Path::new("/home/u/.base-studio-code");
+        // An ALLOW-LIST of the two roots, not "anything under the base dir" — these siblings hold no
+        // project, and answering with the first component would point `bsc plan` at a store named
+        // after a directory that is not a project.
+        for p in [
+            "/home/u/.base-studio-code",
+            "/home/u/.base-studio-code/plans",
+            "/home/u/.base-studio-code/design-studio",
+            "/home/u/.base-studio-code/bin",
+            "/home/u/some/repo",
+            "/",
+        ] {
+            assert_eq!(project_key_at(std::path::Path::new(p), base), None, "{p} is not in a project");
+        }
+        // The roots THEMSELVES name no project — there is no component beneath them.
+        assert_eq!(project_key_at(&base.join("projects"), base), None);
+        assert_eq!(project_key_at(&base.join("worktrees"), base), None);
+    }
+
+    #[test]
+    fn an_explicit_store_still_wins_over_the_derivation() {
+        // The fallback is a FALLBACK. `--db` is the most explicit thing a caller can say, and it must
+        // outrank both the env var and the cwd — otherwise a director inspecting another project's
+        // plan from inside its own would silently read its own.
+        let flag = Some("/tmp/explicit.db".to_string());
+        assert_eq!(resolve_db(&flag).unwrap(), PathBuf::from("/tmp/explicit.db"));
+    }
+
+    #[test]
+    fn a_cwd_outside_a_project_still_names_both_explicit_routes() {
+        // The error is what a session reads when the derivation cannot help, so it has to say what to
+        // do next — and now also WHY the automatic answer did not apply.
+        let msg = resolve_db(&None).err().unwrap_or_default();
+        // (In a project checkout this may resolve; the message is only asserted when it does not.)
+        if !msg.is_empty() {
+            assert!(msg.contains("--db"), "names the flag: {msg}");
+            assert!(msg.contains("BSC_PLAN_DB"), "names the env var: {msg}");
+            assert!(msg.contains("not inside a project"), "says why the fallback did not apply: {msg}");
+        }
+    }
 
     /// End-to-end through `run()` — the ONLY level that exercises `parse_args`, and therefore the only
     /// level that can catch an unregistered flag. A store-level test calls `request_resolve(id, note)`
@@ -863,6 +1045,50 @@ mod tests {
         assert!(go(vec!["request", "show", "999"]).is_err(), "an unknown id is an error");
         assert!(go(vec!["request", "claim", "not-a-number"]).is_err(), "a non-numeric id is rejected");
         assert!(go(vec!["request", "frobnicate"]).is_err(), "an unknown sub is an error");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// #146, through `run()` — the CLI boundary, so `--from` is checked as a registered flag, not just
+    /// a store parameter. Reproduces the exact failing command on request 146: an observation on an
+    /// issue with no change record, which `bsc plan change note` refuses ("no change with ref").
+    #[test]
+    fn the_note_verb_works_on_an_issue_with_no_change_record() {
+        let db = test_db_path("note-verb");
+        let go = |a: Vec<&str>| {
+            let mut v: Vec<String> = a.into_iter().map(String::from).collect();
+            v.push("--db".into());
+            v.push(db.clone());
+            run(v, "bsc plan")
+        };
+
+        // Seed the issue directly (no change record — nobody has claimed this work yet).
+        let s = open_store(&Some(db.clone())).unwrap();
+        s.upsert(&crate::PlanIssue {
+            r#ref: "4208-two-tests-fail-only-under-full-suite-load-and-pa".into(),
+            title: "Two tests fail only under full-suite load".into(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        // What request 146 actually tried and got "no change with ref" for — now succeeds directly.
+        go(vec![
+            "note", "4208-two-tests-fail-only-under-full-suite-load-and-pa",
+            "reproduces only under cargo nextest run --workspace", "--from", "kevin",
+        ])
+        .expect("`note --from` — the flag a store-level test cannot check");
+
+        let issue = s.get("4208-two-tests-fail-only-under-full-suite-load-and-pa").unwrap().unwrap();
+        assert_eq!(issue.notes.len(), 1);
+        assert_eq!(issue.notes[0].author, "kevin");
+        assert_eq!(issue.status, "open", "recording an observation does not claim the work as started");
+
+        // `bsc plan change note` on the same ref still refuses — this verb is deliberately separate.
+        assert!(
+            go(vec!["change", "note", "4208-two-tests-fail-only-under-full-suite-load-and-pa", "x"]).is_err(),
+            "change note still requires an existing change record"
+        );
+        assert!(go(vec!["note", "nope-no-such-issue", "x"]).is_err(), "an unknown ref is an error");
+        assert!(go(vec!["note", "4208-two-tests-fail-only-under-full-suite-load-and-pa", "  "]).is_err(), "empty text is rejected");
         let _ = std::fs::remove_file(&db);
     }
 
@@ -940,7 +1166,7 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc plan", TAGLINE, COMMANDS);
         // Every top-level command appears in the compact menu.
         for c in [
-            "add", "get", "summary", "list", "mine", "status", "link", "remove", "render", "snapshot", "feature", "repo",
+            "add", "amend", "get", "summary", "list", "mine", "status", "link", "remove", "render", "snapshot", "feature", "repo",
             "fleet", "deploy", "deps", "market", "classify", "transformation", "mcp", "blueprint", "ui", "discovery",
             "confirm", "skip", "integration", "lesson", "request", "triage", "stage", "automations", "startup",
             "github-context", "artifact",
@@ -1033,6 +1259,16 @@ mod tests {
         assert!(b.force);
         let c = parse_args(vec!["deploy".into(), "set".into()]).unwrap();
         assert!(!c.force);
+    }
+
+    #[test]
+    fn parse_args_reads_kind() {
+        // #152: `fleet get --kind cleanup` — the flag is generic on Args (parsed once, read by the
+        // `fleet` noun handler), so this only pins the parse, not the filter behavior.
+        let a = parse_args(vec!["fleet".into(), "get".into(), "--kind".into(), "cleanup".into()]).unwrap();
+        assert_eq!(a.kind.as_deref(), Some("cleanup"));
+        let b = parse_args(vec!["fleet".into(), "get".into()]).unwrap();
+        assert!(b.kind.is_none());
     }
 
     #[test]

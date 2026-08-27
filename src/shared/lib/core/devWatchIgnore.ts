@@ -5,7 +5,12 @@
 // vite watches the project root, and this root holds three kinds of large NON-source tree:
 //   1. `target/` — the Cargo workspace's build output, tens of thousands of churning artifacts.
 //   2. `dist/` · `coverage/` — build outputs that accumulate.
-//   3. `wt-*/` — the nested git worktrees the parallel-agent workflow creates.
+//   3. `wt-*/` and `.claude/worktrees/*/` — the nested git worktrees the parallel-agent workflow
+//      creates. TWO conventions, because two different actors create them: `wt-*` is the maintainer's,
+//      and `.claude/worktrees/<branch>/` is where the DEBUGGER CHARTER tells every debug session to
+//      work. Only the first was listed, so the sessions that run continuously were the ones being
+//      watched. Measured when that was found: 27 of them, 36,742 files inside the watched root, 1,346
+//      per worktree in `.bsc-records/` alone — rewritten by every typecheck and every test run.
 //
 // chokidar watching that many files starves vite's event loop on Windows, so the dev server answers the
 // WebView's module requests slowly and the initial load stalls (instant on a fresh clone → ~50s once
@@ -45,5 +50,11 @@ export function devWatchIgnored(repoRoot: string): string[] {
     "**/dist/**",
     `${repoRoot}/wt-*`,
     `${repoRoot}/wt-*/**`,
+    // The debug sessions' worktrees. Same two rules as above for the same two reasons: the directory
+    // itself is listed so chokidar prunes the subtree before descending (dotfile-proof, which matters
+    // more here — the heaviest churner is `.bsc-records/`), and it is root-anchored so it can never
+    // match a source path that merely contains the word.
+    `${repoRoot}/.claude/worktrees/*`,
+    `${repoRoot}/.claude/worktrees/*/**`,
   ];
 }

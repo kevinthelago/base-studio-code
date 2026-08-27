@@ -659,6 +659,24 @@ describe("componentBundle — externals", () => {
     const doc = buildComponentSrcDoc("X");
     expect(doc).toContain(COMPONENT_IMPORTMAP["d3-force"]);
   });
+
+  it("pins zustand (+middleware/+react/shallow) so @/store resolves in a non-GraphHost preview (#120)", () => {
+    // Request #120: @/store is a registered platform module (src-tauri/data/ui/platform-modules.json),
+    // so a component that merely imports it (no dedicated GraphHost/registerXPlatform of its own) gets
+    // the REAL store/index.ts vendored into the bundle, not a stub. That real module does
+    // `import { create } from "zustand"` and `import { persist, createJSONStorage } from "zustand/middleware"`
+    // at top level — before this fix neither specifier was a curated external, so each fell to the
+    // universal stub (#3696): `create` resolved to a black-hole Proxy whose `create()` call returns
+    // `null` (no args ⇒ no `.children` ⇒ null), and the immediate `create()(persist(...))` then threw
+    // "TypeError: create() is not a function" — the exact error `bsc ui preview-errors` captured.
+    expect(COMPONENT_IMPORTMAP["zustand"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d/);
+    expect(COMPONENT_IMPORTMAP["zustand/middleware"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d.*\/middleware/);
+    expect(COMPONENT_IMPORTMAP["zustand/react/shallow"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d.*\/react\/shallow/);
+    // …and they ride into the srcdoc's import-map so the iframe resolves the real zustand, never the stub.
+    const doc = buildComponentSrcDoc("X");
+    expect(doc).toContain(COMPONENT_IMPORTMAP["zustand"]);
+    expect(doc).toContain(COMPONENT_IMPORTMAP["zustand/middleware"]);
+  });
 });
 
 describe("loaderFor: a record id is not a filename (#103)", () => {
@@ -721,19 +739,47 @@ describe("@data JSON in a preview (#105)", () => {
   it("makes a MISSING specifier name itself instead of failing three frames away", () => {
     // The whole improvement over the universal stub: a Proxy answers every property and the failure
     // surfaces as `MODEL_IDS.find` somewhere else. This says WHICH specifier was missing, when touched.
-    const mod = dataJsonModule("@data/knowledge/algorithms.json"); // deliberately excluded — 3.91 MB
+    // `react-ui.json` has no top-level static importer (the kit artifact arrives as source/runtime
+    // params instead), so it stays a genuine "nothing registered this" case, unlike algorithms.json below.
+    const mod = dataJsonModule("@data/components/react-ui.json"); // deliberately excluded — 4.80 MB
     expect(mod).toContain("is not vendored into this preview");
-    expect(mod).toContain("@data/knowledge/algorithms.json");
+    expect(mod).toContain("@data/components/react-ui.json");
     expect(mod).not.toContain("export default {}");
   });
 
-  it("excludes the two giant directories, and only those", () => {
-    // Bounded on purpose: vendoring everything imported would be 8.88 MB, and 8.7 MB of it is these two
-    // — both already reachable in a preview by their proper routes.
-    expect(dataJsonModule("@data/components/react-ui.json")).toContain("is not vendored");
-    expect(dataJsonModule("@data/knowledge/algorithms.json")).toContain("is not vendored");
+  it("excludes the two giant directories, but resolves either — one to the real vendored default, one honestly empty", () => {
+    // Bounded on purpose: vendoring everything imported would be 8.88 MB, and 8.7 MB of it is these two.
     for (const kept of ["@data/ui/themes.json", "@data/teams/departments.json", "@data/mcp/catalog.json"]) {
       expect(dataJsonModule(kept), `${kept} must be vendored`).toContain("export default ");
     }
+    // react-ui.json: nothing imports it as a static ES module, so excluding it is a genuine miss.
+    expect(dataJsonModule("@data/components/react-ui.json")).toContain("is not vendored");
+  });
+
+  describe("algorithms.json's honest empty default (#106)", () => {
+    // `features/algorithms/lib/knowledge.ts` does `import RAW from "@data/knowledge/algorithms.json"`
+    // at MODULE TOP LEVEL, and `store/index.ts` composes the algorithms slice — so the import is
+    // reachable from `@/store` itself, not just from Algorithms feature UI. Excluding it with the
+    // throwing-proxy fallback broke every component that merely calls `useAppStore` (103 of 138
+    // render-doctor findings: StatusBar, PaneMenu/PaneShell, TeamsInspector, none of them rendering
+    // anything algorithm-related). This is the same class of fix as the import.meta.glob shim (#81,
+    // returns `{}`) and the ?raw shim (#85, returns `""`): the honest degradation is the empty value of
+    // the right SHAPE.
+    it("resolves to a real module rather than a throwing proxy", () => {
+      const mod = dataJsonModule("@data/knowledge/algorithms.json");
+      expect(mod.startsWith("export default ")).toBe(true);
+      expect(mod).not.toContain("is not vendored");
+      expect(mod).not.toContain("new Proxy");
+    });
+
+    it("is shaped exactly as knowledge.ts's own buildKnowledge already tolerates — {implementations: []}", () => {
+      const mod = dataJsonModule("@data/knowledge/algorithms.json");
+      const value = JSON.parse(mod.replace(/^export default /, "").replace(/;\s*$/, ""));
+      expect(value).toEqual({ implementations: [] });
+      // A component that DOES render Algorithms feature UI in a preview degrades to an empty knowledge
+      // graph rather than crashing every OTHER component that merely touches the store.
+      expect(Array.isArray(value.implementations)).toBe(true);
+      expect(value.implementations).toHaveLength(0);
+    });
   });
 });

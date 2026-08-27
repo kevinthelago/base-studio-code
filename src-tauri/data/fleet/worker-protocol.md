@@ -6,7 +6,7 @@ You are one of several parallel sessions building this project. Never stop to as
 **The stores are the source of truth — prefer them over anything quoted in your context.** Your context is assembled once, at launch; the stores are live. If a quote here disagrees with what a store returns, the store is right and the quote is stale. Read them directly rather than working from a copy.
 
 - `bsc graph impl get <id>` · `bsc graph impl list [--tech t] [--domain d]` — the **algorithms library**. Anything your feature `requires` is named in the Reference implementations section below; read each one from here rather than re-deriving it.
-- `bsc ui get <id>` · `bsc ui list [--kit k]` — the **component library**. Before writing a UI component, check whether one already exists.
+- `bsc ui get <id>` · `bsc ui list [--kit k]` — the **component library**. Search it before you build any UI: the component you need usually exists, and when it does not, the library is still where the new one goes (see *NEW work is authored INTO the graph*, below).
 - `bsc plan …` — this project's plan: issues, streams, features, contracts. Your scope section is a snapshot of it; `bsc plan` is the live copy.
 - `bsc files read <path>` — a file's text, when you need a module no harvest lifts (a constants/types module).
 
@@ -38,6 +38,16 @@ Two limits worth knowing before you hit them, because both look like breakage an
 - `bsc graph impl get <id>` to read it, `bsc graph impl set …` to change it, then re-emit so the file follows.
 - `bsc graph impl set` **merges** (#4154): send only the fields you are changing. `--clear a,b` removes one explicitly. It is the same contract as `bsc ui set`, so the two surfaces behave identically.
 - There is **no `backing` gate** for algorithms, and it is not needed: an algorithm's file usually backs SEVERAL records (34 of 63 share a `src`), so a file→record lookup is ambiguous by construction — while your `requires` list already names the id without one. Work from the id you pulled in, never from the path.
+
+**NEW work is authored INTO the graph, not as a new file (#3604).** The two rules above tell you where a CHANGE goes. This one tells you where a CREATION goes, and it is the one that decides most of what you write: when nothing exists yet, the reflex is a new `.tsx` or `.ts`, and that reflex is wrong here. **The graph IS the app** — 337 component records and 668 implementations ship as data against 78 non-test modules left under `src/`. A new file is a second copy of something the app renders from the store, and nothing regenerates it.
+
+- **A COMPONENT** — `bsc ui set` with an id that does not exist yet (the write upserts), then `bsc ui emit component <id> <dir>` and build/test against the emitted file. Search first: `bsc ui list --kit <k>`.
+- **AN ALGORITHM** — any pure, React-free logic — `bsc graph impl set --id <id> --name <n> --tech typescript --role algorithm --code-file <path>`. Use `--code-file`, never `--code`: source on a command line is corrupted SILENTLY by the shell (a backtick or a `${…}` is substituted away, a literal `\n` never becomes a newline), and a large module exceeds the argv limit outright.
+- **IN THE CAGE**, `/ui/out` is the authoring outbox — the same write, drained by the host.
+
+**THE GATE CANNOT SEE THIS, so it is on you.** `bsc ui backing gate` asks whether a path you changed HAS a record; a brand-new file has none, so it exits 0 with `ok: none of the N path(s) is component-backed`. That green is not evidence you authored in the right place — it is the gate answering a different question.
+
+**When a plain FILE is still correct.** The exceptions are narrow, and each was learned by shipping the bug first: a module that holds mutable module state on a specifier something ELSE registers (two live copies — the write is refused); one that uses `import.meta.glob` (a build-time transform, not a runtime function); one imported statically by `main.tsx`/`App.tsx`; a type-only module or a `.d.ts` (read because it is included, never imported); a module a BUILD CONFIG imports (bundled before any plugin runs); and a stylesheet. If your case is not plainly one of those, it is not one — file `bsc plan request new` and let the director answer rather than settling it by writing the file.
 
 **Build against the planned contracts, in parallel — do NOT wait on another stream.** The plan already defines the integration contracts/seams between streams (the interface each one exposes/consumes). Implement your work against those contracts now; you do not park waiting for an upstream stream's work to land — integration is verified at merge. (A genuine artifact dependency is a phase boundary the plan already sequenced, not a runtime wait.)
 

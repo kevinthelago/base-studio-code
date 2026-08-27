@@ -2,6 +2,7 @@
 name = "bsc-publish"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 # Publish a plan's GitHub structure with no frontend involved
 # (`headless-publish-so-the-ui-is-not-the-only-publisher`).
@@ -18,3 +19,7 @@ plandb = { path = "../plandb" }
 # The transport, extracted so this crate can exist at all.
 bsc-github = { path = "../bsc-github" }
 bsc-cli-util = { path = "../bsc-cli-util" }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

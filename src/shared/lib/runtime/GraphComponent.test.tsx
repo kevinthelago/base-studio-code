@@ -109,6 +109,43 @@ describe("GraphComponent render gate (#graph-render-gate)", () => {
   });
 });
 
+describe("exportName defaults to the record's own name (#121)", () => {
+  beforeEach(() => {
+    resetLastGood();
+    resetGraphCompiles();
+    load.mockReset();
+    useAppStore.setState({ components: [] as never });
+  });
+
+  it("passes the record's OWN name to the loader when the caller gives no exportName", async () => {
+    // The bug: a record's module can carry a foreign sibling ahead of its own definition (`Field.tsx`
+    // opens with `Field`, then `TextArea`), and a caller that mounts by id alone — the common case —
+    // used to hand the loader `undefined`, which falls back to whichever export comes first in source
+    // order. Defaulting to the record's own `name` here fixes it for every such caller in one place.
+    load.mockResolvedValue(() => <div>good</div>);
+    useAppStore.setState({ components: [{ id: "x", name: "TextArea", srcText: GOOD }] as never });
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+    expect(load.mock.calls[0]?.[2]).toBe("TextArea");
+  });
+
+  it("an explicit exportName still wins over the record's own name", async () => {
+    load.mockResolvedValue(() => <div>good</div>);
+    useAppStore.setState({ components: [{ id: "x", name: "Field", srcText: GOOD }] as never });
+    render(<GraphComponent id="x" exportName="SelectField" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+    expect(load.mock.calls[0]?.[2]).toBe("SelectField");
+  });
+
+  it("mounts with no name at all when the record carries none — unchanged for every existing caller", async () => {
+    load.mockResolvedValue(() => <div>good</div>);
+    setSource(GOOD); // no `name` field, matching every pre-existing test's store shape
+    render(<GraphComponent id="x" fallback={<div>fallback</div>} />);
+    expect(await screen.findByText("good")).toBeTruthy();
+    expect(load.mock.calls[0]?.[2]).toBeUndefined();
+  });
+});
+
 describe("durable fallback — the record's retained history", () => {
   beforeEach(() => {
     resetLastGood();

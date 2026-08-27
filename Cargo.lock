@@ -733,6 +733,7 @@ dependencies = [
  "bsc-publish",
  "bsc-request",
  "bsc-runtime",
+ "bsc-sandbox",
  "bsc-session",
  "bsc-shot",
  "bsc-sound",
@@ -867,7 +868,9 @@ version = "0.1.0"
 dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
+ "bsc-project",
  "bsc-util",
+ "logs",
  "plandb",
  "serde",
  "serde_json",
@@ -1039,6 +1042,12 @@ dependencies = [
 [[package]]
 name = "bsc-sandbox"
 version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "serde_json",
+ "tempfile",
+]
 
 [[package]]
 name = "bsc-session"
@@ -1125,6 +1134,7 @@ name = "bsc-tunnel"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "snow",
 ]
 

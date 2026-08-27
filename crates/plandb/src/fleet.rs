@@ -39,6 +39,25 @@ impl Store {
         self.fleet_stream_upsert_at(id, data, pos)
     }
 
+    /// ONE stream's JSON by id, or `None` when there is no such stream.
+    ///
+    /// The read half of a granular FIELD edit: a caller that wants to change one key reads the row,
+    /// patches it, and writes it back — without reconstructing the whole FleetPlan, and without the
+    /// upsert semantics of [`fleet_stream_set`], which would invent a row for an id that does not
+    /// exist. A caller that must not create a stream (`fleet model`, where a typo'd id would
+    /// otherwise become a repo-less stream the fleet tries to launch) checks this first.
+    ///
+    /// A row whose `data` fails to parse is treated as absent rather than surfaced, matching
+    /// [`fleet_stream_list`]'s refusal to inject a silent `Null` — the caller's own "no such stream"
+    /// path is the safe outcome either way.
+    pub fn fleet_stream_get(&self, id: &str) -> rusqlite::Result<Option<serde_json::Value>> {
+        let raw: Option<String> = self
+            .conn
+            .query_row("SELECT data FROM fleet_streams WHERE id = ?1", params![id.trim()], |r| r.get(0))
+            .ok();
+        Ok(raw.and_then(|d| serde_json::from_str(&d).ok()))
+    }
+
     /// Upsert one stream by id at an explicit position (called by `fleet_set`).
     fn fleet_stream_upsert_at(&self, id: &str, data: &serde_json::Value, pos: i64) -> rusqlite::Result<()> {
         self.conn.execute(

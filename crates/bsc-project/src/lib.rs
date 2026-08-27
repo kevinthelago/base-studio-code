@@ -12,8 +12,6 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc project …`), dispatched by the unified `bsc` binary
 //! (#1877) and by the legacy `bsc-project` shim.
 
-pub mod cli;
-pub mod store;
 
 use std::path::PathBuf;
 
@@ -36,6 +34,118 @@ pub fn projects_root() -> Option<PathBuf> {
 /// The hub directory for one project key (`projects/<key>/`). `None` when no home dir is resolvable.
 pub fn project_dir(key: &str) -> Option<PathBuf> {
     projects_root().map(|r| r.join(key))
+}
+
+// ── the repo clone (#the-director-can-clone-its-projects-repos) ────────────────────────────────────
+//
+// Lives HERE, in the Tauri-free crate, because two callers need the identical act: the app's
+// `clone_repo` command (the UI's door) and `bsc fleet clone` (the DIRECTOR's door). Before this, only
+// the first existed — so a hub with no clone could not start a single worker, and the one act that
+// would unblock the whole fleet was the one act a shell session could not perform.
+//
+// A clone needs no app: it is git plus the hub path. Keeping it out of src-tauri is what lets the CLI
+// do it with the desktop closed.
+
+/// The SHORT repo name: the segment of a GitHub `owner/name` after the last `/`.
+///
+/// Every on-disk path derived from a repo uses this form — the clone dir under the hub, and the
+/// worktree dir name — so it is the single source of that idiom, mirrored from `platform::paths`.
+pub fn repo_short(repo_full_name: &str) -> &str {
+    repo_full_name.rsplit('/').next().unwrap_or(repo_full_name)
+}
+
+/// Where a repo is cloned inside its project hub: `projects/<key>/<short-repo-name>`.
+pub fn repo_dir(project_key: &str, repo_full_name: &str) -> Option<PathBuf> {
+    project_dir(project_key).map(|d| d.join(repo_short(repo_full_name)))
+}
+
+/// The https clone URL, with a PAT injected for a private repo (empty token → the plain public URL).
+///
+/// Pure so it can be unit-tested without shelling out, which is the only way to check the token is
+/// placed correctly without a test that would leak one.
+pub fn clone_url(repo_full_name: &str, token: &str) -> String {
+    if token.is_empty() {
+        format!("https://github.com/{repo_full_name}.git")
+    } else {
+        format!("https://{token}@github.com/{repo_full_name}.git")
+    }
+}
+
+/// What `ensure_clone` did, so a caller can report "already there" without inferring it from silence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloneOutcome {
+    /// The destination was already a git checkout — nothing ran.
+    AlreadyPresent,
+    /// `git clone` ran and succeeded.
+    Cloned,
+}
+
+/// Clone `repo_full_name` into its project hub, if it is not already there. Returns the clone path.
+///
+/// IDEMPOTENT by the same test the app used: a destination holding `.git` is returned untouched. That
+/// is what makes it safe for a caller to run over every linked repo without first working out which
+/// ones are missing.
+///
+/// `source` overrides where it clones FROM — a local path instead of GitHub. Not a convenience: a
+/// hub sitting beside an existing checkout should not re-download hundreds of megabytes, and a clone
+/// with no network is the only kind an offline or sandboxed session can make.
+pub fn ensure_clone(
+    project_key: &str,
+    repo_full_name: &str,
+    token: &str,
+    source: Option<&str>,
+) -> Result<(PathBuf, CloneOutcome), String> {
+    let dest = repo_dir(project_key, repo_full_name)
+        .ok_or("no home dir ($HOME / $USERPROFILE unset), so the hub has no path")?;
+    if dest.join(".git").exists() {
+        return Ok((dest, CloneOutcome::AlreadyPresent));
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    let url = match source {
+        Some(src) => src.to_string(),
+        None => clone_url(repo_full_name, token),
+    };
+    let out = std::process::Command::new("git")
+        .args(["clone", &url, &dest.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("cannot run git: {e}"))?;
+    if !out.status.success() {
+        // REDACT before the message ever leaves this function — a failed private clone echoes the URL
+        // it was given, and that URL carries the PAT.
+        let mut err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        if !token.is_empty() {
+            err = err.replace(token, "***");
+        }
+        return Err(format!("git clone failed for {repo_full_name}: {err}"));
+    }
+    // Keep the app-managed files out of the clone's `git status`, exactly as the UI path did: the
+    // per-repo context file, the session settings, and the fleet's assume-and-log journal.
+    for path in ["CLAUDE.local.md", ".claude/", "DECISIONS.md"] {
+        git_exclude(&dest, path);
+    }
+    Ok((dest, CloneOutcome::Cloned))
+}
+
+/// Append `entry` to a clone's `.git/info/exclude`, once. Best-effort: an exclude that could not be
+/// written leaves a noisier `git status`, which is not worth failing a good clone over.
+fn git_exclude(clone: &std::path::Path, entry: &str) {
+    let f = clone.join(".git").join("info").join("exclude");
+    if let Ok(existing) = std::fs::read_to_string(&f) {
+        if existing.lines().any(|l| l.trim() == entry) {
+            return;
+        }
+        let _ = std::fs::write(&f, format!("{existing}
+{entry}
+"));
+        return;
+    }
+    if let Some(parent) = f.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&f, format!("{entry}
+"));
 }
 
 /// A project's key, derived from its name (#2409) — **frozen at creation**, and the one value that
@@ -882,5 +992,89 @@ mod slug_tests {
             assert!(key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'), "{name:?} -> {key:?}");
             assert!(key.len() <= 60);
         }
+    }
+}
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/store.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-project--<module>.rs
+//     bsc graph impl set --id bsc-project--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-project--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
+
+#[cfg(test)]
+mod clone_tests {
+    use super::*;
+
+    #[test]
+    fn the_short_name_is_the_segment_after_the_last_slash() {
+        assert_eq!(repo_short("kevinthelago/base-studio-code"), "base-studio-code");
+        assert_eq!(repo_short("no-slash"), "no-slash");
+    }
+
+    #[test]
+    fn a_token_is_placed_in_the_url_and_an_empty_one_leaves_it_public() {
+        assert_eq!(clone_url("o/r", ""), "https://github.com/o/r.git");
+        assert_eq!(clone_url("o/r", "ghp_x"), "https://ghp_x@github.com/o/r.git");
+    }
+
+    /// End to end against a REAL git repo on disk — no network, and no GitHub. `source` exists partly
+    /// so this test is possible: a clone that can only come from github.com is a clone no test can make.
+    #[test]
+    fn a_clone_lands_once_and_the_second_call_is_a_no_op() {
+        let _lock = ();
+        let root = std::env::temp_dir().join(format!("bsc-clone-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let src = root.join("origin");
+        std::fs::create_dir_all(&src).unwrap();
+        for args in [
+            vec!["init", "-q", "-b", "main"],
+            vec!["config", "user.email", "t@t"],
+            vec!["config", "user.name", "t"],
+        ] {
+            assert!(std::process::Command::new("git").args(&args).current_dir(&src).status().unwrap().success());
+        }
+        std::fs::write(src.join("README.md"), "hi").unwrap();
+        for args in [vec!["add", "-A"], vec!["commit", "-qm", "init"]] {
+            assert!(std::process::Command::new("git").args(&args).current_dir(&src).status().unwrap().success());
+        }
+
+        std::env::set_var("HOME", &root);
+        std::env::set_var("USERPROFILE", &root);
+        let src_str = src.to_string_lossy().into_owned();
+
+        let (dest, first) = ensure_clone("proj", "owner/origin", "", Some(&src_str)).unwrap();
+        assert_eq!(first, CloneOutcome::Cloned);
+        assert!(dest.join(".git").exists(), "the clone is a git checkout");
+        assert!(dest.join("README.md").exists(), "and it carries the content");
+        assert!(dest.ends_with("origin"), "landed at the SHORT repo name: {}", dest.display());
+
+        // Idempotence is what lets a caller run this over every linked repo without first working out
+        // which are missing — and re-cloning over a live checkout would destroy a worker's worktrees.
+        let (again, second) = ensure_clone("proj", "owner/origin", "", Some(&src_str)).unwrap();
+        assert_eq!(second, CloneOutcome::AlreadyPresent);
+        assert_eq!(again, dest);
+
+        let excl = std::fs::read_to_string(dest.join(".git/info/exclude")).unwrap();
+        for entry in ["CLAUDE.local.md", ".claude/", "DECISIONS.md"] {
+            assert!(excl.lines().any(|l| l.trim() == entry), "{entry} is excluded");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_failed_clone_never_echoes_the_token() {
+        let root = std::env::temp_dir().join(format!("bsc-clone-fail-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("HOME", &root);
+        std::env::set_var("USERPROFILE", &root);
+        // A source that cannot be cloned, with a token present: git echoes the URL it was handed.
+        let err = ensure_clone("proj", "owner/nope", "ghp_secret", Some("/definitely/not/a/repo")).unwrap_err();
+        assert!(!err.contains("ghp_secret"), "the token must be redacted: {err}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

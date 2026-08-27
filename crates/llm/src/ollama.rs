@@ -27,9 +27,28 @@ use super::{
 use serde_json::{json, Value};
 
 /// The default ceiling we clamp a model's `num_ctx` to. A model may advertise a huge context (256k+),
-/// but `num_ctx` is VRAM-bound, so we cap it to something a consumer GPU can hold. The app can lower
-/// this per-session (VRAM-bound) via `$BSC_AGENT_NUM_CTX`; `0` disables setting `num_ctx` entirely.
-const DEFAULT_NUM_CTX_CAP: u64 = 32_768;
+/// but `num_ctx` is VRAM-bound, so we cap it to something a consumer GPU can hold. The app can raise
+/// or lower this per-session via `$BSC_AGENT_NUM_CTX`; `0` disables setting `num_ctx` entirely.
+///
+/// **Sized against OUR OWN prompt, not against a guess.** This was 32_768, and that is smaller than
+/// the context this app composes: a worker's system prompt is the CLAUDE.md chain, `CLAUDE.local.md`,
+/// the skills, the CLI inventory, the agent preamble, and the serialized tool schemas. Measured on
+/// the base-studio-code checkout it came to **33,580 tokens** — over the old cap before the task was
+/// even appended.
+///
+/// And Ollama does not merely trim the overflow. Once the prompt reaches `num_ctx` its runner
+/// truncates to **`num_ctx/2`**, keeping the first few tokens and the tail:
+///
+/// ```text
+/// level=WARN source=llama_server.go:317 msg="truncating input prompt"
+///        limit=16386  prompt=33580  keep=4  new=16386
+/// ```
+///
+/// The head is where `CLAUDE.md` lives, so overflowing by one token silently costs HALF the context —
+/// and the loss is invisible from the client, which is why this went unnoticed: every surface the app
+/// can see reports that the context was injected. See [`crate::check_context_fit`] for the guard that
+/// now says so out loud.
+const DEFAULT_NUM_CTX_CAP: u64 = 65_536;
 /// The `num_ctx` to request when `/api/show` didn't report a context length (older Ollama / non-Ollama
 /// endpoint). Bigger than Ollama's ~4096 default so a long agent prompt isn't silently truncated, but
 /// conservative enough to fit most models + GPUs.
@@ -504,6 +523,30 @@ impl LlmProvider for OllamaProvider {
 mod tests {
     use super::*;
     use crate::{Msg, ToolCall, ToolDef};
+
+    /// The packaged cap is stated in TWO places across a language boundary — here, because it must
+    /// apply when nothing sets `$BSC_AGENT_NUM_CTX`, and in
+    /// `src-tauri/data/console/model-defaults.json` as `localNumCtx`, because the Settings
+    /// placeholder has to show the real default rather than a number invented in the card (the old
+    /// placeholder said `64000`, which matched nothing on either side).
+    ///
+    /// Two copies drift. This reads the JSON and fails if they diverge, so raising the cap in one
+    /// place is caught here rather than by a user wondering why the hint lies.
+    #[test]
+    fn default_num_ctx_cap_matches_the_packaged_default() {
+        // Walk up from this crate to the workspace root — the test runs from `crates/llm`.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../src-tauri/data/console/model-defaults.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("model-defaults.json unreadable at {}: {e}", path.display()));
+        let v: Value = serde_json::from_str(&raw).expect("model-defaults.json is not valid JSON");
+        let packaged = v["localNumCtx"].as_u64().expect("model-defaults.json must carry localNumCtx");
+        assert_eq!(
+            packaged, DEFAULT_NUM_CTX_CAP,
+            "the packaged num_ctx default and the runtime cap have diverged — change both, or the \
+             Settings placeholder states a default the runtime does not apply",
+        );
+    }
 
     #[test]
     fn parse_stream_line_reads_fragments_calls_and_done() {
