@@ -2883,6 +2883,16 @@ fn cmd_features(args: &[String]) -> Result<(), String> {
             continue;
         };
         *by_feature.entry(new.clone()).or_default() += 1;
+        // NEVER OVERWRITE a feature already set. The derivation is a starting point, not an
+        // authority: a record deliberately placed by hand — `toggle` is `DeployToggle`, owned by
+        // `core` because four other features compose it, while its FOLDER stays the planner tree it
+        // was lifted from — must survive every later re-run. Without this the backfill silently undid
+        // curation on each invocation, which is how it was found: a hand placement reverted one
+        // command later.
+        if !old.is_empty() {
+            already += 1;
+            continue;
+        }
         if old == new {
             already += 1;
             continue;
@@ -10841,5 +10851,140 @@ mod required_by_tests {
             "id": "button", "name": "Button", "srcText": "export const Button=()=>null;",
         });
         assert!(validate_component_batch(&[item]).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod feature_backfill_preserves_tests {
+    use super::*;
+
+    /// REGRESSION. The backfill derives `feature` from `folder`, and the first version OVERWROTE a
+    /// value already set. That silently undid curation on every invocation: `toggle` was placed in
+    /// `core` by hand (it is `DeployToggle`, and four other features compose it) and the very next
+    /// `bsc ui features --apply` put it back under `planner`, because its folder says planner.
+    ///
+    /// The two-field split is what makes that placement legitimate — `folder` stays the provenance the
+    /// file was lifted from, `feature` says who owns the record — so the backfill must treat the
+    /// derivation as a starting point and never as an authority. The algorithms backfill had this
+    /// property from the start; the graphs disagreeing about it is what made the loss possible.
+    #[test]
+    fn a_hand_placed_feature_survives_a_re_run() {
+        let dir = tempdir_shim::Dir::new("bsc-feature-preserve");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store
+            .set("toggle", r#"{"id":"toggle","name":"DeployToggle","kitId":"k","folder":"features/planner/bodies","feature":"core"}"#)
+            .unwrap();
+        store.set("card", r#"{"id":"card","name":"Card","kitId":"k","folder":"features/glance"}"#).unwrap();
+
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        let mut placed = Vec::new();
+        for raw in store.list() {
+            let rec: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            let id = rec.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let folder = record_folder(&rec).unwrap_or_default().to_string();
+            let old = rec.get("feature").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            if !old.is_empty() {
+                continue; // the rule under test
+            }
+            if let Some(new) = crate::feature_from_folder(&folder) {
+                placed.push((id, new));
+            }
+        }
+        assert_eq!(placed, vec![("card".to_string(), "glance".to_string())], "only the unplaced one moves");
+    }
+}
+
+#[cfg(test)]
+mod feature_rule_gate {
+    use bsc_util::feature_rule::{violations, Violation};
+
+    /// Edges deliberately kept, each with the decision behind it. EXACT `from -> to` ids.
+    ///
+    /// Two entries, and both are pages composing another feature's page. Neither is obviously wrong —
+    /// a settings section that embeds the tunnel's own panel is reusing the real thing rather than
+    /// copying it — but neither is obviously right either, so they are named here rather than made
+    /// invisible by a broader rule.
+    const ALLOWED: &[&str] = &[
+        // The Automations page embeds the MCP page's server list: automations dispatch into panes, and
+        // the servers a pane can reach are the MCP feature's roster. The alternative is a second list.
+        "automationspage -> mcppage",
+        // Settings → Planner embeds the tunnel's settings panel so the pairing UI lives in one place.
+        "settings-planner -> tunnelsettings",
+    ];
+
+    /// Every packaged component record, read from the seed tree the app ships.
+    fn packaged_components() -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for root in bsc_util::packaged::data_dirs() {
+            let dir = root.join("components").join("app");
+            if !dir.is_dir() {
+                continue;
+            }
+            let mut stack = vec![dir];
+            while let Some(d) = stack.pop() {
+                let Ok(entries) = std::fs::read_dir(&d) else { continue };
+                for e in entries.flatten() {
+                    let p = e.path();
+                    if p.is_dir() {
+                        stack.push(p);
+                    } else if p.extension().and_then(|s| s.to_str()) == Some("json") {
+                        if let Ok(s) = std::fs::read_to_string(&p) {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                                out.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+            if !out.is_empty() {
+                break; // the first data dir that HAS the tree wins, matching `packaged::read`
+            }
+        }
+        out
+    }
+
+    /// THE OWNERSHIP RULE over the packaged component seed.
+    ///
+    /// A component's `composes` names other components BY NAME, not by id, so the resolution differs
+    /// from the algorithms graph — which is exactly why `bsc_util::feature_rule` takes already-resolved
+    /// edges and leaves the addressing to each caller.
+    #[test]
+    fn the_ownership_rule_holds_across_the_component_library() {
+        let recs = packaged_components();
+        assert!(!recs.is_empty(), "no packaged component records found — the gate would be vacuous");
+
+        // name -> (feature, id). A record with no name cannot be a `composes` target.
+        let by_name: std::collections::HashMap<String, (String, String)> = recs
+            .iter()
+            .filter_map(|r| {
+                let name = r.get("name")?.as_str()?.trim();
+                if name.is_empty() {
+                    return None;
+                }
+                let id = r.get("id")?.as_str()?.to_string();
+                let f = r.get("feature").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                Some((name.to_string(), (f, id)))
+            })
+            .collect();
+
+        let mut edges: Vec<(String, String, String, String)> = Vec::new();
+        for r in &recs {
+            let Some(from_id) = r.get("id").and_then(|v| v.as_str()) else { continue };
+            let from_f = r.get("feature").and_then(|v| v.as_str()).unwrap_or_default();
+            let Some(cs) = r.get("composes").and_then(|v| v.as_array()) else { continue };
+            for t in cs.iter().filter_map(|v| v.as_str()) {
+                // A `composes` naming a component the seed does not hold is `bsc ui doctor`'s finding.
+                let Some((to_f, to_id)) = by_name.get(t) else { continue };
+                edges.push((from_id.to_string(), from_f.to_string(), to_id.clone(), to_f.clone()));
+            }
+        }
+
+        let v: Vec<Violation> = violations(&edges, ALLOWED);
+        assert!(
+            v.is_empty(),
+            "{} ownership violation(s) in the component library:\n{}",
+            v.len(),
+            v.iter().map(Violation::describe).collect::<Vec<_>>().join("\n")
+        );
     }
 }
