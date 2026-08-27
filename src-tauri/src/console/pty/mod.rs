@@ -879,13 +879,43 @@ fn pty_create_inner(
     #[cfg(not(target_os = "linux"))]
     let ns_refused: Option<String> = None;
 
+    // A floor that cannot run must SAY SO. Read the settings this session will actually obey and
+    // compare its hook list against the cage it actually got — see `hook_floor_mismatch` for why one
+    // launch-time decision does not make these agree across launches.
+    //
+    // Reported on TWO surfaces on purpose. `log::error!` because the original failure existed only as
+    // transient text in a transcript — grepping every app log for it returned nothing, so "the gates
+    // are not running" had no durable trace at all. The pane notice because the person who can act on
+    // it is looking at the pane, not at a log.
+    let hook_mismatch: Option<String> = (!cwd_empty)
+        .then(|| {
+            let cfg = crate::platform::fsx::read_json_object_or_default(
+                &std::path::Path::new(&cwd).join(".claude").join("settings.json"),
+            );
+            crate::session::settings::hook_floor_mismatch(&cfg, ns_argv.is_some())
+        })
+        .flatten();
+    if let Some(msg) = &hook_mismatch {
+        log::error!("pty[{pane_id}] UNGATED: {msg}");
+    }
+
     let init_line = build_session_init_line(
         into_sandbox.is_some(),
         ns_argv.is_some(), resolved_shell.kind, &cwd, cwd_missing, &effective_cwd,
         launch.as_deref(), launch_claude, &claude_fn, &rc_bash, model_alias.as_deref(), &env_map,
         // Only when a namespace was actually REQUESTED and did not happen. A pane with no role was
         // never going to be caged, and a notice there would be noise rather than information.
-        ns_refused.as_deref(),
+        //
+        // The dead-hook-floor notice rides the same channel: it is the same class of fact (a gate the
+        // session is missing) and the same audience. A refusal already implies the floor is dead, so
+        // the two are joined rather than printed twice.
+        match (ns_refused.as_deref(), hook_mismatch.as_deref()) {
+            (Some(r), Some(h)) => Some(format!("{r}\n{h}")),
+            (Some(r), None) => Some(r.to_string()),
+            (None, Some(h)) => Some(h.to_string()),
+            (None, None) => None,
+        }
+        .as_deref(),
     );
     writer.write_all(init_line.as_bytes()).ok();
 
