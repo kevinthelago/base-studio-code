@@ -245,6 +245,59 @@ pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), S
     git_exclude(&root, ".mcp.json");
     Ok(())
 }
+/// Does this settings blob install a hook that only resolves INSIDE a mount namespace?
+///
+/// The namespace hook list points every PreToolUse gate at [`bsc_sandbox::HOOK_GUEST_PATH`], a
+/// read-only bind that exists nowhere else. Read off the written config rather than inferred from a
+/// launch flag, because the config is what Claude Code actually obeys and it is DURABLE — it outlives
+/// the launch that wrote it, which is the whole failure mode below.
+pub(crate) fn uses_guest_hooks(config: &serde_json::Value) -> bool {
+    config
+        .get("hooks")
+        .map(|h| h.to_string().contains(bsc_sandbox::HOOK_GUEST_PATH))
+        .unwrap_or(false)
+}
+
+/// A session whose PreToolUse floor cannot run. `None` when the hooks and the cage agree.
+///
+/// **Why this needs checking at all, when one decision is supposed to drive both.** `sandboxPlanFor`
+/// derives the hook list and the cage from a single backend, and `sessionLaunch`'s own comment says
+/// they must not disagree. That holds WITHIN one launch. It does not hold ACROSS launches, and
+/// `settings.json` is durable on disk:
+///
+///   - a session spawned uncaged and re-mounted later, while a namespace has since become available,
+///     has its settings rewritten with the guest path — but the running process keeps the cage it was
+///     spawned with, which is none;
+///   - a launch that asked for a cage and was REFUSED (see `sandbox_refusal`) already prints a pane
+///     notice, but the settings it runs under still name the guest path, so its gates are dead too;
+///   - `ensure_session_settings` is skipped entirely for a non-Claude pane and for a Claude pane with
+///     an empty cwd, so a stale namespace-shaped file can simply persist.
+///
+/// OBSERVED as `Failed with non-blocking status code: /bin/sh: 1: /bsc-hook: not found` in a live
+/// director. NON-BLOCKING is the sharp edge: the tool call proceeds, so the session runs with no
+/// write-scope gate and no dangerous-command floor — the exact guarantee the hooks exist to make.
+///
+/// And it was INVISIBLE. That string appeared only as transient text in a session transcript; no app
+/// log recorded it. A gate that is not running looks, from every durable surface, identical to a gate
+/// that is running and permitting. That is what this function is for.
+///
+/// Pure over `(config, caged)` so both directions are testable without a launch.
+pub(crate) fn hook_floor_mismatch(config: &serde_json::Value, caged: bool) -> Option<String> {
+    match (uses_guest_hooks(config), caged) {
+        (true, false) => Some(format!(
+            "this session's PreToolUse hooks point at {} — a path that exists only inside a mount \
+             namespace — but it is NOT running in one. Every gate will fail to execute, and it fails \
+             NON-BLOCKING, so the session runs with no write-scope gate and no dangerous-command floor.",
+            bsc_sandbox::HOOK_GUEST_PATH,
+        )),
+        // The inverse is a real loss too, and quieter: inside a namespace there is no `bsc` binary and
+        // no `BASH_ENV`, so a shell-based gate cannot run either. It is not reported here because a
+        // caged session legitimately reaches this state during the launch that is about to write the
+        // guest list; flagging it would fire on every correct launch.
+        _ => None,
+    }
+}
+
 /// Assemble the posture-scaled ALLOW rules (before the verbatim tool rules are folded in).
 ///
 /// Claude Code does NOT honor a bare `Bash` as allow-all — every auto-approved command must be an
@@ -581,6 +634,59 @@ mod baseline_drift_guard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The exact settings shape the live director was running under, read off disk.
+    fn namespace_hooks() -> serde_json::Value {
+        serde_json::json!({ "hooks": { "PreToolUse": [
+            { "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+              "hooks": [{ "type": "command", "command": "/bsc-hook scope" }] },
+            { "matcher": "Bash",
+              "hooks": [{ "type": "command", "command": "/bsc-hook bash-deny" }] },
+        ]}})
+    }
+
+    /// THE REPORTED FAILURE. A live director logged
+    /// `Failed with non-blocking status code: /bin/sh: 1: /bsc-hook: not found` on every PreToolUse.
+    ///
+    /// `/bsc-hook` is a bwrap bind and resolves nowhere else — verified absent on the host — while
+    /// THREE project hubs carried settings naming it. Non-blocking is the sharp edge: the tool call
+    /// proceeds, so the session ran with no write-scope gate and no dangerous-command floor.
+    #[test]
+    fn hooks_that_only_resolve_in_a_cage_are_reported_when_there_is_no_cage() {
+        let msg = hook_floor_mismatch(&namespace_hooks(), false)
+            .expect("an uncaged session with guest hooks has no floor and must say so");
+        // The message has to name the path AND the consequence — "hook failed" alone reads like a
+        // transient blip, which is precisely how this went unnoticed.
+        assert!(msg.contains("/bsc-hook"), "names the unreachable path: {msg}");
+        assert!(msg.contains("NON-BLOCKING"), "says the call PROCEEDS: {msg}");
+    }
+
+    #[test]
+    fn a_caged_session_with_guest_hooks_is_correct_and_silent() {
+        // The normal namespace launch. Reporting here would fire on every correct launch and train
+        // the reader to ignore the message that matters.
+        assert_eq!(hook_floor_mismatch(&namespace_hooks(), true), None);
+    }
+
+    #[test]
+    fn an_uncaged_session_with_shell_hooks_is_correct_and_silent() {
+        // The host path: `bsc-scope` / `bsc-deny` run through BASH_ENV and resolve fine uncaged.
+        let shell_hooks = serde_json::json!({ "hooks": { "PreToolUse": [
+            { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bsc-deny" }] },
+        ]}});
+        assert_eq!(hook_floor_mismatch(&shell_hooks, false), None);
+        assert!(!uses_guest_hooks(&shell_hooks));
+        // A session with no hooks at all is not this bug — it has no floor to lose.
+        assert_eq!(hook_floor_mismatch(&serde_json::json!({}), false), None);
+    }
+
+    #[test]
+    fn the_guest_path_is_the_one_the_sandbox_actually_binds() {
+        // Two sides hard-code this path — the cage that binds it and the settings that invoke it —
+        // and a mismatch is a gate that silently never fires, which is the failure class above.
+        assert!(uses_guest_hooks(&namespace_hooks()));
+        assert_eq!(bsc_sandbox::HOOK_GUEST_PATH, "/bsc-hook");
+    }
 
     #[test]
     fn ensure_session_settings_merges_mandatory_and_custom_commands() {

@@ -276,6 +276,27 @@ the known set is adjudicated. `delta` is SIGNED: the drift runs both ways, and a
 store holding source the seed never had. A READ — no `ui` write scope required.",
     },
     CmdDoc {
+        name: "sync-seed",
+        summary: "write a store record's current body back into its packaged seed file, by id (#139)",
+        usage: "\
+USAGE:
+  bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]
+
+The store-to-seed sync `bsc ui parity` diagnoses and nothing could act on: an edit to a component
+record lands in the store, and the app keeps SHIPPING the seed's old body until something writes the
+seed back. `export` dumps a record VERBATIM (by design, so it round-trips through `import`) — including
+store bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/`seedHash`/`used`) no seed file has
+ever carried — so its output can't be dropped straight into <dir>. This strips those fields and writes
+the rest over the EXISTING seed file matching <id> (found by walking --seed-dir and reading each
+record's own `id`; a kit bundle with no top-level `id` is not a target).
+
+Deliberately BY ID, never a sweep — seed and store drift both ways, so a mass re-stamp would as often
+overwrite real seed content with stale store content. Dry run by default; pass --apply to write. Skips
+(reported, not erroring) an id absent from the store, an id with no matching seed file (that is a
+PROMOTION — a new file — not a sync), and an id already identical. A READ of the store — no `ui` write
+scope required, since only the on-disk seed file changes (like `bsc ui export`).",
+    },
+    CmdDoc {
         name: "import",
         summary: "load a folder tree of component records into the store — the seed half (#3606)",
         usage: "\
@@ -401,6 +422,30 @@ exits 0 when none are backed. Rejecting rather than warning is deliberate — a 
 
 SCOPE: components only. An algorithm record is a function LIFTED OUT of a file and several share one
 `src` (#4192), so a path-based gate cannot be honest about them yet.",
+    },
+    CmdDoc {
+        name: "library",
+        summary: "verify a `doctor` @bsc/algorithms/<name> library-reference finding (bsc request #118)",
+        usage: "USAGE:
+  bsc ui library get <name-or-spec> [--pretty]
+
+`doctor`'s `reimplementation`/`reimplemented-component`/`unresolvable-import` findings name a
+`@bsc/algorithms/<name>` LIBRARY reference (#3116) — a real node in the Algorithms knowledge graph, not
+a component. Verifying one used to mean `bsc graph impl get`, which is the librarian's surface, not the
+designer's: the Design Studio's designer session is confined to this one command surface and cannot run
+`bsc graph` at all, so it had no way to tell a real finding from a stale one — this verb answers the
+SAME question from inside that confinement, reading the identical live catalog `bsc graph impl list`
+does (never a separate, potentially-stale copy).
+
+Accepts a bare name (`fibonacci`), an exact id (`fibonacci.ts`), or the full spec doctor prints
+(`@bsc/algorithms/fibonacci`) — a bare name/id is always read as the `algorithms` segment, matching
+doctor's own wording. Prints `{ resolves: true, ...the full implementation record }` when it exists —
+composing it, per doctor's guidance, means importing FROM that record's `src`, not re-typing its `code`
+— or `{ resolves: false }` when it does not, meaning the finding IS the stale/wrong one the request
+warned about and should be reported rather than acted on.
+
+SCOPE: the `algorithms` segment only. `@bsc/sounds/<id>` is out of scope — a sound has no importable
+source to hand back (the preview vendors a generated player), so there is nothing here to verify.",
     },
     CmdDoc {
         name: "test",
@@ -891,7 +936,7 @@ ui-scope MUTATION (#2470).",
         summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
         usage: "\
 USAGE:
-  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]    # (`regroup` is a deprecated alias)
+  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]
 
 Re-derives each stored component's `group` as a nested, `/`-delimited FOLDER PATH from its `src`
 (`src/shared/ui/controls/Button.tsx` → `shared/ui/controls`; a leading `src/` root is stripped, the
@@ -1080,7 +1125,12 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     graph_fields: &["id", "name", "kitId", "role", "folder", "used", "composes"],
     // #4107 slice B: `group` -> `folder`. 351 stored records predate the rename and there is no
     // migration pass, so every projection reads the legacy key when the current one is absent.
-    field_aliases: &[("folder", "group")],
+    // #4107's `("folder", "group")` alias is GONE (finish-the-4107-group-to-folder-shim). It existed
+    // because 351 records predated the rename; `bsc ui refolder` has since migrated the last of them,
+    // and the packaged seed never carried the legacy key at all. Its removal is what makes `bsc ui list`
+    // and `bsc ui get --field folder` agree again — projecting through an alias while `get` read the raw
+    // record is why those two disagreed for a year.
+    field_aliases: &[],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
@@ -1138,7 +1188,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
         // `usage-scan` is a READ until `--apply`, which writes `used`/`usageAssessed` onto every examined
         // record. Gate on the flag, not the verb, so the diagnosis stays available to a read-scoped session.
@@ -1522,6 +1572,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_backing(&args[1..])
             }
         }
+        // `library` (bsc request #118) — verify a `doctor` @bsc/algorithms/<name> finding from inside
+        // the designer's own `bsc ui` confinement, never touching the librarian's `bsc graph` surface.
+        Some("library") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "library"));
+                Ok(())
+            } else {
+                cmd_library(&args[1..])
+            }
+        }
         // `doctor` (#2678) is a custom read — the graph-health analyzer over the component store.
         Some("doctor") => {
             if args.get(1).map(String::as_str) == Some("help") {
@@ -1693,22 +1753,27 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_patch(&args[1..])
             }
         }
-        // `regroup` (#3579) re-derives every stored component's `group` as a nested folder path from its
-        // `src` — a ui-scope MUTATION (gated above), so a kit organizes like a completed project's
-        // folders. `regroup help` prints the doc; the scope gate already refused a read-scoped session.
-        // `regroup` stays a DEPRECATED ALIAS: the verb is named in prose the designer/librarian may
-        // have memorised, and an unknown-command error is a worse migration than one extra match arm.
-        Some("refolder" | "regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
-        Some("refolder" | "regroup") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
+        // `refolder` (#3579) re-derives every stored component's `folder` as a nested path from its
+        // `src`, and carries a srcless record's legacy value across — a ui-scope MUTATION (gated above),
+        // so a kit organizes like a completed project's folders.
+        //
+        // The `regroup` ALIAS IS RETIRED (finish-the-4107-group-to-folder-shim). It was kept because the
+        // old name was "named in prose the designer/librarian may have memorised" — but the concept it
+        // named is gone from the store now, and an alias that outlives its field is how two names for
+        // one thing stay alive indefinitely. `unknown_command` names the near miss, so a session that
+        // types the old verb is told the new one rather than left guessing.
+        Some("refolder") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
+        Some("refolder") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
             Ok(())
         }
         // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
         // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
         Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
         Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
+        Some("sync-seed") if args.get(1).map(String::as_str) != Some("help") => cmd_sync_seed(&args[1..]),
         Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
-        Some(v @ ("export" | "import")) => {
+        Some(v @ ("export" | "import" | "sync-seed")) => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
@@ -2623,7 +2688,6 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
 /// and `bsc ui refolder` does the whole store in one pass. Nothing needs migrating before this ships.
 pub(crate) fn record_folder(rec: &serde_json::Value) -> Option<&str> {
     rec.get("folder")
-        .or_else(|| rec.get("group"))
         .and_then(serde_json::Value::as_str)
         .filter(|s| !s.is_empty())
 }
@@ -2660,9 +2724,32 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
         }
         scanned += 1;
         let src = rec.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
-        let Some(new_folder) = crate::folder_from_src(src) else { continue };
+        // The legacy key, read HERE and nowhere else. `record_folder` no longer knows it (#4107's alias
+        // is gone), and this is the one place that still must: a migration verb is the last reader of
+        // the name it is retiring.
+        let legacy = rec.get("group").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let derived = crate::folder_from_src(src);
+        // WHY THIS IS NOT JUST `let Some(new) = derived else { continue }`:
+        //
+        // `folder` derives from `src`, so a record with NO src was skipped outright — and every one of
+        // the 19 components still on `group` at 2026-08-25 was srcless. The only verb that could finish
+        // #4107 structurally could not touch the records that needed it, which is why the rename stalled
+        // at 19 and the compatibility shim stayed load-bearing for a year. (4118 recorded exactly this
+        // trap for the ALGORITHMS store — "refolder counts all 75 as srcless and skips every one" — and
+        // nobody noticed it was equally true here.)
+        //
+        // A srcless record carrying `group` is migrated BY VALUE: its folder is curated (`app/console`,
+        // `features/planner/fleet`) and no `src` could reproduce it, so carrying the value across is the
+        // only correct move as well as the only possible one. Re-derivation stays what it always was for
+        // a record that HAS src.
+        let new_folder = match (derived, &legacy) {
+            (Some(d), _) => d,                      // has src: re-derive, unchanged behaviour
+            (None, Some(g)) => g.clone(),           // srcless + legacy key: carry the value across
+            (None, None) => continue,               // nothing to derive and nothing to carry
+        };
         let old = record_folder(&rec).unwrap_or_default().to_string();
-        if old == new_folder && rec.get("group").is_none() {
+        if old == new_folder && legacy.is_none() {
             continue;   // already correct AND already migrated off the legacy key
         }
         let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -2883,6 +2970,106 @@ fn cmd_import(args: &[String]) -> Result<(), String> {
     let report = serde_json::json!({ "imported": ids.len(), "dir": inp, "ids": ids });
     let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// The store's bookkeeping fields a packaged SEED never carries (#139, verified against all 73
+/// `features/settings/cards/*.json` seeds): the change-history stamp (`history`/`rev`/`updatedAt`/
+/// `updatedBy`, #3164), the reconcile fingerprint (`seedHash`), and the runtime-computed flags
+/// (`builtin`/`used`). `bsc ui export` dumps a record VERBATIM (by design — it round-trips through
+/// `bsc ui import`), so its output carries every one of these and cannot be dropped straight into
+/// `src-tauri/data/components/app/**`; `sync-seed` strips them before it writes.
+const SEED_BOOKKEEPING_FIELDS: &[&str] = &["history", "rev", "updatedAt", "updatedBy", "builtin", "seedHash", "used"];
+
+/// `bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]` (#139) — the
+/// store-to-seed sync `bsc ui parity` diagnoses (123 of 337 drifted, measured) and nothing could act on:
+/// `export` dumps EVERY field, including store bookkeeping no seed file has ever carried, so its output
+/// can't be dropped into the packaged tree. `sync-impl-seed.mjs` already solves this for algorithm
+/// IMPLEMENTATIONS, one id at a time; this is that fix's counterpart for COMPONENTS, mounted on `bsc ui`
+/// instead of left as a script per this repo's rule that a capability lives on the `bsc` surface.
+///
+/// Deliberately BY ID, never a sweep — `parity`'s `delta` is signed because drift runs BOTH ways, so a
+/// mass re-stamp would as often overwrite real seed content with stale store content as the reverse. A
+/// read-only DRY RUN by default (matching `sync-impl-seed.mjs`'s own default); `--apply` writes. A READ
+/// of the store — no `ui` write scope required, since only the on-disk seed file changes (exactly like
+/// `bsc ui export`, which also writes files under a read-only gate).
+fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
+    let (mut seed_dir, mut dir, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut ids: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--seed-dir" => seed_dir = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => ids.push(other.to_string()),
+        }
+    }
+    let usage = "usage: bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]";
+    let seed_dir = seed_dir.ok_or(usage)?;
+    if ids.is_empty() {
+        return Err(usage.into());
+    }
+    let store = open_component_store(&dir)?;
+
+    // Index the seed tree ONCE by id. A kit BUNDLE (`{"components":[…]}`, no top-level `id`) is skipped —
+    // this fix targets the one-record-per-file layout `bsc ui export`/`import` already use.
+    let mut files = Vec::new();
+    collect_json_files(std::path::Path::new(&seed_dir), &mut files)
+        .map_err(|e| format!("cannot read {seed_dir}: {e}"))?;
+    let mut seed_by_id: std::collections::HashMap<String, std::path::PathBuf> = std::collections::HashMap::new();
+    for f in &files {
+        let Ok(raw) = std::fs::read_to_string(f) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+        if let Some(id) = v.get("id").and_then(serde_json::Value::as_str) {
+            seed_by_id.insert(id.to_string(), f.clone());
+        }
+    }
+
+    let (mut synced, mut up_to_date, mut missing_from_store, mut missing_from_seed) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for id in &ids {
+        let Some(raw) = store.get(id)? else {
+            missing_from_store.push(id.clone());
+            continue;
+        };
+        let Some(path) = seed_by_id.get(id) else {
+            // Mirrors `sync-impl-seed.mjs`'s own SKIP wording: a record with no seed file needs
+            // PROMOTING (a new file), not syncing (an existing one).
+            missing_from_seed.push(id.clone());
+            continue;
+        };
+        let mut stored: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+        let obj = stored.as_object_mut().ok_or_else(|| format!("stored record '{id}' is not a JSON object"))?;
+        for field in SEED_BOOKKEEPING_FIELDS {
+            obj.remove(*field);
+        }
+        let seed_raw = std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let seed: serde_json::Value =
+            serde_json::from_str(&seed_raw).map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+        if seed == stored {
+            up_to_date.push(id.clone());
+            continue;
+        }
+        if apply {
+            let text = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
+            std::fs::write(path, format!("{text}\n")).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        }
+        synced.push(serde_json::json!({ "id": id, "path": path.display().to_string() }));
+    }
+
+    let report = serde_json::json!({
+        "seedDir": seed_dir, "applied": apply,
+        "synced": synced, "upToDate": up_to_date,
+        "missingFromStore": missing_from_store, "missingFromSeed": missing_from_seed,
+    });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    // Through the SHARED emitter (unlike `export`/`parity`/`import`'s plain `println!`) so a warm `bsc
+    // serve` child can answer this read too, and so the report is capturable in tests.
+    bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -3887,6 +4074,58 @@ A kit describing ANOTHER project names paths this repo does not have — that is
     Ok(())
 }
 
+/// `library get <name-or-spec> [--pretty]` (bsc request #118) — verify a `doctor`
+/// `@bsc/algorithms/<name>` LIBRARY-reference finding without the `bsc graph` grant the Design Studio's
+/// designer session never carries. A pure read over [`crate::graph_health::resolve_algorithm_library_node`],
+/// the SAME resolution `doctor`'s `reimplementation`/`unresolvable-import` findings judge a component
+/// against, so this verb's answer and doctor's finding can never disagree.
+fn cmd_library(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("get") => {}
+        Some(other) => return Err(format!("unknown `library` command '{other}' — try: get")),
+        None => return Err("usage: bsc ui library get <name-or-spec> [--pretty]".to_string()),
+    }
+    let (mut pretty, mut name) = (false, None::<&str>);
+    for a in &args[1..] {
+        match a.as_str() {
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if name.is_none() => name = Some(other),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let name = name.ok_or("usage: bsc ui library get <name-or-spec> [--pretty]")?;
+    let payload = match crate::graph_health::resolve_algorithm_library_node(name) {
+        crate::graph_health::LibraryLookup::Found(im) => {
+            let mut obj = im;
+            if let Some(map) = obj.as_object_mut() {
+                map.insert("resolves".to_string(), serde_json::Value::Bool(true));
+            }
+            obj
+        }
+        crate::graph_health::LibraryLookup::NotFound => {
+            serde_json::json!({ "resolves": false, "queried": name })
+        }
+        // A bare NAME naming several typescript algorithms is refused rather than guessed — the same
+        // call `bsc graph impl get` makes, and for the same reason (#118): a wrong silent pick on a
+        // verification read is worse than the miss `resolves: false` already covers as a normal answer.
+        crate::graph_health::LibraryLookup::Ambiguous(ids) => {
+            return Err(format!(
+                "'{name}' names {} implementations — pass the exact id instead (e.g. `@bsc/algorithms/{}`): {}",
+                ids.len(),
+                ids.first().map(String::as_str).unwrap_or(name),
+                ids.join(", ")
+            ));
+        }
+    };
+    let json = if pretty { serde_json::to_string_pretty(&payload) } else { serde_json::to_string(&payload) };
+    // Through the SHARED emitter, not `println!` — byte-identical when nothing is capturing, but it
+    // lets a warm `bsc serve` child answer this READ off the same stdout it speaks its protocol on
+    // (see `cmd_scan_cache`'s `get` arm, the other JSON read that already does this).
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
 /// Map the runtime lens (`bsc_runtime::doctor`) onto this doctor's `Finding` shape.
 ///
 /// The ANALYSIS lives in `bsc-runtime`, beside the data, so `bsc graph doctor` asks the same question of
@@ -4048,6 +4287,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // mentioning four live collisions. Reported in BOTH places now; `dupes` keeps it because that is
     // where the keeper recommendation belongs.
     findings.extend(crate::similarity::provides_collision_findings(&comps));
+    // #129: the mirror case — records that disagree about a shared `src_path`'s specifier rather than
+    // colliding on one. Same rationale for appearing in both `dupes` and `doctor` as the collision
+    // finding above: `dupes` is the propose-a-merge surface, `doctor` is the health check people run.
+    findings.extend(crate::similarity::provides_split_findings(&comps));
     if motion {
         // #3163: append the motion findings (re-ranked with the render errors below).
         findings.extend(crate::graph_health::analyze_motion(&comps));
@@ -4058,6 +4301,14 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // actionable finding, so it should never need a flag to surface.
     let render_errors = crate::preview_errors::latest_error_by_id();
     findings.extend(crate::graph_health::render_error_findings(&comps, &render_errors));
+    // #a-composes-target-can-name-two-records: append the NAME COLLISIONS — two records in one kit
+    // answering to one name, so a `composes` entry naming it resolves to whichever comes first in store
+    // order. Appended here rather than added to `analyze_with` because that function has a BYTE-PARITY
+    // TS twin (`graphHealth.ts`); this is the same reason `analyze_motion` and the render errors live
+    // out here. Always on: nothing else in the tooling can report the property (`dupes` found 6 of 39
+    // on the live library, because it detects content similarity and these records collide while
+    // DIFFERING in content).
+    findings.extend(crate::graph_health::analyze_name_collisions(&comps));
     // #3544: append the library-wide NEAR-duplicate findings — the fuzzy layer (name + contract distance)
     // the exact per-kit `duplicate` detector misses (`Donut`≈`DonutChart`, cross-kit `Card` repeats).
     // PROPOSE-ONLY: emitted here, never fed to `--fix` (only byte-identical merges auto-apply). Cross-kit
@@ -4144,6 +4395,7 @@ fn cmd_dupes(args: &[String]) -> Result<(), String> {
     // Conflicts first (#4138 — a `provides` collision has a definite answer), then exact duplicates
     // (certain — shared wraps / byte-identical), then the ranked near-duplicates.
     let mut findings: Vec<crate::graph_health::Finding> = crate::similarity::provides_collision_findings(&comps);
+    findings.extend(crate::similarity::provides_split_findings(&comps));
     findings.extend(
         crate::graph_health::analyze(&comps).into_iter().filter(|f| f.category == "duplicate"),
     );
@@ -4260,16 +4512,17 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
             if into.is_empty() { String::new() } else { format!(", superseded by `{into}`") },
         );
     }
-    // A record harvested from the target's own source file is withheld from the ranking (it is the same
-    // file, not something to merge into — `similarity::module_and_its_harvest`). SAY SO: an unexplained
-    // absence in a ranked list reads as "nothing resembles it", which is the same failure the retired-
-    // record note above exists to prevent. Shape mode scores a different measure and does not withhold.
+    // A record harvested from the target's own source file — or from a barrel/submodule the target is
+    // (transitively) part of — is withheld from the ranking (it is the same module wearing another id,
+    // not something to merge into — `similarity::harvest_families`). SAY SO: an unexplained absence in a
+    // ranked list reads as "nothing resembles it", which is the same failure the retired-record note
+    // above exists to prevent. Shape mode scores a different measure and does not withhold.
     if !shape && !json {
         let held = crate::similarity::harvest_siblings_of(&id, &comps);
         if !held.is_empty() {
             println!(
-                "note: {} record(s) harvested from the same source file are not listed ({}) — they are \
-                 views of one module, not duplicates of it.",
+                "note: {} record(s) in the same module/harvest family are not listed ({}) — they are \
+                 views of one module (or of a barrel that re-exports it), not duplicates of it.",
                 held.len(),
                 held.join(", "),
             );
@@ -6248,12 +6501,53 @@ fn set_at_pointer(root: &mut serde_json::Value, pointer: &str, value: serde_json
     }
 }
 
+/// Refuse to regress a PREVIEW-BUILDABLE `srcText` (the Design Studio preview sandbox can compile and
+/// mount it — [`crate::graph_health::looks_buildable_module`]) into one it cannot, on a record that
+/// carries no `provides`. `provides` is what turns "the preview sandbox can't build this" from a defect
+/// into a deliberate module-lift outcome (#43) — and a record with none yet is exactly the state
+/// `bsc ui set-src` leaves it in for the first of `lift-component-module.mjs`'s two writes (`set-src` the
+/// faithful module, THEN `set --provides` in a second call). Un-refused, nothing marked that in-between
+/// state as a real regression rather than corruption: the write-time gate only WARNS on an unbuildable
+/// non-page `srcText` (`validate_component_batch`), so the first write landed silently and the record
+/// stayed exactly there whenever the follow-up `set --provides` call never ran (or targeted the wrong
+/// id) — which is how a designer-authored preview stub (bsc request #119: `KitShareModal`/`ConsolePage`)
+/// got silently clobbered back to raw `@/…`-importing app source no preview could render.
+///
+/// `--force` ([`FORCE_WRITE`], the same escape `set` already has for the page-role refusal) is the
+/// deliberate override — e.g. a genuine module lift that sets `provides` in a LATER call, same as the
+/// script does today.
+fn refuse_buildable_regression(old_record: &serde_json::Value, new_src: &str) -> Result<(), String> {
+    let provides = old_record.get("provides").and_then(serde_json::Value::as_str).unwrap_or_default();
+    if !provides.trim().is_empty() {
+        return Ok(()); // already a module record — `provides` beats the preview sandbox (#43)
+    }
+    let old_src = old_record.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+    if !crate::graph_health::looks_buildable_module(old_src) {
+        return Ok(()); // nothing buildable was there to protect
+    }
+    if crate::graph_health::looks_buildable_module(new_src) {
+        return Ok(()); // still buildable — not a regression
+    }
+    if FORCE_WRITE.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+    let id = old_record.get("id").and_then(serde_json::Value::as_str).unwrap_or("<no id>");
+    Err(format!(
+        "'{id}': refusing to overwrite a srcText the Design Studio preview can BUILD with one it can't ({}). \
+         This record carries no `provides`, so nothing marks the new source as a deliberate module lift \
+         rather than a silent regression (bsc request #119). Set `provides` in the SAME write if this is a \
+         real module lift, or pass --force to store it anyway.",
+        crate::graph_health::module_defects(new_src).join("; ")
+    ))
+}
+
 /// Replace ONLY component `id`'s `srcText` with `src`, leaving every other field untouched, then run the
 /// SAME write-time JSX syntax gate as `set` (#2928) before writing. The write funnels through
 /// [`stamped_set`] so it bumps `rev`/`updatedAt`/`updatedBy` like every other `bsc ui` mutation (#3164).
 /// Errors when the component is absent. Pure of stdin/print so tests drive it directly.
 fn replace_src(store: &bsc_json_store::Store, id: &str, src: &str) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
+    refuse_buildable_regression(&record, src)?;
     record
         .as_object_mut()
         .expect("load_component_object guarantees an object")
@@ -6278,7 +6572,13 @@ fn apply_patch(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
-    set_at_pointer(&mut record, &normalize_pointer(pointer)?, value)?;
+    let pointer = normalize_pointer(pointer)?;
+    if pointer == "/srcText" {
+        if let serde_json::Value::String(new_src) = &value {
+            refuse_buildable_regression(&record, new_src)?;
+        }
+    }
+    set_at_pointer(&mut record, &pointer, value)?;
     validate_component_batch(std::slice::from_ref(&record))?;
     stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
     // #3737: a component patch invalidates the last render — clear any stale `render-error` (see `replace_src`).
@@ -6304,12 +6604,29 @@ fn field_output(value: &serde_json::Value, raw: bool, pretty: bool) -> Result<St
     }
 }
 
-/// `set-src <id> [--dir D]` (#3162) — replace ONLY component <id>'s `srcText` from stdin. A ui-scope
-/// MUTATION: the write-scope is honored BEFORE stdin/the store are touched (so a read-scoped session
-/// refuses immediately without blocking on stdin).
+/// Pull a bare `--force` out of an args list and arm [`FORCE_WRITE`] when present, returning the rest for
+/// `parse_anim_args` (which errors on any flag it doesn't recognize). Shared by `set-src`/`patch` so both
+/// carry the same escape `set` already has for the page-role refusal — see
+/// [`refuse_buildable_regression`].
+fn strip_force_flag(args: &[String]) -> Vec<String> {
+    let mut rest = Vec::with_capacity(args.len());
+    for a in args {
+        if a == "--force" {
+            FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            rest.push(a.clone());
+        }
+    }
+    rest
+}
+
+/// `set-src <id> [--dir D] [--force]` (#3162) — replace ONLY component <id>'s `srcText` from stdin. A
+/// ui-scope MUTATION: the write-scope is honored BEFORE stdin/the store are touched (so a read-scoped
+/// session refuses immediately without blocking on stdin). `--force` is the escape for
+/// [`refuse_buildable_regression`] (bsc request #119).
 fn cmd_set_src(args: &[String]) -> Result<(), String> {
-    let (pos, dir, _pretty) = parse_anim_args(args)?;
-    let id = pos.first().ok_or("usage: bsc ui set-src <id>   # the new srcText on stdin")?;
+    let (pos, dir, _pretty) = parse_anim_args(&strip_force_flag(args))?;
+    let id = pos.first().ok_or("usage: bsc ui set-src <id> [--force]   # the new srcText on stdin")?;
     bsc_cli_util::require_write_scope("ui")?;
     let mut src = String::new();
     std::io::stdin().read_to_string(&mut src).map_err(|e| format!("cannot read stdin: {e}"))?;
@@ -6320,11 +6637,12 @@ fn cmd_set_src(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `patch <id> <json-pointer> <value> [--dir D]` (#3162) — set ONE field by JSON pointer, parsing
-/// <value> as JSON (else a bare string). A ui-scope MUTATION (gated before the store is touched).
+/// `patch <id> <json-pointer> <value> [--dir D] [--force]` (#3162) — set ONE field by JSON pointer,
+/// parsing <value> as JSON (else a bare string). A ui-scope MUTATION (gated before the store is touched).
+/// `--force` is the escape for [`refuse_buildable_regression`] when `<json-pointer>` is `/srcText`.
 fn cmd_patch(args: &[String]) -> Result<(), String> {
-    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value>";
-    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value> [--force]";
+    let (pos, dir, _pretty) = parse_anim_args(&strip_force_flag(args))?;
     let id = pos.first().ok_or(USAGE)?;
     let pointer = pos.get(1).ok_or(USAGE)?;
     let raw_value = pos.get(2).ok_or(USAGE)?;
@@ -6422,7 +6740,7 @@ fn cmd_get(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// #3606 — export dumps the store to a folder tree nested by `group`, import loads it back, and the
+    /// #3606 — export dumps the store to a folder tree nested by `folder`, import loads it back, and the
     /// round-trip is lossless; a kit BUNDLE ({components:[…]}, e.g. react-ui.json) is exploded on import.
     #[test]
     fn export_import_round_trips_a_folder_tree_and_explodes_a_bundle() {
@@ -6432,8 +6750,9 @@ mod tests {
         let tree = base.join("tree");
         std::fs::create_dir_all(&store_dir).unwrap();
         let store = bsc_json_store::Store::new(store_dir.clone(), "component");
-        // One nested-by-group component, one ungrouped.
-        store.set("card", r#"{"id":"card","name":"Card","group":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
+        // One nested-by-FOLDER component, one unfoldered. (This fixture used the legacy `group` key
+        // until finish-the-4107-group-to-folder-shim removed the alias that made it resolve.)
+        store.set("card", r#"{"id":"card","name":"Card","folder":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
         store.set("loose", r#"{"id":"loose","name":"Loose","srcText":"export const Loose=()=>null;"}"#).unwrap();
 
         // export → files nest by the `group` folder path; ungrouped sits at the root.
@@ -6447,7 +6766,7 @@ mod tests {
         assert_eq!(store.list().len(), 0, "store cleared before re-import");
         cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
         let card: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
-        assert_eq!(card["group"], "ui/data", "the grouped record imported back verbatim");
+        assert_eq!(card["folder"], "ui/data", "the foldered record imported back verbatim");
         assert_eq!(card["srcText"], "export const Card=()=>null;");
         assert!(store.get("loose").unwrap().is_some(), "the ungrouped record imported back too");
 
@@ -7109,6 +7428,89 @@ export const Card = () => <Button />;",
         let _ = std::fs::remove_dir_all(&seed);
     }
 
+    /// #139 — `sync-seed` writes a store record's CURRENT body back into its packaged seed file, by id,
+    /// stripping the store-only bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/
+    /// `seedHash`/`used`) no seed file has ever carried — the gap `bsc ui export`'s own doc note names
+    /// (it dumps a record verbatim, so its output can't be dropped straight into the packaged tree).
+    #[test]
+    fn sync_seed_writes_store_back_into_the_matching_seed_file_by_id() {
+        let dir = tmp_store_dir("sync-seed");
+        let seed = std::env::temp_dir().join(format!("bsc-sync-seed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&seed);
+        std::fs::create_dir_all(&seed).unwrap();
+
+        // Three seed files: one the store agrees with, one the store has drifted from (carrying store
+        // bookkeeping a seed never had), one the store has never seen.
+        for (id, src) in [
+            ("agree", "export const A = 1;"),
+            ("drifted", "export const B = 1; // the SEED copy, stale"),
+            ("seed-only", "export const C = 1;"),
+        ] {
+            std::fs::write(
+                seed.join(format!("{id}.json")),
+                serde_json::json!({ "id": id, "name": id, "role": "primitive", "srcText": src }).to_string(),
+            )
+            .unwrap();
+        }
+
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        store.set("agree", &serde_json::json!({ "id": "agree", "name": "agree", "role": "primitive", "srcText": "export const A = 1;" }).to_string()).unwrap();
+        store
+            .set(
+                "drifted",
+                &serde_json::json!({
+                    "id": "drifted", "name": "drifted", "role": "primitive",
+                    "srcText": "export const B = 1; // the STORE copy, current",
+                    "history": [{ "rev": 1 }], "rev": 4, "updatedAt": "2026-08-01T00:00:00Z",
+                    "updatedBy": "designer", "builtin": true, "seedHash": "abc123", "used": true,
+                })
+                .to_string(),
+            )
+            .unwrap();
+        store.set("store-only", &serde_json::json!({ "id": "store-only", "name": "store-only", "role": "primitive", "srcText": "export const D = 1;" }).to_string()).unwrap();
+
+        let seed_s = seed.to_string_lossy().into_owned();
+
+        // Dry run (no --apply): reports the would-be sync, touches nothing on disk.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_sync_seed(&["agree".into(), "drifted".into(), "seed-only".into(), "store-only".into(), "ghost".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["applied"], false);
+        let synced: Vec<&str> = report["synced"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert_eq!(synced, vec!["drifted"], "only the genuinely diverged id needs writing");
+        assert_eq!(report["upToDate"], serde_json::json!(["agree"]));
+        assert_eq!(report["missingFromSeed"], serde_json::json!(["store-only"]), "in the store, no seed file — a PROMOTION, not a sync");
+        assert_eq!(report["missingFromStore"], serde_json::json!(["seed-only", "ghost"]));
+        let drifted_seed_untouched: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(seed.join("drifted.json")).unwrap()).unwrap();
+        assert_eq!(drifted_seed_untouched["srcText"], "export const B = 1; // the SEED copy, stale", "dry run wrote nothing");
+
+        // --apply writes the store's CURRENT body, minus store-only bookkeeping.
+        cmd_sync_seed(&["drifted".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone(), "--apply".into()]).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(seed.join("drifted.json")).unwrap()).unwrap();
+        assert_eq!(written["srcText"], "export const B = 1; // the STORE copy, current");
+        for field in SEED_BOOKKEEPING_FIELDS {
+            assert!(written.get(*field).is_none(), "seed must not carry store bookkeeping field '{field}': {written}");
+        }
+
+        // A second sync of the now-synced id is a no-op — reported up to date, not re-written.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_sync_seed(&["drifted".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["upToDate"], serde_json::json!(["drifted"]));
+        assert_eq!(report["synced"], serde_json::json!([]));
+
+        assert!(cmd_sync_seed(&["agree".into(), "--dir".into(), dir.clone()]).is_err(), "--seed-dir is required");
+        assert!(cmd_sync_seed(&["--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()]).is_err(), "at least one id is required");
+
+        let _ = std::fs::remove_dir_all(&seed);
+    }
+
     /// `write-gate-blind-to-merge-writes` — the page gate must judge what will be STORED.
     ///
     /// A write MERGES by default (#4197), so the ordinary payload is `{id, srcText}` and carries no
@@ -7513,15 +7915,73 @@ export const P = () => <X />;"
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "import",
+                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
             assert!(!c.usage.contains("bsc component"), "{}'s usage teaches `bsc ui`, not the alias", c.name);
         }
+    }
+
+    #[test]
+    fn library_get_verifies_a_doctor_finding_from_the_designer_own_permitted_surface() {
+        // bsc request #118: the designer's whole auto-runnable surface is `bsc ui`/`bsc component`, never
+        // `bsc graph` — so this verb must resolve a real algorithm and reject a made-up one WITHOUT any
+        // `--dir` component-store setup (it never touches the component store at all).
+        let (r, out) =
+            bsc_util::capture_output(|| cmd_library(&["get".to_string(), "fibonacci".to_string()]));
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).expect("prints JSON");
+        assert_eq!(v["resolves"], true, "the packaged fibonacci algorithm resolves: {v}");
+        assert_eq!(v["name"], "fibonacci");
+
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_library(&["get".to_string(), "totallyMadeUpNode".to_string()])
+        });
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).expect("prints JSON");
+        assert_eq!(v["resolves"], false, "a fabricated name never resolves: {v}");
+
+        assert!(run(vec!["library".into()], "bsc ui").is_err(), "no subcommand");
+        assert!(run(vec!["library".into(), "wat".into()], "bsc ui").is_err(), "unknown subcommand");
+        assert!(run(vec!["library".into(), "get".into()], "bsc ui").is_err(), "missing name");
+        assert!(run(vec!["library".into(), "get".into(), "--nope".into()], "bsc ui").is_err(), "unknown flag");
+        assert!(
+            run(vec!["library".into(), "help".into()], "bsc ui").is_ok(),
+            "help reachable, and never touches the store"
+        );
+    }
+
+    #[test]
+    fn library_get_refuses_an_ambiguous_bare_name_instead_of_guessing() {
+        // bsc request #118's own history: a bare NAME like `index` can name 20+ unrelated typescript
+        // algorithms in the real store, and `bsc graph impl get` already refuses to guess among them.
+        // `bsc ui library get` must make the same call, since it answers the exact same question for a
+        // session that cannot fall back to `bsc graph` to sort out the ambiguity itself.
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-component-cli-library-ambiguous-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        std::fs::write(
+            &store_path,
+            r#"{"implementations":[
+                {"id":"dup-a.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"},
+                {"id":"dup-b.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"}
+            ]}"#,
+        )
+        .unwrap();
+        std::env::set_var("BSC_GRAPH_STORE", &store_path);
+        let err = cmd_library(&["get".to_string(), "dup".to_string()]).unwrap_err();
+        std::env::remove_var("BSC_GRAPH_STORE");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(err.contains("dup-a.ts") && err.contains("dup-b.ts"), "{err}");
     }
 
     #[test]
@@ -8294,6 +8754,75 @@ export const P = () => <X />;"
         // A missing parent and an absent component both error.
         assert!(apply_patch(&store, "card", "/deep/x", json!(1)).is_err());
         assert!(apply_patch(&store, "ghost", "/name", json!("x")).unwrap_err().contains("ghost"));
+    }
+
+    /// bsc request #119: `refuse_buildable_regression` is what makes `set-src`/`patch /srcText` refuse
+    /// exactly the write that clobbered `KitShareModal`/`ConsolePage` — a `provides`-less record whose
+    /// `srcText` the Design Studio preview sandbox could BUILD, overwritten with one it cannot.
+    #[test]
+    fn refuse_buildable_regression_blocks_only_a_provides_less_buildable_to_unbuildable_write() {
+        use serde_json::json;
+        let buildable = "export const Button = () => null;";
+        let unbuildable = "import { X } from \"@/store\";\nexport const Button = () => X;";
+
+        // The core case: no `provides`, buildable -> unbuildable is refused, and the error names both
+        // the request and the escape.
+        let bare = json!({ "id": "consolepage", "srcText": buildable });
+        let err = refuse_buildable_regression(&bare, unbuildable).unwrap_err();
+        assert!(err.contains("consolepage"), "{err}");
+        assert!(err.contains("#119"), "{err}");
+        assert!(err.contains("--force"), "{err}");
+        assert!(err.contains("provides"), "{err}");
+
+        // A record that already CARRIES `provides` is a module lift, not a preview stub — the preview
+        // sandbox no longer decides buildability for it (#43), so the same regression is fine.
+        let with_provides = json!({ "id": "c", "srcText": buildable, "provides": "@/components/c" });
+        assert!(refuse_buildable_regression(&with_provides, unbuildable).is_ok());
+
+        // Nothing buildable was there to protect — the prior copy was ALREADY unbuildable (e.g. a raw
+        // seed transcription that was never fixed), so there is no regression to guard against.
+        let already_broken = json!({ "id": "d", "srcText": unbuildable });
+        assert!(refuse_buildable_regression(&already_broken, unbuildable).is_ok());
+
+        // The new source is STILL buildable — not a regression at all.
+        let still_good = "export const Button2 = () => null;";
+        assert!(refuse_buildable_regression(&bare, still_good).is_ok());
+
+        // `--force` is the deliberate override, same escape `set` already has for the page-role refusal.
+        FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let forced = refuse_buildable_regression(&bare, unbuildable);
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(forced.is_ok(), "--force stores the regression deliberately");
+    }
+
+    /// The guard is wired into the actual write paths, not just the pure predicate: `set-src` refuses
+    /// the regression, leaves the store untouched, and `--force` overrides it.
+    #[test]
+    fn set_src_refuses_a_buildable_to_unbuildable_regression_unless_forced() {
+        let dir = tmp_store_dir("set-src-buildability");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let buildable = "export const ConsolePage = () => null;";
+        store
+            .set("consolepage", &format!(r#"{{"id":"consolepage","name":"ConsolePage","srcText":{}}}"#, serde_json::to_string(buildable).unwrap()))
+            .unwrap();
+
+        let unbuildable = "import { useAppStore } from \"@/store\";\nexport const ConsolePage = () => useAppStore;";
+        let err = replace_src(&store, "consolepage", unbuildable).unwrap_err();
+        assert!(err.contains("#119"), "{err}");
+        let rec: serde_json::Value = serde_json::from_str(&store.get("consolepage").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["srcText"], buildable, "the refused write left srcText untouched");
+
+        // Setting `provides` in the SAME write (a genuine module lift, via `patch`) opts back in.
+        use serde_json::json;
+        apply_patch(&store, "consolepage", "/provides", json!("@/app/console/ConsolePage")).unwrap();
+        assert!(replace_src(&store, "consolepage", unbuildable).is_ok(), "provides beats the preview sandbox");
+
+        // And `--force` overrides it even without `provides`, on a fresh record.
+        store.set("kitsharemodal", r#"{"id":"kitsharemodal","name":"KitShareModal","srcText":"export const K = () => null;"}"#).unwrap();
+        FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let forced = replace_src(&store, "kitsharemodal", unbuildable);
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(forced.is_ok(), "--force stores the regression deliberately");
     }
 
     #[test]
@@ -9608,22 +10137,67 @@ export const P = () => <X />;"
         assert!(store.get("dup").unwrap().is_none(), "a non-builtin merge is still a bare delete");
     }
 
-    // ── #4107 slice B: the `group` -> `folder` rename ──
+    // ── #4107 slice B, FINISHED: the `group` -> `folder` rename ──
 
-    /// The store holds records written under `group` and there is no migration pass (the component seed
-    /// dir is skipped by `ensure_seeded`), so every READ must accept both names. Without this a rename
-    /// silently flattens 351 records to "unfoldered" — the failure looks like a kit that never had folders.
+    /// The inverse of the test this replaces. `record_folder_reads_the_legacy_group_key` pinned the
+    /// COMPATIBILITY SHIM — "every READ must accept both names" — which was right while 351 records
+    /// predated the rename. `bsc ui refolder` has since migrated the last of them and the packaged seed
+    /// never carried the legacy key, so the shim is gone and this pins its absence.
+    ///
+    /// It is pinned rather than merely deleted because a silently-returning alias is exactly how the two
+    /// names stayed alive: `bsc ui list` projected through it while `bsc ui get --field folder` read the
+    /// raw record, so the two disagreed for a year and each looked correct on its own.
     #[test]
-    fn record_folder_reads_the_legacy_group_key() {
+    fn record_folder_no_longer_reads_the_legacy_group_key() {
         use serde_json::json;
         assert_eq!(record_folder(&json!({ "folder": "shared/ui" })), Some("shared/ui"));
-        assert_eq!(record_folder(&json!({ "group": "shared/ui" })), Some("shared/ui"), "legacy key still read");
-        // Both present ⇒ the CURRENT name wins, so a half-migrated record cannot regress to its old path.
+        assert_eq!(
+            record_folder(&json!({ "group": "shared/ui" })), None,
+            "the legacy key is NOT read — a record still on it is unfoldered, which is what makes the \
+             migration observable instead of silently permanent"
+        );
         assert_eq!(record_folder(&json!({ "folder": "new/path", "group": "old/path" })), Some("new/path"));
         assert_eq!(record_folder(&json!({})), None);
         // An empty value is "absent", never a `""` bucket — the record convention the doc pins.
         assert_eq!(record_folder(&json!({ "folder": "" })), None);
-        assert_eq!(record_folder(&json!({ "group": "" })), None);
+    }
+
+    /// `refolder` migrates a SRCLESS record carrying the legacy key by VALUE — the case that kept the
+    /// shim load-bearing. `folder` derives from `src`, so a record with none was skipped outright, and
+    /// every one of the 19 components still on `group` at 2026-08-25 was srcless: the only verb that
+    /// could finish the rename structurally could not touch the records that needed it.
+    #[test]
+    fn refolder_migrates_a_srcless_legacy_record_by_value() {
+        let dir = tmp_store_dir("refolder-legacy");
+        let store = bsc_json_store::Store::new(std::path::PathBuf::from(&dir), "component");
+        // srcless + legacy key: its folder is CURATED, so no `src` could reproduce it.
+        store.set("endedconsole", r#"{"id":"endedconsole","name":"EndedConsole","group":"app/console"}"#).unwrap();
+        // has src: re-derivation, the unchanged path.
+        store.set("btn", r#"{"id":"btn","name":"Btn","src":"src/shared/ui/controls/Btn.tsx"}"#).unwrap();
+
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+
+        let ended: serde_json::Value =
+            serde_json::from_str(&store.get("endedconsole").unwrap().unwrap()).unwrap();
+        assert_eq!(ended["folder"], "app/console", "the curated value is CARRIED, not re-derived");
+        assert!(ended.get("group").is_none(), "the legacy key is cleared, so the two cannot drift");
+
+        let btn: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
+        assert_eq!(btn["folder"], "shared/ui/controls", "a record WITH src still derives");
+    }
+
+    /// A record with neither `src` nor the legacy key is left alone — the 9 suppression TOMBSTONES in the
+    /// live store are exactly this shape, and a tombstone is not a component that lost its folder.
+    #[test]
+    fn refolder_leaves_a_tombstone_alone() {
+        let dir = tmp_store_dir("refolder-tombstone");
+        let store = bsc_json_store::Store::new(std::path::PathBuf::from(&dir), "component");
+        store.set("windowcontrols", r#"{"id":"windowcontrols","suppressed":true}"#).unwrap();
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let t: serde_json::Value =
+            serde_json::from_str(&store.get("windowcontrols").unwrap().unwrap()).unwrap();
+        assert!(t.get("folder").is_none(), "a tombstone gains no folder");
+        assert_eq!(t["suppressed"], true, "and is otherwise untouched");
     }
 
     /// A refolder pass must MIGRATE a legacy record, not just re-derive it: it writes `folder` and drops

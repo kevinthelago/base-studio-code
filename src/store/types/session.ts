@@ -2,8 +2,10 @@
 // auto-resume, gate overrides, default/per-pane model, fleet harness). Split from store/types (#1634).
 import type { ConsoleAutoFocusMode } from "@/app/console/lib/focusQueue";
 import type { ModelId } from "@/app/console/panes/PaneMenu";
+import type { SessionModel } from "@/app/console/lib/models";
 import type { StudioTarget } from "@/shared/lib/fleet/studioNetworkDrive";
 import type { RequestNodeSpec } from "@/features/teams";
+import type { SurfaceRow } from "@/shared/lib/session/surfaceCatalog";
 
 /** Session-behavior slice of {@link AppStore}. */
 export interface SessionState {
@@ -15,6 +17,31 @@ export interface SessionState {
   addDeniedCommand: (cmd: string) => void;
   removeDeniedCommand: (cmd: string) => void;
   setDeniedCommands: (commands: string[]) => void;
+
+  /**
+   * The `bsc` command-surface catalog, as `bsc surface list --json` reports it
+   * (`a-persona-declares-its-command-surfaces`).
+   *
+   * Held in the store because TWO consumers need the same catalog and neither may restate it: the
+   * session launch complements it against each persona's declared set to build that session's denies
+   * (`sessionDeniedCommands`), and the Glance drill draws the band from it. `bsc surface help` says
+   * the role join belongs at the consumer, and a second reader would be the fourth hand-kept copy of
+   * this set — three plan items already exist for earlier ones drifting.
+   *
+   * THE ROWS ARE STORED WHOLE — `status` included — because the two consumers filter DIFFERENTLY, and
+   * collapsing them to one pre-filtered name list is a bypass rather than a simplification. The band
+   * draws ACTIVE only (a deprecated alias and its live surface are one store, so two nodes overstate
+   * it); the gate denies active AND deprecated (`bsc org` reaches the store `bsc teams` serves, so an
+   * un-denied alias is a side door into a store the declaration removed). See `activeSurfaceNames` /
+   * `deniableSurfaceNames`.
+   *
+   * EMPTY UNTIL THE FIRST READ RESOLVES, and every consumer must treat empty as "unknown" rather than
+   * "there are none": the complement fails open on it, deliberately, because a launch that raced the
+   * catalog read must not deny a session its whole CLI. Not persisted — it describes the binary on
+   * this machine right now, and a stale copy restored from disk would be worse than no copy.
+   */
+  surfaceCatalog: SurfaceRow[];
+  setSurfaceCatalog: (surfaces: SurfaceRow[]) => void;
 
   // Console behavior
   // Selectable auto-focus mode (#434): controls whether and when focus advances
@@ -113,7 +140,15 @@ export interface SessionState {
   fleetHarness: "claude" | "bsc-agent";
   setFleetHarness: (h: "claude" | "bsc-agent") => void;
   /** Per-pane model override, keyed by paneId. A pane with no entry falls back to
-   *  {@link defaultModel}. Applied to `claude --model` at the pane's next launch. */
-  paneModels: Record<string, ModelId>;
-  setPaneModel: (paneId: string, m: ModelId) => void;
+   *  {@link defaultModel}.
+   *
+   *  Where the whole model precedence chain LANDS — a fleet stream's model, else a team placement's,
+   *  else the persona's default (`streamPaneWiring`). The harness decides what to do with it: Claude
+   *  Code takes `claude --model <tier>`, a local (bsc-agent) session takes `$BSC_AGENT_MODEL`.
+   *
+   *  {@link SessionModel}, not {@link ModelId}: a director may point a local worker at an installed
+   *  model by name, and `qwen3.5:9b` is not a tier. The narrow type never actually constrained this —
+   *  the value arrives from plan.db as untyped JSON — it only asserted something false. */
+  paneModels: Record<string, SessionModel>;
+  setPaneModel: (paneId: string, m: SessionModel) => void;
 }

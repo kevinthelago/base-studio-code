@@ -190,6 +190,63 @@ const PER_TECH_EXPANSION: Readonly<Record<string, readonly string[]>> = {
 const SINGLE_TECH_COMMANDED: readonly string[] = ["sound-designer", "integrator"];
 
 /**
+ * One singular studio position as its PER-TECHNOLOGY nodes, or `null` when it does not expand.
+ *
+ * Shared by both drills (#the-project-drill-draws-per-technology-studio-nodes). It used to be inline in
+ * `studioNetworkForArchitect`, so the architect drill was the only place a designer was ever more
+ * specific than "designer" — and the base-studio-code drill, where the debug sessions actually hang,
+ * had one shared `designer` node that every technology's requests collapsed onto.
+ *
+ * EACH EXPANDED NODE IS LABELLED. The old inline version spread the role position wholesale, keeping its
+ * `personaId` and carrying no `label` — and a node's slug is `label ?? persona.name ?? nodeId`, so both
+ * designers rendered as "Designer" and both were indistinguishable in the one drill that drew them. The
+ * label is the node id because that is the name the user already has for these: it is what
+ * `bsc session list` prints and what a pane id carries.
+ */
+function expandPosition(p: Position): Position[] | null {
+  const expand = PER_TECH_EXPANSION[p.nodeId];
+  if (!expand) return null;
+  return expand.map((nodeId, i) => ({
+    ...p,
+    nodeId,
+    label: nodeId,
+    x: (p.x ?? 0) + (i - (expand.length - 1) / 2) * 132,
+    y: p.y,
+  }));
+}
+
+/**
+ * The Studio Network with every singular studio position expanded per TECHNOLOGY, relationships and all.
+ *
+ * The architect's own view ({@link studioNetworkForArchitect}) throws the packaged relationships away
+ * and draws only `architect → session` edges, so it never had to answer this: what happens to
+ * `librarian serves designer` when both ends fan out. Here it has to be answered, because the
+ * base-studio-code drill renders the network's OWN story.
+ *
+ * A relationship touching an expanded role fans out across BOTH ends. That is the honest reading rather
+ * than a convenience: the graph is a lens, not a partition (`@bsc/algorithms/fibonacci` is kit-less, so
+ * a React component resolves a TypeScript implementation), so every librarian really does serve every
+ * designer. Collapsing it to one representative pair would draw a boundary the model does not have.
+ *
+ * Ids stay unique — `r-<archetype>-<from>-<to>` — because a fanned edge that reused its role-level id
+ * would silently overwrite its siblings wherever edges are keyed.
+ */
+export function expandStudioPerTechnology(org: Team): Team {
+  if (org.id !== STUDIO_NETWORK_ID) return org;
+  if (!org.positions.some((p) => PER_TECH_EXPANSION[p.nodeId])) return org; // already expanded, or a seed without them
+  const ends = (nodeId: string): readonly string[] => PER_TECH_EXPANSION[nodeId] ?? [nodeId];
+  return {
+    ...org,
+    positions: org.positions.flatMap((p) => expandPosition(p) ?? [p]),
+    relationships: org.relationships.flatMap((r) =>
+      ends(r.from).flatMap((from) =>
+        ends(r.to).map((to) => ({ ...r, id: `r-${r.archetype}-${from}-${to}`, from, to })),
+      ),
+    ),
+  };
+}
+
+/**
  * The Studio Network as the ARCHITECT commands it (#architect-node-expands-into-system-sessions) —
  * the graph its L0 node expands into.
  *
@@ -217,15 +274,8 @@ export function studioNetworkForArchitect(org: Team): Team {
   // occupied so the expansion inherits the packaged layout instead of inventing one. Everything else
   // the architect commands passes through unchanged.
   const commanded = org.positions.flatMap((p) => {
-    const expand = PER_TECH_EXPANSION[p.nodeId];
-    if (expand) {
-      return expand.map((nodeId, i) => ({
-        ...p,
-        nodeId,
-        x: (p.x ?? 0) + (i - (expand.length - 1) / 2) * 132,
-        y: p.y,
-      }));
-    }
+    const expanded = expandPosition(p);
+    if (expanded) return expanded;
     return SINGLE_TECH_COMMANDED.includes(p.nodeId) ? [p] : [];
   });
   return {

@@ -153,6 +153,35 @@ export interface Persona {
   /** A packaged persona: seeded from code, restored on refresh. Can be cloned + edited (edits persist
    *  as an overlay) but not deleted; user-authored personas have `builtin` unset. */
   builtin?: boolean;
+  /** Per-field fingerprints of the PACKAGED prose this record was last seeded with — the mechanism
+   *  that lets a built-in's prose change reach an already-seeded store. See {@link reconcilePersonas}.
+   *  Written only by reconcile; absent on a user-authored persona, which is never re-seeded. */
+  proseSeal?: Partial<Record<ProseField, string>>;
+  /** Prose displaced by the one-time bootstrap re-seed, kept so nothing is destroyed by an upgrade the
+   *  user did not ask for. Written once, never read by the app — it exists to be recoverable. */
+  replacedProse?: Partial<Record<ProseField, string>>;
+}
+
+/** The prose fields a packaged built-in owns and reconcile may re-seed. NOT `name` or `model`: those
+ *  are identity + cost knobs a user sets deliberately and a packaged bump has no business moving. */
+export type ProseField = "startPrompt" | "blurb" | "responsibilities";
+export const PROSE_FIELDS: readonly ProseField[] = ["startPrompt", "blurb", "responsibilities"];
+
+/** A stable, dependency-free fingerprint of one prose value (FNV-1a, 32-bit, hex).
+ *
+ *  This is a CHANGE DETECTOR, not a security primitive — collisions cost a missed re-seed, which is
+ *  the same outcome as the behaviour that existed before this fingerprint did.
+ *
+ *  `responsibilities` is an array, so it is joined with ` ` — a separator that cannot occur in
+ *  the prose, so `["a\nb"]` and `["a", "b"]` do not fingerprint alike. */
+export function proseFingerprint(value: string | string[] | undefined): string {
+  const s = Array.isArray(value) ? value.join(" ") : (value ?? "");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
 }
 
 /** A packaged persona definition, as authored under `src-tauri/data/personas/*.json` (#2185). It is a
@@ -224,6 +253,69 @@ function definedFields(p: Persona): Partial<Persona> {
   return Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) as Partial<Persona>;
 }
 
+/**
+ * Reconcile ONE built-in's prose against the packaged copy — the rule that lets a packaged prose
+ * change reach a store that was seeded before it, without ever overwriting the user's own words.
+ *
+ * ## Why this exists
+ *
+ * A packaged persona's prose used to be unreachable once seeded. The merge preferred the persisted
+ * value for every field, with a single exception — an EMPTY `startPrompt` inherited the packaged one —
+ * so a built-in whose packaged prose CHANGED was never picked up. The architect is what that cost:
+ * discovery was moved onto it and its packaged protocol was rewritten to say so, while every existing
+ * store kept serving the teams-only prompt that tells it to refuse planning outright. The powers moved
+ * (they are computed from the packaged JSON) and the prose did not, so the session was left holding
+ * the funnel's capabilities and the previous job's instructions.
+ *
+ * ## The rule
+ *
+ * Each prose field carries a fingerprint of the PACKAGED value it was seeded from. On reconcile:
+ *
+ *   the field still fingerprints as what we seeded  →  it is ours, re-seed it
+ *   it does not                                     →  the user edited it, keep theirs
+ *
+ * So a packaged bump propagates, and a genuine edit is permanent. Deriving the version from the
+ * CONTENT rather than a hand-maintained revision number is deliberate: a number has to be remembered
+ * at the moment someone edits a markdown file, and the one that is forgotten is indistinguishable
+ * from no change at all.
+ *
+ * ## The bootstrap, and its one cost
+ *
+ * A record written before the seal has no fingerprint to compare, so provenance is genuinely unknown.
+ * It is treated as packaged-seeded and re-seeded once, because that is overwhelmingly what it is —
+ * built-in prompts are read far more often than they are rewritten — and because the alternative
+ * leaves every existing store permanently stuck on the prose this whole mechanism exists to replace.
+ *
+ * The cost lands only on someone who edited a built-in's prose BEFORE this shipped, and it is not
+ * destruction: the displaced text is kept on the record as `replacedProse`. One upgrade pays it; from
+ * then on every edit is sealed and safe.
+ */
+function reseededProse(base: Persona, saved: Persona): Partial<Persona> {
+  const out: Partial<Persona> = {};
+  const seal: Partial<Record<ProseField, string>> = {};
+  const replaced: Partial<Record<ProseField, string>> = { ...saved.replacedProse };
+  let displaced = false;
+
+  for (const field of PROSE_FIELDS) {
+    const packaged = base[field];
+    seal[field] = proseFingerprint(packaged);
+    const previousSeal = saved.proseSeal?.[field];
+    // Unsealed ⇒ the bootstrap: unknown provenance, treated as ours (see above).
+    const ours = previousSeal === undefined || previousSeal === proseFingerprint(saved[field]);
+    if (!ours) continue;                       // a real user edit — never touched
+    if (proseFingerprint(saved[field]) === seal[field]) continue;  // already current
+    // Only the bootstrap can displace text the app did not write, so only it records a replacement.
+    if (previousSeal === undefined && (saved[field] ?? "") !== "") {
+      replaced[field] = Array.isArray(saved[field]) ? saved[field].join("\n") : String(saved[field]);
+      displaced = true;
+    }
+    (out as Record<string, unknown>)[field] = packaged;
+  }
+  out.proseSeal = seal;
+  if (displaced) out.replacedProse = replaced;
+  return out;
+}
+
 /** Merge the packaged built-ins with the persisted set: every built-in is present (re-seeded if the
  *  persisted copy dropped it), user edits to a built-in are preserved, and user-authored personas are
  *  kept. Keyed by id; built-in identity is restored so a stale persisted `builtin:false` can't turn a
@@ -233,20 +325,30 @@ export function reconcilePersonas(persisted: Persona[]): Persona[] {
   const out: Persona[] = BUILTIN_PERSONAS.map((base) => {
     const saved = byId.get(base.id);
     byId.delete(base.id);
-    if (!saved) return base;
-    // Keep user edits (name/blurb/prompt/skills/model) but force builtin identity + role-reference.
+    if (!saved) return { ...base, proseSeal: sealOf(base) };
+    // Keep user edits (name/prompt/skills/model) but force builtin identity + role-reference.
     // `definedFields` means a field the persisted copy never had (a newly-packaged facet like `pooled`)
     // inherits the built-in rather than being masked by an absent-value `undefined`.
     // An EMPTY saved `startPrompt` also inherits the packaged prose rather than clobbering it — the
     // upgrade path: a built-in seeded empty by an older app (worker/director) picks up its newly-wired
     // protocol prose, and since an empty prompt already falls back to the role kickoff downstream,
     // "clearing" a built-in's prompt was never meaningful anyway.
+    //
+    // `reseededProse` runs LAST so it wins over `definedFields`: it is the only thing here that has
+    // decided, per field, whether the persisted value is the user's or ours.
     return {
       ...base, ...definedFields(saved), id: base.id, builtin: true,
       startPrompt: saved.startPrompt?.trim() ? saved.startPrompt : base.startPrompt,
+      ...reseededProse(base, saved),
     };
   });
   // Whatever remains is user-authored (never builtin).
   for (const p of byId.values()) out.push({ ...p, builtin: false });
   return out;
+}
+
+/** The full prose seal for a packaged persona — what a freshly-seeded record carries, so its very
+ *  first edit is already distinguishable from the packaged prose it replaced. */
+function sealOf(base: Persona): Partial<Record<ProseField, string>> {
+  return Object.fromEntries(PROSE_FIELDS.map((f) => [f, proseFingerprint(base[f])]));
 }

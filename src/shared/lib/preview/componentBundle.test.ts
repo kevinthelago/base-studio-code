@@ -659,6 +659,24 @@ describe("componentBundle — externals", () => {
     const doc = buildComponentSrcDoc("X");
     expect(doc).toContain(COMPONENT_IMPORTMAP["d3-force"]);
   });
+
+  it("pins zustand (+middleware/+react/shallow) so @/store resolves in a non-GraphHost preview (#120)", () => {
+    // Request #120: @/store is a registered platform module (src-tauri/data/ui/platform-modules.json),
+    // so a component that merely imports it (no dedicated GraphHost/registerXPlatform of its own) gets
+    // the REAL store/index.ts vendored into the bundle, not a stub. That real module does
+    // `import { create } from "zustand"` and `import { persist, createJSONStorage } from "zustand/middleware"`
+    // at top level — before this fix neither specifier was a curated external, so each fell to the
+    // universal stub (#3696): `create` resolved to a black-hole Proxy whose `create()` call returns
+    // `null` (no args ⇒ no `.children` ⇒ null), and the immediate `create()(persist(...))` then threw
+    // "TypeError: create() is not a function" — the exact error `bsc ui preview-errors` captured.
+    expect(COMPONENT_IMPORTMAP["zustand"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d/);
+    expect(COMPONENT_IMPORTMAP["zustand/middleware"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d.*\/middleware/);
+    expect(COMPONENT_IMPORTMAP["zustand/react/shallow"]).toMatch(/^https:\/\/esm\.sh\/zustand@\d.*\/react\/shallow/);
+    // …and they ride into the srcdoc's import-map so the iframe resolves the real zustand, never the stub.
+    const doc = buildComponentSrcDoc("X");
+    expect(doc).toContain(COMPONENT_IMPORTMAP["zustand"]);
+    expect(doc).toContain(COMPONENT_IMPORTMAP["zustand/middleware"]);
+  });
 });
 
 describe("loaderFor: a record id is not a filename (#103)", () => {
