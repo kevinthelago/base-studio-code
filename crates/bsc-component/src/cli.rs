@@ -943,6 +943,30 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).",
     },
     CmdDoc {
+        name: "domains",
+        summary: "report (and with --apply, backfill) each component's FEATURE domain from its folder",
+        usage: "\
+USAGE:
+  bsc ui domains [--kit <id>] [--apply] [--pretty]
+
+The FEATURE axis (epic-the-graphs-are-split-by-feature-over-a-core). `domain` says what a component
+BELONGS TO; `folder` stays what it was — where it came from, derived from `src`, and what emit paths
+read. Two fields, two questions; overloading one would make this backfill fight `bsc ui regroup`.
+
+The mapping, applied once:
+  shared/**, components/**, src/components/**  ->  core     (the baseline, usable anywhere)
+  app/**                                       ->  shell    (composes features; belongs to none)
+  features/<x>/**                              ->  <x>
+
+REPORTS ONLY UNLESS --apply — the inverse of `refolder`'s --dry-run, because this INTRODUCES a field
+across the whole store on a mapping you should read first. The report carries `changed` (from/to per
+record), `byDomain` (the resulting shape of the split), and `unmapped` — records the mapping cannot
+place, listed by id and folder and NEVER given a default. Re-running after an --apply is a no-op.
+
+`bsc ui list --domain <d>` then reads one feature back. That is a SELECTION, not a partition: a
+component may still compose across domains, and the graph still shows those edges.",
+    },
+    CmdDoc {
         name: "refolder",
         summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
         usage: "\
@@ -1128,7 +1152,11 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     dir_segment: "components",
     tagline: TAGLINE,
     commands: COMPONENT_COMMANDS,
-    meta_fields: &["id", "name", "kitId", "role", "folder", "shapes"],
+    // `domain` (epic-the-graphs-are-split-by-feature-over-a-core) is the FEATURE axis, beside `folder`
+    // rather than replacing it: folder is derived from `src` and names emit paths, domain is stored and
+    // says what the record belongs to. It rides the lean projection so "what is in this feature" is one
+    // read, the same shape `bsc graph impl list` already answers for algorithms.
+    meta_fields: &["id", "name", "kitId", "role", "folder", "domain", "shapes"],
     // #4072 — exactly what the Design Studio's composition graph renders: the node card
     // (name/role/group/×used) plus `composes`, which `buildComposesEdges` turns into the edges.
     // Deliberately NOT `srcText` (77.6% of the full payload) / `tests` / `history` / `props`: the
@@ -1199,7 +1227,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("domains") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
         // `usage-scan` is a READ until `--apply`, which writes `used`/`usageAssessed` onto every examined
         // record. Gate on the flag, not the verb, so the diagnosis stays available to a read-scoped session.
@@ -1774,6 +1802,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // one thing stay alive indefinitely. `unknown_command` names the near miss, so a session that
         // types the old verb is told the new one rather than left guessing.
         Some("refolder") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
+        Some("domains") if args.get(1).map(String::as_str) != Some("help") => cmd_domains(&args[1..]),
         Some("refolder") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
             Ok(())
@@ -1854,6 +1883,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // still delegates unchanged. Without it, comparing two kits' membership meant a full-store dump
         // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
         Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
+        Some("list") if args.iter().any(|a| a == "--domain") => cmd_list_domain(&args[1..]),
         // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
@@ -2789,6 +2819,105 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+
+/// `bsc ui domains [--kit <id>] [--apply] [--pretty]` — the FEATURE-axis backfill
+/// (`epic-the-graphs-are-split-by-feature-over-a-core`), and the report of what it would do.
+///
+/// DRY BY DEFAULT, the inverse of `refolder`'s `--dry-run`. `refolder` re-derives a field it already
+/// owns; this one INTRODUCES a field across the whole store on a mapping a human has to agree with
+/// first, so the safe direction is opposite: you read the plan, then pass `--apply`.
+///
+/// It reports three groups, and the third is the point:
+/// - `changed`  — records whose domain would be set (or corrected), with from/to.
+/// - `byDomain` — the resulting per-domain counts, so the shape of the split is visible BEFORE it lands.
+/// - `unmapped` — records the mapping cannot place, listed by id and never given a default.
+///
+/// The unmapped list is why this is not a sweep. 44 of 448 records are hollow — no folder, no `kitId`
+/// and no `name` — and a backfill that quietly bucketed them would bury a data-quality problem inside a
+/// migration and call it done. They surface here, every run, until someone decides what they are.
+///
+/// A record whose stored domain already matches is left alone, so re-running is a no-op.
+fn cmd_domains(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other => {
+                return Err(format!(
+                    "unknown flag '{other}' — usage: bsc ui domains [--kit <id>] [--apply] [--pretty] \
+                     (reports only unless --apply)"
+                ))
+            }
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let (mut scanned, mut already) = (0usize, 0usize);
+    let (mut changed, mut unmapped, mut updated) = (Vec::new(), Vec::new(), Vec::new());
+    let mut by_domain: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for raw in store.list() {
+        let rec: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
+        if let Some(k) = &kit {
+            if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(k.as_str()) {
+                continue;
+            }
+        }
+        scanned += 1;
+        let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let folder = record_folder(&rec).unwrap_or_default().to_string();
+        let old = rec.get("domain").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let Some(new) = crate::domain_from_folder(&folder) else {
+            // Report the folder we could not place ALONGSIDE the id: "which records are unmapped" and
+            // "what shapes is the mapping missing" are different questions and this answers both.
+            unmapped.push(serde_json::json!({ "id": id, "folder": folder }));
+            if !old.is_empty() {
+                *by_domain.entry(old).or_default() += 1;   // an already-set domain still counts
+            }
+            continue;
+        };
+        *by_domain.entry(new.clone()).or_default() += 1;
+        if old == new {
+            already += 1;
+            continue;
+        }
+        changed.push(serde_json::json!({ "id": id, "folder": folder, "from": old, "to": new }));
+        // Submit ONLY {id, domain}, never the round-tripped record.
+        //
+        // The write MERGES, so the two are equivalent — right up until a stored field is `null`. A
+        // resubmitted explicit `null` reads as a CLEAR, so round-tripping the whole record deletes
+        // every null field it carries. Measured on the real store before this line existed: 448
+        // records went in, 401 fields came out where 402 should have, and the missing one was
+        // `terminalhost.provides` — a stored null, silently dropped by a backfill that was only
+        // supposed to ADD a field.
+        //
+        // Sending just the delta makes that unreachable: a field this command never names is a field
+        // it cannot lose.
+        updated.push(serde_json::json!({ "id": id, "domain": new }));
+    }
+    let applied = if apply && !updated.is_empty() {
+        let writer = crate::record::resolve_writer(None);
+        let plan = WritePlan { replace: false, clear: &[] };
+        set_stamped(&store, &updated, None, &writer, "component", Some("domains: feature axis from folder"), plan)?;
+        true
+    } else {
+        false
+    };
+    let report = serde_json::json!({
+        "scanned": scanned,
+        "alreadyCorrect": already,
+        "changed": changed,
+        "unmapped": unmapped,
+        "byDomain": by_domain,
+        "applied": applied,
+    });
+    let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
 /// `bsc ui export <dir> [--dir <store>] [--pretty]` (#3606) — dump the component store to a folder tree,
 /// `<dir>/<group>/<id>.json`, so components-as-data round-trips: the seed half `bsc ui import` reads it back.
 /// Files are written pretty (readable git diffs); `--pretty` also indents the stdout report.
@@ -3911,6 +4040,64 @@ fn cmd_list_kit(args: &[String]) -> Result<(), String> {
                 .and_then(|v| v.get("kitId").and_then(|k| k.as_str().map(str::to_owned)))
                 .as_deref()
                 == Some(kit.as_str())
+        })
+        .collect();
+    if raw {
+        let ids: Vec<String> = selected.iter().filter_map(|j| bsc_json_store::cli::id_field(j)).collect();
+        bsc_cli_util::print_raw_lines(&ids);
+        return Ok(());
+    }
+    let out: Vec<serde_json::Value> = if full {
+        selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
+    } else {
+        selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
+    };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `list --domain <d> [--full] [--raw] [--pretty] [--dir D]` — the component list scoped to ONE FEATURE
+/// (`epic-the-graphs-are-split-by-feature-over-a-core`).
+///
+/// Mirrors [`cmd_list_kit`] exactly, for the same reason it exists: `domain` is a components-only field,
+/// so filtering here keeps it out of the dispatch every other store shares. `--domain core` answers "what
+/// may I build on anywhere", which is the read this axis was added for.
+///
+/// A SELECTION, NOT A PARTITION. This narrows what is LISTED; it never narrows what a listed record may
+/// reference. A `glance` component composing a `core` one keeps that edge, and it stays visible in the
+/// graph projection — 577 of 927 component edges point at the baseline, so a filter that hid them would
+/// misrepresent the library rather than scope it.
+///
+/// An UNKNOWN domain yields an empty list rather than an error, matching `--kit`: asking what is in a
+/// feature that turns out to hold nothing is a legitimate question, and during the backfill it is the
+/// common one.
+fn cmd_list_domain(args: &[String]) -> Result<(), String> {
+    let (mut domain, mut dir) = (None::<String>, None::<String>);
+    let (mut pretty, mut full, mut raw) = (false, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--domain" => domain = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--full" => full = true,
+            "--raw" => raw = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => {}
+        }
+    }
+    let domain = domain.ok_or("--domain needs a value (e.g. `core`, `glance`; see `bsc ui domains`)")?;
+    let store = open_component_store(&dir)?;
+    let stored = store.list();
+    let selected: Vec<&String> = stored
+        .iter()
+        .filter(|j| {
+            serde_json::from_str::<serde_json::Value>(j)
+                .ok()
+                .and_then(|v| v.get("domain").and_then(|d| d.as_str().map(str::to_owned)))
+                .as_deref()
+                == Some(domain.as_str())
         })
         .collect();
     if raw {
@@ -7702,8 +7889,9 @@ export const P = () => <X />;"
     fn specs_are_the_two_collections_with_the_right_lean_fields() {
         assert_eq!(COMPONENT_SPEC.noun, "component");
         assert_eq!(COMPONENT_SPEC.dir_segment, "components");
-        // `folder` (#3048/#4107) + `shapes` (#2475) ride the lean list projection so `list`/`list --shape` expose the axes.
-        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "folder", "shapes"]);
+        // `folder` (#3048/#4107) + `domain` (the FEATURE axis) + `shapes` (#2475) ride the lean list
+        // projection so `list` / `list --shape` / `list --domain` expose the axes without `--full`.
+        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "folder", "domain", "shapes"]);
         assert_eq!(KIT_SPEC.noun, "kit");
         assert_eq!(KIT_SPEC.dir_segment, "kits");
         assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "tech", "style", "stack"]);
@@ -7973,7 +8161,7 @@ export const P = () => <X />;"
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
+                "set-src", "patch", "domains", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
@@ -9363,11 +9551,15 @@ export const P = () => <X />;"
         });
         set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None, WritePlan::default()).unwrap();
 
-        // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still project.
+        // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still
+        // project. `domain` reads as "" here because this fixture predates the FEATURE axis: `lean_meta`
+        // renders an ABSENT meta field as the empty string rather than omitting it, so a record with no
+        // domain still has the same SHAPE as one that has it. That is what keeps a consumer parsing a
+        // fixed set of keys instead of branching on presence.
         let meta = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.meta_fields);
         assert_eq!(
             meta,
-            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "shapes": ["list"] })
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "folder": "pages", "domain": "", "shapes": ["list"] })
         );
         // get / list / list --full still run clean end-to-end over a stamped store.
         assert!(run(vec!["get".into(), "card".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -10439,5 +10631,151 @@ mod tempdir_shim {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.0).ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod domain_tests {
+    use super::*;
+
+    /// A store shaped like the real one at the split: a baseline, two features, the shell, and a
+    /// HOLLOW record (no folder, no kitId, no name) — 44 of 448 live records look exactly like that,
+    /// and they are the reason this backfill reports rather than defaults.
+    fn seeded() -> (tempdir_shim::Dir, String) {
+        let dir = tempdir_shim::Dir::new("bsc-domains");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store.set("button", r#"{"id":"button","name":"Button","kitId":"k","folder":"shared/ui/controls"}"#).unwrap();
+        store.set("glancepage", r#"{"id":"glancepage","name":"GlancePage","kitId":"k","folder":"features/glance"}"#).unwrap();
+        store.set("settingscard", r#"{"id":"settingscard","name":"Card","kitId":"k","folder":"features/settings/cards"}"#).unwrap();
+        store.set("rail", r#"{"id":"rail","name":"Rail","kitId":"k","folder":"app/chrome"}"#).unwrap();
+        store.set("hollow", r#"{"id":"hollow"}"#).unwrap();
+        let p = dir.path();
+        (dir, p)
+    }
+
+    fn run_domains(path: &str, extra: &[&str]) -> serde_json::Value {
+        // Drive the mapping the command drives, over the same store, so the assertions are about the
+        // backfill's DECISIONS rather than about stdout capture.
+        let store = open_component_store(&Some(path.to_string())).unwrap();
+        let apply = extra.contains(&"--apply");
+        let mut changed = Vec::new();
+        let mut unmapped = Vec::new();
+        let mut by: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut updated = Vec::new();
+        for raw in store.list() {
+            let rec: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            let id = rec.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let folder = record_folder(&rec).unwrap_or_default().to_string();
+            let old = rec.get("domain").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            match crate::domain_from_folder(&folder) {
+                None => unmapped.push(id),
+                Some(new) => {
+                    *by.entry(new.clone()).or_default() += 1;
+                    if old != new {
+                        changed.push(id.clone());
+                        // The DELTA, exactly as the command sends it — see the null-clear note there.
+                        updated.push(serde_json::json!({ "id": id, "domain": new }));
+                    }
+                }
+            }
+        }
+        if apply && !updated.is_empty() {
+            let writer = crate::record::resolve_writer(None);
+            let plan = WritePlan { replace: false, clear: &[] };
+            set_stamped(&store, &updated, None, &writer, "component", Some("domains"), plan).unwrap();
+        }
+        changed.sort();
+        unmapped.sort();
+        serde_json::json!({ "changed": changed, "unmapped": unmapped, "byDomain": by })
+    }
+
+    #[test]
+    fn maps_the_baseline_the_shell_and_each_feature() {
+        let (_d, p) = seeded();
+        let r = run_domains(&p, &[]);
+        assert_eq!(r["byDomain"]["core"], 1, "shared/** is the baseline");
+        assert_eq!(r["byDomain"]["shell"], 1, "app/** is the shell, NOT the baseline");
+        assert_eq!(r["byDomain"]["glance"], 1);
+        assert_eq!(r["byDomain"]["settings"], 1, "the feature is the segment after `features/`");
+    }
+
+    #[test]
+    fn a_hollow_record_is_reported_unmapped_and_never_given_a_default() {
+        // THE POINT OF THE REPORT. 44 live records carry no folder, kitId or name. Bucketing them
+        // under core (or anything) would hide a data-quality problem inside a migration.
+        let (_d, p) = seeded();
+        let r = run_domains(&p, &[]);
+        assert_eq!(r["unmapped"].as_array().unwrap(), &[serde_json::json!("hollow")]);
+        assert!(!r["changed"].as_array().unwrap().contains(&serde_json::json!("hollow")));
+        for d in ["core", "shell", "glance", "settings"] {
+            assert_eq!(r["byDomain"][d], 1, "an unmapped record inflated no domain");
+        }
+    }
+
+    #[test]
+    fn reports_without_writing_until_apply() {
+        let (_d, p) = seeded();
+        run_domains(&p, &[]);   // no --apply
+        let store = open_component_store(&Some(p.clone())).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("button").unwrap().unwrap()).unwrap();
+        assert!(rec.get("domain").is_none(), "a report must not write — --apply is the write");
+    }
+
+    #[test]
+    fn apply_writes_the_domain_and_re_running_is_a_no_op() {
+        let (_d, p) = seeded();
+        let first = run_domains(&p, &["--apply"]);
+        assert_eq!(first["changed"].as_array().unwrap().len(), 4);
+        let store = open_component_store(&Some(p.clone())).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("glancepage").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["domain"], "glance");
+        // Idempotence is what makes the backfill safe to re-run after adjudicating the unmapped ones.
+        let second = run_domains(&p, &["--apply"]);
+        assert!(second["changed"].as_array().unwrap().is_empty(), "second run changed nothing");
+        assert_eq!(second["unmapped"].as_array().unwrap(), &[serde_json::json!("hollow")]);
+    }
+
+    #[test]
+    fn a_stored_null_field_survives_the_backfill() {
+        // REGRESSION. The backfill first resubmitted the whole round-tripped record. The write MERGES,
+        // so that looked equivalent — but a resubmitted explicit `null` reads as a CLEAR, so every null
+        // field a record carried was deleted by a command that only meant to ADD one.
+        //
+        // Caught on the real store, not here: 448 records went in and 401 fields came out where 402
+        // should have, and the missing one was `terminalhost.provides`, a stored null. A store-wide key
+        // count is what found it; no per-record assertion would have.
+        let dir = tempdir_shim::Dir::new("bsc-domains-null");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store
+            .set("nullish", r#"{"id":"nullish","name":"N","kitId":"k","folder":"features/glance","provides":null}"#)
+            .unwrap();
+        let p = dir.path();
+        run_domains(&p, &["--apply"]);
+        let store = open_component_store(&Some(p)).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("nullish").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["domain"], "glance", "the field it meant to add is added");
+        assert!(
+            rec.as_object().unwrap().contains_key("provides"),
+            "a stored null must SURVIVE — the backfill adds a field, it never clears one"
+        );
+    }
+
+    #[test]
+    fn the_backfill_leaves_folder_untouched() {
+        // `folder` is derived from `src` and read by emit + regroup. If the backfill moved it, every
+        // `bsc ui regroup` would undo this work — which is the whole reason domain is a second field.
+        let (_d, p) = seeded();
+        run_domains(&p, &["--apply"]);
+        let store = open_component_store(&Some(p)).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("settingscard").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["folder"], "features/settings/cards", "folder is untouched");
+        assert_eq!(rec["domain"], "settings");
+    }
+
+    #[test]
+    fn domain_rides_the_lean_list_projection() {
+        // "What is in this feature" has to be answerable from `list` alone, without --full.
+        assert!(COMPONENT_SPEC.meta_fields.contains(&"domain"));
+        assert!(COMPONENT_SPEC.meta_fields.contains(&"folder"), "beside folder, not instead of it");
     }
 }
