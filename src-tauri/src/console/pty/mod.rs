@@ -343,9 +343,30 @@ pub(crate) fn gate_file_present(effective_cwd: &str) -> bool {
 /// So a pane whose worktree has no gate file was killed, then refused here, and the director was told
 /// `woke: true`. FOUR network-monitor worktrees were in that state.
 ///
-/// Two callers, one answer, on purpose. A second copy of this test — even a correct one — could drift
-/// and would fail in the worst direction: a pre-check that says "admitted" while the launch refuses
-/// puts us back to killing a session that cannot come back.
+/// Two callers were the design at first — this same function, asked before the kill AND inside the
+/// real spawn (`pty_create_inner`, below) — reasoning that a second copy could drift and fail in the
+/// worst direction: a pre-check saying "admitted" while the launch refuses.
+///
+/// That held for every cause except one, and requests #142 (network-monitor) and #150 (studio-code) are
+/// what it looks like in practice: a worktree whose `.claude/settings.json` was NEVER written — either
+/// because `ensure_worktree` made the directory but no launch ever completed for this stream, or because
+/// the stream is materializing for the very first time via a wake — can never self-heal under a shared
+/// predicate. The ONLY code that writes that file is `ensure_session_settings`, called by
+/// `TerminalView`'s mount effect immediately BEFORE `pty_create` — which means the sole way it could
+/// ever get written is for a wake's kill+remount to actually happen. A precheck that refuses on a
+/// missing gate file forecloses that remount forever: every wake refuses, nothing ever writes the file,
+/// every future wake refuses again. `bsc fleet wake` had no lever to break the loop, and neither did
+/// `bsc fleet start` (refuses on an already-running fleet without `--force`, which would relaunch every
+/// OTHER pane too, disruptively, just to fix or materialize this one).
+///
+/// So the precheck ([`pty_launch_refusal`]) and the real launch-time check (`pty_create_inner`'s own
+/// call to THIS function) now differ in exactly one case: a real, existing cwd directory with no gate
+/// file yet. The precheck admits it — the imminent remount's own `ensure_session_settings` will write
+/// the file before `pty_create` ever runs, so refusing here can never come true, only permanent. The
+/// real spawn-time check stays exactly this function, unchanged and strict: by the time IT runs, the
+/// settings write has already happened (or genuinely failed, in which case refusing is still correct —
+/// this is not a case a precheck should launder). An EMPTY cwd, or a cwd that is not a real directory,
+/// is still refused by both — there is no remount coming that could ever write anything into it.
 pub(crate) fn launch_gate_refusal(pane_id: &str, effective_cwd: &str) -> Option<String> {
     if gate_file_present(effective_cwd) || !must_be_gated(pane_id) {
         return None;
@@ -356,11 +377,26 @@ pub(crate) fn launch_gate_refusal(pane_id: &str, effective_cwd: &str) -> Option<
     ))
 }
 
-/// Ask [`launch_gate_refusal`] from the frontend, so a destructive action can decline BEFORE it
+/// The WAKE precheck's answer — [`launch_gate_refusal`], relaxed for the one case that predicate
+/// cannot resolve on its own: a real, existing cwd directory whose gate file has simply never been
+/// written. See the doc on `launch_gate_refusal` for why (requests #142/#150).
+///
+/// Only the "recoverable" shape is relaxed. Everything else — an empty cwd, a cwd that is not a real
+/// directory, a pane that is not gated, a gate file already present — answers exactly as
+/// `launch_gate_refusal` does, because none of those are fixed by letting the wake through.
+pub(crate) fn wake_precheck_refusal(pane_id: &str, cwd: &str) -> Option<String> {
+    let recoverable = !cwd.is_empty() && std::path::Path::new(cwd).is_dir();
+    if recoverable && !gate_file_present(cwd) && must_be_gated(pane_id) {
+        return None;
+    }
+    launch_gate_refusal(pane_id, cwd)
+}
+
+/// Ask [`wake_precheck_refusal`] from the frontend, so a destructive action can decline BEFORE it
 /// destroys. Returns `None` when the launch would be admitted.
 #[tauri::command]
 pub(crate) fn pty_launch_refusal(pane_id: String, cwd: String) -> Option<String> {
-    launch_gate_refusal(&pane_id, &cwd)
+    wake_precheck_refusal(&pane_id, &cwd)
 }
 
 fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
@@ -1366,11 +1402,8 @@ mod tests {
     /// killed anyway, and the director was told `woke: true`. MEASURED: four network-monitor
     /// worktrees had no `.claude/settings.json`, complete in every other respect.
     ///
-    /// The point of the extraction is that ONE function answers for both callers. A second copy —
-    /// even a correct one — could drift, and it would fail in the worst direction: a pre-check saying
-    /// "admitted" while the launch refuses is exactly the state this fixes.
     #[test]
-    fn the_launch_refusal_is_the_same_answer_the_wake_pre_check_gets() {
+    fn the_real_launch_refusal_stays_strict_on_a_missing_gate_file() {
         let dir = std::env::temp_dir().join(format!("bsc-gate-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -1396,6 +1429,52 @@ mod tests {
         // An EMPTY cwd is the #1819 shape and must refuse a fleet pane rather than launch it nowhere.
         assert!(super::launch_gate_refusal("network-monitor:api", "").is_some());
         assert!(!super::gate_file_present(""));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Requests #142 (network-monitor, `opnsense-config-adapter`) and #150 (studio-code, `surface` /
+    /// `mobile-orphan-clearance`): a worktree whose gate file was never written sat permanently
+    /// `stopped`/unmaterializable because every `bsc fleet wake` precheck refused it before the remount
+    /// that would have written it ever got to run. `wake_precheck_refusal` is the fix — it ADMITS
+    /// exactly this shape, because the imminent remount's own `ensure_session_settings` writes the gate
+    /// file before `pty_create` is ever called.
+    #[test]
+    fn a_wake_precheck_admits_a_real_directory_that_has_never_been_gated() {
+        let dir = std::env::temp_dir().join(format!("bsc-wake-precheck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.to_string_lossy().to_string();
+
+        // THE FIX: a real, existing worktree with no gate file yet is ADMITTED by the precheck — where
+        // the real launch-time check (above) still refuses the identical input.
+        assert!(!super::gate_file_present(&cwd));
+        assert_eq!(
+            super::wake_precheck_refusal("network-monitor:opnsense-config-adapter", &cwd),
+            None,
+            "a real cwd with no gate file yet must be admitted — the remount will write it",
+        );
+        assert!(
+            super::launch_gate_refusal("network-monitor:opnsense-config-adapter", &cwd).is_some(),
+            "the real spawn-time check stays strict for the identical input",
+        );
+
+        // Once the gate file exists, both agree (admitted) — no divergence in the ordinary case.
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        std::fs::write(dir.join(".claude").join("settings.json"), "{}").unwrap();
+        assert_eq!(super::wake_precheck_refusal("network-monitor:opnsense-config-adapter", &cwd), None);
+        assert_eq!(super::launch_gate_refusal("network-monitor:opnsense-config-adapter", &cwd), None);
+
+        // An EMPTY cwd is still refused by both — no remount can ever write a gate file into nothing.
+        assert!(super::wake_precheck_refusal("network-monitor:api", "").is_some());
+
+        // A cwd that is not a real directory at all is still refused too — recovering to some other
+        // ancestor at spawn time is not something the precheck can promise will end up gated either.
+        let ghost = dir.join("never-existed").to_string_lossy().to_string();
+        assert!(super::wake_precheck_refusal("network-monitor:api", &ghost).is_some());
+
+        // A manual console is never refused by either — the user is the principal there.
+        assert_eq!(super::wake_precheck_refusal("man:tab_abc:p2", &cwd), None);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
