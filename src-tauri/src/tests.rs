@@ -196,6 +196,19 @@
             "no npm script passes `--project` any more — either the build/launch recording was unwired \
              (see epic-a-build-or-launch-failure-leaves-no-record) or this guard is now pointing at nothing",
         );
+        // The FRONTEND's copy (`@/shared/lib/core/projectPaths`), which lives in the record store. It
+        // is the third writer of this string — the boot watchdog, the npm scripts and now the debug
+        // session's fault path — and a disagreement would split the app's own faults across stores that
+        // each look empty from the others, which is precisely the failure nothing else can see.
+        let graph = std::fs::read_to_string(manifest.join("data").join("knowledge").join("algorithms.json"))
+            .expect("data/knowledge/algorithms.json");
+        let needle = format!("SELF_PROJECT_KEY = \\\"{}\\\"", bsc_util::SELF_PROJECT_KEY);
+        assert!(
+            graph.contains(&needle),
+            "the frontend's SELF_PROJECT_KEY does not match `{}` — the app's faults would split across two stores",
+            bsc_util::SELF_PROJECT_KEY,
+        );
+
         for (name, key) in wired {
             assert_eq!(
                 key,
