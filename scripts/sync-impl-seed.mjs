@@ -1,12 +1,4 @@
-// Sync a NAMED impl record's `code` AND its carried `tests` from the store into the packaged seed.
-//
-// `tests` was added because it was a hole with no floor: `bsc graph tests set` writes the runtime
-// store and `bsc graph promote` moves a record to `graph/algorithms.json`, but `emit-records.mjs` —
-// and therefore the GATE, which runs the emitted `.bsc-records/**` test — reads THIS seed, and nothing
-// wrote the field here. An edited carried test landed in two stores, never reached the one under test,
-// and this script reported "already identical" because it only ever compared `code`. A sync that
-// cannot see the field that changed is worse than no sync: it answers the question with a green line.
-// Filed as `bsc request` 145 for the `bsc`-surface version of this.
+// Sync a NAMED impl record's CONTENT from the store into the packaged seed.
 //
 // `promote-records.mjs` only promotes records whose FILE still exists — a record that is ALREADY the
 // only copy (its file long retired) is "already seeded" and never reconsidered. So a deliberate edit
@@ -14,7 +6,16 @@
 //
 // This is deliberately BY ID and never a sweep: seed and store have diverged BOTH ways across ~340
 // records, and a mass re-stamp would overwrite real seed content with stale store content. It prints
-// the before/after sizes so the direction of the change is visible before it is trusted.
+// which fields changed, and their before/after sizes, so the direction of the change is visible before
+// it is trusted.
+//
+// #145: this used to compare (and copy) `code` ONLY. `bsc graph tests set` writes a record's `tests`
+// facet — same as `--domain`/`--kind`/`vizCode` — and a `code`-only diff called that "already identical"
+// even though the field that actually changed was never looked at. The comparison now mirrors
+// `repo_store::content_of`/`verdict_for` on the Rust side (crates/bsc-graph/src/repo_store.rs): the
+// WHOLE record, minus write bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`build` — fields the
+// store carries and the seed never does), and it refuses to sync an id whose store copy is MISSING a
+// field the seed already carries, so a stale runtime store can never delete richer seed content.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,46 +25,114 @@ import { join } from "node:path";
 // binary's real home (`census-claims.mjs`'s own fallback) is the honest guess.
 const BSC = process.env.BSC_BIN ?? join(process.env.HOME ?? "", ".base-studio-code", "bin", "bsc");
 const SEED = "src-tauri/data/knowledge/algorithms.json";
-const APPLY = process.argv.includes("--apply");
-const IDS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-if (!IDS.length) { console.error("usage: node sync-impl-seed.mjs <impl-id>… [--apply]"); process.exit(2); }
 
-const store = new Map(
-  JSON.parse(execFileSync(BSC, ["graph", "impl", "list"], { encoding: "utf8", maxBuffer: 1 << 28 }))
-    .map((r) => [r.id, r]),
-);
-const seed = JSON.parse(readFileSync(SEED, "utf8"));
+// Mirrors `repo_store::content_of` — write bookkeeping the store carries and the seed never does.
+const BOOKKEEPING = ["history", "rev", "updatedAt", "updatedBy", "build"];
 
-let changed = 0;
-for (const id of IDS) {
-  const s = store.get(id);
-  const t = (seed.implementations ?? []).find((im) => im.id === id);
-  if (!s) { console.log(`SKIP ${id} — not in the store`); continue; }
-  if (!t) { console.log(`SKIP ${id} — not in the seed (that would be a PROMOTION, not a sync)`); continue; }
-  // Compare each syncable field independently — a record whose `code` is unchanged may still carry an
-  // edited test, and vice versa. Reporting per field keeps the direction of the change visible, which
-  // is the property this script was written for.
-  const moved = [];
-  if ((t.code ?? "") !== (s.code ?? "")) {
-    moved.push(`code ${(t.code ?? "").length} -> ${(s.code ?? "").length} chars`);
-    t.code = s.code;
-  }
-  // `tests` is an ARRAY of { ext, name, src }, so it is compared (and moved) whole: a test can be
-  // renamed, added or dropped, and a per-entry merge would have to guess which of those happened.
-  const seedTests = JSON.stringify(t.tests ?? []);
-  const storeTests = JSON.stringify(s.tests ?? []);
-  if (seedTests !== storeTests) {
-    moved.push(`tests ${seedTests.length} -> ${storeTests.length} chars`);
-    if (s.tests === undefined) delete t.tests; else t.tests = s.tests;
-  }
-  if (!moved.length) { console.log(`SKIP ${id} — already identical`); continue; }
-  console.log(`${APPLY ? "SYNC" : "would sync"} ${id}  ${moved.join("; ")}`);
-  changed += 1;
+export function contentOf(rec) {
+  const c = { ...rec };
+  for (const k of BOOKKEEPING) delete c[k];
+  return c;
 }
 
-if (APPLY && changed) {
-  writeFileSync(SEED, `${JSON.stringify(seed, null, 2)}\n`);
-  console.log(`wrote ${SEED} (${changed} record(s))`);
-} else if (!APPLY) {
-  console.log("(dry run — pass --apply to write)");
+function isEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => isEqual(v, b[i]));
+  }
+  if (typeof a === "object") {
+    const ak = Object.keys(a);
+    const bk = Object.keys(b);
+    if (ak.length !== bk.length) return false;
+    return ak.every((k) => Object.hasOwn(b, k) && isEqual(a[k], b[k]));
+  }
+  return false;
 }
+
+// Would writing `fresh` over `existing` DROP a non-empty field `existing` carries? Mirrors
+// `repo_store::loses_fields` — key PRESENCE, not value equality, and an empty value is nothing to lose.
+export function losesFields(fresh, existing) {
+  return Object.entries(existing).some(([k, v]) => {
+    if (v === null || v === "" || (Array.isArray(v) && v.length === 0)) return false;
+    return !Object.hasOwn(fresh, k);
+  });
+}
+
+// The top-level content keys that differ between `existing` (the seed record) and `fresh` (the store
+// record) — reported so the direction and shape of a sync is visible before it is trusted.
+export function diffFields(existing, fresh) {
+  const keys = new Set([...Object.keys(existing), ...Object.keys(fresh)]);
+  return [...keys].filter((k) => !isEqual(existing[k], fresh[k])).sort();
+}
+
+// One id's sync verdict: "skip-not-in-store" | "skip-not-in-seed" | "up-to-date" | "would-lose-fields" | "sync".
+export function planOne(seedImpls, storeById, id) {
+  const s = storeById.get(id);
+  const t = seedImpls.find((im) => im.id === id);
+  if (!s) return { id, verdict: "skip-not-in-store" };
+  if (!t) return { id, verdict: "skip-not-in-seed" };
+  const existing = contentOf(t);
+  const fresh = contentOf(s);
+  if (isEqual(existing, fresh)) return { id, verdict: "up-to-date" };
+  if (losesFields(fresh, existing)) {
+    return { id, verdict: "would-lose-fields", fields: diffFields(existing, fresh) };
+  }
+  return { id, verdict: "sync", fields: diffFields(existing, fresh), fresh };
+}
+
+function main() {
+  const APPLY = process.argv.includes("--apply");
+  const IDS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  if (!IDS.length) { console.error("usage: node sync-impl-seed.mjs <impl-id>… [--apply]"); process.exit(2); }
+
+  const storeById = new Map(
+    JSON.parse(execFileSync(BSC, ["graph", "impl", "list"], { encoding: "utf8", maxBuffer: 1 << 28 }))
+      .map((r) => [r.id, r]),
+  );
+  const seed = JSON.parse(readFileSync(SEED, "utf8"));
+  const seedImpls = seed.implementations ?? [];
+
+  let changed = 0;
+  for (const id of IDS) {
+    const plan = planOne(seedImpls, storeById, id);
+    switch (plan.verdict) {
+      case "skip-not-in-store":
+        console.log(`SKIP ${id} — not in the store`);
+        break;
+      case "skip-not-in-seed":
+        console.log(`SKIP ${id} — not in the seed (that would be a PROMOTION, not a sync)`);
+        break;
+      case "up-to-date":
+        console.log(`SKIP ${id} — already identical`);
+        break;
+      case "would-lose-fields":
+        console.log(
+          `SKIP ${id} — the store copy is missing field(s) the seed already carries (${plan.fields.join(", ")}); ` +
+          "refusing to lose seed content",
+        );
+        break;
+      case "sync": {
+        const t = seedImpls.find((im) => im.id === id);
+        console.log(`${APPLY ? "SYNC" : "would sync"} ${id}  fields: ${plan.fields.join(", ")}`);
+        if (APPLY) {
+          for (const k of Object.keys(plan.fresh)) t[k] = plan.fresh[k];
+        }
+        changed += 1;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  if (APPLY && changed) {
+    writeFileSync(SEED, `${JSON.stringify(seed, null, 2)}\n`);
+    console.log(`wrote ${SEED} (${changed} record(s))`);
+  } else if (!APPLY) {
+    console.log("(dry run — pass --apply to write)");
+  }
+}
+
+if (process.argv[1] && process.argv[1].endsWith("sync-impl-seed.mjs")) main();
