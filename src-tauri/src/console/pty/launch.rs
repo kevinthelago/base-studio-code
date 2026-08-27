@@ -489,6 +489,28 @@ mod tests {
         assert_eq!(plan_launch(Some(""), None, false, false, true), LaunchPlan::None);
     }
 
+    /// THE OBSERVED SHAPE (#a-session-with-history-always-resumes), pinned so the half of the rule
+    /// that did NOT change cannot drift: the app starts nothing on its own.
+    ///
+    /// This is the literal line the live app logged three times while a worker sat on a bare
+    /// `bash-5.2$` with five conversations in its cage:
+    ///
+    ///     launch decision · has_history=true · resumed=false
+    ///     created · … · init=<none>
+    ///
+    /// It is CORRECT here and must stay correct — a mount with nothing to launch is a shell, per
+    /// `only-the-user-resumes-a-session`. What was wrong lived upstream, in the frontend deciding
+    /// there was nothing to launch: `resolveInitCmd` handed back "" for a pane that was being
+    /// resumed, because the bare `claude` placeholder outranked the resume. Fixing it here instead —
+    /// by resuming on `has_history` alone — would have made the app start sessions by itself, and
+    /// would have resumed a STRANGER'S conversation for a per-request debug session, whose cwd is a
+    /// shared repo and whose `paneContinue` is deliberately false (#3497).
+    #[test]
+    fn an_empty_launch_stays_a_bare_shell_even_with_history() {
+        assert_eq!(plan_launch(None, Some(""), true, false, false), LaunchPlan::None);
+        assert_eq!(plan_launch(None, None, true, true, false), LaunchPlan::None);
+    }
+
     /// #3937: the fallback shell must NOT report its cwd. `__bsc_osc7` echoes `$(pwd)`, the frontend
     /// writes that straight back into `paneCwds`, and for a fleet worker the fallback ancestor is
     /// `worktrees/<key>` — the parent of every worktree. Reporting it overwrites the pane's real,

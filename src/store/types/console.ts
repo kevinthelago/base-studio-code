@@ -11,6 +11,7 @@ import type { ReaperConfig } from "@/app/console/lib/idleReaper";
 import type { QueuedPane, FocusTarget } from "@/app/console/lib/focusQueue";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
+import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { AgentProfile } from "@/shared/lib/security/agentProfiles";
 import type { DirectorMode } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
@@ -38,6 +39,8 @@ export type WorkerEndState = "done" | "needs-attention" | "blocked";
 
 /** A fleet worker auto-ended after its PTY exited (#920). Persisted so a restart never
  *  re-opens/relaunches a finished worker; the view renders a resting card with a reopen action. */
+import type { PaneStop, StopReason } from "@/app/console/lib/paneStops";
+
 export interface EndedInfo {
   /** Done / needs-attention / blocked, from the owned-issue status (not the worker's say-so). */
   state: WorkerEndState;
@@ -50,6 +53,17 @@ export interface EndedInfo {
 }
 
 /** Console domain slice of {@link AppStore}: navigation + the tabs/panes/focus core app state. */
+/**
+ * A stream the wake path may START rather than merely resume
+ * (`the-director-cannot-start-a-stream-that-never-launched`).
+ *
+ * The plan.db row Rust resolved, plus the ABSOLUTE cwd it resolved with it — the worktree for a
+ * repo'd worker, the project hub for a repo-less hub role-actor (#3103). The path travels with the
+ * row for the same reason a fleet launch's does (#905): re-deriving it in the store depends on the
+ * async-loaded `bscBaseDir` mirror, and an empty one drops the session at the user's home dir.
+ */
+export type WakeStream = AgentStream & { cwd: string };
+
 export interface ConsoleState {
   // Navigation
   activeWorkspace: Workspace;
@@ -88,8 +102,15 @@ export interface ConsoleState {
   setFocusTarget: (target: FocusTarget) => void;
   /** Wake a parked pane (#199): seed it with `prompt` as a FRESH claude session and
    *  remount its tab (runId bump). Returns false if the pane/tab is gone or disabled.
-   *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect. */
-  wakePane: (paneId: string, prompt: string) => boolean;
+   *  The caller `pty_kill`s the pane first so the remount spawns fresh, not reconnect.
+   *
+   *  `stream` STARTS a session that was never opened
+   *  (`the-director-cannot-start-a-stream-that-never-launched`). The store's roster
+   *  (`fleetPaneStreams`) only knows what LAUNCHED, so a stream plan.db names and no session
+   *  ever ran is invisible here — Rust reads plan.db and passes the row, with the absolute cwd
+   *  it resolved, so the pane can be wired exactly as `fleetStartProject` would have wired it.
+   *  Omitted (or undefined) ⇒ the historical behaviour: a pane absent from the roster refuses. */
+  wakePane: (paneId: string, prompt: string, stream?: WakeStream) => boolean;
   clearFocusQueue: () => void;
   advanceFocus: () => void;
   // Prune queued panes across every tab whose live status the caller has —
@@ -182,6 +203,18 @@ export interface ConsoleState {
   idleReaper: ReaperConfig;
   /** Mark a pane dormant after its PTY was reaped (the hook calls pty_kill alongside). */
   reapPane: (paneId: string) => void;
+  // ── Why a pane stopped (#a-stopped-session-says-why) ──
+  /** Recent pane stops, newest last — what the transient banner renders and what the log records.
+   *  TRANSIENT (absent from `partialize`): a notice that survives a restart is a notice about a
+   *  session the user is no longer looking at. Bounded + self-pruning; see `paneStops.ts`. */
+  paneStops: PaneStop[];
+  /** Record WHY a pane stopped: appends to {@link paneStops} (replacing any earlier entry for the
+   *  same pane) and ALWAYS writes a log line, faults at warn.
+   *
+   *  Called from the stop actions themselves — `reapPane`, `markPaneEnded`, `markQuarantine`,
+   *  `setPaneDisabled` — because the action that ran IS the reason, so one edit covers every caller.
+   *  The PROCESS-ended reasons come from Rust on the `pty_exit` payload instead. */
+  notePaneStopped: (paneId: string, reason: StopReason, detail: string, lastOutput?: string) => void;
   /** Clear a pane's dormant state so the view relaunches it (resume on focus). */
   resumePane: (paneId: string) => void;
   /** Resume a single dormant fleet/agent session in place (#glance-resume): clears the pane's

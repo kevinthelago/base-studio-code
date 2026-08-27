@@ -60,6 +60,62 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
+        // `fleet model <stream-id> <model>` — set (or `--clear`) the model ONE stream launches on.
+        //
+        // The director's level of a precedence chain that already exists and is documented on
+        // `bsc teams model` / `bsc persona model`: a fleet stream's own model > a team placement's >
+        // the persona's default > the harness's own default. Both of the other levels got a
+        // one-liner; this one did not, so setting it meant reading the whole stream blob, splicing
+        // one field, and writing it back — through `fleet stream set`, which VALIDATES, so a
+        // director that got the round-trip slightly wrong could reject or reshape its own stream.
+        "model" => {
+            let id = args
+                .positional
+                .get(2)
+                .ok_or("usage: bsc plan fleet model <stream-id> <model> | --clear")?;
+            let mut stream = s
+                .fleet_stream_get(id)
+                .map_err(|e| e.to_string())?
+                // REFUSE an unknown stream rather than upserting one. `fleet_stream_set` would
+                // happily create a row holding only `{id, model}` — no repo, no owns — and that is a
+                // stream the fleet would try to launch. A typo'd id must fail here, not at launch.
+                .ok_or_else(|| format!("no stream with id '{id}' in the fleet"))?;
+            let obj = stream
+                .as_object_mut()
+                .ok_or_else(|| format!("stream '{id}' is not a JSON object"))?;
+            if args.clear {
+                obj.remove("model");
+                s.fleet_stream_set(id, &stream).map_err(|e| e.to_string())?;
+                if !args.json {
+                    println!("{id}: model cleared — falls back to the persona's default, then the harness's");
+                }
+                return Ok(());
+            }
+            let model = args
+                .positional
+                .get(3)
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+                .ok_or("usage: bsc plan fleet model <stream-id> <model> | --clear")?;
+            obj.insert("model".into(), serde_json::Value::String(model.to_string()));
+            s.fleet_stream_set(id, &stream).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("{id}: model → {model}");
+                // A value that is not a Claude tier is NOT rejected — choosing a local model is the
+                // point of this verb. But it is not silently accepted either: on Claude Code an
+                // unrecognized model produces no `--model` flag at all, so a typo like `sonet-4.5`
+                // degrades to Claude's own default and looks like it worked. Say which it is.
+                if !is_claude_tier(model) {
+                    println!(
+                        "  note: not a Claude tier ({}). A local harness uses it verbatim; \
+                         Claude Code does not recognize it and falls back to its own default.",
+                        CLAUDE_TIERS.join(" | "),
+                    );
+                }
+            }
+            Ok(())
+        }
         // `fleet stream set <id>` upserts ONE stream's JSON (stdin) — granular per-stream edit, no
         // whole-blob replace. `fleet meta set` upserts just the meta (director/topology/…), leaving
         // every stream row intact.
@@ -140,6 +196,24 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
     }
 }
 
+/// The model tiers Claude Code recognizes as a `--model` alias. Used ONLY to decide whether to warn
+/// (see `fleet model`) — never to reject, because choosing a model Claude does not know is exactly
+/// what this verb exists to allow.
+///
+/// Deliberately a local constant rather than a read of `@data/console/models.json`: plandb is a
+/// Tauri-free crate with no access to the app's data dir, and the cost of the two drifting is a
+/// slightly wrong hint on one line — not a wrong write. The catalog is the authority for what the UI
+/// OFFERS; this is only the authority for what earns a warning.
+const CLAUDE_TIERS: [&str; 3] = ["haiku-4.5", "sonnet-4.5", "opus-4.5"];
+
+/// Whether `model` is a tier Claude Code will map to a `--model` alias. Bare tier names
+/// (`opus`/`sonnet`/`haiku`) count too — that is what the alias actually is, and a director that
+/// types the short form has not made a mistake.
+fn is_claude_tier(model: &str) -> bool {
+    let m = model.trim();
+    CLAUDE_TIERS.contains(&m) || CLAUDE_TIERS.iter().any(|t| t.split('-').next() == Some(m))
+}
+
 /// Reduce a full FleetPlan JSON to the lean per-stream view (`id` / `name` / `dependsOn`). The
 /// permission/flow/kickoff detail is reached with `fleet get <stream-id>` (one stream) or `--full`.
 fn fleet_lean(f: &serde_json::Value) -> serde_json::Value {
@@ -164,6 +238,90 @@ fn fleet_lean(f: &serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A temp store with one real stream in it, for the `fleet model` round trips below.
+    fn store_with_stream(tag: &str) -> (crate::Store, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("plandb-fleetmodel-{tag}-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let s = crate::Store::open(&path).unwrap();
+        s.fleet_set(&serde_json::json!({
+            "streams": [{ "id": "auth", "name": "Auth", "repo": "own/web", "owns": ["src/auth/**"] }],
+            "director": { "enabled": true },
+        }))
+        .unwrap();
+        (s, path)
+    }
+
+    #[test]
+    fn fleet_model_sets_one_field_and_leaves_the_rest_of_the_stream_alone() {
+        // The reason this verb exists: the director's level of the precedence chain was the only one
+        // reachable exclusively by rewriting the WHOLE stream blob, which is both awkward and a way
+        // to lose a field by omission. Setting the model must touch the model and nothing else.
+        let (s, path) = store_with_stream("set");
+        let before = s.fleet_stream_get("auth").unwrap().unwrap();
+
+        let mut patched = before.clone();
+        patched.as_object_mut().unwrap().insert("model".into(), serde_json::json!("qwen3.5:9b"));
+        s.fleet_stream_set("auth", &patched).unwrap();
+
+        let after = s.fleet_stream_get("auth").unwrap().unwrap();
+        assert_eq!(after["model"], serde_json::json!("qwen3.5:9b"));
+        // Everything the stream already carried survives — repo, owns, name.
+        assert_eq!(after["repo"], before["repo"]);
+        assert_eq!(after["owns"], before["owns"]);
+        assert_eq!(after["name"], before["name"]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn fleet_stream_get_is_none_for_an_unknown_id() {
+        // What makes the verb refusable. `fleet_stream_set` UPSERTS, so without this check a typo'd
+        // stream id would silently create a row holding only `{id, model}` — no repo, no owns — and
+        // that is a stream the fleet would then try to launch. The failure has to land on the typo.
+        let (s, path) = store_with_stream("unknown");
+        assert!(s.fleet_stream_get("auth").unwrap().is_some(), "the real stream resolves");
+        assert!(s.fleet_stream_get("auth-ui").unwrap().is_none(), "a near-miss must not resolve");
+        assert!(s.fleet_stream_get("Auth").unwrap().is_none(), "ids are exact, not case-folded");
+        assert!(s.fleet_stream_get("").unwrap().is_none());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn clearing_the_model_falls_back_rather_than_pinning_an_empty_string() {
+        // `--clear` must REMOVE the key, not set it to "". An empty-string model would read as a
+        // deliberate choice all the way down the chain and suppress the persona's default, which is
+        // the opposite of what clearing means.
+        let (s, path) = store_with_stream("clear");
+        let mut v = s.fleet_stream_get("auth").unwrap().unwrap();
+        v.as_object_mut().unwrap().insert("model".into(), serde_json::json!("opus-4.5"));
+        s.fleet_stream_set("auth", &v).unwrap();
+        assert!(s.fleet_stream_get("auth").unwrap().unwrap().get("model").is_some());
+
+        let mut v = s.fleet_stream_get("auth").unwrap().unwrap();
+        v.as_object_mut().unwrap().remove("model");
+        s.fleet_stream_set("auth", &v).unwrap();
+        assert!(
+            s.fleet_stream_get("auth").unwrap().unwrap().get("model").is_none(),
+            "cleared means ABSENT, so the next level of the chain applies",
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn is_claude_tier_recognizes_the_catalog_and_its_bare_aliases() {
+        // Drives only whether the verb WARNS. A false negative prints a note on a valid tier
+        // (harmless); a false positive stays silent on a typo, which is the one that costs — an
+        // unrecognized model produces no `--model` flag at all, so `sonet-4.5` looks like it worked.
+        for t in ["haiku-4.5", "sonnet-4.5", "opus-4.5"] {
+            assert!(is_claude_tier(t), "{t} is a catalog tier");
+        }
+        for t in ["haiku", "sonnet", "opus"] {
+            assert!(is_claude_tier(t), "{t} is the bare alias claude itself takes");
+        }
+        assert!(!is_claude_tier("qwen3.5:9b"), "a local model earns the note");
+        assert!(!is_claude_tier("sonet-4.5"), "a TYPO earns the note — this is the case that matters");
+        assert!(!is_claude_tier(""), "empty is not a tier");
+    }
 
     #[test]
     fn fleet_lean_keeps_only_id_name_depends_on() {

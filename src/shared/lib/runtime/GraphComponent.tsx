@@ -127,8 +127,10 @@ export function GraphComponent({
   fallback?: ReactNode;
   /** Which export of the record to mount. A record provides a MODULE, and a module can export several
    *  components — `@/shared/ui/controls/Field` exports TextField, TextArea and SelectField — so a host
-   *  mounting one of them must say WHICH, or the loader picks whichever function comes first. Absent ⇒
-   *  the default/only export, the behaviour every existing caller relies on. */
+   *  mounting one of them must say WHICH. Absent ⇒ defaults to the record's OWN name (#121), which is
+   *  what makes an id-only mount self-correct for a record whose module carries a foreign sibling ahead
+   *  of its own definition; only a record whose own name matches no export at all falls through to
+   *  `pickComponent`'s default/first-export behaviour. */
   exportName?: string;
   /** The theme to resolve for a `themeSystem: "js"` component (#3715) — passed to the wrapping
    *  `<ThemeProvider>`. Ignored for a CSS component (it follows the cascade). Absent ⇒ the base theme. */
@@ -158,7 +160,17 @@ export function GraphComponent({
   const implCount = useAppStore((s) => s.algorithmImpls.length);
   // Both caches key on record + EXPORT, never the record alone: the same id serves a different component
   // per export, so an id-keyed `lastGood` would hand TextArea the component it cached for TextField.
-  const cacheKey = exportName ? `${id}#${exportName}` : id;
+  //
+  // Absent `exportName` resolves to the record's OWN name (#121-pickComponent-mounts-wrong-export): a
+  // record's module can carry a foreign sibling ahead of its own definition — `Field.tsx` is one file
+  // with `Field`, `TextField`, `TextArea` and `SelectField`, and a record transcribed from it for one of
+  // the latter three still opens with `Field` — and `pickComponent` falls back to whichever export comes
+  // first in source order when it has no name to match against. Resolving it here fixes every existing
+  // id-only caller in one place; `pickComponent` still refuses to guess when the name matches nothing and
+  // the module is ambiguous.
+  const componentName = useAppStore((s) => s.components.find((c) => c.id === id)?.name);
+  const resolvedExportName = exportName ?? componentName;
+  const cacheKey = resolvedExportName ? `${id}#${resolvedExportName}` : id;
   const [Loaded, setLoaded] = useState<ComponentType<Record<string, unknown>> | null>(null);
   // The source the MOUNTED component was built from. Usually `source`; the last-good source when the gate
   // fell back. Kept apart from `source` so the good-marking effect can never mark the CURRENT (broken)
@@ -201,7 +213,7 @@ export function GraphComponent({
     const rungs = recoveryLadder(history, source);
     for (const rung of rungs) {
       try {
-        const Comp = await loadComponentFromSource(rung, resolveGraphSource, exportName);
+        const Comp = await loadComponentFromSource(rung, resolveGraphSource, resolvedExportName);
         log.warn(
           `graph-loader: "${id}" ${why} and this session has no last-good — falling back to a retained ` +
             `earlier version from the record's history (${rung.length} chars). Recover it properly with ` +
@@ -248,7 +260,7 @@ export function GraphComponent({
       const n = (compileCounts.get(cacheKey) ?? 0) + 1;
       compileCounts.set(cacheKey, n);
       log.info(`graph-loader: compile #${n} "${id}" (source ${source.length} chars)`, "graph-loader");
-      const promise = loadComponentFromSource(source, resolveGraphSource, exportName); // vendor sibling panels (#3606)
+      const promise = loadComponentFromSource(source, resolveGraphSource, resolvedExportName); // vendor sibling panels (#3606)
       entry = { source, n, promise };
       compiles.set(cacheKey, entry);
       // EVICT ON SETTLE — this is an in-flight join, deliberately NOT a compile cache. A compile
@@ -297,7 +309,7 @@ export function GraphComponent({
     // forever. It re-fires only for a surface the guard above did not short-circuit — i.e. one with
     // nothing mounted from the current source.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, source, exportName, implCount]);
+  }, [id, source, resolvedExportName, implCount]);
 
   // MARK GOOD — after a commit in which the boundary did NOT catch. This effect cannot run for a render
   // that threw, which is exactly the distinction the gate needs: compiling is a weaker claim than

@@ -102,6 +102,64 @@ pub(crate) fn tool_decl_inner(d: &ToolDef) -> serde_json::Value {
     serde_json::json!({ "name": d.name, "description": d.description, "parameters": d.schema })
 }
 
+/// Characters per token, for the rough estimates the context-budget math runs on.
+///
+/// MEASURED, not assumed: this repo's own `CLAUDE.md` is 94,357 chars and Ollama's
+/// `prompt_eval_count` reported **24,604** tokens for it — 3.83 chars/token on real English-plus-code
+/// prose. The previous estimate divided by 4, which UNDER-counts by ~4%, and under-counting is the
+/// direction that hurts: it is what lets the budget math conclude "fits" for a prompt that does not,
+/// and an overflow costs half the window rather than the excess (see [`check_context_fit`]).
+///
+/// Rounded DOWN to 3.8 so the estimate errs high. An exact per-model tokenizer is not worth a
+/// dependency here — the number only has to be right enough to keep us on the safe side of a cliff.
+pub const CHARS_PER_TOKEN: usize = 38; // tenths, i.e. 3.8 — integer math, no float rounding surprises
+
+/// Rough token count for a string, erring HIGH (see [`CHARS_PER_TOKEN`]).
+pub fn estimate_tokens(s: &str) -> usize {
+    s.len() * 10 / CHARS_PER_TOKEN + 1
+}
+
+/// Approximate tokens the serialized tool declarations add to every turn's prompt.
+///
+/// These were previously counted as ZERO. They are not free: a session's ten native tools serialize
+/// to a few thousand tokens of JSON schema, sent on EVERY turn, and they sit inside the same window
+/// the system prompt has to fit in. Excluding them is how a budget check passes and the request still
+/// overflows.
+pub fn estimate_tool_tokens(tools: &[ToolDef]) -> usize {
+    tools
+        .iter()
+        .map(|d| estimate_tokens(&serde_json::to_string(&tool_decl_inner(d)).unwrap_or_default()))
+        .sum()
+}
+
+/// A prompt that does not fit its context window — what [`check_context_fit`] reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextOverflow {
+    /// Estimated tokens in the fixed part of the prompt (system + tool schemas).
+    pub prompt_tokens: usize,
+    /// The window the provider will actually apply (`num_ctx` for Ollama).
+    pub window: usize,
+    /// What survives truncation. Ollama keeps only `window/2` — see [`check_context_fit`].
+    pub kept_tokens: usize,
+}
+
+/// Whether the FIXED part of the prompt (system + tool schemas) fits `window`. `None` ⇒ it fits.
+///
+/// **Why this is a hard check and not a soft budget.** Message compaction handles a conversation that
+/// grows past the window; it cannot help when the system prompt ALONE is over, because there is
+/// nothing left to elide. Worse, the failure is not proportional: Ollama's runner responds to a
+/// prompt at-or-over `num_ctx` by truncating to **half** the window and keeping the tail, so being one
+/// token over discards ~50% of the context — and the head, where the project spec lives, is exactly
+/// what goes. The client sees a normal response, so nothing downstream can detect it.
+///
+/// Hosted providers carry a ~200k budget, so this returns `None` for them in practice. Pure.
+pub fn check_context_fit(prompt_tokens: usize, window: usize) -> Option<ContextOverflow> {
+    if window == 0 || prompt_tokens < window {
+        return None;
+    }
+    Some(ContextOverflow { prompt_tokens, window, kept_tokens: window / 2 })
+}
+
 /// Build the shared reqwest client carrying the connect + overall timeouts (see the consts above), so a
 /// down/stuck endpoint fails fast instead of hanging. Used by [`post_json`]/[`get_json`] and Ollama's
 /// streaming path.
@@ -307,6 +365,57 @@ mod tests {
         assert!(matches!(resolve_provider("ollama"), Ok(ProviderKind::Ollama)));
         assert!(resolve_provider("mistral").is_err());
         assert!(resolve_provider("").is_err());
+    }
+
+    #[test]
+    fn check_context_fit_fires_at_the_boundary_and_reports_the_halving() {
+        // Under the window ⇒ fits.
+        assert_eq!(check_context_fit(32_767, 32_768), None);
+        // AT the window is already an overflow — Ollama truncates on `>=`, not `>`.
+        let over = check_context_fit(32_768, 32_768).expect("at-window must be an overflow");
+        assert_eq!(over.prompt_tokens, 32_768);
+        assert_eq!(over.window, 32_768);
+        // ...and being one token over costs HALF the window, not one token. This is the whole
+        // reason the check exists; a proportional loss would not have been worth guarding.
+        assert_eq!(over.kept_tokens, 16_384);
+
+        // The exact live failure this was built from: prompt=33580 against num_ctx=32768 was
+        // truncated to 16386 by Ollama (`llama_server.go:317`). We must call that an overflow.
+        assert!(check_context_fit(33_580, 32_768).is_some());
+        // A window of 0 means "don't set num_ctx" (defer to Ollama) — nothing to check against.
+        assert_eq!(check_context_fit(999_999, 0), None);
+        // Hosted providers carry a ~200k budget, so a large-but-normal prompt does not fire.
+        assert_eq!(check_context_fit(33_580, 200_000), None);
+    }
+
+    #[test]
+    fn estimate_tokens_errs_high_against_the_measured_ratio() {
+        // MEASURED: 94,357 chars of this repo's CLAUDE.md tokenized to 24,604 (3.83 chars/token).
+        // The estimate must be >= the real count — under-counting is what lets a prompt that does
+        // not fit pass the budget check, and the penalty for that is losing half the window.
+        let est = estimate_tokens(&"x".repeat(94_357));
+        assert!(est >= 24_604, "must not under-count the measured ratio: {est} < 24604");
+        // ...but still in the right neighbourhood; a wildly high estimate would compact needlessly.
+        assert!(est <= 26_000, "estimate is implausibly high: {est}");
+        // The old len/4 rule would have UNDER-counted this, which is the regression being pinned.
+        assert!(est > 94_357 / 4, "len/4 under-counts and must not come back");
+    }
+
+    #[test]
+    fn tool_schemas_are_counted_rather_than_treated_as_free() {
+        // They ride in every turn's prompt and share the window with the system prompt. Counting
+        // them as zero is how the budget math concluded "fits" for a request that overflowed.
+        let tools = vec![ToolDef {
+            name: "bash".into(),
+            description: "Run a bash command in the session shell".into(),
+            schema: serde_json::json!({
+                "type": "object",
+                "properties": { "command": { "type": "string", "description": "the command" } },
+                "required": ["command"],
+            }),
+        }];
+        assert!(estimate_tool_tokens(&tools) > 0, "a declared tool costs prompt tokens");
+        assert_eq!(estimate_tool_tokens(&[]), 0, "no tools, no cost");
     }
 
     #[test]
