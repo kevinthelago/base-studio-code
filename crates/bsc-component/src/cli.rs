@@ -3360,6 +3360,18 @@ static FORCE_WRITE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 
 fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
     for item in items {
+        // `requiredBy` — the USAGE mirror of a plan feature's `requires`. Validated HERE so a malformed
+        // entry is refused at the door: an entry must be `<projectKey>:<feature>`, because a bare slug is
+        // ambiguous across projects and a stored ambiguity is the thing the qualification exists to stop.
+        if let Some(rb) = item.get("requiredBy") {
+            let entries: Vec<String> = rb
+                .as_array()
+                .ok_or("`requiredBy` must be an array of `<projectKey>:<feature>` entries")?
+                .iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect();
+            bsc_util::required_by::normalize_required_by(&entries)?;
+        }
         // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
         // inline-animation warning surfaces even on a component whose `srcText` isn't a buildable module.
         warn_component_animations(item);
@@ -10780,5 +10792,54 @@ mod feature_tests {
         // "What is in this feature" has to be answerable from `list` alone, without --full.
         assert!(COMPONENT_SPEC.meta_fields.contains(&"feature"));
         assert!(COMPONENT_SPEC.meta_fields.contains(&"folder"), "beside folder, not instead of it");
+    }
+}
+
+#[cfg(test)]
+mod required_by_tests {
+    use super::*;
+
+    /// A component set carrying `requiredBy` is validated at the write, not trusted.
+    ///
+    /// The field is the USAGE mirror of a plan feature's `requires`: which features, in which projects,
+    /// need this component. It is a LIST because the relation is many-to-many in both directions —
+    /// several features across several projects legitimately need the same button.
+    #[test]
+    fn a_qualified_required_by_is_accepted() {
+        let item = serde_json::json!({
+            "id": "button", "name": "Button", "srcText": "export const Button=()=>null;",
+            "requiredBy": ["studio-code:glance", "my-app:settings"],
+        });
+        assert!(validate_component_batch(&[item]).is_ok());
+    }
+
+    #[test]
+    fn a_bare_slug_is_refused_at_the_write() {
+        // The whole reason entries are qualified: nothing stops two projects both having `settings`,
+        // so a bare slug names no one feature. Refusing here is what keeps the stored field unambiguous.
+        let item = serde_json::json!({
+            "id": "button", "name": "Button", "srcText": "export const Button=()=>null;",
+            "requiredBy": ["settings"],
+        });
+        let err = validate_component_batch(&[item]).unwrap_err();
+        assert!(err.contains("<projectKey>:<feature>"), "{err}");
+    }
+
+    #[test]
+    fn a_non_array_required_by_is_refused_rather_than_coerced() {
+        let item = serde_json::json!({
+            "id": "button", "name": "Button", "srcText": "export const Button=()=>null;",
+            "requiredBy": "studio-code:glance",
+        });
+        assert!(validate_component_batch(&[item]).is_err(), "a bare string is not the list shape");
+    }
+
+    #[test]
+    fn a_record_with_no_required_by_is_unaffected() {
+        // The field is OPTIONAL — most records have no declared user, and absence is not a defect.
+        let item = serde_json::json!({
+            "id": "button", "name": "Button", "srcText": "export const Button=()=>null;",
+        });
+        assert!(validate_component_batch(&[item]).is_ok());
     }
 }
