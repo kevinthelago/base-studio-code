@@ -53,7 +53,7 @@ pub struct Candidate {
     pub id: String,
     /// The domain it is in today. Empty when it has none — and on this graph that is the NORMAL state
     /// for a primitive or a general-purpose algorithm, which the collection facet excludes on purpose.
-    pub domain: String,
+    pub feature: String,
     /// The distinct OTHER domains that compose it, sorted. Its own domain never appears.
     pub from: Vec<String>,
 }
@@ -63,12 +63,12 @@ pub struct Candidate {
 pub struct Report {
     pub total: usize,
     /// Records per domain, `""` for the domain-less.
-    pub by_domain: BTreeMap<String, usize>,
+    pub by_feature: BTreeMap<String, usize>,
     /// Ids carrying no domain. NOT a defect list: the collection facet is partial by design, so this is
     /// "what no curated collection claims", which is most of the library.
-    pub domainless: Vec<String>,
+    pub featureless: Vec<String>,
     /// `composes` edges whose two ends sit in different, non-empty domains.
-    pub cross_domain_edges: usize,
+    pub cross_feature_edges: usize,
     /// Edges pointing INTO the baseline — the legal, encouraged shape, reported so the cross-domain
     /// count is read against something rather than in isolation.
     pub edges_into_core: usize,
@@ -91,27 +91,27 @@ fn field<'a>(v: &'a Value, k: &str) -> &'a str {
 /// dangling `composes` entry is a different defect (`bsc graph doctor`'s), and folding it in here
 /// would inflate the very number this exists to drive down.
 pub fn measure(impls: &[Value]) -> Report {
-    let domain_of: BTreeMap<&str, &str> =
-        impls.iter().map(|im| (field(im, "id"), field(im, "domain"))).collect();
+    let feature_of: BTreeMap<&str, &str> =
+        impls.iter().map(|im| (field(im, "id"), field(im, "feature"))).collect();
 
-    let mut by_domain: BTreeMap<String, usize> = BTreeMap::new();
-    let mut domainless: Vec<String> = Vec::new();
+    let mut by_feature: BTreeMap<String, usize> = BTreeMap::new();
+    let mut featureless: Vec<String> = Vec::new();
     let mut foreign: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     let (mut cross, mut into_core) = (0usize, 0usize);
 
     for im in impls {
         let id = field(im, "id");
-        let dom = field(im, "domain");
-        *by_domain.entry(dom.to_string()).or_default() += 1;
-        if dom.is_empty() && !id.is_empty() {
-            domainless.push(id.to_string());
+        let feat = field(im, "feature");
+        *by_feature.entry(feat.to_string()).or_default() += 1;
+        if feat.is_empty() && !id.is_empty() {
+            featureless.push(id.to_string());
         }
         let Some(edges) = im.get("composes").and_then(Value::as_array) else { continue };
         for t in edges.iter().filter_map(Value::as_str) {
             // A `composes` naming an id the store does not hold is `bsc graph doctor`'s finding, not
             // this one's — ignored so a dangling edge cannot inflate the number this drives down.
-            let Some(&target) = domain_of.get(t) else { continue };
-            if dom.is_empty() || target == dom {
+            let Some(&target) = feature_of.get(t) else { continue };
+            if feat.is_empty() || target == feat {
                 continue;   // an unplaced COMPOSER says nothing; same-domain use is not sharing
             }
 
@@ -122,7 +122,7 @@ pub fn measure(impls: &[Value]) -> Report {
             // four most-composed records in the real library — `typescript.number`, `.string`,
             // `.array`, `.map`, each pulled in by 6-7 domains — carry NO domain, so they were absent
             // from a ranking whose entire job is to say what belongs in the baseline.
-            foreign.entry(t).or_default().insert(dom);
+            foreign.entry(t).or_default().insert(feat);
 
             // Classification still needs a placed target: an edge into an unplaced record is neither a
             // crossing nor a use of the baseline until someone decides which.
@@ -141,26 +141,26 @@ pub fn measure(impls: &[Value]) -> Report {
         .into_iter()
         .map(|(id, from)| Candidate {
             id: id.to_string(),
-            domain: domain_of.get(id).copied().unwrap_or("").to_string(),
+            feature: feature_of.get(id).copied().unwrap_or("").to_string(),
             from: from.into_iter().map(str::to_owned).collect(),
         })
         .collect();
     candidates.sort_by(|a, b| b.from.len().cmp(&a.from.len()).then_with(|| a.id.cmp(&b.id)));
 
-    domainless.sort();
-    Report { total: impls.len(), by_domain, domainless, cross_domain_edges: cross, edges_into_core: into_core, candidates }
+    featureless.sort();
+    Report { total: impls.len(), by_feature, featureless, cross_feature_edges: cross, edges_into_core: into_core, candidates }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn im(id: &str, domain: &str, composes: &[&str]) -> Value {
-        serde_json::json!({ "id": id, "domain": domain, "composes": composes })
+    fn im(id: &str, feature: &str, composes: &[&str]) -> Value {
+        serde_json::json!({ "id": id, "feature": feature, "composes": composes })
     }
 
     #[test]
-    fn ranks_by_how_many_domains_reach_in_not_by_how_often() {
+    fn ranks_by_how_many_features_reach_in_not_by_how_often() {
         // THE MEASUREMENT THAT MATTERS. `shared` is composed twice, both times from ONE other domain;
         // `spread` is composed twice from TWO. Raw usage would tie them; fan-in separates them, and
         // `spread` is the one that is actually shared infrastructure.
@@ -178,10 +178,10 @@ mod tests {
     }
 
     #[test]
-    fn a_records_own_domain_is_never_foreign_to_it() {
+    fn a_records_own_feature_is_never_foreign_to_it() {
         let r = measure(&[im("x", "a", &[]), im("y", "a", &["x"])]);
         assert!(r.candidates.is_empty(), "same-domain use is not evidence of sharing");
-        assert_eq!(r.cross_domain_edges, 0);
+        assert_eq!(r.cross_feature_edges, 0);
     }
 
     #[test]
@@ -190,21 +190,21 @@ mod tests {
         // this report exists to drive down go UP as the baseline grows, which is backwards.
         let r = measure(&[im("util", CORE, &[]), im("f", "feature", &["util"])]);
         assert_eq!(r.edges_into_core, 1);
-        assert_eq!(r.cross_domain_edges, 0);
+        assert_eq!(r.cross_feature_edges, 0);
     }
 
     #[test]
-    fn a_domainless_record_is_listed_and_its_edges_are_not_classified() {
+    fn a_featureless_record_is_listed_and_its_edges_are_not_classified() {
         // It surfaces as an owed decision rather than being treated as a domain called "".
         let r = measure(&[im("nodomain", "", &[]), im("f", "feature", &["nodomain"])]);
-        assert_eq!(r.domainless, vec!["nodomain"]);
-        assert_eq!(r.cross_domain_edges, 0, "an unplaced end cannot make an edge a crossing");
+        assert_eq!(r.featureless, vec!["nodomain"]);
+        assert_eq!(r.cross_feature_edges, 0, "an unplaced end cannot make an edge a crossing");
         assert_eq!(r.edges_into_core, 0, "nor a use of the baseline");
-        assert_eq!(r.by_domain[""], 1);
+        assert_eq!(r.by_feature[""], 1);
     }
 
     #[test]
-    fn a_domainless_record_is_still_ranked_because_the_callers_are_placed() {
+    fn a_featureless_record_is_still_ranked_because_the_callers_are_placed() {
         // FOUND BY RUNNING IT. The first version required both ends placed before recording fan-in,
         // which silently hid the four most-composed records in the real library — `typescript.number`,
         // `.string`, `.array`, `.map`, each pulled in by 6-7 domains and each carrying no domain. A
@@ -221,9 +221,9 @@ mod tests {
         ]);
         assert_eq!(r.candidates.len(), 1);
         assert_eq!(r.candidates[0].id, "unplaced");
-        assert_eq!(r.candidates[0].domain, "", "still unplaced — the ranking does not place it");
+        assert_eq!(r.candidates[0].feature, "", "still unplaced — the ranking does not place it");
         assert_eq!(r.candidates[0].from, vec!["a", "b", "c"], "three domains reach for it");
-        assert_eq!(r.cross_domain_edges, 0, "and none of those edges is classified yet");
+        assert_eq!(r.cross_feature_edges, 0, "and none of those edges is classified yet");
     }
 
     #[test]
@@ -231,16 +231,16 @@ mod tests {
         // A `composes` naming an id the store does not hold is `bsc graph doctor`'s finding. Counting
         // it here would inflate exactly the number this report exists to reduce.
         let r = measure(&[im("f", "feature", &["ghost"])]);
-        assert_eq!(r.cross_domain_edges, 0);
+        assert_eq!(r.cross_feature_edges, 0);
         assert!(r.candidates.is_empty());
     }
 
     #[test]
-    fn counts_every_record_by_domain_including_the_unplaced() {
+    fn counts_every_record_by_feature_including_the_unplaced() {
         let r = measure(&[im("a", "x", &[]), im("b", "x", &[]), im("c", "", &[])]);
         assert_eq!(r.total, 3);
-        assert_eq!(r.by_domain["x"], 2);
-        assert_eq!(r.by_domain[""], 1);
+        assert_eq!(r.by_feature["x"], 2);
+        assert_eq!(r.by_feature[""], 1);
     }
 
     #[test]

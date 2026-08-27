@@ -1,5 +1,5 @@
-//! The FEATURE axis (`epic-the-graphs-are-split-by-feature-over-a-core`) — which feature a component
-//! belongs to, and the one-time derivation of it from the folder path it was organized under.
+//! The OWNERSHIP axis (`the-ownership-axis-is-feature-on-both-graphs`) — which feature owns a
+//! component, and the one-time derivation of it from the folder path it was organized under.
 //!
 //! ## Why a second field rather than redefining `folder`
 //!
@@ -49,7 +49,7 @@ pub const SHELL: &str = "shell";
 /// `None` for anything else, INCLUDING an empty folder. That is the important half: 44 records carry no
 /// folder at all (and no `kitId` and no `name` — they are hollow), and bucketing them under a default
 /// would hide a data-quality problem inside a migration. An unmapped record is reported, never guessed.
-pub fn domain_from_folder(folder: &str) -> Option<String> {
+pub fn feature_from_folder(folder: &str) -> Option<String> {
     let f = folder.trim().trim_start_matches("./").replace('\\', "/");
     let f = f.trim_start_matches('/');
     if f.is_empty() {
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn shared_and_components_are_the_baseline() {
         for f in ["shared/ui/controls", "shared/ui", "shared", "components/ui", "src/components/ui"] {
-            assert_eq!(domain_from_folder(f).as_deref(), Some(CORE), "{f}");
+            assert_eq!(feature_from_folder(f).as_deref(), Some(CORE), "{f}");
         }
     }
 
@@ -83,23 +83,23 @@ mod tests {
     fn app_is_the_shell_and_not_the_baseline() {
         // The distinction the whole rule rests on: the shell composes features, the baseline may not.
         for f in ["app", "app/console", "app/console/panes/views"] {
-            assert_eq!(domain_from_folder(f).as_deref(), Some(SHELL), "{f}");
+            assert_eq!(feature_from_folder(f).as_deref(), Some(SHELL), "{f}");
         }
-        assert_ne!(domain_from_folder("app").as_deref(), Some(CORE));
+        assert_ne!(feature_from_folder("app").as_deref(), Some(CORE));
     }
 
     #[test]
     fn a_feature_is_the_segment_after_features() {
-        assert_eq!(domain_from_folder("features/glance").as_deref(), Some("glance"));
-        assert_eq!(domain_from_folder("features/settings/cards").as_deref(), Some("settings"));
-        assert_eq!(domain_from_folder("features/glance/fleet").as_deref(), Some("glance"));
+        assert_eq!(feature_from_folder("features/glance").as_deref(), Some("glance"));
+        assert_eq!(feature_from_folder("features/settings/cards").as_deref(), Some("settings"));
+        assert_eq!(feature_from_folder("features/glance/fleet").as_deref(), Some("glance"));
     }
 
     #[test]
     fn bare_features_names_no_feature() {
         // Not a domain called "features" — that would be a bucket nobody chose.
-        assert_eq!(domain_from_folder("features"), None);
-        assert_eq!(domain_from_folder("features/"), None);
+        assert_eq!(feature_from_folder("features"), None);
+        assert_eq!(feature_from_folder("features/"), None);
     }
 
     #[test]
@@ -107,28 +107,28 @@ mod tests {
         // 44 of 448 records are hollow (no folder, no kitId, no name). Defaulting them into a domain
         // would bury that in the migration; they have to surface as unmapped and be adjudicated.
         for f in ["", "   ", "/"] {
-            assert_eq!(domain_from_folder(f), None, "{f:?}");
+            assert_eq!(feature_from_folder(f), None, "{f:?}");
         }
     }
 
     #[test]
     fn an_unrecognised_root_is_unmapped_rather_than_guessed() {
-        assert_eq!(domain_from_folder("vendor/thing"), None);
-        assert_eq!(domain_from_folder("ui/data"), None);
+        assert_eq!(feature_from_folder("vendor/thing"), None);
+        assert_eq!(feature_from_folder("ui/data"), None);
     }
 
     #[test]
     fn normalizes_separators_and_roots_the_way_folder_derivation_does() {
-        assert_eq!(domain_from_folder("src/shared/ui").as_deref(), Some(CORE));
-        assert_eq!(domain_from_folder("./features/logs").as_deref(), Some("logs"));
-        assert_eq!(domain_from_folder("features\\teams").as_deref(), Some("teams"));
-        assert_eq!(domain_from_folder("  features/mcp  ").as_deref(), Some("mcp"));
+        assert_eq!(feature_from_folder("src/shared/ui").as_deref(), Some(CORE));
+        assert_eq!(feature_from_folder("./features/logs").as_deref(), Some("logs"));
+        assert_eq!(feature_from_folder("features\\teams").as_deref(), Some("teams"));
+        assert_eq!(feature_from_folder("  features/mcp  ").as_deref(), Some("mcp"));
     }
 
     #[test]
     fn is_stable_under_re_derivation() {
         // The backfill must be a no-op on its second run, so the mapping cannot depend on state.
         let f = "features/designs";
-        assert_eq!(domain_from_folder(f), domain_from_folder(f));
+        assert_eq!(feature_from_folder(f), feature_from_folder(f));
     }
 }

@@ -22,7 +22,7 @@ pub mod cli;
 pub(crate) mod closure;
 /// A record's PUBLIC SURFACE — what its module exports, grouped into the ITEMS those exports name.
 pub mod exports;
-pub mod domain;
+pub mod feature;
 pub mod folder;
 pub mod graph_health;
 /// Whether a NAMED import actually names something the target module exports, following `export *`
@@ -43,5 +43,5 @@ pub mod syntax;
 pub mod usage;
 pub mod usage_scan;
 
-pub use domain::{domain_from_folder, CORE, SHELL};
+pub use feature::{feature_from_folder, CORE, SHELL};
 pub use folder::folder_from_src;
