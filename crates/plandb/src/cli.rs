@@ -837,15 +837,130 @@ fn cmd_blob_noun(
 /// Resolve the plan.db path via the shared `--db` → `$BSC_PLAN_DB` → default precedence
 /// ([`bsc_cli_util::resolve_store_path`]). There is no default location for a project's plan.db, so
 /// the default is a hard error.
+/// The project key a path sits inside, or `None` for a path outside every project.
+///
+/// Mirrors the app's `project_key_from_cwd`: an ALLOW-LIST of the two project roots — `projects/`
+/// (the hub, where a director and the studio sessions run) and `worktrees/` (where every worker runs)
+/// — then the first component beneath it. Not "anything under the base dir", because a session in the
+/// base dir itself belongs to no project and must resolve to nothing rather than to a guess.
+///
+/// Pure over `(path, base)` so both roots and the negative cases are testable without a project on disk.
+fn project_key_at(path: &std::path::Path, base: &std::path::Path) -> Option<String> {
+    [base.join("projects"), base.join("worktrees")]
+        .iter()
+        .find_map(|root| path.strip_prefix(root).ok())
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .filter(|k| !k.is_empty())
+}
+
+/// The plan store for the project the CWD sits in — the fallback when nothing was passed or exported.
+///
+/// WHY THIS EXISTS. `resolve_db` was `--db` → `$BSC_PLAN_DB` → error, so the one actor standing IN the
+/// project directory was the one that had to be told where the project is. Reported: a director having
+/// to `export BSC_PLAN_DB=…` before `bsc plan` would run.
+///
+/// The env var does not always arrive. The app sets it only when `plan_db_for_cwd` resolves, so an
+/// empty or recovered cwd yields none (see `an-empty-cwd-launches-the-director-permission-less-in-the-app-home`);
+/// a shell opened by hand never had it; and a namespace-caged session gets neither the var nor the
+/// `bsc` binary, since the cage projects the stores as `/plan` instead. A single missing export should
+/// not be a wall when the answer is derivable from where the process is standing.
+///
+/// Deliberately LAST in the chain: `--db` and `$BSC_PLAN_DB` still win, so this can only add an answer
+/// where there was an error, never override an explicit one.
+fn plan_db_from_cwd() -> Option<PathBuf> {
+    let base = bsc_util::bsc_base_dir()?;
+    let cwd = std::env::current_dir().ok()?;
+    let key = project_key_at(&cwd, &base)?;
+    Some(base.join("plans").join(format!("{key}.db")))
+}
+
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     bsc_cli_util::resolve_store_path(flag, "BSC_PLAN_DB", || {
-        Err("no plan.db: pass --db <path> or set BSC_PLAN_DB".to_string())
+        plan_db_from_cwd().ok_or_else(|| {
+            // Still names both explicit routes: the derivation covers a session inside a project, and
+            // this is what is left — a cwd that belongs to no project, where guessing would be worse.
+            "no plan.db: this directory is not inside a project (…/projects/<key> or \
+             …/worktrees/<key>), so pass --db <path> or set BSC_PLAN_DB"
+                .to_string()
+        })
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A session standing IN a project must not have to be told where the project is.
+    ///
+    /// Reported: a director having to `export BSC_PLAN_DB=…/plans/network-monitor.db` before
+    /// `bsc plan` would run. `resolve_db` was `--db` → `$BSC_PLAN_DB` → error, and the env var does
+    /// not always arrive — the app sets it only when the launch cwd resolves under a project root, a
+    /// shell opened by hand never had it, and a caged session gets neither the var nor the binary.
+    #[test]
+    fn a_project_key_is_derived_from_either_project_root() {
+        let base = std::path::Path::new("/home/u/.base-studio-code");
+
+        // The hub — where a director runs.
+        assert_eq!(
+            project_key_at(std::path::Path::new("/home/u/.base-studio-code/projects/network-monitor"), base).as_deref(),
+            Some("network-monitor"),
+        );
+        // ...and deeper inside it, since a session may `cd` into a linked repo.
+        assert_eq!(
+            project_key_at(std::path::Path::new("/home/u/.base-studio-code/projects/network-monitor/networkmonitor/crates/x"), base).as_deref(),
+            Some("network-monitor"),
+        );
+        // A worktree — where every worker runs. The whole fleet shares the project's ONE store, so
+        // this must resolve to the same key the hub does.
+        assert_eq!(
+            project_key_at(std::path::Path::new("/home/u/.base-studio-code/worktrees/network-monitor/networkmonitor--switch-cli-adapter"), base).as_deref(),
+            Some("network-monitor"),
+        );
+    }
+
+    #[test]
+    fn a_path_outside_every_project_resolves_to_nothing_rather_than_a_guess() {
+        let base = std::path::Path::new("/home/u/.base-studio-code");
+        // An ALLOW-LIST of the two roots, not "anything under the base dir" — these siblings hold no
+        // project, and answering with the first component would point `bsc plan` at a store named
+        // after a directory that is not a project.
+        for p in [
+            "/home/u/.base-studio-code",
+            "/home/u/.base-studio-code/plans",
+            "/home/u/.base-studio-code/design-studio",
+            "/home/u/.base-studio-code/bin",
+            "/home/u/some/repo",
+            "/",
+        ] {
+            assert_eq!(project_key_at(std::path::Path::new(p), base), None, "{p} is not in a project");
+        }
+        // The roots THEMSELVES name no project — there is no component beneath them.
+        assert_eq!(project_key_at(&base.join("projects"), base), None);
+        assert_eq!(project_key_at(&base.join("worktrees"), base), None);
+    }
+
+    #[test]
+    fn an_explicit_store_still_wins_over_the_derivation() {
+        // The fallback is a FALLBACK. `--db` is the most explicit thing a caller can say, and it must
+        // outrank both the env var and the cwd — otherwise a director inspecting another project's
+        // plan from inside its own would silently read its own.
+        let flag = Some("/tmp/explicit.db".to_string());
+        assert_eq!(resolve_db(&flag).unwrap(), PathBuf::from("/tmp/explicit.db"));
+    }
+
+    #[test]
+    fn a_cwd_outside_a_project_still_names_both_explicit_routes() {
+        // The error is what a session reads when the derivation cannot help, so it has to say what to
+        // do next — and now also WHY the automatic answer did not apply.
+        let msg = resolve_db(&None).err().unwrap_or_default();
+        // (In a project checkout this may resolve; the message is only asserted when it does not.)
+        if !msg.is_empty() {
+            assert!(msg.contains("--db"), "names the flag: {msg}");
+            assert!(msg.contains("BSC_PLAN_DB"), "names the env var: {msg}");
+            assert!(msg.contains("not inside a project"), "says why the fallback did not apply: {msg}");
+        }
+    }
 
     /// End-to-end through `run()` — the ONLY level that exercises `parse_args`, and therefore the only
     /// level that can catch an unregistered flag. A store-level test calls `request_resolve(id, note)`
