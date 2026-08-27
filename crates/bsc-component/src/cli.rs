@@ -915,7 +915,7 @@ ui-scope MUTATION (#2470).",
         summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
         usage: "\
 USAGE:
-  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]    # (`regroup` is a deprecated alias)
+  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]
 
 Re-derives each stored component's `group` as a nested, `/`-delimited FOLDER PATH from its `src`
 (`src/shared/ui/controls/Button.tsx` → `shared/ui/controls`; a leading `src/` root is stripped, the
@@ -1104,7 +1104,12 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     graph_fields: &["id", "name", "kitId", "role", "folder", "used", "composes"],
     // #4107 slice B: `group` -> `folder`. 351 stored records predate the rename and there is no
     // migration pass, so every projection reads the legacy key when the current one is absent.
-    field_aliases: &[("folder", "group")],
+    // #4107's `("folder", "group")` alias is GONE (finish-the-4107-group-to-folder-shim). It existed
+    // because 351 records predated the rename; `bsc ui refolder` has since migrated the last of them,
+    // and the packaged seed never carried the legacy key at all. Its removal is what makes `bsc ui list`
+    // and `bsc ui get --field folder` agree again — projecting through an alias while `get` read the raw
+    // record is why those two disagreed for a year.
+    field_aliases: &[],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
@@ -1162,7 +1167,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
         // `usage-scan` is a READ until `--apply`, which writes `used`/`usageAssessed` onto every examined
         // record. Gate on the flag, not the verb, so the diagnosis stays available to a read-scoped session.
@@ -1718,14 +1723,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_patch(&args[1..])
             }
         }
-        // `regroup` (#3579) re-derives every stored component's `group` as a nested folder path from its
-        // `src` — a ui-scope MUTATION (gated above), so a kit organizes like a completed project's
-        // folders. `regroup help` prints the doc; the scope gate already refused a read-scoped session.
-        // `regroup` stays a DEPRECATED ALIAS: the verb is named in prose the designer/librarian may
-        // have memorised, and an unknown-command error is a worse migration than one extra match arm.
-        Some("refolder" | "regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
-        Some("refolder" | "regroup") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
+        // `refolder` (#3579) re-derives every stored component's `folder` as a nested path from its
+        // `src`, and carries a srcless record's legacy value across — a ui-scope MUTATION (gated above),
+        // so a kit organizes like a completed project's folders.
+        //
+        // The `regroup` ALIAS IS RETIRED (finish-the-4107-group-to-folder-shim). It was kept because the
+        // old name was "named in prose the designer/librarian may have memorised" — but the concept it
+        // named is gone from the store now, and an alias that outlives its field is how two names for
+        // one thing stay alive indefinitely. `unknown_command` names the near miss, so a session that
+        // types the old verb is told the new one rather than left guessing.
+        Some("refolder") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
+        Some("refolder") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
             Ok(())
         }
         // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
@@ -2649,7 +2658,6 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
 /// and `bsc ui refolder` does the whole store in one pass. Nothing needs migrating before this ships.
 pub(crate) fn record_folder(rec: &serde_json::Value) -> Option<&str> {
     rec.get("folder")
-        .or_else(|| rec.get("group"))
         .and_then(serde_json::Value::as_str)
         .filter(|s| !s.is_empty())
 }
@@ -2686,9 +2694,32 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
         }
         scanned += 1;
         let src = rec.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
-        let Some(new_folder) = crate::folder_from_src(src) else { continue };
+        // The legacy key, read HERE and nowhere else. `record_folder` no longer knows it (#4107's alias
+        // is gone), and this is the one place that still must: a migration verb is the last reader of
+        // the name it is retiring.
+        let legacy = rec.get("group").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let derived = crate::folder_from_src(src);
+        // WHY THIS IS NOT JUST `let Some(new) = derived else { continue }`:
+        //
+        // `folder` derives from `src`, so a record with NO src was skipped outright — and every one of
+        // the 19 components still on `group` at 2026-08-25 was srcless. The only verb that could finish
+        // #4107 structurally could not touch the records that needed it, which is why the rename stalled
+        // at 19 and the compatibility shim stayed load-bearing for a year. (4118 recorded exactly this
+        // trap for the ALGORITHMS store — "refolder counts all 75 as srcless and skips every one" — and
+        // nobody noticed it was equally true here.)
+        //
+        // A srcless record carrying `group` is migrated BY VALUE: its folder is curated (`app/console`,
+        // `features/planner/fleet`) and no `src` could reproduce it, so carrying the value across is the
+        // only correct move as well as the only possible one. Re-derivation stays what it always was for
+        // a record that HAS src.
+        let new_folder = match (derived, &legacy) {
+            (Some(d), _) => d,                      // has src: re-derive, unchanged behaviour
+            (None, Some(g)) => g.clone(),           // srcless + legacy key: carry the value across
+            (None, None) => continue,               // nothing to derive and nothing to carry
+        };
         let old = record_folder(&rec).unwrap_or_default().to_string();
-        if old == new_folder && rec.get("group").is_none() {
+        if old == new_folder && legacy.is_none() {
             continue;   // already correct AND already migrated off the legacy key
         }
         let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -6576,7 +6607,7 @@ fn cmd_get(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// #3606 — export dumps the store to a folder tree nested by `group`, import loads it back, and the
+    /// #3606 — export dumps the store to a folder tree nested by `folder`, import loads it back, and the
     /// round-trip is lossless; a kit BUNDLE ({components:[…]}, e.g. react-ui.json) is exploded on import.
     #[test]
     fn export_import_round_trips_a_folder_tree_and_explodes_a_bundle() {
@@ -6586,8 +6617,9 @@ mod tests {
         let tree = base.join("tree");
         std::fs::create_dir_all(&store_dir).unwrap();
         let store = bsc_json_store::Store::new(store_dir.clone(), "component");
-        // One nested-by-group component, one ungrouped.
-        store.set("card", r#"{"id":"card","name":"Card","group":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
+        // One nested-by-FOLDER component, one unfoldered. (This fixture used the legacy `group` key
+        // until finish-the-4107-group-to-folder-shim removed the alias that made it resolve.)
+        store.set("card", r#"{"id":"card","name":"Card","folder":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
         store.set("loose", r#"{"id":"loose","name":"Loose","srcText":"export const Loose=()=>null;"}"#).unwrap();
 
         // export → files nest by the `group` folder path; ungrouped sits at the root.
@@ -6601,7 +6633,7 @@ mod tests {
         assert_eq!(store.list().len(), 0, "store cleared before re-import");
         cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
         let card: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
-        assert_eq!(card["group"], "ui/data", "the grouped record imported back verbatim");
+        assert_eq!(card["folder"], "ui/data", "the foldered record imported back verbatim");
         assert_eq!(card["srcText"], "export const Card=()=>null;");
         assert!(store.get("loose").unwrap().is_some(), "the ungrouped record imported back too");
 
@@ -9900,22 +9932,67 @@ export const P = () => <X />;"
         assert!(store.get("dup").unwrap().is_none(), "a non-builtin merge is still a bare delete");
     }
 
-    // ── #4107 slice B: the `group` -> `folder` rename ──
+    // ── #4107 slice B, FINISHED: the `group` -> `folder` rename ──
 
-    /// The store holds records written under `group` and there is no migration pass (the component seed
-    /// dir is skipped by `ensure_seeded`), so every READ must accept both names. Without this a rename
-    /// silently flattens 351 records to "unfoldered" — the failure looks like a kit that never had folders.
+    /// The inverse of the test this replaces. `record_folder_reads_the_legacy_group_key` pinned the
+    /// COMPATIBILITY SHIM — "every READ must accept both names" — which was right while 351 records
+    /// predated the rename. `bsc ui refolder` has since migrated the last of them and the packaged seed
+    /// never carried the legacy key, so the shim is gone and this pins its absence.
+    ///
+    /// It is pinned rather than merely deleted because a silently-returning alias is exactly how the two
+    /// names stayed alive: `bsc ui list` projected through it while `bsc ui get --field folder` read the
+    /// raw record, so the two disagreed for a year and each looked correct on its own.
     #[test]
-    fn record_folder_reads_the_legacy_group_key() {
+    fn record_folder_no_longer_reads_the_legacy_group_key() {
         use serde_json::json;
         assert_eq!(record_folder(&json!({ "folder": "shared/ui" })), Some("shared/ui"));
-        assert_eq!(record_folder(&json!({ "group": "shared/ui" })), Some("shared/ui"), "legacy key still read");
-        // Both present ⇒ the CURRENT name wins, so a half-migrated record cannot regress to its old path.
+        assert_eq!(
+            record_folder(&json!({ "group": "shared/ui" })), None,
+            "the legacy key is NOT read — a record still on it is unfoldered, which is what makes the \
+             migration observable instead of silently permanent"
+        );
         assert_eq!(record_folder(&json!({ "folder": "new/path", "group": "old/path" })), Some("new/path"));
         assert_eq!(record_folder(&json!({})), None);
         // An empty value is "absent", never a `""` bucket — the record convention the doc pins.
         assert_eq!(record_folder(&json!({ "folder": "" })), None);
-        assert_eq!(record_folder(&json!({ "group": "" })), None);
+    }
+
+    /// `refolder` migrates a SRCLESS record carrying the legacy key by VALUE — the case that kept the
+    /// shim load-bearing. `folder` derives from `src`, so a record with none was skipped outright, and
+    /// every one of the 19 components still on `group` at 2026-08-25 was srcless: the only verb that
+    /// could finish the rename structurally could not touch the records that needed it.
+    #[test]
+    fn refolder_migrates_a_srcless_legacy_record_by_value() {
+        let dir = tmp_store_dir("refolder-legacy");
+        let store = bsc_json_store::Store::new(std::path::PathBuf::from(&dir), "component");
+        // srcless + legacy key: its folder is CURATED, so no `src` could reproduce it.
+        store.set("endedconsole", r#"{"id":"endedconsole","name":"EndedConsole","group":"app/console"}"#).unwrap();
+        // has src: re-derivation, the unchanged path.
+        store.set("btn", r#"{"id":"btn","name":"Btn","src":"src/shared/ui/controls/Btn.tsx"}"#).unwrap();
+
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+
+        let ended: serde_json::Value =
+            serde_json::from_str(&store.get("endedconsole").unwrap().unwrap()).unwrap();
+        assert_eq!(ended["folder"], "app/console", "the curated value is CARRIED, not re-derived");
+        assert!(ended.get("group").is_none(), "the legacy key is cleared, so the two cannot drift");
+
+        let btn: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
+        assert_eq!(btn["folder"], "shared/ui/controls", "a record WITH src still derives");
+    }
+
+    /// A record with neither `src` nor the legacy key is left alone — the 9 suppression TOMBSTONES in the
+    /// live store are exactly this shape, and a tombstone is not a component that lost its folder.
+    #[test]
+    fn refolder_leaves_a_tombstone_alone() {
+        let dir = tmp_store_dir("refolder-tombstone");
+        let store = bsc_json_store::Store::new(std::path::PathBuf::from(&dir), "component");
+        store.set("windowcontrols", r#"{"id":"windowcontrols","suppressed":true}"#).unwrap();
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let t: serde_json::Value =
+            serde_json::from_str(&store.get("windowcontrols").unwrap().unwrap()).unwrap();
+        assert!(t.get("folder").is_none(), "a tombstone gains no folder");
+        assert_eq!(t["suppressed"], true, "and is otherwise untouched");
     }
 
     /// A refolder pass must MIGRATE a legacy record, not just re-derive it: it writes `folder` and drops
