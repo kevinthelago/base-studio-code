@@ -1079,7 +1079,8 @@ pub(crate) fn pty_pane_runtime(
         .collect()
 }
 
-/// Per-pane liveness for `bsc fleet` (#4098), shaped as the CLI's wire type.
+/// Per-pane liveness for `bsc fleet` (#4098) and `bsc session list` (#154), shaped as the CLI's wire
+/// type.
 ///
 /// An EMPTY `pane_ids` means "every pane the app is tracking" — the CLI asks that way when there is no
 /// roster to narrow by, and only the app knows the full set.
@@ -1088,28 +1089,44 @@ pub(crate) fn pty_pane_runtime(
 /// part, so the pids are collected under the lock, the lock is DROPPED, and the walk happens once for
 /// all of them. It also reports the pid, which is the thing the original report had to leave the app
 /// and run `tasklist` to find.
+///
+/// **`live` is confirmed with `try_wait`, not read off map PRESENCE (#154).** A child that exits on
+/// its own — no reconnect, no `pty_kill` — keeps its `PtySession` in the map forever; see
+/// `reconnect_or_reap`'s doc for why that tombstone is left for the create path to clear. A liveness
+/// query answered from `contains_key` alone therefore reports a dead pane as live, with its last real
+/// pid, indefinitely — which is exactly the bug reported against `bsc session list`: a session showed
+/// `live: true, busy: true` with a real pid while it was actually off, an `Ok(Some(_))` from
+/// `try_wait` that nothing had ever consulted. Reporting `pid: None` for a confirmed-dead child also
+/// keeps a since-recycled pid out of the `busy`/`agent` process-table walk below, which is what let a
+/// dead session's stale pid read as busy in the first place.
 pub(crate) fn pane_liveness(pane_ids: Vec<String>, state: &PtyState) -> Vec<bsc_fleet::PaneLive> {
-    let (ids, pids): (Vec<String>, Vec<Option<u32>>) = {
-        let sessions = state.0.lock().unwrap();
+    let (ids, live, pids): (Vec<String>, Vec<bool>, Vec<Option<u32>>) = {
+        let mut sessions = state.0.lock().unwrap();
         let wanted: Vec<String> = if pane_ids.is_empty() {
             sessions.keys().cloned().collect()
         } else {
             pane_ids
         };
-        wanted
-            .into_iter()
-            .map(|id| {
-                let pid = sessions.get(&id).and_then(|s| s.child.process_id());
-                (id, pid)
-            })
-            .unzip()
-    };
-    //  is session PRESENCE and is NOT derived from the pid: a session whose  comes
-    // back None still occupies the map (see ), and reporting it as absent would be the
-    // same class of wrong answer this command exists to fix.
-    let live: Vec<bool> = {
-        let sessions = state.0.lock().unwrap();
-        ids.iter().map(|id| sessions.contains_key(id)).collect()
+        let mut ids = Vec::with_capacity(wanted.len());
+        let mut live = Vec::with_capacity(wanted.len());
+        let mut pids = Vec::with_capacity(wanted.len());
+        for id in wanted {
+            let (is_live, pid) = match sessions.get_mut(&id) {
+                Some(s) => match s.child.try_wait() {
+                    // Confirmed exited — report dead, and withhold the now-stale pid.
+                    Ok(Some(_)) => (false, None),
+                    // Still running, OR the status is unreadable. An unreadable status is treated as
+                    // alive for the same reason `reconnect_or_reap` does: the cheap mistake is a
+                    // stale "running" report, not abandoning a process that is actually still there.
+                    _ => (true, s.child.process_id()),
+                },
+                None => (false, None),
+            };
+            ids.push(id);
+            live.push(is_live);
+            pids.push(pid);
+        }
+        (ids, live, pids)
     };
     let busy = busy::shells_with_descendants(&pids);
     // A SECOND, narrower probe (#fleet-list-reports-whether-the-agent-is-running). `busy` answers "may
@@ -4117,6 +4134,98 @@ mod reconnect_tests {
         let mut sessions = HashMap::new();
         assert!(!reconnect_or_reap(&mut sessions, "proj:never-launched"));
         assert!(sessions.is_empty());
+    }
+}
+
+// ── liveness answers a confirmed state, not map presence (request #154) ──────────────────────────
+//
+// `bsc session list` reported `designerReact` as `live: true, busy: true` with a real pid while the
+// session was actually off. The cause was the same shape as `reconnect_or_reap`'s tombstone (see
+// `reconnect_tests` above): a session whose child had exited on its own — no reconnect, no
+// `pty_kill` — stays in the map forever, and `pane_liveness` used to answer purely from
+// `contains_key`. These tests drive real child processes (`try_wait` on a mock has nothing to
+// disagree with the map about) through `pane_liveness` itself, the function both `bsc session list`
+// and `bsc fleet list` share.
+
+#[cfg(test)]
+mod pane_liveness_tests {
+    use super::{pane_liveness, PtySession, PtyState};
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+
+    /// A real session around `argv`, built the same way `pty_create` builds one.
+    fn session(argv: &[&str]) -> PtySession {
+        let pair = native_pty_system()
+            .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(argv[0]);
+        for a in &argv[1..] {
+            cmd.arg(a);
+        }
+        let child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+        let writer = pair.master.take_writer().expect("writer");
+        PtySession { writer, master: pair.master, child, _job: None }
+    }
+
+    /// A child that exits immediately, waited to completion so its status is readable — the exact
+    /// tombstone shape `reconnect_or_reap` guards against on the create path.
+    fn exited_session() -> PtySession {
+        let mut s = if cfg!(windows) {
+            session(&["cmd", "/c", "exit 3"])
+        } else {
+            session(&["/bin/sh", "-c", "exit 3"])
+        };
+        s.child.wait().expect("the child exits on its own");
+        s
+    }
+
+    /// A child that stays up for the length of the test.
+    fn running_session() -> PtySession {
+        if cfg!(windows) {
+            session(&["cmd", "/c", "ping -n 60 127.0.0.1 > NUL"])
+        } else {
+            session(&["/bin/sh", "-c", "sleep 60"])
+        }
+    }
+
+    /// THE regression: a pane whose child has already exited must be reported dead, not live with a
+    /// stale pid — and the withheld pid must not leak into the busy/agent process-table walk either.
+    #[test]
+    fn a_pane_whose_child_has_exited_reports_dead_with_no_pid() {
+        let state = PtyState::new();
+        state.0.lock().unwrap().insert("studio:designer".to_string(), exited_session());
+
+        let out = pane_liveness(vec!["studio:designer".to_string()], &state);
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].live, "an exited child must not be reported live");
+        assert!(!out[0].busy, "a dead pane cannot be busy");
+        assert!(!out[0].agent, "a dead pane cannot be running an agent");
+        assert!(out[0].pid.is_none(), "the stale pid must be withheld, not reported");
+    }
+
+    /// The case the fix must not cost: a session whose child is genuinely still running is still
+    /// reported live, with its pid.
+    #[test]
+    fn a_pane_whose_child_is_running_reports_live_with_a_pid() {
+        let state = PtyState::new();
+        state.0.lock().unwrap().insert("studio:designer".to_string(), running_session());
+
+        let out = pane_liveness(vec!["studio:designer".to_string()], &state);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].live, "a running child must still be reported live");
+        assert!(out[0].pid.is_some(), "and its pid is still reported");
+
+        state.0.lock().unwrap().get_mut("studio:designer").unwrap().child.kill().ok();
+    }
+
+    /// A pane the map has never heard of is dead, not an error — same answer as before the fix.
+    #[test]
+    fn an_unknown_pane_reports_dead() {
+        let state = PtyState::new();
+        let out = pane_liveness(vec!["studio:nonexistent".to_string()], &state);
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].live);
+        assert!(out[0].pid.is_none());
     }
 }
 
