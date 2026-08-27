@@ -2295,3 +2295,105 @@ mod merge_tests {
         assert!(edges_of(&g).is_empty());
     }
 }
+
+#[cfg(test)]
+mod feature_rule_gate {
+    use super::*;
+    use bsc_util::feature_rule::{violations, Violation};
+
+    /// Edges deliberately kept, each with the decision behind it. EXACT `from -> to` ids.
+    ///
+    /// Keep this SHORT and argued. Every entry says "this crossing is correct", and the cost of a
+    /// careless one is that a real violation stops being reported behind it.
+    const ALLOWED: &[&str] = &[
+        // The planner's project pane reads the log stream to show a worker's output inline. The pane
+        // is planner UI and the stream is the logs feature's; the alternative is a copy of the reader.
+        "project-pane-agents.ts -> logs-index.ts",
+        // Publishing a plan assigns a persona per stream, so the publish step resolves identities from
+        // the persona library. `bsc persona` is the store; this is the in-process read of the same set.
+        "stream-persona.ts -> personas-index.ts",
+    ];
+
+    /// THE OWNERSHIP RULE, over the packaged algorithms seed.
+    ///
+    /// Both halves, checked against the store the build actually compiles: a baseline record may depend
+    /// only on baseline, and a feature may not depend on another feature. The tiers, the registrar
+    /// exemption and the reasoning all live in `bsc_util::feature_rule`.
+    ///
+    /// WHY THE SEED AND NOT THE RUNTIME STORE: the seed is what a fresh clone, CI and every worktree
+    /// agent read. A rule enforced against one machine's runtime store would pass or fail depending on
+    /// whose machine ran it, which is not a rule.
+    #[test]
+    fn the_ownership_rule_holds_across_the_algorithms_library() {
+        let impls = implementations_of(&seed());
+        let feature_of: std::collections::HashMap<&str, &str> = impls
+            .iter()
+            .filter_map(|im| {
+                Some((
+                    im.get("id")?.as_str()?,
+                    im.get("feature").and_then(Value::as_str).unwrap_or_default(),
+                ))
+            })
+            .collect();
+
+        let mut edges: Vec<(String, String, String, String)> = Vec::new();
+        for im in &impls {
+            let Some(from_id) = im.get("id").and_then(Value::as_str) else { continue };
+            let from_f = im.get("feature").and_then(Value::as_str).unwrap_or_default();
+            let Some(cs) = im.get("composes").and_then(Value::as_array) else { continue };
+            for t in cs.iter().filter_map(Value::as_str) {
+                // A `composes` naming an id the store does not hold is `bsc graph doctor`'s finding,
+                // not this one's.
+                let Some(to_f) = feature_of.get(t) else { continue };
+                edges.push((from_id.to_string(), from_f.to_string(), t.to_string(), (*to_f).to_string()));
+            }
+        }
+
+        let v: Vec<Violation> = violations(&edges, ALLOWED);
+        assert!(
+            v.is_empty(),
+            "{} ownership violation(s) in the algorithms library:\n{}",
+            v.len(),
+            v.iter().map(Violation::describe).collect::<Vec<_>>().join("\n")
+        );
+    }
+
+    /// COVERAGE — the rule may only skip a record whose feature is unknown, so how many are unknown is
+    /// part of what the gate asserts.
+    ///
+    /// THIS IS NOT DECORATION. When this gate was first written, 52 of 669 seed records carried no
+    /// `feature` and the rule silently skipped every edge touching them — including
+    /// `core/fleet-live.ts -> planner/plan-fleet.ts`, a real violation of the rule's own headline,
+    /// invisible because the OTHER end happened to be unplaced. The gate was green while covering 92%
+    /// of the library. A rule enforced over partial data is the failure this repo keeps hitting, so the
+    /// coverage is asserted rather than assumed.
+    #[test]
+    fn every_record_is_placed_so_the_rule_covers_the_whole_library() {
+        let impls = implementations_of(&seed());
+        let unplaced: Vec<&str> = impls
+            .iter()
+            .filter(|im| im.get("feature").and_then(Value::as_str).unwrap_or_default().trim().is_empty())
+            .filter_map(|im| im.get("id").and_then(Value::as_str))
+            .collect();
+        assert!(
+            unplaced.is_empty(),
+            "{} record(s) carry no `feature`, so the ownership rule cannot see their edges: {:?}",
+            unplaced.len(),
+            &unplaced[..unplaced.len().min(10)]
+        );
+    }
+
+    /// The gate must be able to FAIL. A rule whose test can only pass is a comment.
+    #[test]
+    fn the_rule_reports_a_planted_baseline_violation() {
+        let planted = vec![(
+            "planted.ts".to_string(),
+            "core".to_string(),
+            "some-feature-thing.ts".to_string(),
+            "glance".to_string(),
+        )];
+        let v = violations(&planted, ALLOWED);
+        assert_eq!(v.len(), 1, "a core -> feature edge must be reported");
+        assert!(v[0].describe().contains("core/planted.ts -> glance/some-feature-thing.ts"));
+    }
+}

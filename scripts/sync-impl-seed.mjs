@@ -99,13 +99,27 @@ export function mergeStores(implRecords, edgeRecords) {
 }
 
 // One id's sync verdict: "skip-not-in-store" | "skip-not-in-seed" | "up-to-date" | "would-lose-fields" | "sync".
-export function planOne(seedImpls, storeById, id) {
+// `--only <field>` — sync exactly ONE field and leave everything else alone.
+//
+// Needed because the store and the seed have diverged BOTH ways across ~340 records (see the header),
+// so a whole-record sync of a NEW facet would drag that unrelated drift along with it under cover of
+// the change being made. Measured when the `feature` axis landed: of 670 impls, 617 differed only by
+// `feature`, 38 also carried drift in `tests`/`code`/`name`, and 13 were refused outright by the
+// loses-fields guard. Without this flag those 52 stay unplaced, and a rule enforced over the seed then
+// silently skips them — which is exactly how a gate passes while covering less than the reader assumes.
+//
+// It is deliberately NOT a general filter: one named field, so the diff a reader reviews is one column.
+export function planOne(seedImpls, storeById, id, only) {
   const s = storeById.get(id);
   const t = seedImpls.find((im) => im.id === id);
   if (!s) return { id, verdict: "skip-not-in-store" };
   if (!t) return { id, verdict: "skip-not-in-seed" };
   const existing = contentOf(t);
-  const fresh = contentOf(s);
+  const fresh = only
+    // ONE field, merged onto the seed record: everything else stays exactly as the seed has it, so no
+    // drift rides along and the loses-fields guard has nothing to refuse.
+    ? (Object.hasOwn(contentOf(s), only) ? { ...existing, [only]: contentOf(s)[only] } : existing)
+    : contentOf(s);
   if (isEqual(existing, fresh)) return { id, verdict: "up-to-date" };
   if (losesFields(fresh, existing)) {
     return { id, verdict: "would-lose-fields", fields: diffFields(existing, fresh) };
@@ -115,8 +129,14 @@ export function planOne(seedImpls, storeById, id) {
 
 function main() {
   const APPLY = process.argv.includes("--apply");
-  const IDS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-  if (!IDS.length) { console.error("usage: node sync-impl-seed.mjs <impl-id-or-edge-id>… [--apply]"); process.exit(2); }
+  const rawArgs = process.argv.slice(2);
+  const onlyAt = rawArgs.indexOf("--only");
+  const IDS = rawArgs.filter((a, i) => !a.startsWith("--") && i !== onlyAt + 1);
+  // `--only <field>` takes the NEXT argument, so it is filtered out of the id list above by the
+  // `--`-prefix rule and read positionally here.
+  const onlyIdx = process.argv.indexOf("--only");
+  const ONLY = onlyIdx > -1 ? process.argv[onlyIdx + 1] : undefined;
+  if (!IDS.length) { console.error("usage: node sync-impl-seed.mjs <impl-id-or-edge-id>… [--only <field>] [--apply]"); process.exit(2); }
 
   // Request #151: an EDGE (the relationship tier, `bsc graph edge …`) carries `tests` the same way an
   // impl does, but the store map used to come from `impl list` only — so an edge id always reported
@@ -136,7 +156,7 @@ function main() {
 
   let changed = 0;
   for (const id of IDS) {
-    const plan = planOne(seedRecords, storeById, id);
+    const plan = planOne(seedRecords, storeById, id, ONLY);
     switch (plan.verdict) {
       case "skip-not-in-store":
         console.log(`SKIP ${id} — not in the store`);

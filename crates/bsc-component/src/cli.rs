@@ -2883,6 +2883,16 @@ fn cmd_features(args: &[String]) -> Result<(), String> {
             continue;
         };
         *by_feature.entry(new.clone()).or_default() += 1;
+        // NEVER OVERWRITE a feature already set. The derivation is a starting point, not an
+        // authority: a record deliberately placed by hand — `toggle` is `DeployToggle`, owned by
+        // `core` because four other features compose it, while its FOLDER stays the planner tree it
+        // was lifted from — must survive every later re-run. Without this the backfill silently undid
+        // curation on each invocation, which is how it was found: a hand placement reverted one
+        // command later.
+        if !old.is_empty() {
+            already += 1;
+            continue;
+        }
         if old == new {
             already += 1;
             continue;
@@ -3138,6 +3148,7 @@ const SEED_BOOKKEEPING_FIELDS: &[&str] = &["history", "rev", "updatedAt", "updat
 /// `bsc ui export`, which also writes files under a read-only gate).
 fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
     let (mut seed_dir, mut dir, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut only: Option<String> = None;
     let mut ids: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -3146,11 +3157,17 @@ fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
             "--dir" => dir = it.next().cloned(),
             "--apply" => apply = true,
             "--pretty" => pretty = true,
+            // `--only <field>` — write exactly ONE field onto the seed record, leaving the rest as the
+            // seed has it. Without it this verb is whole-body, and store and seed drift BOTH ways (its
+            // own help says so), so syncing a NEW facet across many records would drag that unrelated
+            // drift along under cover of the change. The algorithms side needed the same flag for the
+            // same reason when the `feature` axis landed.
+            "--only" => only = it.next().cloned(),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => ids.push(other.to_string()),
         }
     }
-    let usage = "usage: bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]";
+    let usage = "usage: bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--only <field>] [--apply] [--pretty]";
     let seed_dir = seed_dir.ok_or(usage)?;
     if ids.is_empty() {
         return Err(usage.into());
@@ -3193,6 +3210,20 @@ fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
         let seed_raw = std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let seed: serde_json::Value =
             serde_json::from_str(&seed_raw).map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+        // ONE field onto the seed record: everything else stays exactly as the seed has it, so no
+        // unrelated drift rides along with the facet being synced.
+        let stored = match &only {
+            None => stored,
+            Some(field) => {
+                let mut merged = seed.clone();
+                match (merged.as_object_mut(), stored.get(field)) {
+                    (Some(m), Some(v)) => { m.insert(field.clone(), v.clone()); }
+                    (Some(m), None) => { m.remove(field); }
+                    _ => {}
+                }
+                merged
+            }
+        };
         if seed == stored {
             up_to_date.push(id.clone());
             continue;
@@ -10843,3 +10874,44 @@ mod required_by_tests {
         assert!(validate_component_batch(&[item]).is_ok());
     }
 }
+
+#[cfg(test)]
+mod feature_backfill_preserves_tests {
+    use super::*;
+
+    /// REGRESSION. The backfill derives `feature` from `folder`, and the first version OVERWROTE a
+    /// value already set. That silently undid curation on every invocation: `toggle` was placed in
+    /// `core` by hand (it is `DeployToggle`, and four other features compose it) and the very next
+    /// `bsc ui features --apply` put it back under `planner`, because its folder says planner.
+    ///
+    /// The two-field split is what makes that placement legitimate — `folder` stays the provenance the
+    /// file was lifted from, `feature` says who owns the record — so the backfill must treat the
+    /// derivation as a starting point and never as an authority. The algorithms backfill had this
+    /// property from the start; the graphs disagreeing about it is what made the loss possible.
+    #[test]
+    fn a_hand_placed_feature_survives_a_re_run() {
+        let dir = tempdir_shim::Dir::new("bsc-feature-preserve");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store
+            .set("toggle", r#"{"id":"toggle","name":"DeployToggle","kitId":"k","folder":"features/planner/bodies","feature":"core"}"#)
+            .unwrap();
+        store.set("card", r#"{"id":"card","name":"Card","kitId":"k","folder":"features/glance"}"#).unwrap();
+
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        let mut placed = Vec::new();
+        for raw in store.list() {
+            let rec: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            let id = rec.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let folder = record_folder(&rec).unwrap_or_default().to_string();
+            let old = rec.get("feature").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            if !old.is_empty() {
+                continue; // the rule under test
+            }
+            if let Some(new) = crate::feature_from_folder(&folder) {
+                placed.push((id, new));
+            }
+        }
+        assert_eq!(placed, vec![("card".to_string(), "glance".to_string())], "only the unplaced one moves");
+    }
+}
+

@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// The canonical `bsc` subcommand registry — the unified umbrella binary's state CLIs (#1843/#1877,
 /// ONE list shared by the agent's prompt block + the shell-helper drift guard) plus the `.mcp.json`
 /// command sentinels for the two bundled MCP servers (now `bsc mcp <sub>` subcommands, #1848/#1877).
+pub mod feature_rule;
 pub mod required_by;
 pub mod sidecars;
 pub use sidecars::{Sidecar, CHANNEL_MOCK_MCP, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
