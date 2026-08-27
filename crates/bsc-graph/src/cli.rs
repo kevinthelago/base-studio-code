@@ -805,6 +805,150 @@ fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, Str
     None
 }
 
+/// `tests set --id <id> --src <test-file> [--name <name>]` (#140) — pair ONE record's test without a
+/// whole-tree `harvest`. See the usage note on the `"tests"` match arm in [`run`] for why this exists
+/// alongside `harvest` rather than folding into it.
+fn tests_set(args: &[String]) -> Result<Value, String> {
+    let usage = "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--pretty]";
+    let id = flag_value(args, "--id").ok_or(usage)?;
+    let src_path = flag_value(args, "--src").ok_or(usage)?;
+    let path = std::path::Path::new(&src_path);
+    bsc_cli_util::require_harvestable_root(path)?;
+    let contents = std::fs::read_to_string(path).map_err(|e| format!("cannot read {src_path}: {e}"))?;
+    let name =
+        flag_value(args, "--name").unwrap_or_else(|| bsc_util::test_display_name(path, &contents));
+
+    let mut g = crate::load();
+    let mut next = crate::implementations_of(&g)
+        .into_iter()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| {
+            format!(
+                "no implementation with id '{id}' — `tests set` pairs an EXISTING record, it does not \
+                 create one; check the id with `bsc graph impl get {id}`, or author the record first \
+                 with `impl set`"
+            )
+        })?;
+    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+    crate::set_impl(&mut g, next)?;
+    crate::save(&g)?;
+    Ok(serde_json::json!({ "id": id, "name": name, "src": src_path }))
+}
+
+/// `tests harvest <dir> [--dry-run]` (#4126) — carry each impl's COLOCATED test file onto its node,
+/// the algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
+/// `bsc_util::test_path_for` so the two libraries cannot drift.
+///
+/// MIRROR, not source. The files stay authoritative, checked in, and RUNNING. The graph cannot
+/// execute a test today, so making it the source would stake the suite on an executor that does not
+/// exist — a node's `tests` entry is inert metadata until `verify` lands (#4124). This buys doctor
+/// honesty and a queryable graph at zero risk to coverage.
+///
+/// ONE ENTRY PER FILE, VERBATIM. A test file's meaning lives partly outside its `it()` blocks —
+/// imports, `beforeEach`, local helpers. Splitting per-`it` would silently drop that. A file that
+/// covers SEVERAL impls (this repo's `graphAlgos.test.ts` covers five) is carried onto each of them:
+/// the coverage is real for every one, and per-impl attribution is not recoverable from the file.
+///
+/// TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling file, so
+/// path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
+fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
+    let root = std::path::Path::new(dir);
+    if !root.is_dir() {
+        return Err(format!("no such directory: {dir}"));
+    }
+    // A harvest hands back file CONTENTS, so it honours the same boundary the file tools do (#3475) —
+    // `bsc-confine` is blind to what this binary reads.
+    bsc_cli_util::require_harvestable_root(root)?;
+
+    let mut g = crate::load();
+    let impls = crate::implementations_of(&g);
+
+    // ⚠️ A WRONG ROOT LOOKS EXACTLY LIKE AN UNTESTED LIBRARY. Every `src` is repo-relative and already
+    // begins `src/`, so the root to pass is the REPO root. Handed `src` instead, every join becomes
+    // `src/src/…`, nothing resolves, and the command still exits 0 reporting a plausible `paired: 31 ·
+    // noColocatedTest: 876` — which reads as "the algorithm tier has no tests" and was filed as
+    // exactly that before anyone checked the invocation. The signature is deterministic (the root's
+    // own name is the first segment of the sources), so detect it and refuse rather than return a
+    // number that means nothing.
+    let root_name =
+        root.canonicalize().ok().and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
+    let srcs: Vec<&str> = impls
+        .iter()
+        .filter_map(|im| im.get("src").and_then(Value::as_str))
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    if let Some(name) = root_name.filter(|n| root_doubles_source_prefix(n, &srcs)) {
+        return Err(format!(
+            "every source path already starts with '{name}/', so joining them to this root gives \
+             '{name}/{name}/…' and nothing resolves — pass the REPO root, not '{name}'"
+        ));
+    }
+
+    let (mut paired, mut no_src, mut no_test, mut retired_no_test) = (Vec::new(), 0usize, 0usize, 0usize);
+    for im in impls {
+        let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else {
+            // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
+            no_src += 1;
+            continue;
+        };
+        // Whether the MODULE still exists separates "a live file nobody tested" from "a retired module
+        // whose test went with it". Both used to land in `noColocatedTest`, where the second is
+        // invisible — and the second is the one the migration can still act on.
+        let module_gone = !root.join(src).is_file();
+        let Some(path) = bsc_util::test_path_for(root, src) else {
+            if module_gone {
+                retired_no_test += 1;
+            } else {
+                no_test += 1;
+            }
+            continue;
+        };
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            if module_gone {
+                retired_no_test += 1;
+            } else {
+                no_test += 1;
+            }
+            continue;
+        };
+        let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        let name = bsc_util::test_display_name(&path, &contents);
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        if !dry {
+            let mut next = im.clone();
+            next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+            crate::set_impl(&mut g, next)?;
+        }
+        paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
+    }
+    if !dry && !paired.is_empty() {
+        crate::save(&g)?;
+    }
+
+    // ONE TEST FILE, N IMPLS — reported, never silent. A module exporting several functions yields one
+    // impl each, and they all pair with that module's single test file. Carrying it onto each is right
+    // for the MIRROR (the coverage really is theirs, and per-impl attribution is not recoverable from
+    // the file) and is a trap for any EXECUTOR that materializes one file per record: the same
+    // assertions would run N times and be counted N times. Whoever consumes this has to know which
+    // pairings are shared, so say so instead of leaving it to be discovered.
+    let (distinct_tests, shared) = shared_test_pairings(&paired);
+    let shared_impls: usize =
+        shared.iter().map(|s| s.get("impls").and_then(Value::as_array).map_or(0, Vec::len)).sum();
+
+    Ok(serde_json::json!({
+        "dryRun": dry,
+        "paired": paired.len(),
+        "noSrc": no_src,
+        "noColocatedTest": no_test,
+        "retiredNoTest": retired_no_test,
+        "distinctTests": distinct_tests,
+        "sharedTestFiles": shared.len(),
+        "sharedTestImpls": shared_impls,
+        "shared": shared,
+        "changes": paired,
+    }))
+}
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
     reject_unknown_flags(&args)?;
@@ -1802,250 +1946,23 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "ambiguousIds": ambiguous,
             }))
         }
-        // `tests harvest <dir>` (#4126) — carry each impl's COLOCATED test file onto its node, the
-        // algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
-        // `bsc_util::test_path_for` so the two libraries cannot drift.
-        //
-        // MIRROR, not source. The files stay authoritative, checked in, and RUNNING. The graph cannot
-        // execute a test today, so making it the source would stake the suite on an executor that does
-        // not exist — a node's `tests` entry is inert metadata until `verify` lands (#4124). This buys
-        // doctor honesty and a queryable graph at zero risk to coverage.
-        //
-        // ONE ENTRY PER FILE, VERBATIM. A test file's meaning lives partly outside its `it()` blocks —
-        // imports, `beforeEach`, local helpers. Splitting per-`it` would silently drop that. A file that
-        // covers SEVERAL impls (this repo's `graphAlgos.test.ts` covers five) is carried onto each of
-        // them: the coverage is real for every one, and per-impl attribution is not recoverable from the
-        // file.
-        //
-        // TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling
-        // file, so path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
-        "tests" => {
-            if positional.get(1).copied() != Some("harvest") {
-                return Err("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]".to_string());
+        // `tests harvest <dir>` (#4126) mirrors every impl's colocated test onto its node; `tests set`
+        // (#140) pairs ONE record's test without needing a whole repo tree to resolve against. See
+        // [`tests_harvest`] and [`tests_set`] for the reasoning behind each.
+        "tests" => match positional.get(1).copied() {
+            Some("set") => emit(&tests_set(&args)?),
+            Some("harvest") => {
+                let dir = positional
+                    .get(2)
+                    .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
+                let dry = args.iter().any(|a| a == "--dry-run");
+                emit(&tests_harvest(dir, dry)?)
             }
-            let dir = positional
-                .get(2)
-                .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
-            let dry = args.iter().any(|a| a == "--dry-run");
-            let root = std::path::Path::new(dir);
-            if !root.is_dir() {
-                return Err(format!("no such directory: {dir}"));
-            }
-            // A harvest hands back file CONTENTS, so it honours the same boundary the file tools do
-            // (#3475) — `bsc-confine` is blind to what this binary reads.
-            bsc_cli_util::require_harvestable_root(root)?;
-
-            let mut g = crate::load();
-            let impls = crate::implementations_of(&g);
-
-            // ⚠️ A WRONG ROOT LOOKS EXACTLY LIKE AN UNTESTED LIBRARY. Every `src` is repo-relative and
-            // already begins `src/`, so the root to pass is the REPO root. Handed `src` instead, every
-            // join becomes `src/src/…`, nothing resolves, and the command still exits 0 reporting a
-            // plausible `paired: 31 · noColocatedTest: 876` — which reads as "the algorithm tier has no
-            // tests" and was filed as exactly that before anyone checked the invocation. The signature is
-            // deterministic (the root's own name is the first segment of the sources), so detect it and
-            // refuse rather than return a number that means nothing.
-            let root_name =
-                root.canonicalize().ok().and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
-            let srcs: Vec<&str> = impls
-                .iter()
-                .filter_map(|im| im.get("src").and_then(Value::as_str))
-                .filter(|s| !s.trim().is_empty())
-                .collect();
-            if let Some(name) = root_name.filter(|n| root_doubles_source_prefix(n, &srcs)) {
-                return Err(format!(
-                    "every source path already starts with '{name}/', so joining them to this root gives \
-                     '{name}/{name}/…' and nothing resolves — pass the REPO root, not '{name}'"
-                ));
-            }
-
-            let (mut paired, mut no_src, mut no_test, mut retired_no_test) =
-                (Vec::new(), 0usize, 0usize, 0usize);
-            for im in impls {
-                let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty())
-                else {
-                    // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
-                    no_src += 1;
-                    continue;
-                };
-                // Whether the MODULE still exists separates "a live file nobody tested" from "a retired
-                // module whose test went with it". Both used to land in `noColocatedTest`, where the
-                // second is invisible — and the second is the one the migration can still act on.
-                let module_gone = !root.join(src).is_file();
-                let Some(path) = bsc_util::test_path_for(root, src) else {
-                    if module_gone {
-                        retired_no_test += 1;
-                    } else {
-                        no_test += 1;
-                    }
-                    continue;
-                };
-                let Ok(contents) = std::fs::read_to_string(&path) else {
-                    if module_gone {
-                        retired_no_test += 1;
-                    } else {
-                        no_test += 1;
-                    }
-                    continue;
-                };
-                let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-                let name = bsc_util::test_display_name(&path, &contents);
-                let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-                if !dry {
-                    let mut next = im.clone();
-                    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
-                    crate::set_impl(&mut g, next)?;
-                }
-                paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
-            }
-            if !dry && !paired.is_empty() {
-                crate::save(&g)?;
-            }
-
-            // ONE TEST FILE, N IMPLS — reported, never silent. A module exporting several functions
-            // yields one impl each, and they all pair with that module's single test file. Carrying it
-            // onto each is right for the MIRROR (the coverage really is theirs, and per-impl attribution
-            // is not recoverable from the file) and is a trap for any EXECUTOR that materializes one file
-            // per record: the same assertions would run N times and be counted N times. Whoever consumes
-            // this has to know which pairings are shared, so say so instead of leaving it to be discovered.
-            let (distinct_tests, shared) = shared_test_pairings(&paired);
-            let shared_impls: usize = shared
-                .iter()
-                .map(|s| s.get("impls").and_then(Value::as_array).map_or(0, Vec::len))
-                .sum();
-
-            emit(&serde_json::json!({
-                "dryRun": dry,
-                "paired": paired.len(),
-                "noSrc": no_src,
-                "noColocatedTest": no_test,
-                "retiredNoTest": retired_no_test,
-                "distinctTests": distinct_tests,
-                "sharedTestFiles": shared.len(),
-                "sharedTestImpls": shared_impls,
-                "shared": shared,
-                "changes": paired,
-            }))
-        }
-        // `reseed [--id a,b] [--all] [--check] [--root <dir>]` — the SEED → RUNTIME STORE direction,
-        // the exact inverse of `promote --seed`. See the help text for why it exists.
-        "reseed" => {
-            let check = args.iter().any(|a| a == "--check");
-            let all = args.iter().any(|a| a == "--all");
-            let named = flag_value(&args, "--id");
-            // REFUSE BEFORE READING ANYTHING. A usage error should not depend on whether a seed and a
-            // runtime store happen to exist — and reaching this check only after the reads made it
-            // unreachable in any test harness that points `--root` at an empty dir.
-            if !check && named.is_none() && !all {
-                return Err(
-                    "reseed OVERWRITES the runtime store from the packaged seed — name what to \
-                     take with `--id a,b`, or `--all` for every drifted record. Run `--check` first."
-                        .to_string(),
-                );
-            }
-            let root = flag_value(&args, "--root")
-                .map(std::path::PathBuf::from)
-                .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
-            let seed_path = crate::repo_store::seed_path_under(&root);
-            let seed = crate::repo_store::read_at(&seed_path)?
-                .ok_or_else(|| format!("no packaged seed at {}", seed_path.display()))?;
-
-            // The runtime store is read DIRECTLY, never through `load()`: load() reconciles the
-            // packaged seed, so on a machine with no store it would report everything as identical
-            // and this verb would silently do nothing.
-            let store_path = crate::store_path().ok_or("no home dir — cannot reach the runtime store")?;
-            let store = crate::repo_store::read_at(&store_path)?
-                .ok_or_else(|| format!("no runtime store at {}", store_path.display()))?;
-
-            let seed_impls = crate::repo_store::impls_of(&seed);
-            let store_impls = crate::repo_store::impls_of(&store);
-            let by_id = |v: &[serde_json::Value]| -> std::collections::BTreeMap<String, serde_json::Value> {
-                v.iter()
-                    .filter_map(|i| {
-                        i.get("id").and_then(serde_json::Value::as_str).map(|k| (k.to_string(), i.clone()))
-                    })
-                    .collect()
-            };
-            let seeded = by_id(&seed_impls);
-            let stored = by_id(&store_impls);
-
-            // Drifted = present in BOTH and differing through the seed projection. A record the store
-            // does not have is an ADDITION, reported separately: putting it there is a different
-            // decision from refreshing one that is already there and stale.
-            let mut drifted: Vec<String> = Vec::new();
-            let mut absent: Vec<String> = Vec::new();
-            for (id, s_rec) in &seeded {
-                match stored.get(id) {
-                    None => absent.push(id.clone()),
-                    Some(t) => {
-                        if crate::repo_store::seed_content_of(s_rec)
-                            != crate::repo_store::seed_content_of(t)
-                        {
-                            drifted.push(id.clone());
-                        }
-                    }
-                }
-            }
-            drifted.sort();
-            absent.sort();
-
-            if check {
-                emit(&serde_json::json!({
-                    "seed": seed_path.to_string_lossy(), "store": store_path.to_string_lossy(),
-                    "drifted": drifted, "absentFromStore": absent, "ok": drifted.is_empty(),
-                }))?;
-                if !drifted.is_empty() {
-                    return Err(format!(
-                        "the runtime store is behind the packaged seed — {} drifted ({}). \
-                         Run `bsc graph reseed --all` to bring it forward.",
-                        drifted.len(),
-                        drifted.join(", "),
-                    ));
-                }
-                return Ok(());
-            }
-
-            // OVERWRITING SOMEONE'S AUTHORING IS AN EXPLICIT DECISION, which is why there is no bare
-            // form. `promote` defaults to "refresh what is already tracked" because the worst case
-            // there is shipping a stale record; here the worst case is destroying the only copy of an
-            // edit, so the caller has to say `--all` or name the ids.
-            // Guarded above, before any I/O.
-            let ids: Vec<String> = match named {
-                Some(v) => v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
-                None => drifted.clone(),
-            };
-
-            let mut next = store.clone();
-            let mut wrote = Vec::new();
-            let mut unknown = Vec::new();
-            {
-                let list = next
-                    .get_mut("implementations")
-                    .and_then(serde_json::Value::as_array_mut)
-                    .ok_or("the runtime store has no `implementations` array")?;
-                for id in &ids {
-                    let Some(fresh) = seeded.get(id) else {
-                        unknown.push(id.clone());
-                        continue;
-                    };
-                    match list.iter().position(|i| {
-                        i.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())
-                    }) {
-                        Some(at) => list[at] = fresh.clone(),
-                        None => list.push(fresh.clone()),
-                    }
-                    wrote.push(id.clone());
-                }
-            }
-            if !unknown.is_empty() {
-                return Err(format!("not in the packaged seed: {}", unknown.join(", ")));
-            }
-            crate::save_at(&store_path, &next)?;
-            emit(&serde_json::json!({
-                "ok": true, "store": store_path.to_string_lossy(),
-                "reseeded": wrote.len(), "records": wrote,
-            }))
-        }
+            _ => Err(
+                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>]"
+                    .to_string(),
+            ),
+        },
         // `promote [--id a,b] [--check] [--root <dir>]` — move records from the per-user RUNTIME store
         // into the committed, build-readable repo store, or (with `--check`) report the drift for the
         // gate. See `crate::repo_store` for why the two stores exist and why the repo one is read
@@ -3880,6 +3797,85 @@ mod tests {
         assert!(err.contains("no provenance"), "{err}");
         assert!(err.contains("--src"), "names the flag to pass: {err}");
         assert!(err.contains("--no-src"), "names the explicit opt-out: {err}");
+    }
+
+    /// `tests set` pairs ONE record's test without a whole-tree `harvest` — the gap filed as request
+    /// #140 (`bsc graph tests harvest <scratch-dir> --dry-run` reported `paired: 0` for every record
+    /// because a scratch dir has nothing colocated to resolve against, even for the one id the caller
+    /// actually had a test file for). It refuses an unknown id rather than silently creating a record.
+    #[test]
+    fn tests_set_pairs_an_existing_record_and_refuses_an_unknown_id() {
+        let dir = crate::unique_temp("testsset");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "paired.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "paired".into(),
+                "--code".into(), "export function paired() {}".into(),
+                "--src".into(), "src/paired.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("paired.test.ts");
+        let contents = "import { paired } from './paired';\nit('works', () => paired());\n";
+        std::fs::write(&test_file, contents).unwrap();
+
+        // `--code-file`-style reads go through the FS-confinement gate (#3475); unconfine the thread so
+        // a `/tmp` fixture is readable, matching every other file-reading test in this module.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "paired.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let stored = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("paired.ts"))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(
+            stored,
+            Some(serde_json::json!([{ "name": "paired.test.ts", "src": contents }])),
+            "the test file's contents landed on the record verbatim, named by its basename \
+             (no `describe(` title to prefer)",
+        );
+
+        // An id that does not exist is refused — `tests set` pairs an EXISTING record, it never
+        // creates one.
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "not-a-real-id.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(err.contains("not-a-real-id.ts") && err.contains("does not create one"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
     }
 
     #[test]
