@@ -17,9 +17,9 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 17] = [
+pub const VERBS: [&str; 18] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
-    "used-by", "merge", "emit", "promote", "build", "migrate-crate", "help",
+    "used-by", "features", "merge", "emit", "promote", "build", "migrate-crate", "help",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -42,7 +42,7 @@ pub const BOOL_FLAGS: [&str; 12] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 45] = [
+pub const FLAGS: [&str; 48] = [
     "--pretty",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
@@ -56,6 +56,7 @@ pub const FLAGS: [&str; 45] = [
     "--superseded-by",
     // #72 — the revision `impl revert` restores to, and who to attribute the write to.
     "--to",
+    "--top",
     "--by",
     // #72 — the WHY, recorded on the history entry alongside the who and the when.
     "--note",
@@ -70,6 +71,8 @@ pub const FLAGS: [&str; 45] = [
     // #76 — the same value, READ FROM DISK instead of pushed through argv.
     "--code-file",
     "--domain",
+    "--feature",
+    "--required-by",
     "--clear",
     "--tags",
     "--kind",
@@ -719,19 +722,6 @@ fn module_paths_agree(a: &str, b: &str) -> bool {
 
 /// Would joining these sources to a root named `root_name` double the prefix — `src/` under `src/`?
 ///
-/// The extension a carried test's SOURCE FILE had, in the `.ts` / `.tsx` form `AlgoImplTest::ext` holds.
-///
-/// Recorded rather than re-derived because the consumer's fallback is a GUESS from the body — the
-/// emitter reads any `<Word…>` as JSX — and a generic arrow, or a bare `<base>` in a comment, satisfies
-/// it. The test is then written `.tsx`, the parser reads `<T>` as a JSX tag, and the suite reports as a
-/// DEAD FILE rather than a red test: wrong on 177 of 376 files when the algorithm corpus moved onto its
-/// records. Only a real module extension is carried; anything else is left for the fallback rather than
-/// stated wrongly, since a stated extension OVERRIDES the guess.
-fn carried_test_ext(path: &std::path::Path) -> Option<String> {
-    let ext = format!(".{}", path.extension()?.to_string_lossy());
-    matches!(ext.as_str(), ".ts" | ".tsx" | ".js" | ".jsx").then_some(ext)
-}
-
 /// `bsc graph tests harvest <dir>` takes the REPO root, because every `src` is repo-relative and already
 /// begins `src/`. Handed `src` instead, every join becomes `src/src/…`, nothing resolves, and the command
 /// still exits 0 reporting a plausible `paired: 31 · noColocatedTest: 876`. That number reads as "the
@@ -957,6 +947,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(code) = source_flag(&args, "--code")? { im["code"] = Value::String(code); }
                 // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
                 if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
+                // The OWNERSHIP axis — which feature owns this record, so which worker may write it.
+                // Distinct from `--domain` (the curated collection facet) and from a plan feature's
+                // `requires` (the many-to-many USAGE relation, per project, so the library never learns
+                // about projects).
+                if let Some(f) = flag_value(&args, "--feature") { im["feature"] = Value::String(f); }
+                // `--required-by a,b` — the USAGE mirror of a plan feature's `requires`. VALIDATED at the
+                // write: every entry must be `<projectKey>:<feature>`, because a bare slug is ambiguous
+                // across projects and a stored ambiguity is what this qualification exists to prevent.
+                if let Some(rb) = flag_value(&args, "--required-by") {
+                    let entries: Vec<String> = rb.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect();
+                    im["requiredBy"] = Value::Array(
+                        bsc_util::required_by::normalize_required_by(&entries)?
+                            .into_iter().map(Value::String).collect(),
+                    );
+                }
                 // #4107: settable directly, but normally DERIVED — pass `--src` and the folder follows,
                 // so a hand-authored impl lands in the same tree a harvested one would.
                 if let Some(sp) = flag_value(&args, "--src") {
@@ -1308,18 +1313,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let role = flag_value(&args, "--role");
                 // The domain facet filter (#3120) — a cross-language domain collection ("all logistics algorithms").
                 let domain = flag_value(&args, "--domain");
+                let feature = flag_value(&args, "--feature");
                 let impls: Vec<Value> = crate::implementations()
                     .into_iter()
                     .filter(|im| tech.as_deref().is_none_or(|t| im.get("tech").and_then(Value::as_str) == Some(t)))
                     .filter(|im| role.as_deref().is_none_or(|r| im.get("role").and_then(Value::as_str) == Some(r)))
                     .filter(|im| domain.as_deref().is_none_or(|d| crate::impl_in_domain(im, d)))
+                    .filter(|im| feature.as_deref().is_none_or(|f| im.get("feature").and_then(Value::as_str) == Some(f)))
                     .collect();
                 emit(&Value::Array(impls))
             }
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
-                      | impl list [--tech <t>] [--role r] [--domain <d>] \
+                      | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
                       | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>]"
                 .to_string()),
@@ -1840,16 +1847,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                 let name = bsc_util::test_display_name(&path, &contents);
                 let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-                // CARRY THE SOURCE FILE'S EXTENSION. Without it the emitter falls back to guessing from
-                // the body, and its guess is `/<[A-Za-z][^>]*>/` — which any generic arrow, or a bare
-                // `<base>` inside a comment, satisfies. The test is then written `.tsx`, the parser reads
-                // `<T>` as a JSX tag, and the whole suite reports as a DEAD FILE rather than a red test.
-                // Measured wrong on 177 of 376 files when the algorithm corpus moved onto its records,
-                // which is why `AlgoImplTest::ext` exists — this is the harvest half that fills it.
-                let ext = carried_test_ext(&path);
                 if !dry {
                     let mut next = im.clone();
-                    next["tests"] = serde_json::json!([{ "name": name, "src": contents, "ext": ext }]);
+                    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
                     crate::set_impl(&mut g, next)?;
                 }
                 paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
@@ -2194,6 +2194,43 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // `used-by <id>` / `--all` (#3594) — the composes-inverse USAGE read (measure step of the optimize
         // loop; mirrors `bsc ui used-by`). A read.
+        // `features [--top N] [--pretty]` — the OWNERSHIP axis, measured. READ-ONLY, always: it ranks candidates
+        // for the baseline and never promotes one, because "many domains use it" is EVIDENCE, not a
+        // decision. A record can be widely used and still be one feature's business that others reach
+        // into wrongly — and that is a finding worth keeping, not a thing to sweep away.
+        //
+        // `coreCandidates` is ranked by FOREIGN-DOMAIN FAN-IN — how many *different* domains compose a
+        // record, not how often it is composed. Raw usage cannot tell shared infrastructure from one
+        // feature's popular helper; the number of distinct callers-across-a-boundary can.
+        "features" => {
+            let g = crate::load();
+            let impls = crate::implementations_of(&g);
+            let owned: Vec<Value> = impls.into_iter().collect();
+            let r = crate::features::measure(&owned);
+            let top: usize = flag_value(&args, "--top")
+                .map(|v| v.parse::<usize>().map_err(|_| "--top needs a number".to_string()))
+                .transpose()?
+                .unwrap_or(20);
+            let candidates: Vec<Value> = r
+                .candidates
+                .iter()
+                .take(top)
+                .map(|c| serde_json::json!({
+                    "id": c.id,
+                    "feature": c.feature,
+                    "foreignFeatures": c.from.len(),
+                    "from": c.from,
+                }))
+                .collect();
+            emit(&serde_json::json!({
+                "total": r.total,
+                "byDomain": r.by_feature,
+                "domainless": r.featureless,
+                "crossDomainEdges": r.cross_feature_edges,
+                "edgesIntoCore": r.edges_into_core,
+                "coreCandidates": candidates,
+            }))
+        }
         "used-by" => {
             let g = crate::load();
             let idx = crate::used_by_index(&g);
@@ -2418,7 +2455,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
+         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -2429,9 +2466,10 @@ fn help(prog: &str) -> String {
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
-         {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
+         {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
+         {prog} features [--top N] [--pretty]           # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY: it ranks, it never assigns. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--required-by p:f,q:g] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --required-by is the USAGE mirror of a plan feature's `requires` — which features, in which projects, need this record; entries are `<projectKey>:<feature>` and an unqualified one is REFUSED, since a bare slug is ambiguous across projects. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
          {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
@@ -3063,23 +3101,6 @@ mod set_gate_tests {
     fn a_primitive_is_exempt_and_no_src_is_the_explicit_none() {
         assert!(provenance_declared("primitive", &json!({ "id": "p" }), None, false)); // #2972
         assert!(provenance_declared("algorithm", &json!({ "id": "a" }), None, true));  // --no-src
-    }
-
-    // ── a carried test states its extension (#a-carried-test-cannot-import-a-colocated-json-fixture) ──
-
-    #[test]
-    fn a_harvested_test_carries_the_extension_its_file_had() {
-        // The emitter OBEYS a stated `ext` and only guesses without one, so stating it is the whole fix.
-        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.ts")).as_deref(), Some(".ts"));
-        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.tsx")).as_deref(), Some(".tsx"));
-    }
-
-    #[test]
-    fn an_extension_the_emitter_cannot_use_is_left_to_the_fallback() {
-        // A stated ext OVERRIDES the guess, so stating one the consumer rejects is worse than silence:
-        // `.mts` is not in its `/^\.[jt]sx?$/`, and carrying it would name a file nothing collects.
-        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.mts")), None);
-        assert_eq!(carried_test_ext(std::path::Path::new("src/a/README")), None);
     }
 
     // ── unknown flags are an error, not silence (#4154, designer request #52) ────────────────────
