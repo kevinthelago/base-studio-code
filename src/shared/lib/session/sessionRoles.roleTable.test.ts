@@ -288,18 +288,32 @@ describe("the architect can reach a director at all", () => {
 
 // #requirement-and-authority-store — the architect writes its handoff, and nothing else in plan.db.
 describe("the architect's plan surface is exactly its handoff", () => {
-  it("can write the requirement record", () => {
-    expect(restrictedRoleCommands("architect")).toContain("bsc plan requirement");
+  it("can write BOTH halves of what it settles — the requirement and the classification", () => {
+    const surface = restrictedRoleCommands("architect");
+    expect(surface).toContain("bsc plan requirement");
+    // `usesGithub` is a DECISION taken with the user, and the architect is the only tier that talks to
+    // one — so it is the only tier that can take it. It was documented as the architect's job in its
+    // own charter while being absent from this list, which meant the session that owns the answer
+    // could not write it down and the director was left reading UNDECIDED.
+    expect(surface).toContain("bsc plan classify");
   });
 
   it("cannot reach the REST of plan.db — issues, features, the fleet stay closed to it", () => {
     // The grants are noun-scoped prefixes, so `bsc plan` itself must never appear: that would carry
     // every noun, and the architect would be able to write issues and fleet state directly — the tier
     // boundary the funnel exists to keep.
+    //
+    // This list is the whole point of the test: it grows only when someone decides a noun belongs to
+    // tier 1, and each addition has to be argued for HERE rather than noticed later in a settings.json.
+    const HANDOFF_NOUNS = ["bsc plan brief", "bsc plan requirement", "bsc plan classify"];
     const surface = restrictedRoleCommands("architect");
     expect(surface).not.toContain("bsc plan");
     for (const c of surface) {
-      if (c.startsWith("bsc plan")) expect(["bsc plan brief", "bsc plan requirement"]).toContain(c);
+      if (c.startsWith("bsc plan")) expect(HANDOFF_NOUNS).toContain(c);
+    }
+    // The nouns that must STAY shut, named so the boundary is readable rather than implied by absence.
+    for (const closed of ["bsc plan issue", "bsc plan feature", "bsc plan fleet", "bsc plan deploy"]) {
+      expect(surface).not.toContain(closed);
     }
   });
 });

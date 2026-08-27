@@ -24,6 +24,22 @@ const rank = (v: string | undefined): number => RANK[v ?? "none"] ?? 0;
 
 const cap = (role: (typeof TIERS)[number]): RoleCapability => ROLE_DEFAULTS[role];
 
+/**
+ * Does a granted command actually auto-run `line`?
+ *
+ * A grant is not a string prefix, and reading it as one is how `bsc fleet directors` came to be
+ * documented as reachable while being refused. Rust wraps each granted command as TWO rules —
+ * `Bash(<cmd>)` (the bare invocation) and `Bash(<cmd> *)` (with arguments; `bash_rule`/`bare_bash_rule`
+ * in `session/settings.rs`) — so the `*` sits behind a LITERAL SPACE. `bsc fleet director` therefore
+ * covers `bsc fleet director new x` and does NOT cover `bsc fleet directors`, which is a different verb
+ * that merely shares a prefix.
+ *
+ * Modelled here rather than asserted with `String.startsWith`, because `startsWith` is exactly the
+ * wrong question and answering it was what made the earlier test green while the command was denied.
+ */
+const autoRuns = (grants: readonly string[], line: string): boolean =>
+  grants.some((c) => line === c || line.startsWith(`${c} `));
+
 describe("the three-tier funnel is monotonic — architect < director < worker", () => {
   it("never widens a git/github/code/net axis as you move UP the funnel toward the human", () => {
     // Walk the tiers in order and assert each axis is non-decreasing from architect to worker.
@@ -136,22 +152,49 @@ describe("the architect's view of its tier (#architect-sees-director-state, revi
   // READ-ONLY ("seeing is not reaching"), and that half is gone: the architect DOES create directors.
   // What survives — and is what these tests now pin — is that the READ still resolves, and that the
   // grant still stops short of `bsc fleet wake`.
-  it("can still read director state — the read got MORE useful, not less", () => {
-    // An architect that can create a director needs to see which already run before creating another.
-    // The grant is now the singular verb, and `directors` resolves through its prefix.
+  it("can CREATE a director — the handoff is a session it brings into existence", () => {
     const surface = restrictedRoleCommands("architect");
-    expect(surface).toContain("bsc fleet director");
-    expect(surface.some((c) => "bsc fleet directors".startsWith(c))).toBe(true);
+    expect(autoRuns(surface, "bsc fleet director new my-app")).toBe(true);
+    // ...and the project it belongs to, since `director new` refuses a key that names no project.
+    expect(autoRuns(surface, 'bsc project new "My App"')).toBe(true);
   });
 
-  it("is granted the FULL verb, never the `bsc fleet` prefix — that would carry `wake`", () => {
-    // Grants are prefix matches expanded to `Bash(<cmd> *)`. `"bsc fleet"` would auto-run
-    // `bsc fleet wake` too — the DIRECTOR's lever over a stopped worker, one tier below where this
-    // session belongs. Creating a director is additive and allowed; reaching into its fleet is not.
+  it("can read director state BEFORE briefing — `directors` needs its own grant, not a prefix", () => {
+    // THE BUG THIS PINS. The protocol tells the architect to check `bsc fleet directors` before
+    // briefing, because a brief to a director that is not running goes quietly missing. That command
+    // was NOT reachable: the emitted rules are `Bash(bsc fleet director)` and
+    // `Bash(bsc fleet director *)`, and the `*` sits behind a literal space, so `directors` matches
+    // neither. The previous test asserted `"bsc fleet directors".startsWith(c)` — a TS string
+    // question, not the rule's — and so stayed green while the command was refused.
+    const surface = restrictedRoleCommands("architect");
+    expect(autoRuns(surface, "bsc fleet directors")).toBe(true);
+    expect(autoRuns(surface, "bsc fleet directors --json")).toBe(true);
+    // The distinction the old assertion missed, stated as a property: sharing a prefix is not being
+    // granted. If this ever becomes true, the grant has been widened to a bare prefix.
+    expect(autoRuns(["bsc fleet director"], "bsc fleet directors")).toBe(false);
+  });
+
+  it("can record BOTH halves of discovery — the requirement and the classification", () => {
+    // `usesGithub` is the architect's decision (it is the only tier that talks to the user) and the
+    // director branches on it. It was documented as the architect's job while being denied to it, so
+    // the one session that owns the answer could not write it down.
+    const surface = restrictedRoleCommands("architect");
+    expect(autoRuns(surface, "bsc plan requirement set")).toBe(true);
+    expect(autoRuns(surface, "bsc plan classify set")).toBe(true);
+    expect(autoRuns(surface, "bsc plan classify get")).toBe(true);
+  });
+
+  it("is granted FULL verbs, never the `bsc fleet` or `bsc plan` prefix — those carry too much", () => {
+    // `"bsc fleet"` would auto-run `bsc fleet wake` too — the DIRECTOR's lever over a stopped worker,
+    // one tier below where this session belongs. `"bsc plan"` would carry the whole plan surface the
+    // architect must not write. Creating a director is additive and allowed; running its fleet is not.
     const surface = restrictedRoleCommands("architect");
     expect(surface).not.toContain("bsc fleet");
-    expect(surface.filter((c) => c.startsWith("bsc fleet"))).toEqual(["bsc fleet director"]);
-    expect("bsc fleet wake".startsWith("bsc fleet director")).toBe(false);
+    expect(surface).not.toContain("bsc plan");
+    expect(autoRuns(surface, "bsc fleet wake s1")).toBe(false);
+    expect(autoRuns(surface, "bsc fleet list")).toBe(false);
+    expect(autoRuns(surface, "bsc plan issue add")).toBe(false);
+    expect(autoRuns(surface, "bsc plan feature set")).toBe(false);
   });
 
   it("still cannot reach WORKERS — the tier boundary is one level, not two", () => {

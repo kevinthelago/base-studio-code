@@ -1,4 +1,12 @@
-// Sync a NAMED impl record's `code` from the store into the packaged seed.
+// Sync a NAMED impl record's `code` AND its carried `tests` from the store into the packaged seed.
+//
+// `tests` was added because it was a hole with no floor: `bsc graph tests set` writes the runtime
+// store and `bsc graph promote` moves a record to `graph/algorithms.json`, but `emit-records.mjs` —
+// and therefore the GATE, which runs the emitted `.bsc-records/**` test — reads THIS seed, and nothing
+// wrote the field here. An edited carried test landed in two stores, never reached the one under test,
+// and this script reported "already identical" because it only ever compared `code`. A sync that
+// cannot see the field that changed is worse than no sync: it answers the question with a green line.
+// Filed as `bsc request` 145 for the `bsc`-surface version of this.
 //
 // `promote-records.mjs` only promotes records whose FILE still exists — a record that is ALREADY the
 // only copy (its file long retired) is "already seeded" and never reconsidered. So a deliberate edit
@@ -32,9 +40,24 @@ for (const id of IDS) {
   const t = (seed.implementations ?? []).find((im) => im.id === id);
   if (!s) { console.log(`SKIP ${id} — not in the store`); continue; }
   if (!t) { console.log(`SKIP ${id} — not in the seed (that would be a PROMOTION, not a sync)`); continue; }
-  if ((t.code ?? "") === (s.code ?? "")) { console.log(`SKIP ${id} — already identical`); continue; }
-  console.log(`${APPLY ? "SYNC" : "would sync"} ${id}  seed ${(t.code ?? "").length} -> store ${(s.code ?? "").length} chars`);
-  t.code = s.code;
+  // Compare each syncable field independently — a record whose `code` is unchanged may still carry an
+  // edited test, and vice versa. Reporting per field keeps the direction of the change visible, which
+  // is the property this script was written for.
+  const moved = [];
+  if ((t.code ?? "") !== (s.code ?? "")) {
+    moved.push(`code ${(t.code ?? "").length} -> ${(s.code ?? "").length} chars`);
+    t.code = s.code;
+  }
+  // `tests` is an ARRAY of { ext, name, src }, so it is compared (and moved) whole: a test can be
+  // renamed, added or dropped, and a per-entry merge would have to guess which of those happened.
+  const seedTests = JSON.stringify(t.tests ?? []);
+  const storeTests = JSON.stringify(s.tests ?? []);
+  if (seedTests !== storeTests) {
+    moved.push(`tests ${seedTests.length} -> ${storeTests.length} chars`);
+    if (s.tests === undefined) delete t.tests; else t.tests = s.tests;
+  }
+  if (!moved.length) { console.log(`SKIP ${id} — already identical`); continue; }
+  console.log(`${APPLY ? "SYNC" : "would sync"} ${id}  ${moved.join("; ")}`);
   changed += 1;
 }
 
