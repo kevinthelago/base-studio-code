@@ -390,6 +390,18 @@ pub(crate) fn blank_comments_and_strings(src: &str) -> String {
                 i = (i + 1).min(n);
                 blank(&mut out, start, i);
             }
+            // A REGEX LITERAL can hold a quote or backtick (`/`/g`, real shape from `recover-issues.ts`,
+            // #149) that is not a string/template opener at all — reading it as one desyncs everything
+            // scanned afterward, exactly the corruption `skip_balanced_interpolation` already guards
+            // against INSIDE a `${…}` interpolation. This is the same hazard at the TOP LEVEL: a
+            // top-level regex containing a backtick was misread as opening a template literal, and
+            // `template_literal_end` then blanked the rest of the file looking for a closer, silently
+            // dropping every export after it (`recoverIssue`/`recoverIssues` both vanished this way).
+            '/' if is_regex_context(&b, i) => {
+                let start = i;
+                i = skip_regex_literal(&b, i);
+                blank(&mut out, start, i);
+            }
             _ => i += 1,
         }
     }
@@ -613,6 +625,31 @@ export const aiderProvider = { id: \"aider\" };
     fn a_destructured_export_declarator_is_skipped_not_misread() {
         let src = "export const { a, b } = obj, c = 1;\n";
         assert_eq!(exported_names(src), vec!["c"], "the destructured group is skipped; the plain one after it is not");
+    }
+
+    /// #149, the second real false positive from the live store: `recoverIssues.ts` has
+    /// `bullet[1].replace(/`/g, "")` — a TOP-LEVEL regex literal (not inside a `${…}` interpolation) whose
+    /// body is a single backtick. Before the top-level scan in `blank_comments_and_strings` understood
+    /// regex context, that backtick was read as OPENING a template literal, and the naive close-search
+    /// then ran to the NEXT backtick in the file — here, the one inside `` `#${gh.number}` `` several
+    /// lines later — blanking every export in between, including `recoverIssue` and `recoverIssues`.
+    #[test]
+    fn a_top_level_regex_literal_holding_a_backtick_does_not_swallow_later_exports() {
+        let src = "\
+function parseIssueBody(raw: string) {
+  return raw.replace(/`/g, \"\");
+}
+
+export function recoverIssue(gh: { number: number }) {
+  const ref = `#${gh.number}`;
+  return ref;
+}
+
+export function recoverIssues() {
+  return [];
+}
+";
+        assert_eq!(exported_names(src), vec!["recoverIssue", "recoverIssues"]);
     }
 
     #[test]
