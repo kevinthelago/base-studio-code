@@ -61,7 +61,15 @@ describe("glance.css is structurally sound (#4038)", () => {
   });
 
   it("keeps the keyframes the canvas still declares inline styles against", () => {
-    expect(CSS).toContain("@keyframes glance-dashmove");
+    // `glance-dashmove` is DELIBERATELY ABSENT — the one animation removed for memory, not for taste.
+    // Animating `stroke-dashoffset` is not compositable, so it repainted the entire SVG world layer
+    // (`worldW × worldH`) every frame. MEASURED on the studio-code drill: +726 MB/min with it and flat
+    // without, and WebKit killed its own web process at 16 GB roughly every half hour. Those are
+    // graphics buffers, so GC never reclaimed them.
+    //
+    // Asserted as absent rather than simply deleted, because a keyframe with no caller reads like an
+    // oversight and is exactly the kind of thing a later pass "restores".
+    expect(CSS).not.toContain("@keyframes glance-dashmove");
     expect(CSS).toContain("@keyframes glance-softpulse");
     // …and NOT the one that became authored motion data (#4032), or it would be dead weight.
     expect(CSS).not.toContain("glance-buildpulse");
