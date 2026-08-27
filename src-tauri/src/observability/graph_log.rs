@@ -263,6 +263,9 @@ pub fn log_reset_scopes(registry: State<Arc<ScopeRegistry>>) -> Result<(), Strin
 /// namespaced under `…::frontend::<scope>` so it joins the one tree; `level` is `error|warn|info|debug`.
 #[tauri::command]
 pub fn frontend_log(level: String, scope: String, message: String) {
+    // PROOF OF LIFE for the renderer watchdog. The frontend already calls this every ~2s with its
+    // perf line, so the heartbeat costs nothing extra — no new IPC, no frontend change.
+    super::renderer_watch::alive();
     let lvl = match level.trim().to_ascii_lowercase().as_str() {
         "error" => log::Level::Error,
         "warn" | "warning" => log::Level::Warn,

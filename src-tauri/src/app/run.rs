@@ -208,6 +208,9 @@ pub fn run() {
             // the window exists — arming earlier would count native init against a deadline that is
             // about the WEBVIEW, and every slow plugin load would eat into the frontend's budget.
             observability::boot_watch::arm();
+            // …and the RENDERER watchdog, which covers the same shape of failure AFTER a healthy
+            // boot: the web process dies under a window that stays open.
+            observability::renderer_watch::arm(app.handle().clone());
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
