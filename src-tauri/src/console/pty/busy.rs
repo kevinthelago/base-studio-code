@@ -56,6 +56,64 @@ fn ignored_name(name: &str) -> bool {
     IGNORED_DESCENDANTS.iter().any(|ign| name.eq_ignore_ascii_case(ign))
 }
 
+/// The sandbox's own wrapper processes, which sit BETWEEN the PTY's session process and the pane's
+/// real shell. Compared case-insensitively against the process name.
+///
+/// These are NOT ignorable descendants in the [`IGNORED_DESCENDANTS`] sense — they are not plumbing
+/// hanging off the shell, they are the shell's ANCESTORS, and a pane that has them has them for its
+/// whole life. That is why they need their own treatment: `PtyState` records the pid it spawned,
+/// which for a caged pane is the outermost wrapper, so "does the session process have a descendant"
+/// is answered `true` by the cage itself, before any work exists. MEASURED on the live desktop, on a
+/// pane sitting at an idle prompt with no agent in it:
+///
+/// ```text
+/// 2384280 bwrap                  <- the session pid, what shells_with_descendants was asked about
+///  \_ 2384283 bwrap
+///      \_ 2384284 /bin/bash -i   <- the prompt the user was actually looking at
+/// ```
+///
+/// Two descendants, no work. `planResume` read that as `already-running`, declined to type the
+/// resume in, and `TerminalView` then marked the pane claude-active — so Resume did nothing and the
+/// UI painted a live agent over a bare shell. The sibling predicate [`is_agent_process`] was already
+/// fixed for this exact chain (see its doc, which names it); this is the same blindness in the busy
+/// walk, which is the one Resume consults.
+const SANDBOX_WRAPPERS: &[&str] = &["bwrap", "systemd-run"];
+
+/// Name test for [`SANDBOX_WRAPPERS`], split out so the descent below is unit-testable.
+fn is_wrapper_name(name: &str) -> bool {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name).trim_end_matches(".exe");
+    SANDBOX_WRAPPERS.iter().any(|w| base.eq_ignore_ascii_case(w))
+}
+
+/// Descend from a pane's session process past the cage's wrapper chain to the shell that actually
+/// holds the prompt. Returns `root` unchanged for an uncaged pane, so the host path is untouched.
+///
+/// PURE over two lookups (name, children) so every shape is testable without a live process table.
+///
+/// Stops at the first non-wrapper, and refuses to descend through a wrapper with anything other than
+/// exactly one child: the cage's chain is strictly linear, so a fork means this is not the chain we
+/// think it is, and treating the wrapper as the shell keeps the answer CONSERVATIVE — it reports
+/// busy, so Resume declines rather than typing into something mid-flight, which is the safe
+/// direction the module doc names.
+fn descend_past_wrappers(
+    root: Pid,
+    name_of: impl Fn(Pid) -> Option<String>,
+    children_of: impl Fn(Pid) -> Vec<Pid>,
+) -> Pid {
+    let mut cur = root;
+    for _ in 0..MAX_DEPTH {
+        match name_of(cur) {
+            Some(name) if is_wrapper_name(&name) => {}
+            _ => return cur,
+        }
+        match children_of(cur).as_slice() {
+            [only] => cur = *only,
+            _ => return cur,
+        }
+    }
+    cur
+}
+
 /// Is this process one of the ignored console-plumbing helpers?
 fn is_ignored(procs: &HashMap<Pid, Process>, pid: Pid) -> bool {
     procs.get(&pid).is_some_and(|p| ignored_name(&p.name().to_string_lossy()))
@@ -81,6 +139,102 @@ fn is_descendant_of(start: Pid, root: Pid, procs: &HashMap<Pid, Process>) -> boo
 ///
 /// Returns a parallel `Vec<bool>` so the caller can zip it back onto its own keys. Refreshes the
 /// full process table once — the whole point of taking a batch.
+/// Is this process an AGENT — the thing whose absence makes a pane idle to a director?
+///
+/// A DIFFERENT QUESTION from [`shells_with_descendants`], deliberately kept apart. That one asks "may
+/// I type at this prompt", and its answer must stay broad: a shell mid-build has no prompt to type at
+/// either. This one asks "is the work actually being done", which is what `bsc fleet list` reports and
+/// what it was getting wrong — its help claimed "the agent is that child", and on a sandboxed pane the
+/// child is `bwrap`, then another `bwrap`, then a bare `/bin/bash -i`.
+///
+/// Matched on the NAME and on argv, because a real install is one of several shapes. Observed on this
+/// machine and on the survey `IGNORED_DESCENDANTS` came from:
+///
+///   claude --model sonnet --continue        a direct binary        → name
+///   node …/@anthropic-ai/claude-code/cli.js an npx-style install   → argv
+///   bsc-agent …                             the model-agnostic run → name
+///
+/// The argv arm is what makes the wrapper case work, and it is why this is not simply a name test: a
+/// node-hosted agent presents as `node`, which no name list can distinguish from any other node.
+///
+/// PURE, over `(name, argv)`, so every shape above is unit-testable without a live process table.
+pub(crate) fn is_agent_process(name: &str, argv: &[String]) -> bool {
+    let base = |s: &str| {
+        s.rsplit(['/', '\\']).next().unwrap_or(s).trim_end_matches(".exe").to_ascii_lowercase()
+    };
+    const AGENTS: &[&str] = &["claude", "bsc-agent"];
+    if AGENTS.contains(&base(name).as_str()) {
+        return true;
+    }
+    // Scan what the process RUNS, never what it merely mentions.
+    //
+    // A `bsc-sandbox` cage is the case that forced this distinction. `bwrap` CONFIGURES with paths and
+    // RUNS what follows `--`, and its configuration names the agent binary as both bind-mount source
+    // and target — `--ro-bind-try /usr/bin/claude /usr/bin/claude`, plus the versioned install bound
+    // over the same path. MEASURED: `claude` appears NINE times in one caged pane's own argv while its
+    // real tree was `bwrap → bwrap → bash` with no agent at all. Scanning the whole argv therefore made
+    // every caged pane report an agent PERMANENTLY, since that argv never changes — so `bsc fleet list`
+    // showed `running` for panes sitting at a bare prompt and the director never had anything to wake.
+    //
+    // Splitting at `--` keeps the case that matters in the other direction: a pane launched straight
+    // into a caged agent (`bwrap … -- claude --model sonnet`) has `bwrap` as its session process, and
+    // reporting THAT idle while it works would be the same failure inverted.
+    //
+    // Split at the LAST `--`, not the first, because wrappers NEST. `SANDBOX_WRAPPERS` carries
+    // `systemd-run` as well as `bwrap`, and a systemd scope above a cage puts the entire bwrap command
+    // line — bind mounts and all — after its own separator. Taking the last one lands on the command
+    // in both shapes, and on `bwrap … -- timeout 600 -- claude` it still lands on the agent.
+    let words: &[String] = if is_wrapper_name(name) {
+        match argv.iter().rposition(|a| a == "--") {
+            Some(i) => &argv[i + 1..],
+            // A wrapper with no command to run is plumbing and nothing else.
+            None => &[],
+        }
+    } else {
+        // A wrapper: the agent is named in the ARGUMENTS rather than in the process name. argv[0] is
+        // skipped because it is the interpreter, which is exactly what we already failed to recognise.
+        argv.get(1..).unwrap_or(&[])
+    };
+    // `cli.js` alone is far too generic to match on, so it counts only under a claude-ish path.
+    words.iter().any(|a| {
+        let b = base(a);
+        AGENTS.contains(&b.as_str()) || (b == "cli.js" && a.to_ascii_lowercase().contains("claude"))
+    })
+}
+
+/// Which shells have an AGENT among their descendants — the fleet table's `running` vs `idle`.
+///
+/// Same walk as [`shells_with_descendants`] and the same cost, on the same refreshed snapshot when the
+/// caller asks for both. The ROOT is included in the test, unlike the busy walk: a pane launched
+/// straight into the agent (no wrapping shell) has the agent AS its session process, and excluding the
+/// root would report that pane idle while it works.
+pub(crate) fn shells_with_agents(shell_pids: &[Option<u32>]) -> Vec<bool> {
+    if shell_pids.iter().all(|p| p.is_none()) {
+        return vec![false; shell_pids.len()];
+    }
+    let mut sys = System::new();
+    // `cmd()` is needed here (the wrapper arm reads argv), so this refresh asks for more than the busy
+    // walk's `nothing()` — still no memory or CPU sampling.
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always));
+    let procs = sys.processes();
+
+    shell_pids
+        .iter()
+        .map(|maybe| {
+            let Some(pid) = maybe else { return false };
+            let root = Pid::from(*pid as usize);
+            procs.iter().any(|(&p, proc_)| {
+                if p != root && !is_descendant_of(p, root, procs) {
+                    return false;
+                }
+                let argv: Vec<String> =
+                    proc_.cmd().iter().map(|s| s.to_string_lossy().into_owned()).collect();
+                is_agent_process(&proc_.name().to_string_lossy(), &argv)
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
     // Nothing to ask about — skip the (comparatively expensive) process walk entirely.
     if shell_pids.iter().all(|p| p.is_none()) {
@@ -97,7 +251,13 @@ pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
         .iter()
         .map(|maybe| {
             let Some(pid) = maybe else { return false };
-            let root = Pid::from(*pid as usize);
+            // The pane's REAL shell, which for a caged pane is NOT the pid we spawned — see
+            // `SANDBOX_WRAPPERS`. Uncaged, this is the session pid unchanged.
+            let root = descend_past_wrappers(
+                Pid::from(*pid as usize),
+                |p| procs.get(&p).map(|q| q.name().to_string_lossy().into_owned()),
+                |p| procs.iter().filter(|(_, q)| q.parent() == Some(p)).map(|(&k, _)| k).collect(),
+            );
             procs
                 .keys()
                 .any(|&p| p != root && !is_ignored(procs, p) && is_descendant_of(p, root, procs))
@@ -108,6 +268,163 @@ pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── the AGENT predicate (#fleet-list-reports-whether-the-agent-is-running) ──────────────────
+    //
+    // Every shape below was READ OFF THIS MACHINE while the bug was live, not invented: the director
+    // pane ran `claude --model sonnet --continue`, and the worker pane that reported `running` was
+    // `bwrap → bwrap → /bin/bash -i` with no agent anywhere in it.
+
+    fn argv(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_direct_agent_is_recognised_by_name() {
+        assert!(is_agent_process("claude", &argv(["claude", "--model", "sonnet", "--continue"].as_ref())));
+        assert!(is_agent_process("claude.exe", &argv(["claude.exe"].as_ref())));
+        assert!(is_agent_process("bsc-agent", &argv(["bsc-agent", "--provider", "openai"].as_ref())));
+    }
+
+    #[test]
+    fn a_wrapper_hosting_the_agent_is_recognised_by_its_arguments() {
+        // The npx-style install the `IGNORED_DESCENDANTS` survey found: the process is `node`, which
+        // no name list can tell from any other node — the agent is named in argv.
+        assert!(is_agent_process(
+            "node",
+            &argv(["node", "/home/u/.npm/_npx/@anthropic-ai/claude-code/cli.js", "--continue"].as_ref()),
+        ));
+        assert!(is_agent_process("node", &argv(["node", "/opt/bin/claude"].as_ref())));
+    }
+
+    #[test]
+    fn the_shells_and_the_sandbox_plumbing_are_not_agents() {
+        // THE REPORTED BUG, as a unit test. A sandboxed pane is `bwrap → bwrap → bash -i`; every one
+        // of those is a descendant, so `shells_with_descendants` says busy and the table said running.
+        assert!(!is_agent_process("bwrap", &argv(["/usr/bin/bwrap", "--unshare-all", "--share-net"].as_ref())));
+        assert!(!is_agent_process("bash", &argv(["/bin/bash", "-i"].as_ref())));
+        assert!(!is_agent_process("bash", &argv(["/bin/bash"].as_ref())));
+    }
+
+    /// The cage's own CONFIGURATION names the agent binary, and that must not read as a running agent.
+    ///
+    /// THE ABBREVIATION IS WHY THIS SURVIVED. The test above says the sandbox plumbing is not an
+    /// agent, and it passes — but it asserts on THREE arguments. A real cage carries ~200, and the
+    /// ones that were trimmed for readability are exactly the ones that break it: `bsc-sandbox` binds
+    /// the agent binary into the namespace, so `/usr/bin/claude` appears in the argv as both source
+    /// and target, plus once more for the versioned install bound over the same path.
+    ///
+    /// MEASURED on the live network-monitor fleet: pane `domain-model-and-adapter-traits` (pid 598682)
+    /// was `bwrap → bwrap → bash` with no agent, its argv mentioned `claude` NINE times, and the table
+    /// reported `running / AGENT yes`. Because the argv of a running cage never changes, that pane
+    /// could never become `idle` — `bsc fleet list` returned `idle: []` for a fleet that was entirely
+    /// parked, and the director had nothing to wake.
+    ///
+    /// So this test keeps the bind-mount arguments verbatim. Shortening them is what hid the bug.
+    #[test]
+    fn a_cages_bind_mounts_do_not_make_it_an_agent() {
+        let caged_shell = argv([
+            "/usr/bin/bwrap", "--unshare-all", "--share-net", "--die-with-parent", "--clearenv",
+            "--ro-bind", "/usr/lib", "/usr/lib",
+            "--ro-bind-try", "/usr/bin/bash", "/usr/bin/bash",
+            // The three that matter — the agent bound in by path, twice as a pair and once versioned.
+            "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--ro-bind", "/home/u/.local/share/claude/versions/2.1.247", "/usr/bin/claude",
+            "--ro-bind", "/home/u/.base-studio-code/bin/bsc-hook", "/bsc-hook",
+            "--bind", "/home/u/.base-studio-code/worktrees/p/r--stream", "/repo",
+            "--chdir", "/repo", "--setenv", "HOME", "/home/agent",
+            // ...and the command it ACTUALLY runs: a bare interactive shell.
+            "--", "/bin/bash", "-i",
+        ].as_ref());
+        assert!(
+            !is_agent_process("bwrap", &caged_shell),
+            "a cage running a bare shell has no agent, however many times its bind mounts say 'claude'",
+        );
+
+        // The other direction, which the fix must not break: a pane launched STRAIGHT into a caged
+        // agent has `bwrap` as its session process, and calling that idle while it works would be the
+        // same mistake inverted.
+        let caged_agent = argv([
+            "/usr/bin/bwrap", "--unshare-all",
+            "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "claude", "--model", "sonnet", "--continue",
+        ].as_ref());
+        assert!(is_agent_process("bwrap", &caged_agent), "a cage RUNNING the agent is working");
+
+        // A caged agent reached through the node wrapper still counts, for the same reason.
+        let caged_wrapper = argv([
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "node", "/home/agent/.npm/@anthropic-ai/claude-code/cli.js", "--continue",
+        ].as_ref());
+        assert!(is_agent_process("bwrap", &caged_wrapper));
+
+        // A cage that wraps nothing is plumbing, even with the binds present.
+        let no_command = argv([
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+        ].as_ref());
+        assert!(!is_agent_process("bwrap", &no_command));
+
+        // NESTED wrappers, which is why the split takes the LAST `--` rather than the first.
+        // `SANDBOX_WRAPPERS` carries `systemd-run` too, and a scope above a cage puts the whole
+        // bwrap command line — bind mounts included — after its own separator. Splitting at the
+        // first would hand back exactly the configuration this fix exists to stop reading.
+        let scoped_shell = argv([
+            "systemd-run", "--scope", "--user", "--",
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "/bin/bash", "-i",
+        ].as_ref());
+        assert!(!is_agent_process("systemd-run", &scoped_shell), "a scoped cage at a prompt is idle");
+
+        let scoped_agent = argv([
+            "systemd-run", "--scope", "--user", "--",
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "claude", "--continue",
+        ].as_ref());
+        assert!(is_agent_process("systemd-run", &scoped_agent), "a scoped cage running the agent works");
+
+        // And a command that carries its own `--` still resolves to the agent beyond it.
+        let via_timeout = argv([
+            "/usr/bin/bwrap", "--ro-bind-try", "/usr/bin/claude", "/usr/bin/claude",
+            "--", "timeout", "600", "--", "claude",
+        ].as_ref());
+        assert!(is_agent_process("bwrap", &via_timeout));
+    }
+
+    #[test]
+    fn a_non_cage_still_scans_its_whole_argv() {
+        // The `--` split is scoped to the sandbox wrapper on purpose. Everything else keeps the old
+        // rule, so an ordinary wrapper that names the agent anywhere in its arguments still counts.
+        //
+        // (Not asserted here: `npx --yes @anthropic-ai/claude-code`. Its basename is `claude-code`,
+        // which has never been in AGENTS, so it did not match before this change either. Widening the
+        // predicate to catch it would be a separate decision, not a side effect of this fix.)
+        assert!(is_agent_process("sh", &argv(["sh", "-c", "exec", "bsc-agent"].as_ref())));
+        // ...and a bare `--` in a non-cage argv is just an argument, not a command boundary.
+        assert!(is_agent_process("timeout", &argv(["timeout", "600", "--", "claude"].as_ref())));
+    }
+
+    #[test]
+    fn an_ordinary_workload_is_busy_but_is_not_an_agent() {
+        // The other half of why these are two probes: a shell mid-build must stay BUSY (Resume must
+        // not type into it) while reading as no-agent (a director should see `idle` and wake it).
+        assert!(!is_agent_process("cargo", &argv(["cargo", "build", "--release"].as_ref())));
+        assert!(!is_agent_process("git", &argv(["git", "push"].as_ref())));
+        assert!(!is_agent_process("node", &argv(["node", "scripts/emit-records.mjs"].as_ref())));
+    }
+
+    #[test]
+    fn a_generic_cli_js_does_not_pass_on_its_name_alone() {
+        // `cli.js` is far too common to match by itself — it counts only under a claude-ish path.
+        assert!(!is_agent_process("node", &argv(["node", "/home/u/some-tool/cli.js"].as_ref())));
+    }
+
+    #[test]
+    fn the_interpreter_in_argv0_never_makes_a_process_an_agent() {
+        // argv[0] is skipped on purpose: matching it would make `/usr/bin/claude-something` or a shell
+        // invoked FROM a claude path read as the agent itself.
+        assert!(!is_agent_process("sh", &argv(["/home/u/claude/bin/sh", "-c", "echo hi"].as_ref())));
+    }
+
 
     /// Both directions, against the SAME spawned process, in one test.
     ///
@@ -175,5 +492,119 @@ mod tests {
         let out = shells_with_descendants(&[None, Some(own), None]);
         assert_eq!(out.len(), 3);
         assert!(!out[0] && !out[2]);
+    }
+
+    // ── the CAGE descent (#a-session-with-history-always-resumes) ───────────────────────────────
+    //
+    // The fixture is the real tree, read off the live desktop while the pane the maintainer was
+    // looking at sat at a bare `bash-5.2$`:
+    //
+    //     2384280 bwrap  ->  2384283 bwrap  ->  2384284 /bin/bash -i
+    //
+    // `PtyState` recorded 2384280, so the busy walk asked about the OUTERMOST wrapper and found two
+    // descendants — the cage itself. Resume declined on a pane that had nothing running in it.
+
+    /// A tiny (pid, parent, name) table, so the descent is exercised without a live process table.
+    fn tree(rows: &[(usize, Option<usize>, &str)]) -> Vec<(Pid, Option<Pid>, String)> {
+        rows.iter()
+            .map(|(pid, parent, name)| {
+                (Pid::from(*pid), parent.map(Pid::from), (*name).to_string())
+            })
+            .collect()
+    }
+
+    /// Run the pure descent over a fixture table.
+    fn descend(root: usize, rows: &[(Pid, Option<Pid>, String)]) -> usize {
+        let got = descend_past_wrappers(
+            Pid::from(root),
+            |p| rows.iter().find(|(pid, _, _)| *pid == p).map(|(_, _, n)| n.clone()),
+            |p| rows.iter().filter(|(_, parent, _)| *parent == Some(p)).map(|(pid, _, _)| *pid).collect(),
+        );
+        usize::from(got)
+    }
+
+    #[test]
+    fn the_descent_walks_the_cage_chain_to_the_real_shell() {
+        let t = tree(&[
+            (2384280, None, "bwrap"),
+            (2384283, Some(2384280), "bwrap"),
+            (2384284, Some(2384283), "bash"),
+        ]);
+        assert_eq!(descend(2384280, &t), 2384284, "the prompt is below two bwraps, not at the session pid");
+    }
+
+    /// The systemd scope arm (`sandbox: cgroup caps via the USER systemd scope`) puts one more
+    /// wrapper on top, so the chain length is not something the descent may assume.
+    #[test]
+    fn the_descent_handles_a_systemd_scope_above_the_cage() {
+        let t = tree(&[
+            (100, None, "systemd-run"),
+            (101, Some(100), "bwrap"),
+            (102, Some(101), "bwrap"),
+            (103, Some(102), "bash"),
+        ]);
+        assert_eq!(descend(100, &t), 103);
+    }
+
+    /// An UNCAGED pane must take the exact path it always did — the host session process IS its shell.
+    #[test]
+    fn the_descent_is_a_no_op_for_an_uncaged_pane() {
+        let t = tree(&[(200, None, "bash"), (201, Some(200), "claude")]);
+        assert_eq!(descend(200, &t), 200, "a host shell is never descended past");
+    }
+
+    /// A wrapper that has FORKED is not the linear chain this understands, so the descent stops and
+    /// the walk reports busy — Resume declines rather than typing into something mid-flight.
+    #[test]
+    fn the_descent_refuses_to_guess_through_a_forked_wrapper() {
+        let t = tree(&[
+            (300, None, "bwrap"),
+            (301, Some(300), "bash"),
+            (302, Some(300), "bash"),
+        ]);
+        assert_eq!(descend(300, &t), 300, "ambiguous chain stays conservative");
+    }
+
+    /// A wrapper whose child is gone (the cage tearing down) must not walk off the end.
+    #[test]
+    fn the_descent_stops_at_a_childless_wrapper() {
+        let t = tree(&[(400, None, "bwrap")]);
+        assert_eq!(descend(400, &t), 400);
+    }
+
+    /// The wrapper names are matched the same way the agent names are — basename, case-insensitive,
+    /// `.exe` trimmed — so a path-qualified `/usr/bin/bwrap` is recognised.
+    #[test]
+    fn wrapper_names_are_matched_by_basename() {
+        assert!(is_wrapper_name("bwrap"));
+        assert!(is_wrapper_name("/usr/bin/bwrap"));
+        assert!(is_wrapper_name("BWRAP"));
+        assert!(is_wrapper_name("systemd-run"));
+        for shell in ["bash", "claude", "node", "sh", "zsh", ""] {
+            assert!(!is_wrapper_name(shell), "{shell} is not a cage wrapper");
+        }
+    }
+
+    /// THE REGRESSION, end to end over the pure descent: a caged pane at a prompt has no descendant
+    /// BELOW its real shell, which is what makes `planResume` return `started` for it. Asking about
+    /// the session pid instead finds the cage and calls it busy — the bug.
+    #[test]
+    fn a_caged_pane_at_a_prompt_is_idle_below_its_real_shell() {
+        let t = tree(&[
+            (2384280, None, "bwrap"),
+            (2384283, Some(2384280), "bwrap"),
+            (2384284, Some(2384283), "bash"),
+        ]);
+        let shell = Pid::from(descend(2384280, &t));
+        let has_work = t.iter().any(|(pid, parent, _)| *pid != shell && *parent == Some(shell));
+        assert!(!has_work, "no agent under the shell => the pane is resumable");
+
+        // …and the same tree WITH an agent still reads busy, so the fix cannot make Resume type into
+        // a working session.
+        let mut busy_tree = t.clone();
+        busy_tree.push((Pid::from(2384999), Some(Pid::from(2384284)), "claude".to_string()));
+        let shell = Pid::from(descend(2384280, &busy_tree));
+        let has_work = busy_tree.iter().any(|(pid, parent, _)| *pid != shell && *parent == Some(shell));
+        assert!(has_work, "an agent under the shell => leave it alone");
     }
 }

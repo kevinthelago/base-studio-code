@@ -9,28 +9,11 @@ use crate::prelude::*;
 #[tauri::command]
 pub(crate) async fn clone_repo(project: String, full_name: String) -> Result<String, String> {
     let _perf = PerfSpan::new("clone_repo");
-    let dest = repo_dir(&project, &full_name);
-    if dest.is_dir() && dest.join(".git").exists() {
-        return Ok(dest.to_string_lossy().into_owned());
-    }
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).str_err()?;
-    }
-    let url = format!("https://github.com/{}.git", full_name);
-    let mut cmd = std::process::Command::new("git");
-    cmd.args(["clone", &url, &dest.to_string_lossy()]);
-    let status = run_status(&mut cmd).str_err()?;
-    if !status.success() {
-        log::warn!("clone_repo: git clone failed for {full_name}");
-        return Err(format!("git clone failed for {}", full_name));
-    }
-    // Keep app-managed files (per-repo CLAUDE.local.md, the .claude/ session
-    // settings) out of the clone's `git status`.
-    git_exclude(&dest, "CLAUDE.local.md");
-    git_exclude(&dest, ".claude/");
-    // The fleet assume-and-log journal (bsc-note) lives in the repo root; keep it out
-    // of the clone's `git status`.
-    git_exclude(&dest, "DECISIONS.md");
-    log::info!("clone_repo: cloned {full_name} → {}", dest.display());
-    Ok(dest.to_string_lossy().into_owned())
+    // ONE COPY of the clone (#the-director-can-clone-its-projects-repos). This used to be the only
+    // thing in the app that could clone a linked repo — which made it the only door, and a director is
+    // a shell session that cannot reach it. The act moved to `bsc-project` (Tauri-free) so
+    // `bsc fleet clone` performs the identical clone, with the identical excludes and the identical
+    // URL. Two doors onto one function cannot drift; two implementations would.
+    let (path, _outcome) = bsc_project::ensure_clone(&project, &full_name, "", None)?;
+    Ok(path.to_string_lossy().into_owned())
 }

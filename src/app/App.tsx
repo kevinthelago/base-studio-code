@@ -19,6 +19,7 @@ import { useFleetDirectorBridge } from "@/app/useFleetDirectorBridge";
 import { useFleetStartBridge } from "@/app/useFleetStartBridge";
 import { useDebugChannel } from "@/app/useDebugChannel";
 import { useDockBack } from "@/app/useDockBack";
+import { useSurfaceCatalogPoll } from "@/app/useSurfaceCatalogPoll";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 // #4186: Console renders FROM THE GRAPH — the host mounts the authored `consolepage` node. The file
@@ -54,6 +55,20 @@ import {
 
 export default function App() {
   useHotkeys();
+  // The ACTIVE `bsc` command surfaces (`a-persona-declares-its-command-surfaces`), read from the ONE
+  // catalog into the store so both consumers share it: the session launch complements it against each
+  // persona's declared set to build that session's denies, and the Glance drill draws the band.
+  //
+  // IT POLLS HERE, IN THE SHELL, and not in Glance — which is where the first read lived. A session is
+  // launched from the Console, from the fleet, and headlessly via `bsc fleet start`, none of which
+  // require Glance to have mounted; leaving the poll on a workspace meant the catalog was empty for
+  // exactly the launches nobody had opened Glance for, and an empty catalog denies nothing.
+  //
+  // The 60s cadence is far above how often the catalog changes (it is a `const` compiled into the
+  // binary, so only a rebuild moves it — which does happen mid-session, since that re-stages the
+  // sidecar) and far below how long a stale set would matter. The read is on the warm-serve
+  // allow-list, so it costs ~10ms and needs no project key.
+  useSurfaceCatalogPoll();
   // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
   // external session can steer the app to a view before capturing it.
   useNavigateBridge();

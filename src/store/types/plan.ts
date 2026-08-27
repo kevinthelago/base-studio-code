@@ -1,7 +1,7 @@
 // Plan-session domain — Claude config profiles, plan section files, blueprints, data models,
 // stage config/runs/preview, and the agent fleet plan. Plus the config + automation-suggestion
 // value types it owns. Split from store/types (#1634).
-import type { ModelId } from "@/app/console/panes/PaneMenu";
+import type { SessionModel } from "@/app/console/lib/models";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
@@ -176,7 +176,7 @@ export interface PlanState {
   setPlanAgentStreamFlow: (projectId: string, streamId: string, patch: Partial<AgentFlow>) => void;
   /** #…: set a stream's per-agent LLM model (undefined clears it so the stream inherits the
    *  global `defaultModel`). Applied at fleet launch as `claude --model <tier>`. */
-  setPlanAgentStreamModel: (projectId: string, streamId: string, model: ModelId | undefined) => void;
+  setPlanAgentStreamModel: (projectId: string, streamId: string, model: SessionModel | undefined) => void;
   /** #378: set a stream's per-stream integration-strategy override (undefined clears
    *  it so the stream inherits the fleet default). */
   setPlanAgentStreamStrategy: (projectId: string, streamId: string, strategy: IntegrationStrategy | undefined) => void;

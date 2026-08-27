@@ -728,6 +728,17 @@ real defect to fix, not a note to skim:
 - **hardcoded-color** — the component's own source hardcodes colour literals and references no
   `var(--…)` token, so it will not follow the active theme. Replace the literals with semantic tokens.
   Only literals in **code position** count; a hex in a comment styles nothing and is not reported.
+- **reimplementation** / **reimplemented-component** / an **unresolvable-import** naming
+  `@bsc/algorithms/<name>` — you declared or imported a name that collides with a real node in the
+  Algorithms knowledge graph (the librarian's library, #3116/#3118). **Verify it with
+  `bsc ui library get <name>`** (bsc request #118) — the ONE reach into that graph this surface grants
+  you, answering the same question `bsc graph impl get` would without needing the librarian's
+  permissions. `{ resolves: true, ... }` means the finding is real: **compose from that record's `src`
+  instead of re-coding it** (an import the preview sandbox cannot resolve is a platform-registration
+  gap, not a reason to hand-roll a copy — raise it rather than working around it). `{ resolves: false }`
+  means the finding names nothing real; report it rather than acting on it (this is what request #118
+  was — do not blindly rename or delete a declaration to chase a finding that has no library node behind
+  it).
 
 `doctor` reconciles the composition graph; **motion is part of the same coherent kit** — any animation
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
@@ -816,11 +827,16 @@ A data-driven component (a chart, a table, a graph) previews with a trivial buil
 `[]` or a placeholder — which reads poorly. For a **realistic** preview, an ALGORITHM can generate the
 data: the app runs it in the sandbox and feeds its output into the component's preview.
 
-You don't write algorithms — the **librarian** owns them (the `bsc graph` library). So, reuse-first:
+You don't write algorithms — the **librarian** owns them (the `bsc graph` library, a surface you never
+run directly). So, reuse-first:
 
-- **Check first:** `bsc graph impl list` — an existing algorithm may already produce the shape you need
-  (a matrix for a heatmap, a graph for a node diagram, a series for a chart).
-- **If none fits, commission the librarian** (the spec is what the data should REPRESENT, on stdin):
+- **Check a specific name first** with `bsc ui library get <name>` if you already suspect a fitting
+  algorithm exists (its name usually surfaces on you already — a `doctor` finding, a sibling component's
+  import, a name you recall from a prior session). `bsc graph impl list` — browsing the WHOLE catalog —
+  is the librarian's surface, not yours; do not reach for it (bsc request #118: your permitted surface
+  is `bsc ui`/`bsc component`, nothing under `bsc graph`).
+- **No specific name to check, or it doesn't resolve? Commission the librarian** (the spec is what the
+  data should REPRESENT, on stdin):
 
   ```
   echo "generate a plausible weekly-activity matrix for a heatmap" | bsc-commission librarian

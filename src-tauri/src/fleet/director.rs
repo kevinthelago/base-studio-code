@@ -239,6 +239,51 @@ mod relocated_tests {
         );
     }
 
+    /// A CAGED director has no `bsc` — and until this, the protocol never said so.
+    ///
+    /// Observed 2026-08-25: `pty[studio-code:director] launching sandboxed as director — 4 store(s),
+    /// 3 outbox(es)` immediately followed by the session running one command, finding
+    /// `bsc: command not found` with `$BSC_BIN` empty, and ending at `exit=1`. The cage was working
+    /// exactly as designed — `/plan`'s own README says "THERE IS NO `bsc` IN THIS SESSION. That is
+    /// the point of the projection, not an oversight" — but this document mentions `$BSC_BIN` seven
+    /// times and named the projections ZERO times, so a caged director was told to drive a binary its
+    /// namespace deliberately withholds and given no second door.
+    ///
+    /// The designer resolved this asymmetry long ago; its persona says to use "the `/ui` projection
+    /// and the `/ui/out` outbox your cage gives you instead". This pins the same for the director.
+    #[test]
+    fn director_protocol_tells_a_caged_director_what_it_actually_has() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+
+        // It must be able to TELL which it is, rather than inferring it from a failure.
+        assert!(p.contains("$BSC_BIN"), "the uncaged form still has to be documented");
+        assert!(
+            p.contains("WHETHER YOU ARE IN A CAGE"),
+            "a director must be told to check, not discover it by running a missing binary",
+        );
+        // ...and that an absent binary is the DESIGN, or it will read as a broken session and stall.
+        assert!(
+            p.contains("deliberate, not a broken session"),
+            "the absence must be named as intentional, or the director reports it as a fault",
+        );
+
+        // The READ surface, by name. `/plan` is the one that replaces its most-used verb.
+        for path in ["/plan", "/graph", "/ui", "/coord"] {
+            assert!(p.contains(path), "the caged read surface must name {path}");
+        }
+        assert!(
+            p.contains("SNAPSHOT, NOT A LIVE VIEW"),
+            "a projection that is mistaken for live is worse than no projection",
+        );
+
+        // The WRITE surface — shell emitters, no binary needed.
+        assert!(p.contains("bsc-ask"), "the caged escalation path must be named");
+        assert!(
+            p.contains("raise") || p.contains("RAISE"),
+            "what it cannot do from inside must route somewhere, not stall",
+        );
+    }
+
     #[test]
     fn director_protocol_takes_team_design_and_the_worker_context() {
         // #funnel-planner-takes-team-and-context. The director staffs the fleet and authors the context

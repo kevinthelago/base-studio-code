@@ -107,6 +107,53 @@ mod tests {
         );
     }
 
+    /// The protocol must say where NEW work goes, not only where a CHANGE goes.
+    ///
+    /// Reported by the maintainer: workers prefer writing files over working in the components and
+    /// algorithms graphs. The protocol was never silent about records — it was silent about
+    /// CREATION. Every record rule it carried was phrased as an edit rule (`before you edit a .tsx`,
+    /// `a change to it belongs on that record`), and the one line that came close framed the file as
+    /// the default: *"Before writing a UI component, check whether one already exists."*
+    ///
+    /// Nothing else closes that gap. `bsc ui backing gate` asks whether a CHANGED path has a record,
+    /// so a brand-new file exits 0 with `ok: none of the N path(s) is component-backed` — measured —
+    /// and the worker reads that green as approval. The kickoff (`buildStreamPrompt`) defines the
+    /// lane in FILES ("you own <globs>") and never mentions the graph at all. So this document is
+    /// the only place a worker can learn it, which is why the wording is pinned rather than trusted.
+    #[test]
+    fn the_worker_protocol_says_where_new_work_goes() {
+        let empty = std::env::temp_dir().join(format!("bsc-proto-new-{}", std::process::id()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let md = crate::platform::config::with_config_root(&empty, super::fleet_protocol_md);
+        let _ = std::fs::remove_dir_all(&empty);
+
+        // The rule itself, and both authoring verbs — a worker that only learns the component half
+        // still writes its pure logic to a file.
+        assert!(
+            md.contains("NEW work is authored INTO the graph"),
+            "creation must have its own rule, not be left implied by the edit rules: {md}"
+        );
+        assert!(md.contains("bsc ui set"), "the component authoring verb: {md}");
+        assert!(md.contains("bsc graph impl set"), "the algorithm authoring verb: {md}");
+        assert!(
+            md.contains("--code-file"),
+            "source on a command line is corrupted silently by the shell, so the flag is not optional: {md}"
+        );
+
+        // The blind spot, said out loud. A green gate that answers a DIFFERENT question is worse
+        // than no gate, because it reads as permission.
+        assert!(
+            md.contains("component-backed"),
+            "the gate's own passing message must appear, so the worker recognises it as not-an-answer: {md}"
+        );
+
+        // And the escape hatch, or the rule is unusable and gets ignored wholesale.
+        assert!(
+            md.contains("import.meta.glob") && md.contains("BUILD CONFIG"),
+            "the narrow cases where a plain file IS right must be listed: {md}"
+        );
+    }
+
     /// The WRITE half of the caged surface. The read block told a worker where the stores are and
     /// left it with no way to record anything — the state that ends in a green gate, a commit, and
     /// an item still reading `in_progress`.
