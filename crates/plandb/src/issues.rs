@@ -33,6 +33,23 @@ fn default_status() -> String {
     "open".into()
 }
 
+/// One recorded observation on an issue — the same shape as {@link crate::changes::ChangeNote}, but
+/// for an issue that has no change record yet (nobody has started work). Opening a change just to hold
+/// an observation would misrepresent an unstarted issue as in-flight, so an issue carries its own
+/// append-only notes independent of whether a change exists.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueNote {
+    /// Epoch seconds.
+    #[serde(default)]
+    pub at: i64,
+    /// Who wrote it — a pane id, a stream, "user". Free-form; provenance, not an enum.
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub text: String,
+}
+
 /// A planned issue — the granular work item. Mirrors the frontend `PlanIssue`; `serde` emits the
 /// camelCase JSON `parseIssuesFile` reads (`ref`, `dependsOn`, …).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -81,6 +98,10 @@ pub struct PlanIssue {
     /// Unix seconds of the last successful reconcile with GitHub, or `None` if never synced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<i64>,
+    /// Append-only observations, oldest first — see {@link IssueNote}. Owned by the `note` verb, never
+    /// by `add`'s content upsert (mirrors how `status`/`gh_number` survive a content edit untouched).
+    #[serde(default)]
+    pub notes: Vec<IssueNote>,
 }
 
 /// The **lean** projection of a {@link PlanIssue} for the agent token budget (#1562): identity +
@@ -214,6 +235,28 @@ impl Store {
         list_query(&mut stmt, status, stream, since, row_to_issue_summary)
     }
 
+    /// Append an observation to an issue — **independent of whether it has a change record**. Unlike
+    /// `bsc plan change note`, this never requires opening a change first: an issue nobody has started
+    /// work on still has somewhere to put an observation without misrepresenting it as in-flight.
+    /// Append-only by construction (read, push, write back), mirroring {@link Store::change_add_note}.
+    /// Returns rows changed (0 = unknown ref).
+    pub fn add_note(&self, r#ref: &str, author: &str, text: &str) -> rusqlite::Result<usize> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(rusqlite::Error::InvalidParameterName("a note needs text".into()));
+        }
+        let Some(mut issue) = self.get(r#ref)? else { return Ok(0) };
+        issue.notes.push(IssueNote {
+            at: now_secs(),
+            author: author.trim().to_string(),
+            text: text.to_string(),
+        });
+        self.conn.execute(
+            "UPDATE issues SET notes = ?2, updated_at = strftime('%s','now') WHERE ref = ?1",
+            params![r#ref, serde_json::to_string(&issue.notes).unwrap_or_else(|_| "[]".into())],
+        )
+    }
+
     /// Delete an issue by `ref` (no-op if absent).
     pub fn remove(&self, r#ref: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM issues WHERE ref = ?1", params![r#ref])?;
@@ -238,6 +281,7 @@ pub const AMEND_OWNED_ELSEWHERE: &[(&str, &str)] = &[
     ("ghNumber", "owned by publish/sync — use `bsc plan link <ref>`"),
     ("ghNodeId", "owned by publish/sync — use `bsc plan link <ref>`"),
     ("syncedAt", "owned by publish/sync — use `bsc plan link <ref>`"),
+    ("notes", "owned by the note verb — use `bsc plan note <ref> <text>`"),
 ];
 
 /// The fields `amend` may actually change — every `PlanIssue` key that isn't in
@@ -298,7 +342,7 @@ pub fn merge_patch(
 // phase-column codec lives in the crate root (shared with features).
 
 pub(crate) const SELECT_COLS: &str =
-    "SELECT ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status, gh_number, gh_node_id, synced_at FROM issues";
+    "SELECT ref, title, phase, repo, stream, parent, body, acceptance, owns, depends_on, labels, status, gh_number, gh_node_id, synced_at, notes FROM issues";
 
 /// Lean column set for {@link Store::list_summary}: **no `body`** (the big blob is dropped at the SQL
 /// layer, not in Rust), value-lists still selected so we can count them. Column order must match
@@ -371,7 +415,15 @@ pub(crate) fn row_to_issue(r: &rusqlite::Row) -> rusqlite::Result<PlanIssue> {
         gh_number: r.get(12)?,
         gh_node_id: r.get(13)?,
         synced_at: r.get(14)?,
+        notes: serde_json::from_str(&r.get::<_, String>(15)?).unwrap_or_default(),
     })
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Map a {@link SELECT_SUMMARY_COLS} row → {@link IssueSummary}: counts for the value-lists, no body.
@@ -682,6 +734,34 @@ mod tests {
         assert!(full.iter().any(|r| r.r#ref == "F2"));
     }
 
+    /// #146 — the request this closes: `bsc plan change note` needs an existing change, so an
+    /// observation on an issue nobody has started work on had nowhere to go. `add_note` requires only
+    /// the issue.
+    #[test]
+    fn add_note_appends_without_a_change_record_and_is_append_only() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert(&mk("4208-flaky", "Two tests fail only under full-suite load")).unwrap();
+
+        s.add_note("4208-flaky", "kevin", "reproduces only with cargo nextest run --workspace").unwrap();
+        s.add_note("4208-flaky", "kevin", "narrowed to ENV_LOCK ordering").unwrap();
+
+        let issue = s.get("4208-flaky").unwrap().unwrap();
+        assert_eq!(issue.notes.len(), 2, "a second note appends, never replaces");
+        assert_eq!(issue.notes[0].text, "reproduces only with cargo nextest run --workspace", "oldest first");
+        assert_eq!(issue.notes[1].author, "kevin");
+        assert!(issue.notes[0].at > 0);
+        // the issue never moved off `open` — noting an observation is not starting work
+        assert_eq!(issue.status, "open");
+
+        // A content edit (the planner re-materializing) must not drop notes evidence.
+        s.upsert(&mk("4208-flaky", "retitled")).unwrap();
+        assert_eq!(s.get("4208-flaky").unwrap().unwrap().notes.len(), 2, "notes survive a content rewrite");
+
+        // An unknown ref reports nothing changed rather than inventing a row.
+        assert_eq!(s.add_note("nope", "x", "y").unwrap(), 0);
+        assert!(s.add_note("4208-flaky", "x", "  ").is_err(), "an empty note is rejected");
+    }
+
     // ── merge_patch (#request-107: amend one field without clobbering the rest) ──────────────
 
     fn mk_full(r: &str) -> PlanIssue {
@@ -730,6 +810,9 @@ mod tests {
             ("ghNumber", serde_json::json!(99)),
             ("ghNodeId", serde_json::json!("I_y")),
             ("syncedAt", serde_json::json!(1)),
+            // #146: `notes` is owned by `bsc plan note`, same as status/gh identity — amend must not
+            // let a content edit clobber append-only observations.
+            ("notes", serde_json::json!([])),
         ] {
             let patch = serde_json::json!({ key: value });
             let err = merge_patch(&existing, patch.as_object().unwrap()).unwrap_err();

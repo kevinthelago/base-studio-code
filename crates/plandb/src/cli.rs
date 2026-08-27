@@ -152,6 +152,18 @@ USAGE:
 Sets one issue's status. <status> is one of: open | in_progress | blocked | complete | verified | failed.",
     },
     CmdDoc {
+        name: "note",
+        summary: "append an observation to an issue (no change record needed)",
+        usage: "\
+USAGE:
+  bsc plan note <ref> <text> [--from AUTHOR]
+
+Appends an append-only observation directly to the issue (#146) — unlike `bsc plan change note`, this
+never requires a change record to already exist. Opening a change on an issue nobody has started work
+on would misrepresent it as in-flight; `note` is where an observation goes before that, or when no
+change will ever exist for it. `--from` names the author; omitted is recorded as empty, never guessed.",
+    },
+    CmdDoc {
         name: "link",
         summary: "record the GitHub issue an issue was published as",
         usage: "\
@@ -728,6 +740,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // #3842: the BATCHED read — every artifact the planner poll needs in one spawn.
         "snapshot" => snapshot::cmd_snapshot(&args),
         "status" => issues::cmd_status(&args),
+        "note" => issues::cmd_note(&args),
         "link" => issues::cmd_link(&args),
         "remove" => issues::cmd_remove(&args),
         "render" => issues::cmd_render(&args),
@@ -1020,6 +1033,50 @@ mod tests {
         assert!(go(vec!["request", "show", "999"]).is_err(), "an unknown id is an error");
         assert!(go(vec!["request", "claim", "not-a-number"]).is_err(), "a non-numeric id is rejected");
         assert!(go(vec!["request", "frobnicate"]).is_err(), "an unknown sub is an error");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// #146, through `run()` — the CLI boundary, so `--from` is checked as a registered flag, not just
+    /// a store parameter. Reproduces the exact failing command on request 146: an observation on an
+    /// issue with no change record, which `bsc plan change note` refuses ("no change with ref").
+    #[test]
+    fn the_note_verb_works_on_an_issue_with_no_change_record() {
+        let db = test_db_path("note-verb");
+        let go = |a: Vec<&str>| {
+            let mut v: Vec<String> = a.into_iter().map(String::from).collect();
+            v.push("--db".into());
+            v.push(db.clone());
+            run(v, "bsc plan")
+        };
+
+        // Seed the issue directly (no change record — nobody has claimed this work yet).
+        let s = open_store(&Some(db.clone())).unwrap();
+        s.upsert(&crate::PlanIssue {
+            r#ref: "4208-two-tests-fail-only-under-full-suite-load-and-pa".into(),
+            title: "Two tests fail only under full-suite load".into(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        // What request 146 actually tried and got "no change with ref" for — now succeeds directly.
+        go(vec![
+            "note", "4208-two-tests-fail-only-under-full-suite-load-and-pa",
+            "reproduces only under cargo nextest run --workspace", "--from", "kevin",
+        ])
+        .expect("`note --from` — the flag a store-level test cannot check");
+
+        let issue = s.get("4208-two-tests-fail-only-under-full-suite-load-and-pa").unwrap().unwrap();
+        assert_eq!(issue.notes.len(), 1);
+        assert_eq!(issue.notes[0].author, "kevin");
+        assert_eq!(issue.status, "open", "recording an observation does not claim the work as started");
+
+        // `bsc plan change note` on the same ref still refuses — this verb is deliberately separate.
+        assert!(
+            go(vec!["change", "note", "4208-two-tests-fail-only-under-full-suite-load-and-pa", "x"]).is_err(),
+            "change note still requires an existing change record"
+        );
+        assert!(go(vec!["note", "nope-no-such-issue", "x"]).is_err(), "an unknown ref is an error");
+        assert!(go(vec!["note", "4208-two-tests-fail-only-under-full-suite-load-and-pa", "  "]).is_err(), "empty text is rejected");
         let _ = std::fs::remove_file(&db);
     }
 
