@@ -32,7 +32,7 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     // legacy `group` key too (#4107 slice B): the store holds records written under the old name, and
     // this projection is the ONE place a raw record becomes a Component, so the fallback belongs here
     // rather than scattered across every consumer.
-    folder: (c as { folder?: string; group?: string }).folder ?? (c as { group?: string }).group,
+    folder: (c as { folder?: string }).folder,
     version: c.version ?? "",
     used: typeof c.used === "number" ? c.used : 0,
     tags: c.tags ?? [],

@@ -36,13 +36,13 @@ pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
-pub const BOOL_FLAGS: [&str; 11] = [
+pub const BOOL_FLAGS: [&str; 12] = [
     "--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run",
-    "--check", "--wasm", "--force",
+    "--check", "--wasm", "--force", "--raw",
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 43] = [
+pub const FLAGS: [&str; 45] = [
     "--pretty",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
@@ -97,6 +97,10 @@ pub const FLAGS: [&str; 43] = [
     "--members",
     "--out",
     "--run",
+    // #137 — `impl get <id-or-name> --field <name> [--raw] [--out <name>]`: narrow to ONE field
+    // (`code`, typically) and optionally spill it to the scratch dir instead of stdout.
+    "--field",
+    "--raw",
 ];
 
 /// Materialize ONE record into `out` and, when `run`, execute its paired tests there.
@@ -715,6 +719,19 @@ fn module_paths_agree(a: &str, b: &str) -> bool {
 
 /// Would joining these sources to a root named `root_name` double the prefix — `src/` under `src/`?
 ///
+/// The extension a carried test's SOURCE FILE had, in the `.ts` / `.tsx` form `AlgoImplTest::ext` holds.
+///
+/// Recorded rather than re-derived because the consumer's fallback is a GUESS from the body — the
+/// emitter reads any `<Word…>` as JSX — and a generic arrow, or a bare `<base>` in a comment, satisfies
+/// it. The test is then written `.tsx`, the parser reads `<T>` as a JSX tag, and the suite reports as a
+/// DEAD FILE rather than a red test: wrong on 177 of 376 files when the algorithm corpus moved onto its
+/// records. Only a real module extension is carried; anything else is left for the fallback rather than
+/// stated wrongly, since a stated extension OVERRIDES the guess.
+fn carried_test_ext(path: &std::path::Path) -> Option<String> {
+    let ext = format!(".{}", path.extension()?.to_string_lossy());
+    matches!(ext.as_str(), ".ts" | ".tsx" | ".js" | ".jsx").then_some(ext)
+}
+
 /// `bsc graph tests harvest <dir>` takes the REPO root, because every `src` is repo-relative and already
 /// begins `src/`. Handed `src` instead, every join becomes `src/src/…`, nothing resolves, and the command
 /// still exits 0 reporting a plausible `paired: 31 · noColocatedTest: 876`. That number reads as "the
@@ -918,7 +935,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         //     carry source intact (the shell eats backticks and `${…}`), and it fails silently.
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
         //   impl remove <id>                             # delete an implementation + scrub it from every composes
-        //   impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
+        //   impl get <id-or-name> | impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120); get falls back to a bare NAME when it's unambiguous (#118)
         "impl" => match positional.get(1).copied() {
             Some("set") => {
                 let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <code>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate]")?;
@@ -1178,8 +1195,94 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // gets truncated to a file OUTSIDE the session's confined FS roots, and so cannot be read
             // back at all. The designer skipped correcting several entries rather than write blind.
             Some("get") => {
-                let id = positional.get(2).copied().ok_or("usage: bsc graph impl get <id>")?;
-                match crate::implementations().into_iter().find(|im| im.get("id").and_then(Value::as_str) == Some(id)) {
+                let ref_ = positional.get(2).copied().ok_or(
+                    "usage: bsc graph impl get <id-or-name> [--field <name>] [--raw] [--out <name>]",
+                )?;
+                let impls = crate::implementations();
+                let by_id = impls.iter().find(|im| im.get("id").and_then(Value::as_str) == Some(ref_));
+                // #118: every OTHER reader of this library — `resolveLibrarySpec`/`libraryModuleResolver`
+                // (the preview's `@bsc/algorithms/<name>` import) and this crate's own `resolves_library`
+                // (`graph_health.rs`) — accepts an algorithm's BARE name interchangeably with its exact
+                // id. `impl get` did not, so a designer verifying a `bsc ui doctor` finding like "re-codes
+                // `models` (import `@bsc/algorithms/models`)" by running `impl get models` got `null` and
+                // reasonably read that as "the target doesn't exist" — when it does, under id `models.ts`,
+                // and the import in the finding already resolves and builds. Fall back to a NAME match,
+                // but only when it is UNAMBIGUOUS: an id is unique by construction, a name is not (`index`
+                // alone names 20 unrelated modules in this store), and a wrong silent pick on a read that
+                // precedes a write is worse than the miss this verb already treats as a normal answer.
+                let found = match by_id {
+                    Some(im) => Some(im),
+                    None => {
+                        let mut by_name = impls.iter().filter(|im| im.get("name").and_then(Value::as_str) == Some(ref_));
+                        match (by_name.next(), by_name.next()) {
+                            (Some(only), None) => Some(only),
+                            (Some(_), Some(_)) => {
+                                let ids: Vec<&str> = impls
+                                    .iter()
+                                    .filter(|im| im.get("name").and_then(Value::as_str) == Some(ref_))
+                                    .filter_map(|im| im.get("id").and_then(Value::as_str))
+                                    .collect();
+                                return Err(format!(
+                                    "'{ref_}' names {} implementations — pass the exact --id instead: {}",
+                                    ids.len(),
+                                    ids.join(", ")
+                                ));
+                            }
+                            (None, _) => None,
+                        }
+                    }
+                };
+                // #137: `impl set` already reads a large or backtick-bearing module from DISK via
+                // `--code-file` (#76) — this is the READ side of that same door, mirroring `bsc ui get
+                // --field --raw --out` (#3162/#3713): `--field <name>` narrows to ONE field (`code` is
+                // the motivating case), `--raw` unwraps a string field with no JSON quoting/escaping, and
+                // `--out <name>` writes those exact bytes into `$BSC_SCRATCH/<name>` instead of stdout.
+                // Without this, the round trip an editor needs — get the module, change three lines, set
+                // it back — had no `bsc` path: unescaping JSON-in-argv by hand is exactly the throwaway
+                // script this surface exists to make unnecessary.
+                let field = flag_value(&args, "--field");
+                let raw = args.iter().any(|a| a == "--raw");
+                let out = flag_value(&args, "--out");
+                if field.is_some() || out.is_some() {
+                    // A miss has no field to extract and nothing to spill — `--field`/`--out` on a null
+                    // record is an ERROR (not the whole-record `null`-on-miss below), since silently
+                    // writing "null" to the caller's file would read as a real, empty module.
+                    let im = found
+                        .ok_or_else(|| format!("no implementation matches '{ref_}' — nothing to read"))?;
+                    let value = match &field {
+                        Some(f) => {
+                            let key = f.trim_start_matches('/');
+                            im.get(key).ok_or_else(|| {
+                                let mut keys: Vec<&str> = im
+                                    .as_object()
+                                    .map(|o| o.keys().map(String::as_str).collect())
+                                    .unwrap_or_default();
+                                keys.sort_unstable();
+                                format!("'{ref_}' has no field '{f}' — fields: {}", keys.join(", "))
+                            })?
+                        }
+                        None => im,
+                    };
+                    let text = field_text(value, raw, pretty)?;
+                    return match out {
+                        Some(name) => {
+                            let path = bsc_cli_util::resolve_scratch_out(&name)?;
+                            let bytes = if raw { bsc_cli_util::raw_line(&text) } else { format!("{text}\n") };
+                            std::fs::write(&path, bytes.as_bytes())
+                                .map_err(|e| format!("cannot write --out {}: {e}", path.display()))?;
+                            emit(&serde_json::json!({ "out": path.display().to_string() }))
+                        }
+                        None if raw => {
+                            bsc_cli_util::print_raw(&text);
+                            Ok(())
+                        }
+                        None => {
+                            bsc_util::emit_line(&text);
+                            Ok(())
+                        }
+                    };
+                }
+                match found {
                     // `--metrics` (#doctor-reads-the-runtime) JOINS the runtime attestations at read
                     // time, under a `metrics` key. Deliberately not a field ON the record: writing it
                     // there would make every boot a record write (filling `bsc ui revert` history with
@@ -1188,12 +1291,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     // numbers to another inside a seed or a Studio snapshot.
                     Some(im) if args.iter().any(|a| a == "--metrics") => {
                         let mut out = im.clone();
+                        let metrics_id = im.get("id").and_then(Value::as_str).unwrap_or(ref_);
                         if let Some(obj) = out.as_object_mut() {
-                            obj.insert("metrics".into(), runtime_metrics(id));
+                            obj.insert("metrics".into(), runtime_metrics(metrics_id));
                         }
                         emit(&out)
                     }
-                    Some(im) => emit(&im),
+                    Some(im) => emit(im),
                     // `null` rather than an error: a miss is a normal answer to "does this exist?", and
                     // it keeps the output parseable by the same reader as a hit.
                     None => emit(&Value::Null),
@@ -1214,7 +1318,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
-            _ => Err("usage: bsc graph impl set … | impl get <id> | impl remove <id> \
+            _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
                       | impl list [--tech <t>] [--role r] [--domain <d>] \
                       | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>]"
@@ -1736,9 +1840,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                 let name = bsc_util::test_display_name(&path, &contents);
                 let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                // CARRY THE SOURCE FILE'S EXTENSION. Without it the emitter falls back to guessing from
+                // the body, and its guess is `/<[A-Za-z][^>]*>/` — which any generic arrow, or a bare
+                // `<base>` inside a comment, satisfies. The test is then written `.tsx`, the parser reads
+                // `<T>` as a JSX tag, and the whole suite reports as a DEAD FILE rather than a red test.
+                // Measured wrong on 177 of 376 files when the algorithm corpus moved onto its records,
+                // which is why `AlgoImplTest::ext` exists — this is the harvest half that fills it.
+                let ext = carried_test_ext(&path);
                 if !dry {
                     let mut next = im.clone();
-                    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+                    next["tests"] = serde_json::json!([{ "name": name, "src": contents, "ext": ext }]);
                     crate::set_impl(&mut g, next)?;
                 }
                 paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
@@ -1785,6 +1896,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             crate::migrate::run(&rest, &mut std::io::stdout())
         }
         "promote" => {
+            // `promote help` asked for help, not to adopt/refresh a record literally named "help" — and
+            // unlike `--id`/`--check`, a bare positional was silently ignored rather than rejected, so
+            // this fell through into a REAL bare promote (refreshing every tracked id) instead of
+            // printing usage. Every other verb's `help` positional is a no-op read (#136); this is the
+            // one place it was a write. Mirrors the `harvest help` / `emit help` precedent above.
+            if positional.get(1) == Some(&"help") {
+                print!("{}", help(prog));
+                return Ok(());
+            }
             let check = args.iter().any(|a| a == "--check");
             let root = flag_value(&args, "--root")
                 .map(std::path::PathBuf::from)
@@ -2243,6 +2363,25 @@ fn source_flag(args: &[String], flag: &str) -> Result<Option<String>, String> {
     }
 }
 
+/// Render ONE resolved field value for `impl get --field` (#137): `raw` unwraps a string with no JSON
+/// quoting/escaping — so `--field code --raw` hands back the record's actual SOURCE, closing the round
+/// trip `--code-file` (#76) opened one-way (write-from-disk, but no read-to-disk) — while a non-string
+/// value still prints as compact JSON. Mirrors `bsc ui get --field`'s own `field_output` (#3162/#3713)
+/// so the two `get --field --raw --out` doors behave identically. Pure → unit-tested.
+fn field_text(value: &Value, raw: bool, pretty: bool) -> Result<String, String> {
+    if raw {
+        return Ok(match value {
+            Value::String(s) => s.clone(),
+            other => serde_json::to_string(other).map_err(|e| e.to_string())?,
+        });
+    }
+    if pretty {
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())
+    } else {
+        serde_json::to_string(value).map_err(|e| e.to_string())
+    }
+}
+
 /// A BATCH write skips a retired id and records it, instead of aborting the whole run (#77).
 ///
 /// `set_impl` now refuses a suppressed id, which is right for `impl set` — the caller named that one
@@ -2279,7 +2418,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl get <id> | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
+         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -2549,6 +2688,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// REGRESSION (#136): `bsc graph promote help` ran a REAL bare promote instead of printing usage —
+    /// `help` was silently accepted as a no-op positional rather than routed to the help arm, so the
+    /// discovery gesture every charter teaches ("run `<verb> help` first") was actively unsafe here. It
+    /// mirrors the `emit help` / `harvest help` guard just above it.
+    #[test]
+    fn promote_help_prints_usage_and_does_not_promote() {
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-promote-help-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let args = vec!["promote".to_string(), "help".to_string(), "--root".to_string(), dir.to_string_lossy().into_owned()];
+        run(args, "bsc graph").expect("`promote help` must succeed");
+
+        assert!(
+            !crate::repo_store::path_under(&dir).exists(),
+            "`promote help` must print usage, not run a promote — it must not create a store file",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The help text is the CLI's own account of its surface, so every exported const must appear in
     /// it — a flag or subverb added to the `match` without reaching help (or this list) fails here.
     #[test]
@@ -2577,6 +2740,201 @@ mod tests {
         assert!(run(vec!["impl".into(), "get".into(), "definitely-not-here.rs".into()], "bsc graph").is_ok());
         // A missing id is a usage error, since there is nothing to look up.
         assert!(run(vec!["impl".into(), "get".into()], "bsc graph").is_err());
+    }
+
+    #[test]
+    fn impl_get_falls_back_to_an_unambiguous_bare_name_but_refuses_to_guess_among_several() {
+        // #118 (design-studio:designer-react): `bsc ui doctor`'s reimplementation findings print an
+        // algorithm's BARE name (`` `models` (import `@bsc/algorithms/models`) ``, never the exact id
+        // `models.ts`) — the SAME bare form `resolveLibrarySpec`/`libraryModuleResolver` (the preview's
+        // import) and this crate's own `resolves_library` (graph_health.rs) already accept in place of the
+        // id. `impl get <bare-name>` did not, so a designer verifying a finding this way got `null` and
+        // reasonably read it as "the target doesn't exist" — a false read, since the import already builds.
+        // The fallback is unambiguous-only: a name can collide (`index` alone names 20+ unrelated modules
+        // in the real store), and a wrong silent pick on a read that precedes a write is worse than the
+        // miss `impl get` already treats as a normal answer.
+        let dir = crate::unique_temp("implget-name");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let set = |id: &str, name: &str| {
+            run(
+                vec![
+                    "impl".to_string(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), id.into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), name.into(),
+                    "--code".into(), format!("export function {name}() {{}}"),
+                    "--src".into(), format!("src/x/{id}"),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+        };
+        set("only-one.ts", "onlyOne");
+        set("dup-a.ts", "dup");
+        set("dup-b.ts", "dup");
+
+        // A name with exactly one implementation resolves through it — the fix.
+        assert!(run(vec!["impl".into(), "get".into(), "onlyOne".into()], "bsc graph").is_ok());
+        // An exact id still resolves directly, unaffected by the fallback.
+        assert!(run(vec!["impl".into(), "get".into(), "only-one.ts".into()], "bsc graph").is_ok());
+        // A name shared by several implementations is refused rather than guessed — and the error names
+        // every colliding id, so the caller can retry with the exact one it means.
+        let err = run(vec!["impl".into(), "get".into(), "dup".into()], "bsc graph").unwrap_err();
+        assert!(err.contains("dup-a.ts") && err.contains("dup-b.ts"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn impl_get_field_raw_out_writes_the_code_verbatim_to_the_scratch_dir() {
+        // #137, the motivating case: `impl set --code-file` already reads a module from DISK (#76)
+        // because argv corrupts backticks/`${…}`/newlines silently — but the READ side had no way to get
+        // that same source back OUT as a file, only as JSON-escaped text on stdout. This is the exact
+        // failing command from the request: `impl get <id> --code-file <path>`, now
+        // `impl get <id> --field code --raw --out <name>`.
+        let dir = crate::unique_temp("implget-fieldout");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env (same pattern as
+        // the neighboring `impl_get_falls_back_…` test).
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        // Source carrying exactly what argv would corrupt silently: a backtick, a `${…}` interpolation,
+        // and literal newlines — read from a file via `--code-file`, never typed on the command line.
+        let code_dir = crate::unique_temp("implget-fieldout-src");
+        let _ = std::fs::remove_dir_all(&code_dir);
+        std::fs::create_dir_all(&code_dir).unwrap();
+        let code_file = code_dir.join("llm-config.ts");
+        let source = "export const cfg = {\n  label: `model-${env}`,\n  fallback: `none`,\n};\n";
+        std::fs::write(&code_file, source).unwrap();
+
+        // `--code-file` reads from disk through the same FS-confinement gate `--out` writes through
+        // (#3475); unconfine the thread so a `/tmp` fixture is readable, matching every other
+        // `--code-file` test in this module.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "impl".into(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), "llm-config.ts".into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), "llmConfig".into(),
+                    "--code-file".into(), code_file.to_string_lossy().into_owned(),
+                    "--src".into(), "src/llm-config.ts".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let scratch = crate::unique_temp("implget-fieldout-scratch");
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).unwrap();
+        bsc_cli_util::with_scratch(scratch.to_str(), || {
+            run(
+                vec![
+                    "impl".into(), "get".into(), "llm-config.ts".into(),
+                    "--field".into(), "code".into(), "--raw".into(), "--out".into(), "llmConfig.ts".into(),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+            let got = std::fs::read_to_string(scratch.join("llmConfig.ts")).unwrap();
+            // `--raw` unwraps the JSON string with no escaping — the round trip is byte-exact.
+            assert_eq!(got, source, "the code landed on disk exactly as it was set, backticks and all");
+        });
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&code_dir);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn impl_get_field_without_out_prints_to_stdout_and_refuses_an_unknown_field() {
+        let dir = crate::unique_temp("implget-field-stdout");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "solo.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "solo".into(),
+                "--code".into(), "export function solo() {}".into(),
+                "--src".into(), "src/solo.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        // `--field` with no `--out` still succeeds, printing to stdout instead of a file.
+        assert!(run(vec!["impl".into(), "get".into(), "solo.ts".into(), "--field".into(), "code".into()], "bsc graph").is_ok());
+        assert!(run(vec!["impl".into(), "get".into(), "solo.ts".into(), "--field".into(), "code".into(), "--raw".into()], "bsc graph").is_ok());
+
+        // An unknown field is refused by name, listing the fields that DO exist.
+        let err = run(vec!["impl".into(), "get".into(), "solo.ts".into(), "--field".into(), "nope".into()], "bsc graph").unwrap_err();
+        assert!(err.contains("nope") && err.contains("code"), "{err}");
+
+        // `--field`/`--out` on a MISS is an error (nothing to extract or spill), unlike the plain
+        // whole-record `get` on a miss, which answers `null`.
+        let err = run(vec!["impl".into(), "get".into(), "definitely-not-here.rs".into(), "--field".into(), "code".into()], "bsc graph").unwrap_err();
+        assert!(err.contains("definitely-not-here.rs"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn impl_get_out_without_field_writes_the_whole_record_and_refuses_a_path_traversal() {
+        let dir = crate::unique_temp("implget-out-whole");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "whole.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "whole".into(),
+                "--code".into(), "export function whole() {}".into(),
+                "--src".into(), "src/whole.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let scratch = crate::unique_temp("implget-out-whole-scratch");
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).unwrap();
+        bsc_cli_util::with_scratch(scratch.to_str(), || {
+            run(vec!["impl".into(), "get".into(), "whole.ts".into(), "--out".into(), "rec.json".into()], "bsc graph").unwrap();
+            let got = std::fs::read_to_string(scratch.join("rec.json")).unwrap();
+            assert!(got.contains("\"id\":\"whole.ts\""), "the whole record landed: {got}");
+
+            // The scratch-dir confinement defense (shared with `bsc ui get --out`) refuses a non-bare name.
+            let err = run(vec!["impl".into(), "get".into(), "whole.ts".into(), "--out".into(), "../escape".into()], "bsc graph").unwrap_err();
+            assert!(err.contains("BARE FILENAME"), "a path traversal is refused: {err}");
+        });
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[test]
@@ -2705,6 +3063,23 @@ mod set_gate_tests {
     fn a_primitive_is_exempt_and_no_src_is_the_explicit_none() {
         assert!(provenance_declared("primitive", &json!({ "id": "p" }), None, false)); // #2972
         assert!(provenance_declared("algorithm", &json!({ "id": "a" }), None, true));  // --no-src
+    }
+
+    // ── a carried test states its extension (#a-carried-test-cannot-import-a-colocated-json-fixture) ──
+
+    #[test]
+    fn a_harvested_test_carries_the_extension_its_file_had() {
+        // The emitter OBEYS a stated `ext` and only guesses without one, so stating it is the whole fix.
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.ts")).as_deref(), Some(".ts"));
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.tsx")).as_deref(), Some(".tsx"));
+    }
+
+    #[test]
+    fn an_extension_the_emitter_cannot_use_is_left_to_the_fallback() {
+        // A stated ext OVERRIDES the guess, so stating one the consumer rejects is worse than silence:
+        // `.mts` is not in its `/^\.[jt]sx?$/`, and carrying it would name a file nothing collects.
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/b.test.mts")), None);
+        assert_eq!(carried_test_ext(std::path::Path::new("src/a/README")), None);
     }
 
     // ── unknown flags are an error, not silence (#4154, designer request #52) ────────────────────

@@ -25,8 +25,12 @@ pub(crate) mod closure;
 /// `epic-one-record-core-across-the-graphs` rested its one-record-type decision on, kept checkable.
 pub mod crossgraph;
 pub mod exports;
+pub mod domain;
 pub mod folder;
 pub mod graph_health;
+/// Whether a NAMED import actually names something the target module exports, following `export *`
+/// barrels (#149) — the SYMBOL-level counterpart to `graph_health`'s module-level `unresolvable-import`.
+pub(crate) mod import_symbols;
 /// A PATTERN — the library's structural conventions, given an id.
 pub mod patterns;
 pub mod motion;
@@ -42,4 +46,5 @@ pub mod syntax;
 pub mod usage;
 pub mod usage_scan;
 
+pub use domain::{domain_from_folder, CORE, SHELL};
 pub use folder::folder_from_src;

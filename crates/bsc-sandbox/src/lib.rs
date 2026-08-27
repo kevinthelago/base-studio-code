@@ -22,7 +22,6 @@
 //! The render is pure and platform-independent **on purpose**: it means these tests run on the
 //! Windows host today, before the Linux migration lands, rather than being untestable until then.
 
-pub mod profile;
 
 use std::path::{Path, PathBuf};
 
@@ -82,6 +81,91 @@ pub const MINIMAL_BINS: &[&str] = &[
     "grep", "head", "ls", "mkdir", "mv", "printf", "rm", "sed", "sort", "tail", "tr", "true",
     "uniq", "wc", "xargs",
 ];
+
+/// A language toolchain, resolved from the host, that a cage needs in order to BUILD — request #135
+/// (`network-monitor:director`): a Rust-only project's workers landed in a cage with no `cargo`, no
+/// `rustc`, and — because the cage is deliberately curated — no `apt`/`curl` to fetch one either. The
+/// gate that was supposed to confirm every stream's work could only mark it `complete`, never
+/// `verified`, because there was nothing to build or test with.
+///
+/// The fix is not to hand the cage a package manager and a network: `apt` would be ambient authority
+/// over the host, and a worker with `--share-net` is a bigger grant than a bound compiler. It is to
+/// bind the toolchain that is ALREADY installed on the host into the namespace, the same way `git`/
+/// `gh` already are.
+///
+/// # The one posture decision in here
+///
+/// `RUSTUP_HOME` is bound READ-ONLY — it holds the compiler and the standard library, and nothing a
+/// session does should ever edit them. `CARGO_HOME`, though, is written on every build (the registry
+/// index, downloaded crates, `.package-cache`), so binding the HOST's would give every caged agent
+/// write access to the crate cache every other build on the machine reads from — a poisoned entry
+/// would outlive the session and cross into unrelated work. The session gets its OWN `CARGO_HOME`,
+/// writable, under its stores root instead. First build in a pane re-downloads its dependencies; a
+/// confused or compromised agent still cannot reach the host's cache.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Toolchain {
+    /// Host→guest binds this toolchain needs.
+    pub mounts: Vec<Mount>,
+    /// Variables to set. A `PATH` entry here is PREPENDED to the spec's existing `PATH` rather than
+    /// replacing it — see [`SandboxSpec::add_toolchain`].
+    pub env: Vec<(String, String)>,
+    /// Extra `/usr/bin` names to curate in, e.g. the linker a compiler shells out to.
+    pub bins: Vec<String>,
+}
+
+/// Where a toolchain's read-only host bits land inside the cage. Fixed rather than caller-chosen,
+/// the same reasoning as [`HOOK_GUEST_PATH`]: two subsystems have to agree on it without talking.
+pub const RUSTUP_GUEST_PATH: &str = "/rustup";
+/// Where the host's `cargo`/`rustc` rustup shims are bound, read-only.
+pub const RUST_BIN_GUEST_PATH: &str = "/rust/bin";
+/// Where the session's own, writable `CARGO_HOME` is bound.
+pub const RUST_CARGO_HOME_GUEST_PATH: &str = "/cargo";
+
+/// The binaries `rustc` shells out to that are NOT themselves part of the toolchain. Without these a
+/// build compiles every crate and only then dies at the link step — the most expensive way to fail,
+/// and one that reads as a Rust problem when it is a missing `cc`.
+const RUST_LINK_BINS: &[&str] = &["cc", "gcc", "ld", "as", "ar"];
+
+/// Describe the Rust toolchain for a cage, given the host's rustup layout and the writable
+/// `CARGO_HOME` the session should use.
+///
+/// Pure — it builds a description from paths and never touches the filesystem — so the whole shape
+/// is testable without a toolchain installed. The caller decides whether the host paths actually
+/// exist; see `rust_toolchain_for` at the launcher for that half.
+pub fn rust_toolchain(
+    host_cargo_bin: &Path,
+    host_rustup_home: &Path,
+    session_cargo_home: &Path,
+) -> Toolchain {
+    Toolchain {
+        mounts: vec![
+            // The compiler and std, read-only. `settings.toml` lives here too, which is how the
+            // shims below resolve the default toolchain — bind the directory, not just `toolchains/`.
+            Mount::ReadOnly {
+                host: host_rustup_home.to_path_buf(),
+                guest: PathBuf::from(RUSTUP_GUEST_PATH),
+            },
+            // The rustup shims. They are not symlinks into the toolchain — they are rustup itself,
+            // re-execing the real binary out of RUSTUP_HOME — so binding them alone would give a
+            // `cargo` that cannot find a compiler.
+            Mount::ReadOnly {
+                host: host_cargo_bin.to_path_buf(),
+                guest: PathBuf::from(RUST_BIN_GUEST_PATH),
+            },
+            // ...and the one writable half. See the type docs for why this is NOT the host's.
+            Mount::ReadWrite {
+                host: session_cargo_home.to_path_buf(),
+                guest: PathBuf::from(RUST_CARGO_HOME_GUEST_PATH),
+            },
+        ],
+        env: vec![
+            ("RUSTUP_HOME".into(), RUSTUP_GUEST_PATH.into()),
+            ("CARGO_HOME".into(), RUST_CARGO_HOME_GUEST_PATH.into()),
+            ("PATH".into(), format!("{RUST_BIN_GUEST_PATH}:{RUST_CARGO_HOME_GUEST_PATH}/bin")),
+        ],
+        bins: RUST_LINK_BINS.iter().map(|s| s.to_string()).collect(),
+    }
+}
 
 /// Which systemd scope wraps the namespace — i.e. where the cgroup limits are applied, if anywhere.
 ///
@@ -409,6 +493,44 @@ impl SandboxSpec {
         Usr::Curated(v)
     }
 
+    /// Fold a [`Toolchain`] (e.g. [`rust_toolchain`]) into this spec: its mounts, its variables, and
+    /// its extra `/usr/bin` names.
+    ///
+    /// Three merges rather than three appends, because each has a way of going silently wrong:
+    ///
+    /// * **`PATH` is PREPENDED, never replaced.** The spec's own `PATH` is where everything the cage
+    ///   already binds lives — `git`, `gh`, the harness. Setting the toolchain's `PATH` wholesale
+    ///   would produce a session that can compile and cannot run a shell.
+    /// * **Any other variable REPLACES** a same-named one, so a caller can correct e.g. `CARGO_HOME`
+    ///   rather than ending up with two entries whose winner depends on bwrap's argument order.
+    /// * **`Usr::All` is left alone.** It already has every binary; extending a curated list that is
+    ///   not there would be a no-op that reads like it did something.
+    pub fn add_toolchain(&mut self, tc: Toolchain) {
+        self.mounts.extend(tc.mounts);
+
+        for (k, v) in tc.env {
+            if k == "PATH" {
+                match self.env.iter_mut().find(|(ek, _)| ek == "PATH") {
+                    Some((_, existing)) => *existing = format!("{v}:{existing}"),
+                    None => self.env.push((k, v)),
+                }
+            } else {
+                match self.env.iter_mut().find(|(ek, _)| *ek == k) {
+                    Some((_, existing)) => *existing = v,
+                    None => self.env.push((k, v)),
+                }
+            }
+        }
+
+        if let Usr::Curated(bins) = &mut self.usr {
+            for b in tc.bins {
+                if !bins.contains(&b) {
+                    bins.push(b);
+                }
+            }
+        }
+    }
+
     fn validate(&self) -> Result<(), SpecError> {
         if self.command.is_empty() {
             return Err(SpecError::EmptyCommand);
@@ -557,6 +679,17 @@ impl SandboxSpec {
                 a.extend(["--ro-bind-try", "/usr/lib64", "/usr/lib64"].map(String::from));
                 // terminfo, ca-certificates, locale — data a normal tool expects.
                 a.extend(["--ro-bind-try", "/usr/share", "/usr/share"].map(String::from));
+                // GCC's own internal helpers. On current Debian/Ubuntu (gcc-14) `cc1`, `cc1plus`,
+                // `lto1`, `collect2` and `liblto_plugin.so` live under `/usr/libexec/gcc/<triplet>/
+                // <ver>/`, NOT `/usr/lib/gcc/...` — that older path still holds compatibility copies
+                // of some files, which is exactly what makes this failure confusing: a caged agent
+                // can `ls /usr/lib/gcc/.../liblto_plugin.so` and find it, while `cc` still can't,
+                // because `cc`'s real search resolves to the libexec copy. Without this bind, `cc -c`
+                // fails outright ("cannot execute 'cc1'") and a plain `cc foo.c` that gets past that
+                // dies at link time with "-fuse-linker-plugin, but liblto_plugin.so not found" —
+                // reproduced against this host's live gcc-14 and confirmed as the fix (request #144).
+                // `-try`: a host whose gcc predates the libexec split has nothing here to bind.
+                a.extend(["--ro-bind-try", "/usr/libexec", "/usr/libexec"].map(String::from));
 
                 // Executables individually. Sorted and de-duplicated so the render is
                 // deterministic regardless of the order a caller assembled the list in.
@@ -698,6 +831,55 @@ impl SandboxSpec {
         a.extend(self.command.iter().cloned());
         Ok(a)
     }
+}
+
+/// The pane's per-session stores directory: `<base>/sandbox-stores/<safe(pane_id)>`.
+///
+/// Pulled out of the launcher so a REPLAY (`bsc sandbox replay <pane-id>`) computes the SAME path
+/// from a bare pane id — the sanitizer (alnum/`-` kept, everything else folded to `_`) has to be
+/// byte-identical on both sides, or a replay looks in a directory the launcher never wrote to.
+pub fn sandbox_stores_root(base: &Path, pane_id: &str) -> PathBuf {
+    let safe: String = pane_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+    base.join("sandbox-stores").join(safe)
+}
+
+/// Where [`write_launch_argv`] persists a rendered namespace launch, inside [`sandbox_stores_root`].
+pub const LAUNCH_ARGV_FILE: &str = "launch-argv";
+
+/// Persist a rendered argv so a LATER `bsc sandbox replay <pane-id>` can reconstruct the exact same
+/// cage a launch actually used.
+///
+/// This exists because nothing else does: the launcher only ever logged a SUMMARY ("N store(s), N
+/// outbox(es)"), never the argv itself, so reproducing a real cage outside the app meant grepping
+/// `journalctl` for a debug line that was never written there — a real dev session tried exactly
+/// that and had no way to get the argv back out (request #135).
+///
+/// NUL-joined, one trailing NUL per element: an argv element is a C string and can therefore never
+/// itself CONTAIN a NUL, which makes this the one separator that needs no quoting layer at all — the
+/// same reasoning [`SandboxSpec::render`] leans on for returning an argv rather than a shell string.
+pub fn write_launch_argv(stores_root: &Path, argv: &[String]) -> std::io::Result<()> {
+    let mut buf = Vec::new();
+    for a in argv {
+        buf.extend_from_slice(a.as_bytes());
+        buf.push(0);
+    }
+    std::fs::write(stores_root.join(LAUNCH_ARGV_FILE), buf)
+}
+
+/// The inverse of [`write_launch_argv`].
+pub fn read_launch_argv(stores_root: &Path) -> std::io::Result<Vec<String>> {
+    let raw = std::fs::read(stores_root.join(LAUNCH_ARGV_FILE))?;
+    let mut parts: Vec<String> =
+        raw.split(|&b| b == 0).map(|s| String::from_utf8_lossy(s).into_owned()).collect();
+    // The writer's trailing NUL splits into one final EMPTY element — drop exactly that one, not
+    // every empty element, so a genuinely empty argv entry in the middle survives the round trip.
+    if parts.last().map(String::is_empty).unwrap_or(false) {
+        parts.pop();
+    }
+    Ok(parts)
 }
 
 #[cfg(test)]
@@ -953,6 +1135,7 @@ mod tests {
                 "/usr/lib",
                 "/usr/lib64",
                 "/usr/share",
+                "/usr/libexec",
                 "/home/k/wt/repo--stream",
                 "/home/k/.base-studio-code/plans"
             ]
@@ -1003,6 +1186,23 @@ mod tests {
         assert!(a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/usr/lib"));
     }
 
+    /// Request #144: a real gcc-14 host keeps `cc1`/`cc1plus`/`lto1`/`liblto_plugin.so` under
+    /// `/usr/libexec/gcc/<triplet>/<ver>/`, not `/usr/lib/gcc/...` — binding only `/usr/lib` leaves a
+    /// curated cage where `cc` execs but `cc -c` fails ("cannot execute 'cc1'") and a bare link fails
+    /// with "-fuse-linker-plugin, but liblto_plugin.so not found" despite the file being visible
+    /// under `/usr/lib/gcc/...` (a stale compatibility copy, not the one gcc actually searches for).
+    /// Reproduced live against this host's gcc-14 with a hand-built bwrap invocation before this fix,
+    /// and confirmed fixed by adding this bind. `-try`, like the other library dirs: a host whose gcc
+    /// predates the libexec split has nothing here to bind, and that must not abort the launch.
+    #[test]
+    fn libexec_is_bound_so_gccs_internal_helpers_are_reachable() {
+        let a = spec().render().unwrap();
+        assert!(
+            a.windows(3).any(|w| w[0] == "--ro-bind-try" && w[1] == "/usr/libexec" && w[2] == "/usr/libexec"),
+            "gcc-14's cc1/lto1/liblto_plugin.so live under /usr/libexec/gcc/... on current Debian/Ubuntu"
+        );
+    }
+
     #[test]
     fn sh_symlink_is_emitted_only_when_its_target_is_in_the_set() {
         // /usr/bin/sh is a symlink to dash; recreating it without dash leaves a dangling link.
@@ -1035,6 +1235,103 @@ mod tests {
             let sp = spec().with_usr(Usr::Curated(vec![bad.into()]));
             assert_eq!(sp.render().unwrap_err(), SpecError::BinNotABasename(bad.into()));
         }
+    }
+
+    // ── the Rust toolchain — request #143 (network-monitor:director) ──────────────────────────
+
+    /// A toolchain must not be able to make the rest of the cage unreachable. `PATH` is the sharp
+    /// edge: the spec's own `/usr/local/bin:/usr/bin:/bin` is where `bash`, `git`, `gh` and the
+    /// harness are bound, so a toolchain that REPLACED it would produce a session that can compile
+    /// and cannot run a shell.
+    #[test]
+    fn a_toolchain_prepends_to_path_and_never_replaces_it() {
+        let mut sp = spec();
+        sp.env = vec![
+            ("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into()),
+            ("TERM".into(), "xterm".into()),
+        ];
+        sp.add_toolchain(rust_toolchain(
+            Path::new("/h/.cargo/bin"),
+            Path::new("/h/.rustup"),
+            Path::new("/h/stores/pane/cargo"),
+        ));
+        let path = sp.env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone()).unwrap();
+        assert_eq!(path, "/rust/bin:/cargo/bin:/usr/local/bin:/usr/bin:/bin");
+        assert_eq!(sp.env.iter().filter(|(k, _)| k == "PATH").count(), 1, "PATH must not be duplicated");
+        assert!(sp.env.iter().any(|(k, v)| k == "TERM" && v == "xterm"), "unrelated vars survive");
+    }
+
+    /// The posture decision, pinned: the compiler is read-only and the cache is NOT the host's.
+    /// Binding the host `CARGO_HOME` writable would let any caged agent poison the crate cache every
+    /// other build on the machine reads from, which outlives the session entirely.
+    #[test]
+    fn the_toolchain_is_read_only_except_the_sessions_own_cargo_home() {
+        let tc = rust_toolchain(
+            Path::new("/h/.cargo/bin"),
+            Path::new("/h/.rustup"),
+            Path::new("/h/stores/pane/cargo"),
+        );
+        let ro: Vec<_> = tc
+            .mounts
+            .iter()
+            .filter_map(|m| match m {
+                Mount::ReadOnly { host, .. } => Some(host.clone()),
+                _ => None,
+            })
+            .collect();
+        let rw: Vec<_> = tc
+            .mounts
+            .iter()
+            .filter_map(|m| match m {
+                Mount::ReadWrite { host, .. } => Some(host.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(ro.contains(&PathBuf::from("/h/.rustup")), "RUSTUP_HOME must be read-only");
+        assert!(ro.contains(&PathBuf::from("/h/.cargo/bin")), "the shims must be read-only");
+        assert_eq!(
+            rw,
+            vec![PathBuf::from("/h/stores/pane/cargo")],
+            "the ONLY writable path is the session's own CARGO_HOME"
+        );
+    }
+
+    /// A compiler with no linker compiles everything and then dies at the last step — the most
+    /// expensive possible failure, and one that reads as a Rust problem when it is a missing `cc`.
+    #[test]
+    fn the_linker_is_curated_in_alongside_the_compiler() {
+        let mut sp = spec();
+        sp.usr = Usr::Curated(vec!["bash".into(), "cc".into()]);
+        sp.add_toolchain(rust_toolchain(Path::new("/h/.cargo/bin"), Path::new("/h/.rustup"), Path::new("/h/c")));
+        let Usr::Curated(bins) = &sp.usr else { panic!("still curated") };
+        for need in ["cc", "ld", "as", "ar"] {
+            assert!(bins.contains(&need.to_string()), "missing linker bin {need}");
+        }
+        assert_eq!(bins.iter().filter(|b| *b == "cc").count(), 1, "an already-present bin is not duplicated");
+        assert!(bins.contains(&"bash".to_string()), "the existing set survives");
+    }
+
+    /// `Usr::All` already has every binary, so extending a curated list that is not there would be a
+    /// no-op that reads like it did something.
+    #[test]
+    fn adding_a_toolchain_to_usr_all_changes_no_bins() {
+        let mut sp = spec();
+        sp.usr = Usr::All;
+        sp.add_toolchain(rust_toolchain(Path::new("/h/.cargo/bin"), Path::new("/h/.rustup"), Path::new("/h/c")));
+        assert_eq!(sp.usr, Usr::All);
+    }
+
+    /// The render end to end: a worker whose spec got a toolchain actually has `cargo`/`rustc`
+    /// reachable via the shim bind, and the render still succeeds (the toolchain's guest paths are
+    /// absolute, so `validate()` accepts them).
+    #[test]
+    fn a_worker_with_a_toolchain_renders_the_rust_bin_mount() {
+        let mut sp = spec();
+        sp.add_toolchain(rust_toolchain(Path::new("/h/.cargo/bin"), Path::new("/h/.rustup"), Path::new("/h/c")));
+        let a = sp.render().unwrap();
+        assert!(a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/h/.cargo/bin" && w[2] == RUST_BIN_GUEST_PATH));
+        assert!(a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/h/.rustup" && w[2] == RUSTUP_GUEST_PATH));
+        assert!(a.windows(3).any(|w| w[0] == "--bind" && w[1] == "/h/c" && w[2] == RUST_CARGO_HOME_GUEST_PATH));
     }
 }
 
@@ -1084,3 +1381,48 @@ mod clear_env_tests {
         assert_eq!(a[i + 2], "/repo");
     }
 }
+
+#[cfg(test)]
+mod launch_argv_tests {
+    use super::*;
+
+    #[test]
+    fn the_stores_root_sanitizes_the_pane_id_like_the_launcher_does() {
+        // Byte-identical to the launcher's own sanitizer (console/pty/mod.rs) — a replay computes
+        // this path from a bare pane id, with no access to what the launcher actually used.
+        let root = sandbox_stores_root(Path::new("/base"), "studio:worker-1/x");
+        assert_eq!(root, PathBuf::from("/base/sandbox-stores/studio_worker-1_x"));
+    }
+
+    #[test]
+    fn a_written_argv_round_trips_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let argv: Vec<String> = vec![
+            "bwrap".into(),
+            "--bind".into(),
+            "/home/agent work".into(), // a space, to prove there is no shell-quoting layer
+            "".into(),                 // a genuinely empty element, mid-argv
+            "/repo".into(),
+        ];
+        write_launch_argv(dir.path(), &argv).unwrap();
+        assert_eq!(read_launch_argv(dir.path()).unwrap(), argv);
+    }
+
+    #[test]
+    fn reading_a_launch_that_was_never_written_is_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_launch_argv(dir.path()).is_err());
+    }
+}
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/profile.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-sandbox--<module>.rs
+//     bsc graph impl set --id bsc-sandbox--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-sandbox--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

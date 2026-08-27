@@ -2,7 +2,12 @@
 name = "bsc-storefs"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Projects the plan store as a read-only file tree, so an agent reads its plan with cat and ls instead of a CLI grammar (phase-3-store-surfaces-are-filesystems). The projection is PURE - store rows in, relative-path/content pairs out - so its tests run on any host; only materialize() touches a filesystem."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_storefs"

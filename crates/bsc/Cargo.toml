@@ -44,6 +44,8 @@ bsc-shot = { path = "../bsc-shot" }
 # `bsc navigate` — steer the running app to a view so a capture can target it (#3274, epic #3260).
 bsc-navigate = { path = "../bsc-navigate" }
 bsc-fleet = { path = "../bsc-fleet" }
+# `bsc sandbox` — a caged session's rendered launch argv: inspect or replay it outside the app (#135).
+bsc-sandbox = { path = "../bsc-sandbox" }
 # `bsc session` — start/stop/list the app-owned SYSTEM SESSIONS over a closed registry
 # (#architect-starts-and-stops-system-sessions). Sibling to `bsc fleet`: that one reads a project's
 # fleet, this one drives the app's own studios.

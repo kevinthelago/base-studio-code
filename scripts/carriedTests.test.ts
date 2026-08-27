@@ -79,3 +79,34 @@ describe("a carried test keeps the extension its source had", () => {
     expect(suspicious.map((t: { spec: string }) => t.spec), "a generic arrow must not land in a .tsx").toEqual([]);
   });
 });
+
+// ── a colocated ASSET is reachable (#a-carried-test-cannot-import-a-colocated-json-fixture) ─────────
+describe("a carried test may read a colocated fixture", () => {
+  it("emits a test that imports a `.json` asset instead of declining it", () => {
+    // `reachable()` only tried module extensions, so `./projectSlug.fixtures.json` — an exact filename —
+    // matched nothing and its carried test was declined as unresolvable, on a green gate. That is the
+    // documented reason `ecbd2402` held `projectPaths` and `tunnel` back: "a test importing a COLOCATED
+    // NON-MODULE ASSET cannot move, because the asset does not".
+    //
+    // The asset does not move. It stays under `src/` and the emitted copy reaches it through the same
+    // `@/…` alias every module specifier uses, so there is still exactly ONE fixture file — which is what
+    // keeps the Rust `find_fixture` name search (it panics on a second match under `src/`) untouched.
+    const withAsset = plan.tests.filter((t: { src: string }) => /from\s+["']@\/[^"']+\.json["']/.test(t.src));
+    expect(withAsset.length, "no carried test reads a .json fixture — this guard has nothing to prove").toBeGreaterThan(0);
+  });
+
+  it("never declines a test for an asset import", () => {
+    // The failure mode is silence: a declined test is simply absent from the gate, and the record still
+    // reads as "has a test". So assert on the DECLINED bucket directly rather than only on the emitted one.
+    const assetDeclines = plan.unresolvable.filter((u: { missing: string[] }) =>
+      u.missing.some((m) => /\.[A-Za-z][A-Za-z0-9]*$/.test(m) && !/\.(tsx?|jsx?)$/.test(m)),
+    );
+    expect(assetDeclines.map((u: { detail: string }) => u.detail), "an asset import must not disqualify a carried test").toEqual([]);
+  });
+
+  it("still declines a specifier that names nothing at all", () => {
+    // The asset arm is an `existsSync` fallback, checked LAST. It must not turn every unresolvable
+    // specifier into a pass — the mispairs above are the proof that declining still happens.
+    expect(plan.unresolvable.length, "the known mispairs are still declined").toBeGreaterThan(0);
+  });
+});

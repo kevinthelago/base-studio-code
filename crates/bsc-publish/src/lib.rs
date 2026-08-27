@@ -27,9 +27,6 @@
 //! separately rather than half-done here. A headless publish today lands the structure; it does not
 //! yet dress the repos.
 
-pub mod cli;
-pub mod render;
-pub mod token;
 
 use plandb::PlanIssue;
 use render::{render_issue_body, with_provenance_label, BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR};
@@ -455,3 +452,15 @@ pub fn create_issues_for_repo(
     }
     identities
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/render.rs, src/token.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-publish--<module>.rs
+//     bsc graph impl set --id bsc-publish--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-publish--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
