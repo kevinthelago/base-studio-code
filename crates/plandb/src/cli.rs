@@ -185,12 +185,22 @@ USAGE:
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
+  bsc plan fleet model <id> <model>   # the model ONE stream launches on (--clear to unset)
   bsc plan fleet remove <stream-id>   # drop one stream
 
 `fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.
 Writes are validated at set-time (#2395): `set` needs a \"streams\" array (an absent one would
 silently wipe the fleet) and every stream a non-empty, unique \"id\" + a \"repo\"; `stream set`'s
-blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.",
+blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.
+
+`fleet model` is the DIRECTOR's level of the model precedence chain, nearest-first:
+    a fleet stream's own model > a team placement's (`bsc teams model`) >
+    the persona's default (`bsc persona model`) > the harness's own default
+Unset is the default and means Claude Code decides — nothing changes for a fleet you never touch.
+A Claude tier (haiku-4.5 | sonnet-4.5 | opus-4.5) becomes `claude --model <tier>`; any other value
+is passed to whatever harness the session runs, so a local (bsc-agent) worker can be pointed at an
+installed model by name. The verb REFUSES an unknown stream id rather than creating one — a stream
+holding only an id and a model is a stream the fleet would try to launch.",
     },
     CmdDoc {
         name: "deploy",
@@ -608,6 +618,9 @@ struct Args {
     /// Skip set-time validation on a structured write (#2395) — the deliberate
     /// store-a-work-in-progress-blob escape hatch. Validation is otherwise strict-reject.
     force: bool,
+    /// Unset an optional field instead of setting it (`fleet model <id> --clear`), so a stream can
+    /// fall back to the next level of the precedence chain rather than being pinned forever.
+    clear: bool,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -616,7 +629,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false, force: false,
+        since: None, pretty: false, force: false, clear: false,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -643,6 +656,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
             "--force" | "--no-validate" => a.force = true,
+            // `--clear` removes an optional field rather than setting it — the counterpart every
+            // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).
+            "--clear" => a.clear = true,
             "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
             "--limit" => {
                 let v = it.next().ok_or("--limit needs a number")?;
