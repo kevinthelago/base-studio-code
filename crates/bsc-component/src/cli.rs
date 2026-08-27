@@ -716,6 +716,27 @@ overlap, then fold the LESS-used component into the more-used one.
 { id, name, kit, count }, most-used first (--kit scopes to one kit). A READ — never scope-gated.",
     },
     CmdDoc {
+        name: "refs",
+        summary: "literal srcText cross-references to a component's NAME across every other component (#113)",
+        usage: "\
+USAGE:
+  bsc ui refs <id> [--json] [--pretty]
+
+The complement to `used-by`: `used-by` reads the DECLARED `composes` graph, so a component that is
+genuinely referenced in another's JSX or import but never added to `composes` reads as an orphan there
+— indistinguishable from one that is actually dead. This scans every OTHER live component's raw
+`srcText`/`source` for literal whole-word occurrences of <id>'s NAME, so a missing edge and a genuinely
+dead root stop looking identical before either gets deleted.
+
+Each hit is classified: a JSX tag (`<Name`/`</Name`), an import-clause binding (`import { Name } from
+…` / `import Name from …`), or a bare mention (anywhere else — a type annotation, `Name.thing`, a plain
+reference). Deliberately loose (no AST, whole-word only, comments/strings skipped) — over-inclusion is
+harmless here, since a hit only tells the caller to LOOK FURTHER, never authorizes a delete on its own.
+
+--json emits { id, name, refs: [{ id, name, kit, jsx, importClause, bare, total }], count }, most-
+referenced first. A READ — never scope-gated.",
+    },
+    CmdDoc {
         name: "exports",
         summary: "a record's PUBLIC SURFACE grouped into ITEMS — the one-record-one-item read (#a-record-holds-one-item-not-a-module-of-them)",
         usage: "\
@@ -1615,6 +1636,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_used_by(&args[1..])
+            }
+        }
+        // `refs` (#113) — literal srcText cross-references to a component's NAME; a READ, never scope-gated.
+        Some("refs") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refs"));
+                Ok(())
+            } else {
+                cmd_refs(&args[1..])
             }
         }
         Some("exports") => {
@@ -4664,12 +4694,19 @@ fn cmd_usage_scan(args: &[String]) -> Result<(), String> {
             if rec.is_null() {
                 continue;
             }
+            let kit = rec.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
             rec["used"] = serde_json::Value::from(row.used);
             if row.used > 0 {
                 rec["usageAssessed"] = serde_json::Value::Bool(true);
                 assessed += 1;
             }
             stamped_set(&store, &row.id, rec, &writer)?;
+            // #110: every other write path emits this right after its `store.set` so the Design Studio's
+            // live-focus poll (`useUiActivity`) re-hydrates and the orphan/dangling-branch badges stop
+            // lagging the store — this loop was the one write path that never did, so `used`/`usageAssessed`
+            // could flip a record from orphan to composed on disk while the running app kept showing the
+            // stale badge until a full relaunch.
+            bsc_util::emit_ui_activity_in("component", &row.id, &kit);
         }
     }
 
@@ -4838,6 +4875,101 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
         println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
     } else {
         println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
+    }
+    Ok(())
+}
+
+/// `bsc ui refs <id>` (#113) — literal srcText cross-references to a component's NAME, across every
+/// OTHER live component in the store. The complement to `used-by`: `used-by` reads the DECLARED
+/// composes graph, so a component actually used in another's JSX/import but never added to `composes`
+/// reads as an orphan there, indistinguishable from a genuinely dead root. This scans raw srcText for
+/// the name itself instead, so the two stop looking identical.
+fn cmd_refs(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut id) = (None::<String>, false, false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui refs <id> [--json] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let target = comps
+        .iter()
+        .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| format!("no component with id '{id}' (see `bsc ui list --raw`)"))?;
+    let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    if name.is_empty() {
+        return Err(format!("component '{id}' has no name to search for"));
+    }
+
+    let mut hits: Vec<serde_json::Value> = Vec::new();
+    for c in &comps {
+        let cid = c.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if cid == id || cid.is_empty() {
+            continue; // never a reference to itself
+        }
+        if c.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true) {
+            continue; // a tombstone's content is gone; it can only ever dilute
+        }
+        let mut text = String::new();
+        for f in ["srcText", "source"] {
+            if let Some(t) = c.get(f).and_then(serde_json::Value::as_str) {
+                text.push_str(t);
+                text.push('\n');
+            }
+        }
+        if text.trim().is_empty() {
+            continue;
+        }
+        let mentions = crate::usage_scan::name_mentions(&text, &name);
+        if mentions.is_empty() {
+            continue;
+        }
+        let jsx = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::JsxTag)).count();
+        let import_clause = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::ImportClause)).count();
+        let bare = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::Bare)).count();
+        hits.push(serde_json::json!({
+            "id": cid,
+            "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "jsx": jsx,
+            "importClause": import_clause,
+            "bare": bare,
+            "total": mentions.len(),
+        }));
+    }
+    hits.sort_by(|a, b| {
+        b["total"].as_u64().cmp(&a["total"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+    });
+
+    if json {
+        let out = serde_json::json!({ "id": id, "name": name, "refs": hits, "count": hits.len() });
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        bsc_util::emit_line(&text.map_err(|e| e.to_string())?);
+    } else if hits.is_empty() {
+        bsc_util::emit_line(&format!(
+            "'{name}' ({id}) — no literal srcText reference found in any other component. Genuinely unreferenced, not just missing a `composes` edge.",
+        ));
+    } else {
+        bsc_util::emit_line(&format!("'{name}' ({id}) is literally referenced in {} component(s):", hits.len()));
+        for h in &hits {
+            bsc_util::emit_line(&format!(
+                "  {} ({})  [jsx {} · import {} · bare {}]",
+                h["name"].as_str().unwrap_or(""),
+                h["id"].as_str().unwrap_or(""),
+                h["jsx"].as_u64().unwrap_or(0),
+                h["importClause"].as_u64().unwrap_or(0),
+                h["bare"].as_u64().unwrap_or(0),
+            ));
+        }
     }
     Ok(())
 }
@@ -7792,7 +7924,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -9549,6 +9681,78 @@ export const P = () => <X />;"
         });
     }
 
+    /// #113: a component genuinely referenced in another's JSX but never added to `composes` reads as
+    /// an orphan under `used-by` — `refs` is the srcText scan that tells the two apart.
+    #[test]
+    fn refs_finds_a_jsx_reference_used_by_cannot_see() {
+        let store = tmp_component_store("refs");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for rec in [
+            serde_json::json!({
+                "id": "widget", "name": "Widget", "kitId": "react-ui", "role": "primitive", "composes": [],
+                "srcText": "export const Widget = () => <div />;",
+            }),
+            // References Widget in JSX, and separately imports it — but never lists it in `composes`.
+            serde_json::json!({
+                "id": "page", "name": "Page", "kitId": "react-ui", "role": "composite", "composes": [],
+                "srcText": "import { Widget } from \"@/x/Widget\";\nexport const Page = () => <Widget />;",
+            }),
+            // Shares no reference at all.
+            serde_json::json!({
+                "id": "unrelated", "name": "Unrelated", "kitId": "react-ui", "role": "primitive", "composes": [],
+                "srcText": "export const Unrelated = () => <span />;",
+            }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+
+        // `used-by` sees NOTHING — there is no `composes` edge — which is exactly the false "orphan"
+        // #113 filed against. `used-by` itself prints via plain `println!`, so its human output is not
+        // capturable here; going straight at the composes-inverse index proves the same fact.
+        let comps: Vec<serde_json::Value> =
+            store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+        let idx = used_by_index(&comps);
+        assert!(
+            !idx.contains_key(&("react-ui".to_string(), "Widget".to_string())),
+            "used-by is blind to the JSX reference: no `composes` edge names Widget"
+        );
+
+        // `refs` finds it: `page` shows both a JSX hit and an import-clause hit, `unrelated` does not appear.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "widget", "--json"]), "bsc ui"));
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["name"], "Widget");
+        assert_eq!(v["count"], 1);
+        assert_eq!(v["refs"][0]["id"], "page");
+        assert_eq!(v["refs"][0]["jsx"], 1);
+        assert_eq!(v["refs"][0]["importClause"], 1);
+
+        // The text form names the referencer and never mentions `unrelated`.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "widget"]), "bsc ui"));
+        r.unwrap();
+        assert!(out.contains("Page"), "{out}");
+        assert!(!out.contains("Unrelated"), "{out}");
+
+        // A component nothing references at all — the genuinely-dead case `refs` exists to confirm.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "unrelated"]), "bsc ui"));
+        r.unwrap();
+        assert!(out.contains("no literal srcText reference found"), "{out}");
+
+        assert!(run(vec!["refs".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        let err = run(d(&["refs", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("no component with id 'ghost'"), "{err}");
+
+        // A READ — in the catalog, never a scoped mutation, and runs under a read-only ui scope.
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "refs"));
+        assert!(!is_scoped_mutation(&["refs".to_string(), "widget".to_string()]), "refs is a read");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(run(d(&["refs", "widget"]), "bsc ui").is_ok(), "refs works read-scoped");
+        });
+    }
+
     #[test]
     fn similar_folds_in_each_candidate_usage() {
         // #3584: `similar` still ranks by name+contract, but each row now carries `usedBy` so a combine
@@ -9790,6 +9994,49 @@ export const P = () => <X />;"
         )
         .expect_err("a missing root must refuse");
         assert!(err.contains("does not exist"), "{err}");
+    }
+
+    /// #110: `usage-scan --apply` is a real mutation path (it flips `used`/`usageAssessed`, which is
+    /// exactly what moves a record off `doctor`'s orphan/dangling-branch findings) but it wrote through
+    /// `stamped_set` directly and never called `emit_ui_activity`, unlike every other write verb (`set`,
+    /// `remove`, `rename`, `merge`, `import`, …). The Design Studio's live-focus poll (`useUiActivity`)
+    /// re-hydrates the library on a `ui-touch` line and nothing else — so a component `usage-scan --apply`
+    /// rescued from a false orphan kept showing the stale badge in the running app until a full relaunch,
+    /// because the ONE signal that tells it to reload never fired. Filed as request 110 (DeployToggle).
+    #[test]
+    fn usage_scan_apply_emits_a_ui_touch_per_written_record_so_the_studio_rehydrates() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        bsc_cli_util::with_scopes(None, || {
+            let act = std::env::temp_dir().join(format!("bsc-component-uiact-usagescan-{}.log", std::process::id()));
+            let _ = std::fs::remove_file(&act);
+            std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+            std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+            let store = tmp_component_store("usage-scan-emit");
+            let dir = store.dir().to_string_lossy().into_owned();
+            let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+            put("child", serde_json::json!({ "id": "child", "name": "Child", "kitId": "base-studio-code", "role": "primitive", "composes": [] }));
+            put("parent", serde_json::json!({ "id": "parent", "name": "Parent", "kitId": "base-studio-code", "role": "composite", "composes": ["Child"] }));
+
+            // A READ never emits — nothing changed for the Studio to reload.
+            run(vec!["usage-scan".into(), "--dir".into(), dir.clone()], "bsc ui").expect("read");
+            assert!(!act.is_file() || std::fs::read_to_string(&act).unwrap().is_empty(), "a read must not touch the activity log");
+
+            run(vec!["usage-scan".into(), "--apply".into(), "--dir".into(), dir], "bsc ui").expect("apply");
+            let text = std::fs::read_to_string(&act).unwrap();
+            assert!(
+                text.contains("\tui-touch\tcomponent\tchild") && text.contains("\tbase-studio-code"),
+                "the rescued (now-used) record touches, carrying its kit: {text:?}",
+            );
+            assert!(
+                text.contains("\tui-touch\tcomponent\tparent"),
+                "every applied record touches, not just the one that changed orphan status: {text:?}",
+            );
+
+            std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+            std::env::remove_var("BSC_AUDIT_PANE");
+            let _ = std::fs::remove_file(&act);
+        });
     }
 
     /// `--apply` writes, so it must be scope-gated like every other write — while the READ stays

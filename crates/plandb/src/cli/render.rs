@@ -179,6 +179,13 @@ pub(crate) fn render_issue(i: &PlanIssue) -> String {
             }
         }
     }
+    if !i.notes.is_empty() {
+        out.push_str("\n  notes:\n");
+        for n in &i.notes {
+            let who = if n.author.is_empty() { String::new() } else { format!(" ({})", n.author) };
+            out.push_str(&format!("    - {}{}\n", n.text, who));
+        }
+    }
     out
 }
 

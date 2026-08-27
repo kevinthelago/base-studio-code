@@ -60,6 +60,7 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             gh_number   INTEGER,
             gh_node_id  TEXT,
             synced_at   INTEGER,
+            notes       TEXT NOT NULL DEFAULT '[]',
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );
@@ -218,6 +219,9 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN gh_number INTEGER", []);
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN gh_node_id TEXT", []);
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN synced_at INTEGER", []);
+    // #146: an issue's own append-only observations, independent of whether it has a change record —
+    // additive like the columns above, so an existing plan.db picks it up with no data loss.
+    let _ = conn.execute("ALTER TABLE issues ADD COLUMN notes TEXT NOT NULL DEFAULT '[]'", []);
     Ok(())
 }
 
