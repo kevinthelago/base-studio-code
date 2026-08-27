@@ -24,6 +24,9 @@ pub(crate) mod closure;
 pub mod exports;
 pub mod folder;
 pub mod graph_health;
+/// Whether a NAMED import actually names something the target module exports, following `export *`
+/// barrels (#149) — the SYMBOL-level counterpart to `graph_health`'s module-level `unresolvable-import`.
+pub(crate) mod import_symbols;
 /// A PATTERN — the library's structural conventions, given an id.
 pub mod patterns;
 pub mod motion;

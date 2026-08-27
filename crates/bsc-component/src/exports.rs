@@ -161,8 +161,19 @@ pub fn exported_names(src: &str) -> Vec<String> {
             continue;
         }
         let rest = rest.strip_prefix("default").map(str::trim_start).unwrap_or(rest);
-        let after_kw = ["async function*", "async function", "function*", "function", "const", "let",
-                        "var", "abstract class", "class", "interface", "enum", "type"]
+        // `const`/`let`/`var` can bind MULTIPLE names in one statement (`export const a = 1, b = 2;`) —
+        // handled separately from the single-name keywords below, since none of the others can.
+        if let Some(body) = ["const", "let", "var"]
+            .iter()
+            .find_map(|kw| rest.strip_prefix(kw).filter(|r| r.starts_with(char::is_whitespace)))
+        {
+            for name in declarator_names(body) {
+                push(&name);
+            }
+            continue;
+        }
+        let after_kw = ["async function*", "async function", "function*", "function",
+                        "abstract class", "class", "interface", "enum", "type"]
             .iter()
             .find_map(|kw| rest.strip_prefix(kw).filter(|r| r.starts_with(char::is_whitespace)));
         match after_kw {
@@ -174,6 +185,121 @@ pub fn exported_names(src: &str) -> Vec<String> {
             // `export default <expr>` — unnamed, but still the module's public entry point.
             None if line.starts_with("export default") => push("default"),
             None => {}
+        }
+    }
+    out
+}
+
+/// The names an `export const/let/var …` declaration list binds — one per top-level, comma-separated
+/// DECLARATOR. `export const a = 1, b = 2;` exports BOTH `a` and `b`; a parser that reads only the first
+/// reports a record's second binding clean when that is the one a broken import actually needed (#149,
+/// "a checker that stops at the barrel reports clean on exactly this bug" — this is the sibling gap the
+/// same request named: stopping at the FIRST declarator).
+///
+/// Scoped to ONE LINE: depth-balanced `(){}[]` comma-splitting over what remains after the keyword, up to
+/// that line's own top-level `;` if it has one. An initializer that itself spans further lines (an object
+/// literal opened here and closed later) is not followed past this line — the FIRST declarator is still
+/// read correctly either way, and a LATER declarator after such a multi-line initializer is missed. Rare
+/// enough in this library's style to leave as a known gap rather than growing this into a real expression
+/// parser. A destructuring pattern (`{ a, b }` / `[a, b]`) is not a plain declarator name and is skipped —
+/// no destructured export existed in the store when this was written, so behavior is unchanged for it.
+fn declarator_names(body: &str) -> Vec<String> {
+    let stmt = trim_to_statement(body);
+    let mut out = Vec::new();
+    for decl in split_top_level_commas(stmt) {
+        let decl = decl.trim_start();
+        if decl.starts_with('{') || decl.starts_with('[') {
+            continue;
+        }
+        let name: String =
+            decl.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$').collect();
+        if !name.is_empty() {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// `body` up to (not including) a `;` that sits at bracket depth 0, or the whole string when none does.
+fn trim_to_statement(body: &str) -> &str {
+    let mut depth = 0i32;
+    for (i, c) in body.char_indices() {
+        match c {
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' => depth -= 1,
+            ';' if depth <= 0 => return &body[..i],
+            _ => {}
+        }
+    }
+    body
+}
+
+/// Split `s` on commas that sit at bracket depth 0 — the declarator boundaries of `const a = f(1, 2), b`,
+/// where the first comma is an argument separator and must not split anything.
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' => depth -= 1,
+            ',' if depth <= 0 => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&s[start..]);
+    out
+}
+
+/// The specifiers named by an `export * from "…"` (or `export * as NS from "…"`) BARREL, in source
+/// order — code position only (column 0, never inside a comment). Deliberately separate from
+/// [`exported_names`], which treats `export *` as naming nothing readable: a barrel names no LOCAL
+/// binding of its own, but its target module's exports still belong to THIS module's public surface, and
+/// walking that chain is [`crate::import_symbols::resolved_export_names`]'s job (#149) — this function
+/// only says where to look.
+///
+/// A line scan, like [`crate::cli::component_specifiers`] — not comment/string-blanked, so a `*` inside a
+/// doc comment reading literally "export * from "x"" could false-positive. Accepted the same way that
+/// sibling function accepts it: the cost of a false hit here is a barrel lookup that resolves to nothing,
+/// not a wrong finding.
+pub fn star_reexport_specifiers(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        if line.starts_with(char::is_whitespace) {
+            continue; // not top level
+        }
+        let Some(rest) = line.strip_prefix("export") else { continue };
+        if !rest.starts_with(|c: char| c.is_whitespace() || c == '{') {
+            continue;
+        }
+        // `export type * from "…"` re-exports only the target's TYPE-level names, but a named import
+        // this checker judges may legitimately import a type through a value-shaped clause (`import { P }
+        // from …` — the sibling `exported_names` doc explains why that is NOT type-erasable), so the
+        // barrel must still be followed rather than silently treated as naming nothing.
+        let after_export = rest.trim_start();
+        let after_export = after_export
+            .strip_prefix("type")
+            .filter(|r| r.starts_with(|c: char| c.is_whitespace() || c == '*'))
+            .map(str::trim_start)
+            .unwrap_or(after_export);
+        let Some(after_star) = after_export.strip_prefix('*') else { continue };
+        let after_star = after_star.trim();
+        let Some(quote_pos) = after_star.find(['"', '\'', '`']) else { continue };
+        let clause = after_star[..quote_pos].trim();
+        // `from`, or `as <ident> from` — the only two shapes a real barrel re-export takes here.
+        let is_barrel = clause == "from"
+            || (clause.starts_with("as ") && clause.trim_end().ends_with("from"));
+        if !is_barrel {
+            continue;
+        }
+        let quote = after_star.as_bytes()[quote_pos] as char;
+        let rest_after_quote = &after_star[quote_pos + quote.len_utf8()..];
+        if let Some(end) = rest_after_quote.find(quote) {
+            out.push(rest_after_quote[..end].to_string());
         }
     }
     out
@@ -207,7 +333,12 @@ pub fn surface(src: &str, own_name: &str, components: &BTreeSet<String>) -> Surf
 /// Kept separate rather than shared because that one is tuned for JSX prose (its quote-adjacency rule
 /// exists so `don't` inside markup is not a string opener) and this one only ever needs to survive the
 /// leading tokens of a line.
-fn blank_comments_and_strings(src: &str) -> String {
+///
+/// `pub(crate)`, not private: [`crate::import_symbols`] (#149) reuses this exact blanking pass rather
+/// than keep a second copy — a template literal's `${…}` interpolation (below) is genuinely tricky to
+/// get right, and two copies of tricky code drift (see [`template_literal_end`]'s doc comment for the
+/// bug that drift would have reintroduced).
+pub(crate) fn blank_comments_and_strings(src: &str) -> String {
     let b: Vec<char> = src.chars().collect();
     let mut out = b.clone();
     let mut i = 0;
@@ -237,13 +368,21 @@ fn blank_comments_and_strings(src: &str) -> String {
                 i = (i + 2).min(n);
                 blank(&mut out, start, i);
             }
-            q @ ('\'' | '"' | '`') => {
+            // A template literal gets its OWN closing search (#149): naively scanning for the next
+            // backtick misreads a NESTED template inside a `${…}` interpolation as the closer of the
+            // OUTER one — see [`template_literal_end`].
+            '`' => {
+                let start = i;
+                i = template_literal_end(&b, start);
+                blank(&mut out, start, i);
+            }
+            q @ ('\'' | '"') => {
                 let start = i;
                 i += 1;
                 while i < n && b[i] != q {
                     if b[i] == '\\' {
                         i += 1;
-                    } else if b[i] == '\n' && q != '`' {
+                    } else if b[i] == '\n' {
                         break; // an unterminated quote on one line is prose, not a string
                     }
                     i += 1;
@@ -255,6 +394,128 @@ fn blank_comments_and_strings(src: &str) -> String {
         }
     }
     out.into_iter().collect()
+}
+
+/// The index just past the CLOSING backtick of the template literal opening at `chars[start]`.
+/// Understands `${…}` interpolation: an interpolation may itself contain a NESTED template literal (or
+/// a plain string, or a further `{…}`), so a scan that just looks for "the next backtick" reads that
+/// nested literal's OWN backtick as the outer one's close.
+///
+/// Real, not hypothetical (#149, bsc request #149): `` `'${s.replace(/'/g, `'\\''`)}'` `` in a packaged
+/// record — the naive scan stopped at the SECOND backtick (the nested literal's own opener), leaving
+/// everything after it un-blanked and desynchronized, which silently dropped every export the doctor's
+/// symbol check (or `bsc ui doctor`'s `no-tests`/`multi-export`, which also read [`exported_names`])
+/// scanned afterward — a component that plainly exports `aiderProvider` was reported as not exporting it.
+///
+/// `start + 1` is EOF-safe: `n` returned from an inner call always ends the outer loop the same way.
+fn template_literal_end(chars: &[char], start: usize) -> usize {
+    let n = chars.len();
+    let mut i = start + 1; // past the opening backtick
+    while i < n {
+        match chars[i] {
+            '\\' => i += 2,
+            '`' => return i + 1,
+            '$' if i + 1 < n && chars[i + 1] == '{' => {
+                i = skip_balanced_interpolation(chars, i + 2);
+            }
+            _ => i += 1,
+        }
+    }
+    n // unterminated — the caller's blank-to-EOF matches how an unterminated `'`/`"` is already handled
+}
+
+/// The index just past the `}` matching a `${` whose own `{` sat at `from - 1` (i.e. `from` is the index
+/// right after that `{`). Tracks further `{…}` nesting (an object literal, another `${…}`) and skips over
+/// any nested string/template/REGEX literal so a `}` — or, for a regex, a stray quote — INSIDE one of
+/// those can't end the interpolation early or be misread as a string opener — mutually recursive with
+/// [`template_literal_end`], since the interpolation may itself hold a template.
+fn skip_balanced_interpolation(chars: &[char], from: usize) -> usize {
+    let n = chars.len();
+    let mut i = from;
+    let mut depth = 0i32; // `{` opened INSIDE this interpolation, beyond the one already consumed
+    while i < n {
+        match chars[i] {
+            '\\' => i += 2,
+            '{' => {
+                depth += 1;
+                i += 1;
+            }
+            '}' if depth == 0 => return i + 1,
+            '}' => {
+                depth -= 1;
+                i += 1;
+            }
+            '`' => i = template_literal_end(chars, i),
+            // A REGEX LITERAL can hold a quote character (`/'/g`, real shape from `aider.ts`, #149) that
+            // is not a string opener at all — reading it as one desyncs everything scanned after it,
+            // including a NESTED template a few characters later. `is_regex_context` disambiguates from
+            // division the same way any hand-rolled JS scanner must: by what token precedes the `/`.
+            '/' if is_regex_context(chars, i) => i = skip_regex_literal(chars, i),
+            q @ ('\'' | '"') => {
+                i += 1;
+                while i < n && chars[i] != q {
+                    if chars[i] == '\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i = (i + 1).min(n);
+            }
+            _ => i += 1,
+        }
+    }
+    n
+}
+
+/// Whether the `/` at `chars[slash_at]` opens a REGEX literal rather than dividing — decided the way any
+/// small JS scanner must, since the grammar is genuinely ambiguous without a real parser: look back past
+/// whitespace to the last significant character. A regex follows an operator/punctuator/opening bracket
+/// (or nothing at all — the start of the interpolation); division follows an operand (an identifier,
+/// digit, `)` or `]`).
+fn is_regex_context(chars: &[char], slash_at: usize) -> bool {
+    let mut j = slash_at;
+    while j > 0 {
+        j -= 1;
+        if chars[j].is_whitespace() {
+            continue;
+        }
+        return !(chars[j].is_ascii_alphanumeric() || matches!(chars[j], '_' | '$' | ')' | ']'));
+    }
+    true
+}
+
+/// The index just past a REGEX LITERAL opening at `chars[start]` (a `/` [`is_regex_context`] already
+/// confirmed), including its trailing flags (`/…/g`). A `[…]` character class is tracked so a `/` INSIDE
+/// one (`/[/]/`) does not end the literal early, mirroring how a real tokenizer reads one. An unterminated
+/// literal (hits a newline first) bails at the newline — same "prose, not code" fallback the plain-quote
+/// scanners in this file use for an unterminated `'`/`"`.
+fn skip_regex_literal(chars: &[char], start: usize) -> usize {
+    let n = chars.len();
+    let mut i = start + 1; // past the opening `/`
+    let mut in_class = false;
+    while i < n {
+        match chars[i] {
+            '\\' => i += 2,
+            '\n' => return i,
+            '[' => {
+                in_class = true;
+                i += 1;
+            }
+            ']' => {
+                in_class = false;
+                i += 1;
+            }
+            '/' if !in_class => {
+                i += 1;
+                break;
+            }
+            _ => i += 1,
+        }
+    }
+    while i < n && chars[i].is_ascii_alphabetic() {
+        i += 1; // flags: g, i, m, s, u, y, d, v …
+    }
+    i
 }
 
 #[cfg(test)]
@@ -306,6 +567,73 @@ export const Real = () => null;
     fn a_multi_line_reexport_list_is_gathered_whole() {
         let src = "export {\n  Alpha,\n  type Beta,\n  Gamma as Delta,\n} from \"./x\";\n";
         assert_eq!(exported_names(src), vec!["Alpha", "Beta", "Delta"]);
+    }
+
+    /// #149: a checker that reads only the FIRST declarator reports `b` clean when `b` is the export a
+    /// broken import actually needed.
+    #[test]
+    fn a_multi_declarator_const_exports_every_name() {
+        let src = "export const a = 1, b = 2, c = f(1, 2);\n";
+        assert_eq!(exported_names(src), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_typed_multi_declarator_export_still_reads_every_name() {
+        let src = "export let a: number = 1, b: string = \"x\";\n";
+        assert_eq!(exported_names(src), vec!["a", "b"]);
+    }
+
+    /// #149, the real failure: a template literal containing a NESTED template literal inside a `${…}`
+    /// interpolation. The naive scan reads the nested literal's own backtick as the outer one's close,
+    /// desyncs, and silently drops every export that follows — `bsc ui doctor --imports` reported
+    /// `aiderProvider` as unexported when the record plainly exports it, verbatim shape from `aider.ts`.
+    #[test]
+    fn a_template_literal_with_a_nested_template_in_its_interpolation_does_not_swallow_later_exports() {
+        let src = "\
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\\\''`)}'`;
+}
+
+export const aiderProvider = { id: \"aider\" };
+";
+        assert_eq!(
+            exported_names(src),
+            vec!["aiderProvider"],
+            "the nested backtick inside ${{…}} must not truncate the outer template literal early"
+        );
+    }
+
+    #[test]
+    fn a_single_declarator_const_is_unaffected() {
+        let src = "export const Card = () => null;\n";
+        assert_eq!(exported_names(src), vec!["Card"]);
+    }
+
+    #[test]
+    fn a_destructured_export_declarator_is_skipped_not_misread() {
+        let src = "export const { a, b } = obj, c = 1;\n";
+        assert_eq!(exported_names(src), vec!["c"], "the destructured group is skipped; the plain one after it is not");
+    }
+
+    #[test]
+    fn star_reexport_specifiers_reads_plain_and_aliased_barrels() {
+        let src = "export * from \"./sub\";\nexport * as NS from \"@/x/other\";\nexport const Real = 1;\n";
+        assert_eq!(star_reexport_specifiers(src), vec!["./sub", "@/x/other"]);
+    }
+
+    #[test]
+    fn star_reexport_specifiers_ignores_an_indented_or_non_barrel_star() {
+        let src = "  export * from \"./nested\";\nexport const Ghost = 1; // export * from \"./nope\"\n";
+        assert!(star_reexport_specifiers(src).is_empty());
+    }
+
+    #[test]
+    fn star_reexport_specifiers_follows_a_type_only_barrel_too() {
+        // A named import this checker judges may still ask a `export type * from` barrel for a type
+        // (importing a type through a value-shaped clause is not type-erasable — see the note on
+        // `clause_is_type_only`), so the barrel must be walked rather than treated as naming nothing.
+        let src = "export type * from \"./types\";\nexport type * as NS from \"@/x/other\";\n";
+        assert_eq!(star_reexport_specifiers(src), vec!["./types", "@/x/other"]);
     }
 
     #[test]
