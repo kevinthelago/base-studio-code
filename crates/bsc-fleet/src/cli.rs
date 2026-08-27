@@ -2,6 +2,7 @@
 
 use crate::gate;
 use crate::membership;
+use crate::doctor;
 use crate::{
     DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
     StartOutcome, StartRequest, StartResult, WakeRequest, WakeResult, DIRECTOR_KIND, KIND,
@@ -174,6 +175,38 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "doctor",
+    summary: "the claims this fleet makes about itself that do not hold",
+    usage: "\
+USAGE:
+  bsc fleet doctor [--db <plan.db>] [--strict] [--json|--pretty]
+
+One finding per claim that does not hold, each naming the pane, what is wrong, WHAT IT COSTS, and the
+fix. Prints nothing when the fleet is clean — a doctor whose normal output is a wall of `ok` is one
+nobody reads, and then the one real line scrolls past.
+
+NEEDS NO APP, unlike `fleet list`. Every check is a filesystem fact about a worktree, so this answers
+when the app is DOWN — which is exactly when a director most needs it.
+
+  no-gate       the worktree has no `.claude/settings.json`, so the pane has no role gate and no shell
+                allow-list. A launch or wake of it is REFUSED (#1819) — and a wake KILLS the session
+                before it finds that out, which is how four workers were destroyed by being woken.
+  caged-floor   its PreToolUse hooks invoke `/bsc-hook`, which exists only inside a mount namespace.
+                Launched uncaged, those gates cannot execute and fail NON-BLOCKING — the session runs
+                with no write-scope and no dangerous-command floor, looking exactly like one that is
+                gated and permitting.
+
+WHY THIS EXISTS. Four bugs in one day shared one signature: an answer that was wrong in the
+SAFE-LOOKING direction and left NO DURABLE TRACE — a parked fleet reported as `running`, a dead
+permission floor, a wake that killed what it could not relaunch, a prompt silently truncated to half.
+Each was found by hand, by reading process trees and server logs. This is the same shape as
+`bsc graph doctor` and `bsc ui parity`: compare TWO INDEPENDENT SOURCES that must agree, and report
+where they do not. A check that re-derives its answer from the code that produced it proves nothing,
+so every check here names its two sources.
+
+Reports and exits 0 by default; `--strict` exits non-zero on any finding. Opt-in for the reason
+`bsc ui parity`'s is: a guard that lands red protects nothing.",
+}, CmdDoc {
     name: "clone",
     summary: "clone the project's linked repos into its hub — the prerequisite for any worker",
     usage: "\
@@ -243,6 +276,9 @@ struct Args {
     db: Option<String>,
     prompt: Option<String>,
     force: bool,
+    /// `doctor --strict`: exit non-zero when anything is found, so it can be a gate. Plain runs
+    /// report and exit 0 — a guard that lands red protects nothing (see `bsc ui parity`).
+    strict: bool,
     timeout_ms: Option<i64>,
     /// `clone`: the PAT for a private repo. Never echoed — a failed clone redacts it.
     token: Option<String>,
@@ -254,7 +290,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -264,6 +300,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
+            "--strict" => a.strict = true,
             "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
             "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
             "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
@@ -325,6 +362,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "start" => cmd_start(&args, prog),
         "wake" => cmd_wake(&args, prog),
         "clone" => cmd_clone(&args, prog),
+        "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -846,6 +884,46 @@ fn choose_membership(args: &Args) -> Option<(String, Vec<membership::Member>)> {
         return None;
     }
     plan_membership(&args.db)
+}
+
+/// `bsc fleet doctor` — the claims this fleet makes about itself that do not hold.
+///
+/// APP-FREE. Every check here is a filesystem fact about a worktree, so it answers with the app
+/// down — which is exactly when a director most needs it and exactly when `fleet list`, which asks
+/// the running app, can say nothing at all.
+///
+/// Prints NOTHING when the fleet is clean. A doctor whose normal output is a wall of "ok" is one
+/// nobody reads, and then the one real line scrolls past.
+fn cmd_doctor(args: &Args) -> Result<(), String> {
+    let Some((key, members)) = choose_membership(args) else {
+        return Err("bsc fleet doctor: no plan store — pass --db or set $BSC_PLAN_DB".into());
+    };
+    let base = bsc_util::bsc_base_dir().ok_or("bsc fleet doctor: no base dir")?;
+
+    let findings: Vec<doctor::Finding> = members
+        .iter()
+        .flat_map(|m| {
+            let wt = doctor::find_worktree(&base, &key, &m.stream);
+            doctor::findings_for(&m.pane_id, doctor::read_facts(wt.as_deref()))
+        })
+        .collect();
+
+    if args.json || args.pretty {
+        bsc_cli_util::emit(args.pretty, args.json, &findings, String::new);
+    } else {
+        for f in &findings {
+            println!("{}  {}", f.pane_id, f.category);
+            println!("    {}", f.detail);
+            println!("    → {}", f.consequence);
+            println!("    fix: {}", f.fix);
+        }
+    }
+    // `--strict` is opt-in for the same reason `bsc ui parity`'s is: a guard that lands red protects
+    // nothing. Reporting exits 0 so this can be run habitually; gating is a deliberate choice.
+    if args.strict && !findings.is_empty() {
+        return Err(format!("bsc fleet doctor: {} finding(s)", findings.len()));
+    }
+    Ok(())
 }
 
 fn cmd_list(args: &Args) -> Result<(), String> {

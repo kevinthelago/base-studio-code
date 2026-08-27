@@ -30,6 +30,9 @@ pub mod membership;
 /// are waiting on an upstream, and which sit in a cycle. Shares one CONTRACT FIXTURE with the app's
 /// `streamGate.ts`, so the reporter and the launcher cannot answer differently.
 pub mod gate;
+/// The claims a fleet makes about itself that do not hold (`bsc fleet doctor`) — the divergence
+/// detector for this domain, alongside `bsc graph doctor` and `bsc ui parity`. App-free.
+pub mod doctor;
 
 /// This verb's routing key in the shared channel.
 pub const KIND: &str = "fleet";
