@@ -556,6 +556,17 @@ impl SandboxSpec {
                 a.extend(["--ro-bind-try", "/usr/lib64", "/usr/lib64"].map(String::from));
                 // terminfo, ca-certificates, locale — data a normal tool expects.
                 a.extend(["--ro-bind-try", "/usr/share", "/usr/share"].map(String::from));
+                // GCC's own internal helpers. On current Debian/Ubuntu (gcc-14) `cc1`, `cc1plus`,
+                // `lto1`, `collect2` and `liblto_plugin.so` live under `/usr/libexec/gcc/<triplet>/
+                // <ver>/`, NOT `/usr/lib/gcc/...` — that older path still holds compatibility copies
+                // of some files, which is exactly what makes this failure confusing: a caged agent
+                // can `ls /usr/lib/gcc/.../liblto_plugin.so` and find it, while `cc` still can't,
+                // because `cc`'s real search resolves to the libexec copy. Without this bind, `cc -c`
+                // fails outright ("cannot execute 'cc1'") and a plain `cc foo.c` that gets past that
+                // dies at link time with "-fuse-linker-plugin, but liblto_plugin.so not found" —
+                // reproduced against this host's live gcc-14 and confirmed as the fix (request #144).
+                // `-try`: a host whose gcc predates the libexec split has nothing here to bind.
+                a.extend(["--ro-bind-try", "/usr/libexec", "/usr/libexec"].map(String::from));
 
                 // Executables individually. Sorted and de-duplicated so the render is
                 // deterministic regardless of the order a caller assembled the list in.
@@ -1001,6 +1012,7 @@ mod tests {
                 "/usr/lib",
                 "/usr/lib64",
                 "/usr/share",
+                "/usr/libexec",
                 "/home/k/wt/repo--stream",
                 "/home/k/.base-studio-code/plans"
             ]
@@ -1049,6 +1061,23 @@ mod tests {
         let a = spec().render().unwrap();
         assert!(a.windows(3).any(|w| w[0] == "--ro-bind-try" && w[1] == "/usr/lib64"));
         assert!(a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/usr/lib"));
+    }
+
+    /// Request #144: a real gcc-14 host keeps `cc1`/`cc1plus`/`lto1`/`liblto_plugin.so` under
+    /// `/usr/libexec/gcc/<triplet>/<ver>/`, not `/usr/lib/gcc/...` — binding only `/usr/lib` leaves a
+    /// curated cage where `cc` execs but `cc -c` fails ("cannot execute 'cc1'") and a bare link fails
+    /// with "-fuse-linker-plugin, but liblto_plugin.so not found" despite the file being visible
+    /// under `/usr/lib/gcc/...` (a stale compatibility copy, not the one gcc actually searches for).
+    /// Reproduced live against this host's gcc-14 with a hand-built bwrap invocation before this fix,
+    /// and confirmed fixed by adding this bind. `-try`, like the other library dirs: a host whose gcc
+    /// predates the libexec split has nothing here to bind, and that must not abort the launch.
+    #[test]
+    fn libexec_is_bound_so_gccs_internal_helpers_are_reachable() {
+        let a = spec().render().unwrap();
+        assert!(
+            a.windows(3).any(|w| w[0] == "--ro-bind-try" && w[1] == "/usr/libexec" && w[2] == "/usr/libexec"),
+            "gcc-14's cc1/lto1/liblto_plugin.so live under /usr/libexec/gcc/... on current Debian/Ubuntu"
+        );
     }
 
     #[test]
