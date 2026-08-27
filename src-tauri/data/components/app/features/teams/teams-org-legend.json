@@ -37,5 +37,6 @@
     "empty",
     "loading",
     "error"
-  ]
+  ],
+  "feature": "teams"
 }

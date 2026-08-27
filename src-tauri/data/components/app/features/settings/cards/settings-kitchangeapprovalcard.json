@@ -7,5 +7,6 @@
   "srcText": "// KitChangeApprovalCard (#2944, default ON #2968) — the Planner setting governing how the designer\n// session's kit changes land: ON (default) auto-applies (propagates to consumer projects without the\n// gate); OFF gates each change in the top-right KitChangesBanner for the user to review + Approve.\nimport { useAppStore } from \"@/store\";\nimport { Card } from \"@/shared/ui/data/Card\";\nimport { ToggleRow } from \"@/features/settings/pages/SettingsControls\";\n\nexport function KitChangeApprovalCard() {\n  const on = useAppStore((s) => s.autoApplyKitChanges);\n  const setOn = useAppStore((s) => s.setAutoApplyKitChanges);\n  return (\n    <Card title=\"Designer kit changes\">\n      <ToggleRow on={on} onToggle={() => setOn(!on)} title=\"Auto-apply kit changes\">\n        When ON (default), the kit changes the designer session makes propagate to consumer projects\n        automatically — no confirmation. Turn OFF to hold each change in a top-right banner for you to\n        review its propagated changes and <b>Approve</b> before it goes out.\n      </ToggleRow>\n    </Card>\n  );\n}\n",
   "composes": [],
   "src": "src/features/settings/cards/KitChangeApprovalCard.tsx",
-  "folder": "features/settings/cards"
+  "folder": "features/settings/cards",
+  "feature": "settings"
 }

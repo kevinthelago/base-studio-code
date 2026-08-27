@@ -51,5 +51,6 @@
       "name": "SectionHeader",
       "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render, screen } from \"@testing-library/react\";\r\nimport { SectionHeader } from \"./SectionHeader\";\r\n\r\ndescribe(\"SectionHeader\", () => {\r\n  it(\"renders title + hint + meta\", () => {\r\n    const { container } = render(<SectionHeader title=\"Hooks\" hint=\"lifecycle\" meta=\"3 enabled\" />);\r\n    expect(screen.getByRole(\"heading\", { name: \"Hooks\" })).toBeInTheDocument();\r\n    expect(screen.getByText(\"lifecycle\")).toBeInTheDocument();\r\n    expect(container.querySelector(\".sh-meta\")?.textContent).toBe(\"3 enabled\");\r\n  });\r\n\r\n  it(\"renders a raw right slot instead of meta\", () => {\r\n    const { container } = render(<SectionHeader title=\"Browse\" right={<input placeholder=\"search\" />} />);\r\n    expect(container.querySelector(\"input\")).not.toBeNull();\r\n    expect(container.querySelector(\".sh-meta\")).toBeNull();\r\n  });\r\n});\r\n"
     }
-  ]
+  ],
+  "feature": "core"
 }

@@ -31,5 +31,6 @@
   "pageKind": "kit",
   "whenUse": [],
   "whenNot": [],
-  "tags": []
+  "tags": [],
+  "feature": "core"
 }

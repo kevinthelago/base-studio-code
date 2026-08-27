@@ -26,5 +26,6 @@
   "variants": [
     "default",
     "note"
-  ]
+  ],
+  "feature": "teams"
 }

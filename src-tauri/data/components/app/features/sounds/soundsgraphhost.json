@@ -7,5 +7,6 @@
   "srcText": "// The Sounds page host (#4215, epic #3604) — renders the Sounds pillar FROM THE GRAPH. The workspace and\n// the three views it composes are sourced from the components graph (`soundspage` + siblings, seeded from\n// `data/components/app/**`), not bundled files.\n//\n// Unlike the seven rail pages, this host is composed by ANOTHER PAGE: the planner Screen mounts it as one\n// of its tabs. Nothing else about the recipe changes — the host registers the feature's injected platform\n// surface at module load, then mounts the record through the runtime loader.\n//\n// The CSS ships as a normal bundled import here: the loader cannot resolve a CSS side-effect import, so it\n// was stripped from the graph source and the host owns the stylesheet the page's classes need.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerSoundsPlatform } from \"@/features/sounds/graphPlatform\";\n\nregisterSoundsPlatform();\n\nexport function SoundsGraphHost() {\n  return <GraphComponent id=\"soundspage\" fallback={<GraphPageFallback page=\"Sounds\" icon=\"♪\" />} />;\n}",
   "composes": [],
   "src": "src/features/sounds/SoundsGraphHost.tsx",
-  "folder": "features/sounds"
+  "folder": "features/sounds",
+  "feature": "sounds"
 }

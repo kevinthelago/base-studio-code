@@ -12,5 +12,6 @@
     "IconButton",
     "TextField"
   ],
-  "folder": "features/mcp"
+  "folder": "features/mcp",
+  "feature": "mcp"
 }

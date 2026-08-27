@@ -10,5 +10,6 @@
     "Text",
     "Stack"
   ],
-  "folder": "app/console/panes"
+  "folder": "app/console/panes",
+  "feature": "shell"
 }

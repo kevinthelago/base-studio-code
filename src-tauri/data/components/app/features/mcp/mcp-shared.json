@@ -21,5 +21,6 @@
     "StatusDot",
     "Text"
   ],
-  "props": []
+  "props": [],
+  "feature": "mcp"
 }

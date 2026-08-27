@@ -13,5 +13,6 @@
       "name": "WorkerDetail Placeholder (#499)",
       "src": "import { describe, it, expect } from \"vitest\";\nimport { render, screen } from \"@testing-library/react\";\nimport { Placeholder } from \"@/features/glance/fleet/WorkerDetailPlaceholder\";\n\ndescribe(\"WorkerDetail Placeholder (#499)\", () => {\n  it(\"renders its title, hint, and body copy\", () => {\n    render(<Placeholder title=\"Tokens & spend\" hint=\"not measured yet\" body=\"Per-session token accounting isn't wired up yet.\" />);\n    expect(screen.getByText(\"Tokens & spend\")).toBeInTheDocument();\n    expect(screen.getByText(\"not measured yet\")).toBeInTheDocument();\n    expect(screen.getByText(/Per-session token accounting/)).toBeInTheDocument();\n  });\n});\n"
     }
-  ]
+  ],
+  "feature": "glance"
 }

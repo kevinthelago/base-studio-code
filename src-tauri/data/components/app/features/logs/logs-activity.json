@@ -11,5 +11,6 @@
     "Text"
   ],
   "folder": "features/logs",
-  "srcRetired": "src/features/logs/ActivityTab.tsx"
+  "srcRetired": "src/features/logs/ActivityTab.tsx",
+  "feature": "logs"
 }

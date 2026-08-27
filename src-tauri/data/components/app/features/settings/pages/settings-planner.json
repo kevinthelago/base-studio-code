@@ -15,5 +15,6 @@
     "Text"
   ],
   "src": "src/features/settings/pages/PlannerPage.tsx",
-  "folder": "features/settings/pages"
+  "folder": "features/settings/pages",
+  "feature": "settings"
 }

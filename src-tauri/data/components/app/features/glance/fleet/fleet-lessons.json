@@ -16,5 +16,6 @@
     "Text"
   ],
   "folder": "features/glance/fleet",
-  "srcRetired": "src/features/planner/fleet/FleetLessons.tsx"
+  "srcRetired": "src/features/planner/fleet/FleetLessons.tsx",
+  "feature": "glance"
 }

@@ -7,5 +7,6 @@
   "srcText": "import { useAppStore } from \"@/store\";\nimport { MODELS, type ModelId } from \"@/app/console/lib/models\";\nimport { SettingsSelectField } from \"@/features/settings/pages/SettingsControls\";\nimport { Card } from \"@/shared/ui/data/Card\";\n\nexport function DefaultModelCard() {\n  const { defaultModel, setDefaultModel } = useAppStore();\n\n  return (\n    <Card title=\"Default model\">\n      <SettingsSelectField\n        label=\"Model new consoles open with\"\n        value={defaultModel}\n        onChange={(v) => setDefaultModel(v as ModelId)}\n        hint=\"Per-pane override is available from the pane hamburger menu.\"\n      >\n        {MODELS.map((m) => (\n          <option key={m.id} value={m.id}>{m.id} · {m.tone}</option>\n        ))}\n      </SettingsSelectField>\n    </Card>\n  );\n}\n",
   "composes": [],
   "src": "src/features/settings/cards/DefaultModelCard.tsx",
-  "folder": "features/settings/cards"
+  "folder": "features/settings/cards",
+  "feature": "settings"
 }

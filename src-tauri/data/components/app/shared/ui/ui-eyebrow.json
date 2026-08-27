@@ -41,5 +41,6 @@
       "req": false,
       "type": "CSSProperties"
     }
-  ]
+  ],
+  "feature": "core"
 }

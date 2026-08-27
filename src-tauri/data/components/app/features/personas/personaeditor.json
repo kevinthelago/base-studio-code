@@ -18,5 +18,6 @@
       "type": "boolean"
     }
   ],
-  "folder": "features/personas"
+  "folder": "features/personas",
+  "feature": "personas"
 }

@@ -63,5 +63,6 @@
       "type": "number"
     }
   ],
-  "srcRetired": "src/shared/ui/controls/Dropdown.tsx"
+  "srcRetired": "src/shared/ui/controls/Dropdown.tsx",
+  "feature": "core"
 }

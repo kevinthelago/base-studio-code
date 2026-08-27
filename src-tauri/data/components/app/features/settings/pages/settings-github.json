@@ -12,5 +12,6 @@
     "SettingsPageHeader"
   ],
   "src": "src/features/settings/pages/GithubPage.tsx",
-  "folder": "features/settings/pages"
+  "folder": "features/settings/pages",
+  "feature": "settings"
 }

@@ -16,5 +16,6 @@
   ],
   "folder": "features/logs",
   "tests": [],
-  "srcRetired": "src/features/logs/LogsWorkspace.tsx"
+  "srcRetired": "src/features/logs/LogsWorkspace.tsx",
+  "feature": "logs"
 }

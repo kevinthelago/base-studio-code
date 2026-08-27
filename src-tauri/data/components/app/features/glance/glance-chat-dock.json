@@ -15,5 +15,6 @@
     "Row",
     "Text"
   ],
-  "props": []
+  "props": [],
+  "feature": "glance"
 }

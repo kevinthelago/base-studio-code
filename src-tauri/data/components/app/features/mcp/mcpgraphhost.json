@@ -13,5 +13,6 @@
       "type": "string"
     }
   ],
-  "folder": "features/mcp"
+  "folder": "features/mcp",
+  "feature": "mcp"
 }

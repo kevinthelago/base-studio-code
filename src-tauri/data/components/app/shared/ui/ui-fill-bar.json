@@ -65,5 +65,6 @@
       "name": "FillBar",
       "src": "import { describe, it, expect } from \"vitest\";\r\nimport { render } from \"@testing-library/react\";\r\nimport { FillBar } from \"./FillBar\";\r\n\r\ndescribe(\"FillBar\", () => {\r\n  it(\"renders a track with an inner fill at value%\", () => {\r\n    const { container } = render(<FillBar value={0.4} color=\"var(--info)\" />);\r\n    const track = container.firstChild as HTMLElement;\r\n    const fill = track.firstChild as HTMLElement;\r\n    expect(track.style.background).toBe(\"var(--bg-elev2)\");\r\n    expect(track.style.overflow).toBe(\"hidden\");\r\n    expect(fill.style.width).toBe(\"40%\");\r\n    expect(fill.style.background).toBe(\"var(--info)\");\r\n  });\r\n\r\n  it(\"clamps value to [0,1]\", () => {\r\n    const { container } = render(<FillBar value={1.8} />);\r\n    const fill = (container.firstChild as HTMLElement).firstChild as HTMLElement;\r\n    expect(fill.style.width).toBe(\"100%\");\r\n  });\r\n\r\n  it(\"renders square corners when rounded={false}\", () => {\r\n    const { container } = render(<FillBar value={0.5} rounded={false} />);\r\n    const track = container.firstChild as HTMLElement;\r\n    expect(track.style.borderRadius).toBe(\"0px\");\r\n  });\r\n});\r\n"
     }
-  ]
+  ],
+  "feature": "core"
 }

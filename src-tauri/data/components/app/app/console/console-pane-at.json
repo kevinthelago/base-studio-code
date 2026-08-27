@@ -156,5 +156,6 @@
       "type": "PaneTokenUsage"
     }
   ],
-  "srcRetired": "src/app/console/PaneAt.tsx"
+  "srcRetired": "src/app/console/PaneAt.tsx",
+  "feature": "shell"
 }

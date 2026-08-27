@@ -11,5 +11,6 @@
     "Stack"
   ],
   "src": "src/shared/ui/feedback/CardStates.tsx",
-  "folder": "shared/ui/feedback"
+  "folder": "shared/ui/feedback",
+  "feature": "core"
 }

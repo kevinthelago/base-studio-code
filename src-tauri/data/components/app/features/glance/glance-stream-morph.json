@@ -10,5 +10,6 @@
     "Box",
     "GlanceChatDock"
   ],
-  "props": []
+  "props": [],
+  "feature": "glance"
 }

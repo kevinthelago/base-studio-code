@@ -69,5 +69,6 @@
       "type": "string"
     }
   ],
-  "folder": "features/designs"
+  "folder": "features/designs",
+  "feature": "designs"
 }

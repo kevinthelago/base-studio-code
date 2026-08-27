@@ -12,5 +12,6 @@
       "type": "node"
     }
   ],
-  "folder": "app/console/terminal"
+  "folder": "app/console/terminal",
+  "feature": "shell"
 }

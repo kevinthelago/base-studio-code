@@ -41,5 +41,6 @@
       "type": "boolean"
     }
   ],
-  "folder": "shared/ui/overlay"
+  "folder": "shared/ui/overlay",
+  "feature": "core"
 }

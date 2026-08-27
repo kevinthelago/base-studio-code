@@ -11,5 +11,6 @@
   ],
   "folder": "app/console/panes/views",
   "provides": "@/app/console/panes/views/LogView",
-  "srcRetired": "src/app/console/panes/views/LogView.tsx"
+  "srcRetired": "src/app/console/panes/views/LogView.tsx",
+  "feature": "shell"
 }

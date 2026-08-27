@@ -41,5 +41,6 @@
     "org-chart",
     "inspector",
     "detail-panel"
-  ]
+  ],
+  "feature": "teams"
 }

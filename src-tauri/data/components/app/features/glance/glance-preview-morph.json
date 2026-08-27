@@ -12,5 +12,6 @@
     "Text",
     "ReviewStrip"
   ],
-  "props": []
+  "props": [],
+  "feature": "glance"
 }

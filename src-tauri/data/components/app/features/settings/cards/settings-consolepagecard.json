@@ -13,5 +13,6 @@
       "name": "ConsolePageCard",
       "src": "import { describe, it, expect, beforeEach } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { ConsolePageCard } from \"@/features/settings/cards/ConsolePageCard\";\nimport { useAppStore } from \"@/store\";\n\ndescribe(\"ConsolePageCard\", () => {\n  beforeEach(() => useAppStore.setState({ showConsolePage: false }));\n\n  it(\"toggles the legacy console page on (off by default, #2372)\", () => {\n    render(<ConsolePageCard />);\n    expect(screen.getByText(/Show the legacy Console page/)).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"switch\"));\n    expect(useAppStore.getState().showConsolePage).toBe(true);\n  });\n});\n"
     }
-  ]
+  ],
+  "feature": "settings"
 }

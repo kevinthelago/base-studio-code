@@ -14,5 +14,6 @@
     "GlanceStreamMorph",
     "Text"
   ],
-  "props": []
+  "props": [],
+  "feature": "glance"
 }

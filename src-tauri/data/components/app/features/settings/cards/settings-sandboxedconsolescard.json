@@ -13,5 +13,6 @@
       "name": "SandboxedConsolesCard",
       "src": "import { describe, it, expect, beforeEach } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { SandboxedConsolesCard } from \"@/features/settings/cards/SandboxedConsolesCard\";\nimport { useAppStore } from \"@/store\";\n\ndescribe(\"SandboxedConsolesCard\", () => {\n  beforeEach(() => useAppStore.setState({ sandboxConsoles: false }));\n\n  it(\"toggles running new consoles inside the WSL2 sandbox\", () => {\n    render(<SandboxedConsolesCard />);\n    expect(screen.getByText(/Run new console sessions inside the WSL2 sandbox/)).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"switch\"));\n    expect(useAppStore.getState().sandboxConsoles).toBe(true);\n  });\n});\n"
     }
-  ]
+  ],
+  "feature": "settings"
 }

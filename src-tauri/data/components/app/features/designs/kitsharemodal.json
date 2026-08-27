@@ -16,5 +16,6 @@
     "Code"
   ],
   "src": "src/features/designs/KitShareModal.tsx",
-  "folder": "features/designs"
+  "folder": "features/designs",
+  "feature": "designs"
 }

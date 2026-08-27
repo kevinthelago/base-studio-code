@@ -13,5 +13,6 @@
       "name": "TargetSelector",
       "src": "import { describe, it, expect, vi } from \"vitest\";\nimport { render, screen, fireEvent } from \"@testing-library/react\";\nimport { TargetSelector } from \"@/features/settings/cards/TargetSelector\";\n\nconst repos = [\n  { full_name: \"octo/one\", local_path: \"/base/one\" },\n  { full_name: \"octo/two\", local_path: \"/base/two\" },\n];\n\ndescribe(\"TargetSelector\", () => {\n  it(\"renders the global chip plus a chip per repo\", () => {\n    render(<TargetSelector allRepos={repos} target=\"global\" setTarget={() => {}} />);\n    expect(screen.getByText(\"global (~/.claude/)\")).toBeInTheDocument();\n    expect(screen.getByText(\"octo/one\")).toBeInTheDocument();\n    expect(screen.getByText(\"octo/two\")).toBeInTheDocument();\n  });\n\n  it(\"shows the empty hint when there are no repos\", () => {\n    render(<TargetSelector allRepos={[]} target=\"global\" setTarget={() => {}} />);\n    expect(screen.getByText(/Resolve repositories on the Projects board/)).toBeInTheDocument();\n  });\n\n  it(\"calls setTarget with the repo's local_path when a chip is clicked\", () => {\n    const setTarget = vi.fn();\n    render(<TargetSelector allRepos={repos} target=\"global\" setTarget={setTarget} />);\n    fireEvent.click(screen.getByText(\"octo/two\"));\n    expect(setTarget).toHaveBeenCalledWith(\"/base/two\");\n  });\n});\n"
     }
-  ]
+  ],
+  "feature": "settings"
 }

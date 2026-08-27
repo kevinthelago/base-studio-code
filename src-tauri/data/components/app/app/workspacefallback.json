@@ -8,5 +8,6 @@
   "composes": [
     "Row"
   ],
-  "folder": "app"
+  "folder": "app",
+  "feature": "shell"
 }

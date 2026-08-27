@@ -2842,11 +2842,13 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
 /// A record whose stored domain already matches is left alone, so re-running is a no-op.
 fn cmd_features(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut seed_dir: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--kit" => kit = it.next().cloned(),
+            "--seed-dir" => seed_dir = it.next().cloned(),
             "--apply" => apply = true,
             "--pretty" => pretty = true,
             other => {
@@ -2856,6 +2858,82 @@ fn cmd_features(args: &[String]) -> Result<(), String> {
                 ))
             }
         }
+    }
+    // `--seed-dir <dir>` — backfill the PACKAGED SEED directly, deriving each record's feature from
+    // its OWN folder rather than from the store's copy.
+    //
+    // WHY IT EXISTS. The normal path reads the store and syncs onward, and that covered 294 of 306
+    // packaged components. The other 12 are records whose STORE copy is hollow — no folder, no kitId,
+    // no name — while the seed file holds the real record, folder and all. That is the store-vs-seed
+    // drift this repo has both ways, and it meant the ownership gate (which reads the seed, because a
+    // rule that depends on whose machine ran it is not a rule) could never reach full coverage through
+    // the store.
+    //
+    // Deriving from the seed's own folder needs no store at all, so a hollow store copy cannot hide a
+    // record from the rule. Same never-overwrite contract as the store path: a feature already written
+    // is a decision, not a starting point.
+    if let Some(seed_dir) = &seed_dir {
+        let root = std::path::Path::new(seed_dir);
+        if !root.is_dir() {
+            return Err(format!("not a directory: {seed_dir}"));
+        }
+        let (mut scanned, mut already) = (0usize, 0usize);
+        let (mut changed, mut unmapped) = (Vec::new(), Vec::new());
+        let mut by_feature: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                    continue;
+                }
+                if p.extension().and_then(|s| s.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&p) else { continue };
+                let Ok(mut rec) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+                // A kit bundle has no top-level `id` and is not a record.
+                let Some(id) = rec.get("id").and_then(serde_json::Value::as_str).map(str::to_owned) else { continue };
+                scanned += 1;
+                let old = rec.get("feature").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+                if !old.is_empty() {
+                    already += 1;
+                    *by_feature.entry(old).or_default() += 1;
+                    continue;
+                }
+                // Fall back to deriving from `src` when the record carries no `folder`. Not a guess:
+                // `folder` IS derived from `src` (`bsc ui regroup` re-derives it), so a record with a
+                // src and no folder is one nobody has re-foldered — not one whose home is unknown.
+                // Without this the last packaged component stayed unplaced for want of a cached value
+                // the record already carries.
+                let folder = record_folder(&rec)
+                    .map(str::to_owned)
+                    .or_else(|| rec.get("src").and_then(serde_json::Value::as_str).and_then(crate::folder_from_src))
+                    .unwrap_or_default();
+                let Some(new) = crate::feature_from_folder(&folder) else {
+                    unmapped.push(serde_json::json!({ "id": id, "folder": folder }));
+                    continue;
+                };
+                *by_feature.entry(new.clone()).or_default() += 1;
+                changed.push(serde_json::json!({ "id": id, "folder": folder, "to": new }));
+                if apply {
+                    if let Some(o) = rec.as_object_mut() {
+                        o.insert("feature".into(), serde_json::Value::String(new));
+                    }
+                    let out = serde_json::to_string_pretty(&rec).map_err(|e| e.to_string())?;
+                    std::fs::write(&p, format!("{out}\n")).map_err(|e| format!("cannot write {}: {e}", p.display()))?;
+                }
+            }
+        }
+        let report = serde_json::json!({
+            "seedDir": seed_dir, "scanned": scanned, "alreadyCorrect": already,
+            "changed": changed, "unmapped": unmapped, "byFeature": by_feature, "applied": apply,
+        });
+        let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
     }
     let store = open_component_store(&dir)?;
     let (mut scanned, mut already) = (0usize, 0usize);
@@ -10918,3 +10996,137 @@ mod feature_backfill_preserves_tests {
     }
 }
 
+
+#[cfg(test)]
+mod feature_rule_gate {
+    use bsc_util::feature_rule::{violations, Violation};
+
+    /// Edges deliberately kept, each with the decision behind it. EXACT `from -> to` ids.
+    ///
+    /// Two entries, and both are pages composing another feature's page. Neither is obviously wrong —
+    /// a settings section that embeds the tunnel's own panel is reusing the real thing rather than
+    /// copying it — but neither is obviously right either, so they are named here rather than made
+    /// invisible by a broader rule.
+    const ALLOWED: &[&str] = &[
+        // The Automations page embeds the MCP page's server list: automations dispatch into panes, and
+        // the servers a pane can reach are the MCP feature's roster. The alternative is a second list.
+        "automationspage -> mcppage",
+        // Settings → Planner embeds the tunnel's settings panel so the pairing UI lives in one place.
+        "settings-planner -> tunnelsettings",
+    ];
+
+    /// Every packaged component record, read from the seed tree the app ships.
+    fn packaged_components() -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for root in bsc_util::packaged::data_dirs() {
+            let dir = root.join("components").join("app");
+            if !dir.is_dir() {
+                continue;
+            }
+            let mut stack = vec![dir];
+            while let Some(d) = stack.pop() {
+                let Ok(entries) = std::fs::read_dir(&d) else { continue };
+                for e in entries.flatten() {
+                    let p = e.path();
+                    if p.is_dir() {
+                        stack.push(p);
+                    } else if p.extension().and_then(|s| s.to_str()) == Some("json") {
+                        if let Ok(s) = std::fs::read_to_string(&p) {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                                out.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+            if !out.is_empty() {
+                break; // the first data dir that HAS the tree wins, matching `packaged::read`
+            }
+        }
+        out
+    }
+
+    /// THE OWNERSHIP RULE over the packaged component seed.
+    ///
+    /// A component's `composes` names other components BY NAME, not by id, so the resolution differs
+    /// from the algorithms graph — which is exactly why `bsc_util::feature_rule` takes already-resolved
+    /// edges and leaves the addressing to each caller.
+    #[test]
+    fn the_ownership_rule_holds_across_the_component_library() {
+        let recs = packaged_components();
+        assert!(!recs.is_empty(), "no packaged component records found — the gate would be vacuous");
+
+        // name -> (feature, id). A record with no name cannot be a `composes` target.
+        let by_name: std::collections::HashMap<String, (String, String)> = recs
+            .iter()
+            .filter_map(|r| {
+                let name = r.get("name")?.as_str()?.trim();
+                if name.is_empty() {
+                    return None;
+                }
+                let id = r.get("id")?.as_str()?.to_string();
+                let f = r.get("feature").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                Some((name.to_string(), (f, id)))
+            })
+            .collect();
+
+        let mut edges: Vec<(String, String, String, String)> = Vec::new();
+        for r in &recs {
+            let Some(from_id) = r.get("id").and_then(|v| v.as_str()) else { continue };
+            let from_f = r.get("feature").and_then(|v| v.as_str()).unwrap_or_default();
+            let Some(cs) = r.get("composes").and_then(|v| v.as_array()) else { continue };
+            for t in cs.iter().filter_map(|v| v.as_str()) {
+                // A `composes` naming a component the seed does not hold is `bsc ui doctor`'s finding.
+                let Some((to_f, to_id)) = by_name.get(t) else { continue };
+                edges.push((from_id.to_string(), from_f.to_string(), to_id.clone(), to_f.clone()));
+            }
+        }
+
+        let v: Vec<Violation> = violations(&edges, ALLOWED);
+        assert!(
+            v.is_empty(),
+            "{} ownership violation(s) in the component library:\n{}",
+            v.len(),
+            v.iter().map(Violation::describe).collect::<Vec<_>>().join("\n")
+        );
+    }
+
+    /// COVERAGE — the rule may only skip a record whose feature is unknown, so how many are unknown is
+    /// part of what the gate asserts.
+    ///
+    /// THIS GATE SHIPPED VACUOUS ONCE AND WAS PULLED FOR IT. When it was first written, 0 of 306
+    /// packaged component files carried `feature`, so it classified ZERO edges and passed — a test that
+    /// could only pass, which is worse than no test at all. Asserting coverage is what makes the
+    /// difference between "the rule holds" and "the rule saw nothing".
+    #[test]
+    fn every_packaged_component_is_placed_so_the_rule_covers_the_library() {
+        let recs = packaged_components();
+        assert!(!recs.is_empty(), "no packaged component records found");
+        let unplaced: Vec<&str> = recs
+            .iter()
+            .filter(|r| r.get("feature").and_then(|v| v.as_str()).unwrap_or_default().trim().is_empty())
+            .filter_map(|r| r.get("id").and_then(|v| v.as_str()))
+            .collect();
+        assert!(
+            unplaced.is_empty(),
+            "{} packaged component(s) carry no `feature`, so the ownership rule cannot see their \
+             edges: {:?}",
+            unplaced.len(),
+            &unplaced[..unplaced.len().min(10)]
+        );
+    }
+
+    /// The gate must be able to FAIL. A rule whose test can only pass is a comment.
+    #[test]
+    fn the_rule_reports_a_planted_baseline_violation() {
+        let planted = vec![(
+            "planted".to_string(),
+            "core".to_string(),
+            "some-glance-thing".to_string(),
+            "glance".to_string(),
+        )];
+        let v = violations(&planted, ALLOWED);
+        assert_eq!(v.len(), 1, "a core -> feature edge must be reported");
+        assert!(v[0].describe().contains("core/planted -> glance/some-glance-thing"));
+    }
+}
