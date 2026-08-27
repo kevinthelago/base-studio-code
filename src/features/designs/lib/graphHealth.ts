@@ -985,9 +985,20 @@ export function analyzeGraphHealth(
           why: `${c.name} is isolated (nothing composes it) and unused (used = 0)` });
       }
     } else {
+      // A `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page.
+      // Its `nodeIds` name ONLY the root, never the reachable set: those are the page's ordinary,
+      // often widely-shared content (#110 — a settings page alone can reach dozens of real components,
+      // including some also composed by unrelated live cards). Sweeping the whole branch into ONE
+      // finding badged every one of them as "unused" purely because ONE page happens to reach them.
+      // A dead LAYOUT keeps the full branch below — unlike a page it is not guaranteed to be a real
+      // entry point, so dragging its subtree down with it is a genuine, worth-reporting risk.
+      // Mirrors the Rust twin's page-root guard in `graph_health.rs`.
       const reach = reachable(c.id, out);
+      const [ids, names] = c.role === "page"
+        ? [[c.id], [c.name]]
+        : [[c.id, ...reach], [c.name, ...[...reach].map(nameOf)]];
       findings.push({ category: "dangling-branch", severity: 3,
-        nodeIds: [c.id, ...reach], nodeNames: [c.name, ...[...reach].map(nameOf)],
+        nodeIds: ids, nodeNames: names,
         why: `${c.name} is an unused root that pulls in ${reach.size} dependenc${reach.size === 1 ? "y" : "ies"}` });
     }
   }

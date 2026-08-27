@@ -1,0 +1,26 @@
+# What `tauri dev`'s watcher must NOT rebuild-and-relaunch the app for
+# (#a-record-write-restarts-the-app-the-user-is-using).
+#
+# The rule is one sentence: the watcher must not fire on a change CARGO ITSELF has declared it does not
+# compile. `build.rs` stages a CONFIG-ONLY subset of `data/` into `$OUT_DIR/config-seed` — the tree
+# `platform/config.rs` embeds — and deliberately leaves `NON_CONFIG_DIRS` out of it, with the
+# measurement recorded there: embedding the raw tree meant editing any record rebuilt AND relinked the
+# app, 20.5s against a 1.3s no-op.
+#
+# That fixed the BUILD and not the WATCHER. Without this file `tauri dev` watches all of `src-tauri/`,
+# so a designer, librarian or debug session writing a component record still fires a rebuild — now a
+# ~1.3s no-op — and then RELAUNCHES the app. The user working in it loses their place for a build that
+# compiled nothing.
+#
+# Safe in dev because nothing reads the embedded copy there: `bsc_util::packaged` resolves the live
+# checkout (`DEV_DATA_ROOT`), so the running app already sees a record write without any rebuild. A
+# release build re-stages these through `beforeBuildCommand`, so the shipped bundle is unaffected.
+#
+# ONLY the non-config dirs. A config surface that IS embedded must keep rebuilding — ignoring one would
+# silently stop an edit from reaching the binary, which is strictly worse than a slow build, and it is
+# the same trap `build.rs` documents about its `rerun-if-changed` list being complete.
+#
+# `src-tauri/src/tests.rs` pins this file to `NON_CONFIG_DIRS`, so adding a non-config dir cannot leave
+# the watcher firing on it.
+data/components/
+data/knowledge/

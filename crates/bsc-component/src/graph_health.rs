@@ -433,19 +433,6 @@ pub(crate) fn platform_modules() -> &'static BTreeSet<String> {
     })
 }
 
-/// The algorithms knowledge seed (`src-tauri/data/knowledge/algorithms.json`) — the SAME json the frontend
-/// (`@data/knowledge/algorithms.json`) + `bsc graph` read. Read here so the THIRD import-resolution
-/// class (#3116) — a `@bsc/algorithms/<name>` cross-graph reference — is recognized without a network
-/// round-trip: a
-/// reference matching a real TS algorithm resolves (the preview vendors its code) and is NEVER flagged; a
-/// `@bsc/algorithms/<missing>` is. The Rust twin of `libraryModules.ts` / `graphHealth.ts`.
-/// LOADED AT RUNTIME rather than `include_str!`'d (see [`bsc_util::packaged`]) — 2.6 MB whose edits
-/// used to recompile this crate and `bsc-graph`.
-fn algorithms_json() -> &'static str {
-    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    V.get_or_init(|| bsc_util::packaged::read_required("knowledge/algorithms.json")).as_str()
-}
-
 /// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the kit an UNPINNED project resolves
 /// `@bsc/sounds/<id>` against, the twin of the frontend's `SoundKitSelection::default` arm. A project whose
 /// blueprint PINS a sound kit resolves against that kit instead ([`HealthOptions::sound_kit_json`], #3412).
@@ -486,27 +473,47 @@ fn is_library_specifier(spec: &str) -> bool {
 
 /// The resolvable `@bsc/algorithms/…` reference NAMES — every TYPESCRIPT algorithm impl carrying real
 /// `code`, keyed by BOTH its bare name (`fibonacci`) and its exact id (`fibonacci.ts`), since a React
-/// component resolves against the TS algorithm kit and accepts either form (#3116). Cached; a malformed
-/// seed yields an empty set, so every `@bsc/algorithms/…` is then flagged — fail safe, never a false
-/// "resolves". Mirrors the resolvable set behind `libraryModuleResolver` (libraryModules.ts).
+/// component resolves against the TS algorithm kit and accepts either form (#3116).
+///
+/// Sourced from [`bsc_graph::implementations`] — the SAME live, writer-reconciled catalog
+/// `bsc graph impl list`/`impl get` serve (the packaged seed reconciled with whatever the librarian has
+/// curated into the on-disk store, `~/.base-studio-code/knowledge/algorithms.json` / `BSC_GRAPH_STORE`).
+/// This crate already depends on `bsc-graph` and reads the same catalog elsewhere for the identical
+/// reason (`cmd_component_test`'s records-only boundary) — resolving straight against the PACKAGED seed
+/// here instead was a second, independent read path that could only ever fall BEHIND the librarian's
+/// curation, never ahead of it: a `bsc graph impl set` that adds, renames, or removes an algorithm
+/// changes what `bsc graph impl get`/`impl list` answer immediately, and this detector's verdict on every
+/// component's `reimplementation`/`unresolvable-import` findings should agree with that answer by
+/// construction rather than by keeping two catalogs in sync by hand (bsc request #118 — a session with
+/// no data-source visibility beyond the doctor report and `bsc graph` itself has no way to tell "the
+/// detector's source is stale" apart from "the detector's source is simply wrong"; reading the one true
+/// catalog removes the question). Cached per-process; a store the graph crate cannot read falls back to
+/// ITS OWN packaged seed ([`bsc_graph::seed`]), never to empty — so a `@bsc/algorithms/…` reference is
+/// never falsely flagged for a data problem in a sibling crate.
 fn algo_library_names() -> &'static BTreeSet<String> {
     static N: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
-    N.get_or_init(|| algo_library_names_from(algorithms_json()))
+    N.get_or_init(|| algo_library_names_from(&bsc_graph::implementations()))
 }
 
-/// Pure over the seed JSON text (testable without the embed): the bare names + exact ids of every
-/// typescript algorithm impl that ships non-empty `code` (a primitive descriptor has no code → not
-/// importable, so it's excluded). Malformed JSON → empty set.
-fn algo_library_names_from(json: &str) -> BTreeSet<String> {
-    let Ok(v) = serde_json::from_str::<Value>(json) else {
-        return BTreeSet::new();
-    };
+/// Is `im` a TYPESCRIPT `algorithm`-role implementation carrying non-empty `code` — the ONLY class of
+/// record `@bsc/algorithms/<name>` resolves against (a primitive descriptor has no code → not
+/// importable, and the SAME bare name can legitimately belong to another language's kit too, e.g. a
+/// `rust` `fibonacci` alongside the `typescript` one — `is_ts_algorithm_impl` is what keeps a lookup
+/// from answering with the wrong language's record when names collide across kits).
+fn is_ts_algorithm_impl(im: &Value) -> bool {
+    let tech = im.get("tech").and_then(Value::as_str).unwrap_or_default();
+    let role = im.get("role").and_then(Value::as_str).unwrap_or_default();
+    let has_code = im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty());
+    tech == "typescript" && role == "algorithm" && has_code
+}
+
+/// Pure over a list of implementation records (testable without touching the store): the bare names +
+/// exact ids of every typescript algorithm impl that ships non-empty `code` (a primitive descriptor has
+/// no code → not importable, so it's excluded).
+fn algo_library_names_from(implementations: &[Value]) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    for im in v.get("implementations").and_then(Value::as_array).into_iter().flatten() {
-        let tech = im.get("tech").and_then(Value::as_str).unwrap_or_default();
-        let role = im.get("role").and_then(Value::as_str).unwrap_or_default();
-        let has_code = im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty());
-        if tech != "typescript" || role != "algorithm" || !has_code {
+    for im in implementations {
+        if !is_ts_algorithm_impl(im) {
             continue;
         }
         if let Some(id) = im.get("id").and_then(Value::as_str) {
@@ -566,6 +573,69 @@ fn resolves_library(spec: &str, sounds: &BTreeSet<String>) -> bool {
         "algorithms" => algo_library_names().contains(name),
         "sounds" => sounds.contains(name),
         _ => false,
+    }
+}
+
+/// The outcome of [`resolve_algorithm_library_node`] — three answers, not two, because a bare NAME
+/// (unlike an id) is not unique: `bsc graph impl get` already learned this the hard way (#118's own
+/// history — `index` alone names 20+ unrelated modules in the real store) and refuses to guess rather
+/// than silently hand back an arbitrary one of several candidates. This verb makes the same call for
+/// the same reason: a designer trusting a wrong silent pick would misjudge a `doctor` finding exactly
+/// as often as they would correctly verify one.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LibraryLookup {
+    /// Exactly one typescript algorithm matches — the unambiguous case.
+    Found(Value),
+    /// The bare NAME matches several typescript algorithms; here are their (unique) ids, so the
+    /// caller can retry with the exact one it means.
+    Ambiguous(Vec<String>),
+    /// Nothing matches.
+    NotFound,
+}
+
+/// Resolve a `@bsc/algorithms/<name>` reference to its full implementation record (`bsc ui library get`,
+/// bsc request #118) — the SAME `algorithms` arm [`resolves_library`] judges a `doctor` finding by, so a
+/// verified name here is guaranteed to be the reason a `reimplementation`/`unresolvable-import` finding
+/// fired (or didn't). Exists so the Design Studio's designer session — confined to `bsc ui`/`bsc
+/// component`, never `bsc graph` (the librarian's surface) — can check a doctor finding's claim from
+/// inside its own permitted shell instead of having no way to verify the report at all. Accepts a bare
+/// name/id (`fibonacci`) OR the full spec (`@bsc/algorithms/fibonacci`); a bare name is always read as
+/// the `algorithms` segment, matching the exact wording doctor's guidance prints ("import
+/// `@bsc/algorithms/<name>`"). [`LibraryLookup::NotFound`] also covers a `@bsc/sounds/…` or non-library
+/// spec, which this verb does not judge (sounds have no importable source to hand back; `doctor`'s own
+/// reimplementation guardrail is algorithms-only for the same reason, see [`reimpl_targets`]).
+///
+/// An EXACT id always wins outright (ids are unique by construction, so there is nothing to
+/// disambiguate); only a bare-NAME match can come back [`LibraryLookup::Ambiguous`].
+pub fn resolve_algorithm_library_node(name_or_spec: &str) -> LibraryLookup {
+    let Some(name) = (match name_or_spec.strip_prefix("@bsc/") {
+        Some(rest) => rest.strip_prefix("algorithms/"),
+        None => Some(name_or_spec),
+    }) else {
+        return LibraryLookup::NotFound;
+    };
+    if name.is_empty() {
+        return LibraryLookup::NotFound;
+    }
+    // Re-apply the SAME `is_ts_algorithm_impl` filter `algo_library_names()` indexed under — the id or
+    // bare name can collide with another language's kit (e.g. a `rust` `fibonacci` alongside the
+    // `typescript` one), and only the typescript record is what `@bsc/algorithms/<name>` resolves to.
+    let impls = bsc_graph::implementations();
+    let ts_impls: Vec<&Value> = impls.iter().filter(|im| is_ts_algorithm_impl(im)).collect();
+    if let Some(by_id) = ts_impls.iter().find(|im| im.get("id").and_then(Value::as_str) == Some(name)) {
+        return LibraryLookup::Found((*by_id).clone());
+    }
+    let by_name: Vec<&&Value> =
+        ts_impls.iter().filter(|im| im.get("name").and_then(Value::as_str) == Some(name)).collect();
+    match by_name.as_slice() {
+        [] => LibraryLookup::NotFound,
+        [only] => LibraryLookup::Found((**only).clone()),
+        many => {
+            let mut ids: Vec<String> =
+                many.iter().filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_string)).collect();
+            ids.sort();
+            LibraryLookup::Ambiguous(ids)
+        }
     }
 }
 
@@ -2276,10 +2346,18 @@ fn analyze_kit(
     kits_holding: &BTreeMap<&str, BTreeSet<&str>>,
     out: &mut Vec<Finding>,
 ) {
-    // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
-    let mut id_by_name: BTreeMap<&str, &str> = BTreeMap::new();
+    // Name → ids (in-kit). A name is NOT guaranteed unique — a fossil left behind by a promotion/rename
+    // can carry the same `name` as its live replacement (#request-115: `ConsolePageCard` existed as both
+    // the live `settings-consolepagecard` and a stale built-in `consolepagecard`). Crediting only ONE id
+    // for a shared name (keep-first, or any other arbitrary pick) silently starves every OTHER same-named
+    // node of the edge a real composer declares — which is exactly what turned six live settings-page
+    // cards into false `orphan`/`dangling-branch` findings: `GeneralPage.composes` names `ConsolePageCard`
+    // once, but the store held two ids for that name, and only the arbitrarily-chosen one received the
+    // in-degree. `bsc ui used-by` resolves by name too and was never wrong — it credits every id sharing
+    // the queried name — so this collects every id per name and credits ALL of them, agreeing with it.
+    let mut ids_by_name: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for n in nodes {
-        id_by_name.entry(n.name.as_str()).or_insert(n.id.as_str());
+        ids_by_name.entry(n.name.as_str()).or_default().push(n.id.as_str());
     }
     // Resolved edges (composer id → dependency id) + in/out degree by id.
     let mut out_ids: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -2296,9 +2374,11 @@ fn analyze_kit(
     let mut dangling: BTreeMap<&str, Vec<&&Node>> = BTreeMap::new();
     for n in nodes {
         for dep_name in &n.composes {
-            if let Some(&dep_id) = id_by_name.get(dep_name.as_str()) {
-                out_ids.entry(n.id.as_str()).or_default().push(dep_id);
-                *in_deg.entry(dep_id).or_insert(0) += 1;
+            if let Some(dep_ids) = ids_by_name.get(dep_name.as_str()) {
+                for &dep_id in dep_ids {
+                    out_ids.entry(n.id.as_str()).or_default().push(dep_id);
+                    *in_deg.entry(dep_id).or_insert(0) += 1;
+                }
             } else if !dep_name.trim().is_empty() && !ids_in_kit.contains(dep_name.as_str()) {
                 dangling.entry(dep_name.as_str()).or_default().push(n);
             }
@@ -2530,12 +2610,27 @@ fn analyze_kit(
             let mut reachable = BTreeSet::new();
             collect_reachable(n.id.as_str(), &out_ids, &mut reachable);
             reachable.remove(n.id.as_str());
-            let mut ids = vec![n.id.clone()];
-            let mut names = vec![n.name.clone()];
-            for id in &reachable {
-                ids.push(id.to_string());
-                names.push(name_of(id));
-            }
+            // A `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page
+            // (`prune_plan` guard 1 already says so for auto-prune, #3087). The finding still surfaces so a
+            // human auditing the graph sees a page with no explicit mount-composer, but its `node_ids`
+            // deliberately name ONLY the root, never the reachable set: those are the page's ordinary,
+            // often widely-shared content (#110 — `SettingsWorkspace` alone reaches 73 real components
+            // including `DeployToggle`, which `bsc ui used-by` shows composed by 8 others elsewhere).
+            // Spreading the category onto every one of them badged real, live components as "unused"
+            // purely because ONE unrelated page happens to reach them. A dead LAYOUT keeps the full
+            // branch below — unlike a page it is not guaranteed to be a real entry point, so dragging its
+            // subtree down with it is a genuine, worth-reporting risk (`flags_an_unused_root_with_deps_as_a_dangling_branch`).
+            let (ids, names) = if n.role == "page" {
+                (vec![n.id.clone()], vec![n.name.clone()])
+            } else {
+                let mut ids = vec![n.id.clone()];
+                let mut names = vec![n.name.clone()];
+                for id in &reachable {
+                    ids.push(id.to_string());
+                    names.push(name_of(id));
+                }
+                (ids, names)
+            };
             out.push(Finding {
                 category: "dangling-branch",
                 severity: 3,
@@ -2548,10 +2643,17 @@ fn analyze_kit(
                     reachable.len(),
                     if reachable.len() == 1 { "y" } else { "ies" }
                 ),
-                suggested_action: format!(
-                    "prune the branch from its root `{}` — check each dependency isn't shared before removing",
-                    n.name
-                ),
+                suggested_action: if n.role == "page" {
+                    "a page is a root by definition — nothing composes it; it is never auto-pruned (see \
+                     `bsc ui doctor --fix`'s guard), reported here only so a human notices it has no \
+                     explicit mount-composer"
+                        .to_string()
+                } else {
+                    format!(
+                        "prune the branch from its root `{}` — check each dependency isn't shared before removing",
+                        n.name
+                    )
+                },
             });
         }
     }
@@ -3278,7 +3380,7 @@ fn analyze_kit(
             node_ids: vec![n.id.clone()],
             node_names: vec![n.name.clone()],
             why: format!(
-                "`{}` exports {} component{} beyond itself ({}) — {} item{} in a record whose id names one. An exported sibling is reachable by import but invisible to everything keyed on the id: it has no record, never previews, is never a `composes` edge, and `pickComponent` mounts whichever exported function comes FIRST, so the export ORDER decides what renders",
+                "`{}` exports {} component{} beyond itself ({}) — {} item{} in a record whose id names one. An exported sibling is reachable by import but invisible to everything keyed on the id: it has no record, never previews on its own, and is never a `composes` edge — even though the id-only mount now self-corrects, matching the export to the record's own name (#121-pickComponent-mounts-wrong-export) rather than picking whichever comes first in source order",
                 n.name,
                 foreign.len(),
                 if foreign.len() == 1 { "" } else { "s" },
@@ -3819,6 +3921,25 @@ function C() {}
     }
 
     #[test]
+    fn a_name_shared_by_two_ids_credits_the_composer_to_both_not_just_one() {
+        // #request-115: a stale fossil left behind by a promotion/rename can carry the SAME `name` as
+        // its live replacement (the real library had `ConsolePageCard` on both `consolepagecard`, a
+        // built-in fossil, and `settings-consolepagecard`, the live record `GeneralPage` actually
+        // composes). `composes` resolves by NAME, so crediting only the FIRST id seen for that name
+        // silently starves the other — which is what turned six live settings-page cards into false
+        // `orphan` findings even though `bsc ui used-by` (name-keyed the same way) correctly reported
+        // them composed. The fossil is listed FIRST here, which is what made the old keep-first
+        // resolution steal the edge in the real store.
+        let fossil = json!({ "id": "card-fossil", "name": "Card", "kitId": "k", "role": "composite",
+            "used": 0, "composes": [], "srcText": "fossil", "source": "export default () => null;" });
+        let live = json!({ "id": "card-live", "name": "Card", "kitId": "k", "role": "composite",
+            "used": 0, "composes": [], "srcText": "live", "source": "export default () => null;" });
+        let comps = [comp("page", "page", 1, &["Card"]), fossil, live];
+        let fs = analyze(&comps);
+        assert!(fs.is_empty(), "neither same-named id should read as orphan: {fs:?}");
+    }
+
+    #[test]
     fn flags_a_self_referential_stub_but_not_a_real_module_or_a_snippet() {
         let comps = [
             // A self-call: it has an `export` (so it's "buildable") and is valid syntax, but the only
@@ -3972,6 +4093,28 @@ function C() {}
     }
 
     #[test]
+    fn zustand_is_a_curated_external_not_a_stub_import() {
+        // #120: `@/store` (a registered platform module) does `import { create } from "zustand"` and
+        // `import { persist, createJSONStorage } from "zustand/middleware"` at top level. Before this fix
+        // neither specifier was in `preview-importmap.json`, so both fell to the universal stub — a
+        // severity-1 `stubbed-import` note here, but at RUNTIME the curried `create<T>()(persist(...))`
+        // call shape turned the stub into a hard `TypeError: create() is not a function` (the universal
+        // stub's `apply` trap returns `null` for a zero-arg non-`use*` call, and `null(...)` throws).
+        // Pinning zustand as a curated external is what keeps this doctor check honest AND the preview
+        // actually running the real store.
+        let comps = [json!({
+            "id":"store-user", "name":"StoreUser", "kitId":"k", "role":"composite", "used":2, "composes":[],
+            "srcText":"import React from \"react\";\nimport { create } from \"zustand\";\nimport { persist } from \"zustand/middleware\";\nexport function StoreUser(){ return React.createElement(\"div\", null, String(create), String(persist)); }"
+        })];
+        let fs = analyze(&comps);
+        assert!(
+            !fs.iter().any(|f| f.category == "stubbed-import" && f.why.contains("zustand")),
+            "zustand must resolve via the curated import-map, not the universal stub: {fs:?}"
+        );
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"));
+    }
+
+    #[test]
     fn does_not_flag_unresolvable_import_when_all_resolve_or_for_a_snippet() {
         let comps = [
             json!({ "id":"fine", "name":"Fine", "kitId":"k", "role":"composite", "used":2, "composes":[],
@@ -4089,16 +4232,19 @@ function C() {}
 
     #[test]
     fn algo_library_names_indexes_ts_algorithms_by_name_and_id_only() {
-        let json = r#"{"implementations":[
+        let implementations: Vec<Value> = serde_json::from_str(
+            r#"[
             {"id":"fibonacci.ts","tech":"typescript","role":"algorithm","name":"fibonacci","code":"export function fibonacci(){}"},
             {"id":"typescript.number","tech":"typescript","role":"primitive","name":"number","ref":"number"},
             {"id":"merge.rs","tech":"rust","role":"algorithm","name":"merge","code":"pub fn merge(){}"}
-        ]}"#;
-        let names = algo_library_names_from(json);
+        ]"#,
+        )
+        .unwrap();
+        let names = algo_library_names_from(&implementations);
         assert!(names.contains("fibonacci") && names.contains("fibonacci.ts"), "a TS algorithm is indexed by name + id");
         assert!(!names.contains("number"), "a primitive (no code) is not importable → excluded");
         assert!(!names.contains("merge"), "a Rust algorithm is not in the typescript kit");
-        assert!(algo_library_names_from("not json").is_empty(), "malformed seed → empty (fail safe)");
+        assert!(algo_library_names_from(&[]).is_empty(), "no implementations → empty (fail safe)");
     }
 
     #[test]
@@ -4112,6 +4258,74 @@ function C() {}
         assert!(!resolves_library("@bsc/ui/Sparkline", sounds), "a graph with no vendor path here does not resolve");
         assert!(!resolves_library("d3-scale", sounds), "a bare npm spec is not a library reference");
         assert!(is_library_specifier("@bsc/algorithms/fibonacci") && !is_library_specifier("@/x") && !is_library_specifier("d3"));
+    }
+
+    #[test]
+    fn resolve_algorithm_library_node_returns_the_real_record_by_bare_name_id_or_full_spec() {
+        // `bsc ui library get` (bsc request #118): a designer session confined to `bsc ui` must get the
+        // SAME answer `bsc graph impl get fibonacci` would, in every form doctor's own guidance prints.
+        let found = |v: LibraryLookup| match v {
+            LibraryLookup::Found(im) => im,
+            other => panic!("expected Found, got {other:?}"),
+        };
+        let by_name = found(resolve_algorithm_library_node("fibonacci"));
+        assert_eq!(by_name.get("name").and_then(Value::as_str), Some("fibonacci"));
+        let by_id = found(resolve_algorithm_library_node("fibonacci.ts"));
+        assert_eq!(by_id.get("id").and_then(Value::as_str), Some("fibonacci.ts"));
+        let by_spec = found(resolve_algorithm_library_node("@bsc/algorithms/fibonacci"));
+        assert_eq!(by_spec.get("id").and_then(Value::as_str), Some("fibonacci.ts"));
+        assert_eq!(
+            resolve_algorithm_library_node("nope"),
+            LibraryLookup::NotFound,
+            "a missing name resolves to nothing"
+        );
+        assert_eq!(
+            resolve_algorithm_library_node("@bsc/sounds/click"),
+            LibraryLookup::NotFound,
+            "the sounds segment is out of scope for this verb — it has no importable source to hand back"
+        );
+    }
+
+    #[test]
+    fn resolve_algorithm_library_node_refuses_to_guess_among_a_bare_names_collisions() {
+        // bsc request #118's own history: `index` alone names 20+ unrelated typescript algorithms in
+        // the real store. `bsc graph impl get` refuses to silently pick one for exactly this reason,
+        // and this verb must make the SAME call — a wrong silent pick on a verification read would
+        // make a designer trust the wrong record just as often as the right one.
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-component-graph-health-ambiguous-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        std::fs::write(
+            &store_path,
+            r#"{"implementations":[
+                {"id":"dup-a.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"},
+                {"id":"dup-b.ts","tech":"typescript","role":"algorithm","name":"dup","code":"export function dup(){}"},
+                {"id":"only-one.ts","tech":"typescript","role":"algorithm","name":"onlyOne","code":"export function onlyOne(){}"}
+            ]}"#,
+        )
+        .unwrap();
+        std::env::set_var("BSC_GRAPH_STORE", &store_path);
+
+        let ambiguous = resolve_algorithm_library_node("dup");
+        let unambiguous = resolve_algorithm_library_node("onlyOne");
+        let by_exact_id = resolve_algorithm_library_node("dup-a.ts");
+
+        std::env::remove_var("BSC_GRAPH_STORE");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        match ambiguous {
+            LibraryLookup::Ambiguous(ids) => {
+                assert_eq!(ids, vec!["dup-a.ts".to_string(), "dup-b.ts".to_string()]);
+            }
+            other => panic!("expected Ambiguous, got {other:?}"),
+        }
+        assert!(matches!(unambiguous, LibraryLookup::Found(_)), "an unambiguous name still resolves");
+        // An EXACT id is never ambiguous, even when its bare name collides — ids are unique.
+        assert!(matches!(by_exact_id, LibraryLookup::Found(_)), "an exact id resolves outright");
     }
 
     #[test]
@@ -4135,10 +4349,52 @@ function C() {}
     }
 
     #[test]
+    fn algo_library_names_sees_a_librarian_curated_impl_the_packaged_seed_never_shipped() {
+        // bsc request #118 (the reimplementation detector referenced nonexistent library nodes): the
+        // designer independently checked flagged names against `bsc graph impl list`/`impl get` — the
+        // LIVE, writer-reconciled store — and found no matches, because this crate resolved
+        // `@bsc/algorithms/<name>` against a totally separate read path (the PACKAGED seed file,
+        // frozen at the last rebuild). Anything the librarian curates into the on-disk store via
+        // `bsc graph impl set` — a rename, a brand-new algorithm — is invisible to the OLD path until
+        // the next full rebuild reseeds it. This test relies on nextest's one-process-per-test
+        // isolation (see CLAUDE.md) so setting `BSC_GRAPH_STORE` here cannot leak into a sibling
+        // test's process.
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-component-graph-health-store-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        std::fs::write(
+            &store_path,
+            r#"{"implementations":[
+                {"id":"librarian-curated.ts","tech":"typescript","role":"algorithm",
+                 "name":"librarianCuratedOnly","code":"export function librarianCuratedOnly(){}"}
+            ]}"#,
+        )
+        .unwrap();
+        std::env::set_var("BSC_GRAPH_STORE", &store_path);
+        let names = algo_library_names();
+        std::env::remove_var("BSC_GRAPH_STORE");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            names.contains("librarianCuratedOnly"),
+            "a name the librarian curated straight into the on-disk store, never in the packaged seed, \
+             must resolve — the detector reads the SAME live catalog `bsc graph impl get` does: {names:?}"
+        );
+        // The reconcile still folds the packaged seed in (#3198), so a curated store is additive, not a
+        // replacement — the flagship packaged algorithm must still resolve alongside the custom one.
+        assert!(names.contains("fibonacci"), "the packaged seed still reconciles in: {names:?}");
+    }
+
+    #[test]
     fn the_embedded_algorithms_seed_carries_the_ts_fibonacci() {
-        // The resolvable-class check reads the SAME algorithms.json the frontend + `bsc graph` embed. If the
-        // include path or the seed drifts, the set empties and the flagship @bsc/algorithms/fibonacci would
-        // be falsely flagged — guard that the seed still carries it.
+        // The resolvable-class check reads the live `bsc_graph` catalog, which reconciles onto the SAME
+        // packaged algorithms.json the frontend embeds. If the include path or the seed drifts, the set
+        // empties and the flagship @bsc/algorithms/fibonacci would be falsely flagged — guard that the
+        // seed still carries it.
         assert!(algo_library_names().contains("fibonacci"), "the packaged seed must carry the TS fibonacci");
     }
 
@@ -4879,6 +5135,15 @@ export function X(){ return <i>{nope}</i>; }"
         assert!(me[0].why.contains("TextField") && me[0].why.contains("SelectField"), "{}", me[0].why);
         assert!(!me[0].why.contains("FieldProps"), "a props type decorates Field — not a second item: {}", me[0].why);
         assert_eq!(me[0].severity, 2);
+        // #121-pickComponent-mounts-wrong-export: GraphComponent now defaults an id-only mount's export
+        // name to the record's own name, so the finding must not claim export ORDER still decides what
+        // renders — that claim went stale the moment the runtime self-corrected.
+        assert!(
+            !me[0].why.contains("mounts whichever exported function comes FIRST"),
+            "the render-order claim is stale once the runtime resolves by name: {}",
+            me[0].why
+        );
+        assert!(me[0].why.contains("self-corrects"), "{}", me[0].why);
 
         // The other direction: `ttscard` DEFINES three components and exports one. `multi-component`
         // has something to say (below its bar here, but it is the check that sees it); `multi-export`
@@ -5177,6 +5442,38 @@ export function X(){ return <i>{nope}</i>; }"
         );
         let skip = plan.skipped.iter().find(|s| s.id == "invoicespage").expect("held back, not dropped");
         assert!(skip.guard.contains("page"), "the guard names itself: {}", skip.guard);
+    }
+
+    /// #110 (design-studio:designer-react's request): `bsc ui used-by toggle` showed `DeployToggle`
+    /// composed by 8 real components, yet the Design Studio badged it as unused. Root cause:
+    /// `SettingsWorkspace` (role `page`, in-degree 0) had no explicit composer, so its dangling-branch
+    /// finding's `nodeIds` swept in every reachable descendant — including `DeployToggle`, which really
+    /// is composed elsewhere, just not via this page. A page's `nodeIds` must name ONLY the root.
+    #[test]
+    fn a_page_roots_dangling_branch_names_only_the_root_not_its_shared_descendants() {
+        let comps = [
+            json!({ "id": "settingspage", "name": "SettingsWorkspace", "kitId": "k", "role": "page", "used": 0,
+                    "composes": ["ToggleRow"], "srcText": "p", "source": "export default () => null;" }),
+            // ToggleRow composes DeployToggle within the dead page's branch...
+            json!({ "id": "togglerow", "name": "ToggleRow", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": ["DeployToggle"], "srcText": "r", "source": "export default () => null;" }),
+            // ...but DeployToggle is ALSO composed by a real, live, unrelated card — exactly `used-by`'s claim.
+            json!({ "id": "toggle", "name": "DeployToggle", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "t", "source": "export default () => null;" }),
+            json!({ "id": "idlereapercard", "name": "IdleReaperCard", "kitId": "k", "role": "composite", "used": 3,
+                    "composes": ["DeployToggle"], "srcText": "c", "source": "export default () => null;" }),
+        ];
+        let finding = analyze(&comps)
+            .into_iter()
+            .find(|f| f.category == "dangling-branch")
+            .expect("SettingsWorkspace is still reported as a dead root");
+        assert_eq!(
+            finding.node_ids,
+            vec!["settingspage".to_string()],
+            "only the page root is named — ToggleRow/DeployToggle must not be badged unused: {:?}",
+            finding.node_ids,
+        );
+        assert_eq!(finding.node_names, vec!["SettingsWorkspace".to_string()]);
     }
 
     /// A packaged built-in seed (the viz kits' demo components, #3194/#3242) is isolated ON PURPOSE.

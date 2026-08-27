@@ -93,6 +93,12 @@ impl State {
     /// Classify one member against the app's answer. `None` means the app is not tracking this pane
     /// at all, which is the ordinary state of a stopped worker — NOT an anomaly, and the reason a
     /// missing pane must produce a row rather than be dropped.
+    ///
+    /// The second element is whether an AGENT is running, NOT whether the shell is busy
+    /// (#fleet-list-reports-whether-the-agent-is-running). `busy` means "something is in flight", which
+    /// is the right question for Resume and the wrong one here: a sandboxed pane is busy at a bare
+    /// prompt, because its own `bwrap` plumbing and the shell inside it are descendants, so it could
+    /// never report `idle` — the state that tells a director to wake it.
     pub fn classify(m: &Member, live: Option<(bool, bool)>) -> State {
         match live {
             Some((true, true)) => State::Running,

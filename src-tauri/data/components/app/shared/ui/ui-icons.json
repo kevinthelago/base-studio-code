@@ -33,5 +33,12 @@
       "req": false,
       "type": "string"
     }
+  ],
+  "tests": [
+    {
+      "name": "blueprint icons (#609)",
+      "ext": ".tsx",
+      "src": "import { describe, it, expect } from \"vitest\";\nimport { render } from \"@testing-library/react\";\nimport { Ic, ICONS } from \"@/shared/ui/icons\";\n\ndescribe(\"blueprint icons (#609)\", () => {\n  it(\"renders an inline SVG for a known glyph\", () => {\n    const { container } = render(<Ic n=\"flag\" size={20} />);\n    const svg = container.querySelector(\"svg\");\n    expect(svg).not.toBeNull();\n    expect(svg!.getAttribute(\"width\")).toBe(\"20\");\n    expect(svg!.getAttribute(\"stroke\")).toBe(\"currentColor\");\n    expect(svg!.innerHTML.length).toBeGreaterThan(0);\n  });\n\n  it(\"has a chevron_left glyph for the planner back button\", () => {\n    expect(ICONS.chevron_left).toContain(\"polyline\");\n    const { container } = render(<Ic n=\"chevron_left\" size={18} />);\n    expect(container.querySelector(\"svg polyline\")).not.toBeNull();\n  });\n\n  it(\"falls back to the category glyph for an unknown name\", () => {\n    const { container } = render(<Ic n=\"does-not-exist\" />);\n    // category is 4 rects; assert the shape rather than exact (jsdom-serialized) markup.\n    expect(container.querySelectorAll(\"svg rect\").length).toBe(4);\n    expect(ICONS.category).toContain(\"rect\");\n  });\n});"
+    }
   ]
 }
