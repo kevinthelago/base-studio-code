@@ -139,6 +139,27 @@ pub(crate) fn cmd_status(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// `note <ref> <text> [--from AUTHOR]` — append an observation to an issue, independent of whether it
+/// has a change record (#146). `bsc plan change note` requires an existing change, and opening one on
+/// an issue nobody has started work on would misrepresent it as in-flight — this is the place an
+/// observation goes before that.
+pub(crate) fn cmd_note(args: &Args) -> Result<(), String> {
+    let r = args.positional.get(1).ok_or("usage: bsc plan note <ref> <text> [--from AUTHOR]")?;
+    let text = args.positional.get(2).ok_or("usage: bsc plan note <ref> <text> [--from AUTHOR]")?;
+    let s = open_store(&args.db)?;
+    // #3279: fetch first so we know the issue's stream — a scoped worker may only note its own.
+    let issue = s.get(r).map_err(|e| e.to_string())?.ok_or_else(|| format!("no issue with ref '{r}'"))?;
+    crate::scope::check_access(crate::scope::env_stream().as_deref(), r, issue.stream.as_deref())?;
+    let n = s.add_note(r, args.from.as_deref().unwrap_or(""), text).map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("no issue with ref '{r}'"));
+    }
+    if !args.json {
+        println!("{r} + note");
+    }
+    Ok(())
+}
+
 /// `link <ref>` — record the GitHub identity a publish/sync established, from `{ghNumber, ghNodeId}`
 /// JSON on stdin.
 ///
