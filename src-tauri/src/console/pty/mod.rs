@@ -325,6 +325,44 @@ fn must_be_gated(pane_id: &str) -> bool {
     parts.len() >= 2 && !parts[0].is_empty() && parts[1..].iter().any(|p| !p.is_empty())
 }
 
+/// Is the role gate actually on disk for this launch cwd?
+///
+/// `.claude/settings.json` is per-DIRECTORY and durable, so this is a question about the DIRECTORY,
+/// not about the pane — a recovered cwd inherits whatever a previous launch wrote there.
+pub(crate) fn gate_file_present(effective_cwd: &str) -> bool {
+    !effective_cwd.is_empty()
+        && std::path::Path::new(effective_cwd).join(".claude").join("settings.json").is_file()
+}
+
+/// Why an agent auto-launch would be REFUSED for this pane at this cwd, or `None` if it is admitted.
+///
+/// Extracted so the refusal can be asked BEFORE anything destructive happens, by exactly the
+/// predicate that will apply at launch. `a-wake-kills-a-pane-it-cannot-relaunch-and-reports-success`:
+/// a wake kills the PTY first (deliberately — otherwise the remount reconnects and the baked prompt
+/// is dropped), and the store's verdict only answers whether a tab and a grid seat could be resolved.
+/// So a pane whose worktree has no gate file was killed, then refused here, and the director was told
+/// `woke: true`. FOUR network-monitor worktrees were in that state.
+///
+/// Two callers, one answer, on purpose. A second copy of this test — even a correct one — could drift
+/// and would fail in the worst direction: a pre-check that says "admitted" while the launch refuses
+/// puts us back to killing a session that cannot come back.
+pub(crate) fn launch_gate_refusal(pane_id: &str, effective_cwd: &str) -> Option<String> {
+    if gate_file_present(effective_cwd) || !must_be_gated(pane_id) {
+        return None;
+    }
+    Some(format!(
+        "pty[{pane_id}] refusing to auto-launch claude at {} — no .claude/settings.json, so the role gate and shell allowlist were never written and the session would run permission-less (#1819). Relaunch the pane from its project so the settings are written first.",
+        if effective_cwd.is_empty() { "<no cwd>" } else { effective_cwd }
+    ))
+}
+
+/// Ask [`launch_gate_refusal`] from the frontend, so a destructive action can decline BEFORE it
+/// destroys. Returns `None` when the launch would be admitted.
+#[tauri::command]
+pub(crate) fn pty_launch_refusal(pane_id: String, cwd: String) -> Option<String> {
+    launch_gate_refusal(&pane_id, &cwd)
+}
+
 fn resolve_session_cwd(pane_id: &str, cwd: String, sandbox: bool) -> ResolvedCwd {
     // #1819 recovery. Only for a HOST session: a sandbox cwd is a distro path, and the hub/repo dirs
     // resolved here are Windows paths that mean nothing inside the cage.
@@ -841,19 +879,14 @@ fn pty_create_inner(
     //
     // Skipped under sandbox: the gate lives inside the distro, not at a host path.
     if launch_claude && into_sandbox.is_none() {
-        let gated = !effective_cwd.is_empty()
-            && std::path::Path::new(&effective_cwd).join(".claude").join("settings.json").is_file();
-        if !gated {
-            // A pane with a PROJECT identity is refused outright. Running one of these ungated is the
-            // one outcome worse than not starting: a director is `code: none`, a worker is scoped to
-            // its owned globs, and permission-less it has neither. A manual console is the user's own
-            // shell and they are the principal, so it keeps the loud warning instead.
-            if must_be_gated(&pane_id) {
-                return Err(format!(
-                    "pty[{pane_id}] refusing to auto-launch claude at {} — no .claude/settings.json, so the role gate and shell allowlist were never written and the session would run permission-less (#1819). Relaunch the pane from its project so the settings are written first.",
-                    if effective_cwd.is_empty() { "<no cwd>" } else { &effective_cwd }
-                ));
-            }
+        // A pane with a PROJECT identity is refused outright. Running one of these ungated is the
+        // one outcome worse than not starting: a director is `code: none`, a worker is scoped to
+        // its owned globs, and permission-less it has neither. A manual console is the user's own
+        // shell and they are the principal, so it keeps the loud warning instead.
+        if let Some(msg) = launch_gate_refusal(&pane_id, &effective_cwd) {
+            return Err(msg);
+        }
+        if !gate_file_present(&effective_cwd) {
             log::error!("pty[{pane_id}] launching claude with NO settings.json at {} — permission-less session: the role gate + shell allowlist were never written (#1819)", if effective_cwd.is_empty() { "<no cwd>" } else { &effective_cwd });
         }
     }
@@ -1323,6 +1356,48 @@ mod tests {
         assert!(!super::must_be_gated("man:tab_abc:p2"), "a manual console is not refused");
         assert!(!super::must_be_gated("t0p1"), "a legacy positional pane is not refused");
         assert!(!super::must_be_gated("pane"), "a bare id has no project identity");
+    }
+
+    /// The refusal a WAKE can ask about before it destroys anything.
+    ///
+    /// `a-wake-kills-a-pane-it-cannot-relaunch-and-reports-success`: the wake kills the PTY first —
+    /// deliberately, or the remount reconnects and drops the baked prompt — and the store's verdict
+    /// only answers whether a tab and a grid seat resolved. So a pane this predicate refuses was
+    /// killed anyway, and the director was told `woke: true`. MEASURED: four network-monitor
+    /// worktrees had no `.claude/settings.json`, complete in every other respect.
+    ///
+    /// The point of the extraction is that ONE function answers for both callers. A second copy —
+    /// even a correct one — could drift, and it would fail in the worst direction: a pre-check saying
+    /// "admitted" while the launch refuses is exactly the state this fixes.
+    #[test]
+    fn the_launch_refusal_is_the_same_answer_the_wake_pre_check_gets() {
+        let dir = std::env::temp_dir().join(format!("bsc-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.to_string_lossy().to_string();
+
+        // No gate file yet — a fleet pane is REFUSED, and the message names the cause and the cure.
+        assert!(!super::gate_file_present(&cwd));
+        let msg = super::launch_gate_refusal("network-monitor:omada-controller-adapter", &cwd)
+            .expect("a fleet pane with no gate file must be refused");
+        assert!(msg.contains(".claude/settings.json"), "names what is missing: {msg}");
+        assert!(msg.contains("permission-less"), "names why it matters: {msg}");
+
+        // The same directory, once the gate exists — admitted.
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        std::fs::write(dir.join(".claude").join("settings.json"), "{}").unwrap();
+        assert!(super::gate_file_present(&cwd));
+        assert_eq!(super::launch_gate_refusal("network-monitor:omada-controller-adapter", &cwd), None);
+
+        // A manual console is never refused — the user is the principal there, so it warns instead.
+        let _ = std::fs::remove_dir_all(dir.join(".claude"));
+        assert_eq!(super::launch_gate_refusal("man:tab_abc:p2", &cwd), None);
+
+        // An EMPTY cwd is the #1819 shape and must refuse a fleet pane rather than launch it nowhere.
+        assert!(super::launch_gate_refusal("network-monitor:api", "").is_some());
+        assert!(!super::gate_file_present(""));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
