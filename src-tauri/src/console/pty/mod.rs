@@ -728,6 +728,23 @@ fn pty_create_inner(
     for (k, v) in session_env(&env_map) {
         cmd.env(k, v);
     }
+    // Count this session's skill ATTACH (#A), for the non-Claude harness.
+    //
+    // `record_skill_uses` lives in `ensure_session_settings`, which its own doc calls "the single
+    // backend chokepoint both manual launches and fleet workers funnel through, so usage is counted
+    // UNIFORMLY + model-agnostically". That was not true: a bsc-agent pane never reaches that command
+    // (TerminalView gates it on `isClaudeProvider`), so the counter under-counted precisely the
+    // non-Claude sessions the comment claimed to cover. The skills now arrive here as
+    // `$BSC_AGENT_SKILLS`, so this is where the local half of that promise gets kept.
+    //
+    // Same function, so a skill counts once per launch on either harness and the two cannot drift.
+    // Best-effort throughout — a launch is never blocked by telemetry.
+    if let Some(raw) = env_map.get("BSC_AGENT_SKILLS") {
+        match serde_json::from_str::<Vec<crate::extensions::cfg::SkillCfg>>(raw) {
+            Ok(skills) => crate::extensions::skills::record_skill_uses(&skills),
+            Err(e) => log::warn!("pty[{pane_id}] BSC_AGENT_SKILLS unparseable, not counted: {e}"),
+        }
+    }
     // Wire every per-session BSC_* env var the bsc-* shell helpers read (checkpoint doc, the
     // BASH_ENV rc, the analytics logs, the plan/skill/data stores + their CLIs, the planner skill
     // group, and the bsc-agent sidecar/session). Returns the bash-style rc path so the interactive

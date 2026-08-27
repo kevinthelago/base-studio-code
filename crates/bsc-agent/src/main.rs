@@ -30,12 +30,13 @@ fn home_dir() -> Option<std::path::PathBuf> {
 /// (most-specific last), then `start/CLAUDE.local.md` (the plan / local overrides copied into worker
 /// worktrees), then skills. Absent/empty files are skipped. (#1078 P3 context parity)
 fn compose_system(start: &Path) -> String {
-    compose_system_inner(start, home_dir().as_deref())
+    compose_system_inner(start, home_dir().as_deref(), std::env::var("BSC_AGENT_SKILLS").ok().as_deref())
 }
 
-/// The pure core of [`compose_system`], with the home dir injected so it's testable without touching
-/// process env. `home` supplies the global `~/.claude/CLAUDE.md` user memory.
-fn compose_system_inner(start: &Path, home: Option<&Path>) -> String {
+/// The pure core of [`compose_system`], with the home dir AND the skills payload injected so it's
+/// testable without touching process env. `home` supplies the global `~/.claude/CLAUDE.md` user
+/// memory; `skills_json` is `$BSC_AGENT_SKILLS` (see [`compose_skills_from`] for the precedence rule).
+fn compose_system_inner(start: &Path, home: Option<&Path>, skills_json: Option<&str>) -> String {
     let mut parts: Vec<String> = Vec::new();
     // Global user memory: Claude Code loads `~/.claude/CLAUDE.md` into EVERY session, and the app
     // writes it as its "global" target (the Settings global instructions — agent/claude_config.rs).
@@ -63,16 +64,104 @@ fn compose_system_inner(start: &Path, home: Option<&Path>) -> String {
             parts.push(c);
         }
     }
-    let skills = compose_skills(start);
+    let skills = compose_skills_from(skills_json, start);
     if !skills.is_empty() {
         parts.push(format!("# Skills\n\n{skills}"));
     }
     parts.join("\n\n")
 }
 
+/// The skills this session runs with, from whichever channel supplied them.
+///
+/// **`$BSC_AGENT_SKILLS` wins outright when set** — it is the app's RESOLVED set for this pane
+/// (session overrides + skill groups + the persona's own skills), and it arrives the same way the
+/// runtime already receives `$BSC_AGENT_MCP` and `$BSC_AGENT_PERMS`, so all of a session's
+/// configuration comes down one channel rather than two.
+///
+/// Why it does not MERGE with the filesystem scan: a bsc-agent session can run in a worktree where an
+/// earlier Claude launch left a `.claude/skills` tree behind, and merging would mean the session
+/// silently carrying a skill the app never resolved for it. The scan therefore serves exactly the case
+/// the env cannot — a bare run outside the app, or a tree Claude Code populated — and only when
+/// nothing was handed to us.
+///
+/// The env is the pane's whole skill set, so a parse failure is NOT silently swallowed: it is reported
+/// and the session continues without skills, which is visible, rather than falling through to a
+/// filesystem tree that would look like success. Pure → testable without touching process env.
+fn compose_skills_from(env_json: Option<&str>, start: &Path) -> String {
+    match env_json.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => match serde_json::from_str::<Vec<EnvSkill>>(raw) {
+            Ok(skills) => render_env_skills(&skills),
+            Err(e) => {
+                eprintln!("\x1b[33m▸ BSC_AGENT_SKILLS parse error: {e} — running with NO skills\x1b[0m");
+                String::new()
+            }
+        },
+        None => compose_skills(start),
+    }
+}
+
+/// One skill as the app hands it over. Mirrors the `SkillCfg` the Claude path writes into a
+/// `SKILL.md`, so both harnesses are fed from the same resolved payload. Unknown fields are ignored,
+/// so adding one on the app side cannot break a session launched by an older runtime.
+#[derive(serde::Deserialize)]
+struct EnvSkill {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    prompt: String,
+}
+
+/// Render env-supplied skills into the same shape the filesystem ones arrive in: a heading per skill
+/// so the model can tell them apart, then the body. Sorted by name for determinism (the FS path sorts
+/// by slug for the same reason — a prompt that reorders between launches is a prompt that cannot be
+/// cached or compared). Skills with an empty body contribute nothing. Pure.
+fn render_env_skills(skills: &[EnvSkill]) -> String {
+    let mut rendered: Vec<String> = skills
+        .iter()
+        .filter(|s| !s.prompt.trim().is_empty())
+        .map(|s| {
+            let head = if s.description.trim().is_empty() {
+                format!("## {}", s.name.trim())
+            } else {
+                format!("## {}\n\n{}", s.name.trim(), s.description.trim())
+            };
+            format!("{head}\n\n{}", s.prompt.trim())
+        })
+        .collect();
+    rendered.sort();
+    rendered.join("\n\n")
+}
+
+/// A one-line description of how many skills this session has and where they came from, for the
+/// startup banner. Reports `none` explicitly rather than staying quiet — see the call site for why
+/// that distinction is the whole point. Pure.
+fn skills_origin(env_json: Option<&str>, start: &Path) -> String {
+    match env_json.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => match serde_json::from_str::<Vec<EnvSkill>>(raw) {
+            Ok(s) => {
+                let n = s.iter().filter(|s| !s.prompt.trim().is_empty()).count();
+                format!("{n} from the app")
+            }
+            Err(_) => "NONE (BSC_AGENT_SKILLS unparseable)".to_string(),
+        },
+        None => {
+            let n = start.join(".claude").join("skills");
+            match std::fs::read_dir(&n) {
+                Ok(e) => format!("{} from .claude/skills", e.flatten().filter(|d| d.path().is_dir()).count()),
+                Err(_) => "none".to_string(),
+            }
+        }
+    }
+}
+
 /// Concatenate the project's skills — every `<start>/.claude/skills/<slug>/SKILL.md`, sorted by
 /// slug for determinism — so a bsc-agent session has the same skill context Claude Code discovers.
 /// Returns "" when there's no skills dir. (#1078 P3 parity)
+///
+/// The FALLBACK path now (see [`compose_skills_from`]): it serves a bare run outside the app, or a
+/// tree Claude Code populated, and is skipped whenever the app supplied this session's skills.
 fn compose_skills(start: &Path) -> String {
     let dir = start.join(".claude").join("skills");
     let Ok(entries) = std::fs::read_dir(&dir) else { return String::new() };
@@ -181,9 +270,14 @@ async fn main() {
     // view, so echo what THIS session is actually running — provider, model, context size, and a task
     // preview — so the user can see it started and isn't staring at a silent, seemingly-hung screen.
     eprintln!(
-        "\x1b[2m▸ bsc-agent · provider={provider} · model={} · context={} chars\x1b[0m",
+        "\x1b[2m▸ bsc-agent · provider={provider} · model={} · context={} chars · skills: {}\x1b[0m",
         if model.is_empty() { "<default>" } else { &model },
         system.len(),
+        // Say where the skills came from, and say it even when there are none. This bug's whole shape
+        // was SILENCE: a session ran with zero skills and every visible surface looked identical to
+        // one that had them, so nothing distinguished "none attached" from "never delivered". A count
+        // plus its source is the smallest thing that tells those two apart at a glance.
+        skills_origin(std::env::var("BSC_AGENT_SKILLS").ok().as_deref(), &std::env::current_dir().unwrap_or_default()),
     );
     let preview: String = task.chars().take(160).collect();
     eprintln!("\x1b[2m▸ task: {preview}{}\x1b[0m", if task.chars().count() > 160 { "…" } else { "" });
@@ -368,13 +462,14 @@ async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use super::{available_clis, compose_system_inner, render_clis_block};
+    use super::{available_clis, compose_skills_from, compose_system_inner, render_clis_block, skills_origin};
     use std::fs;
 
-    /// Compose with NO global home memory, so a real `~/.claude/CLAUDE.md` on the dev machine can't
-    /// leak into these structural assertions. The global layer has its own test below.
+    /// Compose with NO global home memory and NO app-supplied skills, so neither a real
+    /// `~/.claude/CLAUDE.md` on the dev machine nor an inherited `$BSC_AGENT_SKILLS` can leak into
+    /// these structural assertions. Both layers have their own tests below.
     fn compose_system(start: &std::path::Path) -> String {
-        compose_system_inner(start, None)
+        compose_system_inner(start, None, None)
     }
 
     #[test]
@@ -390,13 +485,13 @@ mod tests {
         fs::write(home.join(".claude").join("CLAUDE.md"), "GLOBAL-MEMORY").unwrap();
         fs::write(proj.join("CLAUDE.md"), "PROJECT-SPEC").unwrap();
 
-        let s = compose_system_inner(&proj, Some(home.as_path()));
+        let s = compose_system_inner(&proj, Some(home.as_path()), None);
         let (gi, pi) = (s.find("GLOBAL-MEMORY"), s.find("PROJECT-SPEC"));
         assert!(gi.is_some() && pi.is_some(), "both global + project present: {s}");
         assert!(gi < pi, "global memory is least-specific (appears first): {s}");
 
         // With no home, the global layer is simply absent (best-effort) — not an error.
-        let none = compose_system_inner(&proj, None);
+        let none = compose_system_inner(&proj, None, None);
         assert!(!none.contains("GLOBAL-MEMORY"));
         assert!(none.contains("PROJECT-SPEC"));
 
@@ -472,6 +567,110 @@ mod tests {
         fs::write(dir.join("CLAUDE.local.md"), "PLAN-ONLY-MARKER").unwrap();
         assert!(compose_system(&dir).contains("PLAN-ONLY-MARKER"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// THE REGRESSION. A bsc-agent pane got NO skills, and the reason it went unnoticed is that the
+    /// only writer of `.claude/skills` is `write_session_skills`, reached from
+    /// `ensure_session_settings`, which `TerminalView` calls only for a CLAUDE pane. So the runtime
+    /// scanned a directory nothing had ever created for it and found nothing — which is
+    /// indistinguishable, from every visible surface, from a session that legitimately has no skills.
+    ///
+    /// The app now hands the pane's RESOLVED set over directly. This asserts on a tree with NO
+    /// `.claude/skills` at all, which is the real shape of the bug: before the change this composed to
+    /// a prompt with no Skills section no matter what the app had resolved.
+    #[test]
+    fn the_apps_resolved_skills_reach_a_session_with_no_skills_directory() {
+        let dir = std::env::temp_dir().join(format!("bsc-agent-envskills-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        assert!(!dir.join(".claude").join("skills").exists(), "the bug's shape: no skills tree exists");
+
+        let payload = r#"[
+            {"id":"open-pr","name":"Open a PR","description":"how this repo opens PRs","prompt":"PR-BODY-MARKER"}
+        ]"#;
+        let s = compose_system_inner(&dir, None, Some(payload));
+        assert!(s.contains("# Skills"), "the section is present: {s}");
+        assert!(s.contains("PR-BODY-MARKER"), "the skill's BODY is what the model needs: {s}");
+        assert!(s.contains("Open a PR"), "named, so the model can tell skills apart: {s}");
+        assert!(s.contains("how this repo opens PRs"), "the description rides along too: {s}");
+
+        // Without the payload — the state before this change — the same tree yields nothing at all.
+        assert!(!compose_system_inner(&dir, None, None).contains("# Skills"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_apps_skills_win_over_a_tree_claude_left_behind() {
+        // A bsc-agent session can run in a worktree an earlier Claude launch populated. Merging the
+        // two would mean silently carrying a skill the app did not resolve for THIS pane, so the env
+        // is authoritative and the scan is skipped entirely.
+        let dir = std::env::temp_dir().join(format!("bsc-agent-skillprec-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let stale = dir.join(".claude").join("skills").join("leftover");
+        fs::create_dir_all(&stale).unwrap();
+        fs::write(stale.join("SKILL.md"), "STALE-CLAUDE-SKILL").unwrap();
+
+        let payload = r#"[{"id":"a","name":"Current","description":"","prompt":"CURRENT-SKILL"}]"#;
+        let s = compose_system_inner(&dir, None, Some(payload));
+        assert!(s.contains("CURRENT-SKILL"), "the app's set is used: {s}");
+        assert!(!s.contains("STALE-CLAUDE-SKILL"), "the leftover tree is NOT merged in: {s}");
+
+        // With no payload the same tree is still readable — that fallback is what serves a bare run.
+        assert!(compose_system_inner(&dir, None, None).contains("STALE-CLAUDE-SKILL"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unparseable_skills_payload_is_reported_rather_than_silently_falling_back() {
+        // The env IS this pane's whole skill set. Falling through to a filesystem tree on a parse
+        // error would produce a session that looks correct while running someone else's skills —
+        // the same class of silent substitution this whole item is about.
+        let dir = std::env::temp_dir().join(format!("bsc-agent-skillbad-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let stale = dir.join(".claude").join("skills").join("leftover");
+        fs::create_dir_all(&stale).unwrap();
+        fs::write(stale.join("SKILL.md"), "STALE-CLAUDE-SKILL").unwrap();
+
+        let s = compose_system_inner(&dir, None, Some("{not json"));
+        assert!(!s.contains("STALE-CLAUDE-SKILL"), "a bad payload must not fall back to the tree: {s}");
+        assert!(!s.contains("# Skills"), "and must not invent a Skills section: {s}");
+        assert_eq!(skills_origin(Some("{not json"), &dir), "NONE (BSC_AGENT_SKILLS unparseable)");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn env_skills_render_deterministically_and_drop_empty_bodies() {
+        // Determinism: a prompt that reorders between launches cannot be cached or diffed, which is
+        // why the filesystem path sorts by slug. The env path sorts too, regardless of array order.
+        let payload = r#"[
+            {"id":"z","name":"Zebra","description":"","prompt":"Z-BODY"},
+            {"id":"a","name":"Alpha","description":"","prompt":"A-BODY"},
+            {"id":"e","name":"Empty","description":"has no body","prompt":"   "}
+        ]"#;
+        let out = compose_skills_from(Some(payload), std::path::Path::new("/nonexistent"));
+        let (a, z) = (out.find("A-BODY"), out.find("Z-BODY"));
+        assert!(a.is_some() && z.is_some() && a < z, "sorted by name, not array order: {out}");
+        assert!(!out.contains("Empty"), "a skill with no body contributes nothing: {out}");
+    }
+
+    #[test]
+    fn skills_origin_names_the_channel_and_says_none_out_loud() {
+        // The banner has to distinguish "none attached" from "never delivered" — those looked
+        // identical for the entire life of this bug.
+        let empty = std::env::temp_dir().join(format!("bsc-agent-origin-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&empty);
+        fs::create_dir_all(&empty).unwrap();
+        assert_eq!(skills_origin(None, &empty), "none");
+        assert_eq!(
+            skills_origin(Some(r#"[{"id":"a","name":"A","description":"","prompt":"B"}]"#), &empty),
+            "1 from the app",
+        );
+        fs::create_dir_all(empty.join(".claude").join("skills").join("one")).unwrap();
+        assert_eq!(skills_origin(None, &empty), "1 from .claude/skills");
+        let _ = fs::remove_dir_all(&empty);
     }
 
     #[test]
