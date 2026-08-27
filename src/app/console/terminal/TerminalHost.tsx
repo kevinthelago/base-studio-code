@@ -53,11 +53,86 @@ export interface SlotTerminalProps {
   parked?: boolean;
 }
 
-/** The claim that visually HOSTS the terminal: the last non-parked claim, else the last claim (every
- *  remaining claim is a parked holding mount). Pure — exported for the unit test. */
-export function ownerClaim<T extends { propsRef: { readonly current: SlotTerminalProps } }>(claims: readonly T[]): T | undefined {
+/** The claim that visually HOSTS the terminal.
+ *
+ * Order of preference: the last VISIBLE non-parked claim · else the last non-parked claim · else the
+ * last claim (every remaining one is a parked holding mount). Pure — exported for the unit tests.
+ *
+ * ## Why visibility outranks registration order
+ *
+ * This used to be "last non-parked claim wins", and that quietly made a HIDDEN surface able to steal
+ * the terminal from a visible one. A console grid cell claims its pane whenever its card is mounted
+ * and passes `visible={view === "console" && !hidden}` — so a cell in a background tab is a live,
+ * non-parked claim that simply is not on screen. Register it after a Glance morph and the terminal was
+ * re-parented into that hidden cell, leaving the morph the user was looking at with an empty div.
+ *
+ * Nothing had to change on screen for that to happen, which is why it read as "terminals randomly go
+ * blank": ANY remount of a console card re-registers its slot at the END of the claim list. A `runId`
+ * bump remounts every card in a tab at once (`key={runId-i}`), so one `bsc fleet wake` could blank
+ * every open morph simultaneously — reported, and mis-attributed at the time to the morph grid's
+ * anchor.
+ *
+ * `parked` was already an exception to last-wins for exactly this shape of bug ("a holding claim can
+ * register at an arbitrary time ... without this it could land AFTER a visible dock and park the
+ * terminal off-screen"). That reasoning was right and simply did not go far enough: a hidden console
+ * cell is not parked, and steals just the same.
+ *
+ * ## `visible` is a CLAIM about the pane, not about the screen
+ *
+ * This used to end: "Ties are impossible in practice — the console grid and the Glance canvas are
+ * different Workspaces, so at most one is on screen." THAT PREMISE IS FALSE, and the bug came back
+ * through it. `App.tsx` keeps the console mounted across every navigation —
+ * `display: activeWorkspace === "console" ? "flex" : "none"` — precisely so xterm survives, while
+ * Glance is conditionally rendered. So on Glance BOTH are mounted, and a console cell's
+ * `visible={view === "console" && !hidden}` is still `true`: `hidden` means "another pane is
+ * fullscreen, or another tab is active", never "this whole Workspace is off screen".
+ *
+ * Two visible claims therefore coexist all the time, last-wins picks the console cell, and the wake
+ * blanks the morph exactly as before — the earlier fix ruled out a hidden PANE and not a hidden
+ * WORKSPACE.
+ *
+ * So ask the DOM instead of trusting the prop: `offsetParent === null` is exactly "inside a
+ * `display:none` subtree" (or detached), which is the one thing `visible` cannot express and the one
+ * thing that actually decides whether the user can see it. Injected rather than called directly so
+ * this stays pure and every tier is unit-testable; the default answers "on screen" for everything, so
+ * a caller that cannot tell gets byte-identical behaviour to before.
+ *
+ * The ladder degrades rather than failing: if NOTHING passes the on-screen test — mid-transition, a
+ * layout not yet computed, a host without a document — tier 2 is the previous rule, so the terminal
+ * still lands somewhere sensible instead of nowhere. */
+export function ownerClaim<T extends { propsRef: { readonly current: SlotTerminalProps }; el?: HTMLElement }>(
+  claims: readonly T[],
+  onScreen: (claim: T) => boolean = () => true,
+): T | undefined {
+  // 1. The one the user can actually SEE.
+  for (let i = claims.length - 1; i >= 0; i--) {
+    const p = claims[i].propsRef.current;
+    if (!p.parked && p.visible && onScreen(claims[i])) return claims[i];
+  }
+  // 2. …else the previous rule, unchanged.
+  for (let i = claims.length - 1; i >= 0; i--) {
+    const p = claims[i].propsRef.current;
+    if (!p.parked && p.visible) return claims[i];
+  }
   for (let i = claims.length - 1; i >= 0; i--) if (!claims[i].propsRef.current.parked) return claims[i];
   return claims[claims.length - 1];
+}
+
+/** Is this claim's slot actually rendered — i.e. not inside a `display:none` subtree, and attached?
+ *
+ *  `offsetParent` is the portable test for exactly that: it is `null` for an element in a hidden
+ *  subtree or outside the document. Its one blind spot is `position: fixed`, which reports `null`
+ *  while perfectly visible — so `getClientRects()` backs it up, since a hidden element has no boxes
+ *  and a fixed one has boxes. Neither alone is sufficient: a laid-out-but-zero-size slot has no rects,
+ *  and a fixed one has no offsetParent. Closing the gap here rather than asserting a slot is "never
+ *  fixed" is deliberate — an assertion about layout made in a comment is exactly the kind of premise
+ *  that quietly stopped being true and produced this bug in the first place.
+ *
+ *  A claim with no element cannot be tested, so it is treated as on screen: unknown must not outrank
+ *  a claim we positively know is visible, and it must not be excluded either. */
+export function claimIsOnScreen(claim: { el?: HTMLElement }): boolean {
+  if (!claim.el) return true;
+  return claim.el.offsetParent !== null || claim.el.getClientRects?.().length > 0;
 }
 
 /** A registered claim on a paneId's terminal. Claims are ordered by registration; the last non-`parked`
@@ -146,7 +221,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
     const containers = containersRef.current;
     for (const [paneId, container] of containers) {
       const claims = map.get(paneId);
-      const owner = claims && ownerClaim(claims);
+      const owner = claims && ownerClaim(claims, claimIsOnScreen);
       if (owner?.el) {
         if (container.parentElement !== owner.el) owner.el.appendChild(container);
       } else if (map.has(paneId)) {
@@ -171,7 +246,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
       <div ref={holdingRef} style={{ display: "none" }} aria-hidden />
       {activePaneIds.map((paneId) => {
         const claims = registryRef.current.get(paneId)!;
-        const owner = ownerClaim(claims)!;
+        const owner = ownerClaim(claims, claimIsOnScreen)!;
         // Launch/data props from the primary (console) claim; visibility/focus from the current owner.
         const primaryClaim = claims.find((c) => c.propsRef.current.primary);
         // #3427 — an APP-OWNED session must not launch before its dedicated mount claims it. Its page dock

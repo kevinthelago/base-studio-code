@@ -1,0 +1,106 @@
+{
+  "note": "The dependency-gate CONTRACT (#3931), shared by the two implementations that must agree: `streamGate.ts` (the launcher, in the app) and `bsc-fleet`'s `gate` module (the reporter, in the CLI). Both read THIS file in their tests, so a rule that changes in one and not the other fails a gate instead of drifting into two answers to the same question. Same pattern the tunnel/planner wire contracts already use.",
+  "cases": [
+    {
+      "name": "a root stream with no deps is ready",
+      "streams": [{ "id": "a" }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": ["a"], "landed": [], "held": [] }
+    },
+    {
+      "name": "a dependent waits for its upstream, and names it",
+      "streams": [{ "id": "a" }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": ["a"], "landed": [], "held": [{ "streamId": "b", "waitingOn": ["a"], "deadlocked": false }] }
+    },
+    {
+      "name": "a merged branch lands a stream and releases its dependent",
+      "streams": [{ "id": "a" }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": ["a"], "sessionDone": [] },
+      "expect": { "ready": ["b"], "landed": ["a"], "held": [] }
+    },
+    {
+      "name": "all issues done lands a stream",
+      "streams": [{ "id": "a", "issues": ["#1", "#2"] }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": ["#1", "#2"], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": ["b"], "landed": ["a"], "held": [] }
+    },
+    {
+      "name": "one issue short is NOT landed",
+      "streams": [{ "id": "a", "issues": ["#1", "#2"] }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": ["#1"], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": ["a"], "landed": [], "held": [{ "streamId": "b", "waitingOn": ["a"], "deadlocked": false }] }
+    },
+    {
+      "name": "an EMPTY issue list is not vacuous completion — the 0-issue-fleet hang",
+      "streams": [{ "id": "a", "issues": [] }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": ["a"], "landed": [], "held": [{ "streamId": "b", "waitingOn": ["a"], "deadlocked": false }] }
+    },
+    {
+      "name": "a session latch lands a stream",
+      "streams": [{ "id": "a" }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": ["a"] },
+      "expect": { "ready": ["b"], "landed": ["a"], "held": [] }
+    },
+    {
+      "name": "readiness does NOT cascade in one pass — c waits for b to LAND, not to start",
+      "streams": [{ "id": "a" }, { "id": "b", "dependsOn": ["a"] }, { "id": "c", "dependsOn": ["b"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": ["a"], "sessionDone": [] },
+      "expect": { "ready": ["b"], "landed": ["a"], "held": [{ "streamId": "c", "waitingOn": ["b"], "deadlocked": false }] }
+    },
+    {
+      "name": "a two-node cycle is deadlocked, both members reported",
+      "streams": [{ "id": "a", "dependsOn": ["b"] }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": {
+        "ready": [], "landed": [],
+        "held": [
+          { "streamId": "a", "waitingOn": ["b"], "deadlocked": true },
+          { "streamId": "b", "waitingOn": ["a"], "deadlocked": true }
+        ]
+      }
+    },
+    {
+      "name": "downstream of a cycle is stuck too, and reported alongside it",
+      "streams": [
+        { "id": "a", "dependsOn": ["b"] },
+        { "id": "b", "dependsOn": ["a"] },
+        { "id": "c", "dependsOn": ["a"] }
+      ],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": {
+        "ready": [], "landed": [],
+        "held": [
+          { "streamId": "a", "waitingOn": ["b"], "deadlocked": true },
+          { "streamId": "b", "waitingOn": ["a"], "deadlocked": true },
+          { "streamId": "c", "waitingOn": ["a"], "deadlocked": true }
+        ]
+      }
+    },
+    {
+      "name": "a landed member BREAKS a cycle — its dep edges stop mattering",
+      "streams": [{ "id": "a", "dependsOn": ["b"] }, { "id": "b", "dependsOn": ["a"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": ["b"], "sessionDone": [] },
+      "expect": { "ready": ["a"], "landed": ["b"], "held": [] }
+    },
+    {
+      "name": "a dep naming no stream in this fleet BLOCKS but is not a deadlock — a plan typo is not a cycle",
+      "streams": [{ "id": "a", "dependsOn": ["ghost"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": [], "landed": [], "held": [{ "streamId": "a", "waitingOn": ["ghost"], "deadlocked": false }] }
+    },
+    {
+      "name": "only the UNLANDED deps are named as waited-on",
+      "streams": [{ "id": "a" }, { "id": "b" }, { "id": "c", "dependsOn": ["a", "b"] }],
+      "evidence": { "doneIssues": [], "mergedBranches": ["a"], "sessionDone": [] },
+      "expect": { "ready": ["b"], "landed": ["a"], "held": [{ "streamId": "c", "waitingOn": ["b"], "deadlocked": false }] }
+    },
+    {
+      "name": "order is preserved within each bucket",
+      "streams": [{ "id": "z" }, { "id": "y" }, { "id": "x" }],
+      "evidence": { "doneIssues": [], "mergedBranches": [], "sessionDone": [] },
+      "expect": { "ready": ["z", "y", "x"], "landed": [], "held": [] }
+    }
+  ]
+}
