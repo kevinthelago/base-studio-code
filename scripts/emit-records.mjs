@@ -122,11 +122,29 @@ function testFileExists(spec) {
  *  that reads imports differently from the tool that rewrites them is how a mispair gets waved through. */
 const resolveRel = (fromDir, rel) => aliasForDir(fromDir, rel).slice(2);
 
-/** Is this normalized path something `@/…` can reach — a module still in `src/`, or one being emitted? */
+/** Is this normalized path something `@/…` can reach — a module still in `src/`, one being emitted, or
+ *  a colocated ASSET the test reads as data?
+ *
+ *  The asset arm is why `ecbd2402` could not carry `projectPaths`: "a test importing a COLOCATED
+ *  NON-MODULE ASSET cannot move, because the asset does not". `./projectSlug.fixtures.json` names an
+ *  exact file, and appending `.ts` to it asks for something nobody wrote — so the specifier resolved to
+ *  nothing, the carried test was declined as unresolvable, and the record could never hold it.
+ *
+ *  The asset does not have to move. It stays under `src/` and the rewrite sends the emitted copy at it
+ *  through the same `@/…` alias the module specifiers already use, so exactly ONE copy of the fixture
+ *  exists — still at the path the Rust `find_fixture` name search walks (`mobile/tunnel/mod.rs` panics on
+ *  a second name match under `src/`). `.bsc-records/` is not under `src/`, and nothing here writes a
+ *  fixture into it.
+ *
+ *  Checked LAST and never INSTEAD. A dotted tail does not prove an extension — `./platformModules.gen`
+ *  and `./styleContract.gen` are ordinary modules whose names contain a dot — so sniffing the tail first
+ *  would decline the very imports that resolve today. Trying the module extensions first makes this
+ *  purely additive: a specifier that resolved before still resolves, by the same arm. */
 function reachable(relPath, willEmit) {
   if (willEmit.has(relPath)) return true;
   const base = join(REPO, "src", ...relPath.split("/"));
-  return [".tsx", ".ts", ".jsx", ".js", "/index.tsx", "/index.ts"].some((e) => existsSync(base + e));
+  if ([".tsx", ".ts", ".jsx", ".js", "/index.tsx", "/index.ts"].some((e) => existsSync(base + e))) return true;
+  return existsSync(base);
 }
 
 /** Rewrite a carried test's RELATIVE imports to absolute `@/…` specifiers.
