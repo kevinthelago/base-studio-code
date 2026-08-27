@@ -4271,6 +4271,14 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // actionable finding, so it should never need a flag to surface.
     let render_errors = crate::preview_errors::latest_error_by_id();
     findings.extend(crate::graph_health::render_error_findings(&comps, &render_errors));
+    // #a-composes-target-can-name-two-records: append the NAME COLLISIONS — two records in one kit
+    // answering to one name, so a `composes` entry naming it resolves to whichever comes first in store
+    // order. Appended here rather than added to `analyze_with` because that function has a BYTE-PARITY
+    // TS twin (`graphHealth.ts`); this is the same reason `analyze_motion` and the render errors live
+    // out here. Always on: nothing else in the tooling can report the property (`dupes` found 6 of 39
+    // on the live library, because it detects content similarity and these records collide while
+    // DIFFERING in content).
+    findings.extend(crate::graph_health::analyze_name_collisions(&comps));
     // #3544: append the library-wide NEAR-duplicate findings — the fuzzy layer (name + contract distance)
     // the exact per-kit `duplicate` detector misses (`Donut`≈`DonutChart`, cross-kit `Card` repeats).
     // PROPOSE-ONLY: emitted here, never fed to `--fix` (only byte-identical merges auto-apply). Cross-kit
