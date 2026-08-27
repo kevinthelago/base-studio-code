@@ -1010,7 +1010,13 @@ fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
         let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
         if !dry {
             let mut next = im.clone();
-            next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+            // #148: same facet `tests_set` carries — the emitter's content-guess is what silently
+            // moved a `.ts` test with a generic into `.tsx` (a different, ~35x slower vitest project).
+            let mut entry = serde_json::json!({ "name": name, "src": contents });
+            if let Some(ext) = bsc_util::test_source_ext(&path) {
+                entry["ext"] = serde_json::json!(ext);
+            }
+            next["tests"] = serde_json::json!([entry]);
             crate::set_impl(&mut g, next)?;
         }
         paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
@@ -1137,7 +1143,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     bsc_cli_util::require_harvestable_root(path)?;
                     let contents = std::fs::read_to_string(path).map_err(|err| format!("cannot read {p}: {err}"))?;
                     let name = bsc_util::test_display_name(path, &contents);
-                    e["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+                    // #148: same facet `tests_set` carries — without it the emitter's content-guess can
+                    // misread a `.ts` generic as JSX and re-emit this test into the wrong vitest project.
+                    let mut entry = serde_json::json!({ "name": name, "src": contents });
+                    if let Some(ext) = bsc_util::test_source_ext(path) {
+                        entry["ext"] = serde_json::json!(ext);
+                    }
+                    e["tests"] = serde_json::json!([entry]);
                     e["src"] = Value::String(p.replace(crate::extract::BACKSLASH, "/"));
                 }
                 let mut g = crate::load();
@@ -4067,7 +4079,7 @@ mod tests {
             stored,
             Some(serde_json::json!([{ "name": "paired.test.ts", "src": contents, "ext": ".ts" }])),
             "the test file's contents landed on the record verbatim, named by its basename \
-             (no `describe(` title to prefer)",
+             (no `describe(` title to prefer), carrying the source file's real `.ts` extension (#148)",
         );
 
         // An id that does not exist is refused — `tests set` pairs an EXISTING record, it never
