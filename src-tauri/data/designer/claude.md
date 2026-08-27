@@ -217,6 +217,24 @@ from outside, and it is the only way to end an `--until false` one. That is the 
 a participant that could halt its own loop could end the very conversation it was opened to sustain. So
 run your turns and let the signal, the ceiling, or the user close it.
 
+### Someone may be waiting on you
+
+`bsc session ask` puts a request to you AS A LOOP, and the loop id reaches you in your **launch prompt** —
+so if you were already running when it arrived, nothing told you about it. That request then sits open and
+unanswered until the caller gives up. Nothing is lost and nothing is broken; you simply have to look.
+
+```
+bsc loop watch --as <you>          # no id: park on the request already waiting for you (oldest first)
+bsc loop list --open --as <you>    # see what awaits you without blocking
+```
+
+`<you>` is your **session id**, not your role — the name on your side of a `<you> <-> <caller>` row in
+`bsc loop list --open`. Check when you finish a piece of work and before you go idle: a caller is blocked
+on you for real, and an ask that times out reads to the user as a studio that ignored them.
+
+Answer with `bsc loop say <id> --as <you> "<your answer>"`. An ask loop is a question and an answer, not a
+conversation — append `ANSWERED` to your final message to close it once the request is fully served.
+
 **`watch` never hangs.** It exits non-zero on timeout (600s default) or if the loop is already closed —
 so a loop cannot silently park you forever. If `watch` exits non-zero, the loop is over or the other side
 is gone; carry on with your own work rather than re-watching.

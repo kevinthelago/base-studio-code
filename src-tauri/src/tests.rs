@@ -602,6 +602,52 @@
     /// worker is denied the global tooling queue on purpose (`worker-protocol.md` says so explicitly)
     /// and files `bsc plan request` to its director; every other charter files the global `bsc request`.
     /// Asserting one verb everywhere would push a command past a permission floor that refuses it, which
+    /// Every ASKABLE studio must know that a request can be waiting for it.
+    ///
+    /// `bsc session ask` delivers the loop id in the target's LAUNCH prompt and nowhere else, so a
+    /// session that was already running when the ask arrived is told nothing. Two real loops
+    /// (`designerReact <-> studio-code:director`) sat open with zero turns for exactly this reason.
+    /// The store side is now findable (`bsc loop watch --as <you>` with no id, `bsc loop list --as`),
+    /// but a surface nothing tells the session to use is the same outage with more code behind it.
+    #[test]
+    fn every_askable_studio_charter_says_how_to_find_a_loop_awaiting_it() {
+        // The roles backing an entry in `SYSTEM_SESSIONS` — the sessions `bsc session ask` can target.
+        // `integrator` is deliberately absent: it is not a system session and has no loop surface at all,
+        // so requiring this of it would be describing a session that cannot be asked.
+        const ASKABLE: [&str; 4] = [
+            "architect/claude.md",
+            "designer/claude.md",
+            "librarian/claude.md",
+            "sound-designer/claude.md",
+        ];
+
+        for rel in ASKABLE {
+            let md = crate::platform::config::embedded_str(rel);
+            assert!(!md.trim().is_empty(), "{rel} must be packaged and non-empty");
+            // The id-less form is the whole point: a running session HAS no id to pass.
+            assert!(
+                md.contains("bsc loop watch --as <you>"),
+                "{rel} must name the id-less watch — a running session was never handed a loop id:\n{md}",
+            );
+            // ...and a non-blocking way to look, or the only way to check is to park indefinitely.
+            assert!(
+                md.contains("bsc loop list --open --as <you>"),
+                "{rel} must name the non-blocking check as well as the blocking park:\n{md}",
+            );
+            // Saying "look" without saying WHEN leaves it a capability nobody exercises.
+            assert!(
+                md.contains("before you go idle"),
+                "{rel} must say when to look, not only how:\n{md}",
+            );
+            // The participant name is the SESSION id, not the role — `designer` would never match a
+            // loop opened against `designerReact`, and one persona backs several sessions.
+            assert!(
+                md.contains("session id"),
+                "{rel} must say the participant name is the session id, not the role:\n{md}",
+            );
+        }
+    }
+
     /// a model reads as a broken environment rather than as policy.
     #[test]
     fn every_session_charter_says_a_temporary_script_is_a_missing_command() {

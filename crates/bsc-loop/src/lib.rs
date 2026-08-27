@@ -166,6 +166,14 @@ pub struct Filter {
     /// Only loops tagged with this project.
     pub project: Option<String>,
     pub limit: Option<i64>,
+    /// Only loops where it is THIS participant's turn to speak.
+    ///
+    /// The discovery half of `bsc session ask` (`a-running-session-never-learns-a-loop-is-waiting-for-it`).
+    /// A session learns a loop id from its launch prompt, and a session that was ALREADY RUNNING when the
+    /// ask arrived never gets one — so without a way to ask "which loops await me?" a live session cannot
+    /// find the request at all, and it sits open until the caller's timeout. This is what makes it findable
+    /// while keeping the callee the one that enters the read: it is a QUERY, never a push.
+    pub awaiting: Option<String>,
 }
 
 /// The loop store — a thin owner of the SQLite connection plus the create / turn-append / read ops.
@@ -225,11 +233,33 @@ impl Store {
     /// The participant whose turn it is next, or `None` if the loop is closed / absent.
     pub fn whose_turn(&self, id: i64) -> rusqlite::Result<Option<String>> {
         let Some(lp) = self.get(id)? else { return Ok(None) };
+        self.next_participant(&lp)
+    }
+
+    /// Whose turn it is on a loop already in hand — the shared body behind [`Store::whose_turn`] and the
+    /// `awaiting` filter, so the alternation rule has ONE implementation. Deriving it a second time in SQL
+    /// would put the turn order in two places, and the copy is what goes stale.
+    fn next_participant(&self, lp: &Loop) -> rusqlite::Result<Option<String>> {
         let last: Option<String> = self
             .conn
-            .query_row("SELECT participant FROM turns WHERE loop_id = ?1 ORDER BY seq DESC LIMIT 1", params![id], |r| r.get(0))
+            .query_row("SELECT participant FROM turns WHERE loop_id = ?1 ORDER BY seq DESC LIMIT 1", params![lp.id], |r| r.get(0))
             .optional()?;
         Ok(lp.next_speaker(last.as_deref()))
+    }
+
+    /// The open loops waiting on `participant`, **oldest first**.
+    ///
+    /// Oldest first because this answers "what should I serve next": newest-first would starve the
+    /// longest-waiting caller, and an ask that has already burned its timeout is the one most worth
+    /// answering. (`list` stays newest-first — it is a table, not a queue.)
+    pub fn awaiting(&self, participant: &str) -> rusqlite::Result<Vec<Loop>> {
+        let mut v = self.list(&Filter {
+            open_only: true,
+            awaiting: Some(participant.to_string()),
+            ..Default::default()
+        })?;
+        v.reverse();
+        Ok(v)
     }
 
     /// The running cost total across a loop's turns.
@@ -310,7 +340,7 @@ impl Store {
     /// knows whether the last shutdown was unclean); this only answers "what was still running?", so
     /// the store never has to guess about process liveness.
     pub fn open_loops(&self) -> rusqlite::Result<Vec<Loop>> {
-        self.list(&Filter { open_only: true, project: None, limit: None })
+        self.list(&Filter { open_only: true, ..Default::default() })
     }
 
     /// Close `ids` as INTERRUPTED, returning how many actually changed (#3961).
@@ -354,12 +384,30 @@ impl Store {
             sql.push_str(&clauses.join(" AND "));
         }
         sql.push_str(" ORDER BY id DESC");
-        if let Some(n) = filter.limit {
-            sql.push_str(&format!(" LIMIT {}", n.max(0)));
+        // The `awaiting` filter is evaluated in Rust (turn order lives in `next_speaker`, not in SQL), so a
+        // SQL LIMIT would cut rows BEFORE it ran and silently under-report — `--limit 1` could return
+        // nothing while a loop awaited you. Applied after the filter instead, below.
+        if filter.awaiting.is_none() {
+            if let Some(n) = filter.limit {
+                sql.push_str(&format!(" LIMIT {}", n.max(0)));
+            }
         }
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(vals), row_to_loop)?;
-        rows.collect()
+        let mut out: Vec<Loop> = rows.collect::<rusqlite::Result<Vec<Loop>>>()?;
+        if let Some(who) = &filter.awaiting {
+            let mut kept: Vec<Loop> = Vec::new();
+            for lp in out {
+                if self.next_participant(&lp)?.as_deref() == Some(who.as_str()) {
+                    kept.push(lp);
+                }
+            }
+            out = kept;
+            if let Some(n) = filter.limit {
+                out.truncate(n.max(0) as usize);
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -419,6 +467,66 @@ mod tests {
         assert!(matches!(s.say(lp.id, "designer", &say_msg("again")), Err(SayError::NotYourTurn(_))));
         s.say(lp.id, "ext", &say_msg("hi back")).unwrap();
         assert_eq!(s.whose_turn(lp.id).unwrap().as_deref(), Some("designer"));
+    }
+
+    #[test]
+    fn awaiting_finds_the_loop_a_running_session_was_never_told_about() {
+        // THE REGRESSION. `bsc session ask` only appends the loop id to a session's LAUNCH prompt, so a
+        // session that was already running is never told. Loops 7 and 8 on the real store sat open with
+        // ZERO turns for exactly this reason. A zero-turn ask loop awaits `a` — the session — so the
+        // session can now find it without having been handed an id.
+        let s = Store::open_in_memory().unwrap();
+        let lp = s.create(&newl("designerReact", "studio-code:director", Some("ANSWERED")), 1).unwrap();
+        let found = s.awaiting("designerReact").unwrap();
+        assert_eq!(found.len(), 1, "the session finds the request waiting on it");
+        assert_eq!(found[0].id, lp.id);
+        // ...and the CALLER is not waiting on itself, or both sides would go looking for the same turn.
+        assert!(s.awaiting("studio-code:director").unwrap().is_empty());
+    }
+
+    #[test]
+    fn awaiting_follows_the_turn_and_never_reports_a_closed_loop() {
+        let s = Store::open_in_memory().unwrap();
+        let lp = s.create(&newl("designerReact", "director", Some("ANSWERED")), 1).unwrap();
+        s.say(lp.id, "designerReact", &say_msg("on it")).unwrap();
+        // The turn moved, so the request no longer awaits the session — it awaits the caller.
+        assert!(s.awaiting("designerReact").unwrap().is_empty(), "not my turn any more");
+        assert_eq!(s.awaiting("director").unwrap().len(), 1);
+        // A closed loop awaits nobody: answering it would be the thing `say` already refuses.
+        s.say(lp.id, "director", &say_msg("thanks ANSWERED")).unwrap();
+        assert!(s.awaiting("designerReact").unwrap().is_empty());
+        assert!(s.awaiting("director").unwrap().is_empty());
+    }
+
+    #[test]
+    fn awaiting_is_oldest_first_so_the_longest_waiting_caller_is_served_first() {
+        // `list` is newest-first because it is a table. This is a QUEUE, and newest-first would starve
+        // the ask that has already burned its timeout — the one most worth answering.
+        let s = Store::open_in_memory().unwrap();
+        let first = s.create(&newl("designerReact", "d1", None), 1).unwrap();
+        let second = s.create(&newl("designerReact", "d2", None), 2).unwrap();
+        let ids: Vec<i64> = s.awaiting("designerReact").unwrap().iter().map(|l| l.id).collect();
+        assert_eq!(ids, vec![first.id, second.id]);
+        // The table itself is unchanged — newest-first.
+        let table: Vec<i64> = s.list(&Filter { open_only: true, ..Default::default() }).unwrap().iter().map(|l| l.id).collect();
+        assert_eq!(table, vec![second.id, first.id]);
+    }
+
+    #[test]
+    fn a_limit_cannot_hide_a_loop_that_awaits_you() {
+        // The SQL LIMIT runs before the Rust-side turn filter, so applying it in SQL would let
+        // `--limit 1` return NOTHING while a loop awaited you — a silent under-report of exactly the
+        // thing this query exists to surface.
+        let s = Store::open_in_memory().unwrap();
+        let mine = s.create(&newl("designerReact", "director", None), 1).unwrap();
+        for i in 0..5 {
+            s.create(&newl("someone-else", "director", None), 2 + i).unwrap(); // newer, so they sort first
+        }
+        let got = s
+            .list(&Filter { open_only: true, awaiting: Some("designerReact".into()), limit: Some(1), ..Default::default() })
+            .unwrap();
+        assert_eq!(got.len(), 1, "the limit still bounds the result");
+        assert_eq!(got[0].id, mine.id, "and it is MY loop, not the newest row");
     }
 
     #[test]
