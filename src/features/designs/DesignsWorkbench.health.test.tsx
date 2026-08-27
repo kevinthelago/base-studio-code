@@ -19,8 +19,15 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
 }));
 vi.mock("@/features/designs/lib/uiActivity", () => ({ useUiActivity: vi.fn() }));
 vi.mock("@/features/designs/lib/useComponentScan", () => ({ useComponentScan: vi.fn() }));
+// SPY, not a stub: the cache test has to prove the REAL analysis is skipped, so the implementation
+// stays and only the call count is observable. A stub would make "it wasn't called" trivially true.
+vi.mock("@/features/designs/lib/graphHealth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/features/designs/lib/graphHealth")>();
+  return { ...actual, analyzeGraphHealth: vi.fn(actual.analyzeGraphHealth) };
+});
 
 import { DesignsWorkbench } from "@/features/designs/DesignsWorkbench";
+import { analyzeGraphHealth } from "@/features/designs/lib/graphHealth";
 import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "@/features/designs/lib/reactUiKit";
 import { SEED_THEMES } from "@/features/designs/lib/themes";
 
@@ -65,5 +72,51 @@ describe("graph health arrives after paint, not before it", () => {
       const chip = [...container.querySelectorAll("*")].find((el) => /^⚠ \d+$/.test(el.textContent ?? ""));
       expect(chip).toBeTruthy();
     }, { timeout: 3000 });
+  });
+});
+
+describe("the analysis is not repeated for a library it has already analysed", () => {
+  // WHY THIS EXISTS. `analyzeGraphHealth` runs `componentBuildable` over every component in the kit, so
+  // it costs ~250ms on a real library and grows with it — measured as the heaviest named phase in the
+  // app (`bsc perf phases`: designs:health, 9 runs, 248ms mean, 2.2s total). Nothing was recomputing
+  // because the data changed: navigating away and back gave `kitComps`/`libResolver` fresh identities
+  // for identical contents, and the whole library was re-analysed to reach the answer just discarded.
+  it("re-uses the findings on a remount, and does not run the analyser again", async () => {
+    const spy = vi.mocked(analyzeGraphHealth);
+    spy.mockClear();
+
+    const first = render(<DesignsWorkbench />);
+    await waitFor(() => expect(first.container.querySelector(".ds-health")).toBeTruthy(), { timeout: 3000 });
+    const runsAfterFirstVisit = spy.mock.calls.length;
+    expect(runsAfterFirstVisit).toBeGreaterThan(0);
+    first.unmount();
+
+    // Navigate back. The store's `components` array is untouched, so this is the same library.
+    const second = render(<DesignsWorkbench />);
+    // Decorated on the FIRST commit — no clear, no idle round trip. This is the user-visible half: the
+    // badges are simply there, instead of arriving a beat later after a quarter-second of blocked work.
+    expect(second.container.querySelector(".ds-health")).toBeTruthy();
+    expect(spy.mock.calls.length).toBe(runsAfterFirstVisit);
+  });
+
+  // The cache must not outlive its inputs — stale badges point at components that are no longer there,
+  // and the existing behaviour (clear first, then recompute) is what keeps a wrong badge off screen.
+  it("re-analyses when the library actually changes", async () => {
+    const spy = vi.mocked(analyzeGraphHealth);
+    spy.mockClear();
+
+    const first = render(<DesignsWorkbench />);
+    await waitFor(() => expect(first.container.querySelector(".ds-health")).toBeTruthy(), { timeout: 3000 });
+    const before = spy.mock.calls.length;
+    first.unmount();
+
+    // A real edit: a NEW array with different contents, exactly as a store write produces.
+    useAppStore.setState({
+      components: [...useAppStore.getState().components, { ...orphan, id: "second-orphan", name: "SecondOrphan" }],
+    });
+
+    const second = render(<DesignsWorkbench />);
+    await waitFor(() => expect(second.container.querySelector(".ds-health")).toBeTruthy(), { timeout: 3000 });
+    expect(spy.mock.calls.length).toBeGreaterThan(before);
   });
 });

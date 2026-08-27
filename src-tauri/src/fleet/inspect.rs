@@ -314,37 +314,11 @@ mod relocated_tests {
 /// landing", which the caller must treat as *not satisfied* — never as "everything is done".
 #[tauri::command]
 pub(crate) fn fleet_landed_streams(project_key: String) -> Vec<String> {
-    let hub = crate::project_dir(&project_key);
-    let Ok(rd) = std::fs::read_dir(&hub) else { return Vec::new() };
-    let mut landed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for entry in rd.flatten() {
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let repo = entry.path();
-        if !repo.join(".git").exists() {
-            continue;
-        }
-        let repo_str = repo.to_string_lossy().into_owned();
-        // The base line: every commit reachable from HEAD by first parents. A branch tip found here was
-        // never authored on that branch — it is the base commit the branch was cut from.
-        let base_line: std::collections::HashSet<String> =
-            git_lines(&repo_str, &["rev-list", "--first-parent", "HEAD"])
-                .into_iter()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect();
-        // One pass for the merged set WITH each tip's sha, so the filter needs no per-branch spawn.
-        for line in git_lines(&repo_str, &["for-each-ref", "--merged", "HEAD", "--format=%(objectname) %(refname:short)", "refs/heads"]) {
-            let Some((sha, name)) = line.trim().split_once(' ') else { continue };
-            let name = name.trim();
-            if name.is_empty() || base_line.contains(sha.trim()) {
-                continue; // pristine / base branch — no work of its own
-            }
-            landed.insert(name.to_string());
-        }
-    }
-    landed.into_iter().collect()
+    // ONE implementation of "merged into HEAD" (#the-director-can-see-which-streams-are-held). This
+    // lives in `bsc-fleet` now because `bsc fleet list` needs the identical answer to tell a director
+    // which stopped stream is actually dispatchable — and a reporter that disagrees with the launcher
+    // about what LANDED means is worse than no reporter.
+    bsc_fleet::gate::landed_branches(&crate::project_dir(&project_key)).into_iter().collect()
 }
 
 #[cfg(test)]

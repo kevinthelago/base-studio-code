@@ -1,6 +1,8 @@
 //! The `bsc fleet` subcommand (#4098) — real per-pane liveness, joined onto the roster.
 
+use crate::gate;
 use crate::membership;
+use crate::doctor;
 use crate::{
     DirectorNewRequest, DirectorNewResult, DirectorOutcome, FleetRequest, FleetResult, PaneLive,
     StartOutcome, StartRequest, StartResult, WakeRequest, WakeResult, DIRECTOR_KIND, KIND,
@@ -24,17 +26,38 @@ USAGE:
 One row per pane in this project's fleet — INCLUDING the ones that are not running. Each row carries
 the state, and each state is one move:
 
-  running          a session exists and its agent is working        leave it alone
-  idle             the shell is up but its agent has EXITED         wake it
+  running          a session exists and its AGENT is working        leave it alone
+  idle             the shell is up but its agent is NOT running     wake it
   stopped          it launched before; no session now               wake it
   never-launched   the plan names the stream, nothing ever ran it   start the fleet
 
-  LIVE / BUSY / PID are the app's raw answer behind that state.
+  LIVE / AGENT / PID are the app's raw answer behind that state.
+
+AGENT is a real probe for `claude` / `bsc-agent` (or a wrapper hosting one) among the pane's processes
+— NOT `the shell has a child`. Those differ exactly where it matters: a SANDBOXED pane's own `bwrap`
+plumbing and the shell inside it are its descendants, so a bare prompt in a cage looked like work and
+could never report `idle`. A shell mid-build is the same mistake the other way round. `--json` still
+carries `busy` (is anything in flight) for a caller that wants that separate question.
 
 ISSUES is that stream's PROGRESS — its plan issues done/total — because liveness alone does not say
 which stopped worker to wake: stopped-having-finished and stopped-at-issue-one look identical
 otherwise. A stream that owns no issues shows `-`, never 0/0. Blocked and failed issues cannot show
 in a ratio, so the streams holding them are NAMED under the table.
+
+WAITING ON is the DEPENDENCY GATE, and it appears only when something is actually held. `dependsOn`
+is planning-time sequencing, so a worker never parks on an upstream at run time — but a stream whose
+upstream has not LANDED has nothing to build on, and waking it gets you a worker with no ground under
+it. Without this column `stopped 0/7` read the same for a stream ready to go and one that is not.
+
+  waits:a,b   the unlanded upstreams. Wake it once they land.
+  cycle:a     it sits in (or downstream of) a `dependsOn` CYCLE and can NEVER become ready. That is a
+              PLAN fix — `bsc plan fleet` — not a wake, and the two look identical without this.
+
+LANDED is three signals OR'd, because each is empty on some real fleet: every owned issue done, its
+branch merged into its clone's HEAD, or its session reported `maintain`. The rules are shared with the
+app's launcher through one contract fixture, so this table and Glance cannot disagree.
+
+This half needs no app: plan.db, the clones' git history and the coord log are all on disk.
 
 WHERE THE LIST COMES FROM, and why it matters. MEMBERSHIP is plan.db's — the fleet-session ledger
 (every agent this project has launched, persisted across a clean quit) unioned with the planned
@@ -152,6 +175,66 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "doctor",
+    summary: "the claims this fleet makes about itself that do not hold",
+    usage: "\
+USAGE:
+  bsc fleet doctor [--db <plan.db>] [--strict] [--json|--pretty]
+
+One finding per claim that does not hold, each naming the pane, what is wrong, WHAT IT COSTS, and the
+fix. Prints nothing when the fleet is clean — a doctor whose normal output is a wall of `ok` is one
+nobody reads, and then the one real line scrolls past.
+
+NEEDS NO APP, unlike `fleet list`. Every check is a filesystem fact about a worktree, so this answers
+when the app is DOWN — which is exactly when a director most needs it.
+
+  no-gate       the worktree has no `.claude/settings.json`, so the pane has no role gate and no shell
+                allow-list. A launch or wake of it is REFUSED (#1819) — and a wake KILLS the session
+                before it finds that out, which is how four workers were destroyed by being woken.
+  caged-floor   its PreToolUse hooks invoke `/bsc-hook`, which exists only inside a mount namespace.
+                Launched uncaged, those gates cannot execute and fail NON-BLOCKING — the session runs
+                with no write-scope and no dangerous-command floor, looking exactly like one that is
+                gated and permitting.
+
+WHY THIS EXISTS. Four bugs in one day shared one signature: an answer that was wrong in the
+SAFE-LOOKING direction and left NO DURABLE TRACE — a parked fleet reported as `running`, a dead
+permission floor, a wake that killed what it could not relaunch, a prompt silently truncated to half.
+Each was found by hand, by reading process trees and server logs. This is the same shape as
+`bsc graph doctor` and `bsc ui parity`: compare TWO INDEPENDENT SOURCES that must agree, and report
+where they do not. A check that re-derives its answer from the code that produced it proves nothing,
+so every check here names its two sources.
+
+Reports and exits 0 by default; `--strict` exits non-zero on any finding. Opt-in for the reason
+`bsc ui parity`'s is: a guard that lands red protects nothing.",
+}, CmdDoc {
+    name: "clone",
+    summary: "clone the project's linked repos into its hub — the prerequisite for any worker",
+    usage: "\
+USAGE:
+  bsc fleet clone [--db <plan.db>] [--repo <owner/name>]… [--source <path-or-url>] [--token <t>] [--json]
+
+Materializes the repo CLONES a fleet needs. Every worker runs in a git worktree cut from its repo's
+clone inside the project hub, so a hub with no clone cannot start a single worker — `bsc fleet start`
+and `bsc fleet wake` both fail with `ensure_worktree: repo not cloned`, and until now the only thing
+that could fix that was a click in the desktop UI. A director is a shell session, so the one act that
+unblocks its whole fleet was the one act it could not perform.
+
+THE REPOS COME FROM plan.db, the same store `fleet list` reads membership from — so this and the UI
+cannot disagree about which repos the project has. `--repo` narrows it to the ones you name.
+
+IDEMPOTENT: a repo already cloned is reported `already-present` and nothing runs. That is what makes
+it safe to run before every launch rather than working out first which repos are missing. It never
+re-clones over an existing checkout, which would destroy the worktrees cut from it.
+
+NO APP NEEDED. A clone is git plus a path; this does not go through the desktop, so it works with the
+app closed — unlike `start` and `wake`, which place panes and therefore cannot.
+
+--source clones from a local path instead of github.com. Use it when a checkout already exists on this
+machine: it is the difference between seconds and re-downloading hundreds of megabytes, and it is the
+only form that works with no network.
+
+--token authorizes a private repo. It is redacted from any error, since git echoes the URL it was given.",
+}, CmdDoc {
     name: "wake",
     summary: "wake a parked/reaped worker — the director's lever over a stopped session",
     usage: "USAGE:
@@ -161,13 +244,27 @@ Wakes a worker whose session was parked or reclaimed, and hands it a prompt to s
 --prompt the app supplies its standard change-request wake, so a director does not have to reproduce
 that prose to use the command.
 
+IT ALSO STARTS A STREAM THAT NEVER RAN — the `never-launched` state in `bsc fleet list`. The pane does
+not have to exist; the plan row is what has to. The stream is resolved from plan.db, its worktree is
+built if it has none, and the pane comes up wired exactly as a fleet launch would have wired it. So
+`bsc fleet start` is for bringing up a WHOLE fleet, never for the one stream that did not come up —
+it refuses outright while any pane is live. Pass a real --prompt for a never-launched stream: it has
+no assignment in its pane yet, so the standard wake would tell it to re-read nothing.
+
+A stream plan.db does NOT name is still an error, and says so — an unknown stream is not the same
+thing as an unlaunched one.
+
 REFUSES a BUSY pane unless --force. Waking KILLS the PTY before relaunching, so interrupting a worker
 that is mid-task is a deliberate act, not something to do by accident. `bsc fleet list` shows which
 panes are busy.
 
-The reply carries whether the wake actually landed. A pane the app cannot resolve (or one the user
-disabled) reports an ERROR rather than success — the wake path kills first, so a false success would
-leave a dead worker behind a caller that believes it is running.
+A DISABLED pane (one a person turned off via the Console pane menu, or that a session-end used to set)
+is REVIVED, not refused — ending a session no longer keeps the director from waking it back up.
+
+The reply carries whether the wake actually landed. A pane the app cannot resolve — no open tab left to
+recreate it in, or a stream neither the roster nor plan.db names — reports an ERROR rather than success,
+naming which of the two it was. The wake path kills first, so a false success would leave a dead worker
+behind a caller that believes it is running.
 
 Requires the desktop app: waking is frontend state, so only the app can do it.",
 }];
@@ -179,12 +276,21 @@ struct Args {
     db: Option<String>,
     prompt: Option<String>,
     force: bool,
+    /// `doctor --strict`: exit non-zero when anything is found, so it can be a gate. Plain runs
+    /// report and exit 0 — a guard that lands red protects nothing (see `bsc ui parity`).
+    strict: bool,
     timeout_ms: Option<i64>,
+    /// `clone`: the PAT for a private repo. Never echoed — a failed clone redacts it.
+    token: Option<String>,
+    /// `clone`: clone FROM here instead of github.com (a local path, or any git URL).
+    source: Option<String>,
+    /// `clone`: restrict to these repos instead of every one the plan links.
+    repos: Vec<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, timeout_ms: None, positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -194,6 +300,10 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
+            "--strict" => a.strict = true,
+            "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
+            "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
+            "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -251,8 +361,154 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "director" => cmd_director(&args, prog),
         "start" => cmd_start(&args, prog),
         "wake" => cmd_wake(&args, prog),
+        "clone" => cmd_clone(&args, prog),
+        "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
+}
+
+/// The plan store this session is scoped to — `--db`, else `$BSC_PLAN_DB`. A path naming nothing is
+/// `None` rather than a fresh empty store: `Store::open` would mint one, and a project invented by a
+/// typo is not a project to clone repos for.
+fn plan_db_path(db_flag: Option<&str>) -> Option<std::path::PathBuf> {
+    let flag = db_flag.map(str::to_string);
+    let path = bsc_cli_util::resolve_store_path(&flag, "BSC_PLAN_DB", || Err("no plan store".to_string())).ok()?;
+    path.is_file().then_some(path)
+}
+
+/// A project's key, read off its plan store's filename — plans live at `plans/<key>.db`, and the key
+/// is what names the hub the clone lands in. Taken from the PATH rather than from inside the store
+/// because that mapping is the one `plan_db_path` in the app already relies on.
+fn project_key_from_db(db: &std::path::Path) -> Option<String> {
+    db.file_stem().map(|s| s.to_string_lossy().into_owned()).filter(|k| !k.is_empty())
+}
+
+/// A non-empty credential from `var`, or `None`. Blank-but-set is treated as absent: an exported
+/// `GH_TOKEN=""` is how a shell says "no token", and passing it on would rebuild the anonymous URL
+/// this fallback exists to avoid.
+fn env_token(var: &str) -> Option<String> {
+    std::env::var(var).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+/// Turn git's credential-prompt failure into something the reader can act on.
+///
+/// Cloning a private repo with no credential does not fail with "unauthorized" — git tries to PROMPT,
+/// finds no terminal, and reports `could not read Username for 'https://github.com': No such device
+/// or address`. That sentence has sent a maintainer looking for a missing PERMISSION twice: the role
+/// gate already grants a director `github: read`, and the actual state was that no GitHub account was
+/// connected at all, so there was no token to inject or to read.
+fn explain_clone_failure(prog: &str, repo: &str, had_token: bool, err: &str) -> String {
+    let auth_prompt = err.contains("could not read Username")
+        || err.contains("Authentication failed")
+        || err.contains("terminal prompts disabled");
+    if !auth_prompt {
+        return format!("{prog} clone: {err}");
+    }
+    if had_token {
+        format!(
+            "{prog} clone: {repo} refused the credential this session carries. It may not grant \
+             access to that repo, or it may have expired — reconnect the account in Settings → \
+             GitHub. (original: {err})"
+        )
+    } else {
+        format!(
+            "{prog} clone: no GitHub credential, so {repo} could only be tried anonymously and git \
+             asked for a username with no terminal to ask on.\n\
+             \n\
+             If the repo is PRIVATE: connect an account in Settings → GitHub — a session is handed \
+             that token as $GH_TOKEN automatically — or pass `--token <t>` for this one call.\n\
+             If a checkout is already on this machine: `{prog} clone --source <path>`, which needs \
+             no network and no credential at all.\n\
+             (original: {err})"
+        )
+    }
+}
+
+/// `clone` — materialize the hub's repo clones, the prerequisite every worker has.
+///
+/// Deliberately NOT folded into `ensure_worktree`. A clone is minutes and `bsc fleet wake`'s CLI
+/// timeout is 8 seconds, so a wake that cloned would report a timeout while the work continued
+/// invisibly — and the director would be told its wake failed when a clone was in fact running. A verb
+/// with its own timeout is the honest shape for a long operation; `ensure_worktree` names this command
+/// in its error instead.
+fn cmd_clone(args: &Args, prog: &str) -> Result<(), String> {
+    let db = plan_db_path(args.db.as_deref())
+        .ok_or_else(|| format!("{prog} clone: no plan store — pass --db <plan.db> or set BSC_PLAN_DB"))?;
+    let key = project_key_from_db(&db).ok_or_else(|| {
+        format!("{prog} clone: cannot tell which project {} belongs to", db.display())
+    })?;
+    let store = plandb::Store::open(&db).map_err(|e| format!("{prog} clone: cannot open {}: {e}", db.display()))?;
+    let linked = store.repo_list().map_err(|e| format!("{prog} clone: cannot read the linked repos: {e}"))?;
+
+    // Naming a repo the plan does not link is a mistake worth refusing: it would clone something the
+    // fleet has no stream for, into a hub that will never use it.
+    let repos: Vec<String> = if args.repos.is_empty() {
+        linked.clone()
+    } else {
+        for r in &args.repos {
+            if !linked.contains(r) {
+                return Err(format!(
+                    "{prog} clone: '{r}' is not linked to '{key}'. Linked: {}",
+                    if linked.is_empty() { "(none)".into() } else { linked.join(", ") }
+                ));
+            }
+        }
+        args.repos.clone()
+    };
+    if repos.is_empty() {
+        return Err(format!(
+            "{prog} clone: '{key}' links no repos, so there is nothing to clone. \
+             `bsc plan repo list` shows what the plan holds."
+        ));
+    }
+
+    // THE SESSION IS ALREADY HOLDING A CREDENTIAL, and this used to ignore it.
+    //
+    // `session-launch` puts the app's GitHub token in every session that has any git/gh capability
+    // (`if (ghToken && !noGitOrGithub) e.GH_TOKEN = ghToken`), precisely so `gh` and git-over-https
+    // work. This verb defaulted `--token` to EMPTY instead of reading it, so a director with a
+    // perfectly good token in its environment still cloned anonymously — and a private repo answered
+    // with git's prompt failure, `could not read Username for 'https://github.com'`, which names
+    // neither the cause nor the fix.
+    //
+    // `GH_TOKEN` first (what the app injects), then `GITHUB_TOKEN` (what CI and `gh` also honour).
+    let token = args
+        .token
+        .clone()
+        .or_else(|| env_token("GH_TOKEN"))
+        .or_else(|| env_token("GITHUB_TOKEN"))
+        .unwrap_or_default();
+    let mut rows = Vec::new();
+    for repo in &repos {
+        // FAIL CLOSED on the first repo that cannot be cloned, naming it. A partial clone reported as
+        // success is the state where half the fleet starts and the other half fails one wake at a time.
+        let (path, outcome) = bsc_project::ensure_clone(&key, repo, &token, args.source.as_deref())
+            .map_err(|e| explain_clone_failure(prog, repo, !token.is_empty(), &e))?;
+        rows.push(serde_json::json!({
+            "repo": repo,
+            "path": path.to_string_lossy(),
+            "outcome": match outcome {
+                bsc_project::CloneOutcome::AlreadyPresent => "already-present",
+                bsc_project::CloneOutcome::Cloned => "cloned",
+            },
+        }));
+    }
+
+    let res = serde_json::json!({ "projectKey": key, "repos": rows });
+    bsc_cli_util::emit(args.pretty, args.json, &res, || {
+        let mut out = String::new();
+        for r in &rows {
+            out.push_str(&format!(
+                "{:<14} {}  {}\n",
+                r["outcome"].as_str().unwrap_or(""),
+                r["repo"].as_str().unwrap_or(""),
+                r["path"].as_str().unwrap_or(""),
+            ));
+        }
+        out.push_str(&format!("{} repo(s) for {key}", rows.len()));
+        out
+    });
+    Ok(())
 }
 
 /// `start <projectKey>` — launch the whole fleet.
@@ -630,6 +886,46 @@ fn choose_membership(args: &Args) -> Option<(String, Vec<membership::Member>)> {
     plan_membership(&args.db)
 }
 
+/// `bsc fleet doctor` — the claims this fleet makes about itself that do not hold.
+///
+/// APP-FREE. Every check here is a filesystem fact about a worktree, so it answers with the app
+/// down — which is exactly when a director most needs it and exactly when `fleet list`, which asks
+/// the running app, can say nothing at all.
+///
+/// Prints NOTHING when the fleet is clean. A doctor whose normal output is a wall of "ok" is one
+/// nobody reads, and then the one real line scrolls past.
+fn cmd_doctor(args: &Args) -> Result<(), String> {
+    let Some((key, members)) = choose_membership(args) else {
+        return Err("bsc fleet doctor: no plan store — pass --db or set $BSC_PLAN_DB".into());
+    };
+    let base = bsc_util::bsc_base_dir().ok_or("bsc fleet doctor: no base dir")?;
+
+    let findings: Vec<doctor::Finding> = members
+        .iter()
+        .flat_map(|m| {
+            let wt = doctor::find_worktree(&base, &key, &m.stream);
+            doctor::findings_for(&m.pane_id, doctor::read_facts(wt.as_deref()))
+        })
+        .collect();
+
+    if args.json || args.pretty {
+        bsc_cli_util::emit(args.pretty, args.json, &findings, String::new);
+    } else {
+        for f in &findings {
+            println!("{}  {}", f.pane_id, f.category);
+            println!("    {}", f.detail);
+            println!("    → {}", f.consequence);
+            println!("    fix: {}", f.fix);
+        }
+    }
+    // `--strict` is opt-in for the same reason `bsc ui parity`'s is: a guard that lands red protects
+    // nothing. Reporting exits 0 so this can be run habitually; gating is a deliberate choice.
+    if args.strict && !findings.is_empty() {
+        return Err(format!("bsc fleet doctor: {} finding(s)", findings.len()));
+    }
+    Ok(())
+}
+
 fn cmd_list(args: &Args) -> Result<(), String> {
     if let Some((key, members)) = choose_membership(args) {
         return list_from_plan(args, &key, members);
@@ -665,8 +961,62 @@ struct Row {
     state: membership::State,
     live: bool,
     busy: bool,
+    /// An agent process is running for this pane. What `STATE` is derived from — `busy` is the broader
+    /// "something is in flight", which is a different question (see `PaneLive`).
+    agent: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pid: Option<u32>,
+    /// The UNLANDED upstreams this stream is waiting on
+    /// (#the-director-can-see-which-streams-are-held). Empty ⇒ nothing blocks it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    waiting_on: Vec<String>,
+    /// In, or downstream of, a `dependsOn` cycle — it can never become ready on its own.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    deadlocked: bool,
+}
+
+/// This project's held streams, keyed by stream id — the `DEPS` column's content.
+///
+/// Every signal is read HERE rather than asked of the app: plan.db, the repo clones' git history and
+/// the coord log are all on disk, so a director gets this answer with the desktop closed. The app's
+/// own producer (`fleet_landed_streams`) calls the same function for tier 2, and the pure rules are
+/// pinned to `streamGate.ts` by a shared fixture — so the launcher and this reporter cannot disagree.
+///
+/// Best-effort by design: no plan store, no hub, or a git failure yields an EMPTY map, which reads as
+/// "nothing is blocked". That is the safe direction — it degrades to the table that printed before —
+/// whereas a partial gate reported as authoritative would tell a director not to wake a ready worker.
+fn gate_for(args: &Args, project_key: &str) -> std::collections::HashMap<String, gate::HeldStream> {
+    let Some(db) = plan_db_path(args.db.as_deref()) else { return Default::default() };
+    let Ok(store) = plandb::Store::open(&db) else { return Default::default() };
+    let streams: Vec<gate::GateStream> = store
+        .fleet_stream_list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| {
+            let id = r.get("id").and_then(serde_json::Value::as_str)?.to_string();
+            let strs = |k: &str| {
+                r.get(k)
+                    .and_then(serde_json::Value::as_array)
+                    .map(|a| a.iter().filter_map(serde_json::Value::as_str).map(str::to_string).collect())
+                    .unwrap_or_default()
+            };
+            Some(gate::GateStream { id, depends_on: strs("dependsOn"), issues: strs("issues") })
+        })
+        .collect();
+    if streams.is_empty() {
+        return Default::default();
+    }
+    let hub = bsc_project::project_dir(project_key).unwrap_or_default();
+    let ev = gate::LandedEvidence {
+        done_issues: gate::done_issue_refs(&store),
+        merged_branches: gate::landed_branches(&hub).into_iter().collect(),
+        session_done: gate::maintaining_streams(&logs::log_dir(), project_key),
+    };
+    gate::partition_by_deps(&streams, &ev)
+        .held
+        .into_iter()
+        .map(|h| (h.stream_id.clone(), h))
+        .collect()
 }
 
 /// Join plan.db's membership onto the app's liveness.
@@ -686,16 +1036,32 @@ fn list_from_plan(
         &res.panes.iter().map(|p| p.pane_id.clone()).collect::<Vec<_>>(),
     );
 
+    // THE DEPENDENCY GATE (#the-director-can-see-which-streams-are-held). Liveness says whether a
+    // worker is breathing and ISSUES says what it achieved; neither says whether it is WAITING on
+    // another stream — so "stopped 0/7" read the same for a stream ready to wake and one whose
+    // upstream has not landed, and picking between them was the director's whole job.
+    //
+    // Best-effort: a gate that cannot be computed leaves every row unblocked, which degrades to the
+    // table this printed before. An empty answer must never read as "everything is held".
+    let waiting = gate_for(args, project_key);
+
     let rows: Vec<Row> = members
         .into_iter()
         .map(|m| {
             let p = res.panes.iter().find(|p| p.pane_id == m.pane_id);
-            let state = membership::State::classify(&m, p.map(|p| (p.live, p.busy)));
+            // AGENT, not busy (#fleet-list-reports-whether-the-agent-is-running). `busy` is "something
+            // is in flight", which a sandboxed pane satisfies at a bare prompt — `bwrap` and the shell
+            // inside it are its own descendants — so it could never read `idle`.
+            let state = membership::State::classify(&m, p.map(|p| (p.live, p.agent)));
+            let held = waiting.get(m.stream.as_str());
             Row {
                 state,
                 live: p.map(|p| p.live).unwrap_or(false),
                 busy: p.map(|p| p.busy).unwrap_or(false),
+                agent: p.map(|p| p.agent).unwrap_or(false),
                 pid: p.and_then(|p| p.pid),
+                waiting_on: held.map(|h| h.waiting_on.clone()).unwrap_or_default(),
+                deadlocked: held.is_some_and(|h| h.deadlocked),
                 member: m,
             }
         })
@@ -717,28 +1083,81 @@ fn render_plan_table(rows: &[Row]) -> String {
     // and a fixed column either truncates the id — which is the argument a director has to TYPE — or
     // pads every short fleet to the width of the longest one that ever existed.
     let w = rows.iter().map(|r| r.member.pane_id.len()).max().unwrap_or(4).max(4);
-    let mut out = format!(
-        "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
-        "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "BUSY",
-        w = w
-    );
+    // The DEPS column is printed only when something is actually held. A column of `-` on every row
+    // widens the table for a fleet whose graph is flat and teaches the reader nothing.
+    let show_deps = rows.iter().any(|r| !r.waiting_on.is_empty());
+    let dw = rows.iter().map(|r| waits_cell(r).len()).max().unwrap_or(4).max(4);
+    let mut out = if show_deps {
+        format!(
+            "{:<w$}  {:<9} {:<14} {:<8} {:<dw$} {:<5} {:<5} PID\n",
+            "PANE", "ROLE", "STATE", "ISSUES", "WAITING ON", "LIVE", "AGENT",
+            w = w, dw = dw.max("WAITING ON".len())
+        )
+    } else {
+        format!(
+            "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} PID\n",
+            "PANE", "ROLE", "STATE", "ISSUES", "LIVE", "AGENT",
+            w = w
+        )
+    };
     for r in rows {
-        out.push_str(&format!(
-            "{:<w$}  {:<9} {:<14} {:<8} {:<5} {:<5} {}\n",
+        let head = format!(
+            "{:<w$}  {:<9} {:<14} {:<8}",
             r.member.pane_id,
             if r.member.role.is_empty() { "-" } else { &r.member.role },
             r.state.as_str(),
             r.member.progress.cell(),
-            if r.live { "yes" } else { "no" },
-            if r.busy { "yes" } else { "no" },
-            r.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
             w = w,
-        ));
+        );
+        let tail = format!(
+            "{:<5} {:<5} {}",
+            if r.live { "yes" } else { "no" },
+            // The column shows the AGENT, because that is what STATE is derived from and what the
+            // reader is actually asking. `busy` is still in `--json` for anything that wants "is
+            // something in flight" — they differ on a sandboxed pane at a bare prompt.
+            if r.agent { "yes" } else { "no" },
+            r.pid.map(|n| n.to_string()).unwrap_or_else(|| "-".into()),
+        );
+        if show_deps {
+            out.push_str(&format!("{head} {:<dw$} {tail}\n", waits_cell(r), dw = dw.max("WAITING ON".len())));
+        } else {
+            out.push_str(&format!("{head} {tail}\n"));
+        }
     }
     out.push('\n');
     out.push_str(&summarize(rows));
     out.push('\n');
     out
+}
+
+/// The widest the `WAITING ON` cell may render before it is elided.
+const WAITS_MAX: usize = 28;
+
+/// What a row is waiting on, short enough for a column.
+///
+/// A DEADLOCK is called out by name rather than shown as an ordinary wait: those two rows look
+/// identical in a table (`waiting on X`) and mean opposite things — one resolves when a worker
+/// finishes, the other never resolves at all and needs the PLAN edited.
+fn waits_cell(r: &Row) -> String {
+    if r.waiting_on.is_empty() {
+        return "-".into();
+    }
+    let tag = if r.deadlocked { "cycle" } else { "waits" };
+    let names = if r.waiting_on.len() <= 2 {
+        r.waiting_on.join(",")
+    } else {
+        format!("{},{},+{}", r.waiting_on[0], r.waiting_on[1], r.waiting_on.len() - 2)
+    };
+    // CAPPED. Pane ids in this table already run past 50 characters, and one stream named
+    // `commons--kevinthelago-base-studio-code` would otherwise set the column width for all 45 rows
+    // and push LIVE/BUSY/PID off an ordinary terminal. The column exists to carry the SIGNAL — held
+    // vs cycle, and roughly what by; `--json` carries the full `waitingOn` for anything that needs it.
+    let cell = format!("{tag}:{names}");
+    if cell.len() <= WAITS_MAX {
+        cell
+    } else {
+        format!("{}…", &cell[..WAITS_MAX - 1])
+    }
 }
 
 /// The tally, plus the ONE next move it implies. A 39-row table whose 38 stopped rows scroll past is
@@ -765,6 +1184,20 @@ fn summarize(rows: &[Row]) -> String {
         out.push_str(
             "\n  a never-launched stream has no session to wake — `bsc fleet start <projectKey>` brings the fleet up",
         );
+    }
+    // The point of the gate: of the workers you COULD wake, say which ones would just sit there. A
+    // director picking the next move needs the difference between "not running" and "not runnable".
+    let held = rows.iter().filter(|r| !r.waiting_on.is_empty()).count();
+    let stuck = rows.iter().filter(|r| r.deadlocked).count();
+    if held > 0 {
+        out.push_str(&format!(
+            "\n  {held} stream(s) WAITING on an upstream that has not landed — waking one now gets a worker with nothing to build on",
+        ));
+    }
+    if stuck > 0 {
+        out.push_str(&format!(
+            "\n  {stuck} of them sit in a `dependsOn` CYCLE and can never become ready — that is a PLAN fix (`bsc plan fleet`), not a wake",
+        ));
     }
     // ISSUES is done/total, so a stuck issue is invisible in it — a stream sitting at 2/7 reads the
     // same whether the other five are untouched or blocked. Name the streams instead of leaving the
@@ -905,6 +1338,133 @@ mod tests {
         path
     }
 
+    // ── the WAITING ON column (#the-director-can-see-which-streams-are-held) ────────────────────
+
+    fn row_waiting(pane: &str, waiting: &[&str], deadlocked: bool) -> Row {
+        Row {
+            member: membership::Member {
+                pane_id: pane.into(),
+                stream: pane.split(':').nth(1).unwrap_or("").into(),
+                role: "worker".into(),
+                ..Default::default()
+            },
+            state: membership::State::Stopped,
+            live: false,
+            busy: false,
+            agent: false,
+            pid: None,
+            waiting_on: waiting.iter().map(|s| s.to_string()).collect(),
+            deadlocked,
+        }
+    }
+
+    #[test]
+    fn a_flat_fleet_does_not_grow_a_column_of_dashes() {
+        // A DEPS column on a fleet whose graph is flat widens every row to teach the reader nothing.
+        let out = render_plan_table(&[row_waiting("k:a", &[], false)]);
+        assert!(!out.contains("WAITING ON"), "no column when nothing is held: {out}");
+    }
+
+    #[test]
+    fn a_held_stream_names_what_it_waits_on() {
+        let out = render_plan_table(&[row_waiting("k:a", &[], false), row_waiting("k:b", &["a"], false)]);
+        assert!(out.contains("WAITING ON"), "the column appears: {out}");
+        assert!(out.contains("waits:a"), "and names the upstream: {out}");
+        assert!(out.contains("WAITING on an upstream"), "the summary states the count: {out}");
+    }
+
+    #[test]
+    fn a_cycle_is_called_out_as_a_cycle_not_as_an_ordinary_wait() {
+        // The two look identical in a table and mean opposite things: one resolves when a worker
+        // finishes, the other never resolves and needs the PLAN edited. A director that reads a
+        // deadlock as a wait waits forever.
+        let out = render_plan_table(&[row_waiting("k:a", &["b"], true), row_waiting("k:b", &["a"], true)]);
+        assert!(out.contains("cycle:b"), "the row says cycle: {out}");
+        assert!(out.contains("can never become ready"), "and the summary says what to do: {out}");
+        assert!(out.contains("bsc plan fleet"), "naming the surface that fixes it: {out}");
+    }
+
+    #[test]
+    fn a_long_wait_list_is_truncated_rather_than_widening_the_table() {
+        let out = render_plan_table(&[row_waiting("k:a", &["one", "two", "three", "four"], false)]);
+        assert!(out.contains("waits:one,two,+2"), "first two then a count: {out}");
+    }
+
+    #[test]
+    fn one_long_upstream_name_cannot_set_the_width_for_every_row() {
+        // Measured on the real fleet: pane ids already run past 50 chars, and a single
+        // `commons--kevinthelago-base-studio-code` upstream pushed LIVE/BUSY/PID off the terminal for
+        // all 45 rows. The cell carries the SIGNAL; `--json` carries the full list.
+        let out = render_plan_table(&[row_waiting("k:a", &["commons--kevinthelago-base-studio-code"], false)]);
+        for line in out.lines().filter(|l| l.contains("waits:")) {
+            assert!(line.contains('…'), "the long cell is elided: {line}");
+        }
+        assert!(out.contains("waits:"), "and still says it is waiting: {out}");
+    }
+
+    // ── `clone` (#the-director-can-clone-its-projects-repos) ────────────────────────────────────
+
+    /// A plan store with two LINKED repos, for the clone refusals. Separate from `seed_plan_db`
+    /// because that one seeds streams and a ledger and links no repos — and the repo list is the
+    /// entire input here.
+    fn seed_repo_db(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-clone-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("demo.db");
+        let _ = std::fs::remove_file(&path);
+        let store = plandb::Store::open(&path).unwrap();
+        store.repo_add("o/one").unwrap();
+        store.repo_add("o/two").unwrap();
+        path
+    }
+
+    fn clone_args(db: &std::path::Path, extra: &[&str]) -> Args {
+        let mut raw = vec!["clone".to_string(), "--db".to_string(), db.to_string_lossy().into_owned()];
+        raw.extend(extra.iter().map(|s| s.to_string()));
+        parse_args(raw).unwrap()
+    }
+
+    #[test]
+    fn the_project_key_is_read_off_the_plan_store_filename() {
+        // plans live at `plans/<key>.db`, and the key is what names the hub the clone lands in.
+        assert_eq!(project_key_from_db(std::path::Path::new("/p/plans/studio-code.db")).unwrap(), "studio-code");
+        assert_eq!(project_key_from_db(std::path::Path::new("nm.db")).unwrap(), "nm");
+    }
+
+    #[test]
+    fn cloning_a_repo_the_plan_does_not_link_is_refused_and_lists_what_it_does() {
+        // Not pedantry: it would clone something the fleet has no stream for, into a hub that will
+        // never use it — and the useful half of the refusal is being told what IS linked.
+        let db = seed_repo_db("unlinked");
+        let err = cmd_clone(&clone_args(&db, &["--repo", "o/three"]), "bsc fleet").unwrap_err();
+        assert!(err.contains("o/three"), "names the repo asked for: {err}");
+        assert!(err.contains("o/one") && err.contains("o/two"), "names what IS linked: {err}");
+    }
+
+    #[test]
+    fn a_project_that_links_no_repos_says_so_rather_than_succeeding_emptily() {
+        // "0 repos cloned" exiting 0 reads as done. It is not — it means the plan has no repos, and
+        // the caller's next step is `bsc plan repo`, not another clone.
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-clone-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("empty.db");
+        let _ = std::fs::remove_file(&path);
+        plandb::Store::open(&path).unwrap();
+        let err = cmd_clone(&clone_args(&path, &[]), "bsc fleet").unwrap_err();
+        assert!(err.contains("links no repos"), "{err}");
+        assert!(err.contains("bsc plan repo list"), "points at where repos come from: {err}");
+    }
+
+    #[test]
+    fn a_plan_store_that_names_nothing_is_not_minted_into_existence() {
+        // `Store::open` would happily create one, and a fresh empty store answers "no repos" — the
+        // wrong answer for a typo'd --db, and it would litter the disk with empty plan stores.
+        let missing = std::env::temp_dir().join(format!("bsc-fleet-no-such-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&missing);
+        assert!(plan_db_path(Some(&missing.to_string_lossy())).is_none());
+        assert!(!missing.exists(), "the probe must not create it");
+    }
+
     /// THE FIX, at the CLI seam. Membership comes out of plan.db — every planned stream and every
     /// launched agent — with no roster file anywhere and nothing running. The old path produced at
     /// most the panes the app was tracking, which is why a stopped worker had no row.
@@ -982,7 +1542,10 @@ mod tests {
             state,
             live,
             busy,
+            agent: busy,
             pid: if live { Some(42) } else { None },
+            waiting_on: Vec::new(),
+            deadlocked: false,
         }
     }
 
@@ -1251,7 +1814,9 @@ mod director_tests {
     }
 
     fn pane(id: &str, live: bool, busy: bool) -> PaneLive {
-        PaneLive { pane_id: id.into(), live, busy, pid: if live { Some(7) } else { None } }
+        // `agent` mirrors `busy` in these fixtures: they were written when the two were one signal,
+        // and the cases here are about JOINING liveness onto membership, not about telling them apart.
+        PaneLive { pane_id: id.into(), live, busy, agent: busy, pid: if live { Some(7) } else { None } }
     }
 
     /// The table must show a stopped director as a ROW — that row is the point — and say plainly how
@@ -1448,5 +2013,57 @@ mod director_tests {
         // out — the colon is load-bearing, so this pins it.
         assert!("studio-code:director".ends_with(DIRECTOR_SUFFIX));
         assert!(!"studio-code:art-director".ends_with(DIRECTOR_SUFFIX));
+    }
+}
+
+#[cfg(test)]
+mod clone_credential_tests {
+    use super::*;
+
+    /// The failure a maintainer actually met, twice read as a missing PERMISSION.
+    ///
+    /// Git does not say "unauthorized" when it has no credential — it tries to PROMPT and fails on
+    /// the absent terminal. The message must name the cause (no credential) and both ways out.
+    #[test]
+    fn a_credential_prompt_failure_names_the_cause_and_the_ways_out() {
+        let raw = "Cloning into '/hub/repo'...\nfatal: could not read Username for \
+                   'https://github.com': No such device or address";
+        let m = explain_clone_failure("bsc fleet", "acme/private", false, raw);
+        assert!(m.contains("no GitHub credential"), "names the cause: {m}");
+        assert!(m.contains("acme/private"), "names the repo: {m}");
+        assert!(m.contains("Settings → GitHub"), "names where a token comes from: {m}");
+        assert!(m.contains("$GH_TOKEN"), "says the token reaches a session automatically: {m}");
+        assert!(m.contains("--source"), "names the no-network way out: {m}");
+        assert!(m.contains(raw) || m.contains("could not read Username"), "keeps the original: {m}");
+    }
+
+    /// HAVING a token and being REFUSED is a different problem with a different fix, so it must not
+    /// tell the reader to go connect an account they already connected.
+    #[test]
+    fn a_refusal_with_a_token_in_hand_reads_differently() {
+        let m = explain_clone_failure("bsc fleet", "acme/private", true, "fatal: Authentication failed");
+        assert!(m.contains("refused the credential"), "{m}");
+        assert!(!m.contains("no GitHub credential"), "must not claim there is no token: {m}");
+    }
+
+    /// Anything that is NOT an auth prompt passes through untouched — a disk-full or bad-path clone
+    /// failure must not be relabelled as a credential problem.
+    #[test]
+    fn a_non_auth_failure_is_not_dressed_up_as_one() {
+        let m = explain_clone_failure("bsc fleet", "acme/pub", false, "fatal: destination path exists");
+        assert_eq!(m, "bsc fleet clone: fatal: destination path exists");
+    }
+
+    /// A set-but-blank variable is how a shell says "no token"; passing it on would rebuild the
+    /// anonymous URL this fallback exists to avoid.
+    #[test]
+    fn a_blank_env_token_counts_as_absent() {
+        // Distinct names per case: nextest gives each test its own process, but these still must not
+        // depend on each other's ordering within one.
+        std::env::set_var("BSC_TEST_TOKEN_BLANK", "   ");
+        assert_eq!(env_token("BSC_TEST_TOKEN_BLANK"), None);
+        std::env::set_var("BSC_TEST_TOKEN_REAL", "  ghp_example  ");
+        assert_eq!(env_token("BSC_TEST_TOKEN_REAL").as_deref(), Some("ghp_example"));
+        assert_eq!(env_token("BSC_TEST_TOKEN_ABSENT_XYZ"), None);
     }
 }

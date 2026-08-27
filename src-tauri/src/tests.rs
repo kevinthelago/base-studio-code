@@ -290,6 +290,55 @@
         }
     }
 
+    /// The `tauri dev` watcher must not fire on a change CARGO has declared it does not compile
+    /// (#a-record-write-restarts-the-app-the-user-is-using).
+    ///
+    /// `build.rs` keeps `NON_CONFIG_DIRS` out of the embedded config seed, so a record write does not
+    /// invalidate the build. The WATCHER is a separate mechanism and did not know: it watched all of
+    /// `src-tauri/`, so writing a component record still triggered a rebuild — a ~1.3s no-op — and then
+    /// RELAUNCHED the app under the user working in it.
+    ///
+    /// Pinned rather than trusted, because the two lists live in different files and the failure is
+    /// silent in both directions: a dir added to `NON_CONFIG_DIRS` and not here leaves the watcher
+    /// firing on it, and one listed here but still embedded means an edit stops reaching the binary.
+    #[test]
+    fn the_watch_ignore_covers_every_dir_the_build_leaves_out() {
+        let ignore = include_str!("../.taurignore");
+        let build_rs = include_str!("../build.rs");
+        // The list as build.rs states it, read from the source rather than duplicated here — a third
+        // copy would be the very drift this pins.
+        let decl = build_rs
+            .split("const NON_CONFIG_DIRS: &[&str] = &[")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .expect("build.rs declares NON_CONFIG_DIRS");
+        let dirs: Vec<&str> = decl
+            .split(',')
+            .map(|s| s.trim().trim_matches('"'))
+            .filter(|s| !s.is_empty())
+            .collect();
+        assert!(!dirs.is_empty(), "parsed no dirs out of NON_CONFIG_DIRS: {decl:?}");
+
+        for dir in &dirs {
+            assert!(
+                ignore.lines().any(|l| l.trim() == format!("data/{dir}/")),
+                ".taurignore is missing `data/{dir}/`, so `tauri dev` still rebuilds and RELAUNCHES \
+                 the app when a session writes there — a build cargo already skips",
+            );
+        }
+
+        // And nothing MORE: an entry here for a dir that IS embedded would stop an edit reaching the
+        // binary, silently, which build.rs's own comment calls strictly worse than a slow build.
+        for line in ignore.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            let named = line.trim_start_matches("data/").trim_end_matches('/');
+            assert!(
+                dirs.contains(&named),
+                "`{line}` is ignored by the watcher but is NOT in build.rs's NON_CONFIG_DIRS, so it \
+                 IS compiled in — an edit to it would silently stop reaching the binary",
+            );
+        }
+    }
+
     /// `build.rs` cannot depend on a workspace lib, so it repeats the seed list as `BUNDLED_SEEDS`.
     /// Pin the copy to the original — a seed added to one and not the other either fails to ship or
     /// fails to stage, and both only show up in a release build.

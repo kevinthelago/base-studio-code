@@ -16,6 +16,16 @@
       "prompts/*",
       "discovery/*.md",
       "discovery/*"
+    ],
+    "surfaces": [
+      "plan",
+      "fleet",
+      "errors",
+      "publish",
+      "teams",
+      "persona",
+      "logs",
+      "request"
     ]
   },
   "blurb": "Coordinates the fleet: reviews/merges PRs, resolves decisions, keeps the board current.",
