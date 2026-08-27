@@ -4694,12 +4694,19 @@ fn cmd_usage_scan(args: &[String]) -> Result<(), String> {
             if rec.is_null() {
                 continue;
             }
+            let kit = rec.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
             rec["used"] = serde_json::Value::from(row.used);
             if row.used > 0 {
                 rec["usageAssessed"] = serde_json::Value::Bool(true);
                 assessed += 1;
             }
             stamped_set(&store, &row.id, rec, &writer)?;
+            // #110: every other write path emits this right after its `store.set` so the Design Studio's
+            // live-focus poll (`useUiActivity`) re-hydrates and the orphan/dangling-branch badges stop
+            // lagging the store — this loop was the one write path that never did, so `used`/`usageAssessed`
+            // could flip a record from orphan to composed on disk while the running app kept showing the
+            // stale badge until a full relaunch.
+            bsc_util::emit_ui_activity_in("component", &row.id, &kit);
         }
     }
 
@@ -9987,6 +9994,49 @@ export const P = () => <X />;"
         )
         .expect_err("a missing root must refuse");
         assert!(err.contains("does not exist"), "{err}");
+    }
+
+    /// #110: `usage-scan --apply` is a real mutation path (it flips `used`/`usageAssessed`, which is
+    /// exactly what moves a record off `doctor`'s orphan/dangling-branch findings) but it wrote through
+    /// `stamped_set` directly and never called `emit_ui_activity`, unlike every other write verb (`set`,
+    /// `remove`, `rename`, `merge`, `import`, …). The Design Studio's live-focus poll (`useUiActivity`)
+    /// re-hydrates the library on a `ui-touch` line and nothing else — so a component `usage-scan --apply`
+    /// rescued from a false orphan kept showing the stale badge in the running app until a full relaunch,
+    /// because the ONE signal that tells it to reload never fired. Filed as request 110 (DeployToggle).
+    #[test]
+    fn usage_scan_apply_emits_a_ui_touch_per_written_record_so_the_studio_rehydrates() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        bsc_cli_util::with_scopes(None, || {
+            let act = std::env::temp_dir().join(format!("bsc-component-uiact-usagescan-{}.log", std::process::id()));
+            let _ = std::fs::remove_file(&act);
+            std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+            std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+            let store = tmp_component_store("usage-scan-emit");
+            let dir = store.dir().to_string_lossy().into_owned();
+            let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+            put("child", serde_json::json!({ "id": "child", "name": "Child", "kitId": "base-studio-code", "role": "primitive", "composes": [] }));
+            put("parent", serde_json::json!({ "id": "parent", "name": "Parent", "kitId": "base-studio-code", "role": "composite", "composes": ["Child"] }));
+
+            // A READ never emits — nothing changed for the Studio to reload.
+            run(vec!["usage-scan".into(), "--dir".into(), dir.clone()], "bsc ui").expect("read");
+            assert!(!act.is_file() || std::fs::read_to_string(&act).unwrap().is_empty(), "a read must not touch the activity log");
+
+            run(vec!["usage-scan".into(), "--apply".into(), "--dir".into(), dir], "bsc ui").expect("apply");
+            let text = std::fs::read_to_string(&act).unwrap();
+            assert!(
+                text.contains("\tui-touch\tcomponent\tchild") && text.contains("\tbase-studio-code"),
+                "the rescued (now-used) record touches, carrying its kit: {text:?}",
+            );
+            assert!(
+                text.contains("\tui-touch\tcomponent\tparent"),
+                "every applied record touches, not just the one that changed orphan status: {text:?}",
+            );
+
+            std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+            std::env::remove_var("BSC_AUDIT_PANE");
+            let _ = std::fs::remove_file(&act);
+        });
     }
 
     /// `--apply` writes, so it must be scope-gated like every other write — while the READ stays
