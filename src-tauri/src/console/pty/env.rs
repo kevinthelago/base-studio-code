@@ -861,8 +861,20 @@ pub(super) fn wire_bsc_env(
     // under `~/.base-studio-code/projects/<key>/...` (the director/planner at the hub, workers in a
     // worktree beneath it) — so the whole fleet shares one plan.db. Non-project sessions (a plain
     // console in some repo) get no BSC_PLAN_DB and never call `bsc plan`.
-    if let Some(db) = plan_db_for_cwd(cwd) {
-        cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
+    //
+    // The `else` is not defensive dressing (#request-128): `CommandBuilder` seeds every spawned command
+    // from the APP PROCESS's own ambient environment (portable_pty's `get_base_env` = `vars_os()`), and
+    // nothing here ever clears it. So `cmd.env(...)` only runs when `cwd` resolves — if it does not, the
+    // line above is silently skipped and `BSC_PLAN_DB` is left at whatever the app's own launching shell
+    // happened to export (this repo's own dev workflow, above, tells a developer to
+    // `export BSC_PLAN_DB=.../studio-code.db` — exactly the kind of value that leaked into a director
+    // session for an unrelated project, #request-128). A session scoped to ONE project must never
+    // silently read or write a DIFFERENT project's store, so a miss clears the var explicitly instead of
+    // leaving it to inherit — turning "wrong project's plan.db used, silently" into "no BSC_PLAN_DB, `bsc
+    // plan` fails loudly," which is the behavior every doc comment on this function already claims.
+    match plan_db_for_cwd(cwd) {
+        Some(db) => cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy())),
+        None => cmd.env_remove("BSC_PLAN_DB"),
     }
     // The studio scratch dir (#3373): where a restricted studio session stages a payload it then applies
     // with `bsc <store> set --file <name>` — the only authoring channel that is both allow-listable
@@ -897,13 +909,16 @@ pub(super) fn wire_bsc_env(
     // bsc errors (#2260): point this session at its project's runtime-fault store. $BSC_ERROR_DB is the
     // error.db the `bsc errors` subcommand reads/writes — cwd-derived exactly like BSC_PLAN_DB, so the
     // whole fleet shares one error.db per project; a non-project session gets none and never calls it.
-    if let Some(db) = error_db_for_cwd(cwd) {
-        cmd.env("BSC_ERROR_DB", to_bash_path(&db.to_string_lossy()));
+    // Cleared, not left, on a miss — same #request-128 reasoning as BSC_PLAN_DB above.
+    match error_db_for_cwd(cwd) {
+        Some(db) => cmd.env("BSC_ERROR_DB", to_bash_path(&db.to_string_lossy())),
+        None => cmd.env_remove("BSC_ERROR_DB"),
     }
     // bsc usage (#3812, epic #3809): point this session at its project's usage-events store, cwd-derived
     // exactly like BSC_ERROR_DB — a running/generated app records usage, an agent reads via `bsc usage`.
-    if let Some(db) = usage_db_for_cwd(cwd) {
-        cmd.env("BSC_USAGE_DB", to_bash_path(&db.to_string_lossy()));
+    match usage_db_for_cwd(cwd) {
+        Some(db) => cmd.env("BSC_USAGE_DB", to_bash_path(&db.to_string_lossy())),
+        None => cmd.env_remove("BSC_USAGE_DB"),
     }
     // Runtime-fault instrumentation (#2262): surface the durable per-project ingest token + the
     // collector's loopback port so a session that (re)generates the fault shim can bake them in. The
@@ -934,9 +949,10 @@ pub(super) fn wire_bsc_env(
     // onto the one `bsc plan` issue surface.)
     // bsc data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
     // PlatformScan the planner reads at the UI-kickoff stage via `bsc data`. $BSC_DATA_DB is the
-    // project's .duckdb (cwd-derived, like BSC_PLAN_DB).
-    if let Some(db) = data_db_for_cwd(cwd) {
-        cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy()));
+    // project's .duckdb (cwd-derived, like BSC_PLAN_DB). Cleared, not left, on a miss (#request-128).
+    match data_db_for_cwd(cwd) {
+        Some(db) => cmd.env("BSC_DATA_DB", to_bash_path(&db.to_string_lossy())),
+        None => cmd.env_remove("BSC_DATA_DB"),
     }
     // bsc compliance (#1718): point every session at the GLOBAL compliance standards store.
     // $BSC_COMPLIANCE_STORE is the store.db the `bsc compliance` subcommand reads/writes (and which the
@@ -1517,6 +1533,67 @@ mod tests {
         // A plain repo somewhere on disk is not a project session.
         let elsewhere = std::path::Path::new("C:/code/some-repo");
         assert_eq!(plan_db_for_cwd(&elsewhere.to_string_lossy()), None);
+    }
+
+    /// #request-128 — a cwd that resolves to NO project must CLEAR the per-project store vars, not
+    /// merely skip setting them.
+    ///
+    /// This is the whole bug, and it is invisible at the call site. `CommandBuilder::new` seeds
+    /// `envs` from `get_base_env()` — a copy of the APP PROCESS's own environment — so an
+    /// `if let Some(db) = … { cmd.env(…) }` that does not fire leaves whatever the app's launching
+    /// shell exported. This repo's own workflow tells a developer to
+    /// `export BSC_PLAN_DB=…/studio-code.db`, so a director opened for an unrelated project
+    /// inherited studio-code's plan store and read and wrote the WRONG project's issues, silently.
+    ///
+    /// The assertion only means something because the var is SET first: a value that was never set
+    /// and one that was cleared both read as `None`, so a bare `is_none()` on a clean environment
+    /// would pass against the unfixed code. Setting it makes `None` provable evidence of a clear.
+    #[test]
+    fn a_cwd_with_no_project_clears_the_inherited_store_vars_rather_than_inheriting_them() {
+        use super::CommandBuilder;
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Stand in for the leak: the app's own shell exported another project's stores.
+        let leaked = [
+            ("BSC_PLAN_DB", "/somewhere/else/plans/studio-code.db"),
+            ("BSC_ERROR_DB", "/somewhere/else/error.db"),
+            ("BSC_USAGE_DB", "/somewhere/else/usage.db"),
+            ("BSC_DATA_DB", "/somewhere/else/data.duckdb"),
+        ];
+        for (k, v) in leaked {
+            std::env::set_var(k, v);
+        }
+        // A plain repo is not a project session, so none of the four can resolve.
+        let mut cmd = CommandBuilder::new("bash");
+        let _ = super::wire_bsc_env(&mut cmd, "t0p1", "C:/code/some-unrelated-repo", None, None);
+        for (k, v) in leaked {
+            assert_eq!(
+                cmd.get_env(k),
+                None,
+                "{k} must be CLEARED for a non-project session — it was inherited as {v:?}, and a \
+                 session scoped to one project must never silently read or write another's store",
+            );
+            std::env::remove_var(k);
+        }
+    }
+
+    /// The other half of the same contract: when the cwd DOES resolve, the var is set to that
+    /// project's store — so the clear above cannot be "clear it always", which would break every
+    /// fleet session's `bsc plan`.
+    #[test]
+    fn a_project_cwd_still_gets_its_own_plan_db() {
+        use super::CommandBuilder;
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("BSC_PLAN_DB", "/somewhere/else/plans/studio-code.db");
+        let hub = bsc_base_dir().join("projects").join("my-app");
+        let mut cmd = CommandBuilder::new("bash");
+        let _ = super::wire_bsc_env(&mut cmd, "t0p1", &hub.to_string_lossy(), None, None);
+        let got = cmd.get_env("BSC_PLAN_DB").map(|s| s.to_string_lossy().to_string());
+        assert!(got.is_some(), "a project session must still get its own BSC_PLAN_DB");
+        assert!(
+            got.as_deref().is_some_and(|g| g.contains("my-app")),
+            "and it must be THIS project's store, not the inherited one: {got:?}",
+        );
+        std::env::remove_var("BSC_PLAN_DB");
     }
 
     // ── #3959: staging must survive a locked destination ────────────────────────────────────────
