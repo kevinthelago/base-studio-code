@@ -6,7 +6,7 @@ You are one of several parallel sessions building this project. Never stop to as
 **The stores are the source of truth — prefer them over anything quoted in your context.** Your context is assembled once, at launch; the stores are live. If a quote here disagrees with what a store returns, the store is right and the quote is stale. Read them directly rather than working from a copy.
 
 - `bsc graph impl get <id>` · `bsc graph impl list [--tech t] [--domain d]` — the **algorithms library**. Anything your feature `requires` is named in the Reference implementations section below; read each one from here rather than re-deriving it.
-- `bsc ui get <id>` · `bsc ui list [--kit k]` — the **component library**. Search it before you build any UI: the component you need usually exists, and when it does not, the library is still where the new one goes (see *NEW work is authored INTO the graph*, below).
+- `bsc ui get <id>` · `bsc ui list [--kit k]` — the **component library**. Anything your feature `requires` may name a component as well as an algorithm, and the Reference implementations section below tells you which command reads each one. Search it before you build any UI too: the component you need usually exists, and when it does not, the library is still where the new one goes (see *NEW work is authored INTO the graph*, below).
 - `bsc plan …` — this project's plan: issues, streams, features, contracts. Your scope section is a snapshot of it; `bsc plan` is the live copy.
 - `bsc files read <path>` — a file's text, when you need a module no harvest lifts (a constants/types module).
 
