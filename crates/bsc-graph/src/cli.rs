@@ -17,9 +17,9 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 17] = [
+pub const VERBS: [&str; 18] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
-    "used-by", "merge", "emit", "promote", "build", "migrate-crate", "help",
+    "used-by", "domains", "merge", "emit", "promote", "build", "migrate-crate", "help",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -42,7 +42,7 @@ pub const BOOL_FLAGS: [&str; 12] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 45] = [
+pub const FLAGS: [&str; 46] = [
     "--pretty",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
@@ -56,6 +56,7 @@ pub const FLAGS: [&str; 45] = [
     "--superseded-by",
     // #72 — the revision `impl revert` restores to, and who to attribute the write to.
     "--to",
+    "--top",
     "--by",
     // #72 — the WHY, recorded on the history entry alongside the who and the when.
     "--note",
@@ -2194,6 +2195,43 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // `used-by <id>` / `--all` (#3594) — the composes-inverse USAGE read (measure step of the optimize
         // loop; mirrors `bsc ui used-by`). A read.
+        // `domains [--top N] [--pretty]` — the `domain` facet, measured. READ-ONLY, always: it ranks candidates
+        // for the baseline and never promotes one, because "many domains use it" is EVIDENCE, not a
+        // decision. A record can be widely used and still be one feature's business that others reach
+        // into wrongly — and that is a finding worth keeping, not a thing to sweep away.
+        //
+        // `coreCandidates` is ranked by FOREIGN-DOMAIN FAN-IN — how many *different* domains compose a
+        // record, not how often it is composed. Raw usage cannot tell shared infrastructure from one
+        // feature's popular helper; the number of distinct callers-across-a-boundary can.
+        "domains" => {
+            let g = crate::load();
+            let impls = crate::implementations_of(&g);
+            let owned: Vec<Value> = impls.into_iter().collect();
+            let r = crate::domains::measure(&owned);
+            let top: usize = flag_value(&args, "--top")
+                .map(|v| v.parse::<usize>().map_err(|_| "--top needs a number".to_string()))
+                .transpose()?
+                .unwrap_or(20);
+            let candidates: Vec<Value> = r
+                .candidates
+                .iter()
+                .take(top)
+                .map(|c| serde_json::json!({
+                    "id": c.id,
+                    "domain": c.domain,
+                    "foreignDomains": c.from.len(),
+                    "from": c.from,
+                }))
+                .collect();
+            emit(&serde_json::json!({
+                "total": r.total,
+                "byDomain": r.by_domain,
+                "domainless": r.domainless,
+                "crossDomainEdges": r.cross_domain_edges,
+                "edgesIntoCore": r.edges_into_core,
+                "coreCandidates": candidates,
+            }))
+        }
         "used-by" => {
             let g = crate::load();
             let idx = crate::used_by_index(&g);
@@ -2429,7 +2467,7 @@ fn help(prog: &str) -> String {
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
-         {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
+         {prog} used-by <id> [--pretty]          {prog} domains [--top N] [--pretty]            # the `domain` facet measured: records per domain, what no collection claims, the composes edges that cross a domain vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT domains compose them. READ-ONLY: it ranks, it never tags. NOTE `domain` is the curated cross-language COLLECTION facet (#3120) and is partial by design — primitives and general-purpose algorithms are excluded on purpose, so this is not a feature axis\n| used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)

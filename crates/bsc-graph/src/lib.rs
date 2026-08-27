@@ -9,6 +9,7 @@
 //! after a write reflects the write ("verify after every write"). #2745 layers the extract-to-harvest
 //! feeder (mine reusable code from a project into the library) on top.
 
+pub mod domains;
 pub mod build_facet;
 pub mod cli;
 /// The store→file direction (#4192) — the twin of `bsc ui emit`, with the shared-`src` hazard
