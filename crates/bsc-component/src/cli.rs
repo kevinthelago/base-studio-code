@@ -716,6 +716,27 @@ overlap, then fold the LESS-used component into the more-used one.
 { id, name, kit, count }, most-used first (--kit scopes to one kit). A READ — never scope-gated.",
     },
     CmdDoc {
+        name: "refs",
+        summary: "literal srcText cross-references to a component's NAME across every other component (#113)",
+        usage: "\
+USAGE:
+  bsc ui refs <id> [--json] [--pretty]
+
+The complement to `used-by`: `used-by` reads the DECLARED `composes` graph, so a component that is
+genuinely referenced in another's JSX or import but never added to `composes` reads as an orphan there
+— indistinguishable from one that is actually dead. This scans every OTHER live component's raw
+`srcText`/`source` for literal whole-word occurrences of <id>'s NAME, so a missing edge and a genuinely
+dead root stop looking identical before either gets deleted.
+
+Each hit is classified: a JSX tag (`<Name`/`</Name`), an import-clause binding (`import { Name } from
+…` / `import Name from …`), or a bare mention (anywhere else — a type annotation, `Name.thing`, a plain
+reference). Deliberately loose (no AST, whole-word only, comments/strings skipped) — over-inclusion is
+harmless here, since a hit only tells the caller to LOOK FURTHER, never authorizes a delete on its own.
+
+--json emits { id, name, refs: [{ id, name, kit, jsx, importClause, bare, total }], count }, most-
+referenced first. A READ — never scope-gated.",
+    },
+    CmdDoc {
         name: "exports",
         summary: "a record's PUBLIC SURFACE grouped into ITEMS — the one-record-one-item read (#a-record-holds-one-item-not-a-module-of-them)",
         usage: "\
@@ -915,7 +936,7 @@ ui-scope MUTATION (#2470).",
         summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
         usage: "\
 USAGE:
-  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]    # (`regroup` is a deprecated alias)
+  bsc ui refolder [--kit <id>] [--dry-run] [--pretty]
 
 Re-derives each stored component's `group` as a nested, `/`-delimited FOLDER PATH from its `src`
 (`src/shared/ui/controls/Button.tsx` → `shared/ui/controls`; a leading `src/` root is stripped, the
@@ -1104,7 +1125,12 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     graph_fields: &["id", "name", "kitId", "role", "folder", "used", "composes"],
     // #4107 slice B: `group` -> `folder`. 351 stored records predate the rename and there is no
     // migration pass, so every projection reads the legacy key when the current one is absent.
-    field_aliases: &[("folder", "group")],
+    // #4107's `("folder", "group")` alias is GONE (finish-the-4107-group-to-folder-shim). It existed
+    // because 351 records predated the rename; `bsc ui refolder` has since migrated the last of them,
+    // and the packaged seed never carried the legacy key at all. Its removal is what makes `bsc ui list`
+    // and `bsc ui get --field folder` agree again — projecting through an alias while `get` read the raw
+    // record is why those two disagreed for a year.
+    field_aliases: &[],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
@@ -1162,7 +1188,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
+        Some("set") | Some("revert") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("refolder") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
         // `usage-scan` is a READ until `--apply`, which writes `used`/`usageAssessed` onto every examined
         // record. Gate on the flag, not the verb, so the diagnosis stays available to a read-scoped session.
@@ -1612,6 +1638,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_used_by(&args[1..])
             }
         }
+        // `refs` (#113) — literal srcText cross-references to a component's NAME; a READ, never scope-gated.
+        Some("refs") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refs"));
+                Ok(())
+            } else {
+                cmd_refs(&args[1..])
+            }
+        }
         Some("exports") => {
             if args.get(1).map(String::as_str) == Some("help") {
                 print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "exports"));
@@ -1718,14 +1753,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_patch(&args[1..])
             }
         }
-        // `regroup` (#3579) re-derives every stored component's `group` as a nested folder path from its
-        // `src` — a ui-scope MUTATION (gated above), so a kit organizes like a completed project's
-        // folders. `regroup help` prints the doc; the scope gate already refused a read-scoped session.
-        // `regroup` stays a DEPRECATED ALIAS: the verb is named in prose the designer/librarian may
-        // have memorised, and an unknown-command error is a worse migration than one extra match arm.
-        Some("refolder" | "regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
-        Some("refolder" | "regroup") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
+        // `refolder` (#3579) re-derives every stored component's `folder` as a nested path from its
+        // `src`, and carries a srcless record's legacy value across — a ui-scope MUTATION (gated above),
+        // so a kit organizes like a completed project's folders.
+        //
+        // The `regroup` ALIAS IS RETIRED (finish-the-4107-group-to-folder-shim). It was kept because the
+        // old name was "named in prose the designer/librarian may have memorised" — but the concept it
+        // named is gone from the store now, and an alias that outlives its field is how two names for
+        // one thing stay alive indefinitely. `unknown_command` names the near miss, so a session that
+        // types the old verb is told the new one rather than left guessing.
+        Some("refolder") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
+        Some("refolder") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
             Ok(())
         }
         // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
@@ -2649,7 +2688,6 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
 /// and `bsc ui refolder` does the whole store in one pass. Nothing needs migrating before this ships.
 pub(crate) fn record_folder(rec: &serde_json::Value) -> Option<&str> {
     rec.get("folder")
-        .or_else(|| rec.get("group"))
         .and_then(serde_json::Value::as_str)
         .filter(|s| !s.is_empty())
 }
@@ -2686,9 +2724,32 @@ fn cmd_refolder(args: &[String]) -> Result<(), String> {
         }
         scanned += 1;
         let src = rec.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
-        let Some(new_folder) = crate::folder_from_src(src) else { continue };
+        // The legacy key, read HERE and nowhere else. `record_folder` no longer knows it (#4107's alias
+        // is gone), and this is the one place that still must: a migration verb is the last reader of
+        // the name it is retiring.
+        let legacy = rec.get("group").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty())
+            .map(str::to_string);
+        let derived = crate::folder_from_src(src);
+        // WHY THIS IS NOT JUST `let Some(new) = derived else { continue }`:
+        //
+        // `folder` derives from `src`, so a record with NO src was skipped outright — and every one of
+        // the 19 components still on `group` at 2026-08-25 was srcless. The only verb that could finish
+        // #4107 structurally could not touch the records that needed it, which is why the rename stalled
+        // at 19 and the compatibility shim stayed load-bearing for a year. (4118 recorded exactly this
+        // trap for the ALGORITHMS store — "refolder counts all 75 as srcless and skips every one" — and
+        // nobody noticed it was equally true here.)
+        //
+        // A srcless record carrying `group` is migrated BY VALUE: its folder is curated (`app/console`,
+        // `features/planner/fleet`) and no `src` could reproduce it, so carrying the value across is the
+        // only correct move as well as the only possible one. Re-derivation stays what it always was for
+        // a record that HAS src.
+        let new_folder = match (derived, &legacy) {
+            (Some(d), _) => d,                      // has src: re-derive, unchanged behaviour
+            (None, Some(g)) => g.clone(),           // srcless + legacy key: carry the value across
+            (None, None) => continue,               // nothing to derive and nothing to carry
+        };
         let old = record_folder(&rec).unwrap_or_default().to_string();
-        if old == new_folder && rec.get("group").is_none() {
+        if old == new_folder && legacy.is_none() {
             continue;   // already correct AND already migrated off the legacy key
         }
         let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
@@ -4240,6 +4301,14 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // actionable finding, so it should never need a flag to surface.
     let render_errors = crate::preview_errors::latest_error_by_id();
     findings.extend(crate::graph_health::render_error_findings(&comps, &render_errors));
+    // #a-composes-target-can-name-two-records: append the NAME COLLISIONS — two records in one kit
+    // answering to one name, so a `composes` entry naming it resolves to whichever comes first in store
+    // order. Appended here rather than added to `analyze_with` because that function has a BYTE-PARITY
+    // TS twin (`graphHealth.ts`); this is the same reason `analyze_motion` and the render errors live
+    // out here. Always on: nothing else in the tooling can report the property (`dupes` found 6 of 39
+    // on the live library, because it detects content similarity and these records collide while
+    // DIFFERING in content).
+    findings.extend(crate::graph_health::analyze_name_collisions(&comps));
     // #3544: append the library-wide NEAR-duplicate findings — the fuzzy layer (name + contract distance)
     // the exact per-kit `duplicate` detector misses (`Donut`≈`DonutChart`, cross-kit `Card` repeats).
     // PROPOSE-ONLY: emitted here, never fed to `--fix` (only byte-identical merges auto-apply). Cross-kit
@@ -4625,12 +4694,19 @@ fn cmd_usage_scan(args: &[String]) -> Result<(), String> {
             if rec.is_null() {
                 continue;
             }
+            let kit = rec.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
             rec["used"] = serde_json::Value::from(row.used);
             if row.used > 0 {
                 rec["usageAssessed"] = serde_json::Value::Bool(true);
                 assessed += 1;
             }
             stamped_set(&store, &row.id, rec, &writer)?;
+            // #110: every other write path emits this right after its `store.set` so the Design Studio's
+            // live-focus poll (`useUiActivity`) re-hydrates and the orphan/dangling-branch badges stop
+            // lagging the store — this loop was the one write path that never did, so `used`/`usageAssessed`
+            // could flip a record from orphan to composed on disk while the running app kept showing the
+            // stale badge until a full relaunch.
+            bsc_util::emit_ui_activity_in("component", &row.id, &kit);
         }
     }
 
@@ -4799,6 +4875,101 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
         println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
     } else {
         println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
+    }
+    Ok(())
+}
+
+/// `bsc ui refs <id>` (#113) — literal srcText cross-references to a component's NAME, across every
+/// OTHER live component in the store. The complement to `used-by`: `used-by` reads the DECLARED
+/// composes graph, so a component actually used in another's JSX/import but never added to `composes`
+/// reads as an orphan there, indistinguishable from a genuinely dead root. This scans raw srcText for
+/// the name itself instead, so the two stop looking identical.
+fn cmd_refs(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut id) = (None::<String>, false, false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui refs <id> [--json] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let target = comps
+        .iter()
+        .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| format!("no component with id '{id}' (see `bsc ui list --raw`)"))?;
+    let name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    if name.is_empty() {
+        return Err(format!("component '{id}' has no name to search for"));
+    }
+
+    let mut hits: Vec<serde_json::Value> = Vec::new();
+    for c in &comps {
+        let cid = c.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if cid == id || cid.is_empty() {
+            continue; // never a reference to itself
+        }
+        if c.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true) {
+            continue; // a tombstone's content is gone; it can only ever dilute
+        }
+        let mut text = String::new();
+        for f in ["srcText", "source"] {
+            if let Some(t) = c.get(f).and_then(serde_json::Value::as_str) {
+                text.push_str(t);
+                text.push('\n');
+            }
+        }
+        if text.trim().is_empty() {
+            continue;
+        }
+        let mentions = crate::usage_scan::name_mentions(&text, &name);
+        if mentions.is_empty() {
+            continue;
+        }
+        let jsx = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::JsxTag)).count();
+        let import_clause = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::ImportClause)).count();
+        let bare = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::Bare)).count();
+        hits.push(serde_json::json!({
+            "id": cid,
+            "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "jsx": jsx,
+            "importClause": import_clause,
+            "bare": bare,
+            "total": mentions.len(),
+        }));
+    }
+    hits.sort_by(|a, b| {
+        b["total"].as_u64().cmp(&a["total"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+    });
+
+    if json {
+        let out = serde_json::json!({ "id": id, "name": name, "refs": hits, "count": hits.len() });
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        bsc_util::emit_line(&text.map_err(|e| e.to_string())?);
+    } else if hits.is_empty() {
+        bsc_util::emit_line(&format!(
+            "'{name}' ({id}) — no literal srcText reference found in any other component. Genuinely unreferenced, not just missing a `composes` edge.",
+        ));
+    } else {
+        bsc_util::emit_line(&format!("'{name}' ({id}) is literally referenced in {} component(s):", hits.len()));
+        for h in &hits {
+            bsc_util::emit_line(&format!(
+                "  {} ({})  [jsx {} · import {} · bare {}]",
+                h["name"].as_str().unwrap_or(""),
+                h["id"].as_str().unwrap_or(""),
+                h["jsx"].as_u64().unwrap_or(0),
+                h["importClause"].as_u64().unwrap_or(0),
+                h["bare"].as_u64().unwrap_or(0),
+            ));
+        }
     }
     Ok(())
 }
@@ -6576,7 +6747,7 @@ fn cmd_get(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// #3606 — export dumps the store to a folder tree nested by `group`, import loads it back, and the
+    /// #3606 — export dumps the store to a folder tree nested by `folder`, import loads it back, and the
     /// round-trip is lossless; a kit BUNDLE ({components:[…]}, e.g. react-ui.json) is exploded on import.
     #[test]
     fn export_import_round_trips_a_folder_tree_and_explodes_a_bundle() {
@@ -6586,8 +6757,9 @@ mod tests {
         let tree = base.join("tree");
         std::fs::create_dir_all(&store_dir).unwrap();
         let store = bsc_json_store::Store::new(store_dir.clone(), "component");
-        // One nested-by-group component, one ungrouped.
-        store.set("card", r#"{"id":"card","name":"Card","group":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
+        // One nested-by-FOLDER component, one unfoldered. (This fixture used the legacy `group` key
+        // until finish-the-4107-group-to-folder-shim removed the alias that made it resolve.)
+        store.set("card", r#"{"id":"card","name":"Card","folder":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
         store.set("loose", r#"{"id":"loose","name":"Loose","srcText":"export const Loose=()=>null;"}"#).unwrap();
 
         // export → files nest by the `group` folder path; ungrouped sits at the root.
@@ -6601,7 +6773,7 @@ mod tests {
         assert_eq!(store.list().len(), 0, "store cleared before re-import");
         cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
         let card: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
-        assert_eq!(card["group"], "ui/data", "the grouped record imported back verbatim");
+        assert_eq!(card["folder"], "ui/data", "the foldered record imported back verbatim");
         assert_eq!(card["srcText"], "export const Card=()=>null;");
         assert!(store.get("loose").unwrap().is_some(), "the ungrouped record imported back too");
 
@@ -7752,7 +7924,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -9509,6 +9681,78 @@ export const P = () => <X />;"
         });
     }
 
+    /// #113: a component genuinely referenced in another's JSX but never added to `composes` reads as
+    /// an orphan under `used-by` — `refs` is the srcText scan that tells the two apart.
+    #[test]
+    fn refs_finds_a_jsx_reference_used_by_cannot_see() {
+        let store = tmp_component_store("refs");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for rec in [
+            serde_json::json!({
+                "id": "widget", "name": "Widget", "kitId": "react-ui", "role": "primitive", "composes": [],
+                "srcText": "export const Widget = () => <div />;",
+            }),
+            // References Widget in JSX, and separately imports it — but never lists it in `composes`.
+            serde_json::json!({
+                "id": "page", "name": "Page", "kitId": "react-ui", "role": "composite", "composes": [],
+                "srcText": "import { Widget } from \"@/x/Widget\";\nexport const Page = () => <Widget />;",
+            }),
+            // Shares no reference at all.
+            serde_json::json!({
+                "id": "unrelated", "name": "Unrelated", "kitId": "react-ui", "role": "primitive", "composes": [],
+                "srcText": "export const Unrelated = () => <span />;",
+            }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+
+        // `used-by` sees NOTHING — there is no `composes` edge — which is exactly the false "orphan"
+        // #113 filed against. `used-by` itself prints via plain `println!`, so its human output is not
+        // capturable here; going straight at the composes-inverse index proves the same fact.
+        let comps: Vec<serde_json::Value> =
+            store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+        let idx = used_by_index(&comps);
+        assert!(
+            !idx.contains_key(&("react-ui".to_string(), "Widget".to_string())),
+            "used-by is blind to the JSX reference: no `composes` edge names Widget"
+        );
+
+        // `refs` finds it: `page` shows both a JSX hit and an import-clause hit, `unrelated` does not appear.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "widget", "--json"]), "bsc ui"));
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["name"], "Widget");
+        assert_eq!(v["count"], 1);
+        assert_eq!(v["refs"][0]["id"], "page");
+        assert_eq!(v["refs"][0]["jsx"], 1);
+        assert_eq!(v["refs"][0]["importClause"], 1);
+
+        // The text form names the referencer and never mentions `unrelated`.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "widget"]), "bsc ui"));
+        r.unwrap();
+        assert!(out.contains("Page"), "{out}");
+        assert!(!out.contains("Unrelated"), "{out}");
+
+        // A component nothing references at all — the genuinely-dead case `refs` exists to confirm.
+        let (r, out) = bsc_util::capture_output(|| run(d(&["refs", "unrelated"]), "bsc ui"));
+        r.unwrap();
+        assert!(out.contains("no literal srcText reference found"), "{out}");
+
+        assert!(run(vec!["refs".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        let err = run(d(&["refs", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("no component with id 'ghost'"), "{err}");
+
+        // A READ — in the catalog, never a scoped mutation, and runs under a read-only ui scope.
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "refs"));
+        assert!(!is_scoped_mutation(&["refs".to_string(), "widget".to_string()]), "refs is a read");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(run(d(&["refs", "widget"]), "bsc ui").is_ok(), "refs works read-scoped");
+        });
+    }
+
     #[test]
     fn similar_folds_in_each_candidate_usage() {
         // #3584: `similar` still ranks by name+contract, but each row now carries `usedBy` so a combine
@@ -9752,6 +9996,49 @@ export const P = () => <X />;"
         assert!(err.contains("does not exist"), "{err}");
     }
 
+    /// #110: `usage-scan --apply` is a real mutation path (it flips `used`/`usageAssessed`, which is
+    /// exactly what moves a record off `doctor`'s orphan/dangling-branch findings) but it wrote through
+    /// `stamped_set` directly and never called `emit_ui_activity`, unlike every other write verb (`set`,
+    /// `remove`, `rename`, `merge`, `import`, …). The Design Studio's live-focus poll (`useUiActivity`)
+    /// re-hydrates the library on a `ui-touch` line and nothing else — so a component `usage-scan --apply`
+    /// rescued from a false orphan kept showing the stale badge in the running app until a full relaunch,
+    /// because the ONE signal that tells it to reload never fired. Filed as request 110 (DeployToggle).
+    #[test]
+    fn usage_scan_apply_emits_a_ui_touch_per_written_record_so_the_studio_rehydrates() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        bsc_cli_util::with_scopes(None, || {
+            let act = std::env::temp_dir().join(format!("bsc-component-uiact-usagescan-{}.log", std::process::id()));
+            let _ = std::fs::remove_file(&act);
+            std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+            std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+            let store = tmp_component_store("usage-scan-emit");
+            let dir = store.dir().to_string_lossy().into_owned();
+            let put = |id: &str, v: serde_json::Value| store.set(id, &v.to_string()).unwrap();
+            put("child", serde_json::json!({ "id": "child", "name": "Child", "kitId": "base-studio-code", "role": "primitive", "composes": [] }));
+            put("parent", serde_json::json!({ "id": "parent", "name": "Parent", "kitId": "base-studio-code", "role": "composite", "composes": ["Child"] }));
+
+            // A READ never emits — nothing changed for the Studio to reload.
+            run(vec!["usage-scan".into(), "--dir".into(), dir.clone()], "bsc ui").expect("read");
+            assert!(!act.is_file() || std::fs::read_to_string(&act).unwrap().is_empty(), "a read must not touch the activity log");
+
+            run(vec!["usage-scan".into(), "--apply".into(), "--dir".into(), dir], "bsc ui").expect("apply");
+            let text = std::fs::read_to_string(&act).unwrap();
+            assert!(
+                text.contains("\tui-touch\tcomponent\tchild") && text.contains("\tbase-studio-code"),
+                "the rescued (now-used) record touches, carrying its kit: {text:?}",
+            );
+            assert!(
+                text.contains("\tui-touch\tcomponent\tparent"),
+                "every applied record touches, not just the one that changed orphan status: {text:?}",
+            );
+
+            std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+            std::env::remove_var("BSC_AUDIT_PANE");
+            let _ = std::fs::remove_file(&act);
+        });
+    }
+
     /// `--apply` writes, so it must be scope-gated like every other write — while the READ stays
     /// available to a read-scoped session, because the diagnosis is the useful half.
     #[test]
@@ -9900,22 +10187,67 @@ export const P = () => <X />;"
         assert!(store.get("dup").unwrap().is_none(), "a non-builtin merge is still a bare delete");
     }
 
-    // ── #4107 slice B: the `group` -> `folder` rename ──
+    // ── #4107 slice B, FINISHED: the `group` -> `folder` rename ──
 
-    /// The store holds records written under `group` and there is no migration pass (the component seed
-    /// dir is skipped by `ensure_seeded`), so every READ must accept both names. Without this a rename
-    /// silently flattens 351 records to "unfoldered" — the failure looks like a kit that never had folders.
+    /// The inverse of the test this replaces. `record_folder_reads_the_legacy_group_key` pinned the
+    /// COMPATIBILITY SHIM — "every READ must accept both names" — which was right while 351 records
+    /// predated the rename. `bsc ui refolder` has since migrated the last of them and the packaged seed
+    /// never carried the legacy key, so the shim is gone and this pins its absence.
+    ///
+    /// It is pinned rather than merely deleted because a silently-returning alias is exactly how the two
+    /// names stayed alive: `bsc ui list` projected through it while `bsc ui get --field folder` read the
+    /// raw record, so the two disagreed for a year and each looked correct on its own.
     #[test]
-    fn record_folder_reads_the_legacy_group_key() {
+    fn record_folder_no_longer_reads_the_legacy_group_key() {
         use serde_json::json;
         assert_eq!(record_folder(&json!({ "folder": "shared/ui" })), Some("shared/ui"));
-        assert_eq!(record_folder(&json!({ "group": "shared/ui" })), Some("shared/ui"), "legacy key still read");
-        // Both present ⇒ the CURRENT name wins, so a half-migrated record cannot regress to its old path.
+        assert_eq!(
+            record_folder(&json!({ "group": "shared/ui" })), None,
+            "the legacy key is NOT read — a record still on it is unfoldered, which is what makes the \
+             migration observable instead of silently permanent"
+        );
         assert_eq!(record_folder(&json!({ "folder": "new/path", "group": "old/path" })), Some("new/path"));
         assert_eq!(record_folder(&json!({})), None);
         // An empty value is "absent", never a `""` bucket — the record convention the doc pins.
         assert_eq!(record_folder(&json!({ "folder": "" })), None);
-        assert_eq!(record_folder(&json!({ "group": "" })), None);
+    }
+
+    /// `refolder` migrates a SRCLESS record carrying the legacy key by VALUE — the case that kept the
+    /// shim load-bearing. `folder` derives from `src`, so a record with none was skipped outright, and
+    /// every one of the 19 components still on `group` at 2026-08-25 was srcless: the only verb that
+    /// could finish the rename structurally could not touch the records that needed it.
+    #[test]
+    fn refolder_migrates_a_srcless_legacy_record_by_value() {
+        let dir = tmp_store_dir("refolder-legacy");
+        let store = bsc_json_store::Store::new(std::path::PathBuf::from(&dir), "component");
+        // srcless + legacy key: its folder is CURATED, so no `src` could reproduce it.
+        store.set("endedconsole", r#"{"id":"endedconsole","name":"EndedConsole","group":"app/console"}"#).unwrap();
+        // has src: re-derivation, the unchanged path.
+        store.set("btn", r#"{"id":"btn","name":"Btn","src":"src/shared/ui/controls/Btn.tsx"}"#).unwrap();
+
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+
+        let ended: serde_json::Value =
+            serde_json::from_str(&store.get("endedconsole").unwrap().unwrap()).unwrap();
+        assert_eq!(ended["folder"], "app/console", "the curated value is CARRIED, not re-derived");
+        assert!(ended.get("group").is_none(), "the legacy key is cleared, so the two cannot drift");
+
+        let btn: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
+        assert_eq!(btn["folder"], "shared/ui/controls", "a record WITH src still derives");
+    }
+
+    /// A record with neither `src` nor the legacy key is left alone — the 9 suppression TOMBSTONES in the
+    /// live store are exactly this shape, and a tombstone is not a component that lost its folder.
+    #[test]
+    fn refolder_leaves_a_tombstone_alone() {
+        let dir = tmp_store_dir("refolder-tombstone");
+        let store = bsc_json_store::Store::new(std::path::PathBuf::from(&dir), "component");
+        store.set("windowcontrols", r#"{"id":"windowcontrols","suppressed":true}"#).unwrap();
+        run(vec!["refolder".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let t: serde_json::Value =
+            serde_json::from_str(&store.get("windowcontrols").unwrap().unwrap()).unwrap();
+        assert!(t.get("folder").is_none(), "a tombstone gains no folder");
+        assert_eq!(t["suppressed"], true, "and is otherwise untouched");
     }
 
     /// A refolder pass must MIGRATE a legacy record, not just re-derive it: it writes `folder` and drops

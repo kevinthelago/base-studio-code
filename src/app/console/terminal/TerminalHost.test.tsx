@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TerminalHost, ownerClaim, type SlotTerminalProps } from "./TerminalHost";
+import { TerminalHost, ownerClaim, claimIsOnScreen, type SlotTerminalProps } from "./TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 
 // #2378 guardrail: there is exactly ONE <TerminalView> per paneId (one xterm, one PTY listener), owned by
@@ -271,6 +271,91 @@ describe("ownerClaim — a hidden surface must not steal a visible one's termina
 
   it("a parked claim owns it only when it is all that is left", () => {
     expect(ownerClaim([claim("parked", { visible: false, parked: true })])?.slotId).toBe("parked");
+  });
+
+  // ── The premise the last fix rested on, which was FALSE ─────────────────────────────────────────
+  //
+  // That fix closed with: "Ties are impossible in practice — the console grid and the Glance canvas
+  // are different Workspaces, so at most one is on screen." `App.tsx` keeps the console mounted across
+  // every navigation (`display: activeWorkspace === "console" ? "flex" : "none"`) precisely so xterm
+  // survives, while Glance is conditionally rendered. So on Glance BOTH are mounted and BOTH claim
+  // `visible: true` — a console cell's `visible={view === "console" && !hidden}` says nothing about
+  // its Workspace being off screen; `hidden` only ever meant "another pane is fullscreen, or another
+  // tab is active".
+  //
+  // So the tie the doc called impossible is the NORMAL state, last-wins picked the console cell again,
+  // and the wake blanked the morph exactly as before. Reported twice.
+  const onScreen = (ids: string[]) => (c: { slotId: string }) => ids.includes(c.slotId);
+
+  it("does not let an OFF-SCREEN console cell steal from the visible morph, though both claim visible", () => {
+    // Both visible; only the morph is actually rendered. The console cell registers LAST, which is
+    // what a `runId` bump from `bsc fleet wake` does to every card in the tab at once.
+    const claims = [claim("morph", { visible: true }), claim("console", { visible: true })];
+    expect(ownerClaim(claims, onScreen(["morph"]))?.slotId).toBe("morph");
+  });
+
+  it("still prefers the last ON-SCREEN claim when several are genuinely rendered", () => {
+    const claims = [claim("a", { visible: true }), claim("b", { visible: true })];
+    expect(ownerClaim(claims, onScreen(["a", "b"]))?.slotId).toBe("b");
+  });
+
+  it("degrades to the previous rule when NOTHING passes the on-screen test", () => {
+    // Mid-transition, a layout not yet computed, or a host with no document. Losing the terminal
+    // entirely would be worse than the bug being fixed, so tier 2 is the old answer, unchanged.
+    const claims = [claim("a", { visible: false }), claim("morph", { visible: true })];
+    expect(ownerClaim(claims, onScreen([]))?.slotId).toBe("morph");
+  });
+
+  it("keeps the parked exception ahead of the on-screen test", () => {
+    // A parked holding mount is off-screen BY DESIGN and must never own while a real surface exists —
+    // the new tier must not accidentally promote it just because nothing else is rendered.
+    const parked = claim("parked", { visible: true, parked: true });
+    expect(ownerClaim([claim("morph", { visible: true }), parked], onScreen(["parked"]))?.slotId)
+      .toBe("morph");
+  });
+
+  it("with no predicate, behaves exactly as it did before", () => {
+    // The default answers "on screen" for everything, so a caller that cannot tell — and every
+    // existing test above — gets byte-identical behaviour.
+    const claims = [claim("morph", { visible: true }), claim("console", { visible: true })];
+    expect(ownerClaim(claims)?.slotId).toBe("console");
+  });
+
+  it("parked beats visible — a visible holding mount is still a holding mount", () => {
+    expect(ownerClaim([claim("parked", { visible: true, parked: true }), claim("cell", { visible: false })])?.slotId)
+      .toBe("cell");
+  });
+
+  it("no claims ⇒ no owner", () => {
+    expect(ownerClaim([])).toBeUndefined();
+  });
+});
+
+describe("claimIsOnScreen", () => {
+  it("treats a claim with no element as on screen rather than excluding it", () => {
+    // Unknown must not outrank a claim we positively know is visible, and must not be dropped either.
+    expect(claimIsOnScreen({})).toBe(true);
+  });
+
+  // jsdom has no layout — offsetParent is null and getClientRects() is empty for EVERYTHING — which
+  // is exactly the "cannot tell" case the ladder degrades through. So these pin the PREDICATE against
+  // hand-built shapes rather than against a rendered DOM, which jsdom could not answer for.
+  const asEl = (offsetParent: unknown, rects: number) =>
+    ({ offsetParent, getClientRects: () => ({ length: rects }) }) as unknown as HTMLElement;
+
+  it("reads offsetParent — null means a display:none subtree or a detached node", () => {
+    expect(claimIsOnScreen({ el: asEl(null, 0) })).toBe(false);
+    expect(claimIsOnScreen({ el: asEl({}, 0) })).toBe(true);
+  });
+
+  it("falls back to client rects, so a position:fixed slot is not mistaken for hidden", () => {
+    // A fixed-positioned element reports offsetParent === null while fully visible. Without this
+    // fallback such a slot would silently lose every ownership contest to an off-screen console cell.
+    expect(claimIsOnScreen({ el: asEl(null, 1) })).toBe(true);
+  });
+
+  it("survives an element without getClientRects rather than throwing on the ownership path", () => {
+    expect(claimIsOnScreen({ el: { offsetParent: null } as unknown as HTMLElement })).toBe(false);
   });
 
   it("parked beats visible — a visible holding mount is still a holding mount", () => {
