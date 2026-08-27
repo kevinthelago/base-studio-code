@@ -732,9 +732,20 @@ fn cmd_feature_add(s: &crate::Store) -> Result<Vec<String>, String> {
     Ok(slugs)
 }
 
-/// A one-line feature entry: `invite-teammates  ✓ Invite teammates   (auth)` — ✓ = fully defined.
+/// A one-line feature entry: `invite-teammates  ✓ Invite teammates   (auth)` — ✓ = fully defined,
+/// which since #requires-names-components INCLUDES a non-empty `requires`.
 fn render_feature_line(f: &PlanFeature) -> String {
-    let defined = !f.name.is_empty() && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false) && !f.acceptance.is_empty();
+    // A feature is not fully defined until it says WHAT IT DRAWS ON. `requires` is the plan -> library
+    // edge (algorithm implementations and UI components alike), and the worker charter renders it as the
+    // Reference implementations section — so an empty one means a worker is told to build from nothing
+    // and re-derives what the library already holds.
+    //
+    // MEASURED when this was added: 124 features across six projects, THREE with a requires list. The
+    // edge and the worker protocol were both correct; the input was empty, and nothing said so.
+    let defined = !f.name.is_empty()
+        && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false)
+        && !f.acceptance.is_empty()
+        && !f.requires.is_empty();
     let mark = if defined { "✓" } else { "·" };
     let stream = f.stream.as_deref().map(|s| format!("   ({s})")).unwrap_or_default();
     format!("{:<24} {} {}{}", f.slug, mark, f.name, stream)
@@ -1054,5 +1065,52 @@ mod tests {
         let i = parse_integration(&serde_json::json!({ "id": "a", "docs": "  ", "purpose": "" })).unwrap();
         assert_eq!(i.docs, None);
         assert_eq!(i.purpose, None);
+    }
+}
+
+#[cfg(test)]
+mod feature_defined_tests {
+    use super::*;
+
+    fn f(requires: Vec<String>) -> PlanFeature {
+        PlanFeature {
+            slug: "invite".into(),
+            name: "Invite teammates".into(),
+            behavior: Some("send an invite".into()),
+            acceptance: vec!["an invite arrives".into()],
+            requires,
+            ..Default::default()
+        }
+    }
+
+    /// A feature is not fully defined until it says what it draws on.
+    ///
+    /// MEASURED when this rule was added: 124 features across six projects carried THREE `requires`
+    /// lists between them. The plan → library edge existed, the worker protocol used it correctly, and
+    /// the section it renders was blank almost every time — because nothing reported the gap. `·` is
+    /// what makes it visible in the one place a planner already looks.
+    #[test]
+    fn an_empty_requires_is_not_fully_defined() {
+        assert!(render_feature_line(&f(vec![])).contains('·'), "no requires ⇒ pending");
+        assert!(render_feature_line(&f(vec!["a-star.rs".into()])).contains('✓'), "with requires ⇒ defined");
+    }
+
+    /// The other three conditions still hold — this ADDS a requirement, it does not replace them.
+    #[test]
+    fn the_existing_conditions_are_unchanged() {
+        let mut none_behavior = f(vec!["a-star.rs".into()]);
+        none_behavior.behavior = None;
+        assert!(render_feature_line(&none_behavior).contains('·'));
+
+        let mut no_acceptance = f(vec!["a-star.rs".into()]);
+        no_acceptance.acceptance = vec![];
+        assert!(render_feature_line(&no_acceptance).contains('·'));
+    }
+
+    /// A requires entry may name EITHER library — the marker does not care which, only that the
+    /// feature said something.
+    #[test]
+    fn either_library_counts() {
+        assert!(render_feature_line(&f(vec!["ui-button".into()])).contains('✓'), "a component id counts");
     }
 }

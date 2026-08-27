@@ -3588,7 +3588,10 @@ fn warn_jsx_text_escapes(item: &serde_json::Value) {
 
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
 /// (`~/.base-studio-code/components/`) precedence as the shared store CLI, for the custom reads.
-fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
+/// PUBLIC so an in-process reader outside this crate can resolve the library the same way the CLI
+/// does — the fleet reads it to render a feature's required COMPONENTS beside its algorithms, and a
+/// second resolution path would be a second answer to "where is the store".
+pub fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
     let dir = bsc_cli_util::resolve_store_path(dir, COMPONENT_SPEC.dir_env, || {
         bsc_util::bsc_base_dir()
             .map(|b| b.join(COMPONENT_SPEC.dir_segment))

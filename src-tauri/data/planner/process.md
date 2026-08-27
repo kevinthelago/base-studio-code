@@ -562,12 +562,37 @@ file after the topic (`feature_flags.md`, `offline_sync.md`).
   `bsc plan feature` store (NOT a features.json file). FIRST register the COMPLETE title roster in
   one pass — `bsc plan feature add "Invite teammates" "Export to CSV" …` (names only) — and agree it
   with the user. THEN fill each in one at a time by slug:
-  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","dependsOn":[],"stream"?}' | bsc plan feature add`
+  `echo '{"slug","behavior","acceptance":[],"approach","tools":[],"data","dependsOn":[],"requires":[],"stream"?}' | bsc plan feature add`
   (merges in place — never resend the `name`). `dependsOn` is the slugs of OTHER features this one
   builds on — the coarse roadmap **DAG** (keep it acyclic; a cycle holds the gate). A feature may be
   foundational (others depend on it), not just a user-facing capability. Each feature is ALSO its
   fleet **stream** (`stream` defaults to `slug`). The board + gate read the store: a feature is
-  "defined" once it has `name` + `behavior` + ≥1 `acceptance` (`bsc plan feature list` shows ✓/·).
+  "defined" once it has `name` + `behavior` + ≥1 `acceptance` + a non-empty `requires` (`bsc plan
+  feature list` shows ✓/·).
+  **`requires` — what this feature BUILDS ON, and it is not optional.** It names ids in the two
+  libraries: algorithm implementations (`bsc graph impl list`) and UI components (`bsc ui list`). The
+  fleet renders it into each worker's `CLAUDE.local.md` as a *Reference implementations* section
+  pointing at the store, so a worker is handed what already exists instead of re-deriving it — the
+  `reimplemented-component` problem, caught BEFORE the code is written.
+
+  MEASURED before this line existed: 124 features across six projects carried THREE `requires` lists
+  between them. The edge worked, the worker protocol used it correctly, and the section it renders was
+  blank almost every time. Workers were not ignoring the libraries; nobody was telling them what to use.
+
+  **Finding the candidates is one query per library, scoped to the feature's own group:**
+
+  ```
+  bsc ui list --feature <slug>              # the components that feature already owns
+  bsc graph impl list --feature <slug>      # its algorithm implementations
+  bsc ui list --feature core                # the shared baseline — usable by ANY feature
+  bsc graph impl list --feature core
+  ```
+
+  Name what the capability genuinely needs, including from `core` — that is what the baseline is for.
+  A wrong id is a DANGLING reference, not a corrupt plan: the two stores are separate and the graph may
+  be unreachable when a plan is written, so nothing validates it here. The worker's block reports an
+  unresolved id rather than hiding it, which is where a typo surfaces.
+
   The per-feature `repo__<short>__feat__<slug>.md` sections (below) are the *working notes*; the
   plan store is the durable artifact. When every feature is populated, the stage completes under GRANTED AUTHORITY
   (#funnel-unattended-director). Read what you may decide with `bsc plan decision authority`
@@ -711,7 +736,7 @@ it before moving on. Do not move on until ALL of these are concrete:
 - **Dependencies** — which other features this one builds on (its `dependsOn`); the
   files/dirs it owns are assigned to its stream later, in the Permissions stage.
 Capture all of it on the FEATURE the moment it's nailed —
-`echo '{"slug":"…","behavior":"…","acceptance":[…],"approach":"…","tools":[…],"data":"…","dependsOn":[…]}' | bsc plan feature add`
+`echo '{"slug":"…","behavior":"…","acceptance":[…],"approach":"…","tools":[…],"data":"…","dependsOn":[…],"requires":[…]}' | bsc plan feature add`
 (merges in place) — so the structure panel fills in as you go and nothing is lost. Do
 NOT author issues. Then, and only then, move to the next unit.
 

@@ -347,6 +347,34 @@ const ALGO_REFS_MARKER: &str = "## Reference implementations (required by this f
 /// One resolved entry for the block: the id, plus the impl fields when the library actually has it.
 /// A `None` impl is a DANGLING id — surfaced, never silently dropped (#4080 deliberately does not
 /// validate ids at plan-write time, so this is the first place a typo becomes visible).
+/// Which library a required id resolved in — and therefore which command reads it.
+///
+/// A feature's `requires` names ids in EITHER graph: an algorithm implementation or a UI component.
+/// The two are addressed by different verbs, so a block that guessed one would send a worker to a
+/// command that returns nothing for half the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RefStore {
+    Algorithms,
+    Components,
+}
+
+impl RefStore {
+    /// The read command for this store — what the block tells the worker to run.
+    fn read_cmd(self, id: &str) -> String {
+        match self {
+            RefStore::Algorithms => format!("bsc graph impl get {id}"),
+            RefStore::Components => format!("bsc ui get {id}"),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            RefStore::Algorithms => "algorithms library",
+            RefStore::Components => "component library",
+        }
+    }
+}
+
 pub(crate) struct AlgoRef {
     pub id: String,
     pub name: Option<String>,
@@ -357,6 +385,9 @@ pub(crate) struct AlgoRef {
     /// which of the two resolved shapes to render (a real implementation vs a language `primitive`,
     /// which is DESCRIBED via `--ref` and has no code by design, #2972).
     pub has_code: bool,
+    /// WHICH library it resolved in — decides the read command the block prints. `None` when the id
+    /// matched neither, which is the dangling case the block reports rather than hides.
+    pub store: Option<RefStore>,
 }
 
 /// Render the worker's reference-implementation block (#4082, rewritten #4191). Pure — resolved refs →
@@ -398,7 +429,15 @@ pub(crate) fn algo_refs_block(refs: &[AlgoRef]) -> Option<String> {
                 if let Some(t) = r.tech.as_deref().filter(|t| !t.trim().is_empty()) {
                     md.push_str(&format!("_Language: {t}._\n"));
                 }
-                md.push_str(&format!("\n```\nbsc graph impl get {}\n```\n", r.id));
+                // The command that reads it — algorithms and components are different verbs, so a
+                // block that hard-coded one would send the worker somewhere that returns nothing.
+                // Name the LIBRARY as well as the command. A worker reading a mixed list should not have
+                // to infer which store an id came from by looking at the verb.
+                if let Some(s) = r.store {
+                    md.push_str(&format!("_From the {}._\n", s.label()));
+                }
+                let cmd = r.store.map(|s| s.read_cmd(&r.id)).unwrap_or_default();
+                md.push_str(&format!("\n```\n{cmd}\n```\n"));
             }
             // In the library but carrying no code (a primitive is DESCRIBED via `--ref`, not re-coded).
             Some(name) => {
@@ -408,11 +447,13 @@ pub(crate) fn algo_refs_block(refs: &[AlgoRef]) -> Option<String> {
                     "{s}\n_No stored code — this is a language primitive; use the platform's own._\n"
                 ));
             }
-            // Not in the library at all.
+            // In NEITHER library. Surfaced, never dropped: #4080 deliberately does not validate ids at
+            // plan-write time, so this block is the first place a typo becomes visible.
             None => {
                 md.push_str(&format!(
-                    "\n### `{}` — NOT FOUND in the algorithms library\n\
-                     The plan requires this id but nothing matches it. Implement the capability yourself \
+                    "\n### `{}` — NOT FOUND in either library\n\
+                     The plan requires this id but neither the algorithms library nor the component library has it. \
+                     Implement the capability yourself \
                      and mention the unresolved reference in your checkpoint, so the plan can be corrected.\n",
                     r.id,
                 ));
@@ -439,6 +480,13 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
     }
     let graph = bsc_graph::load();
     let impls = bsc_graph::implementations_of(&graph);
+    // The COMPONENT library too: a feature's `requires` names ids in EITHER graph, because a UI
+    // capability needs components exactly the way a computational one needs algorithms. Read
+    // best-effort like everything else here — an unreachable component store costs the component
+    // half of the block, never the launch.
+    let components: Vec<serde_json::Value> = bsc_component::cli::open_component_store(&None)
+        .map(|s| s.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect())
+        .unwrap_or_default();
     let field = |v: &serde_json::Value, k: &str| {
         v.get(k).and_then(serde_json::Value::as_str).map(str::to_string).filter(|s| !s.trim().is_empty())
     };
@@ -446,18 +494,36 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
         .requires
         .iter()
         .map(|id| {
-            let found = impls.iter().find(|im| im.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()));
-            match found {
-                Some(im) => AlgoRef {
+            let by_id = |v: &&serde_json::Value| v.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str());
+            // ALGORITHMS FIRST, then components. The order is arbitrary but must be FIXED: an id that
+            // somehow existed in both would otherwise resolve differently between runs, and the worker
+            // would be told to read it with whichever command won the race.
+            if let Some(im) = impls.iter().find(by_id) {
+                return AlgoRef {
                     id: id.clone(),
                     name: field(im, "name").or_else(|| Some(id.clone())),
                     tech: field(im, "tech"),
                     summary: field(im, "summary"),
                     // Presence only — the body stays in the store (#4191).
                     has_code: field(im, "code").is_some(),
-                },
-                None => AlgoRef { id: id.clone(), name: None, tech: None, summary: None, has_code: false },
+                    store: Some(RefStore::Algorithms),
+                };
             }
+            if let Some(c) = components.iter().find(by_id) {
+                return AlgoRef {
+                    id: id.clone(),
+                    name: field(c, "name").or_else(|| Some(id.clone())),
+                    // A component's `role` (primitive/composite/page) sits where an impl's language
+                    // does: the one-word "what kind of thing is this" the block prints.
+                    tech: field(c, "role"),
+                    summary: field(c, "summary").or_else(|| field(c, "blurb")),
+                    // `srcText` is the component's body. Presence only, same rule — the block POINTS at
+                    // the store rather than quoting it, so the source never enters a worker's context.
+                    has_code: field(c, "srcText").is_some(),
+                    store: Some(RefStore::Components),
+                };
+            }
+            AlgoRef { id: id.clone(), name: None, tech: None, summary: None, has_code: false, store: None }
         })
         .collect();
     let Some(block) = algo_refs_block(&refs) else { return };
@@ -986,10 +1052,13 @@ mod algo_ref_tests {
             id: id.into(),
             name: name.map(str::to_string),
             tech: tech.map(str::to_string),
+            // These cases are all algorithm refs; a component one uses `rc` below.
+            store: name.map(|_| RefStore::Algorithms),
             summary: summary.map(str::to_string),
             has_code,
         }
     }
+
 
     /// Most features require nothing — an empty heading would be pure noise in every worker's context.
     #[test]
@@ -1133,5 +1202,86 @@ mod algo_ref_tests {
             .unwrap();
         inject_required_algorithms(&hub, &wt_local, "plain");
         assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), "# plan\n");
+    }
+}
+
+#[cfg(test)]
+mod required_component_tests {
+    use super::*;
+
+    fn algo(id: &str) -> AlgoRef {
+        AlgoRef {
+            id: id.into(),
+            name: Some("a_star".into()),
+            tech: Some("rust".into()),
+            summary: Some("shortest path".into()),
+            has_code: true,
+            store: Some(RefStore::Algorithms),
+        }
+    }
+    fn comp(id: &str) -> AlgoRef {
+        AlgoRef {
+            id: id.into(),
+            name: Some("Button".into()),
+            tech: Some("primitive".into()),
+            summary: Some("the pressable".into()),
+            has_code: true,
+            store: Some(RefStore::Components),
+        }
+    }
+
+    /// A required COMPONENT is read with `bsc ui get`, not `bsc graph impl get`.
+    ///
+    /// This is the whole point of resolving in both libraries: before it, every entry printed the
+    /// algorithms command, so a worker handed a component id ran a command that returns nothing and
+    /// had no way to tell a missing record from a wrong verb.
+    #[test]
+    fn a_component_ref_prints_the_component_read_command() {
+        let md = algo_refs_block(&[comp("ui-button")]).expect("a block");
+        assert!(md.contains("bsc ui get ui-button"), "{md}");
+        assert!(!md.contains("bsc graph impl get ui-button"), "the algorithms verb must not appear: {md}");
+    }
+
+    #[test]
+    fn an_algorithm_ref_still_prints_the_algorithms_command() {
+        let md = algo_refs_block(&[algo("a-star.rs")]).expect("a block");
+        assert!(md.contains("bsc graph impl get a-star.rs"), "{md}");
+    }
+
+    /// One feature, both libraries — the mixed case, which is the normal one for a UI capability that
+    /// also computes something.
+    #[test]
+    fn a_feature_may_require_from_both_libraries_at_once() {
+        let md = algo_refs_block(&[algo("a-star.rs"), comp("ui-button")]).expect("a block");
+        assert!(md.contains("bsc graph impl get a-star.rs"), "{md}");
+        assert!(md.contains("bsc ui get ui-button"), "{md}");
+        assert!(md.contains("a_star") && md.contains("Button"), "both are named: {md}");
+    }
+
+    /// A dangling id is still surfaced, and now says it checked BOTH libraries.
+    ///
+    /// `requires` is deliberately not validated at plan-write time (the two stores are separate and the
+    /// graph may be unreachable when a plan is written), so this block is the first place a typo
+    /// becomes visible. Saying "not in the algorithms library" would have sent the reader looking in
+    /// the wrong place for a component id.
+    #[test]
+    fn an_unresolved_id_names_both_libraries() {
+        let dangling = AlgoRef {
+            id: "nope".into(), name: None, tech: None, summary: None, has_code: false, store: None,
+        };
+        let md = algo_refs_block(&[dangling]).expect("a block");
+        assert!(md.contains("NOT FOUND in either library"), "{md}");
+        assert!(md.contains("neither the algorithms library nor the component library"), "{md}");
+    }
+
+    /// The block POINTS at the store; it never quotes a body. `has_code` is presence only — for a
+    /// component that is `srcText`, which is 77.6% of the component payload and would otherwise land
+    /// in every worker's context as a second copy that drifts from the record.
+    #[test]
+    fn the_block_never_carries_a_body() {
+        let md = algo_refs_block(&[comp("ui-button"), algo("a-star.rs")]).expect("a block");
+        assert!(!md.contains("export const"), "no component source: {md}");
+        assert!(!md.contains("pub fn"), "no algorithm source: {md}");
+        assert!(md.contains("the store is right and the quote is stale"), "and it says so: {md}");
     }
 }

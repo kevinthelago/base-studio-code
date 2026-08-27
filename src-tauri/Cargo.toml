@@ -164,6 +164,9 @@ llm = { path = "../crates/llm", package = "bsc-llm" }
 # TEACHES the `bsc graph` CLI, so its content test derives the expected verb/flag surface from
 # `bsc_graph::cli::{VERBS, IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list.
 bsc-graph = { path = "../crates/bsc-graph" }
+# The COMPONENT library, so a feature's `requires` resolves in EITHER graph (#requires-names-components).
+# DuckDB-free, like bsc-graph beside it — this edge costs nothing at build time.
+bsc-component = { path = "../crates/bsc-component" }
 
 # Unix-only: process-group signalling so a PTY's whole tree (shell + claude + any
 # grandchildren) dies with the session on pty_kill / app exit. portable-pty calls

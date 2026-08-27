@@ -200,7 +200,7 @@ Prints the full issues.json projection to stdout (the durable shape, unchanged).
 USAGE:
   bsc plan feature add <name>...   # register feature title(s) — the roster (slug from name)
   bsc plan feature add             # (no names) merge details from a feature object/array on stdin
-  bsc plan feature list            # list features (· = title only, ✓ = fully defined)
+  bsc plan feature list            # list features (· = title only, ✓ = fully defined — incl. `requires`)
   bsc plan feature get <slug>      # print one feature's full spec
   bsc plan feature remove <slug>   # delete a feature",
     },
