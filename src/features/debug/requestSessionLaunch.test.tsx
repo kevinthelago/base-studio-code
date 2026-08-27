@@ -37,7 +37,12 @@ vi.mock("@/shared/lib/core/bsc", () => ({
   bscWrite: vi.fn(async () => {}),
 }));
 // Run the poll body once, deterministically, rather than on a 20s timer.
-vi.mock("@/shared/hooks/usePoll", () => ({ usePoll: (fn: () => void | Promise<void>) => { void fn(); } }));
+// `usePoll` hands its callback an `isCancelled` probe (the mount checks it before writing state after
+// an await). A mock that calls `fn()` bare passes `undefined` for it, so the first `isCancelled()`
+// throws — the callback never ran, and the test failed for a reason that had nothing to do with it.
+vi.mock("@/shared/hooks/usePoll", () => ({
+  usePoll: (fn: (isCancelled: () => boolean) => void | Promise<void>) => { void fn(() => false); },
+}));
 // xterm cannot initialize in jsdom (`open()` needs real measurements).
 vi.mock("@xterm/xterm", () => {
   class Terminal {

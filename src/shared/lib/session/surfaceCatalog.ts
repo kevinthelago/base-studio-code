@@ -28,18 +28,6 @@ const isActive = (r: SurfaceRow): boolean => !r.status || r.status === "active";
 const rowsOf = (rows: readonly SurfaceRow[] | null | undefined): readonly SurfaceRow[] => rows ?? [];
 
 /**
- * The surfaces the Glance band DRAWS — active only.
- *
- * A deprecated alias is skipped because it and its live surface are ONE store: the catalog says so
- * itself (`bsc org` → "the same store `bsc teams` serves"), and drawing both would put two nodes on
- * one store and overstate the surface area. An `internal` row (`hook`, `serve`) is harness plumbing
- * rather than something an agent drives, so it is not a capability worth a node either.
- */
-export function activeSurfaceNames(rows: readonly SurfaceRow[] | null | undefined): string[] {
-  return rowsOf(rows).filter(isActive).map((r) => r.name);
-}
-
-/**
  * The surfaces the permission gate may DENY — active **and deprecated**.
  *
  * THE DEPRECATED ROWS ARE THE WHOLE POINT, and leaving them out is a bypass rather than an omission.

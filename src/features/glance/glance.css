@@ -18,6 +18,13 @@
 .glance-kit-band-divider { stroke-width: 1; stroke-dasharray: 5 7; opacity: .5; }
 .glance-kit-band-label { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
 
+/* REPOSITORY groups in a fleet drill — a LABEL ONLY, no box. The grouping is carried by the layout
+   (`bandNodesByRepo` stacks each repo's nodes into its own zone), so a wash + divider around it restated
+   spatially what the positions already say and put two more shapes per group on the canvas. Neutral
+   (`--fg-muted`) rather than accented: a repo is not a dimension with its own meaning the way a kit or
+   an MCP server is, and an accent would compete with the role colours the cards already carry. */
+.glance-repo-band-label { fill: var(--fg-muted); font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
+
 /* Node → live-terminal card (#2401/#2534): a node grows in place into its CLI session, IN the graph — a
    WORLD-LAYER child, so it pans/zooms/scales with the canvas (no portal, no scrim; the graph stays fully
    visible + interactive). JS sets the card's WORLD geometry (left/top/width/height) from the node box →

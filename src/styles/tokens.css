@@ -565,4 +565,10 @@ textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical;
 .app .xterm .xterm-viewport {
   overflow-y: auto;
   background-color: transparent;   /* xterm hardcodes #000; let the pane's own background show */
+  /* NO SCROLL CHAINING out of a terminal. Reaching the last line must not hand the rest of the gesture
+     to whatever is behind the pane — in Glance a terminal morph lives INSIDE the graph canvas, so
+     chaining threw the whole graph out from under the reader mid-scroll. The canvas's zoom is declined
+     separately (`overScrollableChild` in useGraphViewport, which is why that guard is not
+     direction-aware); this is the other half, and it covers the console panes as well. */
+  overscroll-behavior: contain;
 }

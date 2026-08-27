@@ -48,6 +48,18 @@ describe("glance.css is structurally sound (#4038)", () => {
     expect(CSS).toMatch(/\.glance-kit-band-divider\s*\{[^}]*stroke-dasharray/);
   });
 
+  it("carries the REPOSITORY group LABEL rule, and no box (#nodes-are-grouped-by-repository)", () => {
+    // The label carries its own `fill` rather than taking one from the canvas the way the kit band does:
+    // a repo is a grouping, not a dimension with an accent, so there is no per-band colour to pass in.
+    // If that fill is lost the label renders invisible and the groups become unnamed.
+    expect(CSS).toContain(".glance-repo-band-label");
+    expect(CSS).toMatch(/\.glance-repo-band-label\s*\{[^}]*fill:/);
+    // The BOX IS DELIBERATELY GONE — the layout already separates the groups, so a wash and a divider
+    // restated it and added two shapes per group. Asserted so it cannot creep back as "polish".
+    expect(CSS).not.toContain(".glance-repo-band-bg");
+    expect(CSS).not.toContain(".glance-repo-band-divider");
+  });
+
   it("keeps the keyframes the canvas still declares inline styles against", () => {
     expect(CSS).toContain("@keyframes glance-dashmove");
     expect(CSS).toContain("@keyframes glance-softpulse");
