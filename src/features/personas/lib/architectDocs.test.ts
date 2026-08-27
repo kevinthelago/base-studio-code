@@ -81,3 +81,52 @@ describe("the two architect documents agree", () => {
     for (const [, md] of DOCS) expect(md).toContain("bsc fleet directors");
   });
 });
+
+// The prose above tells the architect to run `bsc fleet directors` before briefing. This is the other
+// half of that claim: that the grant actually PERMITS it.
+//
+// They were out of step, and the test that should have caught it asserted the wrong thing. Rust wraps
+// each granted command as `Bash(<cmd>)` and `Bash(<cmd> *)` (`bash_rule`/`bare_bash_rule`,
+// session/settings.rs), so the `*` sits behind a LITERAL SPACE. `bsc fleet director` covers
+// `bsc fleet director new x` and does NOT cover `bsc fleet directors` — a different verb that merely
+// shares a prefix. Two separate tests asserted
+//
+//     expect("bsc fleet directors".startsWith("bsc fleet director")).toBe(true)
+//
+// and called that proof the read resolved. It is true of the TS strings and false of the rule, so both
+// stayed green while the command was refused and the protocol went on naming it.
+describe("the architect's grants permit what its documents tell it to run", () => {
+  /** Does a granted command auto-run `line`? Modelled the way the emitted rule reads it. */
+  const autoRuns = (grants: readonly string[], line: string): boolean =>
+    grants.some((c) => line === c || line.startsWith(`${c} `));
+
+  it("permits every command the documents name", async () => {
+    const { restrictedRoleCommands } = await import("@/shared/lib/session/roleModel");
+    const surface = restrictedRoleCommands("architect");
+    for (const line of [
+      "bsc plan requirement set",
+      "bsc plan classify set",
+      "bsc plan classify get",
+      'bsc project new "My App"',
+      "bsc fleet director new my-app",
+      "bsc fleet directors",
+      "bsc plan brief my-app:director",
+    ]) {
+      expect(autoRuns(surface, line), `${line} must auto-run`).toBe(true);
+    }
+  });
+
+  it("still refuses what the documents say it must not reach", async () => {
+    const { restrictedRoleCommands } = await import("@/shared/lib/session/roleModel");
+    const surface = restrictedRoleCommands("architect");
+    for (const line of ["bsc fleet wake s1", "bsc fleet list", "bsc plan issue add", "bsc plan feature set"]) {
+      expect(autoRuns(surface, line), `${line} must NOT auto-run`).toBe(false);
+    }
+  });
+
+  it("pins the trap itself: sharing a prefix is not being granted", () => {
+    expect(autoRuns(["bsc fleet director"], "bsc fleet directors")).toBe(false);
+    expect(autoRuns(["bsc fleet director"], "bsc fleet director new x")).toBe(true);
+    expect(autoRuns(["bsc fleet director"], "bsc fleet director")).toBe(true);
+  });
+});
