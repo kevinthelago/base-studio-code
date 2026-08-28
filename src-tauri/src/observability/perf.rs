@@ -76,6 +76,21 @@ const RING_CAP: usize = 2000;
 const RETENTION_EVERY: u64 = 100;
 /// Floor between full process-table walks when the webview set looks stale (see [`discover_webview`]).
 const WEBVIEW_RESCAN_MIN_MS: i64 = 30_000;
+/// Linux caps `/proc/<pid>/comm` — what `sysinfo::Process::name()` reads — at 15 characters. See the
+/// warning on [`webview_label`]: a needle longer than this can never match on the platform that dies.
+const COMM_MAX: usize = 15;
+
+/// The needles in [`webview_label`] must FIT in a truncated `comm`, enforced at COMPILE time.
+///
+/// This is the bug that shipped, turned into something the compiler refuses: the needle was the full
+/// 16-character `webkitwebprocess`, which cannot occur in a 15-character name, so the matcher was
+/// silently inert on the platform it exists for. A unit test can only check the names someone thought
+/// to list; this checks the rule itself, and it fails the build rather than a run.
+const _: () = {
+    assert!("webkitwebproces".len() <= COMM_MAX);
+    assert!("webkitnetworkpr".len() <= COMM_MAX);
+    assert!("webkitgpuproces".len() <= COMM_MAX);
+};
 /// Don't sample during the cold-start window (#1033). Agent metrics have no value before the app is
 /// up (no agents are even running at a fresh launch), and the 2s disk writes + IPC just pile
 /// contention onto the slowest moment of a launch.
@@ -209,18 +224,35 @@ fn open_db(path: &Path) -> rusqlite::Result<Connection> {
 ///     platform's naming rather than of this classification, and it is still strictly better than
 ///     the nothing that was sampled before.
 ///
+/// ⚠️ THE NEEDLES ARE THE TRUNCATED NAMES, and that is the whole subtlety here. Linux reports `comm`,
+/// which the kernel caps at [`COMM_MAX`] = 15 characters, so `sysinfo::Process::name()` returns
+/// `WebKitWebProces` — not `WebKitWebProcess`. The first version of this matched on the full
+/// 16-character name and therefore matched NOTHING on the one platform it exists for: 211 sample
+/// ticks against the running app produced zero webview rows. Its unit tests passed because they
+/// asserted the full names, which is what `ps -o args` prints and NOT what sysinfo returns.
+///
+/// A truncation is a PREFIX of the full name, so one needle covers both forms — which is why these
+/// are written at exactly 15 characters rather than shortened by eye. `a_truncated_comm_still_
+/// classifies` derives the truncation rather than hard-coding it, so the guard cannot drift.
+///
 /// Substring rather than equality: Linux reports a bare name, macOS a reverse-DNS one, and Windows
 /// carries the `.exe`.
 fn webview_label(name: &str) -> Option<&'static str> {
     let n = name.to_ascii_lowercase();
-    if n.contains("webkitnetworkprocess") || n.contains("webkit.networking") {
+    if n.contains("webkitnetworkpr") || n.contains("webkit.networking") {
         Some("app:webview-net")
-    } else if n.contains("webkitgpuprocess") || n.contains("webkit.gpu") {
+    } else if n.contains("webkitgpuproces") || n.contains("webkit.gpu") {
         Some("app:webview-gpu")
-    } else if n.contains("webkitwebprocess")
+    } else if n.contains("webkitwebproces")
         || n.contains("webkit.webcontent")
         || n.contains("msedgewebview2")
     {
+        Some("app:webview")
+    } else if n.contains("com.apple.webkit") {
+        // macOS truncates EVERY helper to `com.apple.WebKit`, so at 16 characters they cannot be told
+        // apart. Labelling them all as the content process is the honest degradation — the index and
+        // the `pid` column separate them — and it beats classifying none of them. The specific arms
+        // above run first, so a fuller name still wins wherever the platform provides one.
         Some("app:webview")
     } else {
         None
@@ -719,6 +751,34 @@ mod tests {
         assert_eq!(webview_label("com.apple.WebKit.WebContent"), Some("app:webview"));
         assert_eq!(webview_label("com.apple.WebKit.Networking"), Some("app:webview-net"));
         assert_eq!(webview_label("msedgewebview2.exe"), Some("app:webview"));
+    }
+
+    #[test]
+    fn a_truncated_comm_still_classifies() {
+        // THE REGRESSION. Linux hands sysinfo `comm`, capped at COMM_MAX — so the process this whole
+        // module exists to watch arrives as `WebKitWebProces`, one character short. Matching the full
+        // name produced zero rows against a live, leaking app while every other test stayed green.
+        //
+        // The truncation is DERIVED rather than written out, so this cannot drift from the kernel's
+        // limit the way a hard-coded string would.
+        for (full, want) in [
+            ("WebKitWebProcess", "app:webview"),
+            ("WebKitNetworkProcess", "app:webview-net"),
+            ("WebKitGPUProcess", "app:webview-gpu"),
+        ] {
+            let comm: String = full.chars().take(COMM_MAX).collect();
+            assert!(comm.len() < full.len(), "`{full}` must actually be truncated, or this proves nothing");
+            assert_eq!(webview_label(&comm), Some(want), "comm `{comm}` (truncated from `{full}`)");
+            assert_eq!(webview_label(full), Some(want), "and the untruncated name still classifies");
+        }
+    }
+
+    #[test]
+    fn the_truncated_driver_is_still_not_a_webview() {
+        // `WebKitWebDriver` is 15 characters, so it survives truncation intact and sits right next to
+        // the shortened `webkitwebproces` needle. Shortening the needle by eye instead of to the
+        // kernel's exact limit is how it would start matching.
+        assert_eq!(webview_label("WebKitWebDriver"), None);
     }
 
     #[test]
