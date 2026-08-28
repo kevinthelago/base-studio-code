@@ -50,6 +50,23 @@
   opacity: 0; transition: opacity .22s .14s cubic-bezier(.22, .61, .36, 1);
 }
 .glance-card.open .glance-card-body { opacity: 1; }
+
+/* SELECTION: off across the graph, ON inside a live terminal.
+ *
+ * The world layer already sets `user-select: none` (#2527, GraphCanvas) so a click or a pan-drag never
+ * paints a blue smear across node labels and edge text. A terminal morph is a WORLD-LAYER CHILD — it
+ * grows in place inside the graph rather than portalling out — so it INHERITED that block, and the one
+ * surface where selecting text is the whole point could not be selected. Copying a stack trace out of a
+ * session meant reading it off the screen.
+ *
+ * Scoped to `.xterm` rather than to the card: the card is also what a PREVIEW morph renders into, and
+ * "everything except the terminal sessions" is what was asked for. `.xterm` is xterm's own root, so this
+ * tracks the terminal wherever it is mounted instead of naming a Glance container that may move.
+ *
+ * `text` rather than `auto`: `auto` on a child of a `none` ancestor still computes to `none` in WebKit,
+ * which is exactly the case here — the ancestor is the world layer.
+ */
+.glance-card .xterm, .glance-card .xterm * { user-select: text; -webkit-user-select: text; }
 @media (prefers-reduced-motion: reduce) {
   .glance-card, .glance-card-body { transition-duration: .001ms !important; }
 }
