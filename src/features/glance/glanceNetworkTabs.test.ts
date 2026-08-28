@@ -10,6 +10,9 @@ import { readFileSync } from "node:fs";
 const GLANCE: string = JSON.parse(
   readFileSync("src-tauri/data/components/app/features/glance/glancepage.json", "utf8"),
 ).srcText;
+const LOGS: string = JSON.parse(
+  readFileSync("src-tauri/data/components/app/features/logs/logspage.json", "utf8"),
+).srcText;
 const SCREEN: string = JSON.parse(
   readFileSync("src-tauri/data/components/app/shared/ui/ui-screen.json", "utf8"),
 ).srcText;
@@ -23,12 +26,19 @@ describe("Glance's tabs are the networks", () => {
     expect(GLANCE).toMatch(/usePageTabs\("glance", glanceTabs\)/);
   });
 
-  it("keeps the two fixed tabs, whose ids a network id can never collide with", () => {
-    // Every network id is minted `network-<slug>` with a NON-EMPTY slug, so `network` (no hyphen) and
-    // `fleet` are unreachable by that grammar — which is why the overview survives without a sentinel.
+  it("keeps ONE fixed tab, whose id a network id can never collide with", () => {
+    // Every network id is minted `network-<slug>` with a NON-EMPTY slug, so `network` (no hyphen) is
+    // unreachable by that grammar — which is why the all-projects lens survives without a sentinel.
     expect(GLANCE).toMatch(/GLANCE_FIXED_TABS/);
     expect(GLANCE).toMatch(/id: "network"/);
-    expect(GLANCE).toMatch(/id: "fleet"/);
+  });
+
+  it("no longer carries the Fleet page — it is a dashboard, and it lives in Logs now", () => {
+    expect(GLANCE).not.toMatch(/FleetGraphHost/);
+    expect(LOGS).toMatch(/id: "fleet"/);
+    expect(LOGS).toMatch(/tab === "fleet" && <FleetGraphHost \/>/);
+    // Through the BARREL, not a deep path: the fleet modules are still glance-owned (#1545).
+    expect(LOGS).toMatch(/import \{ FleetGraphHost \} from "@\/features\/glance"/);
   });
 
   it("stays UNCONTROLLED, so `bsc navigate page <networkId>` can reach a tab", () => {
