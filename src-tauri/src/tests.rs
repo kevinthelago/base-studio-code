@@ -36,6 +36,66 @@
         );
     }
 
+    /// The RUST half of `#only-the-user-resumes-a-session`.
+    ///
+    /// `src/shared/lib/fleet/injectCallers.test.ts` ratchets the frontend injectors — `injectPrompt`
+    /// and the raw `pty_write` command — to user-action paths plus one deliberate unattended exception
+    /// (a cron automation the user configured). That guard greps `src/`, so it is STRUCTURALLY blind to
+    /// a backend writer: Rust can reach `PtyState` directly and type into any live session without the
+    /// ratchet noticing. This is that guard for this side.
+    ///
+    /// The existing frontend guard learned the same lesson the hard way — an inventory that "named
+    /// eight injectors and believed itself complete" missed `useWorkerAutoEnd`, which invoked the raw
+    /// command twice into the DIRECTOR's pane with a trailing CR. Matching the capability rather than a
+    /// convenience wrapper is what caught it, so this matches the capability too.
+    #[test]
+    fn rust_injectors_are_ratcheted() {
+        // rel path (forward-slash, from src/) → why it may write into a live pane.
+        let allow = [
+            "console/pty/mod.rs",   // DEFINES `write_pane` + the `pty_write` command
+            "session/deliver.rs",   // the one deliberate backend injector (#an-ask-is-delivered-not-left-to-be-found)
+            "tests.rs",             // THIS guard — it holds the match string as a literal
+        ];
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        collect_pane_writers(&src, &src, &allow, &mut offenders);
+        offenders.sort();
+        assert!(
+            offenders.is_empty(),
+            "new backend pane-writer(s) outside the allow-list. Writing into a session nobody clicked \
+             crosses #only-the-user-resumes-a-session — the decision is the maintainer's, not a \
+             refactor's. Argue it onto the list in this test with a reason: {offenders:?}",
+        );
+        // The guard must actually be able to SEE an injector, or it passes by matching nothing — the
+        // vacuous-green failure this repo keeps paying for. `session/deliver.rs` is a known writer.
+        let deliver = std::fs::read_to_string(src.join("session/deliver.rs")).expect("deliver.rs is present");
+        assert!(
+            deliver.contains("write_pane("),
+            "the ratchet's match string no longer appears in the known injector, so it is matching \
+             nothing and would pass with any number of new writers",
+        );
+    }
+
+    /// Collect `.rs` files under `dir` (not allowlisted) that write into a pane's PTY.
+    fn collect_pane_writers(base: &std::path::Path, dir: &std::path::Path, allow: &[&str], out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_pane_writers(base, &path, allow, out);
+            } else if path.extension().is_some_and(|x| x == "rs") {
+                let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                if allow.contains(&rel.as_str()) {
+                    continue;
+                }
+                let Ok(contents) = std::fs::read_to_string(&path) else { continue };
+                if contents.contains("write_pane(") {
+                    out.push(rel);
+                }
+            }
+        }
+    }
+
     /// Collect `.rs` files under `dir` (not allowlisted) that embed `data/` at compile time.
     fn collect_data_embeds(base: &std::path::Path, dir: &std::path::Path, allow: &[&str], out: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(dir) else { return };
