@@ -1060,6 +1060,17 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 let stored = crate::implementations_of(&g)
                     .into_iter()
                     .find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str()));
+                // #155: a record that lives ONLY in the committed repo store (never authored into the
+                // runtime store — e.g. a Rust crate module materialized straight into
+                // `graph/algorithms.json`) is invisible to the lookup above. Without this fallback,
+                // `set_impl_by` below would take its CREATE branch and build a record from just this
+                // call's flags — silently dropping every field the repo copy carries that this call
+                // doesn't restate, `tests` first among them, since there is no `--tests` flag at all.
+                // Falling back to the repo-only copy here makes the provenance check below see it too
+                // (an editor no longer has to re-supply `--src` for a record that already has one), and
+                // seeds the runtime graph with it further down so the write MERGES onto real fields
+                // instead of starting from nothing.
+                let stored = stored.or_else(|| repo_only_impl(&id, &args));
                 if !provenance_declared(&role, &im, stored.as_ref(), args.iter().any(|a| a == "--no-src")) {
                     return Err(format!(
                         "impl set: algorithm '{id}' has no provenance — pass --src <path> (the folder                          derives from it), --folder <path>, or --no-src if it has no source in this repo.                          Without one it cannot be organized in the graph's folder tree (#4136)."
@@ -1072,6 +1083,17 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // A trace-program is JS and routinely carries both backticks and `${…}`, so this is the
                 // flag most likely to be corrupted in transit — see `source_flag`.
                 if let Some(v) = source_flag(&args, "--viz-code")? { im["vizCode"] = Value::String(v); }
+                // #155: the runtime store has no record under this id at all — `stored` above is purely
+                // the REPO-ONLY copy. Seed the runtime graph with it BEFORE `set_impl_by`'s merge runs,
+                // so this write's flags land on top of the repo record's fields rather than replacing
+                // them outright. Pushed raw (not through `set_impl`/`set_impl_by`) so it carries no write
+                // stamp of its own — the stamp `set_impl_by` applies next treats it as the PRIOR value,
+                // which is what it actually is.
+                if crate::implementations_of(&g).iter().all(|x| x.get("id").and_then(Value::as_str) != Some(id.as_str())) {
+                    if let Some(repo_rec) = &stored {
+                        crate::ensure_array(&mut g, "implementations").push(repo_rec.clone());
+                    }
+                }
                 let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
@@ -1237,6 +1259,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         }
                     }
                 };
+                // #155: a record PROMOTED into the committed repo store and never re-authored in the
+                // runtime store afterward (e.g. a materialized Rust crate module) is invisible to every
+                // read above — `crate::implementations()` only ever resolves the runtime store. That
+                // read the id as "does not exist" when it plainly does, in `graph/algorithms.json`, and
+                // there was no way to see its fields (`tests` among them) before editing it. Fall back to
+                // the committed store directly (never through `crate::load()` — see repo_store's module
+                // doc for why) so a repo-only record is readable by the same verb as any other.
+                let found = found.cloned().or_else(|| repo_only_impl(ref_, &args));
+                let found = found.as_ref();
                 // #137: `impl set` already reads a large or backtick-bearing module from DISK via
                 // `--code-file` (#76) — this is the READ side of that same door, mirroring `bsc ui get
                 // --field --raw --out` (#3162/#3713): `--field <name>` narrows to ONE field (`code` is
@@ -2400,6 +2431,48 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// The COMMITTED repo store's record for `ref_`, for a record that exists only there (#155).
+///
+/// Read directly via [`crate::repo_store::read_at`] and never through [`crate::load`] — `load` runs the
+/// seed reconcile, which would append all 676 packaged implementations to what the build compiles from.
+/// That is the whole reason `repo_store` exists as a separate reader; see its module doc.
+///
+/// Resolution mirrors the runtime lookup it falls back FROM: exact `id` first, then a `name` that matches
+/// exactly one record. An ambiguous name yields `None` rather than an arbitrary pick — the caller has
+/// already reported ambiguity for the runtime store, and silently answering with one of several records
+/// would be worse than saying it was not found.
+///
+/// Every failure is `None`: no repo, no store file, unreadable, unparseable. This is a FALLBACK behind a
+/// successful runtime read, so the caller's existing "does not exist" message stays the one the user
+/// sees; surfacing an io error from here would replace a true statement with a confusing one.
+fn repo_only_impl(ref_: &str, args: &[String]) -> Option<Value> {
+    // `--root` where given (the same flag `promote` takes), else search upward from the cwd. The walk
+    // matters: `bsc graph impl get` is run from wherever a session happens to be — a crate directory, a
+    // nested worktree — and anchoring on the cwd alone would make a repo-only record readable from the
+    // repo root and invisible two directories down, which reads as data loss rather than as a path bug.
+    let store = match flag_value(args, "--root") {
+        Some(r) => crate::repo_store::read_at(&crate::repo_store::path_under(std::path::Path::new(&r))).ok()?,
+        None => {
+            let cwd = std::env::current_dir().ok()?;
+            cwd.ancestors()
+                .map(crate::repo_store::path_under)
+                .find(|p| p.is_file())
+                .and_then(|p| crate::repo_store::read_at(&p).ok())
+                .flatten()
+        }
+    }?;
+
+    let impls = crate::repo_store::impls_of(&store);
+    if let Some(by_id) = impls.iter().find(|im| im.get("id").and_then(Value::as_str) == Some(ref_)) {
+        return Some(by_id.clone());
+    }
+    let mut by_name = impls.iter().filter(|im| im.get("name").and_then(Value::as_str) == Some(ref_));
+    match (by_name.next(), by_name.next()) {
+        (Some(only), None) => Some(only.clone()),
+        _ => None,
+    }
+}
+
 /// Resolve a SOURCE-bearing flag from either its inline form (`--code`) or its file form
 /// (`--code-file`), reading the file verbatim (#76, designer request).
 ///
@@ -2755,6 +2828,145 @@ mod tests {
         std::fs::write(&full, "pub fn f() {}").unwrap();
         let args = vec!["--code-file".to_string(), full.to_string_lossy().into_owned()];
         assert_eq!(source_flag(&args, "--code").unwrap().as_deref(), Some("pub fn f() {}"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #155: a record that lives ONLY in the committed repo store must be readable.
+    ///
+    /// `crate::implementations()` resolves the runtime store alone, so a crate module promoted into
+    /// `graph/algorithms.json` and never re-authored read as "does not exist" — while plainly existing,
+    /// with fields (`tests` among them) an editor needs to see before touching it.
+    #[test]
+    fn a_repo_only_record_is_found_by_id_and_by_unique_name() {
+        let dir = std::env::temp_dir()
+            .join(format!("bsc-repo-only-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("graph")).unwrap();
+        std::fs::write(
+            crate::repo_store::path_under(&dir),
+            serde_json::json!({
+                "implementations": [
+                    { "id": "bsc-loop--cli.rs", "name": "cli", "code": "//! x", "tests": [{ "name": "cli.rs" }] },
+                    { "id": "other--cli.rs", "name": "cli", "code": "//! y" },
+                    { "id": "solo.rs", "name": "solo", "code": "//! z" }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let root = vec!["--root".to_string(), dir.to_string_lossy().into_owned()];
+
+        // By exact id — and it carries the fields that made this worth fixing.
+        let got = repo_only_impl("bsc-loop--cli.rs", &root).expect("found by id");
+        assert_eq!(got.get("id").and_then(Value::as_str), Some("bsc-loop--cli.rs"));
+        assert!(got.get("tests").is_some(), "the record's paired tests come back with it");
+
+        // By a name only one record has.
+        assert_eq!(
+            repo_only_impl("solo", &root).and_then(|v| v.get("id").and_then(Value::as_str).map(str::to_owned)),
+            Some("solo.rs".to_string()),
+        );
+
+        // An AMBIGUOUS name yields None rather than an arbitrary pick: two records are named `cli`, and
+        // answering with either would be a wrong record returned confidently.
+        assert!(repo_only_impl("cli", &root).is_none(), "ambiguous name must not resolve");
+        assert!(repo_only_impl("nothing-here", &root).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every failure path is `None`, never an error: this runs BEHIND a successful runtime read, so the
+    /// caller's existing "does not exist" message must stay the one the user sees.
+    #[test]
+    fn a_missing_or_corrupt_repo_store_is_not_found_rather_than_an_error() {
+        let dir = std::env::temp_dir()
+            .join(format!("bsc-repo-only-bad-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("graph")).unwrap();
+        let root = vec!["--root".to_string(), dir.to_string_lossy().into_owned()];
+
+        // No store file at all — a repo that has migrated nothing is not an error.
+        assert!(repo_only_impl("anything", &root).is_none());
+
+        // A corrupt one is also just "not found" here; `promote`/the build report it properly.
+        std::fs::write(crate::repo_store::path_under(&dir), "{ not json").unwrap();
+        assert!(repo_only_impl("anything", &root).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #155 (request #155, filed by kevin): `impl set --code-file` on an id that exists ONLY in the
+    /// committed repo store — a runtime store lookup finds nothing — used to take `set_impl_by`'s
+    /// CREATE branch and build a record from just this call's flags. `tests` has no flag at all, so it
+    /// was silently dropped from the runtime store, and `promote` then refused forever
+    /// (`refusedWouldLoseFields`) rather than ever landing the new code: an editor could not safely
+    /// touch a repo-only record's code at all. The fix seeds the runtime graph with the repo-only copy
+    /// before `set_impl_by`'s merge runs, so the write lands ON TOP of the real fields instead of
+    /// starting from nothing — the same shape `impl get`'s repo-only fallback already uses.
+    #[test]
+    fn impl_set_on_a_repo_only_record_merges_onto_it_and_promote_then_lands_cleanly() {
+        let dir = crate::unique_temp("repo-only-set");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("graph")).unwrap();
+        std::fs::write(
+            crate::repo_store::path_under(&dir),
+            serde_json::json!({
+                "implementations": [{
+                    "id": "bsc-loop--cli.rs", "tech": "rust", "role": "algorithm", "name": "cli",
+                    "code": "// original\n", "src": "crates/bsc-loop/src/cli.rs",
+                    "folder": "crates/bsc-loop/src",
+                    "tests": [{ "name": "cli.rs", "src": "#[test]\nfn it_works() {}\n" }],
+                    "summary": "the bsc-loop CLI dispatcher"
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let runtime_store = dir.join("runtime.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env (nextest gives this
+        // test its own process, per the note on `impl_set_writes_and_clears_module_state` above).
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+
+        let root = dir.to_string_lossy().into_owned();
+        // No --src, no --no-src: the record's provenance already lives on the repo-only copy, and this
+        // edit must not have to restate it to pass the #4136 gate.
+        let set_args: Vec<String> = [
+            "impl", "set", "--id", "bsc-loop--cli.rs", "--tech", "rust", "--role", "algorithm",
+            "--name", "cli", "--code", "// new code\n", "--root", &root,
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        run(set_args, "bsc graph").expect("impl set must not require restating provenance it already has");
+
+        let saved = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("bsc-loop--cli.rs"))
+            .expect("the record now exists in the runtime store");
+        assert_eq!(saved.get("code").and_then(Value::as_str), Some("// new code\n"), "the edit landed");
+        assert!(saved.get("tests").is_some(), "the repo-only record's paired test must survive the edit");
+        assert_eq!(
+            saved.get("summary").and_then(Value::as_str),
+            Some("the bsc-loop CLI dispatcher"),
+            "fields this call never restated must survive too"
+        );
+
+        // Promote must now land the code change cleanly — before the fix this refused forever
+        // (`refusedWouldLoseFields`) because the runtime copy had regressed relative to the repo one.
+        let promote_args: Vec<String> =
+            ["promote", "--id", "bsc-loop--cli.rs", "--root", &root].iter().map(|s| s.to_string()).collect();
+        run(promote_args, "bsc graph").expect("promote must land the merged record, not refuse it");
+
+        let repo = crate::repo_store::read_at(&crate::repo_store::path_under(&dir)).unwrap().unwrap();
+        let promoted = crate::repo_store::impls_of(&repo)
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("bsc-loop--cli.rs"))
+            .expect("promoted into the repo store");
+        assert_eq!(promoted.get("code").and_then(Value::as_str), Some("// new code\n"));
+        assert!(promoted.get("tests").is_some(), "tests survive the promote too");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 
