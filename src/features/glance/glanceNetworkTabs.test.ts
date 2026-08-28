@@ -26,11 +26,20 @@ describe("Glance's tabs are the networks", () => {
     expect(GLANCE).toMatch(/usePageTabs\("glance", glanceTabs\)/);
   });
 
-  it("keeps ONE fixed tab, whose id a network id can never collide with", () => {
-    // Every network id is minted `network-<slug>` with a NON-EMPTY slug, so `network` (no hyphen) is
-    // unreachable by that grammar — which is why the all-projects lens survives without a sentinel.
-    expect(GLANCE).toMatch(/GLANCE_FIXED_TABS/);
-    expect(GLANCE).toMatch(/id: "network"/);
+  it("has NO fixed tabs — every tab is a domain", () => {
+    // An `All projects` lens used to sit here. A tab that is not a domain is a different kind of thing
+    // wearing the same chrome, and the kitchen-sink domain already holds everything not yet organised.
+    expect(GLANCE).not.toMatch(/GLANCE_FIXED_TABS/);
+    expect(GLANCE).toMatch(/networks\.map\(\(n\) => \(\{ id: n\.id, label: n\.name/);
+  });
+
+  it("draws NO projects when no tab resolves, rather than falling back to all of them", () => {
+    // With no all-projects lens, the old fallback would silently draw an unscoped graph under a tab
+    // claiming to be one domain.
+    // The CLAIM, not the formatting: the scoped list's fallback is empty rather than `allProjects`.
+    // Pinning the exact indentation (as this first did) breaks on a reflow and says nothing.
+    expect(GLANCE).toMatch(/const projects = useMemo\(/);
+    expect(GLANCE).not.toMatch(/:\s*allProjects\s*\)/);
   });
 
   it("no longer carries the Fleet page — it is a dashboard, and it lives in Logs now", () => {
