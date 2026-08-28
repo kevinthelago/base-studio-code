@@ -573,6 +573,7 @@
   "@data/components/app/features/sounds/sounds-rail.json",
   "@data/components/app/features/sounds/soundsgraphhost.json",
   "@data/components/app/features/sounds/soundspage.json",
+  "@data/components/app/features/studio-sessions/networkarchitectmount.json",
   "@data/components/app/features/studio-sessions/studiosessionhosts.json",
   "@data/components/app/features/studio-sessions/studiosessionmount.json",
   "@data/components/app/features/teams/architectterminal.json",
