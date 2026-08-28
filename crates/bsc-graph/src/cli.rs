@@ -1358,7 +1358,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     .collect();
                 emit(&Value::Array(impls))
             }
-            // `impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` (#157,
+            // `impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] [--pretty]` (#157,
             // request from kevin) — the `bsc ui sync-seed` (#139) counterpart for this store: write a
             // runtime impl/edge record's CONTENT back into the packaged
             // `src-tauri/data/knowledge/algorithms.json` seed, by id. Ports `scripts/sync-impl-seed.mjs`
@@ -1372,7 +1372,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                       | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
                       | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>] \
-                      | impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply]"
+                      | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply]"
                 .to_string()),
         },
         // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
@@ -2603,16 +2603,19 @@ fn diff_fields(existing: &Value, fresh: &Value) -> Vec<String> {
     keys.into_iter().filter(|k| existing.get(k) != fresh.get(k)).collect()
 }
 
-/// `impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` (#157) — the
-/// store-to-seed sync `bsc ui sync-seed` (#139) already does for the component store, ported here for
-/// the Algorithms library: write a runtime impl/edge record's CONTENT back into the packaged
+/// `impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] [--pretty]` (#157) —
+/// the store-to-seed sync `bsc ui sync-seed` (#139) already does for the component store, ported here
+/// for the Algorithms library: write a runtime impl/edge record's CONTENT back into the packaged
 /// `<seed-dir>/algorithms.json`, by id.
 ///
 /// Deliberately BY ID, never a sweep — seed and store drift BOTH ways (that is the whole reason
 /// `sync-impl-seed.mjs` reports SKIPs instead of assuming a direction), so a mass re-stamp would as
 /// often overwrite real seed content with stale store content as the reverse. Dry run by default;
-/// `--apply` writes. `--only <field>` syncs exactly ONE field, leaving the rest of the seed record
-/// untouched, for landing a new facet across many records without dragging unrelated drift along.
+/// `--apply` writes. `--only <field>[,<field>…]` (request #167) syncs exactly the NAMED fields,
+/// leaving the rest of the seed record untouched, for landing a new facet across many records without
+/// dragging unrelated drift along. A value naming no field (empty, or all commas) is REFUSED rather
+/// than silently matching nothing — the original bug: a comma list like `code,tests` was treated as
+/// one literal (nonexistent) field name, so the merge was always a no-op reported as `upToDate`.
 ///
 /// Comparison and the loses-fields refusal are NOT reimplemented here — they are
 /// [`crate::repo_store::content_of`] and [`crate::repo_store::loses_fields`], the same functions
@@ -2629,9 +2632,23 @@ fn diff_fields(existing: &Value, fresh: &Value) -> Vec<String> {
 /// writing the file back would silently re-sort every record in it alphabetically — a one-field fix
 /// producing a multi-thousand-line diff.
 fn cmd_impl_sync_seed(args: &[String]) -> Result<(), String> {
-    let usage = "usage: bsc graph impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]";
+    let usage =
+        "usage: bsc graph impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] [--pretty]";
     let seed_dir = flag_value(args, "--seed-dir").ok_or(usage)?;
-    let only = flag_value(args, "--only");
+    // `--only` accepts a COMMA LIST (request #167): treating the whole value as one literal field
+    // name meant `--only code,tests` matched no field on either side, so the merge was always a
+    // silent no-op reported as `upToDate` — a comma-joined multi-field sync is the established
+    // convention for this CLI (`--tags a,b`, `--composes a,b`), and this flag had never followed it.
+    let only: Option<Vec<String>> = match flag_value(args, "--only") {
+        None => None,
+        Some(raw) => {
+            let fields: Vec<String> = raw.split(',').map(str::trim).filter(|f| !f.is_empty()).map(String::from).collect();
+            if fields.is_empty() {
+                return Err(format!("--only '{raw}' names no field"));
+            }
+            Some(fields)
+        }
+    };
     let apply = args.iter().any(|a| a == "--apply");
     let pretty = args.iter().any(|a| a == "--pretty");
     // Ids are the positionals after `impl sync-seed`, skipping both flags AND the VALUE token that
@@ -2722,19 +2739,22 @@ fn cmd_impl_sync_seed(args: &[String]) -> Result<(), String> {
             .ok_or_else(|| format!("internal: seed index for '{id}' is stale"))?;
         let existing_content = crate::repo_store::content_of(&existing);
         let store_content = crate::repo_store::content_of(store_rec);
-        // `--only <field>` — ONE field onto the seed record: everything else stays exactly as the seed
-        // has it, so no unrelated drift rides along with the facet being synced.
+        // `--only <field>[,<field>…]` — exactly the NAMED fields onto the seed record: everything
+        // else stays exactly as the seed has it, so no unrelated drift rides along with the facet(s)
+        // being synced.
         let fresh = match &only {
             None => store_content.clone(),
-            Some(field) => {
+            Some(fields) => {
                 let mut merged = existing_content.clone();
                 if let Some(obj) = merged.as_object_mut() {
-                    match store_content.get(field) {
-                        Some(v) => {
-                            obj.insert(field.clone(), v.clone());
-                        }
-                        None => {
-                            obj.remove(field);
+                    for field in fields {
+                        match store_content.get(field) {
+                            Some(v) => {
+                                obj.insert(field.clone(), v.clone());
+                            }
+                            None => {
+                                obj.remove(field);
+                            }
                         }
                     }
                 }
@@ -2815,7 +2835,7 @@ fn help(prog: &str) -> String {
   \
          {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
   \
-         {prog} impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]   # write a runtime impl/edge record's CONTENT back into the packaged <seed-dir>/algorithms.json, by id (#157) — the `bsc ui sync-seed` (#139) counterpart for this store. Deliberately BY ID: seed and store drift BOTH ways, so a sweep would as often overwrite real seed content as fresh store content. Dry run by default; --apply writes. --only <field> syncs exactly ONE field, leaving the rest of the seed record untouched. Refuses (would-lose-fields) rather than dropping a non-empty field the seed already carries and the store copy lacks\n  \
+         {prog} impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] [--pretty]   # write a runtime impl/edge record's CONTENT back into the packaged <seed-dir>/algorithms.json, by id (#157) — the `bsc ui sync-seed` (#139) counterpart for this store. Deliberately BY ID: seed and store drift BOTH ways, so a sweep would as often overwrite real seed content as fresh store content. Dry run by default; --apply writes. --only <field>[,<field>…] (#167) syncs exactly the named fields, leaving the rest of the seed record untouched — a value naming no field is refused rather than silently matching nothing. Refuses (would-lose-fields) rather than dropping a non-empty field the seed already carries and the store copy lacks\n  \
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
@@ -3402,6 +3422,86 @@ mod tests {
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// request #167 (kevin): `--only code,tests` used to be treated as ONE literal field name —
+    /// `code,tests` matches no field on either side, so the merge was always a no-op silently reported
+    /// as `upToDate` with nothing written. A comma list must sync EACH named field.
+    #[test]
+    fn impl_sync_seed_only_flag_accepts_a_comma_list() {
+        let dir = crate::unique_temp("impl-sync-seed-only-list");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let seed_path = dir.join("algorithms.json");
+        std::fs::write(
+            &seed_path,
+            serde_json::json!({
+                "implementations": [{
+                    "id": "sync167-list", "tech": "typescript", "role": "algorithm", "name": "List",
+                    "code": "// stale seed code\n", "tests": "// stale seed tests\n", "summary": "unrelated summary"
+                }],
+                "edges": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let runtime_store = dir.join("runtime.json");
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        std::fs::write(
+            &runtime_store,
+            serde_json::json!({
+                "implementations": [{
+                    "id": "sync167-list", "tech": "typescript", "role": "algorithm", "name": "List",
+                    "code": "// fresh store code\n", "tests": "// fresh store tests\n", "summary": "unrelated summary"
+                }],
+                "edges": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let seed_dir = dir.to_string_lossy().into_owned();
+        let args: Vec<String> =
+            ["impl", "sync-seed", "sync167-list", "--seed-dir", &seed_dir, "--only", "code,tests", "--apply"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        let (r, out) = bsc_util::capture_output(|| cmd_impl_sync_seed(&args));
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["upToDate"], serde_json::json!([]), "a genuine drift must not report upToDate");
+        assert_eq!(report["synced"][0]["id"], "sync167-list");
+
+        let seed_written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let rec = &seed_written["implementations"][0];
+        assert_eq!(rec["code"], "// fresh store code\n", "both comma-listed fields sync");
+        assert_eq!(rec["tests"], "// fresh store tests\n", "both comma-listed fields sync");
+        assert_eq!(rec["summary"], "unrelated summary", "a field outside --only stays untouched");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An `--only` value naming no field (empty, or nothing but commas) is refused rather than
+    /// silently accepted as a single literal field name that can never match — the same silent-no-op
+    /// shape as #167, just at the empty end of the range.
+    #[test]
+    fn impl_sync_seed_only_flag_rejects_a_value_naming_no_field() {
+        assert!(
+            cmd_impl_sync_seed(&[
+                "impl".into(),
+                "sync-seed".into(),
+                "some-id".into(),
+                "--seed-dir".into(),
+                "/tmp/wherever".into(),
+                "--only".into(),
+                ", ,".into(),
+            ])
+            .is_err(),
+            "--only ', ,' names no field and must be refused"
+        );
     }
 
     /// Mirrors `bsc ui sync-seed`'s own usage guards: `--seed-dir` is required, and so is at least one id.
