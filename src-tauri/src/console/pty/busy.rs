@@ -172,7 +172,31 @@ fn is_agent_infrastructure(argv: &[String]) -> bool {
 /// three processes whose name says they might be the webview, to tell the app's own renderer apart
 /// from any other browser on the box. Same question, same shallow chains — worth one visibility
 /// change rather than a copy that can drift.
+/// Is this entry a real PROCESS rather than one of its own threads?
+///
+/// **THE BUG THIS EXISTS FOR, and it made every agent session permanently busy.** sysinfo enumerates
+/// Linux *tasks*, so each of an agent's threads appears in the process map as its own entry — same
+/// argv, parented to the main pid. An idle `claude` has ~20 of them. Every descendant scan therefore
+/// found twenty "children" that were the agent itself, so `agents_doing_work` said WORKING for a
+/// session sitting at its prompt, from the moment it launched until it died.
+///
+/// MEASURED on the live app: `designerReact`'s agent had zero child processes and twenty-one entries
+/// under `/proc/<pid>/task`, and the probe listed exactly those task ids as descendants
+/// (`claude --model sonnet --continue`, twenty times over).
+///
+/// What that broke is the whole delivery path: `deliver::plan` routes a busy target to
+/// `LeaveWorking`, so an ask to a live studio delivered nothing — and `--on-busy wait` then polled for
+/// an idle that could never arrive, which is a director hanging.
+fn is_real_process(procs: &HashMap<Pid, Process>, pid: Pid) -> bool {
+    procs.get(&pid).is_some_and(|p| p.thread_kind().is_none())
+}
+
 pub(crate) fn is_descendant_of(start: Pid, root: Pid, procs: &HashMap<Pid, Process>) -> bool {
+    // A THREAD is not a descendant — it is the same process. Checked at the top of the walk rather
+    // than at each call site so no future scan can forget it.
+    if !is_real_process(procs, start) {
+        return false;
+    }
     let mut pid = start;
     for _ in 0..MAX_DEPTH {
         let Some(parent) = procs.get(&pid).and_then(|p| p.parent()) else { return false };
@@ -659,6 +683,59 @@ mod tests {
         assert!(name.is_some_and(|n| !n.is_empty()), "names must survive the cheap refresh");
     }
 
+    /// THE PRIMARY BUG, and it made EVERY agent session permanently busy. sysinfo enumerates Linux
+    /// *tasks*, so an agent's own threads appear in the process map as entries parented to its pid —
+    /// an idle `claude` carries about twenty. Every descendant scan therefore found twenty "children"
+    /// that were the agent itself.
+    ///
+    /// Uses THIS process, which the test harness runs multi-threaded, so the fixture is a real
+    /// thread rather than a mock of one. Measured before the fix: `designerReact` had zero child
+    /// processes, twenty-one entries under `/proc/<pid>/task`, and the probe listed exactly those
+    /// task ids as descendants.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_processs_own_threads_are_not_its_descendants() {
+        let me = std::process::id();
+        // Spawn a few threads so the harness definitely has more than one task.
+        let handles: Vec<_> = (0..4)
+            .map(|_| std::thread::spawn(|| std::thread::sleep(std::time::Duration::from_millis(400))))
+            .collect();
+
+        let tids: Vec<u32> = std::fs::read_dir(format!("/proc/{me}/task"))
+            .expect("linux exposes /proc/<pid>/task")
+            .filter_map(|e| e.ok()?.file_name().to_string_lossy().parse::<u32>().ok())
+            .filter(|t| *t != me)
+            .collect();
+        assert!(!tids.is_empty(), "the test harness is multi-threaded, so there is a thread to check");
+
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always),
+        );
+        let procs = sys.processes();
+        let root = Pid::from(me as usize);
+
+        // If sysinfo did not surface the threads at all there is nothing to prove, and asserting
+        // anyway would be a test that passes for the wrong reason.
+        let surfaced: Vec<Pid> = tids.iter().map(|t| Pid::from(*t as usize)).filter(|p| procs.contains_key(p)).collect();
+        if surfaced.is_empty() {
+            eprintln!("SKIPPED: this sysinfo build does not enumerate threads, so they cannot be miscounted");
+        }
+        for tid in surfaced {
+            assert!(
+                !is_real_process(procs, tid),
+                "{tid} is a thread of this process and must not read as a real process",
+            );
+            assert!(
+                !is_descendant_of(tid, root, procs),
+                "{tid} is a THREAD of {me}, not a child — counting it makes an idle agent read busy",
+            );
+        }
+        for h in handles { let _ = h.join(); }
+    }
+
     /// THE OUTAGE. An agent's own MCP servers and HTTP bridge are spawned at STARTUP and held for the
     /// whole session, so counting them as work marks every MCP-enabled session busy from its first
     /// second — which routes every `bsc session ask` to `LeaveWorking` (nothing delivered) and makes
@@ -838,4 +915,6 @@ mod tests {
         let has_work = busy_tree.iter().any(|(pid, parent, _)| *pid != shell && *parent == Some(shell));
         assert!(has_work, "an agent under the shell => leave it alone");
     }
+
+
 }
