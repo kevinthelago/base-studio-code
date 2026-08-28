@@ -565,10 +565,15 @@ textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical;
 .app .xterm .xterm-viewport {
   overflow-y: auto;
   background-color: transparent;   /* xterm hardcodes #000; let the pane's own background show */
-  /* NO SCROLL CHAINING out of a terminal. Reaching the last line must not hand the rest of the gesture
-     to whatever is behind the pane — in Glance a terminal morph lives INSIDE the graph canvas, so
-     chaining threw the whole graph out from under the reader mid-scroll. The canvas's zoom is declined
-     separately (`overScrollableChild` in useGraphViewport, which is why that guard is not
-     direction-aware); this is the other half, and it covers the console panes as well. */
+  /* NO SCROLL CHAINING out of a terminal, for whatever native scrolling still happens here.
+     THIS RULE IS NOT WHAT STOPS THE GLANCE GRAPH ZOOMING, and it never was — it was written believing
+     it was half of that guard. xterm 6 scrolls SYNTHETICALLY (VS Code's `SmoothScrollableElement`,
+     `.xterm-scrollable-element`), so on this element there is no native scroll for the browser to
+     chain, and the declaration is inert for that purpose. `.xterm-viewport` is also a SIBLING of
+     `.xterm-screen`, where a wheel over terminal text actually lands.
+     The gesture is contained in JS instead, at the one place that can see it: `containTerminalWheel`
+     in `@/app/console/lib/terminalWheel`, wired by `TerminalView` where the `Terminal` is. Kept here
+     because it costs nothing and is correct for any native scrolling xterm does do — but do not read
+     it as the guard. */
   overscroll-behavior: contain;
 }
