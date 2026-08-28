@@ -55,16 +55,32 @@ pub fn harvest_for(root: &Path, src: &str) -> Option<HarvestedTest> {
 ///
 /// READ-ONLY. A record with no colocated test is omitted entirely — never emitted with an empty `tests`,
 /// which would read as "declared none" rather than "not yet harvested".
+///
+/// `bsc ui tests set --id <id> --src <test-file> [--name <name>] [--by <tag>] [--note <text>] [--dir D]
+/// [--pretty]` (#166) pairs ONE record without a whole-tree `harvest` re-mirroring every other paired
+/// record — see [`run_set`].
 pub fn run(args: &[String], prog: &str) -> Result<(), String> {
     if args.first().map(String::as_str) == Some("help") || args.is_empty() {
         println!("{}", HELP.replace("{prog}", prog));
         return Ok(());
     }
-    if args.first().map(String::as_str) != Some("harvest") {
-        return Err(format!("unknown tests command '{}' — want: {prog} tests harvest", args[0]));
+    match args.first().map(String::as_str) {
+        Some("harvest") => run_harvest(&args[1..]),
+        Some("set") if args.get(1).map(String::as_str) != Some("help") => run_set(&args[1..]),
+        Some("set") => {
+            println!("{}", HELP.replace("{prog}", prog));
+            Ok(())
+        }
+        _ => Err(format!(
+            "unknown tests command '{}' — want: {prog} tests harvest | {prog} tests set",
+            args[0]
+        )),
     }
+}
+
+fn run_harvest(args: &[String]) -> Result<(), String> {
     let (mut root, mut kit, mut pretty) = (".".to_string(), None::<String>, false);
-    let mut it = args[1..].iter();
+    let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--kit" => kit = Some(it.next().cloned().ok_or("--kit needs a kit id")?),
@@ -114,16 +130,93 @@ pub fn run(args: &[String], prog: &str) -> Result<(), String> {
     Ok(())
 }
 
-const HELP: &str = "{prog} tests — the per-node TEST manifest (#3878/#3907)
+/// `tests set --id <id> --src <test-file> [--name <name>] [--by <tag>] [--note <text>] [--dir D]
+/// [--pretty]` (#166, request from kevin) — pair ONE record's test without re-mirroring the whole store.
+///
+/// `harvest` is root-scoped and all-or-nothing: it re-emits EVERY paired record under a kit (13-21 on
+/// this repo's own kit), so updating a single test's content means piping every one of those back
+/// through `set` — including records the caller never meant to touch. That is how an unrelated record
+/// (`terminalhost`) lost its `provides` field as a side effect: a stale re-read carried an explicit
+/// JSON `null` for a field a concurrent write had since given a real value, and `bsc ui set`'s merge
+/// honours an explicit `null` as "remove this" (#4197) — exactly the semantics a narrower write needs
+/// to never trigger by accident.
+///
+/// This writes a MERGE payload of just `{ id, tests }` through the same stamped path `bsc ui set` uses
+/// (`bsc_component::cli::apply_tests_set`), so every OTHER field — including one a concurrent session
+/// just wrote — survives untouched, and the write still bumps `rev`/`updatedAt`/`updatedBy` and lands in
+/// `bsc ui log <id>`. `Err` when `id` names no existing record: this PAIRS a record, it does not create
+/// one — the same contract `bsc graph tests set` (#140) carries for the algorithms graph, which this
+/// mirrors so the two `tests set` verbs read the same.
+fn run_set(args: &[String]) -> Result<(), String> {
+    // ui-scope MUTATION gate (#2470) — refuse BEFORE reading the test file or resolving the store.
+    bsc_cli_util::require_write_scope("ui")?;
+    let (mut id, mut src, mut name, mut by, mut note, mut dir, mut pretty) = (
+        None::<String>,
+        None::<String>,
+        None::<String>,
+        None::<String>,
+        None::<String>,
+        None::<String>,
+        false,
+    );
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--id" => id = Some(it.next().cloned().ok_or("--id needs a component id")?),
+            "--src" => src = Some(it.next().cloned().ok_or("--src needs a test-file path")?),
+            "--name" => name = Some(it.next().cloned().ok_or("--name needs a display name")?),
+            "--by" => by = Some(it.next().cloned().ok_or("--by needs a writer tag")?),
+            "--note" => note = Some(it.next().cloned().ok_or("--note needs a text")?),
+            "--dir" => dir = Some(it.next().cloned().ok_or("--dir needs a store path")?),
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}' — usage: {SET_USAGE}")),
+        }
+    }
+    let id = id.ok_or(format!("usage: {SET_USAGE}"))?;
+    let src = src.ok_or(format!("usage: {SET_USAGE}"))?;
+    let path = std::path::Path::new(&src);
+    // A test's CONTENTS are read from disk, so this honours the same boundary the harvest does (#3475).
+    bsc_cli_util::require_harvestable_root(path)?;
+    let contents = std::fs::read_to_string(path).map_err(|e| format!("cannot read {src}: {e}"))?;
+    let name = name.unwrap_or_else(|| display_name(path, &contents));
+
+    let store = match dir {
+        Some(d) => bsc_json_store::Store::new(d, "component"),
+        None => bsc_json_store::Store::open_default("components", "component")?,
+    };
+    bsc_component::cli::apply_tests_set(
+        &store,
+        &id,
+        serde_json::json!([{ "name": name, "src": contents }]),
+        by.as_deref(),
+        note.as_deref(),
+    )?;
+    let out = serde_json::json!({ "id": id, "name": name, "src": src });
+    let s = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+const SET_USAGE: &str = "bsc ui tests set --id <id> --src <test-file> [--name <name>] [--by <tag>] \
+[--note <text>] [--dir D] [--pretty]";
+
+const HELP: &str = "{prog} tests — the per-node TEST manifest (#3878/#3907/#166)
 
 USAGE:
   {prog} tests harvest [<root>] [--kit K] [--pretty]
+  {prog} tests set --id <id> --src <test-file> [--name <name>] [--by <tag>] [--note <text>] [--dir D] [--pretty]
 
-Pairs each component record with its COLOCATED test file (`<src-without-ext>.test.tsx`, else `.test.ts`)
-under <root> (default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY —
-pipe into `set` to apply, which stamps rev/provenance as usual:
+`harvest` pairs each component record with its COLOCATED test file (`<src-without-ext>.test.tsx`, else
+`.test.ts`) under <root> (default `.`) and prints the records that HAVE one, with `tests` populated.
+READ-ONLY — pipe into `set`, which stamps rev/provenance as usual:
 
   {prog} tests harvest --kit base-studio-code | {prog} set --by tests-harvest
+
+`tests set` pairs ONE record's test in place — a MERGING, stamped write of just `tests`, so it never
+touches any field `harvest`'s whole-tree re-mirror would otherwise carry along on unrelated records:
+
+  {prog} tests set --id githubpage --src src/features/github/GithubPage.test.tsx
 
 MIRROR, NOT SOURCE. The files stay authoritative and checked in; this copies them onto their node so the
 graph is queryable and `bsc ui doctor`'s `no-tests` is honest. Nothing executes a graph-held test yet.
@@ -132,8 +225,9 @@ ONE ENTRY PER FILE, VERBATIM. A test file's meaning lives partly outside its `it
 `beforeEach`, local helpers, mocks — so splitting per-test would silently drop it. `src` is the file
 byte-for-byte; `name` is its first `describe(...)` title, else the file's basename.
 
-A record with no colocated test is OMITTED, never emitted with an empty `tests`: absent means \"not yet
-harvested\", while `[]` would read as \"declared none\" and silence the doctor for the wrong reason.
+A record with no colocated test is OMITTED from `harvest`, never emitted with an empty `tests`: absent
+means \"not yet harvested\", while `[]` would read as \"declared none\" and silence the doctor for the
+wrong reason. `tests set` errors rather than creating a record: it PAIRS an existing one.
 ";
 
 #[cfg(test)]
@@ -202,5 +296,106 @@ mod tests {
         let h = harvest_for(&d, "src/shared/ui/data/Card.tsx").unwrap();
         assert_eq!(h.src, body, "byte-identical to the file on disk");
         assert_eq!(h.name, "X");
+    }
+
+    /// A store dir + a seeded record, isolated per test the same way `tmp` isolates a fixture root —
+    /// these run in parallel and a shared dir means one test's write races another's read.
+    fn tmp_store(label: &str) -> bsc_json_store::Store {
+        let d = std::env::temp_dir().join(format!("bsc-tests-harvest-store-{}-{label}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let store = bsc_json_store::Store::new(d, "component");
+        store
+            .set("card", &serde_json::json!({ "id": "card", "name": "Card", "kitId": "k" }).to_string())
+            .unwrap();
+        store
+    }
+
+    #[test]
+    fn cli_set_pairs_one_record_via_dir_and_honours_a_name_override() {
+        // End-to-end through `run()`, the same entry point `bsc ui tests set` dispatches through —
+        // covers flag parsing AND the --name override, neither of which the bsc-component-level
+        // `apply_tests_set` tests (which call the write function directly) exercise.
+        let store = tmp_store("cli-name");
+        let d = tmp("cli-name-src");
+        let test_path = d.join("src/shared/ui/data/Card.test.tsx");
+        std::fs::write(&test_path, "describe(\"Card renders\", () => {});").unwrap();
+
+        let args: Vec<String> = [
+            "set",
+            "--id",
+            "card",
+            "--src",
+            test_path.to_str().unwrap(),
+            "--name",
+            "custom name",
+            "--dir",
+            store.dir().to_str().unwrap(),
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        // Unconfine for this test: the surrounding process's real $BSC_REPO_ROOT (this repo checkout)
+        // would otherwise reject a temp-dir test-file path outside it (#158 FS confinement).
+        bsc_cli_util::with_repo_root(None, || run(&args, "bsc ui")).unwrap();
+
+        let after: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(after["tests"], serde_json::json!([{ "name": "custom name", "src": "describe(\"Card renders\", () => {});" }]));
+        assert_eq!(after["name"], "Card", "an unmentioned field survives the merge");
+    }
+
+    #[test]
+    fn cli_set_derives_the_name_from_describe_when_no_override_is_given() {
+        let store = tmp_store("cli-derive");
+        let d = tmp("cli-derive-src");
+        let test_path = d.join("src/shared/ui/data/Card.test.tsx");
+        std::fs::write(&test_path, "describe(\"Card renders\", () => {});").unwrap();
+
+        let args: Vec<String> = [
+            "set",
+            "--id",
+            "card",
+            "--src",
+            test_path.to_str().unwrap(),
+            "--dir",
+            store.dir().to_str().unwrap(),
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        bsc_cli_util::with_repo_root(None, || run(&args, "bsc ui")).unwrap();
+
+        let after: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(after["tests"][0]["name"], "Card renders");
+    }
+
+    #[test]
+    fn cli_set_errs_on_an_unknown_id() {
+        let store = tmp_store("cli-unknown");
+        let d = tmp("cli-unknown-src");
+        let test_path = d.join("src/shared/ui/data/Card.test.tsx");
+        std::fs::write(&test_path, "x").unwrap();
+
+        let args: Vec<String> = [
+            "set",
+            "--id",
+            "nope",
+            "--src",
+            test_path.to_str().unwrap(),
+            "--dir",
+            store.dir().to_str().unwrap(),
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let err = bsc_cli_util::with_repo_root(None, || run(&args, "bsc ui")).unwrap_err();
+        assert!(err.contains("no component with id 'nope'"), "{err}");
+    }
+
+    #[test]
+    fn cli_set_missing_id_or_src_errors_with_usage() {
+        let err = run(&["set".to_string(), "--src".to_string(), "x".to_string()], "bsc ui").unwrap_err();
+        assert!(err.contains("bsc ui tests set"), "{err}");
+        let err = run(&["set".to_string(), "--id".to_string(), "x".to_string()], "bsc ui").unwrap_err();
+        assert!(err.contains("bsc ui tests set"), "{err}");
     }
 }

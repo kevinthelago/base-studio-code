@@ -246,19 +246,27 @@ which group's contract it resolved against. Compact JSON by default; --pretty in
     },
     CmdDoc {
         name: "tests",
-        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node (#3907)",
+        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node, or pair ONE record (#3907/#166)",
         usage: "USAGE:
   bsc ui tests harvest [<root>] [--kit K] [--pretty]
+  bsc ui tests set --id <id> --src <test-file> [--name <name>] [--by <tag>] [--note <text>] [--dir D] [--pretty]
 
-Pairs each record with its COLOCATED test (`<src-without-ext>.test.tsx`, else `.test.ts`) under <root>
-(default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY — pipe into `set`:
+`harvest` pairs each record with its COLOCATED test (`<src-without-ext>.test.tsx`, else `.test.ts`) under
+<root> (default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY — pipe into
+`set`:
 
   bsc ui tests harvest --kit base-studio-code | bsc ui set --by tests-harvest
+
+`tests set` pairs ONE record's test in place — a MERGING, stamped write of just `tests` — so pairing a
+single component's test does not require re-mirroring every OTHER record `harvest` would also emit:
+
+  bsc ui tests set --id githubpage --src src/features/github/GithubPage.test.tsx
 
 MIRROR, not source: the files stay authoritative; this copies them onto the node so the graph is
 queryable and `bsc ui doctor`'s `no-tests` is honest. ONE ENTRY PER FILE, verbatim — a test's meaning
 lives partly outside its `it()` blocks (imports, beforeEach, mocks), so a per-test split would drop it.
-A record with no colocated test is OMITTED, never given an empty `tests`.",
+A record with no colocated test is OMITTED, never given an empty `tests`. `tests set` errors rather than
+creating a record: it PAIRS an existing one.",
     },
     CmdDoc {
         name: "harvest",
