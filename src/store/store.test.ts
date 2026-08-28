@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, TRIAGE_PROMPT } from "./";
 import type { ViewKey } from "@/app/console/panes/viewDefs";
+import { stopHeadline, type StopReason } from "@/app/console/lib/paneStops";
 import type { QueuedPane } from "@/app/console/lib/focusQueue";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
@@ -2271,3 +2272,52 @@ describe("canonicalizePlanStages collapses stale title-named sections (#803)", (
 // per-request sessions — off by default, which shipped that whole feature switched off. The behaviour
 // they used to guard is now asserted where it actually lives: RequestSessionsMount.test.tsx pins that
 // the mount runs unconditionally and stops only where a source tree cannot be resolved.
+
+describe("a worker's stop carries the PROCESS's reason, not the lane verdict", () => {
+  // THE REPORTED DECEPTION: "Finished their work — stopped early". `markPaneEnded` hardcoded
+  // `auto-ended`, whose headline is "finished its work", so a cage that never started, an agent that
+  // crashed, and a worker that genuinely completed all rendered identically. Rust had classified the
+  // exit correctly the whole time; one listener dropped the field.
+  const ended = (exit?: { reason?: StopReason; detail?: string }) => {
+    const pane = `p-${Math.random().toString(36).slice(2)}`;
+    useAppStore.setState({ endedPanes: {}, paneStops: [] });
+    useAppStore.getState().markPaneEnded(pane, {
+      state: "needs-attention", streamId: "s1", summary: "1/1 still open · 0/1 complete",
+      at: Date.now(), exit,
+    });
+    return useAppStore.getState().paneStops.find((x) => x.paneId === pane)!;
+  };
+
+  it("does not report a failed exit as finished its work", () => {
+    const stop = ended({ reason: "failed", detail: "The agent exited with status 1 inside its worker sandbox." });
+    expect(stop.reason).toBe("failed");
+    expect(stopHeadline(stop.reason)).toBe("the agent exited with an error");
+  });
+
+  // The "it printed nothing" case this was reported from — the agent never ran at all.
+  it("does not report a cage that never started as finished its work", () => {
+    expect(stopHeadline(ended({ reason: "launcher-failed" }).reason)).toBe("the sandbox never started");
+  });
+
+  it("keeps a signalled exit distinct from a completion", () => {
+    expect(ended({ reason: "signalled" }).reason).toBe("signalled");
+  });
+
+  // BOTH halves reach the reader, because neither implies the other: a worker can crash with its
+  // issues complete, or exit cleanly with none of them done.
+  it("reports the process detail AND the lane verdict together", () => {
+    const stop = ended({ reason: "failed", detail: "exited with status 1" });
+    expect(stop.detail).toContain("exited with status 1");
+    expect(stop.detail).toContain("0/1 complete");
+  });
+
+  it("still reports a clean finish as auto-ended", () => {
+    expect(ended({ reason: "finished" }).reason).toBe("auto-ended");
+  });
+
+  // `bsc-done` has no pty_exit payload — the worker asked to close. That is the one case
+  // `auto-ended` names honestly, and it must not regress into "unknown".
+  it("still reports the bsc-done path as auto-ended", () => {
+    expect(ended(undefined).reason).toBe("auto-ended");
+  });
+});
