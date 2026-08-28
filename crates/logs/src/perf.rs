@@ -85,6 +85,63 @@ pub fn perf_samples(
     out
 }
 
+/// RSS growth for one session over a window: the first and last RSS-bearing sample, the delta, and
+/// the implied rate. `None` when fewer than two such samples exist in the window — a single point
+/// has no rate, and reporting a fabricated zero would read as "not growing" rather than "not enough
+/// data yet" (#request-159: this replaces a hand-rolled `sleep`+`sqlite3` polling loop someone wrote
+/// to answer exactly this while chasing a webview memory leak).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PerfGrowth {
+    pub session: String,
+    /// How many RSS-bearing samples the window held (more than 2 = a real trend line collapsed to
+    /// its endpoints, not just two lonely points).
+    pub n: usize,
+    pub from_ts: i64,
+    pub to_ts: i64,
+    pub from_bytes: i64,
+    pub to_bytes: i64,
+    pub delta_bytes: i64,
+    pub duration_secs: f64,
+    pub bytes_per_sec: f64,
+    pub mb_per_min: f64,
+}
+
+/// Compute [`PerfGrowth`] for `session` from the samples in `perf_samples(db_path, Some(session),
+/// since_ms, None)`. Uses the first and last RSS-bearing sample rather than fitting a line through
+/// every point — the endpoints are what "is it growing, and how fast" actually asks, and a two-point
+/// rate is honest about being exactly that instead of dressing itself up as a regression.
+pub fn perf_growth(db_path: &Path, session: &str, since_ms: Option<i64>) -> Option<PerfGrowth> {
+    let samples = perf_samples(db_path, Some(session), since_ms, None);
+    let with_rss: Vec<&PerfSample> = samples.iter().filter(|s| s.rss_bytes.is_some()).collect();
+    if with_rss.len() < 2 {
+        return None;
+    }
+    let first = with_rss[0];
+    let last = with_rss[with_rss.len() - 1];
+    let from_bytes = first.rss_bytes.expect("filtered to Some above");
+    let to_bytes = last.rss_bytes.expect("filtered to Some above");
+    let duration_secs = (last.ts - first.ts) as f64 / 1000.0;
+    if duration_secs <= 0.0 {
+        // Every sample landed at the same timestamp (or ts went backwards) — no time span to derive
+        // a rate from, so this is the same "not enough data" case as fewer than two samples.
+        return None;
+    }
+    let delta_bytes = to_bytes - from_bytes;
+    let bytes_per_sec = delta_bytes as f64 / duration_secs;
+    Some(PerfGrowth {
+        session: session.to_string(),
+        n: with_rss.len(),
+        from_ts: first.ts,
+        to_ts: last.ts,
+        from_bytes,
+        to_bytes,
+        delta_bytes,
+        duration_secs,
+        bytes_per_sec,
+        mb_per_min: bytes_per_sec * 60.0 / 1_048_576.0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,6 +218,79 @@ mod tests {
         assert_eq!(lim[0].ts, 4000);
         assert!((lim[0].cpu_pct.unwrap() - 4.0).abs() < 1e-9);
 
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn growth_reports_delta_and_rate_between_first_and_last_rss_sample() {
+        let p = tmp_db();
+        let _ = std::fs::remove_file(&p);
+        // 3320MB -> 4580MB over 160s, the shape of the real webview leak this verb was written for.
+        seed(
+            &p,
+            &[
+                (0, "app:webview", 3320 * 1_048_576, 1.0),
+                (80_000, "app:webview", 3950 * 1_048_576, 1.0),
+                (160_000, "app:webview", 4580 * 1_048_576, 1.0),
+            ],
+        );
+        let g = perf_growth(&p, "app:webview", None).unwrap();
+        assert_eq!(g.n, 3);
+        assert_eq!(g.from_ts, 0);
+        assert_eq!(g.to_ts, 160_000);
+        assert_eq!(g.delta_bytes, 1260 * 1_048_576);
+        assert!((g.duration_secs - 160.0).abs() < 1e-9);
+        // ~1260MB / (160s/60) minutes ≈ 472.5 MB/min.
+        assert!((g.mb_per_min - 472.5).abs() < 0.1, "got {}", g.mb_per_min);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn growth_is_none_for_a_missing_or_single_sample_session() {
+        let p = tmp_db();
+        let _ = std::fs::remove_file(&p);
+        seed(&p, &[(0, "app:webview", 1000, 1.0)]);
+        assert!(perf_growth(&p, "app:webview", None).is_none(), "one sample has no rate");
+        assert!(perf_growth(&p, "does-not-exist", None).is_none(), "no samples at all");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn growth_ignores_other_sessions_and_null_rss_samples() {
+        let p = tmp_db();
+        let _ = std::fs::remove_file(&p);
+        seed(
+            &p,
+            &[
+                (0, "app:webview", 1_048_576, 1.0),
+                (1000, "t0p1", 999_999_999, 1.0), // a different session — must not leak in
+                (60_000, "app:webview", 2 * 1_048_576, 1.0),
+            ],
+        );
+        let g = perf_growth(&p, "app:webview", None).unwrap();
+        assert_eq!(g.n, 2);
+        assert_eq!(g.delta_bytes, 1_048_576);
+        assert!((g.mb_per_min - 1.0).abs() < 1e-9);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn growth_honors_since_ms_to_scope_the_window() {
+        let p = tmp_db();
+        let _ = std::fs::remove_file(&p);
+        seed(
+            &p,
+            &[
+                (0, "app:webview", 100 * 1_048_576, 1.0),
+                (60_000, "app:webview", 200 * 1_048_576, 1.0),
+                (120_000, "app:webview", 400 * 1_048_576, 1.0),
+            ],
+        );
+        // Scoped to the last two samples: 200 -> 400 over 60s.
+        let g = perf_growth(&p, "app:webview", Some(60_000)).unwrap();
+        assert_eq!(g.n, 2);
+        assert_eq!(g.from_bytes, 200 * 1_048_576);
+        assert_eq!(g.to_bytes, 400 * 1_048_576);
         let _ = std::fs::remove_file(&p);
     }
 }
