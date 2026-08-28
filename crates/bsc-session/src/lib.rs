@@ -158,22 +158,94 @@ pub fn valid_ids() -> Vec<&'static str> {
     SYSTEM_SESSIONS.iter().map(|s| s.id).collect()
 }
 
-/// Resolve an id against the closed set.
+/// The pane-id prefix every NETWORK's architect shares. A network is a domain that owns a set of
+/// projects and exactly one architect session; its store id is already `network-<slug>`, so the pane
+/// key IS the network id and the two cannot drift.
+pub const NETWORK_PREFIX: &str = "network-";
+/// The tail every network's architect pane carries. One colon, per the pane grammar: the key is read as
+/// `pane_id.split(':')[0]`, so a per-network id takes a HYPHEN in the key and never a second colon.
+pub const NETWORK_ARCHITECT_TAIL: &str = ":architect";
+
+/// A session the WRITE half may name, resolved — and OWNED, because not every one is a compile-time
+/// registry row any more.
+///
+/// `resolve` used to hand back `&'static SystemSession`, which silently required every nameable session
+/// to exist at compile time. A network's architect is minted when the user creates the network, so it
+/// cannot be a `'static` row and the return type had to stop insisting it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSession {
+    pub id: String,
+    pub pane_id: String,
+    pub summary: String,
+    pub stoppable: bool,
+}
+
+/// The network slug in `network-<slug>:architect`, or `None` when `id` is not one.
+///
+/// This is a GRAMMAR, not a lookup, and that is the whole safety argument. The closed registry made
+/// `bsc session` safe to grant by ensuring every argument was an id the app owned; a grammar keeps that
+/// property — `network-kitchen:architect` is a name the app defines — without requiring this crate to
+/// depend on the network store to find out which slugs exist. Whether that network is real is answered
+/// by whether a pane is live, which is the same question `stop` already asks.
+///
+/// The slug is validated rather than accepted: it becomes a pane key and a directory name, so a
+/// separator or a space would reach somewhere it should not.
+pub fn network_architect_slug(id: &str) -> Option<&str> {
+    let rest = id.strip_prefix(NETWORK_PREFIX)?;
+    let slug = rest.strip_suffix(NETWORK_ARCHITECT_TAIL)?;
+    if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return None;
+    }
+    Some(slug)
+}
+
+/// Resolve an id to a session the write half may name.
 ///
 /// **This is the injection boundary.** Everything downstream — the pane id, the emit, the store action —
-/// works from the returned [`SystemSession`], never from the caller's string, so no argument reaches the
-/// app as text. The error names the valid set rather than saying "unknown": a caller that guessed
+/// works from the returned [`ResolvedSession`], never from the caller's string, so no argument reaches
+/// the app as text. The error names the valid set rather than saying "unknown": a caller that guessed
 /// `sound-designer` for `soundDesigner` should be corrected, not left to guess again.
-pub fn resolve(id: &str) -> Result<&'static SystemSession, String> {
-    SYSTEM_SESSIONS.iter().find(|s| s.id == id).ok_or_else(|| {
-        format!(
-            "'{id}' is not a system session. Valid ids: {}.\n\
-             This verb reaches ONLY the app-owned system sessions — not fleet workers, and not a \
-             project's director (a director owns a running fleet, so ending one is the user's act, \
-             not the architect's).",
-            valid_ids().join(" · ")
-        )
-    })
+///
+/// Two spaces resolve, and they are different KINDS of thing rather than one list with an exception:
+/// the fixed registry of app-owned studios, and the per-network architects, whose ids the app defines
+/// by grammar because the user mints them at runtime.
+pub fn resolve(id: &str) -> Result<ResolvedSession, String> {
+    if let Some(row) = SYSTEM_SESSIONS.iter().find(|s| s.id == id) {
+        return Ok(ResolvedSession {
+            id: row.id.to_string(),
+            pane_id: row.pane_id.to_string(),
+            summary: row.summary.to_string(),
+            stoppable: row.stoppable,
+        });
+    }
+    if let Some(slug) = network_architect_slug(id) {
+        // id == pane_id here, deliberately: the network's own store id is the pane key, so there is no
+        // second short name to keep in step, and the thing a user types is the thing the app runs.
+        return Ok(ResolvedSession {
+            id: id.to_string(),
+            pane_id: id.to_string(),
+            summary: format!(
+                "the architect for the '{slug}' network — discovery for its projects, and the director \
+                 each one gets"
+            ),
+            // STOPPABLE, unlike the Teams Studio architect. That one holds the orchestration
+            // conversation this verb is called from; a network's architect is an ordinary session the
+            // user created, and a network deleted while its architect runs must not strand it.
+            stoppable: true,
+        });
+    }
+    Err(resolve_error(id))
+}
+
+fn resolve_error(id: &str) -> String {
+    format!(
+        "'{id}' is not a system session. Valid ids: {}, or a network's architect \
+         (`network-<slug>:architect`).\n\
+         This verb reaches the app-owned system sessions and the per-network architects — not fleet \
+         workers, and not a project's director (a director owns a running fleet, so ending one is the \
+         user's act, not the architect's).",
+        valid_ids().join(" · ")
+    )
 }
 
 /// Resolve an id that `stop` may act on.
@@ -188,7 +260,7 @@ pub fn resolve(id: &str) -> Result<&'static SystemSession, String> {
 ///
 /// `start` deliberately has no such exclusion: starting an already-running architect is a no-op, and
 /// starting a stopped one is the ordinary thing another actor might want.
-pub fn resolve_stoppable(id: &str) -> Result<&'static SystemSession, String> {
+pub fn resolve_stoppable(id: &str) -> Result<ResolvedSession, String> {
     let s = resolve(id)?;
     if !s.stoppable {
         return Err(format!(
@@ -273,6 +345,17 @@ pub const DEBUG_STUDIO_PREFIX: &str = "debug-studio:";
 /// came from" is answerable only if the listing says which REQUEST a session belongs to; a row that
 /// only proved something was running would restate the mystery.
 pub fn discovered(pane_id: &str) -> Option<(String, String)> {
+    // A NETWORK's architect is reported by its full pane id, because that is also its resolvable id —
+    // there is no short name to keep in step. Unlike a debug session it IS nameable by the write half,
+    // and `list` derives `managed` by asking `resolve` rather than asserting it here, so the two halves
+    // cannot disagree about which rows those are.
+    if network_architect_slug(pane_id).is_some() {
+        let (id, summary) = (
+            pane_id.to_string(),
+            resolve(pane_id).ok()?.summary,
+        );
+        return Some((id, summary));
+    }
     let tail = pane_id.strip_prefix(DEBUG_STUDIO_PREFIX)?;
     if tail.is_empty() {
         return None;
@@ -394,10 +477,44 @@ mod tests {
     }
 
     #[test]
-    fn resolve_accepts_exactly_the_registry() {
+    fn resolve_accepts_the_registry_and_the_network_architect_grammar() {
         for s in SYSTEM_SESSIONS {
             assert_eq!(resolve(s.id).unwrap().pane_id, s.pane_id);
         }
+    }
+
+    /// A network's architect is nameable by the WRITE half, unlike a discovered debug session.
+    ///
+    /// The closed registry made this verb safe to grant by ensuring every argument was an id the app
+    /// owned. A grammar keeps that property — `network-<slug>:architect` is a name the app defines —
+    /// while letting the user mint networks at runtime, which a compile-time table cannot express.
+    #[test]
+    fn a_network_architect_resolves_by_grammar_and_is_stoppable() {
+        let s = resolve("network-kitchen:architect").expect("the grammar resolves");
+        assert_eq!(s.id, "network-kitchen:architect");
+        assert_eq!(s.pane_id, s.id, "id and pane id are the same string — no short name to keep in step");
+        assert!(s.summary.contains("kitchen"), "the summary names its network: {}", s.summary);
+
+        // STOPPABLE, unlike the Teams Studio architect — that one holds the conversation this verb is
+        // called from, whereas a network's architect is an ordinary session the user created. A network
+        // deleted while its architect runs must not strand it.
+        assert!(resolve_stoppable("network-kitchen:architect").is_ok());
+        assert!(resolve_stoppable("architect").is_err(), "the Teams Studio architect is still unstoppable");
+    }
+
+    /// The grammar is not a hole. It admits exactly one shape, and everything the closed set refused
+    /// before is still refused — a director above all, which is the guarantee the module doc makes.
+    #[test]
+    fn the_network_grammar_widens_nothing_else() {
+        for bad in [
+            "network-:architect", "network-kitchen", "network-kitchen:director",
+            "network-Kitchen:architect", "network-kit chen:architect", "network-../etc:architect",
+            "kitchen:architect", "studio-code:director", "director", "worker", "",
+            "debug-studio:req-158", "debug-studio:debugger",
+        ] {
+            assert!(resolve(bad).is_err(), "{bad} must not resolve");
+        }
+        assert!(network_architect_slug("network-kitchen:architect") == Some("kitchen"));
     }
 
     /// A discovered session is READ-ONLY here, and the two halves have to agree about which rows those
@@ -434,7 +551,7 @@ mod tests {
     /// rather than being listed as one. A registry pane in particular: it has its own row already, and
     /// two rows for one session would read as two sessions.
     #[test]
-    fn only_a_debug_studio_pane_is_discovered() {
+    fn only_a_debug_studio_or_network_architect_pane_is_discovered() {
         for pane in [
             "design-studio:designer-react",
             "teams-studio:architect",
@@ -442,6 +559,13 @@ mod tests {
             "debug-studio:", // the bare prefix names no session
             "debug-studio",
             "",
+            // The network grammar, missed in every way it can be missed.
+            "network-:architect",        // no slug
+            "network-kitchen",           // no tail
+            "network-kitchen:director",  // a network has ONE architect, and no director of its own
+            "network-Kitchen:architect", // a slug is lowercase — it is a pane key and a directory name
+            "network-kit chen:architect",
+            "kitchen:architect",         // the prefix is what makes it a network
         ] {
             assert!(discovered(pane).is_none(), "{pane} must not be discovered");
         }

@@ -62,8 +62,11 @@ const ACK_TIMEOUT: Duration = Duration::from_millis(5_000);
 /// still refuses their ids — not by a check here, but because those ids are not in the space it
 /// searches.
 pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionListResult, String> {
-    let wanted: Vec<&'static bsc_session::SystemSession> = if req.ids.is_empty() {
-        SYSTEM_SESSIONS.iter().collect()
+    let wanted: Vec<bsc_session::ResolvedSession> = if req.ids.is_empty() {
+        SYSTEM_SESSIONS.iter().map(|s| bsc_session::ResolvedSession {
+            id: s.id.to_string(), pane_id: s.pane_id.to_string(),
+            summary: s.summary.to_string(), stoppable: s.stoppable,
+        }).collect()
     } else {
         // An unknown id in the filter is DROPPED rather than erroring the whole read: `list` is the
         // command a caller runs to find out what the valid ids are, so failing it on a bad guess would
@@ -89,7 +92,7 @@ pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionL
                 // session, so reporting it here made the column a restatement of `live`.
                 busy: live.is_some_and(|p| p.working),
                 pid: live.and_then(|p| p.pid),
-                summary: s.summary.to_string(),
+                summary: s.summary.clone(),
                 managed: true,
             }
         })
@@ -114,6 +117,7 @@ pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionL
                 .filter(|p| p.live)
                 .filter_map(|p| {
                     let (id, summary) = bsc_session::discovered(&p.pane_id)?;
+                    let id_for_managed = id.clone();
                     Some(SystemSessionState {
                         id,
                         pane_id: p.pane_id.clone(),
@@ -121,7 +125,10 @@ pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionL
                         busy: p.working,
                         pid: p.pid,
                         summary,
-                        managed: false,
+                        // DERIVED, not asserted: `managed` means "the write half can name this",
+                        // and the write half is `resolve`. A network's architect is discovered
+                        // AND nameable, so a hard-coded false would have made the two disagree.
+                        managed: bsc_session::resolve(&id_for_managed).is_ok(),
                     })
                 })
                 .collect();

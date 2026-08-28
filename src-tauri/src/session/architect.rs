@@ -43,6 +43,55 @@ pub(crate) fn setup_architect_workspace_inner(
     super::studio_ws::setup_studio_workspace(base, "teams-studio", tech, "architect/claude.md", context)
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct NetworkArchitectWorkspacePaths {
+    // NB: Tauri does NOT rename RETURN-value fields — the frontend reads `network_dir` verbatim.
+    network_dir: String,
+}
+
+/// Idempotently create ONE NETWORK's architect workspace and (re)write its `CLAUDE.md` from the same
+/// packaged architect seed the Teams Studio uses.
+///
+/// A network is a domain that owns a set of projects and exactly one architect — the session that runs
+/// discovery for each of them and creates their directors. Each network gets its OWN workspace dir, so
+/// each gets its own `claude --continue` history: two networks are two conversations, which is the
+/// whole point of separating concerns by network rather than sharing one architect across everything.
+///
+/// The argument is the PANE ID (`network-<slug>:architect`), not a bare slug, so the directory can only
+/// be derived from a string that already passed [`bsc_session::network_architect_slug`]. One validator,
+/// and the caller passes exactly what it is about to mount — there is no second place for the two to
+/// disagree about which network this is.
+#[tauri::command]
+pub(crate) fn setup_network_architect_workspace(
+    pane_id: String,
+    context: Option<String>,
+) -> Result<NetworkArchitectWorkspacePaths, String> {
+    let dir = setup_network_architect_workspace_inner(
+        &crate::platform::paths::bsc_base_dir(),
+        &pane_id,
+        context.as_deref(),
+    )?;
+    Ok(NetworkArchitectWorkspacePaths { network_dir: dir.to_string_lossy().into_owned() })
+}
+
+/// Synchronous core of [`setup_network_architect_workspace`] — creates `<base>/networks/<slug>/`.
+pub(crate) fn setup_network_architect_workspace_inner(
+    base: &std::path::Path,
+    pane_id: &str,
+    context: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    let slug = bsc_session::network_architect_slug(pane_id).ok_or_else(|| {
+        format!("'{pane_id}' is not a network architect pane (expected `network-<slug>:architect`)")
+    })?;
+    super::studio_ws::setup_studio_workspace(
+        base,
+        &format!("networks/{slug}"),
+        None,
+        "architect/claude.md",
+        context,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,6 +122,52 @@ mod tests {
             assert_eq!(md, crate::platform::config::load_str("architect/claude.md"));
             assert!(!md.trim().is_empty());
         });
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// TWO NETWORKS ARE TWO CONVERSATIONS. Each network's architect gets its own workspace dir, and
+    /// therefore its own `claude --continue` history — which is the entire reason for separating
+    /// concerns by network instead of sharing one architect across every project. A shared directory
+    /// would have made them one session wearing two names.
+    #[test]
+    fn each_network_gets_its_own_architect_workspace() {
+        let base = scratch();
+        let cfg = base.join("config");
+        crate::platform::config::with_config_root(&cfg, || {
+            let kitchen = setup_network_architect_workspace_inner(&base, "network-kitchen:architect", None).unwrap();
+            let finance = setup_network_architect_workspace_inner(&base, "network-finance:architect", None).unwrap();
+
+            assert_eq!(kitchen, base.join("networks").join("kitchen"));
+            assert_eq!(finance, base.join("networks").join("finance"));
+            assert_ne!(kitchen, finance, "two networks must not share a conversation");
+
+            // Both are seeded from the SAME packaged architect charter — a network's architect is the
+            // same role, pointed at a different domain.
+            for dir in [&kitchen, &finance] {
+                let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+                assert_eq!(md, crate::platform::config::load_str("architect/claude.md"));
+            }
+            // ...and it is NOT the Teams Studio's directory, which keeps its own separate session.
+            assert!(!kitchen.starts_with(base.join("teams-studio")));
+        });
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The directory is derived only from a pane id that already passed the session grammar, so a
+    /// hostile or malformed one cannot reach the filesystem. One validator, not two.
+    #[test]
+    fn a_malformed_network_pane_id_creates_no_directory() {
+        let base = scratch();
+        for bad in [
+            "network-:architect", "network-kitchen", "network-kitchen:director",
+            "network-../escape:architect", "teams-studio:architect", "", "kitchen",
+        ] {
+            assert!(
+                setup_network_architect_workspace_inner(&base, bad, None).is_err(),
+                "{bad} must be refused before it names a directory",
+            );
+        }
+        assert!(!base.join("networks").exists(), "no directory was created for any refused id");
         let _ = std::fs::remove_dir_all(&base);
     }
 
