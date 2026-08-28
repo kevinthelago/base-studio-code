@@ -147,6 +147,7 @@
   "@/features/mcp/lib/migrateExtensions",
   "@/features/mcp/lib/sessionConfig",
   "@/features/mcp/shared",
+  "@/features/networks",
   "@/features/personas/lib/persona",
   "@/features/planner/fleet/teamFleet",
   "@/features/planner/stages/blueprintBuiltins",

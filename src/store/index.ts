@@ -12,6 +12,7 @@ import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { createOrgSlice } from "@/features/teams/store";
+import { createNetworksSlice } from "@/features/networks";
 import { createComponentsSlice } from "@/features/designs/store";
 import { createAlgorithmsSlice } from "@/features/algorithms/store";
 import { createStudiosSlice } from "@/features/studio-sessions/store";
@@ -59,6 +60,7 @@ export const useAppStore = create<AppStore>()(
       ...createMcpSlice(set, get, store),
       ...createPersonasSlice(set, get, store),
       ...createOrgSlice(set, get, store),
+      ...createNetworksSlice(set, get, store),
       ...createComponentsSlice(set, get, store),
       // #3357: the app-owned studio sessions' lifecycle (wanted set + viewer ref-counts). Transient —
       // deliberately absent from `partialize`, so nothing launches at boot.
