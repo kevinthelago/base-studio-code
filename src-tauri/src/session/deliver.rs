@@ -83,7 +83,7 @@ pub fn deliver(
             if action == Action::InterruptWith {
                 // Interrupt, then let the turn unwind before the request arrives — otherwise the text
                 // is typed into a turn that is still tearing down rather than at a prompt.
-                crate::console::pty::write_pane(session.pane_id, INTERRUPT_KEY, &state);
+                crate::console::pty::write_pane(&session.pane_id, INTERRUPT_KEY, &state);
                 std::thread::sleep(std::time::Duration::from_millis(INTERRUPT_SETTLE_MS));
             }
             // #only-the-user-resumes-a-session: every unattended write into a live session is audited,
@@ -93,7 +93,7 @@ pub fn deliver(
                 session.id,
                 action
             );
-            if !crate::console::pty::write_pane(session.pane_id, &submission(&req.text), &state) {
+            if !crate::console::pty::write_pane(&session.pane_id, &submission(&req.text), &state) {
                 // The probe said live and the write found nothing: a teardown race. Reported rather
                 // than returned as success, because a caller told "delivered" would wait forever.
                 return Err(format!(
