@@ -14,6 +14,11 @@ import {
   loadNetworks, pushNetwork, dropNetwork, projectsByNetwork, mintNetworkId, type Network,
 } from "@/features/networks/lib/networkBridge";
 
+/** The kitchen-sink domain — where everything not yet organised lives, and what a fresh install opens
+ *  on. Must match `bsc_project::store::DEFAULT_NETWORK_ID`, which is what the migration writes onto every
+ *  pre-existing project row. */
+export const DEFAULT_NETWORK_ID = "network-kitchen";
+
 export interface NetworksSlice {
   /** Every network, tab order first. Hydrated from `bsc network`; never persisted. */
   networks: Network[];
@@ -43,7 +48,37 @@ export const createNetworksSlice: StateCreator<AppStore, [], [], NetworksSlice> 
   hydrateNetworks: async () => {
     const rows = await loadNetworks();
     if (rows === null) return; // unreachable bridge — keep what we have
-    set({ networks: rows });
+
+    // RECONCILE, not just load. Two stores hold the two halves of a network and neither writes the
+    // other: `bsc project network set` (and the kitchen migration) writes the id onto a PROJECT row,
+    // while the network's own row lives here. They can therefore disagree — and did, on every machine
+    // that upgraded: the migration filed all 27 projects into `network-kitchen` while
+    // `bsc network list` returned nothing, so Glance had no tab to draw them in.
+    //
+    // Creating what is referenced-but-missing heals that in the direction that cannot lose data: a
+    // project naming a network is evidence the network should exist. The reverse is never done — an
+    // empty network is perfectly legitimate and must not be swept away.
+    const referenced = new Set(
+      (await projectsByNetwork()).map((p) => p.network).filter((n): n is string => !!n),
+    );
+    const have = new Set(rows.map((n) => n.id));
+    const missing = [...referenced].filter((id) => !have.has(id)).sort();
+
+    // …and with NOTHING at all, `kitchen` — the kitchen-sink domain. Every Glance tab is a domain, so a
+    // fresh install must open on one rather than on an empty strip with only a `+`.
+    if (rows.length === 0 && missing.length === 0) missing.push(DEFAULT_NETWORK_ID);
+
+    if (missing.length === 0) { set({ networks: rows }); return; }
+
+    const created = missing.map((id, i) => ({
+      id,
+      // `network-kitchen` → `kitchen`. The id is the only thing that survived the migration, so the
+      // name is derived from it rather than invented; the user renames it freely afterwards.
+      name: id.startsWith("network-") ? id.slice("network-".length) : id,
+      position: rows.length + i,
+    }));
+    for (const n of created) void pushNetwork(n);
+    set({ networks: [...rows, ...created] });
   },
 
   addNetwork: (name) => {

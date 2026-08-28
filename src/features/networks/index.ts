@@ -3,5 +3,5 @@
 //
 // Cross-feature, import ONLY this barrel (#1545). Glance reaches networks through it; nothing reaches
 // past it into `lib/` or `store`.
-export { createNetworksSlice, type NetworksSlice } from "@/features/networks/store";
+export { createNetworksSlice, DEFAULT_NETWORK_ID, type NetworksSlice } from "@/features/networks/store";
 export { mintNetworkId, type Network } from "@/features/networks/lib/networkBridge";

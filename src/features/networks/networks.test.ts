@@ -106,14 +106,58 @@ describe("the networks slice", () => {
 
   it("leaves what it has when the bridge is UNREACHABLE, rather than blanking the strip", async () => {
     // `loadNetworks` returns null for "could not ask" and [] for "genuinely none". Collapsing the two
-    // would empty Glance's tab strip on any older bundled binary.
-    useAppStore.getState().addNetwork("kitchen");
+    // would empty Glance's tab strip on any older bundled binary — and now that every tab is a domain,
+    // it would empty the WORKSPACE.
+    const id = useAppStore.getState().addNetwork("finance");
     loaded = null;
     await useAppStore.getState().hydrateNetworks();
-    expect(useAppStore.getState().networks).toHaveLength(1);
+    expect(useAppStore.getState().networks.map((n) => n.id), "a null read keeps what we had").toEqual([id]);
 
+    // …whereas an EMPTY read genuinely replaces it. The stale `finance` is gone, and what remains is
+    // the reconcile's fallback rather than nothing, because a domain-only strip cannot be empty.
     loaded = [];
     await useAppStore.getState().hydrateNetworks();
-    expect(useAppStore.getState().networks).toHaveLength(0);
+    expect(useAppStore.getState().networks.map((n) => n.id)).toEqual(["network-kitchen"]);
+  });
+});
+
+describe("hydrate RECONCILES the two stores", () => {
+  it("creates a network a project references but the store lacks", async () => {
+    // The failure this exists for, measured on the real machine: the kitchen migration filed all 27
+    // projects into `network-kitchen` while `bsc network list` returned nothing, so Glance had no tab
+    // to draw them in. Two stores hold the two halves and neither writes the other.
+    loaded = [];
+    projectRows = [{ key: "wan-relay", network: "network-kitchen" }, { key: "ledger", network: "network-kitchen" }];
+    await useAppStore.getState().hydrateNetworks();
+
+    const rows = useAppStore.getState().networks;
+    expect(rows.map((n) => n.id)).toEqual(["network-kitchen"]);
+    expect(rows[0].name).toBe("kitchen"); // derived from the id — the only thing the migration left
+    expect(pushed).toHaveLength(1);       // and written through, so the next boot needs no repair
+  });
+
+  it("falls back to `kitchen` when there is nothing at all", async () => {
+    // Every tab is a domain, so a fresh install must open on one rather than an empty strip.
+    loaded = [];
+    projectRows = [];
+    await useAppStore.getState().hydrateNetworks();
+    expect(useAppStore.getState().networks.map((n) => n.id)).toEqual(["network-kitchen"]);
+  });
+
+  it("never REASSIGNS a project — it only creates the network the project already names", async () => {
+    // The reconcile heals in the one direction that cannot lose data. A project deliberately unfiled
+    // stays unfiled, which is the same guard the Rust backfill makes.
+    loaded = [{ id: "network-finance", name: "finance", position: 0 }];
+    projectRows = [{ key: "ledger", network: null }];
+    await useAppStore.getState().hydrateNetworks();
+    expect(useAppStore.getState().networks.map((n) => n.id)).toEqual(["network-finance"]);
+    expect(pushed).toHaveLength(0);
+  });
+
+  it("leaves an EMPTY network alone — the reverse direction is never swept", async () => {
+    loaded = [{ id: "network-empty", name: "empty", position: 0 }];
+    projectRows = [];
+    await useAppStore.getState().hydrateNetworks();
+    expect(useAppStore.getState().networks.map((n) => n.id)).toEqual(["network-empty"]);
   });
 });
