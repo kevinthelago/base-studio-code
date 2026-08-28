@@ -6,7 +6,7 @@
  * meets it. See the `projects` split in vitest.config.ts for why the default is `node` here.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, filterArchived, ARCHIVED_STATE } from "./useGlanceProjects";
 import type { DbProject } from "@/features/planner";
@@ -684,6 +684,44 @@ describe("mergeDbIntoDrafts — the durable projects DB is a source, the store m
       });
       const { result } = renderHook(() => useGlanceProjects());
       await waitFor(() => expect(result.current.some((p) => p.id === "cached")).toBe(true));
+    });
+
+    // #163 — a durable row changed by a DIFFERENT surface (a live session running `bsc project
+    // network set`, or any other `bsc project db` write) must surface on Glance while the user is
+    // just sitting on the page, not only on the next unmount/remount. The old code fetched
+    // `listDbProjects()` exactly once per mount (`useEffect` with deps `[enabled]`); this asserts the
+    // hook actually re-reads the bridge on a later tick with NO remount in between.
+    it("re-reads the durable projects DB on the next poll tick, with no unmount/remount (#163)", async () => {
+      useAppStore.setState({
+        localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null,
+        triagedProjects: { "poll-project": 1 },
+      });
+      let network: string | null = null;
+      vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+        if (cmd === "list_local_projects") return [];
+        const argv = (args as { args?: string[] } | undefined)?.args;
+        if (cmd === "bsc" && argv?.join(" ") === "project db list --json") {
+          return JSON.stringify([
+            { key: "poll-project", title: "Poll Project", pitch: "", state: "drafted", createdAt: 1, updatedAt: 2, network },
+          ]);
+        }
+        return null;
+      });
+
+      vi.useFakeTimers();
+      try {
+        const { result } = renderHook(() => useGlanceProjects());
+        await act(() => vi.advanceTimersByTimeAsync(0)); // flush the immediate poll tick's microtasks
+        expect(result.current.find((p) => p.id === "poll-project")?.network).toBeUndefined();
+
+        // The row changes OUT FROM UNDER the already-mounted hook — exactly the failing repro on
+        // request #163 (`bsc project network set wan-relay network-finance`, then look at Glance).
+        network = "network-finance";
+        await act(() => vi.advanceTimersByTimeAsync(10_000)); // the poll cadence — no unmount/remount here
+        expect(result.current.find((p) => p.id === "poll-project")?.network).toBe("network-finance");
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
