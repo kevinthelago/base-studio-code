@@ -259,6 +259,25 @@ fn webview_label(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether one entry in the process table is a webview process worth sampling.
+///
+/// ⚠️ `is_thread` IS NOT OPTIONAL. `sysinfo` lists a process's THREADS alongside processes on Linux,
+/// each carrying the parent's name AND its `VmRSS` — so without this filter the renderer is counted
+/// once per thread. Observed live on the first working run: `app:webview` and `app:webview-2` both
+/// reporting exactly 1319 MB, where `ps` showed a single `WebKitWebProcess`. `/proc/266432` was a
+/// thread of `/proc/266397`, and a curve that double-counts is worse than no curve, because it looks
+/// like data.
+///
+/// Split out from [`webview_label`] as a pure function precisely so this rule is testable: a
+/// `sysinfo::Process` cannot be constructed in a unit test, so the decision has to leave the type
+/// behind before it can be pinned.
+fn classify_process(name: &str, is_thread: bool) -> Option<&'static str> {
+    if is_thread {
+        return None;
+    }
+    webview_label(name)
+}
+
 /// Turn classified `(stem, pid)` pairs into the ids they are stored under, disambiguating several
 /// processes of one kind as `<stem>-2`, `<stem>-3`, … .
 ///
@@ -300,7 +319,10 @@ fn discover_webview(sys: &mut System, own_pid: u32) -> Vec<(String, u32)> {
     let found: Vec<(&'static str, u32)> = procs
         .iter()
         .filter_map(|(pid, proc)| {
-            let stem = webview_label(&proc.name().to_string_lossy())?;
+            let stem = classify_process(
+                &proc.name().to_string_lossy(),
+                proc.thread_kind().is_some(),
+            )?;
             crate::console::pty::busy::is_descendant_of(*pid, own, procs)
                 .then_some((stem, pid.as_u32()))
         })
@@ -771,6 +793,22 @@ mod tests {
             assert_eq!(webview_label(&comm), Some(want), "comm `{comm}` (truncated from `{full}`)");
             assert_eq!(webview_label(full), Some(want), "and the untruncated name still classifies");
         }
+    }
+
+    #[test]
+    fn a_thread_of_the_renderer_is_never_sampled_as_a_second_renderer() {
+        // THE SECOND REGRESSION, caught the first time the sampler actually ran. sysinfo lists a
+        // process's THREADS beside its processes on Linux, each carrying the parent's name and the
+        // parent's VmRSS — so the renderer was reported twice, as `app:webview` and `app:webview-2`,
+        // both at exactly 1319 MB, while `ps` showed one WebKitWebProcess. A curve that double-counts
+        // is worse than no curve: it looks like data.
+        assert_eq!(classify_process("WebKitWebProces", true), None, "a thread is not a process");
+        assert_eq!(classify_process("WebKitNetworkPr", true), None);
+        assert_eq!(
+            classify_process("WebKitWebProces", false),
+            Some("app:webview"),
+            "and the real process is still sampled",
+        );
     }
 
     #[test]
