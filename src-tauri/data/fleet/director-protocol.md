@@ -240,6 +240,13 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   you do next. It does not make you the owner of that session — one already running is left as it
   was.
 
+  It is DELIVERED, not left to be found: a stopped target is woken holding your request and an idle
+  one is handed it. The only case you have to decide about is a target that is MID-TURN, and
+  `--on-busy` is that decision: `leave` (the default) stands off and tells you, so nothing lands;
+  `wait` blocks until it goes idle and delivers then; `interrupt` stops the turn in flight. Reach
+  for `wait` when the request has to land and you can afford to sit — a default `leave` followed by
+  re-asking opens a SECOND loop the target then has to answer twice.
+
   `$BSC_BIN plan request new "<what you need>" --to architect --ref <item>` is the CONTRACT: it
   stands in plan.db with a lifecycle (open -> claimed -> resolved) and outlives your session, the
   log and an app restart. Use it for what must not be lost if nobody is at the keyboard — a

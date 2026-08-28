@@ -508,8 +508,9 @@ pub mod deliver {
                 Action::Inject => "your request was delivered to the idle session",
                 Action::InterruptWith => "the session was interrupted and given your request",
                 Action::LeaveWorking => {
-                    "the session is working, so the request was left queued — re-send with --interrupt to \
-                     cut in"
+                    "the session is working, so the request was left queued — re-send with \
+                     `--on-busy wait` to have it delivered the moment the session frees up, or \
+                     `--on-busy interrupt` (`--interrupt`) to cut in now"
                 }
             }
         }
@@ -591,9 +592,11 @@ pub mod deliver {
         #[test]
         fn leaving_a_working_session_alone_still_tells_the_caller_what_to_do() {
             // A delivery that silently did nothing is the failure this item exists to end, so the one
-            // action that delivers nothing has to carry the way to get through.
+            // action that delivers nothing has to carry BOTH ways through — the caller who stood off
+            // by default is exactly the caller who does not know the other two exist.
             let msg = Action::LeaveWorking.describe();
-            assert!(msg.contains("--interrupt"), "it names the flag that would cut in: {msg}");
+            assert!(msg.contains("--on-busy wait"), "it names the route that waits: {msg}");
+            assert!(msg.contains("--interrupt"), "and the one that cuts in: {msg}");
         }
 
         #[test]
