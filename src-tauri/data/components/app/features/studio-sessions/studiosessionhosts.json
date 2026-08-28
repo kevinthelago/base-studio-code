@@ -1,12 +1,14 @@
 {
-  "id": "studiosessionhosts",
-  "name": "StudioSessionHosts",
-  "kitId": "base-studio-code",
-  "role": "primitive",
-  "provides": "@/features/studio-sessions/StudioSessionHosts",
-  "srcText": "import { useAppStore } from \"@/store\";\nimport { StudioSessionMount } from \"@/features/studio-sessions/StudioSessionMount\";\nimport { useStudioReaper } from \"@/features/studio-sessions/useStudioReaper\";\nimport { orderedWantedStudios } from \"@/features/studio-sessions/store\";\nimport { studioDetached } from \"@/features/studio-sessions/lib/studioSessions\";\n\nexport function StudioSessionHosts() {\r\n  useStudioReaper();\r\n  const wantedStudios = useAppStore((s) => s.wantedStudios);\r\n  const detachedSections = useAppStore((s) => s.detachedSections);\r\n  const mounted = orderedWantedStudios(wantedStudios).filter((id) => !studioDetached(id, detachedSections));\r\n  return <>{mounted.map((id) => <StudioSessionMount key={id} studio={id} />)}</>;\r\n}",
-  "composes": [],
-  "src": "src/features/studio-sessions/StudioSessionHosts.tsx",
+  "srcText": "import { useAppStore } from \"@/store\";\nimport { StudioSessionMount } from \"@/features/studio-sessions/StudioSessionMount\";\nimport { NetworkArchitectMount } from \"@/features/studio-sessions/NetworkArchitectMount\";\nimport { useStudioReaper } from \"@/features/studio-sessions/useStudioReaper\";\nimport { orderedWantedStudios } from \"@/features/studio-sessions/store\";\nimport { studioDetached } from \"@/features/studio-sessions/lib/studioSessions\";\n\nexport function StudioSessionHosts() {\n  useStudioReaper();\n  const wantedStudios = useAppStore((s) => s.wantedStudios);\n  const detachedSections = useAppStore((s) => s.detachedSections);\n  const mounted = orderedWantedStudios(wantedStudios).filter((id) => !studioDetached(id, detachedSections));\n  // Networks are NOT filtered by `studioDetached`: that reads `detachedSections` keyed by a studio's\n  // `sectionId`, and a network has none. Nothing tears a network tab off into its own window today, and\n  // wiring it through the studio key would match the wrong section rather than none.\n  const networks = useAppStore((s) => s.wantedNetworkArchitects);\n  return (\n    <>\n      {mounted.map((id) => <StudioSessionMount key={id} studio={id} />)}\n      {networks.map((id) => <NetworkArchitectMount key={id} networkId={id} />)}\n    </>\n  );\n}",
+  "composes": [
+    "StudioSessionMount"
+  ],
+  "feature": "studio-sessions",
   "folder": "features/studio-sessions",
-  "feature": "studio-sessions"
+  "src": "src/features/studio-sessions/StudioSessionHosts.tsx",
+  "id": "studiosessionhosts",
+  "kitId": "base-studio-code",
+  "name": "StudioSessionHosts",
+  "provides": "@/features/studio-sessions/StudioSessionHosts",
+  "role": "primitive"
 }
