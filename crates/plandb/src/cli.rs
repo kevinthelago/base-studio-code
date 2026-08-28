@@ -1020,7 +1020,6 @@ mod tests {
         );
     }
 
-    #[test]
     /// The architect's problem, and the reason `--project` exists.
     ///
     /// Every other route answers "which project" with a LOCATION, and the architect stands in its own
