@@ -116,7 +116,51 @@ fn descend_past_wrappers(
 
 /// Is this process one of the ignored console-plumbing helpers?
 fn is_ignored(procs: &HashMap<Pid, Process>, pid: Pid) -> bool {
-    procs.get(&pid).is_some_and(|p| ignored_name(&p.name().to_string_lossy()))
+    procs.get(&pid).is_some_and(|p| {
+        let argv: Vec<String> = p.cmd().iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        ignored_name(&p.name().to_string_lossy()) || is_agent_infrastructure(&argv)
+    })
+}
+
+/// An agent's OWN plumbing — spawned at startup and held for the whole life of the session, so it is
+/// present whether the agent is working or sitting at its prompt.
+///
+/// # Why this cannot be a name list
+///
+/// [`IGNORED_DESCENDANTS`] compares process NAMES, and neither of these can be recognised that way.
+/// The MCP servers ARE the bundled `bsc` binary, and `bsc` is emphatically not ignorable — a session
+/// running `bsc ui set` is doing real work. What separates them is the ARGV: `bsc mcp <sub>` is only
+/// ever a server. Likewise `socat` in general could be anything; a socat bound to a `claude-http-*`
+/// socket is the agent's own HTTP bridge.
+///
+/// # Why this matters more than it looks
+///
+/// MEASURED on the running app: `librarianTypescript`'s agent had exactly two descendants —
+/// `bsc mcp compliance` and `bsc mcp research` — and so reported WORKING from the moment it launched.
+/// Every MCP-enabled session did. That sends `deliver::plan` to `LeaveWorking`, so an ask to a live
+/// studio delivers nothing at all; and with `--wait` implying `--on-busy wait`, the caller then polls
+/// for an idle that can never arrive, which is a director hanging for five minutes.
+///
+/// It was LATENT until the approval modal was fixed. While that dialog blocked, the servers were never
+/// spawned, the agent had no children, and it read idle. Making the servers start turned a quiet probe
+/// bug into a total delivery outage — the two items are one story.
+///
+/// Real tool calls are untouched: the `bash -c …` shells Claude spawns to run commands still count,
+/// which is the whole point of the probe.
+fn is_agent_infrastructure(argv: &[String]) -> bool {
+    let base = |s: &str| {
+        s.rsplit(['/', '\\']).next().unwrap_or(s).trim_end_matches(".exe").to_ascii_lowercase()
+    };
+    let Some(prog) = argv.first() else { return false };
+    match base(prog).as_str() {
+        // `<bsc> mcp <sub>` — a bundled MCP server. The `mcp` subcommand is the discriminator; every
+        // other `bsc` verb is a workload and must keep counting.
+        "bsc" => argv.get(1).map(String::as_str) == Some("mcp"),
+        // The agent's own HTTP bridge, matched on the socket it binds — so a socat a session runs for
+        // its own reasons is still work.
+        "socat" => argv.iter().any(|a| a.contains("claude-http-")),
+        _ => false,
+    }
 }
 
 /// Does `pid`'s ancestor chain reach `root`?
@@ -613,6 +657,44 @@ mod tests {
         let own = Pid::from(std::process::id() as usize);
         let name = sys.processes().get(&own).map(|p| p.name().to_string_lossy().into_owned());
         assert!(name.is_some_and(|n| !n.is_empty()), "names must survive the cheap refresh");
+    }
+
+    /// THE OUTAGE. An agent's own MCP servers and HTTP bridge are spawned at STARTUP and held for the
+    /// whole session, so counting them as work marks every MCP-enabled session busy from its first
+    /// second — which routes every `bsc session ask` to `LeaveWorking` (nothing delivered) and makes
+    /// `--on-busy wait` poll for an idle that can never come (the director hanging).
+    #[test]
+    fn an_agents_own_mcp_servers_and_bridge_are_not_work() {
+        let argv = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // Exactly what was measured under `librarianTypescript` and `req-162`.
+        assert!(is_agent_infrastructure(&argv(&["/home/u/.base-studio-code/bin/bsc", "mcp", "compliance"])));
+        assert!(is_agent_infrastructure(&argv(&["/home/u/.base-studio-code/bin/bsc", "mcp", "research"])));
+        assert!(is_agent_infrastructure(&argv(&[
+            "socat",
+            "UNIX-LISTEN:/tmp/claude-http-3bab834b965f15c4.sock,fork,reuseaddr",
+            "TCP:localhost:41099",
+        ])));
+    }
+
+    /// THE BOUNDARY, and it is the reason this reads argv instead of the process name. `bsc` is the
+    /// same binary either way; only the subcommand says whether it is a server or a workload. Ignoring
+    /// the NAME would hide every `bsc` command a session runs — and this probe exists to see those.
+    #[test]
+    fn a_real_bsc_command_is_still_work() {
+        let argv = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for real in [
+            vec!["/home/u/.base-studio-code/bin/bsc", "ui", "set"],
+            vec!["bsc", "graph", "impl", "set"],
+            vec!["bsc", "plan", "list"],
+            vec!["bsc"],
+        ] {
+            assert!(!is_agent_infrastructure(&argv(&real)), "{real:?} is a workload");
+        }
+        // ...and a socat that is not the agent's bridge.
+        assert!(!is_agent_infrastructure(&argv(&["socat", "TCP-LISTEN:8080", "TCP:example:80"])));
+        // The tool shells Claude spawns for real commands must keep counting — they ARE the work.
+        assert!(!is_agent_infrastructure(&argv(&["/bin/bash", "-c", "cargo build"])));
+        assert!(!is_agent_infrastructure(&[]));
     }
 
     /// Console plumbing is filtered; anything that could be real work is not. The survey that
