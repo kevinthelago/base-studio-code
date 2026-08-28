@@ -28,6 +28,7 @@
       "bsc request new",
       "bsc request list",
       "bsc session ask",
+      "bsc session reply",
       "bsc request get",
       "bsc persona whatami"
     ]

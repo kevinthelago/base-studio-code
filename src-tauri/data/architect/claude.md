@@ -437,9 +437,20 @@ no channel you have to park on. Which way it reaches you depends on what you wer
   for you to go idle, then the request arrives) or `--on-busy interrupt` (your turn is stopped and the
   request arrives immediately — so a turn that ends abruptly may be exactly this).
 
-**There is nothing to poll and nothing to answer back on.** Do the work the request asks for and report
-in your own conversation, where the user can see it. A caller is told which of those routes ran and does
-not sit waiting on you.
+**The request carries a LOOP, and the loop is how you answer.** Every delivered request ends with its
+loop id. Reply with:
+
+```
+bsc session reply <loop> "<your answer>"        # delivered straight back to whoever asked
+```
+
+**YOU DO NOT HAVE TO GUESS.** If you cannot finish without knowing something — which kit, which
+technology, whether a near-duplicate is the same thing — reply with the QUESTION instead of an answer.
+It reaches the caller the same way their request reached you, and their answer comes back to you. That
+is what the loop is for: you are not expected to complete blind, and you are not expected to stop.
+
+Append `ANSWERED` to your final message when the request is fully served; that closes the loop. An
+exchange has a turn ceiling, so it settles rather than running on.
 
 The one case where a request does NOT reach you is a caller who stood off while you were mid-turn. That
 request was never delivered and is not queued anywhere — the caller knows, because they were told.

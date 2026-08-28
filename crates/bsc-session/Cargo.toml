@@ -20,4 +20,10 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 # The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`/`bsc fleet`, so there is no
 # second transport.
 bsc-appchan = { path = "../bsc-appchan" }
+# `bsc session ask` opens a LOOP and `bsc session reply` posts into one
+# (#an-ask-is-a-loop-again-and-every-turn-is-delivered). The dependency runs THIS WAY ONLY: making
+# `bsc loop say` deliver would need bsc-loop to resolve a participant to a session and reach the app,
+# which is the reverse edge and a cycle. Keeping both verbs here leaves `bsc loop` a generic
+# conversation store that knows nothing about system sessions.
+bsc-loop = { path = "../bsc-loop" }
 bsc-sqlite-util = { path = "../bsc-sqlite-util" }
