@@ -2139,6 +2139,43 @@ pub fn apply_relink(store: &bsc_json_store::Store, writes: &[serde_json::Value])
     Ok(())
 }
 
+/// Apply a per-record `tests` write (#166) — a MERGING, stamped write of just `tests`, so `bsc ui tests
+/// set` can pair ONE record without a whole-tree `harvest` re-mirroring every other paired record (and
+/// dragging along whatever a stale re-read of an UNRELATED record happened to hold — the `terminalhost`
+/// `provides` loss #166 was filed against: a re-emitted record carried an explicit `null` for a field a
+/// concurrent write had since given a real value, and `merge_over` honours an explicit `null` as
+/// "remove this", #4197).
+///
+/// Exported for the same reason [`apply_relink`] is: the verb's file read lives in `bsc-ui` (a crate
+/// above this one), while the write must still go through the same stamped path every other component
+/// write uses — so a per-test pairing bumps `rev`, records attribution, and lands in `bsc ui log` like
+/// any edit. `Err` when `id` names no existing record: this PAIRS a record, it does not create one.
+pub fn apply_tests_set(
+    store: &bsc_json_store::Store,
+    id: &str,
+    tests: serde_json::Value,
+    by: Option<&str>,
+    note: Option<&str>,
+) -> Result<(), String> {
+    if current_record(store, id)?.is_null() {
+        return Err(format!(
+            "no component with id '{id}' — `tests set` pairs an EXISTING record, it does not create \
+             one; check the id with `bsc ui get {id}`, or author the record first with `bsc ui set`"
+        ));
+    }
+    let writer = crate::record::resolve_writer(by);
+    set_stamped(
+        store,
+        &[serde_json::json!({ "id": id, "tests": tests })],
+        None,
+        &writer,
+        "component",
+        Some(note.unwrap_or("tests set: pair one record's colocated test")),
+        WritePlan { replace: false, clear: &[] },
+    )?;
+    Ok(())
+}
+
 fn set_stamped(
     store: &bsc_json_store::Store,
     items: &[serde_json::Value],
@@ -9684,6 +9721,66 @@ export const P = () => <X />;"
         assert_eq!(after["role"], "page", "everything else survives");
         let entry = after["history"].as_array().unwrap().last().unwrap();
         assert_eq!(entry["dropped"], serde_json::json!(["composes"]));
+    }
+
+    #[test]
+    fn apply_tests_set_pairs_one_record_and_preserves_every_other_field() {
+        // #166: pairing ONE record's test must not behave like a `harvest`+`set` round trip that
+        // re-mirrors the whole record — every field this write never mentions survives, exactly like
+        // any other merge (#4197).
+        let store = tmp_component_store("tests-set-merge");
+        let rich = fleetpage_record();
+        set_stamped(&store, std::slice::from_ref(&rich), None, "seed", "component", None, WritePlan::default()).unwrap();
+
+        let tests =
+            serde_json::json!([{ "name": "FleetPage renders", "src": "describe(\"FleetPage renders\", () => {});" }]);
+        apply_tests_set(&store, "fleetpage", tests.clone(), Some("harvester"), None).unwrap();
+
+        let after = stored(&store, "fleetpage");
+        assert_eq!(after["tests"], tests, "the tests field is written");
+        assert_eq!(after["updatedBy"], "harvester", "--by flows through the same stamped path `set` uses");
+        assert!(after["rev"].as_i64().unwrap() >= 2, "the write is stamped like any other set");
+        for (field, expected) in [
+            ("name", serde_json::json!("FleetPage")),
+            ("kitId", serde_json::json!("base-studio-code")),
+            ("role", serde_json::json!("page")),
+            ("composes", serde_json::json!(["Row", "Card"])),
+            ("srcText", serde_json::json!("old")),
+            ("props", serde_json::json!({ "title": "string" })),
+        ] {
+            assert_eq!(after[field], expected, "tests set never mentioned {field}, so it is preserved");
+        }
+    }
+
+    #[test]
+    fn apply_tests_set_never_touches_another_record() {
+        // The exact #166 symptom: a whole-tree `harvest | set` re-mirrored every paired record and a
+        // stale re-read stripped `terminalhost`'s `provides` as a side effect. A per-record write must
+        // carry no such risk — this is the regression test for that guarantee, not just for the merge.
+        let store = tmp_component_store("tests-set-unrelated");
+        set_stamped(&store, std::slice::from_ref(&fleetpage_record()), None, "seed", "component", None, WritePlan::default())
+            .unwrap();
+        let terminalhost = serde_json::json!({
+            "id": "terminalhost", "name": "TerminalHost",
+            "provides": "@/app/console/terminal/TerminalHost",
+        });
+        set_stamped(&store, std::slice::from_ref(&terminalhost), None, "seed", "component", None, WritePlan::default())
+            .unwrap();
+        let before = stored(&store, "terminalhost");
+
+        apply_tests_set(&store, "fleetpage", serde_json::json!([{ "name": "x", "src": "y" }]), None, None).unwrap();
+
+        let after = stored(&store, "terminalhost");
+        assert_eq!(after, before, "an unrelated record is byte-for-byte unchanged");
+    }
+
+    #[test]
+    fn apply_tests_set_errs_on_an_unknown_id_rather_than_creating_a_record() {
+        let store = tmp_component_store("tests-set-missing");
+        let err = apply_tests_set(&store, "nope", serde_json::json!([]), None, None).unwrap_err();
+        assert!(err.contains("no component with id 'nope'"), "{err}");
+        assert!(err.contains("does not create"), "{err}");
+        assert!(store.get("nope").unwrap().is_none(), "the missing id was never written");
     }
 
     #[test]
