@@ -450,6 +450,8 @@ pub(crate) fn backfill_projects_db_from_hubs() {
             // hub on disk is not triage — the marker is `set_triaged`'s to write (#4088).
             triaged_at: None,
             architect: None,
+            // Ignored by `upsert` for the same reason `architect` is — see ProjectRow::network.
+            network: None,
         };
         if let Err(e) = bsc_project::store::upsert(&conn, &row) {
             log::warn!("backfill projects.db {:?}: {e}", lp.key);
@@ -522,6 +524,7 @@ pub(crate) fn materialize_hub(project_key: String) -> Result<String, String> {
                     // hub is not triage (#4088).
                     triaged_at: None,
                     architect: None,
+                    network: None,
                 };
                 if let Err(e) = bsc_project::store::upsert(&conn, &row) {
                     log::warn!("materialize_hub({key}): projects.db insert failed: {e}");
@@ -849,6 +852,7 @@ mod relocated_tests {
                 blueprint: None, category: None, state: "drafted".into(), created_at: 1, updated_at: 1,
                 triaged_at: None,
                 architect: None,
+                network: None,
             }).unwrap();
         }
         assert!(!project_dir(key).exists(), "no hub before materialize");
@@ -884,6 +888,7 @@ mod relocated_tests {
                 blueprint: None, category: None, state: "drafted".into(), created_at: 1, updated_at: 1,
                 triaged_at: None,
                 architect: None,
+                network: None,
             }).unwrap();
             assert!(bsc_project::store::set_triaged(&conn, key, 4242).unwrap(), "stamped for the test");
         }
