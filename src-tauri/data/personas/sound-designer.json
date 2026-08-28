@@ -15,7 +15,10 @@
     "allow": [
       "bsc sound",
       "bsc request new",
-      "bsc request list"
+      "bsc request list",
+      "bsc session ask",
+      "bsc request get",
+      "bsc persona whatami"
     ]
   },
   "blurb": "Authors sound kits from the Sound Studio — synthesis descriptors only, via bsc sound.",
