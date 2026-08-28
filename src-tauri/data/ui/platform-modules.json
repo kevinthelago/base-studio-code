@@ -25,6 +25,7 @@
   "@/app/console/lib/terminalConstants",
   "@/app/console/lib/terminalKeys",
   "@/app/console/lib/terminalNudge",
+  "@/app/console/lib/terminalWheel",
   "@/app/console/lib/useIdleReaper",
   "@/app/console/lib/usePaneActivityFeed",
   "@/app/console/lib/usePaneTokenUsage",
