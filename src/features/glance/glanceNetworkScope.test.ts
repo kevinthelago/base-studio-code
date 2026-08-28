@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { architectNodeId } from "@/features/glance/lib/glanceGraph";
 import { studioPaneIdForNode } from "@/features/glance/lib/studioProject";
+import { decideExpand } from "@/features/glance/lib/expandNode";
 
 const GLANCE: string = JSON.parse(
   readFileSync("src-tauri/data/components/app/features/glance/glancepage.json", "utf8"),
@@ -75,5 +76,63 @@ describe("the two competing stories about the architect are resolved", () => {
     // `glanceData` — two stories contradicting each other, both true once. The architect is per NETWORK.
     expect(STUDIO_PROJECT).not.toMatch(/There is no architect persona to assign a project to any/);
     expect(STUDIO_PROJECT).toMatch(/THE ARCHITECT IS PER NETWORK/);
+  });
+});
+
+/** The body of `expandNode` as SHIPPED, from its arrow head to the matching two-space `};`. Sliced
+ *  rather than regexed whole so the assertions below can talk about ORDER, which is what was wrong. */
+function expandNodeBody(src: string): string {
+  const start = src.indexOf("const expandNode = (id: string) => {");
+  const end = src.indexOf("\n  };", start);
+  return start < 0 || end < 0 ? "" : src.slice(start, end);
+}
+
+describe("expandNode admits a STUDIO node that has no drill — the L0 architect", () => {
+  // THE BUG THIS PINS. `expandNode` opened with an unconditional `if (!drill) return;`, and
+  // `onNodeClick` routes the architect into it from the `else` of `if (drill)` — i.e. only at L0,
+  // where `drill` is null by definition. So the call bailed on its first line and the click did
+  // nothing, on every network tab, while the session sat warm and reachable in its
+  // `NetworkArchitectMount`.
+  //
+  // "clicks through to `expandNode`, not `setDrill`" above passed the whole time it was broken: it
+  // proved the CALL SITE existed, never that the call did anything. Order is the property that was
+  // wrong, so order is what these assert.
+  const body = expandNodeBody(GLANCE);
+
+  it("finds the function at all", () => {
+    expect(body, "expandNode's body must be sliceable, or the rest of this block proves nothing")
+      .not.toBe("");
+  });
+
+  it("does not bail before it knows whether the node is app-owned", () => {
+    const decides = body.indexOf("const isStudio =");
+    const guards = body.indexOf("if (!isStudio && !drill) return;");
+    expect(decides).toBeGreaterThanOrEqual(0);
+    expect(guards, "the drill guard must come AFTER isStudio is known").toBeGreaterThan(decides);
+  });
+
+  it("has no unconditional drill guard as its first statement", () => {
+    expect(body).not.toMatch(/=> \{\s*\n\s*if \(!drill\) return;/);
+  });
+
+  it("still refuses a FLEET node with no drill — the guard narrowed, not removed", () => {
+    // The fleet path's pane id is `fleetPaneId(drill, id)`, so without a drill there is nothing to
+    // expand. Deleting the guard outright would trade a dead click for a bad pane id.
+    expect(body).toMatch(/if \(!isStudio && !drill\) return;/);
+  });
+});
+
+describe("a studio node's expansion never reads the drill", () => {
+  it("resolves to a morph or a select — both return before the fleet path", () => {
+    // This is WHY the narrowed guard is safe: an app-owned node's action is decided without a drill,
+    // and both outcomes return from the switch before anything reads one.
+    // The three fleet fields are required by the type and IGNORED when `isAppOwnedSession` is true —
+    // set to the values that would send a FLEET node down the resume path, so the assertion is that
+    // app-ownership wins over them rather than that they happened to be benign.
+    const fleet = { paneIsLive: true, paneIsComplete: false, canResumeInPlace: true };
+    expect(decideExpand({ isAppOwnedSession: true, studioMorphs: true, ...fleet }).kind)
+      .toBe("studio-morph");
+    expect(decideExpand({ isAppOwnedSession: true, studioMorphs: false, ...fleet }).kind)
+      .toBe("select");
   });
 });
