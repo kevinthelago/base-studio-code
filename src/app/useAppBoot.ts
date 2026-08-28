@@ -177,6 +177,9 @@ export function useAppBoot() {
     // so the desktop Org tab, live sessions, and the planner share ONE library. Reconciles the packaged
     // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
     void useAppStore.getState().hydrateOrgs();
+    // The NETWORKS — Glance's tab strip is derived from them, so a boot that skipped this would show
+    // only the two fixed tabs and read as "you have no networks" rather than "not loaded yet".
+    void useAppStore.getState().hydrateNetworks();
     // Component library (#2269): hydrate the proven-component library from the global `bsc ui`
     // store so the planner's test_ui pane + (later) the Design Studio share ONE library. A no-op that
     // keeps the typed seed when the bridge is unreachable (which is every build until the store lands).
