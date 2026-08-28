@@ -177,6 +177,12 @@ interface ProjectLiveness { projectKey: string; live: boolean }
  *  going silent surfaces (and its "app down" alert records) within ~one interval. */
 const LIVENESS_POLL_MS = 10_000;
 
+/** How often to re-read the durable projects DB (ms, #163). A row written from outside the app —
+ *  `bsc project network set`, `bsc project architect set`, any `bsc project db` write from a live
+ *  session or another surface — must surface on Glance without an app restart. Same cadence as
+ *  {@link LIVENESS_POLL_MS}: neither signal is more time-sensitive than the other. */
+const DB_PROJECTS_POLL_MS = 10_000;
+
 /**
  * Overlay backend liveness onto the merged node set (#2263/#2541): a project whose key is in `liveKeys`
  * is detected RUNNING → activity `"live"` and health `"healthy"` (a running app is active & fine — the
@@ -453,17 +459,24 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   // returns null on ANY failure (bridge absent, old bundled `bsc` without the verb, bad payload) — we
   // keep the previous rows in that case, so a degraded environment falls back to the store cache
   // exactly as before rather than dropping nodes.
+  //
+  // POLLED, not fetched once (#163): a one-shot mount-only fetch meant a row written from outside the
+  // app — `bsc project network set` and friends — was invisible until the Glance workspace unmounted
+  // and remounted (a rail navigation), or the app restarted. `usePoll` re-reads on the same cadence as
+  // liveness below, so the CLI and the graph can no longer disagree about what a project looks like
+  // while the user is just sitting on the page watching it.
   const [dbProjects, setDbProjects] = useState<DbProject[]>(() => dbProjectsCache ?? NO_DB_PROJECTS);
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    void listDbProjects().then((rows) => {
-      if (cancelled || !rows) return;
+  usePoll(
+    async (isCancelled) => {
+      if (!enabled) return;
+      const rows = await listDbProjects();
+      if (isCancelled() || !rows) return;
       dbProjectsCache = rows;
       setDbProjects(rows);
-    });
-    return () => { cancelled = true; };
-  }, [enabled]);
+    },
+    DB_PROJECTS_POLL_MS,
+    [enabled],
+  );
 
   // githubGraphql (not a raw invoke) so the read goes through the backend TTL cache (#2447):
   // a Glance revisit within the window is served with no network call. Past the window, the
