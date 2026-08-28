@@ -8,6 +8,33 @@
 //
 // `overScrollableChild` is exported precisely so it can be tested here: jsdom reports every layout metric
 // as 0, so no amount of rendering can exercise it — the element stubs below supply the metrics instead.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// READ THIS BEFORE DEBUGGING "THE GRAPH STILL ZOOMS OVER A TERMINAL". Two claims elsewhere in this file
+// were wrong, cost two rounds of fixes, and are corrected here rather than deleted, so the next reader
+// does not re-derive them:
+//
+//  1. **This guard does NOT cover xterm.** It was written believing "an ancestor that scrolls" reaches
+//     xterm's viewport "without naming it". It does not. xterm 6 scrolls SYNTHETICALLY — VS Code's
+//     `SmoothScrollableElement` (`.xterm-scrollable-element`) with a drawn scrollbar — so no ancestor of
+//     a wheel over terminal text ever reports `scrollHeight > clientHeight`, and this predicate returns
+//     false every time. `.xterm-viewport`, the one element that still declares an overflow, is a SIBLING
+//     of `.xterm-screen` where the wheel actually lands, so the ancestor walk cannot reach it either.
+//     What made it LOOK covered: xterm consumes a wheel (preventDefault + stopPropagation) only when it
+//     actually scrolled, so mid-scroll this handler never runs at all — and at the END of the scrollback
+//     it does, and zooms. The `overlay` case below is a real property of the predicate; its mention of
+//     xterm is provenance for why the branch exists, not evidence that this path is exercised.
+//
+//  2. **"This cannot be solved from the child's side" is true only of REACT handlers.** React attaches
+//     synthetic `onWheel` at the root container, above the viewport, so a synthetic `stopPropagation`
+//     does run too late. A NATIVE `addEventListener` on a descendant does not: it fires before this
+//     viewport listener in the same bubble phase. That is how the terminal is fixed —
+//     `containTerminalWheel` in `@/app/console/lib/terminalWheel`, wired by `TerminalView`, with
+//     `terminalWheel.test.ts` asserting the real propagation rather than stubs.
+//
+// This guard is still correct and still needed for children that DO scroll natively. It is simply not
+// the thing that keeps a terminal's wheel out of the canvas.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { overScrollableChild } from "@/shared/ui/layouts/useGraphViewport";
 
@@ -99,13 +126,15 @@ describe("overScrollableChild — the canvas hands the wheel to a scrolling chil
   });
 });
 
-// The OTHER half of the fix, and it is a separate mechanism rather than a belt-and-braces duplicate.
+// This rule was written as "the OTHER half of the fix" — the reasoning being that once the canvas
+// declines to zoom, the browser handles the wheel natively and would chain it to an ancestor, which
+// `overscroll-behavior: contain` stops.
 //
-// Declining to zoom (above) means the canvas handler returns WITHOUT `preventDefault`, so the browser
-// then handles the wheel natively — and native scroll chaining would walk the gesture up to whatever
-// ancestor can scroll. `overscroll-behavior: contain` is what stops that walk at the terminal. Neither
-// half is sufficient alone: without the guard the canvas zooms before the browser ever gets the event,
-// and without this the browser scrolls something behind the pane after the guard has stepped aside.
+// THE PREMISE DOES NOT HOLD FOR XTERM, per point 1 at the top of this file: xterm 6 scrolls
+// synthetically, so on `.xterm-viewport` there is no native scroll for the browser to chain and the
+// declaration is inert for that purpose. It is kept — it costs nothing and is correct for whatever
+// native scrolling does happen here — but it is NOT what keeps the graph still. That is
+// `containTerminalWheel`, and this assertion is pinned only so the rule is not removed as dead.
 describe("the terminal viewport does not chain its scroll outward", () => {
   it("declares overscroll-behavior: contain", async () => {
     const { readFileSync } = await import("node:fs");

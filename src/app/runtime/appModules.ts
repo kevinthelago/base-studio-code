@@ -215,6 +215,7 @@ import * as UseTerminalSession from "@/app/console/useTerminalSession";
 import * as RepoCredentials from "@/shared/lib/github/repoCredentials";
 import * as PaneActivity from "@/app/console/lib/paneActivity";
 import * as TerminalAdmission from "@/app/console/lib/terminalAdmission";
+import * as TerminalWheel from "@/app/console/lib/terminalWheel";
 import * as SystemSessions from "@/shared/lib/session/systemSessions";
 import * as StartupTrace from "@/shared/lib/core/startupTrace";
 import * as ConfigOverrides from "@/shared/lib/core/configOverrides";
@@ -587,6 +588,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/github/repoCredentials": RepoCredentials,
   "@/app/console/lib/paneActivity": PaneActivity,
   "@/app/console/lib/terminalAdmission": TerminalAdmission,
+  "@/app/console/lib/terminalWheel": TerminalWheel,
   "@/shared/lib/session/systemSessions": SystemSessions,
   "@/shared/lib/core/startupTrace": StartupTrace,
   "@/shared/lib/core/configOverrides": ConfigOverrides,
