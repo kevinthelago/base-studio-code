@@ -38,8 +38,8 @@ rather than only on the conclusion.
 
 **DOES IT USE GITHUB? That is a decision, and it is yours.**
 
-    bsc plan classify set        # JSON on stdin: { ..., "usesGithub": true | false }
-    bsc plan classify get        # reports it, or UNDECIDED
+    bsc plan classify set --project <key>   # JSON on stdin: { ..., "usesGithub": true | false }
+    bsc plan classify get --project <key>   # reports it, or UNDECIDED
 
 Ask, then record it. It is a DECISION taken with the user, never a detection — publishing used to
 happen whenever a token happened to be present, so nothing could tell *"this project does not use

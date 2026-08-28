@@ -6,9 +6,11 @@
 //! Extracted from the old `bsc-plan` binary so the unified `bsc` umbrella dispatches into it via
 //! [`run`]; the legacy `bsc-plan` shim still calls the same entrypoint.
 //!
-//! The DB is located via `--db <path>` or the `BSC_PLAN_DB` env var (set per-session at launch, so
-//! the CLI resolves the hub's plan.db even from a worker's worktree). Default output is human text;
-//! `--json` emits machine-readable JSON.
+//! The DB is located via `--project <key>` (its NAME), `--db <path>` (its PATH), the `BSC_PLAN_DB` env
+//! var (set per-session at launch, so the CLI resolves the hub's plan.db even from a worker's
+//! worktree), or — last — derived from a cwd inside `projects/<key>` or `worktrees/<key>`. Precedence
+//! is exactly that order with `--db` first, since a written-out path is the most explicit thing on the
+//! line. Default output is human text; `--json` emits machine-readable JSON.
 //!
 //! Reads are **lean by default** (#1562): plural reads (`list`/`mine`) emit a compact, body-free TSV
 //! (value-lists as counts) and `--json` a compact summary array, so an embedded plan.db read is cheap
@@ -622,6 +624,13 @@ struct Args {
     prog: String,
     json: bool,
     db: Option<String>,
+    /// `--project <key>` — name the project whose plan store to use, instead of its PATH.
+    ///
+    /// Normalized into `db` at the end of [`parse_args`], so every handler keeps reading one field and
+    /// the precedence falls out: an explicit `--db` wins, then `--project`, then `$BSC_PLAN_DB`, then
+    /// the cwd derivation. Kept as its own field so an error can name the flag the caller actually
+    /// typed rather than a path it never wrote.
+    project: Option<String>,
     positional: Vec<String>,
     status: Option<String>,
     stream: Option<String>,
@@ -673,7 +682,7 @@ struct Args {
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
-        prog: String::new(), json: false, db: None, positional: Vec::new(), status: None, stream: None,
+        prog: String::new(), json: false, db: None, project: None, positional: Vec::new(), status: None, stream: None,
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
@@ -684,6 +693,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         match arg.as_str() {
             "--json" => a.json = true,
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
+            "--project" => a.project = Some(it.next().ok_or("--project needs a project key")?),
             "--status" => a.status = Some(it.next().ok_or("--status needs a value")?),
             "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
             "--rule" => a.rule = Some(it.next().ok_or("--rule needs a value")?),
@@ -723,7 +733,44 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             _ => a.positional.push(arg),
         }
     }
+    // `--project <key>` becomes the resolved path, so every handler keeps reading one field. Only when
+    // `--db` was NOT given: a path the caller wrote out is the most explicit thing on the line, and it
+    // wins. Doing this here rather than in `resolve_db` is what keeps the ~3 `open_store` call sites —
+    // and any future one — from having to thread a second argument they do not care about.
+    if a.db.is_none() {
+        if let Some(key) = &a.project {
+            a.db = Some(plan_db_for_key(key)?.to_string_lossy().into_owned());
+        }
+    }
     Ok(a)
+}
+
+/// The plan store path for a project KEY — `~/.base-studio-code/plans/<key>.db`.
+///
+/// WHY THIS EXISTS. `resolve_db` was `--db` → `$BSC_PLAN_DB` → the cwd derivation, and all three
+/// answer "which project" with a LOCATION. That leaves the architect unable to run the two commands
+/// its charter names as its whole job: it stands in its own studio directory, which is under neither
+/// `projects/<key>` nor `worktrees/<key>`, so the derivation declines and no env var is exported for
+/// it — `bsc plan requirement set` and `bsc plan classify set` simply failed for the one session
+/// expected to write them. `bsc errors` already had `--project` for the same reason.
+///
+/// The key is validated, not just interpolated: it names a file under a shared directory, so a key
+/// carrying a separator would reach outside `plans/`. Mirrors `sanitize_project_key`'s containment
+/// role without pulling that crate in for one check.
+fn plan_db_for_key(key: &str) -> Result<PathBuf, String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("--project needs a project key (list them with `bsc project list`)".into());
+    }
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!(
+            "--project: '{key}' is not a project key — keys are [A-Za-z0-9-_] (list them with \
+             `bsc project list`)"
+        ));
+    }
+    let base = bsc_util::bsc_base_dir()
+        .ok_or("--project: no home dir ($HOME / $USERPROFILE unset), so pass --db <path>")?;
+    Ok(base.join("plans").join(format!("{key}.db")))
 }
 
 /// The `plan` subcommand entrypoint: `args` is everything after `bsc plan`; `prog` is the display
@@ -931,8 +978,11 @@ fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
         plan_db_from_cwd().ok_or_else(|| {
             // Still names both explicit routes: the derivation covers a session inside a project, and
             // this is what is left — a cwd that belongs to no project, where guessing would be worse.
+            // Names every explicit route, cheapest first. `--project <key>` leads because it is the
+            // one a caller can act on without knowing a path — and because the session most likely to
+            // hit this error, the architect, stands outside both project roots by design.
             "no plan.db: this directory is not inside a project (…/projects/<key> or \
-             …/worktrees/<key>), so pass --db <path> or set BSC_PLAN_DB"
+             …/worktrees/<key>), so pass --project <key>, or --db <path>, or set BSC_PLAN_DB"
                 .to_string()
         })
     })
@@ -971,6 +1021,55 @@ mod tests {
     }
 
     #[test]
+    /// The architect's problem, and the reason `--project` exists.
+    ///
+    /// Every other route answers "which project" with a LOCATION, and the architect stands in its own
+    /// studio directory — under neither project root — so the derivation declines and the app exports
+    /// no env var for it. `bsc plan requirement set` and `bsc plan classify set`, the two commands its
+    /// charter names as its entire job, simply failed. Naming the project is the missing route.
+    #[test]
+    fn a_project_key_names_the_store_without_a_path() {
+        let a = parse_args(vec!["--project".into(), "network-monitor".into(), "list".into()]).unwrap();
+        let db = a.db.expect("--project resolved to a path");
+        assert!(db.ends_with("plans/network-monitor.db") || db.ends_with("plans\\network-monitor.db"), "{db}");
+        assert_eq!(a.positional, vec!["list".to_string()], "the flag is consumed, the verb survives");
+    }
+
+    /// `--db` is a path the caller wrote out — the most explicit thing on the line — so it wins over a
+    /// key. Silently preferring the key would send a write to a different store than the one named.
+    #[test]
+    fn an_explicit_db_path_beats_a_project_key() {
+        let a = parse_args(
+            vec!["--db".into(), "/tmp/explicit.db".into(), "--project".into(), "network-monitor".into()],
+        )
+        .unwrap();
+        assert_eq!(a.db.as_deref(), Some("/tmp/explicit.db"));
+        assert_eq!(a.project.as_deref(), Some("network-monitor"), "and the key is still readable for errors");
+    }
+
+    /// The key names a FILE under a shared directory, so it is validated rather than interpolated. A
+    /// separator would reach outside `plans/` — the containment `sanitize_project_key` provides for
+    /// hub paths, applied here for the same reason.
+    #[test]
+    fn a_project_key_that_could_escape_the_plans_dir_is_refused() {
+        for bad in ["../../etc/passwd", "a/b", "a\\b", "", "   ", "has space", "semi;colon"] {
+            let err = plan_db_for_key(bad).err().unwrap_or_default();
+            assert!(!err.is_empty(), "'{bad}' is refused rather than interpolated");
+        }
+        // …while the shapes a real key takes are accepted.
+        for good in ["network-monitor", "studio-code", "a_b", "p-1741"] {
+            assert!(plan_db_for_key(good).is_ok(), "'{good}' is a legal key");
+        }
+    }
+
+    /// A missing value is an error rather than swallowing the next token as the key — otherwise
+    /// `bsc plan --project list` would look up a project named "list" and report it empty.
+    #[test]
+    fn project_needs_a_value() {
+        assert!(parse_args(vec!["--project".into()]).is_err());
+    }
+
+    #[test]
     fn a_path_outside_every_project_resolves_to_nothing_rather_than_a_guess() {
         let base = std::path::Path::new("/home/u/.base-studio-code");
         // An ALLOW-LIST of the two roots, not "anything under the base dir" — these siblings hold no
@@ -1001,12 +1100,13 @@ mod tests {
     }
 
     #[test]
-    fn a_cwd_outside_a_project_still_names_both_explicit_routes() {
+    fn a_cwd_outside_a_project_names_every_explicit_route() {
         // The error is what a session reads when the derivation cannot help, so it has to say what to
         // do next — and now also WHY the automatic answer did not apply.
         let msg = resolve_db(&None).err().unwrap_or_default();
         // (In a project checkout this may resolve; the message is only asserted when it does not.)
         if !msg.is_empty() {
+            assert!(msg.contains("--project"), "names the route a caller can use without a path: {msg}");
             assert!(msg.contains("--db"), "names the flag: {msg}");
             assert!(msg.contains("BSC_PLAN_DB"), "names the env var: {msg}");
             assert!(msg.contains("not inside a project"), "says why the fallback did not apply: {msg}");
