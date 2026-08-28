@@ -14,7 +14,7 @@ use std::io::Write;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
-mod busy;
+pub(crate) mod busy;
 mod env;
 mod launch;
 mod pump;

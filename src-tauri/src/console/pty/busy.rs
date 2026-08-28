@@ -123,7 +123,12 @@ fn is_ignored(procs: &HashMap<Pid, Process>, pid: Pid) -> bool {
 ///
 /// Walks parents rather than building a children index: the caller tests every process against a
 /// handful of roots, and chains are shallow, so the walk is cheaper than materialising the tree.
-fn is_descendant_of(start: Pid, root: Pid, procs: &HashMap<Pid, Process>) -> bool {
+///
+/// `pub(crate)` for a SECOND caller with the same shape: `observability::perf` asks it of the two or
+/// three processes whose name says they might be the webview, to tell the app's own renderer apart
+/// from any other browser on the box. Same question, same shallow chains — worth one visibility
+/// change rather than a copy that can drift.
+pub(crate) fn is_descendant_of(start: Pid, root: Pid, procs: &HashMap<Pid, Process>) -> bool {
     let mut pid = start;
     for _ in 0..MAX_DEPTH {
         let Some(parent) = procs.get(&pid).and_then(|p| p.parent()) else { return false };
