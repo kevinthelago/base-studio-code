@@ -27,6 +27,22 @@ export interface HeapInfo { usedMB: number; limitMB: number; }
  * Reads the WebView's JS heap usage. `performance.memory` is a non-standard
  * Chromium API (present in the WebView2 renderer) — absent elsewhere, hence the
  * guard. Used to spot renderer memory growth, e.g. a 4×4 triage's 16 terminals.
+ *
+ * ⚠️ `null` MEANS UNMEASURED, NEVER "MEMORY IS FINE" — and on the platform where the renderer
+ * actually dies it is ALWAYS null. This app ships on WebKitGTK on Linux, which has no
+ * `performance.memory`, so every caller here reads nothing while the web process climbs. Measured
+ * 2026-08-28: +472 MB/min (3320 → 4580 MB in 160s) until WebKit killed it at 16 GB, with this
+ * function returning null throughout and the `HEAP_WARN_RATIO` check below never firing once.
+ *
+ * IT IS ALSO THE WRONG NUMBER even where it works. It reports the JS HEAP, and the memory that kills
+ * this app is not on the JS heap — measured at the death, `[heap]` was 9.9 MB against 4.6 GB of
+ * anonymous mappings. A green heap reading is entirely compatible with a renderer about to be killed.
+ *
+ * THE AUTHORITATIVE SOURCE IS THE BACKEND, on every platform: `observability::perf` samples the
+ * webview processes' real RSS from the OS and persists them, so the curve outlives the process that
+ * produced it. Read it with `bsc logs perf --session app:webview`. This function is one source among
+ * several and the weakest of them; treat it as a hint, and never as the answer to "is the renderer
+ * healthy".
  */
 export function readHeap(): HeapInfo | null {
   const m = (performance as unknown as {

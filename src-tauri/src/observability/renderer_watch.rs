@@ -32,6 +32,26 @@
 //! every ~2s with its perf line. Any frontend-originated command is proof of life, so the watchdog
 //! reads a clock the app was already winding.
 //!
+//! ## What this CANNOT cover, stated so nobody looks for it here
+//!
+//! A WHOLE-APP death. This watchdog lives in the Tauri process, so when that process goes down too,
+//! the watchdog goes with it and files nothing — which is why a fatal event can leave zero faults
+//! behind. From inside the process that is not a gap to be closed; it is arithmetic.
+//!
+//! What survives instead is the CURVE. [`super::perf`] samples the webview processes' RSS every
+//! couple of seconds and writes each sample straight to perf.db, so the last readings before a death
+//! are already on disk when it happens. That does not record the death, but it answers the question
+//! the death raises:
+//!
+//! ```text
+//! bsc logs perf --session app:webview
+//! ```
+//!
+//! Before that existed the only sampled processes were the Tauri host and the system totals, and the
+//! host stays FLAT while the renderer dies — measured 2026-08-28 at 372-377 MB while the web process
+//! climbed to 4.6 GB and was killed. So the instrumentation reported health, and the growth that
+//! actually mattered went unmeasured.
+//!
 //! ## Recovery
 //!
 //! Filing a fault makes the death visible; it does not give the user their app back. So the watchdog

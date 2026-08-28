@@ -54,6 +54,9 @@ impl Default for PerfConfig {
 /// - `"system"` — system-wide totals (RSS = used RAM, cpu_pct = global %)
 /// - `"frontend"` — WebView metrics (RSS = heap bytes, cpu_pct = jank count,
 ///   threads = PTY event count)
+/// - `"app:webview"` / `"app:webview-net"` / `"app:webview-gpu"` — the WEBVIEW child processes
+///   ([`webview_label`]); several of one kind are suffixed `-2`, `-3`, … . THIS is the row to read
+///   when the UI dies: `"app"` measures the Rust host, which stays flat while the webview grows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerfSample {
@@ -71,6 +74,8 @@ pub struct PerfSample {
 const RING_CAP: usize = 2000;
 /// Apply retention pruning every N ingests (not every tick — a DELETE per tick is wasteful).
 const RETENTION_EVERY: u64 = 100;
+/// Floor between full process-table walks when the webview set looks stale (see [`discover_webview`]).
+const WEBVIEW_RESCAN_MIN_MS: i64 = 30_000;
 /// Don't sample during the cold-start window (#1033). Agent metrics have no value before the app is
 /// up (no agents are even running at a fresh launch), and the 2s disk writes + IPC just pile
 /// contention onto the slowest moment of a launch.
@@ -91,6 +96,11 @@ struct PerfInner {
     db_opened: bool,
     /// Persistent `System` so CPU delta accumulates across ticks (first tick = 0 %).
     sys: System,
+    /// The app's webview child processes as `(session_id, pid)` — see [`discover_webview`]. Cached
+    /// because finding them costs a full process walk while SAMPLING them costs nothing extra.
+    webview: Vec<(String, u32)>,
+    /// When that walk last ran, so a platform with no webview process does not pay for one per tick.
+    webview_scan_ms: i64,
     ingest_count: u64,
 }
 
@@ -134,6 +144,8 @@ impl PerfState {
             db: None,
             db_opened: false,
             sys: System::new(),
+            webview: Vec::new(),
+            webview_scan_ms: 0,
             ingest_count: 0,
         }))
     }
@@ -178,6 +190,92 @@ fn open_db(path: &Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
+// ── The webview processes ─────────────────────────────────────────────────────
+
+/// The `session_id` stem for a webview process, or `None` when the name is not one.
+///
+/// THE PROCESS THAT DIES IS NOT THE ONE WE WERE SAMPLING. `"app"` is the Tauri host — the Rust side.
+/// The WebView runs in separate child processes, and on this project it is the one that grows:
+/// measured 2026-08-28 at ~472 MB/min (3320 → 4580 MB in 160s, then killed) while `"app"` sat flat
+/// at 372-377 MB. perf.db held 13,272 `"app"` samples whose all-time maximum was 755 MB, so the
+/// existing instrumentation reported a healthy process right up to the moment the window went blank.
+///
+/// Matched on the process NAME, because that is the one thing every platform agrees on:
+///   * WebKitGTK (Linux — where `Unable to shrink memory footprint … Killed` comes from):
+///     `WebKitWebProcess`, `WebKitNetworkProcess`, `WebKitGPUProcess`.
+///   * WebKit (macOS): `com.apple.WebKit.WebContent` / `.Networking` / `.GPU`.
+///   * WebView2 (Windows): every helper shares the image name `msedgewebview2.exe`, so they all land
+///     under one stem and are told apart by the index and the `pid` column. That is a limit of the
+///     platform's naming rather than of this classification, and it is still strictly better than
+///     the nothing that was sampled before.
+///
+/// Substring rather than equality: Linux reports a bare name, macOS a reverse-DNS one, and Windows
+/// carries the `.exe`.
+fn webview_label(name: &str) -> Option<&'static str> {
+    let n = name.to_ascii_lowercase();
+    if n.contains("webkitnetworkprocess") || n.contains("webkit.networking") {
+        Some("app:webview-net")
+    } else if n.contains("webkitgpuprocess") || n.contains("webkit.gpu") {
+        Some("app:webview-gpu")
+    } else if n.contains("webkitwebprocess")
+        || n.contains("webkit.webcontent")
+        || n.contains("msedgewebview2")
+    {
+        Some("app:webview")
+    } else {
+        None
+    }
+}
+
+/// Turn classified `(stem, pid)` pairs into the ids they are stored under, disambiguating several
+/// processes of one kind as `<stem>-2`, `<stem>-3`, … .
+///
+/// Sorted by `(stem, pid)` first so a label is STABLE ACROSS TICKS within a run — that is what makes
+/// `bsc logs perf --session app:webview` a growth curve rather than a shuffle of whichever process
+/// the process table happened to yield first. Across restarts the pids differ and so may the
+/// ordering, which is why `pid` is stored alongside and is the column to key on when it matters.
+fn label_webview(mut found: Vec<(&'static str, u32)>) -> Vec<(String, u32)> {
+    found.sort_unstable();
+    let mut seen: HashMap<&'static str, u32> = HashMap::new();
+    found
+        .into_iter()
+        .map(|(stem, pid)| {
+            let n = seen.entry(stem).or_insert(0);
+            *n += 1;
+            let id = if *n == 1 { stem.to_string() } else { format!("{stem}-{n}") };
+            (id, pid)
+        })
+        .collect()
+}
+
+/// Walk the process table once and return the app's webview descendants, labelled.
+///
+/// This is the ONE full walk in this module, which is why its caller rate-limits it: everything else
+/// refreshes a known PID list, and that is what keeps sampling cheap at 20+ agents.
+///
+/// DESCENDANTS, not direct children. On WebKitGTK the webview processes are the app's own children,
+/// but WebView2 spawns its renderers under a broker process that is itself the app's child — so a
+/// children-only test would sample the broker and miss the process that actually grows. The name
+/// filter runs FIRST, so the ancestry walk is paid for only by the two or three processes that could
+/// possibly match, and never by the agent shells.
+///
+/// Rooting at our own pid is what separates OUR renderer from any other browser on the box, which
+/// matters on a developer machine where several are usually running.
+fn discover_webview(sys: &mut System, own_pid: u32) -> Vec<(String, u32)> {
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    let own = Pid::from(own_pid as usize);
+    let procs = sys.processes();
+    let found: Vec<(&'static str, u32)> = procs
+        .iter()
+        .filter_map(|(pid, proc)| {
+            let stem = webview_label(&proc.name().to_string_lossy())?;
+            crate::console::pty::busy::is_descendant_of(*pid, own, procs)
+                .then_some((stem, pid.as_u32()))
+        })
+        .collect();
+    label_webview(found)
+}
+
 // ── Sampler ───────────────────────────────────────────────────────────────────
 
 /// Collect one round of metrics and persist them. Called from the background task.
@@ -192,6 +290,23 @@ pub fn tick(state: &PerfState) {
     let tracked: Vec<(String, u32)> = g.tracked.iter().map(|(k, &v)| (k.clone(), v)).collect();
     let mut pids: Vec<Pid> = tracked.iter().map(|(_, p)| Pid::from(*p as usize)).collect();
     pids.push(Pid::from(own_pid as usize));
+
+    // Re-find the webview processes when we have none, or when one has DIED — a dead pid has already
+    // dropped out of `sys` (the refresh below passes `remove_dead_processes`), so a renderer that
+    // `renderer_watch` respawned is picked up on the next tick with no timer of its own. The floor is
+    // what stops a platform where nothing ever matches from paying for a full walk every 2s.
+    if g.config.track_process {
+        let stale = g.webview.is_empty()
+            || g.webview.iter().any(|(_, p)| g.sys.process(Pid::from(*p as usize)).is_none());
+        if stale && now - g.webview_scan_ms >= WEBVIEW_RESCAN_MIN_MS {
+            g.webview_scan_ms = now;
+            g.webview = discover_webview(&mut g.sys, own_pid);
+        }
+    }
+    // Cloned for the same reason `tracked` is: the sample loop below reads `g.sys` while iterating.
+    let webview: Vec<(String, u32)> = g.webview.clone();
+    // They ride the SAME per-tick refresh as everything else — no second walk, no extra syscalls.
+    pids.extend(webview.iter().map(|(_, p)| Pid::from(*p as usize)));
 
     // Refresh only the PIDs we care about — no full process walk.
     if g.config.track_process {
@@ -231,6 +346,20 @@ pub fn tick(state: &PerfState) {
             cpu_pct: proc.map(|p| p.cpu_usage()),
             threads: proc.and_then(|p| p.tasks()).map(|t| t.len() as u32),
         });
+
+        // The WEBVIEW processes — where a UI death actually happens. See `webview_label` for why the
+        // `"app"` row above cannot answer it.
+        for (sid, pid) in &webview {
+            let proc = g.sys.process(Pid::from(*pid as usize));
+            samples.push(PerfSample {
+                ts: now,
+                session_id: sid.clone(),
+                pid: Some(*pid),
+                rss_bytes: proc.map(|p| p.memory()),
+                cpu_pct: proc.map(|p| p.cpu_usage()),
+                threads: proc.and_then(|p| p.tasks()).map(|t| t.len() as u32),
+            });
+        }
     }
 
     // System-wide totals (always — cheap, no per-process work).
@@ -573,6 +702,99 @@ mod tests {
             assert!(!g.tracked.contains_key("p1"));
             assert_eq!(g.tracked.get("p2"), Some(&2222));
         }
+    }
+
+    // ── The webview processes (#the-renderer-can-die-at-16gb-with-nothing-measuring-it) ──────────
+    //
+    // The regression these guard is not a crash — it is a GREEN reading. `"app"` stayed at 372-377 MB
+    // while the renderer climbed to 16 GB and was killed, so the failure mode is instrumentation that
+    // reports health while the app dies. A name that stops being classified brings that back silently.
+
+    #[test]
+    fn every_platforms_webview_process_is_classified() {
+        // The real names, verbatim, from the three shells this app ships on.
+        assert_eq!(webview_label("WebKitWebProcess"), Some("app:webview"));
+        assert_eq!(webview_label("WebKitNetworkProcess"), Some("app:webview-net"));
+        assert_eq!(webview_label("WebKitGPUProcess"), Some("app:webview-gpu"));
+        assert_eq!(webview_label("com.apple.WebKit.WebContent"), Some("app:webview"));
+        assert_eq!(webview_label("com.apple.WebKit.Networking"), Some("app:webview-net"));
+        assert_eq!(webview_label("msedgewebview2.exe"), Some("app:webview"));
+    }
+
+    #[test]
+    fn the_content_process_is_not_confused_with_its_siblings() {
+        // `WebKitWebProcess` and `WebKitNetworkProcess` share a prefix, and only the first one is the
+        // renderer. Getting this backwards would sample a process that never grows and call it the UI.
+        assert_ne!(webview_label("WebKitWebProcess"), webview_label("WebKitNetworkProcess"));
+    }
+
+    #[test]
+    fn nothing_else_on_the_box_is_mistaken_for_a_webview() {
+        // Agent shells are descendants of the app too, and they are ALREADY sampled under their pane
+        // id. Matching one here would double-count it against the renderer's curve.
+        for name in ["base-studio-code", "bash", "claude", "node", "cargo", "bsc", "WebKitWebDriver"] {
+            assert_eq!(webview_label(name), None, "{name} must not classify as a webview process");
+        }
+    }
+
+    #[test]
+    fn one_process_of_a_kind_keeps_the_bare_label() {
+        // The single-renderer case is the one every query is written against, so it must not acquire
+        // an index it would then need to know about.
+        let out = label_webview(vec![("app:webview", 42), ("app:webview-net", 7)]);
+        assert_eq!(
+            out,
+            vec![("app:webview".to_string(), 42), ("app:webview-net".to_string(), 7)],
+        );
+    }
+
+    #[test]
+    fn several_of_one_kind_are_suffixed_and_ordered_by_pid() {
+        // WebView2 gives every helper the same image name, so this is the Windows shape. Ordering by
+        // pid is what keeps a label pinned to the same process from tick to tick.
+        let out = label_webview(vec![("app:webview", 300), ("app:webview", 100), ("app:webview", 200)]);
+        assert_eq!(
+            out,
+            vec![
+                ("app:webview".to_string(), 100),
+                ("app:webview-2".to_string(), 200),
+                ("app:webview-3".to_string(), 300),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_webview_curve_survives_the_process_that_produced_it() {
+        // THE ACCEPTANCE CRITERION: after a death the last samples must still be readable, because the
+        // whole point is to have evidence for a process that is no longer around to be asked. Nothing
+        // here is in-memory-only — the row is on disk the moment it is ingested.
+        let db_path = tmp_db_path();
+        let state = PerfState::new(db_path.clone());
+        let mut g = state.0.lock().unwrap();
+        let now = now_ms();
+        // A climb of the shape actually measured: ~470 MB/min, ending where WebKit kills the process.
+        for (i, mb) in [3320_u64, 3653, 3877, 4580].iter().enumerate() {
+            ingest(&mut g, vec![PerfSample {
+                ts: now + i as i64 * 20_000,
+                session_id: "app:webview".to_string(),
+                pid: Some(39579),
+                rss_bytes: Some(mb * 1_048_576),
+                cpu_pct: Some(12.0),
+                threads: Some(30),
+            }]);
+        }
+        let conn = g.db_conn().expect("perf.db opens");
+        let (n, peak): (i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), MAX(rss_bytes) FROM perf_samples WHERE session_id = 'app:webview'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("the webview curve is readable back by session_id");
+        assert_eq!(n, 4, "every sample of the climb is durable");
+        assert_eq!(peak, 4580 * 1_048_576, "and the peak it died at is one of them");
+        drop(g);
+        let _ = std::fs::remove_file(&db_path);
     }
 }
 
