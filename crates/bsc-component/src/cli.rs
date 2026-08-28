@@ -297,6 +297,29 @@ PROMOTION — a new file — not a sync), and an id already identical. A READ of
 scope required, since only the on-disk seed file changes (like `bsc ui export`).",
     },
     CmdDoc {
+        name: "promote",
+        summary: "write a genuinely NEW store record into its own file under the packaged seed (#162)",
+        usage: "\
+USAGE:
+  bsc ui promote <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]
+
+The counterpart `sync-seed` explicitly declines to be: syncing an id with no matching seed file needs
+PROMOTING (a new file), not syncing (an existing one), per `sync-seed`'s own report. Without this,
+authoring a genuinely new component in the store had no path to git except hand-writing the seed json —
+exactly what request #162 hit authoring NetworkArchitectMount.
+
+Strips the same store bookkeeping `sync-seed` strips (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/
+`seedHash`/`used`/`usageAssessed`/`version`), then writes what remains to <seed-dir>/<folder>/<id>.json,
+nested by the record's own `folder` (mirroring `bsc ui export`'s nesting; a folder-less record lands at
+the seed-dir root). Mirrors `bsc graph promote`'s shape — an explicit, gated verb landing a runtime
+record into the committed store — ported to this store's one-file-per-record layout.
+
+Refuses (reported as `alreadySeeded`, never overwritten) an id that already HAS a seed file — that
+drift is `sync-seed`'s job, by id, drift-aware; this verb is not. Dry run by default; --apply writes. A
+READ of the store — no `ui` write scope required, since only the on-disk seed file changes (like `bsc
+ui export`/`sync-seed`).",
+    },
+    CmdDoc {
         name: "import",
         summary: "load a folder tree of component records into the store — the seed half (#3606)",
         usage: "\
@@ -1815,8 +1838,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
         Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
         Some("sync-seed") if args.get(1).map(String::as_str) != Some("help") => cmd_sync_seed(&args[1..]),
+        Some("promote") if args.get(1).map(String::as_str) != Some("help") => cmd_promote(&args[1..]),
         Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
-        Some(v @ ("export" | "import" | "sync-seed")) => {
+        Some(v @ ("export" | "import" | "sync-seed" | "promote")) => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
@@ -3327,6 +3351,106 @@ fn cmd_sync_seed(args: &[String]) -> Result<(), String> {
     let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     // Through the SHARED emitter (unlike `export`/`parity`/`import`'s plain `println!`) so a warm `bsc
     // serve` child can answer this read too, and so the report is capturable in tests.
+    bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `bsc ui promote <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]` (#162, request from
+/// kevin) — writes a genuinely NEW record's content into a NEW file under the packaged seed. `sync-seed`
+/// deliberately declines exactly this case (its own report calls it out: "an id with no matching seed
+/// file — that is a PROMOTION — a new file — not a sync"), so authoring a new component in the store had
+/// no path to git — the request's evidence is a hand-written
+/// `src-tauri/data/components/app/features/studio-sessions/networkarchitectmount.json`. `bsc graph
+/// promote` does the analogous move for algorithm records, but its shape doesn't transplant here as-is:
+/// that store is one committed `algorithms.json`, so "promote" there means writing a JSON *field* into
+/// one file, while the component seed is a file tree of one-record-per-file, so promoting here means
+/// creating a new *file*, nested by the record's `folder` (mirroring `bsc ui export`'s own nesting).
+///
+/// Deliberately narrower than `bsc graph promote`'s bare-refresh + `--id`-adopt shape, and on purpose:
+/// an earlier in-flight attempt at a full store↔seed reconciler (`bsc ui promote --check`, never merged)
+/// surfaced that the store is POORER than the seed for a real, non-empty set of existing records —
+/// `provides` synthesised as a fallback that stops resolving, `srcText` that is simply older than what
+/// shipped — so overwriting an EXISTING seed file from the store risks regressing landed work. This verb
+/// never does that: an id that already has a seed file is left untouched and reported as
+/// `alreadySeeded`, pointing at `sync-seed` (the by-id, drift-aware verb for that direction) instead. By
+/// id, never a sweep — same reasoning as `sync-seed`. Dry run by default; `--apply` writes.
+fn cmd_promote(args: &[String]) -> Result<(), String> {
+    let (mut seed_dir, mut dir, mut apply, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut ids: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--seed-dir" => seed_dir = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => ids.push(other.to_string()),
+        }
+    }
+    let usage = "usage: bsc ui promote <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]";
+    let seed_dir = seed_dir.ok_or(usage)?;
+    if ids.is_empty() {
+        return Err(usage.into());
+    }
+    let store = open_component_store(&dir)?;
+
+    // Index the seed tree ONCE by id, same walk `sync-seed` uses, so the two verbs cannot disagree
+    // about which ids already have a seed file.
+    let mut files = Vec::new();
+    collect_json_files(std::path::Path::new(&seed_dir), &mut files)
+        .map_err(|e| format!("cannot read {seed_dir}: {e}"))?;
+    let mut seeded: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for f in &files {
+        let Ok(raw) = std::fs::read_to_string(f) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+        if let Some(id) = v.get("id").and_then(serde_json::Value::as_str) {
+            seeded.insert(id.to_string());
+        }
+    }
+
+    let (mut promoted, mut already_seeded, mut missing_from_store) = (Vec::new(), Vec::new(), Vec::new());
+    for id in &ids {
+        let Some(raw) = store.get(id)? else {
+            missing_from_store.push(id.clone());
+            continue;
+        };
+        if seeded.contains(id) {
+            // Refuse rather than overwrite — that is `sync-seed`'s job, and it is drift-aware where
+            // this verb (by design) is not.
+            already_seeded.push(id.clone());
+            continue;
+        }
+        let mut rec: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+        let obj = rec.as_object_mut().ok_or_else(|| format!("stored record '{id}' is not a JSON object"))?;
+        for field in SEED_BOOKKEEPING_FIELDS {
+            obj.remove(*field);
+        }
+        // Nest by `folder`, exactly like `bsc ui export`, so a promoted record lands where the rest of
+        // the tree would put it rather than flattening to the seed-dir root.
+        let folder = record_folder(&rec).unwrap_or("").to_string();
+        let mut path = std::path::Path::new(&seed_dir).to_path_buf();
+        for seg in folder.split('/').filter(|s| !s.is_empty()) {
+            path.push(seg);
+        }
+        path.push(format!("{id}.json"));
+        if apply {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            let text = serde_json::to_string_pretty(&rec).map_err(|e| e.to_string())?;
+            std::fs::write(&path, format!("{text}\n")).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        }
+        promoted.push(serde_json::json!({ "id": id, "path": path.display().to_string() }));
+    }
+
+    let report = serde_json::json!({
+        "seedDir": seed_dir, "applied": apply,
+        "promoted": promoted, "alreadySeeded": already_seeded,
+        "missingFromStore": missing_from_store,
+    });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
     Ok(())
 }
@@ -7894,6 +8018,109 @@ export const Card = () => <Button />;",
         let _ = std::fs::remove_dir_all(&seed);
     }
 
+    /// #162 (request from kevin) — `promote` writes a genuinely NEW store record into its own file
+    /// under the packaged seed, the case `sync-seed` explicitly declines ("an id with no matching seed
+    /// file needs PROMOTING, not syncing"). Before this there was no path from a store-only component
+    /// to git except hand-writing the seed json.
+    #[test]
+    fn promote_writes_a_new_record_into_a_new_seed_file_nested_by_folder() {
+        let dir = tmp_store_dir("promote");
+        let seed = std::env::temp_dir().join(format!("bsc-promote-seed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&seed);
+        std::fs::create_dir_all(&seed).unwrap();
+
+        // One seed file already exists (`already-seeded`); the store also holds a genuinely NEW record
+        // (`new-one`, nested under a folder) and one with no `folder` at all (`rootless`).
+        std::fs::write(
+            seed.join("already-seeded.json"),
+            serde_json::json!({ "id": "already-seeded", "name": "already-seeded", "role": "primitive" }).to_string(),
+        )
+        .unwrap();
+
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        store
+            .set(
+                "already-seeded",
+                &serde_json::json!({
+                    "id": "already-seeded", "name": "already-seeded", "role": "primitive",
+                    "srcText": "export const A = 2; // store has since drifted",
+                })
+                .to_string(),
+            )
+            .unwrap();
+        store
+            .set(
+                "new-one",
+                &serde_json::json!({
+                    "id": "new-one", "name": "NewOne", "role": "composite",
+                    "srcText": "export const B = 1;", "folder": "features/studio-sessions",
+                    // Store bookkeeping a seed file never carries — must be stripped on the way out.
+                    "history": [{ "rev": 1 }], "rev": 3, "updatedAt": "2026-08-28T00:00:00Z",
+                    "updatedBy": "designer", "builtin": false, "seedHash": "xyz", "used": true,
+                    "usageAssessed": true, "version": "",
+                })
+                .to_string(),
+            )
+            .unwrap();
+        store
+            .set(
+                "rootless",
+                &serde_json::json!({ "id": "rootless", "name": "Rootless", "role": "primitive", "srcText": "export const C = 1;" })
+                    .to_string(),
+            )
+            .unwrap();
+
+        let seed_s = seed.to_string_lossy().into_owned();
+
+        // Dry run (no --apply): reports what WOULD be written, touches nothing on disk.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_promote(&[
+                "new-one".into(), "already-seeded".into(), "rootless".into(), "ghost".into(),
+                "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone(),
+            ])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["applied"], false);
+        let promoted: Vec<&str> = report["promoted"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert!(promoted.contains(&"new-one") && promoted.contains(&"rootless"), "promoted: {promoted:?}");
+        assert_eq!(report["alreadySeeded"], serde_json::json!(["already-seeded"]), "an id with a seed file is refused, not overwritten");
+        assert_eq!(report["missingFromStore"], serde_json::json!(["ghost"]));
+        assert!(!seed.join("features/studio-sessions/new-one.json").exists(), "dry run wrote nothing");
+        assert_eq!(
+            std::fs::read_to_string(seed.join("already-seeded.json")).unwrap(),
+            serde_json::json!({ "id": "already-seeded", "name": "already-seeded", "role": "primitive" }).to_string(),
+            "an already-seeded id is untouched even in the report-only pass",
+        );
+
+        // --apply actually writes: nested by `folder` for `new-one`, at the seed-dir root for the
+        // folder-less `rootless`.
+        cmd_promote(&["new-one".into(), "rootless".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone(), "--apply".into()]).unwrap();
+        let new_one_path = seed.join("features/studio-sessions/new-one.json");
+        assert!(new_one_path.exists(), "new-one lands nested under its `folder`");
+        let written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&new_one_path).unwrap()).unwrap();
+        assert_eq!(written["srcText"], "export const B = 1;");
+        assert_eq!(written["folder"], "features/studio-sessions");
+        for field in SEED_BOOKKEEPING_FIELDS {
+            assert!(written.get(*field).is_none(), "seed must not carry store bookkeeping field '{field}': {written}");
+        }
+        assert!(seed.join("rootless.json").exists(), "a folder-less record lands at the seed-dir root");
+
+        // Promoting it again now reports `alreadySeeded` — the file it just created is a real seed file.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_promote(&["new-one".into(), "--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["alreadySeeded"], serde_json::json!(["new-one"]));
+        assert_eq!(report["promoted"], serde_json::json!([]));
+
+        assert!(cmd_promote(&["new-one".into(), "--dir".into(), dir.clone()]).is_err(), "--seed-dir is required");
+        assert!(cmd_promote(&["--seed-dir".into(), seed_s.clone(), "--dir".into(), dir.clone()]).is_err(), "at least one id is required");
+
+        let _ = std::fs::remove_dir_all(&seed);
+    }
+
     /// `write-gate-blind-to-merge-writes` — the page gate must judge what will be STORED.
     ///
     /// A write MERGES by default (#4197), so the ordinary payload is `{id, srcText}` and carries no
@@ -8299,7 +8526,7 @@ export const P = () => <X />;"
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "import",
+                "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "promote", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
