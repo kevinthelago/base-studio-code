@@ -25,6 +25,15 @@ export interface ProjectsState {
   // re-scoped it on a tab change, because a single value has nothing to re-scope.
   glanceDrill: Record<string, string | null>;
   setGlanceDrill: (tab: string, id: string | null) => void;
+  // The graph's PAN/ZOOM per Glance tab (`each-glance-tab-remembers-its-own-viewport`). Recorded when
+  // you leave a tab and restored when you come back, so a tab keeps the place you left it in rather
+  // than inheriting the previous tab's transform — one viewport instance serves every tab, so without
+  // this a switch lands you at whatever position the other graph was at.
+  //
+  // Transient like `glanceDrill`, and written only on a tab SWITCH — never per pan frame, which would
+  // put a store write on every mousemove.
+  glanceView: Record<string, { tx: number; ty: number; scale: number }>;
+  setGlanceView: (tab: string, view: { tx: number; ty: number; scale: number }) => void;
   // Verify-preview (#2623, transient): the PreviewSource the verify-build produced per project (what the
   // graph's preview node renders), and whether a build is in flight. Not persisted — a served preview
   // URL dies with its process, so it's re-built on demand.

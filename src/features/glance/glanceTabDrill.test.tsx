@@ -91,3 +91,28 @@ describe("the tab a drill belongs to is the tab that shows it", () => {
       ).toBeTruthy());
   });
 });
+
+describe("each tab remembers its own graph position", () => {
+  // THE BUG: one `useGraphViewport` instance serves every Glance tab, so a switch applied the outgoing
+  // tab's transform to the incoming graph and you landed somewhere arbitrary. Nothing recorded it.
+  //
+  // Asserted on the STORE, because the leak is a state-shape property — one view cannot hold two tabs'
+  // positions. The render path is covered by the sibling case above; what matters here is that leaving
+  // a tab records where you were and that another tab cannot overwrite it.
+  it("keeps a position per tab", () => {
+    useAppStore.setState({ glanceView: {} });
+    useAppStore.getState().setGlanceView(FINANCE, { tx: -100, ty: -50, scale: 1.4 });
+    useAppStore.getState().setGlanceView(KITCHEN, { tx: 20, ty: 30, scale: 0.6 });
+    const v = useAppStore.getState().glanceView;
+    expect(v[FINANCE]).toEqual({ tx: -100, ty: -50, scale: 1.4 });
+    expect(v[KITCHEN], "kitchen must not inherit finance's transform").toEqual({ tx: 20, ty: 30, scale: 0.6 });
+  });
+
+  it("has NO recorded position for a tab never visited — the signal to fit it", () => {
+    // `undefined` is load-bearing: it is what tells the workspace to FIT a graph the user has not
+    // looked at yet, rather than dropping them at another tab's coordinates.
+    useAppStore.setState({ glanceView: {} });
+    useAppStore.getState().setGlanceView(FINANCE, { tx: 1, ty: 2, scale: 1 });
+    expect(useAppStore.getState().glanceView[KITCHEN]).toBeUndefined();
+  });
+});
