@@ -436,8 +436,44 @@ fn apply_permission_posture(config: &mut serde_json::Value, bypass: bool, cwd: &
 /// whose command is the bundled `bsc` binary. A third-party entry stays unlisted and still prompts,
 /// which is the property worth keeping.
 fn enabled_mcp_names(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Vec<String> {
-    let doc = crate::platform::fsx::read_json_object_or_default(&root.join(".mcp.json"));
-    enabled_mcp_names_from(&doc, mcp_servers, crate::console::pty::bsc_bin_path().as_deref())
+    enabled_mcp_names_from(
+        &mcp_json_docs_from(root),
+        mcp_servers,
+        crate::console::pty::bsc_bin_path().as_deref(),
+    )
+}
+
+/// Every `.mcp.json` a session at `root` is subject to — its OWN, then each ancestor's, nearest first.
+///
+/// # Why ancestors
+///
+/// Claude discovers `.mcp.json` by walking UP from the cwd, and the trust record has to cover what it
+/// will actually find. The first version of this fix read only `root/.mcp.json` and so computed
+/// NOTHING for a session whose directory has no file of its own — which is precisely the case that
+/// was broken. Measured: `algorithms-studio/python` has no `.mcp.json`, its parent
+/// `algorithms-studio/.mcp.json` holds exactly `[Compliance, Research]`, and those are the two names
+/// Claude's approval modal listed in that cwd. The per-technology studios split off their parent and
+/// four of them (`algorithms-studio/{python,rust}`, `sound-studio`, `integration-studio`) inherit
+/// rather than own.
+///
+/// # Why the walk is unbounded
+///
+/// It stops at the filesystem root and reads nothing else, because the DEPTH is not what makes this
+/// safe — [`app_managed_mcp_server`] is. Only a server whose command is the bundled `bsc` binary is
+/// ever trusted, so a stranger's `.mcp.json` twelve levels up contributes nothing no matter how far
+/// the walk goes. Bounding it by directory instead would be a second, weaker rule that has to be kept
+/// in step with the first.
+fn mcp_json_docs_from(root: &std::path::Path) -> Vec<serde_json::Value> {
+    let mut docs = Vec::new();
+    let mut dir = Some(root);
+    while let Some(d) = dir {
+        let p = d.join(".mcp.json");
+        if p.is_file() {
+            docs.push(crate::platform::fsx::read_json_object_or_default(&p));
+        }
+        dir = d.parent();
+    }
+    docs
 }
 
 /// The pure half — the decision, with the two things it reads from the world injected.
@@ -448,12 +484,16 @@ fn enabled_mcp_names(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Ve
 /// sees-less this repo keeps getting caught by — the first draft of that test skipped silently and it
 /// took an explicit `eprintln!` to notice.
 fn enabled_mcp_names_from(
-    doc: &serde_json::Value,
+    docs: &[serde_json::Value],
     mcp_servers: &[McpServerCfg],
     app_bin: Option<&std::path::Path>,
 ) -> Vec<String> {
     let mut names: Vec<String> = mcp_servers.iter().map(|m| m.name.clone()).collect();
-    if let Some(on_disk) = doc.get("mcpServers").and_then(|v| v.as_object()) {
+    // NEAREST FILE WINS, which is why this is a first-seen union rather than a merge: a name defined
+    // in both the session's own file and an ancestor's is ONE server as far as Claude is concerned, and
+    // listing it twice would be a second answer to the same question.
+    for doc in docs {
+        let Some(on_disk) = doc.get("mcpServers").and_then(|v| v.as_object()) else { continue };
         for (name, cfg) in on_disk {
             if names.iter().any(|n| n == name) {
                 continue;
@@ -1091,7 +1131,7 @@ mod tests {
         }});
 
         // The launch that used to break it: nothing resolved, so the old code removed the key.
-        let names = enabled_mcp_names_from(&doc, &[], Some(bin));
+        let names = enabled_mcp_names_from(std::slice::from_ref(&doc), &[], Some(bin));
 
         assert!(
             names.contains(&"Compliance".to_string()) && names.contains(&"Research".to_string()),
@@ -1115,7 +1155,7 @@ mod tests {
         let doc = serde_json::json!({ "mcpServers": {
             "Compliance": { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "compliance"] },
         }});
-        assert!(enabled_mcp_names_from(&doc, &[], None).is_empty());
+        assert!(enabled_mcp_names_from(std::slice::from_ref(&doc), &[], None).is_empty());
     }
 
     /// The resolved list still leads, and a server in BOTH is listed once — the enabled set is a
@@ -1130,7 +1170,59 @@ mod tests {
             name: "Compliance".into(), transport: "stdio".into(),
             command: Some("/opt/bsc/bin/bsc".into()), args: vec![], url: None, env: vec![],
         }];
-        assert_eq!(enabled_mcp_names_from(&doc, &resolved, Some(bin)), vec!["Compliance".to_string()]);
+        assert_eq!(enabled_mcp_names_from(std::slice::from_ref(&doc), &resolved, Some(bin)), vec!["Compliance".to_string()]);
+    }
+
+    /// THE HOLE IN THE FIRST FIX, and the reason the modal survived it. Claude walks UP for
+    /// `.mcp.json`, so a session whose own directory has none is still subject to its parent's — and
+    /// the first version read only the session's own file, computing NOTHING for exactly that case.
+    ///
+    /// Measured: `algorithms-studio/python` has no `.mcp.json`; its parent's holds
+    /// `[Compliance, Research]`; those are the two names Claude's modal listed in that cwd. Four of
+    /// the per-technology studios inherit rather than own.
+    #[test]
+    fn a_session_with_no_file_of_its_own_still_trusts_its_ancestors() {
+        let bin = std::path::Path::new("/opt/bsc/bin/bsc");
+        // Nearest first, exactly as the walk yields them: the session's own dir (nothing), then the
+        // parent that actually declares the servers.
+        let docs = vec![
+            serde_json::json!({}),
+            serde_json::json!({ "mcpServers": {
+                "Compliance": { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "compliance"] },
+                "Research":   { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "research"] },
+            }}),
+        ];
+        let names = enabled_mcp_names_from(&docs, &[], Some(bin));
+        assert!(
+            names.contains(&"Compliance".to_string()) && names.contains(&"Research".to_string()),
+            "an inherited server must be trusted too, or the studios that own no file keep blocking on \
+             the approval modal: {names:?}",
+        );
+    }
+
+    /// A name in both the session's file and an ancestor's is ONE server to Claude, so it is listed
+    /// once. A duplicate would be a second answer to the same question.
+    #[test]
+    fn a_server_declared_at_two_levels_is_listed_once() {
+        let bin = std::path::Path::new("/opt/bsc/bin/bsc");
+        let entry = serde_json::json!({ "mcpServers": {
+            "Compliance": { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "compliance"] },
+        }});
+        let docs = vec![entry.clone(), entry];
+        assert_eq!(enabled_mcp_names_from(&docs, &[], Some(bin)), vec!["Compliance".to_string()]);
+    }
+
+    /// The walk being unbounded is safe because DEPTH is not what gates it — `app_managed_mcp_server`
+    /// is. A stranger's `.mcp.json` any number of levels up contributes nothing.
+    #[test]
+    fn an_ancestors_third_party_server_is_never_trusted_however_far_up_it_is() {
+        let bin = std::path::Path::new("/opt/bsc/bin/bsc");
+        let docs = vec![
+            serde_json::json!({}),
+            serde_json::json!({ "mcpServers": { "Evil": { "command": "npx", "args": ["-y", "@x/y"] } } }),
+            serde_json::json!({ "mcpServers": { "AlsoEvil": { "command": "/usr/bin/sh" } } }),
+        ];
+        assert!(enabled_mcp_names_from(&docs, &[], Some(bin)).is_empty());
     }
 
     /// Removal still lands. The fix must not turn `enabledMcpjsonServers` into an append-only list —
