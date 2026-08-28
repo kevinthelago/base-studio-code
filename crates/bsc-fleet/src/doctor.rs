@@ -96,8 +96,14 @@ pub fn findings_for(pane_id: &str, facts: Option<WorktreeFacts>) -> Vec<Finding>
             pane_id: pane_id.to_string(),
             category: "no-gate",
             detail: "the worktree has no .claude/settings.json, so this pane has no role gate and no shell allow-list".into(),
-            consequence: "a launch or wake of this pane is REFUSED (#1819) — and a wake kills the session before it finds out",
-            fix: "relaunch the pane from its project so the settings are written, then wake it",
+            // A direct launch still refuses outright (#1819, `launch_gate_refusal`). A WAKE no longer
+            // does: since #150 the wake precheck (`wake_precheck_refusal`) admits exactly this
+            // recoverable shape — a real worktree with no gate file yet — because the imminent
+            // remount's own `ensure_session_settings` writes it before `pty_create` runs. Naming that
+            // is the point: the OLD wording here ("a wake kills the session before it finds out") is
+            // what sent request #142 and #165 looking for a scoped repair verb that already existed.
+            consequence: "a direct launch of this pane is REFUSED (#1819); a wake no longer is — since #150 its own remount writes the missing file",
+            fix: "bsc fleet provision <projectKey> --stream <id> (sugar for bsc fleet wake <pane-id>) — no --force, no other pane touched",
         });
     }
 
@@ -184,8 +190,15 @@ mod tests {
         // The consequence is the half that makes anyone act — "no settings.json" alone reads as
         // tidiness, and this sat unnoticed through four worktrees for exactly that reason.
         assert!(f[0].consequence.contains("REFUSED"));
-        assert!(f[0].consequence.contains("kills the session"));
-        assert!(!f[0].fix.is_empty(), "a finding with no move is a complaint");
+        // #150 relaxed the wake-time precheck for exactly this shape, so a wake now REPAIRS it
+        // instead of killing it blind — the consequence names that (request #142/#165 were both
+        // filed because the old wording ("a wake kills the session before it finds out") hid that a
+        // wake already fixes this, so nobody reached for it).
+        assert!(f[0].consequence.contains("wake"));
+        // The fix names the scoped, discoverable repair (request #165) rather than the old
+        // "relaunch the pane from its project", which read as the disruptive whole-fleet path.
+        assert!(f[0].fix.contains("bsc fleet provision"));
+        assert!(f[0].fix.contains("--stream"));
     }
 
     #[test]
