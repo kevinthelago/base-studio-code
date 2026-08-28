@@ -3,7 +3,8 @@
   "_amendments": [
     "the-architect-runs-discovery-and-spawns-a-director (2026-08-27): architect.allow += `bsc plan classify` and `bsc fleet directors`. DELIBERATE, and both were already the architect's documented job. `bsc plan classify` records the usesGithub DECISION — the architect is the only tier that talks to the user, so it is the only tier that can take it; its own charter instructed it twice while the floor denied it. `bsc fleet directors` is the pre-brief check the protocol already told it to run: the emitted rules are Bash(bsc fleet director) and Bash(bsc fleet director *), and the `*` sits behind a literal space, so `directors` matched NEITHER and was refused. No access axis moved — github/git/code/net/ui all stay `none` — and `bsc plan` / `bsc fleet` bare prefixes remain ungranted.",
     "the-debug-session-is-for-the-whole-app-not-just-bsc-ui (2026-08-27): debugger.github write -> read. A NARROWING, and it closes a prose/permission split rather than changing policy: the debug session works base-studio-code, which is local-first (CLAUDE.md: reads are fine, `gh issue create/close/edit`, `gh pr create/merge` and `git push` are not), and its own charter now says so explicitly. Leaving the grant would repeat the architect defect — instructions forbidding what the floor permits. Nothing depended on it: no test asserted debugger github write, and `issuer`/`triage` (the genuinely GitHub-facing roles) keep theirs. Every other axis is unchanged; the debugger stays full-capability on git/code/ui, which is what the job needs.",
-    "a-studios-floor-denies-what-its-charter-instructs (2026-08-28): every confined studio gains `bsc persona whatami`; every persona that can FILE a request gains `bsc request get`; and every persona whose CHARTER instructs `bsc session ask` gains that exact prefix. A WIDENING, and deliberate: it closes the same prose/permission split the architect amendment above records, with the sign flipped — a studio was told to read its request replies, to put a judgement call to a sibling studio, and could do neither. Measured across all five studios plus the curator; the grants are per-verb, never a bare noun, so `bsc session` (start/stop) and `bsc persona` (rewriting identities) stay the architect's alone. ONE CONSEQUENCE WORTH NAMING: `bsc session ask` to a STOPPED target starts it, because delivery wakes a session to hand it the request — that is inside the closed-set mitigation (the target is an id from a registry the app owns) and is strictly narrower than the architect's existing grant. The `_amendments` array reflows to multi-line here because it was hand-collapsed onto one; nothing else in the file changes shape."
+    "a-studios-floor-denies-what-its-charter-instructs (2026-08-28): every confined studio gains `bsc persona whatami`; every persona that can FILE a request gains `bsc request get`; and every persona whose CHARTER instructs `bsc session ask` gains that exact prefix. A WIDENING, and deliberate: it closes the same prose/permission split the architect amendment above records, with the sign flipped — a studio was told to read its request replies, to put a judgement call to a sibling studio, and could do neither. Measured across all five studios plus the curator; the grants are per-verb, never a bare noun, so `bsc session` (start/stop) and `bsc persona` (rewriting identities) stay the architect's alone. ONE CONSEQUENCE WORTH NAMING: `bsc session ask` to a STOPPED target starts it, because delivery wakes a session to hand it the request — that is inside the closed-set mitigation (the target is an id from a registry the app owns) and is strictly narrower than the architect's existing grant. The `_amendments` array reflows to multi-line here because it was hand-collapsed onto one; nothing else in the file changes shape.",
+    "an-ask-is-a-loop-again-and-every-turn-is-delivered (2026-08-28): every studio instructed to reply gains `bsc session reply` — the verb that posts a turn into its ask loop AND delivers it to the other participant. It is what lets a studio PAUSE AND ASK rather than guess or stop, which is the reason the loop came back. Per-verb as before; `bsc session` start/stop stays the architect's."
   ],
   "roles": {
     "architect": {
@@ -83,6 +84,7 @@
         "bsc request new",
         "bsc request list",
         "bsc session ask",
+        "bsc session reply",
         "bsc request get",
         "bsc persona whatami"
       ]
@@ -143,6 +145,7 @@
         "bsc request new",
         "bsc request list",
         "bsc session ask",
+        "bsc session reply",
         "bsc request get",
         "bsc persona whatami"
       ]
@@ -186,6 +189,7 @@
         "bsc request new",
         "bsc request list",
         "bsc session ask",
+        "bsc session reply",
         "bsc request get",
         "bsc persona whatami"
       ]
@@ -248,6 +252,7 @@
         "bsc request new",
         "bsc request list",
         "bsc session ask",
+        "bsc session reply",
         "bsc request get",
         "bsc persona whatami"
       ]

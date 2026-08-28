@@ -709,10 +709,19 @@
                 md.contains("--on-busy interrupt"),
                 "{rel} must explain the interrupt route, or a cut-off turn reads as a failure:\n{md}",
             );
-            // And the negative, so a session does not go hunting for a queue that does not exist.
+            // THE LOOP, and the verb that continues it. A request now carries the exchange it belongs
+            // to (#an-ask-is-a-loop-again-and-every-turn-is-delivered), and a charter that describes
+            // only the arrival leaves the session holding an answer it cannot send.
             assert!(
-                md.contains("nothing to poll"),
-                "{rel} must say there is nothing to poll — the surface it used to be told to check is gone:\n{md}",
+                md.contains("bsc session reply"),
+                "{rel} must name the verb that answers, or the reply has nowhere to go:\n{md}",
+            );
+            // ...and the reason the loop came back at all: a studio that cannot finish must be able to
+            // ASK rather than guess or stop. Said in the imperative, because the old prose told it the
+            // opposite — that nothing was coming back.
+            assert!(
+                md.contains("YOU DO NOT HAVE TO GUESS"),
+                "{rel} must tell the session it may pause and ask instead of guessing:\n{md}",
             );
             // A charter must NOT still send the session to the retired discovery surface.
             assert!(
