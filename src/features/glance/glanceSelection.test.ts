@@ -19,9 +19,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
 const CSS = readFileSync("src/features/glance/glance.css", "utf8");
+const CANVAS_CSS = readFileSync("src/shared/ui/layouts/graphCanvas.css", "utf8");
 /** The shared canvas as it SHIPS — a record, so the packaged copy is what actually mounts. */
 const CANVAS: string = JSON.parse(
   readFileSync("src-tauri/data/components/app/shared/ui/ui-graph-canvas.json", "utf8"),
+).srcText;
+/** Likewise the rail: `.graph-rail` has to be on the element the CSS targets, or the rule hits nothing. */
+const RAIL: string = JSON.parse(
+  readFileSync("src-tauri/data/components/app/shared/ui/ui-graph-rail.json", "utf8"),
 ).srcText;
 
 describe("graph selection (#2527 + the terminal carve-out)", () => {
@@ -56,5 +61,43 @@ describe("graph selection (#2527 + the terminal carve-out)", () => {
     const rule = CSS.slice(CSS.indexOf(".glance-card .xterm"));
     const selector = rule.slice(0, rule.indexOf("{"));
     expect(selector).toContain(".xterm");
+  });
+});
+
+// The LEFT RAIL, added after the fact. 3005dc42 deliberately left rail/toolbar/inspector selectable;
+// the maintainer then asked for the left pane to be included. Only the LEFT one — the toolbar and the
+// right-hand inspector keep the original behaviour, so this suite has to pin the boundary too, or
+// "include the left pane" quietly becomes "include everything" on the next edit.
+describe("the graph's left rail is not selectable either", () => {
+  it("blocks selection across the rail", () => {
+    expect(CANVAS_CSS).toMatch(/\.graph-rail\s*\{[^}]*user-select:\s*none/);
+  });
+
+  it("carries the -webkit- prefix, or it is inert on the platform this ships on", () => {
+    expect(CANVAS_CSS).toMatch(/\.graph-rail\s*\{[^}]*-webkit-user-select:\s*none/);
+  });
+
+  it("carves the form fields back out — the rail LEADS with a search box", () => {
+    // Glance puts a SearchField in the rail's `tools` slot. Under a `none` ancestor WebKit makes the
+    // text inside an input unselectable: no caret drag, no copying out of your own search box.
+    expect(CANVAS_CSS).toMatch(/\.graph-rail input[^{]*\{[^}]*user-select:\s*text/);
+    expect(CANVAS_CSS).toMatch(/\.graph-rail input[^{]*\{[^}]*-webkit-user-select:\s*text/);
+  });
+
+  it("uses `text`, not `auto`, for that carve-out — the same trap as the terminal's", () => {
+    const rule = CANVAS_CSS.slice(CANVAS_CSS.indexOf(".graph-rail input"));
+    expect(rule.slice(0, rule.indexOf("}"))).not.toMatch(/user-select:\s*auto/);
+  });
+
+  it("puts the class on GraphRail's own root, not on a GraphCanvas wrapper", () => {
+    // GraphCanvas renders `rail` BARE unless `railResizable` is set, and only wraps it in a Box when it
+    // is. A wrapper-side rule would cover Glance (resizable) and silently miss every other graph.
+    expect(RAIL).toMatch(/className="graph-rail"/);
+  });
+
+  it("does NOT widen to the toolbar or the right-hand inspector", () => {
+    // Those two stay selectable on purpose — 3005dc42's reasoning holds for them, and only the left
+    // pane was asked for. A `.graph-inspector`/toolbar rule appearing here is scope creep, not a fix.
+    expect(CANVAS_CSS).not.toMatch(/\.graph-inspector\s*\{[^}]*user-select:\s*none/);
   });
 });
