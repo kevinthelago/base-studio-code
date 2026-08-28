@@ -518,6 +518,12 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const effectiveDrafts = useMemo(() => mergeDbIntoDrafts(drafts, dbProjects), [drafts, dbProjects]);
   // #architects-own-projects — which architect OWNS each project, straight off the durable row. The
   // ONLY writer is `bsc project architect set`; nothing in the UI edits it, so this is a pure read.
+  // Which NETWORK each project belongs to, straight off the durable row like the architect below.
+  // Written only by `bsc project network set`; nothing else edits it, so this is a pure read.
+  const networkByKey = useMemo(
+    () => Object.fromEntries(dbProjects.filter((r) => r.network).map((r) => [r.key, r.network as string])),
+    [dbProjects],
+  );
   const architectByKey = useMemo(
     () => Object.fromEntries(dbProjects.filter((r) => r.architect).map((r) => [r.key, r.architect as string])),
     [dbProjects],
@@ -550,6 +556,10 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
                 // #architects-own-projects — absent ⇒ unassigned, which the graph resolves against
                 // the architect set (sole architect adopts it; several ⇒ no edge until assigned).
                 architect: architectByKey[p.id],
+                // The NETWORK this project is filed into — what SCOPES L0 to a tab. Absent reads as
+                // unfiled: the project appears in `All projects` and in no network tab, which is the
+                // honest answer rather than filing it somewhere it was never put.
+                network: networkByKey[p.id],
               })),
               triagedProjects,
             ), archivedKeys),

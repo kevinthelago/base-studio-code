@@ -21,3 +21,7 @@ name = "bsc_network"
 bsc-json-store = { path = "../bsc-json-store" }
 # Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# The ONE home-dir resolver (#1646), for the custom `new`/`rename` verbs.
+bsc-util = { path = "../bsc-util" }
+# `new`/`rename` compose and patch the stored row without a typed model.
+serde_json = "1"
