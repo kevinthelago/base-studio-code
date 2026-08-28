@@ -789,19 +789,49 @@ pub mod deliver {
     pub const INTERRUPT_KEY: &str = "\x1b";
     pub const INTERRUPT_SETTLE_MS: u64 = 250;
 
-    /// The bytes that deliver `text` to an agent sitting at its prompt.
+    /// The bytes that deliver `text` to an agent sitting at its prompt — WITHOUT its terminator.
     ///
-    /// The trailing CR is what SUBMITS the line — without it the request sits in the agent's input box
-    /// unsent, which looks identical to a delivery that worked right up until nobody answers. Any interior
-    /// CR/LF is flattened to a space for the same reason: a multi-line request would submit at its first
-    /// newline and send the remainder as a second, truncated turn.
+    /// Any interior CR/LF is flattened to a space: a multi-line request would otherwise submit at its
+    /// first newline and send the remainder as a second, truncated turn.
+    ///
+    /// **The Enter is deliberately not here — see [`SUBMIT_KEY`].** It used to be, as a trailing `\r`
+    /// on this string, and that is exactly why a delivered prompt sat in the input box unsent.
     pub fn submission(text: &str) -> String {
-        let flattened: String = text
-            .chars()
+        text.chars()
             .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
-            .collect();
-        format!("{}\r", flattened.trim())
+            .collect::<String>()
+            .trim()
+            .to_string()
     }
+
+    /// The keystroke that SUBMITS a delivered request, written SEPARATELY from the text.
+    ///
+    /// # Why it cannot ride on the text
+    ///
+    /// One `write_pane` call puts the text and the terminator in a single read on the PTY, and Claude's
+    /// TUI reads a large single-read burst as a PASTE — inside which a carriage return is a newline in
+    /// the buffer, not a submit. The request is delivered and never sent, which looks identical to a
+    /// working delivery right up until nobody answers.
+    ///
+    /// MEASURED by replaying the app's exact byte pattern against a real PTY master. SIZE is the
+    /// trigger, which is why every short probe submitted happily and only a real director prompt showed
+    /// it:
+    ///
+    /// ```text
+    /// 494 chars, `text + \r` in ONE write   -> text sits in the input, no turn runs
+    /// 494 chars, `text`, 150ms, then `\r`   -> the turn runs and the model answers
+    /// ```
+    ///
+    /// The interrupt route above already separates its keystroke from the text for a kindred reason;
+    /// this is the same move at the other end of the delivery.
+    pub const SUBMIT_KEY: &str = "\r";
+
+    /// How long to let the pasted text settle before the Enter, so the two land in different reads.
+    ///
+    /// 150ms is the measured-good value, not a guess at a threshold — the TUI's paste heuristic is
+    /// its own business and may change, so the margin is deliberately generous relative to the cost
+    /// (a delivery already crossed a process boundary to get here).
+    pub const SUBMIT_SETTLE_MS: u64 = 150;
 
     #[cfg(test)]
         mod tests {
@@ -854,13 +884,23 @@ pub mod deliver {
             assert!(!Action::LeaveWorking.writes_into_a_live_session());
         }
 
+        /// THE PROMPT THAT ARRIVED AND WAS NEVER SENT. The terminator used to be fused onto this
+        /// string, so one `write_pane` put text and Enter in a single read — which Claude's TUI reads
+        /// as a PASTE, and a carriage return inside a paste is a newline in the buffer. The request
+        /// appeared in the input box and no turn ever ran.
+        ///
+        /// MEASURED against a real PTY master with the app's exact byte pattern: 494 chars plus `\r`
+        /// in ONE write does not submit; the same text with the `\r` 150ms later does. Short probes
+        /// submit either way, which is why only a real director prompt ever showed it.
         #[test]
-        fn a_submission_ends_in_a_carriage_return_or_it_was_never_sent() {
-            // Without the CR the text sits in the agent's input box unsent — indistinguishable from a
-            // working delivery until nobody ever answers.
+        fn the_submission_carries_no_terminator_of_its_own() {
             let s = submission("review the kickoff");
-            assert!(s.ends_with('\r'), "{s:?}");
-            assert_eq!(s, "review the kickoff\r");
+            assert_eq!(s, "review the kickoff");
+            assert!(!s.ends_with('\r'), "the Enter is a SEPARATE write: {s:?}");
+            // ...and the key that submits it is its own thing, so the two cannot be re-fused by
+            // accident.
+            assert_eq!(SUBMIT_KEY, "\r");
+            const { assert!(SUBMIT_SETTLE_MS > 0, "they must land in different reads") };
         }
 
         #[test]
@@ -868,15 +908,15 @@ pub mod deliver {
             // A multi-line request would submit at its FIRST newline and send the rest as a second,
             // truncated turn — the receiving agent would answer half a question.
             let s = submission("line one\nline two\r\nline three");
-            assert_eq!(s, "line one line two  line three\r");
-            assert_eq!(s.matches('\r').count(), 1, "exactly one submission");
+            assert_eq!(s, "line one line two  line three");
+            assert_eq!(s.matches('\r').count(), 0, "no terminator anywhere in the text");
         }
 
         #[test]
         fn surrounding_whitespace_is_trimmed_but_the_text_is_otherwise_verbatim() {
-            assert_eq!(submission("  spaced  "), "spaced\r");
+            assert_eq!(submission("  spaced  "), "spaced");
             // Not mangled: the request is prose the receiving agent has to read.
-            assert_eq!(submission("use `bsc ui set` — and check --coverage"), "use `bsc ui set` — and check --coverage\r");
+            assert_eq!(submission("use `bsc ui set` — and check --coverage"), "use `bsc ui set` — and check --coverage");
         }
     }
 }
