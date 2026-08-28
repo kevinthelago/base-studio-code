@@ -266,7 +266,37 @@ recreate it in, or a stream neither the roster nor plan.db names — reports an 
 naming which of the two it was. The wake path kills first, so a false success would leave a dead worker
 behind a caller that believes it is running.
 
+THIS IS ALSO THE FIX FOR A WORKTREE WITH NO `.claude/settings.json` — `bsc fleet doctor`'s `no-gate`
+finding. The imminent remount this command triggers writes that file before the pane launches, so
+waking a stream in that state repairs it — no `--force`, no whole-fleet relaunch, no other pane
+touched. `bsc fleet provision <projectKey> --stream <id>` is the same call under a name built for
+exactly that repair.
+
 Requires the desktop app: waking is frontend state, so only the app can do it.",
+}, CmdDoc {
+    name: "provision",
+    summary: "rewrite ONE stream's worktree settings.json and bring its pane up — no whole-fleet --force",
+    usage: "\
+USAGE:
+  bsc fleet provision <projectKey> --stream <id> [--prompt <text>] [--force] [--json|--pretty]
+
+Repairs `bsc fleet doctor`'s `no-gate` finding — a worktree with no `.claude/settings.json`, so its
+pane has no role gate and no shell allow-list (#1819) — for exactly ONE stream, by project key and
+stream id rather than a pre-built pane id.
+
+THIS IS SUGAR OVER `bsc fleet wake <projectKey>:<id>`, not a second launch path: it builds the same
+pane id and rides the identical wake round trip, so the settings are written by the one place that
+already writes them. Reach for `provision` when a stream's project+id is what you have (a doctor
+finding, a plan row); reach for `wake` when you already have the pane id.
+
+NO WHOLE-FLEET DISRUPTION. `bsc fleet start` refuses on an already-running fleet without `--force`,
+and `--force` relaunches every other live pane just to repair one — this touches only the named
+stream's pane. See `bsc fleet wake help` for the busy/disabled/never-launched semantics this inherits
+verbatim (REFUSES a BUSY pane unless --force; a DISABLED pane is REVIVED; a never-launched stream is
+started fresh).
+
+Requires the desktop app, for the same reason `wake` does: writing the settings happens at the pane's
+imminent remount, which is frontend state.",
 }];
 
 struct Args {
@@ -286,17 +316,21 @@ struct Args {
     source: Option<String>,
     /// `clone`: restrict to these repos instead of every one the plan links.
     repos: Vec<String>,
+    /// `provision`: the stream id to re-provision, combined with the projectKey positional into a
+    /// pane id — the same identity `wake` takes directly.
+    stream: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), stream: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--roster" => a.roster = Some(it.next().ok_or("--roster needs a path")?),
+            "--stream" => a.stream = Some(it.next().ok_or("--stream needs a stream id")?),
             "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
@@ -361,6 +395,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "director" => cmd_director(&args, prog),
         "start" => cmd_start(&args, prog),
         "wake" => cmd_wake(&args, prog),
+        "provision" => cmd_provision(&args, prog),
         "clone" => cmd_clone(&args, prog),
         "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
@@ -569,6 +604,56 @@ fn cmd_wake(args: &Args, prog: &str) -> Result<(), String> {
         format!("woke {}{note}", res.pane_id)
     });
     Ok(())
+}
+
+/// `bsc fleet provision <projectKey> --stream <id>` (request #165) — the scoped, discoverable name
+/// for exactly what `bsc fleet wake <projectKey>:<id>` already does: rewrite ONE stream's worktree
+/// `.claude/settings.json` and bring its pane up, without a whole-fleet `--force` relaunch and
+/// without touching any other pane.
+///
+/// DELIBERATELY NOT A SECOND LAUNCH PATH — this composes the same `pane_id` `wake` takes and rides
+/// the identical [`WAKE_KIND`] round trip, so there is exactly one place that resolves a stream to a
+/// pane and writes its gate. Request #165 was filed because nothing said `wake` already does this
+/// (`bsc fleet doctor`'s `no-gate` finding read as "relaunch the pane from its project", which sounds
+/// like the disruptive whole-fleet `--force` path) — `provision` exists for discoverability, not
+/// because `wake` was missing a capability.
+fn cmd_provision(args: &Args, prog: &str) -> Result<(), String> {
+    let key = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let stream = args.stream.as_deref().unwrap_or("");
+    let req = provision_wake_request(key, stream, args.prompt.as_deref().unwrap_or(""), args.force)
+        .map_err(|reason| {
+            format!(
+                "usage: {prog} provision <projectKey> --stream <id> [--prompt <text>] [--force]\n\n\
+                 {reason} — `bsc plan fleet get` shows a project's stream ids."
+            )
+        })?;
+    let timeout = args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+    let res: WakeResult = ask(WAKE_KIND, &req, timeout)?;
+    bsc_cli_util::emit(args.pretty, args.json, &res, || {
+        let note = if res.was_busy { " (interrupted a BUSY pane)" } else { "" };
+        format!("provisioned {} — its .claude/settings.json is (re)written and the session is up{note}", res.pane_id)
+    });
+    Ok(())
+}
+
+/// The [`WakeRequest`] `provision <projectKey> --stream <id>` sends — pulled out of [`cmd_provision`]
+/// so a test can check exactly what pane id and payload `wake` receives without going through the
+/// app-channel transport `ask` opens.
+///
+/// `key:stream` is the SAME pane-id grammar `wake` takes directly (`<projectKey>:<streamId>`,
+/// `bsc_fleet::director_pane_id`'s sibling for a worker) — composed here rather than re-derived by
+/// `wake`, so `provision` and a hand-built `wake <pane-id>` can never disagree about the pane a given
+/// project+stream resolves to.
+fn provision_wake_request(key: &str, stream: &str, prompt: &str, force: bool) -> Result<WakeRequest, &'static str> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("needs a project key");
+    }
+    let stream = stream.trim();
+    if stream.is_empty() {
+        return Err("needs --stream <id>");
+    }
+    Ok(WakeRequest { pane_id: format!("{key}:{stream}"), prompt: prompt.to_string(), force })
 }
 
 /// `bsc fleet director new <projectKey>` — the architect's create into the project tier.
@@ -1287,6 +1372,52 @@ mod tests {
         let a = parse_args(vec!["list".into(), "--db".into(), "/p.db".into()]).unwrap();
         assert_eq!(a.db.as_deref(), Some("/p.db"));
         assert!(parse_args(vec!["--db".into()]).is_err());
+
+        // --stream (`provision`'s own flag) needs a value, same as --db/--roster.
+        let a = parse_args(vec!["provision".into(), "k".into(), "--stream".into(), "s1".into()]).unwrap();
+        assert_eq!(a.stream.as_deref(), Some("s1"));
+        assert!(parse_args(vec!["--stream".into()]).is_err());
+    }
+
+    /// `provision <projectKey> --stream <id>` composes the SAME `<projectKey>:<streamId>` pane id a
+    /// hand-built `wake` call would use — the whole point of it being sugar rather than a second path.
+    #[test]
+    fn provision_composes_the_same_pane_id_wake_takes_directly() {
+        let req = provision_wake_request("studio-code", "mobile-kit-mirror", "", false).unwrap();
+        assert_eq!(req.pane_id, "studio-code:mobile-kit-mirror");
+        assert_eq!(req.prompt, "");
+        assert!(!req.force);
+    }
+
+    #[test]
+    fn provision_carries_prompt_and_force_through_like_wake_does() {
+        let req = provision_wake_request("k", "s1", "go", true).unwrap();
+        assert_eq!(req.prompt, "go");
+        assert!(req.force);
+    }
+
+    /// A `--stream` (or leading edge/trailing) space is trimmed the same way `cmd_start`/`cmd_wake`
+    /// trim their positional — `bsc fleet provision "k " --stream " s1 "` must not mint a pane id with
+    /// stray whitespace baked in.
+    #[test]
+    fn provision_trims_both_the_project_key_and_the_stream_id() {
+        let req = provision_wake_request(" k ", " s1 ", "", false).unwrap();
+        assert_eq!(req.pane_id, "k:s1");
+    }
+
+    #[test]
+    fn provision_refuses_an_empty_project_key_or_stream_rather_than_minting_a_bogus_pane_id() {
+        assert!(provision_wake_request("", "s1", "", false).is_err());
+        assert!(provision_wake_request("  ", "s1", "", false).is_err());
+        assert!(provision_wake_request("k", "", "", false).is_err());
+        assert!(provision_wake_request("k", "   ", "", false).is_err());
+    }
+
+    /// `bsc fleet help` and `bsc fleet provision help` (`handle_help`) both walk `COMMANDS`, so a
+    /// listed name with no matching `run()` arm — or the reverse — silently strands one of them.
+    #[test]
+    fn provision_is_registered_in_both_the_command_table_and_the_dispatcher() {
+        assert!(COMMANDS.iter().any(|c| c.name == "provision"));
     }
 
     fn args_with(db: Option<&str>, roster: Option<&str>) -> Args {
