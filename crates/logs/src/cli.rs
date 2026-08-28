@@ -145,8 +145,15 @@ The deduped set of panes that self-reported `done` via bsc-done, newest first (#
         usage: "\
 USAGE:
   bsc logs perf [--session <id>] [--since <epochMs>] [--limit N] [--json|--pretty]
+  bsc logs perf growth --session <id> [--since <epochMs>] [--json|--pretty]
 
-Recent process metrics sampled into perf.db (the one binary-SQLite stream): rss, cpu%, threads.",
+Recent process metrics sampled into perf.db (the one binary-SQLite stream): rss, cpu%, threads.
+
+`growth` answers 'is rss growing, and how fast' for ONE session over the window: the first and last
+rss-bearing sample, the delta, and the rate in MB/min — so a leak hunt stops hand-rolling a
+sleep+sqlite3 polling loop to compute the same thing. Fewer than two rss-bearing samples in the
+window reports absence (an explicit 'not enough data' line, or `null` under --json), never a
+fabricated zero rate.",
     },
     CmdDoc {
         name: "summary",
@@ -383,6 +390,26 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let rows = crate::done_panes(&dir);
             emit(a.pretty, a.json, &rows, || rows.join("\n"));
         }
+        // `bsc logs perf growth --session <id>` — one session's RSS growth rate over the window
+        // (#request-159): first/last rss-bearing sample, delta, duration, MB/min. Absence (fewer
+        // than two rss-bearing samples) is reported explicitly, never a fabricated zero rate.
+        "perf" if a.positional.get(1).map(String::as_str) == Some("growth") => {
+            let id = a.session.clone()
+                .ok_or("usage: bsc logs perf growth --session <id> [--since <epochMs>]")?;
+            let growth = perf::perf_growth(&dir.join("perf.db"), &id, a.since);
+            emit(a.pretty, a.json, &growth, || match &growth {
+                Some(g) => format!(
+                    "session\tn\tfrom_mb\tto_mb\tdelta_mb\tduration_s\tmb_per_min\n{}\t{}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.2}",
+                    g.session, g.n,
+                    g.from_bytes as f64 / 1_048_576.0,
+                    g.to_bytes as f64 / 1_048_576.0,
+                    g.delta_bytes as f64 / 1_048_576.0,
+                    g.duration_secs,
+                    g.mb_per_min,
+                ),
+                None => format!("no rate for '{id}': fewer than two rss-bearing samples in this window"),
+            });
+        }
         // Recent perf.db samples (rss/cpu/threads), the one binary-SQLite stream (#1716). perf.db
         // sits in the same log dir; read-only. Honors --session / --since / --limit like every verb.
         "perf" => {
@@ -455,6 +482,41 @@ mod tests {
         assert!(go(vec!["cost", "--full", "--limit", "5"]).is_ok());
         // `tail` with no stream positional is a clear usage error, not a panic.
         assert!(go(vec!["tail"]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn perf_growth_dispatches_and_requires_a_session() {
+        // `bsc logs perf growth` is a sub-verb of `perf`, not its own top-level command — this guards
+        // the `a.positional.get(1) == Some("growth")` dispatch rather than falling through to the
+        // plain `perf` sample listing (#request-159).
+        let d = std::env::temp_dir().join(format!("bsc-logs-cli-growth-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let conn = rusqlite::Connection::open(d.join("perf.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE perf_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL, session_id TEXT NOT NULL,
+                pid INTEGER, rss_bytes INTEGER, cpu_pct REAL, threads INTEGER);
+            INSERT INTO perf_samples (ts, session_id, pid, rss_bytes, cpu_pct, threads)
+                VALUES (0, 'app:webview', 1, 104857600, 1.0, 8),
+                       (60000, 'app:webview', 1, 209715200, 1.0, 8);",
+        )
+        .unwrap();
+        drop(conn);
+        let dir = d.to_string_lossy().into_owned();
+        let go = |v: Vec<&str>| {
+            let mut args: Vec<String> = v.into_iter().map(String::from).collect();
+            args.extend(["--dir".into(), dir.clone()]);
+            run(args, "bsc logs")
+        };
+        // No --session is a usage error, not a panic or a silent empty result.
+        assert!(go(vec!["perf", "growth"]).is_err());
+        // A real window dispatches fine in both lean and --json form.
+        assert!(go(vec!["perf", "growth", "--session", "app:webview"]).is_ok());
+        assert!(go(vec!["perf", "growth", "--session", "app:webview", "--json"]).is_ok());
+        // A session with no (or one) rss-bearing sample dispatches fine too — absence, not an error.
+        assert!(go(vec!["perf", "growth", "--session", "does-not-exist"]).is_ok());
         let _ = std::fs::remove_dir_all(&d);
     }
 
