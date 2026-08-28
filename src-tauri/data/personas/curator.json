@@ -11,7 +11,8 @@
     "ui": "write",
     "allow": [
       "bsc ui",
-      "bsc graph"
+      "bsc graph",
+      "bsc persona whatami"
     ]
   },
   "blurb": "After a change lands, harvests reusable components/algorithms into the shared stores and keeps the library graph minimal — stores only, no code.",

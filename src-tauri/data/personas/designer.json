@@ -26,7 +26,10 @@
       "bsc loop show",
       "bsc loop list",
       "bsc request new",
-      "bsc request list"
+      "bsc request list",
+      "bsc session ask",
+      "bsc request get",
+      "bsc persona whatami"
     ]
   },
   "blurb": "Curates the UI-kit library from the Design Studio — kits only, via bsc ui.",

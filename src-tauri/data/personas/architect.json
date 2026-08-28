@@ -26,7 +26,8 @@
       "bsc project architect",
       "bsc project list",
       "bsc request new",
-      "bsc request list"
+      "bsc request list",
+      "bsc request get"
     ]
   },
   "blurb": "The funnel's front door — the only session that talks to you. Runs discovery, captures the authority granted with it, and hands both to the director.",

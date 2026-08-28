@@ -436,11 +436,11 @@ what the command inside is.
 **Need the same thing for N items? Issue N commands.** Each one is allowed on its own; a loop over them
 is not. This is not a workaround, it is the supported path:
 
-✅ `bsc ui preview-props button --pretty`
-&nbsp;&nbsp;&nbsp;`bsc ui preview-props panel --pretty`
-&nbsp;&nbsp;&nbsp;`bsc ui preview-props field --pretty`  *(…one call per id)*
+✅ `bsc graph impl get quick-sort`
+&nbsp;&nbsp;&nbsp;`bsc graph impl get merge-sort`
+&nbsp;&nbsp;&nbsp;`bsc graph impl get heap-sort`  *(…one call per id)*
 
-❌ `for id in button panel field; do bsc ui preview-props "$id"; done`
+❌ `for id in quick-sort merge-sort heap-sort; do bsc graph impl get "$id"; done`
 
 If N is large enough that repeating feels wrong, that is a **missing batch form** — file it with
 `bsc request new` and pass the loop you wanted to write as `--cmd`. Then carry on with the individual
