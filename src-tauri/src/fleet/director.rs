@@ -212,19 +212,33 @@ mod relocated_tests {
 
         // The VIEW upward — the twin of looking down at its own workers.
         assert!(p.contains("session list"), "the director must be told how to SEE the architect");
-        // The CALL: an answer it can act on this turn.
+        // The DELIVERY: it can put something in front of that session now.
         assert!(
             p.contains("session ask architect"),
-            "the director must be told how to ASK the architect and get an answer back",
+            "the director must be told how to reach the architect",
         );
-        // The CONTRACT: a decision that outlives the turn.
+        // ...and that nothing comes BACK. This assertion inverted with
+        // #the-loop-comes-out-an-ask-is-just-a-delivery: the protocol used to promise "it puts your
+        // question to the architect and RETURNS ITS ANSWER", and it no longer can. The failure worth
+        // naming inverted with it — it used to be reaching for the call when you needed a record; it
+        // is now a director WAITING for an answer that is never coming, which is worse because
+        // waiting looks like progress.
+        assert!(
+            p.contains("IT DOES NOT RETURN AN ANSWER"),
+            "the protocol must say the ask is one-way, or a director blocks on a reply that cannot arrive",
+        );
+        assert!(
+            p.contains("DO NOT WAIT ON IT"),
+            "…in the imperative, because the old prose actively told it to wait",
+        );
+        // The DURABLE one: a decision that outlives the turn.
         assert!(
             p.contains("--to architect"),
             "…and how to file something that must not be lost when its turn ends",
         );
         // The two are for different things, and choosing wrong is the failure worth naming.
         assert!(
-            p.contains("ask when you need an answer to keep going"),
+            p.contains("PREFER `plan request` for anything that must survive"),
             "the protocol must say WHICH to reach for, not just that both exist",
         );
         // The queue is pull, like every other queue the director works.

@@ -64,10 +64,6 @@ pub struct DeliverRequest {
     /// told so; this is the maintainer's "ability to completely interrupt a session with a prompt".
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrupt: bool,
-    /// The loop this delivery serves, when there is one. Carried into the LAUNCH PROMPT if the target
-    /// has to be started, so a session woken for a request comes up already knowing which one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub loop_id: Option<i64>,
 }
 
 /// What the delivery did — never silent, because a request that vanished is the failure the whole
@@ -256,14 +252,18 @@ pub struct LifecycleRequest {
     /// the only writer; re-resolving is what keeps the closed set closed rather than merely tidy.
     pub id: String,
     pub action: LifecycleAction,
-    /// Set by `bsc session ask` when this start exists to SERVE a loop. The app turns it into a launch
-    /// directive appended to the session's persona prompt, so the session comes up already running
-    /// `bsc loop watch` — which is what makes ask compose with start rather than racing it.
+    /// Set by `bsc session ask` when this start exists to SERVE a request: the request ITSELF, which
+    /// becomes the started session's launch prompt.
+    ///
+    /// It used to be a loop id, and the app turned that into prose telling the session to go run
+    /// `bsc loop watch <n>`. That was an indirection to a rendezvous the callee had to opt into, and
+    /// across 23 loops it opted in zero times. The request is right here, so it can simply BE the
+    /// prompt — and a session born holding its request cannot miss it.
     ///
     /// A launch ARGUMENT, not a write into a live terminal: it goes exactly where the persona prompt
-    /// goes. `injectPrompt` keeps its empty caller set.
+    /// goes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub loop_id: Option<i64>,
+    pub request: Option<String>,
 }
 
 /// What actually happened — distinguished, not collapsed into a bare success.
@@ -387,7 +387,7 @@ mod tests {
     /// field as "the app did nothing".
     #[test]
     fn the_wire_contract_round_trips() {
-        let req = LifecycleRequest { id: "designer".into(), action: LifecycleAction::Stop, loop_id: None };
+        let req = LifecycleRequest { id: "designer".into(), action: LifecycleAction::Stop, request: None };
         let back: LifecycleRequest = serde_json::from_str(&serde_json::to_string(&req).unwrap()).unwrap();
         assert_eq!(back, req);
 

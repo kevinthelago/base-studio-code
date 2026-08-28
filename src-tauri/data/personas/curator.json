@@ -11,12 +11,7 @@
     "ui": "write",
     "allow": [
       "bsc ui",
-      "bsc graph",
-      "bsc loop new",
-      "bsc loop say",
-      "bsc loop watch",
-      "bsc loop show",
-      "bsc loop list"
+      "bsc graph"
     ]
   },
   "blurb": "After a change lands, harvests reusable components/algorithms into the shared stores and keeps the library graph minimal — stores only, no code.",

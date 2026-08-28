@@ -129,11 +129,12 @@ pub fn apply(
         // The frontend ORs this with its own `wantedStudios` view. Sent rather than re-derived there
         // because the store cannot see a PTY.
         "ptyLive": pty_live,
-        // #architect-asks-a-system-session-for-a-service: when this start exists to serve an ask, the
-        // session comes up already watching its loop. The PROSE is built here rather than in the
-        // frontend so there is one authority for it (and one test pinning it) — the frontend only
-        // appends it to the persona prompt. Null for an ordinary start.
-        "askDirective": req.loop_id.map(|l| bsc_session::ask::watch_directive(session.id, l)),
+        // #the-loop-comes-out-an-ask-is-just-a-delivery: when this start exists to serve an ask, the
+        // session comes up holding THE REQUEST ITSELF as its launch prompt. It used to be prose
+        // telling the session to go run `bsc loop watch <n>` — an indirection to a rendezvous that,
+        // measured across 23 loops, the callee entered zero times. The request is right here.
+        // Null for an ordinary start, which is what keeps an ordinary open from re-greeting.
+        "askDirective": req.request.clone(),
     });
 
     app.emit("bsc://session-lifecycle", payload)

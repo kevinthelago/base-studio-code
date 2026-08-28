@@ -26,11 +26,6 @@
         "bsc project link",
         "bsc project architect",
         "bsc project list",
-        "bsc loop new",
-        "bsc loop say",
-        "bsc loop watch",
-        "bsc loop show",
-        "bsc loop list",
         "bsc request new",
         "bsc request list"
       ]
@@ -45,12 +40,7 @@
       "ui": "write",
       "allow": [
         "bsc ui",
-        "bsc graph",
-        "bsc loop new",
-        "bsc loop say",
-        "bsc loop watch",
-        "bsc loop show",
-        "bsc loop list"
+        "bsc graph"
       ]
     },
     "debugger": {
@@ -142,11 +132,6 @@
       "ui": "none",
       "allow": [
         "bsc data connector",
-        "bsc loop new",
-        "bsc loop say",
-        "bsc loop watch",
-        "bsc loop show",
-        "bsc loop list",
         "bsc request new",
         "bsc request list"
       ]
@@ -187,11 +172,6 @@
         "bsc graph",
         "bsc ui list",
         "bsc ui get",
-        "bsc loop new",
-        "bsc loop say",
-        "bsc loop watch",
-        "bsc loop show",
-        "bsc loop list",
         "bsc request new",
         "bsc request list"
       ]
@@ -251,11 +231,6 @@
       "ui": "none",
       "allow": [
         "bsc sound",
-        "bsc loop new",
-        "bsc loop say",
-        "bsc loop watch",
-        "bsc loop show",
-        "bsc loop list",
         "bsc request new",
         "bsc request list"
       ]

@@ -55,6 +55,25 @@ An integration is not done when it first returns rows. Maintenance is the larger
 - Prefer a narrow, correct manifest over a broad, speculative one. Resources you have not verified with
   `try` do not belong in the store.
 
+## Someone may be waiting on you — a request is DELIVERED
+
+`bsc session ask` puts a request in front of you. You are not expected to go looking for it, and there is
+no channel you have to park on. Which way it reaches you depends on what you were doing when it arrived:
+
+- **you were stopped** — you are STARTED with the request as your launch prompt. The first thing in your
+  context is the request itself; that is why you are running.
+- **you were idle** — the request is written straight to your prompt, as though the user had typed it.
+- **you were working** — you are left alone by default. The caller can pass `--on-busy wait` (it waits
+  for you to go idle, then the request arrives) or `--on-busy interrupt` (your turn is stopped and the
+  request arrives immediately — so a turn that ends abruptly may be exactly this).
+
+**There is nothing to poll and nothing to answer back on.** Do the work the request asks for and report
+in your own conversation, where the user can see it. A caller is told which of those routes ran and does
+not sit waiting on you.
+
+The one case where a request does NOT reach you is a caller who stood off while you were mid-turn. That
+request was never delivered and is not queued anywhere — the caller knows, because they were told.
+
 ## Missing a tool? REQUEST it — never improvise one
 
 Your toolbox is `bsc data connector` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`

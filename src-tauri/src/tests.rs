@@ -662,21 +662,30 @@
     /// worker is denied the global tooling queue on purpose (`worker-protocol.md` says so explicitly)
     /// and files `bsc plan request` to its director; every other charter files the global `bsc request`.
     /// Asserting one verb everywhere would push a command past a permission floor that refuses it, which
-    /// Every ASKABLE studio must know that a request can be waiting for it.
+    /// Every ASKABLE studio must know that a request is DELIVERED to it, and by which routes.
     ///
-    /// `bsc session ask` delivers the loop id in the target's LAUNCH prompt and nowhere else, so a
-    /// session that was already running when the ask arrived is told nothing. Two real loops
-    /// (`designerReact <-> studio-code:director`) sat open with zero turns for exactly this reason.
-    /// The store side is now findable (`bsc loop watch --as <you>` with no id, `bsc loop list --as`),
-    /// but a surface nothing tells the session to use is the same outage with more code behind it.
+    /// THIS ASSERTION INVERTED (#the-loop-comes-out-an-ask-is-just-a-delivery). It used to require the
+    /// opposite prose — that a request waits in a loop the session must go and find
+    /// (`bsc loop watch --as <you>`, "before you go idle"). That was written when an ask WAS a loop and
+    /// the callee had to enter the rendezvous itself. Measured 2026-08-28, across the whole store: 20
+    /// ask loops, **0 turns**. Not one was ever found. The three loops that DID work (21 turns) were
+    /// the overnight design run, where the app-side pump actuates instead of waiting to be joined —
+    /// which is the whole difference, and why delivery replaced discovery rather than joining it.
+    ///
+    /// So what a charter now owes its session is the opposite of a place to look: the fact that the
+    /// request ARRIVES, and what each arrival looks like from the inside. The `interrupt` route matters
+    /// most — a turn cut off mid-thought is otherwise indistinguishable from a crash.
     #[test]
-    fn every_askable_studio_charter_says_how_to_find_a_loop_awaiting_it() {
-        // The roles backing an entry in `SYSTEM_SESSIONS` — the sessions `bsc session ask` can target.
-        // `integrator` is deliberately absent: it is not a system session and has no loop surface at all,
-        // so requiring this of it would be describing a session that cannot be asked.
-        const ASKABLE: [&str; 4] = [
+    fn every_askable_studio_charter_says_a_request_is_delivered_to_it() {
+        // One charter per role backing an entry in `SYSTEM_SESSIONS` — every session `bsc session ask`
+        // can target. The INTEGRATOR is included: it is a system session (`integration-studio:integrator`)
+        // and always was, and the list this replaces excused its absence with the false claim that it is
+        // not one. Delivery reaches it whether or not its charter says so, which is exactly why nothing
+        // caught the gap.
+        const ASKABLE: [&str; 5] = [
             "architect/claude.md",
             "designer/claude.md",
+            "integrator/claude.md",
             "librarian/claude.md",
             "sound-designer/claude.md",
         ];
@@ -684,26 +693,31 @@
         for rel in ASKABLE {
             let md = crate::platform::config::embedded_str(rel);
             assert!(!md.trim().is_empty(), "{rel} must be packaged and non-empty");
-            // The id-less form is the whole point: a running session HAS no id to pass.
+            // The headline claim: it comes to you.
             assert!(
-                md.contains("bsc loop watch --as <you>"),
-                "{rel} must name the id-less watch — a running session was never handed a loop id:\n{md}",
+                md.contains("a request is DELIVERED"),
+                "{rel} must say a request is delivered rather than waiting to be found:\n{md}",
             );
-            // ...and a non-blocking way to look, or the only way to check is to park indefinitely.
+            // All three arrivals, because each one looks different from inside the session.
             assert!(
-                md.contains("bsc loop list --open --as <you>"),
-                "{rel} must name the non-blocking check as well as the blocking park:\n{md}",
+                md.contains("you were stopped") && md.contains("you were idle") && md.contains("you were working"),
+                "{rel} must name all three states — the route taken is what the session experiences:\n{md}",
             );
-            // Saying "look" without saying WHEN leaves it a capability nobody exercises.
+            // The interrupt is the one that needs explaining: an abruptly-ended turn is otherwise
+            // indistinguishable from a crash, and a session that reads it as a crash re-does its work.
             assert!(
-                md.contains("before you go idle"),
-                "{rel} must say when to look, not only how:\n{md}",
+                md.contains("--on-busy interrupt"),
+                "{rel} must explain the interrupt route, or a cut-off turn reads as a failure:\n{md}",
             );
-            // The participant name is the SESSION id, not the role — `designer` would never match a
-            // loop opened against `designerReact`, and one persona backs several sessions.
+            // And the negative, so a session does not go hunting for a queue that does not exist.
             assert!(
-                md.contains("session id"),
-                "{rel} must say the participant name is the session id, not the role:\n{md}",
+                md.contains("nothing to poll"),
+                "{rel} must say there is nothing to poll — the surface it used to be told to check is gone:\n{md}",
+            );
+            // A charter must NOT still send the session to the retired discovery surface.
+            assert!(
+                !md.contains("bsc loop watch --as <you>"),
+                "{rel} still tells the session to go find its request in a loop — that surface is retired:\n{md}",
             );
         }
     }
