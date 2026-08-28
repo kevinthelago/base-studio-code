@@ -20,7 +20,59 @@ pub(crate) fn level_color(level: log::Level) -> &'static str {
         log::Level::Trace => "\x1b[90m", // bright black
     }
 }
+/// The loopback port the dev inspector listens on when nothing says otherwise.
+const INSPECTOR_PORT_DEFAULT: u16 = 2999;
+
+/// Open WebKit's remote inspector so a session can see INSIDE the renderer.
+///
+/// WHY THIS EXISTS. `bsc logs perf --session app:webview` can say the renderer is growing at
+/// 200-450 MB/min; it cannot say WHAT is growing, and from outside the process nothing can. Three
+/// hypotheses — compositing buffers, the JS heap, retained DOM — were argued from RSS and per-thread
+/// CPU and none could be settled, because the numbers that separate them live inside WebKit. The
+/// inspector's `Memory` domain reports memory BY CATEGORY, which is exactly that missing split.
+///
+/// MUST RUN BEFORE WEBKIT STARTS. WebKitGTK reads this variable when it creates its web context, so
+/// setting it here — the first thing `run` does, well before the Tauri builder makes a window — is
+/// what makes it take effect. Set it later and it is silently ignored, which looks identical to the
+/// feature not existing.
+///
+/// SCOPE, deliberately narrow:
+///   * **Linux only.** `WEBKIT_INSPECTOR_SERVER` is a WebKitGTK variable. WebView2 has its own
+///     mechanism and is not wired here, so this is a no-op on Windows rather than a broken promise.
+///   * **Debug builds only** by default. A release build opens nothing unless asked.
+///   * **Loopback only** (`127.0.0.1`), never `0.0.0.0` — the inspector is unauthenticated and can
+///     drive the page, so binding it to an interface would hand the app to the network.
+///
+/// To ask for it deliberately (including in a release build), set `WEBKIT_INSPECTOR_SERVER` yourself —
+/// an explicit value always wins and is never overwritten. `BSC_INSPECTOR_PORT` moves the dev default
+/// when 2999 is taken.
+fn enable_remote_inspector() {
+    #[cfg(target_os = "linux")]
+    {
+        const VAR: &str = "WEBKIT_INSPECTOR_SERVER";
+        // An explicit setting is the operator's, not ours — never clobber it.
+        if let Some(existing) = std::env::var_os(VAR) {
+            log::info!("[inspector] {VAR} already set to {} — leaving it alone", existing.to_string_lossy());
+            return;
+        }
+        if !cfg!(debug_assertions) {
+            return; // release: closed unless explicitly asked for, above.
+        }
+        let port = std::env::var("BSC_INSPECTOR_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(INSPECTOR_PORT_DEFAULT);
+        std::env::set_var(VAR, format!("127.0.0.1:{port}"));
+        // Logged at INFO because a port you cannot discover is a port nobody uses.
+        log::info!("[inspector] WebKit remote inspector on 127.0.0.1:{port} (dev build; `bsc debug memory` reads it)");
+    }
+}
+
 pub fn run() {
+    // Before ANYTHING else: WebKit reads its inspector variable when it builds its web context, and
+    // the Tauri builder below is what triggers that. See `enable_remote_inspector`.
+    enable_remote_inspector();
+
     // rustls 0.23 can't auto-determine a CryptoProvider from features at runtime, so
     // the relay dial's TLS handshake (tokio-tungstenite) would panic the tunnel thread
     // ("could not automatically determine the process-level CryptoProvider"). Install
