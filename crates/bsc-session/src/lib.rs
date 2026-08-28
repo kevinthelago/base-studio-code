@@ -181,8 +181,15 @@ pub struct SystemSessionState {
     pub pane_id: String,
     /// A PTY session exists — `pty_create` would RECONNECT rather than launch.
     pub live: bool,
-    /// Its shell has a live descendant, i.e. something is actually running in it. Distinct from
-    /// `live`: a session parked in `bsc loop watch` is live AND busy; an idle one is live, not busy.
+    /// The AGENT is running something — it has spawned a child of its own (a tool call, a build).
+    ///
+    /// This used to be the shell-level "has a live descendant" probe, and the doc here claimed an idle
+    /// session would read false. It could not: for an agent session the agent IS a descendant of the
+    /// shell, so the field was true for the whole life of the session and merely restated `live`.
+    /// Measured on an idle designer whose entire tree was `bash → claude` sitting at its prompt.
+    ///
+    /// LIMIT: an agent waiting on a model response has no child either, so it reads false. This means
+    /// "running something", not "occupied".
     pub busy: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,

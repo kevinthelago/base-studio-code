@@ -1816,7 +1816,7 @@ mod director_tests {
     fn pane(id: &str, live: bool, busy: bool) -> PaneLive {
         // `agent` mirrors `busy` in these fixtures: they were written when the two were one signal,
         // and the cases here are about JOINING liveness onto membership, not about telling them apart.
-        PaneLive { pane_id: id.into(), live, busy, agent: busy, pid: if live { Some(7) } else { None } }
+        PaneLive { pane_id: id.into(), live, busy, agent: busy, working: busy, pid: if live { Some(7) } else { None } }
     }
 
     /// The table must show a stopped director as a ROW — that row is the point — and say plainly how

@@ -71,7 +71,9 @@ pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionL
                 id: s.id.to_string(),
                 pane_id: s.pane_id.to_string(),
                 live: live.is_some_and(|p| p.live),
-                busy: live.is_some_and(|p| p.busy),
+                // The AGENT-level probe, not the shell-level one: `busy` is permanently true for an agent
+                // session, so reporting it here made the column a restatement of `live`.
+                busy: live.is_some_and(|p| p.working),
                 pid: live.and_then(|p| p.pid),
             }
         })

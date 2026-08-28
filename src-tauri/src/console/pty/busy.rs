@@ -235,6 +235,74 @@ pub(crate) fn shells_with_agents(shell_pids: &[Option<u32>]) -> Vec<bool> {
         .collect()
 }
 
+/// Which shells have an agent that is DOING something — `bsc session list`'s `BUSY` column.
+///
+/// # Why neither existing predicate answers this
+///
+/// [`shells_with_descendants`] asks "may I type a command at this shell's prompt?", and for an agent
+/// session the answer is permanently no: the agent process is itself a descendant, so that predicate
+/// cannot read false while the session is up. Reporting it as `BUSY` made the column a restatement of
+/// `live` — measured on an idle designer, whose whole tree was `bash → claude` sitting at its prompt.
+///
+/// [`shells_with_agents`] looks like the fix and is not. It reports whether an agent is *present*,
+/// which is equally true of an idle one; it separates "agent session" from "shell mid-build", not
+/// "working" from "idle".
+///
+/// The OSC-100 `run`/`idle` markers do not answer it either — they are emitted from `PROMPT_COMMAND`,
+/// so they describe the SHELL, which reads `run` for the entire time the agent is foregrounded.
+///
+/// # The predicate: the agent has a child of its own
+///
+/// An agent parked at its prompt has spawned nothing; one running a tool call has. That is observable
+/// from the process table with no cooperation from the agent, and it is what this walks.
+///
+/// # The limit, stated rather than implied
+///
+/// An agent THINKING — waiting on a model response with no subprocess — has no children either, so it
+/// reads as idle. This predicate answers "is it running something", not "is it occupied". That is the
+/// honest bound of what the process table can see, and the direction that matters is safe here: this
+/// value reports state, it does not gate typing (that stays [`shells_with_descendants`], unchanged).
+pub(crate) fn agents_doing_work(shell_pids: &[Option<u32>]) -> Vec<bool> {
+    if shell_pids.iter().all(|p| p.is_none()) {
+        return vec![false; shell_pids.len()];
+    }
+    let mut sys = System::new();
+    // `cmd()` is required: recognising an agent reads argv (a node-hosted agent presents as `node`).
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always),
+    );
+    let procs = sys.processes();
+
+    shell_pids
+        .iter()
+        .map(|maybe| {
+            let Some(pid) = maybe else { return false };
+            let root = Pid::from(*pid as usize);
+            // The agents under this shell. The ROOT is included, matching `shells_with_agents`: a pane
+            // launched straight into the agent has it AS the session process.
+            let agents: Vec<Pid> = procs
+                .iter()
+                .filter(|(&p, _)| p == root || is_descendant_of(p, root, procs))
+                .filter(|(_, proc_)| {
+                    let argv: Vec<String> =
+                        proc_.cmd().iter().map(|s| s.to_string_lossy().into_owned()).collect();
+                    is_agent_process(&proc_.name().to_string_lossy(), &argv)
+                })
+                .map(|(&p, _)| p)
+                .collect();
+            // Working ⇔ some agent has a descendant that is real work (console plumbing does not count,
+            // for the same reason it does not in the busy walk).
+            agents.iter().any(|&agent| {
+                procs
+                    .iter()
+                    .any(|(&p, _)| p != agent && is_descendant_of(p, agent, procs) && !is_ignored(procs, p))
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn shells_with_descendants(shell_pids: &[Option<u32>]) -> Vec<bool> {
     // Nothing to ask about — skip the (comparatively expensive) process walk entirely.
     if shell_pids.iter().all(|p| p.is_none()) {
@@ -410,6 +478,71 @@ mod tests {
         assert!(!is_agent_process("cargo", &argv(["cargo", "build", "--release"].as_ref())));
         assert!(!is_agent_process("git", &argv(["git", "push"].as_ref())));
         assert!(!is_agent_process("node", &argv(["node", "scripts/emit-records.mjs"].as_ref())));
+    }
+
+    /// THE REGRESSION (#session-list-reports-every-agent-session-as-busy): an agent sitting at its own
+    /// prompt must read as NOT working, and the same agent running a tool call must read as working.
+    ///
+    /// Driven against the real process table, because that is the only thing that can be wrong here —
+    /// the pure half (`is_agent_process`) was already right, and the bug was choosing the wrong walk.
+    /// A copy of `bash` NAMED `claude` is a genuine agent to every probe in this module: the name test
+    /// is exactly what identifies one, so the fake is faithful where it matters.
+    #[cfg(unix)]
+    #[test]
+    fn an_agent_at_its_prompt_is_not_working_and_one_running_a_tool_is() {
+        // The dir name feeds a `bash -c` string, so it must contain NOTHING the shell parses. The
+        // obvious `{:?}` of a ThreadId renders `ThreadId(2)` — and those parentheses are a bash syntax
+        // error, so the agent never spawns, the tree is empty, and the idle assertion passes for
+        // entirely the wrong reason. Digits only.
+        let tid: String =
+            format!("{:?}", std::thread::current().id()).chars().filter(char::is_ascii_digit).collect();
+        let dir = std::env::temp_dir().join(format!("bsc-working-{}-{tid}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("claude");
+        std::fs::copy("/bin/bash", &fake).expect("a shell to masquerade as the agent");
+
+        // Both panes are the PRODUCTION shape — a shell with the agent as its child — because that is
+        // the shape the broad predicate gets wrong. IDLE runs `read`, a bash builtin, so the agent
+        // blocks with no child: a session waiting at its TUI prompt. WORKING has a tool call in flight.
+        let spawn = |inner: &str| {
+            std::process::Command::new("/bin/bash")
+                .arg("-c")
+                // The trailing `; true` on BOTH levels defeats bash's exec optimization: `bash -c 'sleep 30'`
+                // REPLACES itself with `sleep`, collapsing shell → agent → tool into a bare `sleep` with no
+                // agent anywhere in it. With a second statement present each level stays a real process.
+                .arg(format!("{} -c '{inner}; true'; true", fake.display()))
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .expect("spawn the pane shell")
+        };
+        let mut idle = spawn("read x");
+        let mut working = spawn("sleep 30");
+
+        // Let the grandchild actually appear in the process table before walking it.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        let pids = [Some(idle.id()), Some(working.id()), None];
+        let got = agents_doing_work(&pids);
+        // Measured on the SAME snapshot moment, so the contrast below is not a timing artifact.
+        let broad = shells_with_descendants(&pids);
+
+        let _ = idle.kill();
+        let _ = working.kill();
+        let _ = idle.wait();
+        let _ = working.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(!got[0], "an agent parked at its prompt has no child and is NOT working");
+        assert!(got[1], "an agent running a tool call has a child and IS working");
+        assert!(!got[2], "a pane with no shell pid is never working");
+
+        // THE BUG, as an assertion: the broad predicate calls BOTH busy, because the agent is itself a
+        // descendant of the shell. That is correct for its own question ("may I type here") and useless
+        // as a state indicator — which is why `bsc session list` needed the narrower walk rather than a
+        // change to this one. Both must keep answering their own question.
+        assert!(broad[0], "the idle pane is still `busy` — Resume must not type into it");
+        assert!(broad[1], "and so is the working one; the broad walk cannot tell them apart");
     }
 
     #[test]

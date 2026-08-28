@@ -1135,12 +1135,17 @@ pub(crate) fn pane_liveness(pane_ids: Vec<String>, state: &PtyState) -> Vec<bsc_
     // a bare prompt (its own `bwrap` and the shell inside are descendants), and a shell mid-build is
     // busy with no agent at all.
     let agent = busy::shells_with_agents(&pids);
+    // A THIRD probe, narrower still (#session-list-reports-every-agent-session-as-busy): `agent` says an
+    // agent is PRESENT, which an idle one equally is, so `bsc session list` needs "is it running
+    // something" — the agent having a child of its own.
+    let working = busy::agents_doing_work(&pids);
     ids.into_iter()
         .zip(live)
         .zip(busy)
         .zip(agent)
+        .zip(working)
         .zip(pids)
-        .map(|((((pane_id, live), busy), agent), pid)| bsc_fleet::PaneLive { pane_id, live, busy, agent, pid })
+        .map(|(((((pane_id, live), busy), agent), working), pid)| bsc_fleet::PaneLive { pane_id, live, busy, agent, working, pid })
         .collect()
 }
 

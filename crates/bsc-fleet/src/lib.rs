@@ -194,6 +194,21 @@ pub struct PaneLive {
     /// has no agent; a sandboxed pane is busy at a bare prompt, because its own `bwrap` plumbing and
     /// the shell inside it are both descendants. Use `agent` for the second question.
     pub busy: bool,
+    /// The agent is RUNNING something — it has spawned a child of its own (a tool call, a build).
+    ///
+    /// This is what `bsc session list` reports as `BUSY`, and it exists because neither field around it
+    /// can answer that question. `busy` is permanently true for an agent session (the agent is itself a
+    /// descendant, so it restates `live`); `agent` reports that an agent is PRESENT, which an idle one
+    /// equally is. Measured on an idle designer whose entire tree was `bash → claude` at its prompt:
+    /// both read true, and the session looked mid-task while it sat waiting for input.
+    ///
+    /// LIMIT, stated because it is invisible otherwise: an agent waiting on a model response has no
+    /// child either, so it reads `false`. This means "running something", not "occupied".
+    ///
+    /// `#[serde(default)]` so an older app answering a newer CLI degrades to "not working" rather than
+    /// failing to parse — the same safe direction `agent` takes.
+    #[serde(default)]
+    pub working: bool,
     /// An AGENT process is running for this pane — `claude`, `bsc-agent`, or a wrapper hosting one.
     ///
     /// This is what makes `bsc fleet list` say `running` rather than `idle`, and it is a different
@@ -267,8 +282,8 @@ mod tests {
 
         let res = FleetResult {
             panes: vec![
-                PaneLive { pane_id: "k:director".into(), live: true, busy: true, agent: true, pid: Some(4242) },
-                PaneLive { pane_id: "k:worker".into(), live: false, busy: false, agent: false, pid: None },
+                PaneLive { pane_id: "k:director".into(), live: true, busy: true, agent: true, working: true, pid: Some(4242) },
+                PaneLive { pane_id: "k:worker".into(), live: false, busy: false, agent: false, working: false, pid: None },
             ],
         };
         let json = serde_json::to_string(&res).unwrap();
