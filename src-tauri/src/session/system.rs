@@ -42,11 +42,25 @@ use tauri::{Emitter, Manager};
 /// rather than a bare timeout that reads as "the app is not running".
 const ACK_TIMEOUT: Duration = Duration::from_millis(5_000);
 
-/// `bsc session list` — every system session's real state, answered in Rust.
+/// `bsc session list` — every system session's real state, answered in Rust, PLUS the sessions the app
+/// is running that this verb does not manage.
 ///
 /// Always reports the WHOLE registry, filtered by the request's ids when it names any. A session with
 /// no PTY is reported as `live: false` rather than omitted: "not running" is an answer, and a missing
 /// row would read as "this session does not exist".
+///
+/// # Why it reports beyond the registry
+///
+/// The registry is a CLOSED SET because that is what makes this verb safe to grant to the architect —
+/// every argument is an id the app owns. But "what may I name?" and "what is running?" are different
+/// questions, and answering only the first meant two `debug-studio:req-<n>` sessions could appear with
+/// no `bsc` surface able to see them at all: the only way to find them was to grep the app's log for
+/// `pty[debug-studio:`. That is a per-request debug session, whose id is MINTED AT RUNTIME and so can
+/// never be a compile-time registry entry.
+///
+/// So the read widens and the write does not. Discovered rows carry `managed: false`, and `resolve`
+/// still refuses their ids — not by a check here, but because those ids are not in the space it
+/// searches.
 pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionListResult, String> {
     let wanted: Vec<&'static bsc_session::SystemSession> = if req.ids.is_empty() {
         SYSTEM_SESSIONS.iter().collect()
@@ -63,7 +77,7 @@ pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionL
         &state,
     );
 
-    let sessions = wanted
+    let mut sessions: Vec<SystemSessionState> = wanted
         .iter()
         .map(|s| {
             let live = liveness.iter().find(|p| p.pane_id == s.pane_id);
@@ -75,9 +89,48 @@ pub fn list(app: &tauri::AppHandle, req: &SessionListRequest) -> Result<SessionL
                 // session, so reporting it here made the column a restatement of `live`.
                 busy: live.is_some_and(|p| p.working),
                 pid: live.and_then(|p| p.pid),
+                summary: s.summary.to_string(),
+                managed: true,
             }
         })
         .collect();
+
+    // ...and the sessions the app is running that this verb does NOT manage.
+    //
+    // Only on an unfiltered read. `--ids` resolves against the closed registry, so a filtered read is
+    // asking about named sessions and a discovered id could not have been named in the first place.
+    //
+    // An empty `pane_ids` means "every pane the app is tracking", which is the only way to find one:
+    // there is no list of them anywhere, because they are minted per request.
+    if req.ids.is_empty() {
+        let mut discovered: Vec<SystemSessionState> =
+            crate::console::pty::pane_liveness(vec![], &state)
+                .into_iter()
+                // DEAD ONES ARE DROPPED, unlike a registry row. A registry row reports `live: false`
+                // because the caller asked about a session that is always meaningful to name; a
+                // discovered one exists only because it is running, so an exited `req-157` is not a
+                // stopped session — it is a session that is over, and listing it would grow the table
+                // by one row per request ever filed.
+                .filter(|p| p.live)
+                .filter_map(|p| {
+                    let (id, summary) = bsc_session::discovered(&p.pane_id)?;
+                    Some(SystemSessionState {
+                        id,
+                        pane_id: p.pane_id.clone(),
+                        live: true,
+                        busy: p.working,
+                        pid: p.pid,
+                        summary,
+                        managed: false,
+                    })
+                })
+                .collect();
+        // Stable order, so a listing read twice does not appear to shuffle: the map behind
+        // `pane_liveness` has no order of its own.
+        discovered.sort_by(|a, b| a.pane_id.cmp(&b.pane_id));
+        sessions.extend(discovered);
+    }
+
     Ok(SessionListResult { sessions })
 }
 
@@ -129,11 +182,12 @@ pub fn apply(
         // The frontend ORs this with its own `wantedStudios` view. Sent rather than re-derived there
         // because the store cannot see a PTY.
         "ptyLive": pty_live,
-        // #architect-asks-a-system-session-for-a-service: when this start exists to serve an ask, the
-        // session comes up already watching its loop. The PROSE is built here rather than in the
-        // frontend so there is one authority for it (and one test pinning it) — the frontend only
-        // appends it to the persona prompt. Null for an ordinary start.
-        "askDirective": req.loop_id.map(|l| bsc_session::ask::watch_directive(session.id, l)),
+        // #the-loop-comes-out-an-ask-is-just-a-delivery: when this start exists to serve an ask, the
+        // session comes up holding THE REQUEST ITSELF as its launch prompt. It used to be prose
+        // telling the session to go run `bsc loop watch <n>` — an indirection to a rendezvous that,
+        // measured across 23 loops, the callee entered zero times. The request is right here.
+        // Null for an ordinary start, which is what keeps an ordinary open from re-greeting.
+        "askDirective": req.request.clone(),
     });
 
     app.emit("bsc://session-lifecycle", payload)

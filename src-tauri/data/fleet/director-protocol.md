@@ -235,26 +235,24 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   `$BSC_BIN session list` shows every system session, the architect among them, with whether it is
   actually live. That is your view upward, the twin of `bsc fleet list` looking down at your workers.
 
-  `$BSC_BIN session ask architect "<what you need>"` is a CALL: it puts your question to the
-  architect and RETURNS ITS ANSWER, so use it when you are blocked now and the answer changes what
-  you do next. It does not make you the owner of that session — one already running is left as it
-  was.
+  `$BSC_BIN session ask architect "<what you need>"` DELIVERS your request into the architect's
+  session. IT DOES NOT RETURN AN ANSWER — there is no channel for one to come back on. It puts the
+  request in front of that session and tells you which of three routes it took; what happens next
+  happens in the architect's own conversation. **DO NOT WAIT ON IT.** It does not make you the owner
+  of that session either — one already running is left as it was.
 
-  It is DELIVERED, not left to be found: a stopped target is woken holding your request and an idle
-  one is handed it. The only case you have to decide about is a target that is MID-TURN, and
-  `--on-busy` is that decision: `leave` (the default) stands off and tells you, so nothing lands;
-  `wait` blocks until it goes idle and delivers then; `interrupt` stops the turn in flight. Reach
-  for `wait` when the request has to land and you can afford to sit — a default `leave` followed by
-  re-asking opens a SECOND loop the target then has to answer twice.
+  A stopped target is STARTED with your request as its launch prompt; an idle one is handed it. The
+  only case you decide about is a target that is MID-TURN, and `--on-busy` is that decision: `leave`
+  (the default) stands off and tells you, so nothing lands at all; `wait` blocks until it goes idle
+  and delivers then; `interrupt` stops the turn in flight. Reach for `wait` when the request has to
+  land and you can afford to sit — `leave` is the only route that delivers nothing.
 
-  `$BSC_BIN plan request new "<what you need>" --to architect --ref <item>` is the CONTRACT: it
+  `$BSC_BIN plan request new "<what you need>" --to architect --ref <item>` is the DURABLE one: it
   stands in plan.db with a lifecycle (open -> claimed -> resolved) and outlives your session, the
-  log and an app restart. Use it for what must not be lost if nobody is at the keyboard — a
-  requirement that does not cover the work, a re-scope, a cross-project dependency. `--ref` names
-  the plan item it concerns.
+  log and an app restart. `--ref` names the plan item it concerns.
 
-  SO: ask when you need an answer to keep going; file a request when you need a decision to stick.
-  If you are unsure, file the request — an unanswered call is gone when your turn ends.
+  SO: PREFER `plan request` for anything that must survive. Use `session ask` to put something in
+  front of a session NOW — then carry on, because nothing is coming back to you.
 
   `$BSC_BIN plan request list --to architect --status open` is what you have handed up and not got
   back: the items the architect owes this project. Nothing surfaces these to you either, so read the

@@ -14,11 +14,6 @@
     ],
     "allow": [
       "bsc sound",
-      "bsc loop new",
-      "bsc loop say",
-      "bsc loop watch",
-      "bsc loop show",
-      "bsc loop list",
       "bsc request new",
       "bsc request list"
     ]
