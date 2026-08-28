@@ -285,10 +285,10 @@ USAGE:
 The store-to-seed sync `bsc ui parity` diagnoses and nothing could act on: an edit to a component
 record lands in the store, and the app keeps SHIPPING the seed's old body until something writes the
 seed back. `export` dumps a record VERBATIM (by design, so it round-trips through `import`) — including
-store bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/`seedHash`/`used`) no seed file has
-ever carried — so its output can't be dropped straight into <dir>. This strips those fields and writes
-the rest over the EXISTING seed file matching <id> (found by walking --seed-dir and reading each
-record's own `id`; a kit bundle with no top-level `id` is not a target).
+store bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/`seedHash`/`used`/`usageAssessed`/
+`version`) no seed file has ever carried — so its output can't be dropped straight into <dir>. This
+strips those fields and writes the rest over the EXISTING seed file matching <id> (found by walking
+--seed-dir and reading each record's own `id`; a kit bundle with no top-level `id` is not a target).
 
 Deliberately BY ID, never a sweep — seed and store drift both ways, so a mass re-stamp would as often
 overwrite real seed content with stale store content. Dry run by default; pass --apply to write. Skips
@@ -3207,10 +3207,16 @@ fn cmd_import(args: &[String]) -> Result<(), String> {
 /// The store's bookkeeping fields a packaged SEED never carries (#139, verified against all 73
 /// `features/settings/cards/*.json` seeds): the change-history stamp (`history`/`rev`/`updatedAt`/
 /// `updatedBy`, #3164), the reconcile fingerprint (`seedHash`), and the runtime-computed flags
-/// (`builtin`/`used`). `bsc ui export` dumps a record VERBATIM (by design — it round-trips through
-/// `bsc ui import`), so its output carries every one of these and cannot be dropped straight into
-/// `src-tauri/data/components/app/**`; `sync-seed` strips them before it writes.
-const SEED_BOOKKEEPING_FIELDS: &[&str] = &["history", "rev", "updatedAt", "updatedBy", "builtin", "seedHash", "used"];
+/// (`builtin`/`used`/`usageAssessed`/`version`). `bsc ui export` dumps a record VERBATIM (by design —
+/// it round-trips through `bsc ui import`), so its output carries every one of these and cannot be
+/// dropped straight into `src-tauri/data/components/app/**`; `sync-seed` strips them before it writes.
+///
+/// #158 — the list was short by `usageAssessed` (stamped by `usage-scan --apply`, see its own doc
+/// comment) and `version` (a store-only defaulted key), so a `sync-seed --apply` after either had run
+/// wrote both into the seed file and `seedRoundTrip.test.ts`'s "carries only fields the projection
+/// preserves" case failed on the very next `terminalview.json` sync.
+const SEED_BOOKKEEPING_FIELDS: &[&str] =
+    &["history", "rev", "updatedAt", "updatedBy", "builtin", "seedHash", "used", "usageAssessed", "version"];
 
 /// `bsc ui sync-seed <id>… --seed-dir <dir> [--dir <store>] [--apply] [--pretty]` (#139) — the
 /// store-to-seed sync `bsc ui parity` diagnoses (123 of 337 drifted, measured) and nothing could act on:
@@ -7797,10 +7803,11 @@ export const Card = () => <Button />;",
         let _ = std::fs::remove_dir_all(&seed);
     }
 
-    /// #139 — `sync-seed` writes a store record's CURRENT body back into its packaged seed file, by id,
-    /// stripping the store-only bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/
-    /// `seedHash`/`used`) no seed file has ever carried — the gap `bsc ui export`'s own doc note names
-    /// (it dumps a record verbatim, so its output can't be dropped straight into the packaged tree).
+    /// #139/#158 — `sync-seed` writes a store record's CURRENT body back into its packaged seed file, by
+    /// id, stripping the store-only bookkeeping (`history`/`rev`/`updatedAt`/`updatedBy`/`builtin`/
+    /// `seedHash`/`used`/`usageAssessed`/`version`) no seed file has ever carried — the gap `bsc ui
+    /// export`'s own doc note names (it dumps a record verbatim, so its output can't be dropped straight
+    /// into the packaged tree).
     #[test]
     fn sync_seed_writes_store_back_into_the_matching_seed_file_by_id() {
         let dir = tmp_store_dir("sync-seed");
@@ -7832,6 +7839,9 @@ export const Card = () => <Button />;",
                     "srcText": "export const B = 1; // the STORE copy, current",
                     "history": [{ "rev": 1 }], "rev": 4, "updatedAt": "2026-08-01T00:00:00Z",
                     "updatedBy": "designer", "builtin": true, "seedHash": "abc123", "used": true,
+                    // #158: `usage-scan --apply` stamps these two onto a store record — the strip list
+                    // was short by exactly them, so a sync after either had run wrote them into the seed.
+                    "usageAssessed": true, "version": "",
                 })
                 .to_string(),
             )
@@ -7864,6 +7874,10 @@ export const Card = () => <Button />;",
         for field in SEED_BOOKKEEPING_FIELDS {
             assert!(written.get(*field).is_none(), "seed must not carry store bookkeeping field '{field}': {written}");
         }
+        // #158 regression: named explicitly (not just via the const above) so a future shrink of
+        // SEED_BOOKKEEPING_FIELDS can't silently re-open the gap these two were filed for.
+        assert!(written.get("usageAssessed").is_none(), "usage-scan's stamp must not leak into the seed: {written}");
+        assert!(written.get("version").is_none(), "the store-only version key must not leak into the seed: {written}");
 
         // A second sync of the now-synced id is a no-op — reported up to date, not re-written.
         let (r, out) = bsc_util::capture_output(|| {

@@ -231,11 +231,14 @@ pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), S
     // auto-approved for autonomous sessions via `enabledMcpjsonServers` (exactly the
     // resolved set — servers not listed aren't trusted, which is how removal lands).
     write_session_hooks(&mut config, hooks);
-    apply_enabled_mcp_servers(&mut config, mcp_servers);
 
+    // ORDER IS LOAD-BEARING: the `.mcp.json` is written FIRST, then the trust record is computed from
+    // the merged file. The other way round reads the PREVIOUS launch's file, so a server added on this
+    // launch would be on disk and unlisted — the same modal, one launch later.
     std::fs::create_dir_all(root.join(".claude")).str_err()?;
-    crate::platform::fsx::atomic_write_json(&settings_path, &config).str_err()?;
     write_mcp_json(&root, mcp_servers)?;
+    apply_enabled_mcp_servers(&mut config, &enabled_mcp_names(&root, mcp_servers));
+    crate::platform::fsx::atomic_write_json(&settings_path, &config).str_err()?;
     write_session_skills(&root, skills)?;
     // Attach-time usage counting (#A): bump each attached skill's global usage counter so the
     // `bsc-skill list --sort rank|uses` ordering + the Skills-page chart reflect real deployment,
@@ -405,18 +408,85 @@ fn apply_permission_posture(config: &mut serde_json::Value, bypass: bool, cwd: &
     }
 }
 
-/// Gate the resolved MCP servers via `enabledMcpjsonServers` — set to EXACTLY the resolved set
-/// (servers not listed aren't trusted, which is how removal lands); an empty set drops the key.
-fn apply_enabled_mcp_servers(config: &mut serde_json::Value, mcp_servers: &[McpServerCfg]) {
+/// The names to list in `enabledMcpjsonServers` for a session at `root`.
+///
+/// # Why this reads the FILE and not just the resolved list
+///
+/// Claude Code's approval modal is driven by the `.mcp.json` ON DISK, so the trust record has to
+/// describe that file. The two halves of the write used to disagree about what an EMPTY resolved list
+/// means: [`write_mcp_json`] returns early and LEAVES the existing file alone, while this function
+/// removed the key. A second launch with nothing resolved therefore deleted the trust record and left
+/// the servers in place — and Claude, finding servers it had no answer for, blocked on
+///
+/// ```text
+/// 2 new MCP servers found in this project
+///   [x] Compliance   [x] Research      Space to select · Esc to reject all
+/// ```
+///
+/// BEFORE submitting the session's baked startup prompt. The session came up, parked on a modal
+/// nobody was watching, and its kickoff never ran. Measured on every per-technology studio
+/// (`design-studio/react`, `algorithms-studio/typescript`, `teams-studio`): `.mcp.json` present, key
+/// missing. Removing the key does not make a server untrusted — it makes it ASK.
+///
+/// # Why only the app's OWN servers
+///
+/// `write_mcp_json` deliberately PRESERVES repo-authored entries, so a user project's `.mcp.json` can
+/// name a third-party server the app knows nothing about. Auto-enabling everything in the file would
+/// silently trust that. So the union is restricted to servers the app itself put there — the ones
+/// whose command is the bundled `bsc` binary. A third-party entry stays unlisted and still prompts,
+/// which is the property worth keeping.
+fn enabled_mcp_names(root: &std::path::Path, mcp_servers: &[McpServerCfg]) -> Vec<String> {
+    let doc = crate::platform::fsx::read_json_object_or_default(&root.join(".mcp.json"));
+    enabled_mcp_names_from(&doc, mcp_servers, crate::console::pty::bsc_bin_path().as_deref())
+}
+
+/// The pure half — the decision, with the two things it reads from the world injected.
+///
+/// `app_bin` is the bundled `bsc` path; `None` means no sidecar is staged, so nothing on disk can be
+/// app-managed. Split out because the effectful version can only be exercised where a sidecar happens
+/// to exist, and a test that quietly does nothing when it does not is exactly the green-gate-that-
+/// sees-less this repo keeps getting caught by — the first draft of that test skipped silently and it
+/// took an explicit `eprintln!` to notice.
+fn enabled_mcp_names_from(
+    doc: &serde_json::Value,
+    mcp_servers: &[McpServerCfg],
+    app_bin: Option<&std::path::Path>,
+) -> Vec<String> {
+    let mut names: Vec<String> = mcp_servers.iter().map(|m| m.name.clone()).collect();
+    if let Some(on_disk) = doc.get("mcpServers").and_then(|v| v.as_object()) {
+        for (name, cfg) in on_disk {
+            if names.iter().any(|n| n == name) {
+                continue;
+            }
+            if app_managed_mcp_server(cfg, app_bin) {
+                names.push(name.clone());
+            }
+        }
+    }
+    names
+}
+
+/// Whether a `.mcp.json` entry is one the APP wrote — its command is the bundled `bsc` binary.
+///
+/// `mcp_server_value` rewrites every built-in marker to that absolute path at write time, so this is
+/// the same fact the writer already established, read back off the file rather than restated.
+fn app_managed_mcp_server(cfg: &serde_json::Value, app_bin: Option<&std::path::Path>) -> bool {
+    let (Some(cmd), Some(bin)) = (cfg.get("command").and_then(|v| v.as_str()), app_bin) else {
+        return false;
+    };
+    std::path::Path::new(cmd) == bin
+}
+
+/// Gate the MCP servers via `enabledMcpjsonServers` — see [`enabled_mcp_names`] for what goes in it.
+/// An empty set drops the key, which is correct only when the file names nothing either.
+fn apply_enabled_mcp_servers(config: &mut serde_json::Value, names: &[String]) {
     let obj = config.as_object_mut().unwrap();
-    if mcp_servers.is_empty() {
+    if names.is_empty() {
         obj.remove("enabledMcpjsonServers");
     } else {
         obj.insert(
             "enabledMcpjsonServers".into(),
-            serde_json::Value::Array(
-                mcp_servers.iter().map(|m| serde_json::Value::String(m.name.clone())).collect(),
-            ),
+            serde_json::Value::Array(names.iter().cloned().map(serde_json::Value::String).collect()),
         );
     }
 }
@@ -995,6 +1065,91 @@ mod tests {
         let allow = read();
         assert!(!allow.contains(&"Bash(terraform *)".to_string()), "replace must drop the removed command (#799)");
         assert!(allow.contains(&"Bash".to_string()), "but the broad Bash allow is recomputed");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE REGRESSION. A launch with an EMPTY resolved list used to delete `enabledMcpjsonServers`
+    /// while `write_mcp_json` left the servers sitting in `.mcp.json` — so Claude found servers it had
+    /// no answer for and blocked on its approval modal BEFORE submitting the session's baked startup
+    /// prompt. The session came up, parked on a dialog nobody was watching, and its kickoff never ran.
+    ///
+    /// Measured on every per-technology studio: `.mcp.json` present, key missing. It is the reason
+    /// `bsc session ask` looked like it "only started the session" — delivery was correct the whole
+    /// time (the prompt was in argv), and the agent never reached a prompt to receive it.
+    ///
+    /// Written against the PURE half so it runs everywhere. Its first draft went through
+    /// `write_session_settings` and needed a staged `bsc` sidecar to mean anything — without one it
+    /// returned early and passed, having asserted nothing.
+    #[test]
+    fn a_launch_with_no_resolved_servers_keeps_trusting_what_the_app_put_on_disk() {
+        let bin = std::path::Path::new("/opt/bsc/bin/bsc");
+        let doc = serde_json::json!({ "mcpServers": {
+            "Compliance": { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "compliance"] },
+            "Research":   { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "research"] },
+            "ThirdParty": { "command": "npx", "args": ["-y", "@someone/else"] },
+        }});
+
+        // The launch that used to break it: nothing resolved, so the old code removed the key.
+        let names = enabled_mcp_names_from(&doc, &[], Some(bin));
+
+        assert!(
+            names.contains(&"Compliance".to_string()) && names.contains(&"Research".to_string()),
+            "a server the app itself put in .mcp.json must stay trusted, or its next launch blocks on \
+             the approval modal instead of running its prompt: {names:?}",
+        );
+        // ...and the boundary that keeps this from being a silent widening. `write_mcp_json` preserves
+        // repo-authored entries, so auto-enabling everything in the file would trust a server the app
+        // knows nothing about.
+        assert!(
+            !names.contains(&"ThirdParty".to_string()),
+            "a repo-authored server must NOT be auto-trusted — it still prompts: {names:?}",
+        );
+    }
+
+    /// With no sidecar staged, NOTHING on disk can be proven to be the app's — so nothing is trusted.
+    /// Failing open here would auto-enable a repo-authored server on exactly the installs least able
+    /// to vouch for it.
+    #[test]
+    fn without_a_bundled_binary_nothing_on_disk_is_app_managed() {
+        let doc = serde_json::json!({ "mcpServers": {
+            "Compliance": { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "compliance"] },
+        }});
+        assert!(enabled_mcp_names_from(&doc, &[], None).is_empty());
+    }
+
+    /// The resolved list still leads, and a server in BOTH is listed once — the enabled set is a
+    /// union, not a concatenation, and a duplicate would be a second answer to the same question.
+    #[test]
+    fn the_resolved_list_and_the_file_union_without_duplicating() {
+        let bin = std::path::Path::new("/opt/bsc/bin/bsc");
+        let doc = serde_json::json!({ "mcpServers": {
+            "Compliance": { "command": "/opt/bsc/bin/bsc", "args": ["mcp", "compliance"] },
+        }});
+        let resolved = vec![McpServerCfg {
+            name: "Compliance".into(), transport: "stdio".into(),
+            command: Some("/opt/bsc/bin/bsc".into()), args: vec![], url: None, env: vec![],
+        }];
+        assert_eq!(enabled_mcp_names_from(&doc, &resolved, Some(bin)), vec!["Compliance".to_string()]);
+    }
+
+    /// Removal still lands. The fix must not turn `enabledMcpjsonServers` into an append-only list —
+    /// a server genuinely dropped from `.mcp.json` has to leave the trust record with it.
+    #[test]
+    fn a_server_no_longer_on_disk_leaves_the_trust_record() {
+        let dir = std::env::temp_dir().join(format!("bsc-mcp-drop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.to_string_lossy().to_string();
+
+        // No `.mcp.json` at all, and nothing resolved ⇒ nothing to trust, and the key goes.
+        write_session_settings(&SessionSettingsSpec { mcp_servers: &[], ..SessionSettingsSpec::for_dir(&cwd) }).unwrap();
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        assert!(
+            settings.get("enabledMcpjsonServers").is_none(),
+            "with nothing on disk and nothing resolved the key must be absent, not an empty relic",
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

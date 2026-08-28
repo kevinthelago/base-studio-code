@@ -28,8 +28,8 @@ pub const VERBS: [&str; 18] = [
 /// seed taught it to nobody — and because the spec drift test derives its expectations from THIS list,
 /// the one verb the records architecture tells every worker to reach for was the one verb no test could
 /// notice going undocumented. The list is only a drift guard if it is complete.
-pub const IMPL_SUBVERBS: [&str; 8] =
-    ["set", "get", "remove", "list", "suppress", "unsuppress", "history", "revert"];
+pub const IMPL_SUBVERBS: [&str; 9] =
+    ["set", "get", "remove", "list", "suppress", "unsuppress", "history", "revert", "sync-seed"];
 
 /// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
@@ -42,12 +42,16 @@ pub const BOOL_FLAGS: [&str; 12] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 48] = [
+pub const FLAGS: [&str; 50] = [
     "--pretty",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
     "--check",
     "--root",
+    // `impl sync-seed` (#157) — the directory holding the packaged `algorithms.json` seed, and
+    // `--only <field>` to sync exactly one field rather than a record's whole content.
+    "--seed-dir",
+    "--only",
     // `build` — compile a node and stamp the verdict; --wasm adds the wasm32 target, --force ignores
     // a current hash.
     "--wasm",
@@ -1354,12 +1358,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     .collect();
                 emit(&Value::Array(impls))
             }
+            // `impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` (#157,
+            // request from kevin) — the `bsc ui sync-seed` (#139) counterpart for this store: write a
+            // runtime impl/edge record's CONTENT back into the packaged
+            // `src-tauri/data/knowledge/algorithms.json` seed, by id. Ports `scripts/sync-impl-seed.mjs`
+            // onto the surface — a comment/code fix living only in the runtime store had no `bsc` path
+            // to reach git, which is exactly the class of gap this repo's own rule (a script is a
+            // missing command, not a workaround) exists to close.
+            Some("sync-seed") => cmd_impl_sync_seed(&args),
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
                       | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
                       | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
-                      | impl history <id> | impl revert <id> [--to <rev>]"
+                      | impl history <id> | impl revert <id> [--to <rev>] \
+                      | impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply]"
                 .to_string()),
         },
         // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
@@ -2576,6 +2589,204 @@ fn list_flag(s: Option<&str>) -> Value {
     )
 }
 
+/// The top-level content keys that differ between `existing` (the seed record) and `fresh` (the store
+/// record), sorted — reported so the direction and shape of a sync is visible before it is trusted.
+/// Mirrors `diffFields` in `scripts/sync-impl-seed.mjs`, the script this verb replaces.
+fn diff_fields(existing: &Value, fresh: &Value) -> Vec<String> {
+    let mut keys: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    if let Some(o) = existing.as_object() {
+        keys.extend(o.keys().cloned());
+    }
+    if let Some(o) = fresh.as_object() {
+        keys.extend(o.keys().cloned());
+    }
+    keys.into_iter().filter(|k| existing.get(k) != fresh.get(k)).collect()
+}
+
+/// `impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` (#157) — the
+/// store-to-seed sync `bsc ui sync-seed` (#139) already does for the component store, ported here for
+/// the Algorithms library: write a runtime impl/edge record's CONTENT back into the packaged
+/// `<seed-dir>/algorithms.json`, by id.
+///
+/// Deliberately BY ID, never a sweep — seed and store drift BOTH ways (that is the whole reason
+/// `sync-impl-seed.mjs` reports SKIPs instead of assuming a direction), so a mass re-stamp would as
+/// often overwrite real seed content with stale store content as the reverse. Dry run by default;
+/// `--apply` writes. `--only <field>` syncs exactly ONE field, leaving the rest of the seed record
+/// untouched, for landing a new facet across many records without dragging unrelated drift along.
+///
+/// Comparison and the loses-fields refusal are NOT reimplemented here — they are
+/// [`crate::repo_store::content_of`] and [`crate::repo_store::loses_fields`], the same functions
+/// `bsc graph promote` already uses to decide the OTHER seam (runtime store → committed repo store),
+/// so this verb and `promote` agree on what "the same record" means without a second definition to
+/// drift from the first.
+///
+/// The whole seed document is parsed and re-written (never a per-record text patch), which is safe
+/// only because `serde_json`'s `preserve_order` feature is on for this crate: [`Value`] objects then
+/// round-trip through an insertion-ordered map, so an UNTOUCHED record's fields keep their original
+/// order and only a synced record's fields move — `Map::insert` on an existing key updates its value
+/// in place without changing its position, exactly like the JS `t[k] = fresh[k]` assignment loop in
+/// `sync-impl-seed.mjs` it replaces. Without that feature every `Value::Object` is a `BTreeMap`, and
+/// writing the file back would silently re-sort every record in it alphabetically — a one-field fix
+/// producing a multi-thousand-line diff.
+fn cmd_impl_sync_seed(args: &[String]) -> Result<(), String> {
+    let usage = "usage: bsc graph impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]";
+    let seed_dir = flag_value(args, "--seed-dir").ok_or(usage)?;
+    let only = flag_value(args, "--only");
+    let apply = args.iter().any(|a| a == "--apply");
+    let pretty = args.iter().any(|a| a == "--pretty");
+    // Ids are the positionals after `impl sync-seed`, skipping both flags AND the VALUE token that
+    // follows a value-taking flag. A plain `!starts_with("--")` filter is not enough — `--seed-dir`'s
+    // own value is a bare directory name that looks exactly like an id, and was landing in `ids` too.
+    let mut ids: Vec<&str> = Vec::new();
+    let mut it = args.iter().skip(2); // args[0] = "impl", args[1] = "sync-seed"
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--seed-dir" | "--only" => {
+                it.next(); // consume this flag's value — never an id
+            }
+            other if other.starts_with("--") => {} // `--apply` / `--pretty` / any other bare flag
+            other => ids.push(other),
+        }
+    }
+    if ids.is_empty() {
+        return Err(usage.into());
+    }
+
+    let seed_path = std::path::Path::new(&seed_dir).join("algorithms.json");
+    let seed_raw = std::fs::read_to_string(&seed_path).map_err(|e| format!("cannot read {}: {e}", seed_path.display()))?;
+    let mut seed: Value =
+        serde_json::from_str(&seed_raw).map_err(|e| format!("{} is not valid JSON: {e}", seed_path.display()))?;
+
+    // Index the seed's two tiers by id ONCE — an id joins its tier's array position, matching
+    // `mergeStores` in the mjs script: impls and edges share one id space by construction (an edge id
+    // joins its members with `--`, an impl id is a bare file/name), so a genuine collision there is a
+    // data problem worth failing on rather than silently picking a side.
+    #[derive(Clone, Copy)]
+    enum Tier {
+        Impl,
+        Edge,
+    }
+    let mut seed_index: std::collections::HashMap<String, (Tier, usize)> = std::collections::HashMap::new();
+    for (i, im) in seed.get("implementations").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        if let Some(id) = im.get("id").and_then(Value::as_str) {
+            seed_index.insert(id.to_string(), (Tier::Impl, i));
+        }
+    }
+    for (i, e) in seed.get("edges").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        if let Some(id) = e.get("id").and_then(Value::as_str) {
+            seed_index.insert(id.to_string(), (Tier::Edge, i));
+        }
+    }
+
+    // The runtime store (store-or-seed, reconciled) — the SAME lookup `impl get`/`edge get` resolve
+    // against, so a sync reflects the record a live session is actually looking at.
+    let g = crate::load();
+    let mut store_index: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+    for im in crate::implementations_of(&g) {
+        if let Some(id) = im.get("id").and_then(Value::as_str) {
+            store_index.insert(id.to_string(), im);
+        }
+    }
+    for e in crate::edges_of(&g) {
+        if let Some(id) = e.get("id").and_then(Value::as_str) {
+            if store_index.contains_key(id) {
+                return Err(format!("id '{id}' exists as BOTH an impl and an edge in the store — ambiguous sync target"));
+            }
+            store_index.insert(id.to_string(), e);
+        }
+    }
+
+    let (mut synced, mut up_to_date, mut would_lose_fields, mut missing_from_store, mut missing_from_seed) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+
+    for id in &ids {
+        let Some(store_rec) = store_index.get(*id) else {
+            missing_from_store.push(*id);
+            continue;
+        };
+        let Some(&(tier, idx)) = seed_index.get(*id) else {
+            // Mirrors the mjs script's own SKIP wording: a record with no seed file needs PROMOTING
+            // (a new entry), not syncing (an existing one).
+            missing_from_seed.push(*id);
+            continue;
+        };
+        let arr_key = match tier {
+            Tier::Impl => "implementations",
+            Tier::Edge => "edges",
+        };
+        let existing = seed
+            .get(arr_key)
+            .and_then(Value::as_array)
+            .and_then(|a| a.get(idx))
+            .cloned()
+            .ok_or_else(|| format!("internal: seed index for '{id}' is stale"))?;
+        let existing_content = crate::repo_store::content_of(&existing);
+        let store_content = crate::repo_store::content_of(store_rec);
+        // `--only <field>` — ONE field onto the seed record: everything else stays exactly as the seed
+        // has it, so no unrelated drift rides along with the facet being synced.
+        let fresh = match &only {
+            None => store_content.clone(),
+            Some(field) => {
+                let mut merged = existing_content.clone();
+                if let Some(obj) = merged.as_object_mut() {
+                    match store_content.get(field) {
+                        Some(v) => {
+                            obj.insert(field.clone(), v.clone());
+                        }
+                        None => {
+                            obj.remove(field);
+                        }
+                    }
+                }
+                merged
+            }
+        };
+        if existing_content == fresh {
+            up_to_date.push(*id);
+            continue;
+        }
+        if crate::repo_store::loses_fields(&fresh, &existing_content) {
+            would_lose_fields
+                .push(serde_json::json!({ "id": id, "fields": diff_fields(&existing_content, &fresh) }));
+            continue;
+        }
+        let fields = diff_fields(&existing_content, &fresh);
+        if apply {
+            let target = seed
+                .get_mut(arr_key)
+                .and_then(Value::as_array_mut)
+                .and_then(|a| a.get_mut(idx))
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| format!("internal: cannot re-open seed slot for '{id}'"))?;
+            // Overlay each fresh key rather than replacing the whole object: `Map::insert` on an
+            // EXISTING key updates its value in place and keeps its position (preserve_order), so a
+            // record whose `id`/`tech`/`role` already sit first in the file stay there — only the
+            // fields that actually changed move, and any brand-new key lands at the end.
+            if let Some(fresh_obj) = fresh.as_object() {
+                for (k, v) in fresh_obj {
+                    target.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        synced.push(serde_json::json!({ "id": id, "fields": fields }));
+    }
+
+    if apply && !synced.is_empty() {
+        let text = serde_json::to_string_pretty(&seed).map_err(|e| e.to_string())?;
+        std::fs::write(&seed_path, format!("{text}\n"))
+            .map_err(|e| format!("cannot write {}: {e}", seed_path.display()))?;
+    }
+
+    let report = serde_json::json!({
+        "seedDir": seed_dir, "applied": apply,
+        "synced": synced, "upToDate": up_to_date, "wouldLoseFields": would_lose_fields,
+        "missingFromStore": missing_from_store, "missingFromSeed": missing_from_seed,
+    });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    bsc_util::emit_line(&s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
 fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
@@ -2604,6 +2815,7 @@ fn help(prog: &str) -> String {
   \
          {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
   \
+         {prog} impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]   # write a runtime impl/edge record's CONTENT back into the packaged <seed-dir>/algorithms.json, by id (#157) — the `bsc ui sync-seed` (#139) counterpart for this store. Deliberately BY ID: seed and store drift BOTH ways, so a sweep would as often overwrite real seed content as fresh store content. Dry run by default; --apply writes. --only <field> syncs exactly ONE field, leaving the rest of the seed record untouched. Refuses (would-lose-fields) rather than dropping a non-empty field the seed already carries and the store copy lacks\n  \
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
@@ -3012,6 +3224,198 @@ mod tests {
             "`promote help` must print usage, not run a promote — it must not create a store file",
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #157 (request from kevin): `impl sync-seed` writes a runtime store record's CONTENT back into
+    /// the packaged `<seed-dir>/algorithms.json`, by id — the `bsc ui sync-seed` (#139) counterpart for
+    /// the Algorithms library. A comment/code fix authored through `impl set` used to live only in the
+    /// runtime store with no `bsc` path back into the packaged seed / git.
+    #[test]
+    fn impl_sync_seed_writes_a_changed_field_refuses_field_loss_and_reports_missing_ids() {
+        let dir = crate::unique_temp("impl-sync-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let seed_path = dir.join("algorithms.json");
+        std::fs::write(
+            &seed_path,
+            serde_json::json!({
+                "implementations": [
+                    { "id": "sync157-a", "tech": "typescript", "role": "algorithm", "name": "A",
+                      "code": "// seed code a\n", "summary": "seed summary a" },
+                    { "id": "sync157-b", "tech": "typescript", "role": "algorithm", "name": "B",
+                      "code": "// seed code b\n", "summary": "seed summary b", "docs": "seed-only docs" },
+                    { "id": "sync157-missing-from-store", "tech": "typescript", "role": "algorithm",
+                      "name": "M", "code": "// only in the seed\n" }
+                ],
+                "edges": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let runtime_store = dir.join("runtime.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env (nextest gives this
+        // test its own process, per the note on `impl_set_writes_and_clears_module_state` above).
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        std::fs::write(
+            &runtime_store,
+            serde_json::json!({
+                "implementations": [
+                    { "id": "sync157-a", "tech": "typescript", "role": "algorithm", "name": "A",
+                      "code": "// NEW code a\n", "summary": "seed summary a" },
+                    // `docs` is absent here — syncing this record WHOLE would DROP a non-empty seed field.
+                    { "id": "sync157-b", "tech": "typescript", "role": "algorithm", "name": "B",
+                      "code": "// NEW code b\n", "summary": "NEW summary b" },
+                    { "id": "sync157-missing-from-seed", "tech": "typescript", "role": "algorithm",
+                      "name": "N", "code": "// only in the store\n" }
+                ],
+                "edges": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let seed_dir = dir.to_string_lossy().into_owned();
+        let ids = ["sync157-a", "sync157-b", "sync157-missing-from-store", "sync157-missing-from-seed"];
+        let mut args: Vec<String> = vec!["impl".into(), "sync-seed".into()];
+        args.extend(ids.iter().map(|s| s.to_string()));
+        args.extend(["--seed-dir".to_string(), seed_dir.clone()]);
+
+        // Dry run (no --apply): reports the would-be sync, refuses the field-losing record, and
+        // touches nothing on disk.
+        let (r, out) = bsc_util::capture_output(|| cmd_impl_sync_seed(&args));
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["applied"], false);
+        let synced: Vec<&str> =
+            report["synced"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert_eq!(synced, vec!["sync157-a"], "only the cleanly-diverged id needs writing");
+        assert_eq!(
+            report["synced"][0]["fields"],
+            serde_json::json!(["code"]),
+            "only the field that actually changed is reported"
+        );
+        let lost: Vec<&str> =
+            report["wouldLoseFields"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert_eq!(lost, vec!["sync157-b"], "syncing b whole would drop the seed-only `docs` field");
+        assert_eq!(report["missingFromSeed"], serde_json::json!(["sync157-missing-from-seed"]));
+        assert_eq!(report["missingFromStore"], serde_json::json!(["sync157-missing-from-store"]));
+
+        let seed_unchanged: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let a_seed =
+            seed_unchanged["implementations"].as_array().unwrap().iter().find(|i| i["id"] == "sync157-a").unwrap();
+        assert_eq!(a_seed["code"], "// seed code a\n", "dry run wrote nothing");
+
+        // --apply writes the diverged record and preserves the seed's field order (preserve_order).
+        let mut apply_args = args.clone();
+        apply_args.push("--apply".to_string());
+        cmd_impl_sync_seed(&apply_args).unwrap();
+        let seed_written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let a_written =
+            seed_written["implementations"].as_array().unwrap().iter().find(|i| i["id"] == "sync157-a").unwrap();
+        assert_eq!(a_written["code"], "// NEW code a\n");
+        let keys: Vec<&str> = a_written.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            vec!["id", "tech", "role", "name", "code", "summary"],
+            "insertion order is preserved — only VALUES change"
+        );
+
+        // `b` (would lose `docs`) must still be untouched even after --apply of the whole batch.
+        let b_written =
+            seed_written["implementations"].as_array().unwrap().iter().find(|i| i["id"] == "sync157-b").unwrap();
+        assert_eq!(b_written["code"], "// seed code b\n", "the refused record is never written");
+        assert_eq!(b_written["summary"], "seed summary b");
+        assert!(b_written.get("docs").is_some(), "the seed-only field the refusal protects must survive");
+
+        // A second sync of the already-synced id is a no-op.
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_impl_sync_seed(&[
+                "impl".into(),
+                "sync-seed".into(),
+                "sync157-a".into(),
+                "--seed-dir".into(),
+                seed_dir.clone(),
+            ])
+        });
+        r.unwrap();
+        let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(report["upToDate"], serde_json::json!(["sync157-a"]));
+        assert_eq!(report["synced"], serde_json::json!([]));
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `--only <field>` syncs exactly ONE field onto the seed record, leaving the rest of it exactly as
+    /// the seed already has it — so landing a new facet across many records does not drag unrelated
+    /// drift along under cover of the change.
+    #[test]
+    fn impl_sync_seed_only_flag_syncs_a_single_field() {
+        let dir = crate::unique_temp("impl-sync-seed-only");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let seed_path = dir.join("algorithms.json");
+        std::fs::write(
+            &seed_path,
+            serde_json::json!({
+                "implementations": [{
+                    "id": "sync157-only", "tech": "typescript", "role": "algorithm", "name": "Only",
+                    "code": "// seed code\n", "summary": "seed summary"
+                }],
+                "edges": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let runtime_store = dir.join("runtime.json");
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        std::fs::write(
+            &runtime_store,
+            serde_json::json!({
+                "implementations": [{
+                    "id": "sync157-only", "tech": "typescript", "role": "algorithm", "name": "Only",
+                    "code": "// STORE code — must NOT sync\n", "summary": "NEW summary — should sync"
+                }],
+                "edges": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let seed_dir = dir.to_string_lossy().into_owned();
+        let args: Vec<String> =
+            ["impl", "sync-seed", "sync157-only", "--seed-dir", &seed_dir, "--only", "summary", "--apply"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        cmd_impl_sync_seed(&args).unwrap();
+
+        let seed_written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let rec = &seed_written["implementations"][0];
+        assert_eq!(rec["summary"], "NEW summary — should sync", "--only field is synced");
+        assert_eq!(rec["code"], "// seed code\n", "everything else stays exactly as the seed has it");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Mirrors `bsc ui sync-seed`'s own usage guards: `--seed-dir` is required, and so is at least one id.
+    #[test]
+    fn impl_sync_seed_requires_seed_dir_and_at_least_one_id() {
+        assert!(
+            cmd_impl_sync_seed(&["impl".into(), "sync-seed".into(), "some-id".into()]).is_err(),
+            "--seed-dir is required"
+        );
+        assert!(
+            cmd_impl_sync_seed(&["impl".into(), "sync-seed".into(), "--seed-dir".into(), "/tmp/wherever".into()])
+                .is_err(),
+            "at least one id is required"
+        );
     }
 
     /// The help text is the CLI's own account of its surface, so every exported const must appear in

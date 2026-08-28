@@ -29,7 +29,15 @@ bsc-data = { path = "../data", default-features = false }
 # `bsc-confine` hook, so a harvest cannot read outside a confined session's root.
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `preserve_order` — LOAD-BEARING for `impl sync-seed`. The packaged seed
+# (src-tauri/data/knowledge/algorithms.json) is one 6.6MB file holding every record, and its field
+# order is INSERTION order, not alphabetical (verified: `JSON.stringify(JSON.parse(seed), null, 2)`
+# round-trips byte-identical). Without this feature `serde_json::Value` objects are BTreeMaps, so
+# parsing the whole seed and writing it back would silently re-sort every record's keys alphabetically
+# — a multi-thousand-line diff for a one-field sync. With it, `Map::insert` on an EXISTING key updates
+# the value in place and keeps its position, matching how `sync-impl-seed.mjs` (the script this verb
+# replaces) already merged fields onto a seed record without reordering it.
+serde_json = { version = "1", features = ["preserve_order"] }
 tree-sitter = "0.26"
 tree-sitter-typescript = "0.23"
 tree-sitter-rust = "0.24"

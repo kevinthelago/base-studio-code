@@ -190,6 +190,14 @@ reflects it:
 - `bsc graph impl revert <id> [--to <rev>]` — restore a previous `code`. Defaults to undoing the last
   source-moving write. It REFUSES rather than landing on a nearer revision when the target has aged past
   the retained rungs, and names which revisions are still reachable.
+- `bsc graph impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` — a write here
+  is to the RUNTIME store; the PACKAGED seed (`src-tauri/data/knowledge/algorithms.json`) is a checked-in
+  file that only reaches git through this verb. Reach for it after a write you want to land on a branch:
+  a dry run (no `--apply`) reports what would sync, `--apply` writes it. Deliberately BY ID, never a
+  sweep — seed and store drift BOTH ways, so a mass re-stamp would as often overwrite real seed content
+  as fresh store content. `--only <field>` syncs exactly one field, leaving the rest of the seed record
+  untouched. Refuses (`wouldLoseFields`) rather than dropping a non-empty field the seed already carries
+  and the store copy lacks.
 
 Steward toward one accurate, non-duplicated library: one algorithm per id, honest roles, real
 `composes` edges rooted in the language's primitives.
