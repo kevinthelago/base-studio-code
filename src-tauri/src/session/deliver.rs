@@ -65,8 +65,9 @@ pub fn deliver(
     let action = plan(live, working, req.interrupt);
 
     match action {
-        // Wake it holding the request. Unchanged from the path that has never failed — the frontend
-        // mounts the session and `askDirective` rides in on its persona prompt.
+        // Wake it holding the request — which IS the launch prompt now, not a pointer to somewhere
+        // the request can be found. The frontend mounts the session and `askDirective` rides in
+        // exactly where the persona prompt goes.
         Action::StartWith => {
             crate::session::system::apply(
                 app,
@@ -74,7 +75,7 @@ pub fn deliver(
                 &bsc_session::LifecycleRequest {
                     id: session.id.to_string(),
                     action: bsc_session::LifecycleAction::Start,
-                    loop_id: req.loop_id,
+                    request: Some(req.text.clone()),
                 },
             )?;
         }

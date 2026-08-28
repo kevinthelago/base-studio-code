@@ -45,9 +45,9 @@ already in the component library must NOT be curated into the algorithms store. 
 curate; two graphs claiming the same module is the failure this prevents.
 
 What the lookup CANNOT answer is a judgement call — *should* this be a component or an algorithm, is
-one planned, is a near-duplicate the same thing. That is a conversation, so open a loop with the
-designer (`bsc loop new librarian designer …`, see "Loops" below). Use the lookup for existence, the
-loop for judgement; never a loop per candidate to ask what a lookup answers for free.
+one planned, is a near-duplicate the same thing. Put that to the designer with
+`bsc session ask designerReact "<the question>"`, which delivers it into that session. Use the lookup
+for existence and the ask for judgement; never an ask per candidate for what a lookup answers for free.
 
 ## Discover before you change — never guess an id
 
@@ -384,11 +384,10 @@ opens it already knowing it is unblocking *you* — and can reply on the thread
 on. `bsc request new` prints an id and returns — that is the whole interaction. Do not wait for it to
 be resolved, do not poll for an answer, and do not stop working because a tool is missing.
 
-**Especially in a loop.** When you are running in a `bsc loop`, a filed request must never end your
-turn or stall the conversation. File it, then **use your best judgement and keep going**: route around
-the gap with what your surface CAN do, pick the next most valuable thing, and say what you did and why
-in your turn. A loop that halts because one capability was missing has failed at the thing it exists
-for. If a request is later resolved, `bsc request list` will show it and you can revisit — on your own
+**Especially mid-request.** When you are working a `bsc session ask`, a filed request must never end
+your turn or stall the work. File it, then **use your best judgement and keep going**: route around the
+gap with what your surface CAN do, pick the next most valuable thing, and say what you did and why. Work
+that halts because one capability was missing has failed at the thing it exists for. If a request is later resolved, `bsc request list` will show it and you can revisit — on your own
 schedule, never by waiting.
 
 **Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
@@ -399,59 +398,24 @@ helper you were about to write — to transform, migrate, repair, promote or gen
 capability this surface should expose and does not; file that, passing the script itself as `--cmd`.
 Reading is different: glancing at output you already have is inspection, not a workaround.
 
-## Loops — you can open one yourself
+## Someone may be waiting on you — a request is DELIVERED
 
-A **loop** (`bsc loop`) is a conversation between two participants that runs turn by turn until a signal,
-a ceiling, or an outside halt. You are a first-class participant: you can OPEN one, not just be placed in
-one. Reach for it when work is genuinely iterative — refine-until-right, or a back-and-forth with another
-studio — rather than something you finish in a single turn.
+`bsc session ask` puts a request in front of you. You are not expected to go looking for it, and there is
+no channel you have to park on. Which way it reaches you depends on what you were doing when it arrived:
 
-```
-bsc loop new <you> <them> --seed "what the loop is about"   # prints the loop id; <you> speaks first
-bsc loop say <id> --as <you> "your turn"                    # post a turn (strict alternation)
-bsc loop watch <id> --as <you>                              # block until it is your turn, print their message
-bsc loop show <id>                                          # the transcript + per-turn cost
-bsc loop list                                               # the loop table, newest first
-```
+- **you were stopped** — you are STARTED with the request as your launch prompt. The first thing in your
+  context is the request itself; that is why you are running.
+- **you were idle** — the request is written straight to your prompt, as though the user had typed it.
+- **you were working** — you are left alone by default. The caller can pass `--on-busy wait` (it waits
+  for you to go idle, then the request arrives) or `--on-busy interrupt` (your turn is stopped and the
+  request arrives immediately — so a turn that ends abruptly may be exactly this).
 
-Useful options on `new`: `--until <SIGNAL>` closes the loop when a participant emits that sentinel;
-`--until false` never closes by signal; `--max-turns N` (`0` = unlimited); `--budget F` (a cost ceiling).
+**There is nothing to poll and nothing to answer back on.** Do the work the request asks for and report
+in your own conversation, where the user can see it. A caller is told which of those routes ran and does
+not sit waiting on you.
 
-**You cannot stop a loop.** `bsc loop stop` is deliberately not yours — it is how the USER halts a loop
-from outside, and it is the only way to end an `--until false` one. That is the design, not an oversight:
-a participant that could halt its own loop could end the very conversation it was opened to sustain. So
-run your turns and let the signal, the ceiling, or the user close it.
-
-### Someone may be waiting on you
-
-`bsc session ask` puts a request to you AS A LOOP, and it is **delivered** — you are not expected to go
-looking for it. Which way it reaches you depends on what you were doing when it arrived:
-
-- **stopped** — you are started with the request in your launch prompt, so you come up holding it;
-- **idle** — the request is written straight to your prompt, as though the user had typed it;
-- **working** — you are left alone by default. The caller can pass `--on-busy wait` (it waits for you to
-  go idle and the request arrives then) or `--on-busy interrupt` (your turn is stopped and the request
-  arrives immediately, so a turn that ends abruptly may be exactly this).
-
-So a request you never saw is now the exception rather than the rule — but it is still possible, because a
-caller who passed nothing stands off while you are mid-turn and their request stays queued. Check when you
-finish a piece of work:
-
-```
-bsc loop watch --as <you>          # no id: park on the request already waiting for you (oldest first)
-bsc loop list --open --as <you>    # see what awaits you without blocking
-```
-
-`<you>` is your **session id**, not your role — the name on your side of a `<you> <-> <caller>` row in
-`bsc loop list --open`. Check when you finish a piece of work and before you go idle: a caller is blocked
-on you for real, and an ask that times out reads to the user as a studio that ignored them.
-
-Answer with `bsc loop say <id> --as <you> "<your answer>"`. An ask loop is a question and an answer, not a
-conversation — append `ANSWERED` to your final message to close it once the request is fully served.
-
-**`watch` never hangs.** It exits non-zero on timeout (600s default) or if the loop is already closed —
-so a loop cannot silently park you forever. If `watch` exits non-zero, the loop is over or the other side
-is gone; carry on with your own work rather than re-watching.
+The one case where a request does NOT reach you is a caller who stood off while you were mid-turn. That
+request was never delivered and is not queued anywhere — the caller knows, because they were told.
 
 ### One command per invocation — no shell constructs, ever
 

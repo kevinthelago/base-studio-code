@@ -20,8 +20,4 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 # The ONE bsc→app request channel — shared with `bsc shot`/`bsc navigate`/`bsc fleet`, so there is no
 # second transport.
 bsc-appchan = { path = "../bsc-appchan" }
-# `bsc session ask` rides the EXISTING loop store rather than a second request channel: `bsc loop
-# watch` blocks, so the callee parks in a read it entered itself — which is what makes a request reach
-# an idle session without the app ever injecting into one.
-bsc-loop = { path = "../bsc-loop" }
 bsc-sqlite-util = { path = "../bsc-sqlite-util" }
