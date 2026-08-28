@@ -506,6 +506,10 @@ mod tests {
         // the shape the broad predicate gets wrong. IDLE runs `read`, a bash builtin, so the agent
         // blocks with no child: a session waiting at its TUI prompt. WORKING has a tool call in flight.
         let spawn = |inner: &str| {
+            // Its OWN process group, so cleanup can take the whole tree. Killing the outer shell alone
+            // orphans the agent and its `sleep`, which outlive the test — nextest reports that as a LEAK,
+            // and a test that leaves strays behind on every run is not finished.
+            use std::os::unix::process::CommandExt;
             std::process::Command::new("/bin/bash")
                 .arg("-c")
                 // The trailing `; true` on BOTH levels defeats bash's exec optimization: `bash -c 'sleep 30'`
@@ -513,6 +517,7 @@ mod tests {
                 // agent anywhere in it. With a second statement present each level stays a real process.
                 .arg(format!("{} -c '{inner}; true'; true", fake.display()))
                 .stdin(std::process::Stdio::piped())
+                .process_group(0)
                 .spawn()
                 .expect("spawn the pane shell")
         };
@@ -527,8 +532,14 @@ mod tests {
         // Measured on the SAME snapshot moment, so the contrast below is not a timing artifact.
         let broad = shells_with_descendants(&pids);
 
-        let _ = idle.kill();
-        let _ = working.kill();
+        // Negative pid = the whole process group, which `process_group(0)` made equal to each shell's
+        // own pid. This is what actually reaps the agent and its tool call.
+        for child in [&idle, &working] {
+            let _ = std::process::Command::new("kill")
+                .arg("-9")
+                .arg(format!("-{}", child.id()))
+                .status();
+        }
         let _ = idle.wait();
         let _ = working.wait();
         let _ = std::fs::remove_dir_all(&dir);
