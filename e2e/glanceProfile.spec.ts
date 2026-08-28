@@ -32,6 +32,26 @@
 import { test, expect } from "@playwright/test";
 import type { CDPSession } from "@playwright/test";
 
+// ── EVERY SAMPLE IS TAKEN AFTER A FORCED COLLECTION, and that is the whole correctness of this file ──
+//
+// The first version of this spec did NOT collect, and it produced a confident false positive within an
+// hour of being written: JSEventListeners climbed 184 → 344 over 180s, dead linear at ~53/min, with
+// Nodes pinned — which reads exactly like subscriptions piling up, and was reported as such.
+//
+// It was garbage. `HeapProfiler.collectGarbage` gave back every single one:
+//
+//     after mount        listeners 176   nodes 466   heap 160.4MB
+//     after 90s          listeners 240   nodes 466   heap 135.6MB
+//     after forced GC    listeners 176   nodes 466   heap 133.4MB     ← 0% of the growth retained
+//
+// `JSEventListeners` counts live-but-uncollected listener objects, so an uncollected sample measures
+// how recently V8 last ran a GC — not what the page holds. The real source was React re-assigning
+// `onclick` DOM properties on commit (setProp → updateProperties → commitUpdate), which is ordinary
+// React behaviour for inline handlers and allocates nothing that survives.
+//
+// So: collect first, then measure. A number that only says "the collector has not run lately" is worse
+// than no number, because it looks like evidence.
+
 const HARNESS = "/e2e/harness/graph-pages-harness.html";
 
 /** How long to hold Glance mounted while sampling. Long by default: the bug it hunts took MINUTES to
@@ -53,6 +73,8 @@ const LISTENER_GROWTH_BUDGET_PER_MIN = 5;
 type Metrics = Record<string, number>;
 
 async function metrics(cdp: CDPSession): Promise<Metrics> {
+  // See the header: an uncollected reading measures GC timing, not retention.
+  await cdp.send("HeapProfiler.collectGarbage");
   const { metrics: rows } = await cdp.send("Performance.getMetrics");
   const out: Metrics = {};
   for (const m of rows) out[m.name] = m.value;
@@ -70,17 +92,12 @@ async function mountGlance(page: import("@playwright/test").Page): Promise<void>
 
 test("Glance's populations while it sits mounted — listeners, nodes, heap", async ({ page, context }) => {
   test.setTimeout((PROFILE_SECONDS + 90) * 1000);
-  // KNOWN FAILING, on purpose — this is the guard for
-  // `glance-render-rate-accelerates-until-a-remount-clears-it`, which is open. Measured 2026-08-28 in
-  // this harness: 184 → 344 listeners over 180s, a dead-linear ~53/min on a page nobody is touching,
-  // with Nodes pinned at 466 throughout.
-  //
-  // `test.fail()` rather than a skip, so the spec still RUNS and still prints the table — and so that
-  // fixing the bug turns this red as an "unexpected pass", which tells whoever fixed it to delete this
-  // marker. A skipped test would just rot.
-  test.fail();
+  // NOT marked `test.fail()`. It was, on the strength of the uncollected numbers in the header — and
+  // that was wrong twice over: the growth was garbage, and marking a spec known-failing on a
+  // misread metric would have taught every future reader that Glance leaks listeners.
   const cdp = await context.newCDPSession(page);
   await cdp.send("Performance.enable");
+  await cdp.send("HeapProfiler.enable"); // for collectGarbage — see the header
   await mountGlance(page);
 
   const rows: Array<{ t: number } & Metrics> = [];
@@ -112,10 +129,9 @@ test("Glance's populations while it sits mounted — listeners, nodes, heap", as
   // legitimately allocates and legitimately renders more DOM as data arrives, so an assertion on them
   // would fail for correct behaviour.
   //
-  // A RATE, not a ratio. The first version allowed a doubling, which quietly makes the threshold depend
-  // on how long you run: the measured leak (184 → 344 in 180s) passed a doubling test at 180s and would
-  // have failed it at 200s, so the same bug looked present or absent depending on PROFILE_SECONDS. A
-  // per-minute rate is the honest invariant — an idle page should acquire ~none.
+  // A RATE, not a ratio: a ratio threshold quietly depends on how long you run, so the same page looks
+  // healthy or sick depending on PROFILE_SECONDS. And POST-GC, so it is retention rather than GC timing
+  // — measured that way, an idle Glance returns exactly to its mount-time count.
   const l0 = first.JSEventListeners ?? 0;
   const l1 = last.JSEventListeners ?? 0;
   const perMin = ((l1 - l0) / PROFILE_SECONDS) * 60;
