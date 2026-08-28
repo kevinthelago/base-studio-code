@@ -87,6 +87,7 @@ const COMMANDS: &[Surface] = &[
     active("persona", "user persona store: agent identities (prompt + skills + model over a role)", Some("personas/ — user")),
     active("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
     active("teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
+    active("network", "user network store: a DOMAIN owning a set of projects and one architect session", Some("networks/ — user; membership is the `network` column on the project row")),
     active("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)", Some("the Studio snapshot store — user")),
     deprecated("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)", Some("orgs/ — the same store `bsc teams` serves")),
     deprecated("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)", Some("the component library — the same store `bsc ui` serves")),
@@ -218,6 +219,11 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "atlas" => atlasdb::cli::run(rest, "bsc atlas"),
         "sound" => bsc_sound::cli::run(rest, "bsc sound"),
         "teams" => bsc_teams::cli::run(rest, "bsc teams"),
+        // A NETWORK is a domain: a named set of projects sharing one concern, and the owner of exactly
+        // one architect session. This store holds the entity only — a project's membership is the
+        // `network` column on its project row (`bsc project network set`), the same seam `architect`
+        // uses, so a network never has to keep a member list in sync.
+        "network" => bsc_network::cli::run(rest, "bsc network"),
         "studio" => bsc_studio::cli::run(rest, "bsc studio"),
         // Deprecated alias (#2700, the #2469 `bsc component` → `bsc ui` pattern): `bsc org` still routes
         // to the SAME teams store handler — live agent sessions call it, so it must keep working. The
@@ -546,6 +552,7 @@ mod tests {
         // #2700: `bsc teams` is the primary verb; `bsc org` stays a deprecated alias onto the same
         // store handler (delegating + warning on stderr). Help paths — no store required.
         assert!(dispatch("teams", vec!["help".into()]).is_ok());
+        assert!(dispatch("network", vec!["help".into()]).is_ok());
         assert!(dispatch("org", vec!["help".into()]).is_ok());
     }
 }
