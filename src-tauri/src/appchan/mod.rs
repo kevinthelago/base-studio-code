@@ -116,6 +116,12 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
             let res = crate::session::system::apply(app, &env.id, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
         }
+        bsc_session::DELIVER_KIND => {
+            let req: bsc_session::DeliverRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed session deliver request: {e}"))?;
+            let res = crate::session::deliver::deliver(app, &env.id, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
         bsc_fleet::START_KIND => {
             let req: bsc_fleet::StartRequest = serde_json::from_value(env.payload.clone())
                 .map_err(|e| format!("malformed fleet start request: {e}"))?;
@@ -171,6 +177,7 @@ mod tests {
         assert_eq!(bsc_debug::KIND, "debug");
         assert_eq!(bsc_session::KIND, "session");
         assert_eq!(bsc_session::LIFECYCLE_KIND, "session-lifecycle");
+        assert_eq!(bsc_session::DELIVER_KIND, "session-deliver");
         // One channel, routed by kind — a collision silently sends a request to the wrong handler.
         // `fleet` and its `fleet-wake` sibling are in here too: `session`/`session-lifecycle` follows
         // the same two-key shape, and the pair is exactly where a prefix collision would hide.
@@ -184,6 +191,7 @@ mod tests {
             bsc_fleet::START_KIND,
             bsc_session::KIND,
             bsc_session::LIFECYCLE_KIND,
+            bsc_session::DELIVER_KIND,
         ];
         for (i, a) in kinds.iter().enumerate() {
             for b in &kinds[i + 1..] {

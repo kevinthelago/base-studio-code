@@ -43,6 +43,45 @@ pub const KIND: &str = "session";
 /// (frontend emit + ack), so it rides its own key the way `fleet-wake` does next to `fleet`.
 pub const LIFECYCLE_KIND: &str = "session-lifecycle";
 
+/// The DELIVER routing key (#an-ask-is-delivered-not-left-to-be-found).
+///
+/// Its own key rather than a flag on [`LIFECYCLE_KIND`] because it is a different question: lifecycle
+/// asks "be running / stop running", delivery asks "take this request", and the answer names which of
+/// three routes was taken. It can END in a lifecycle start (a stopped target is woken WITH the
+/// request), which is exactly why it is the caller of that rather than a variant of it.
+pub const DELIVER_KIND: &str = "session-deliver";
+
+/// Ask the app to put `text` in front of a system session, whatever state it is in.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliverRequest {
+    /// A system-session id, re-resolved against [`SYSTEM_SESSIONS`] by the app — the same closed-set
+    /// boundary every other verb here crosses.
+    pub id: String,
+    /// The request to put in front of it.
+    pub text: String,
+    /// Cut into work already in progress. Without it a working session is LEFT ALONE and the caller is
+    /// told so; this is the maintainer's "ability to completely interrupt a session with a prompt".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interrupt: bool,
+    /// The loop this delivery serves, when there is one. Carried into the LAUNCH PROMPT if the target
+    /// has to be started, so a session woken for a request comes up already knowing which one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_id: Option<i64>,
+}
+
+/// What the delivery did — never silent, because a request that vanished is the failure the whole
+/// item exists to end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliverResult {
+    pub session_id: String,
+    pub pane_id: String,
+    pub action: deliver::Action,
+    /// Human-readable, and the line the CLI prints.
+    pub detail: String,
+}
+
 /// One app-owned system session: the id the CLI takes, the fixed pane id its session runs on, and what
 /// it is for (printed by `list`, and in the refusal — a caller that named the wrong one should be able
 /// to pick the right one without a second command).
@@ -424,3 +463,172 @@ mod tests {
 // This header stays a file because include! refuses crate-level //! docs and #![…] inner
 // attributes (E0753 / "an inner attribute is not permitted in this context").
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));
+
+/// The DELIVERY policy for an ask (#an-ask-is-delivered-not-left-to-be-found).
+///
+/// Lives in this Tauri-free crate rather than in the app because BOTH ends need it: the app decides
+/// and carries it out, and the CLI reports what happened. A stringly-typed action on the wire would
+/// have the two disagree about the one thing the caller reads.
+pub mod deliver {
+    use serde::{Deserialize, Serialize};
+
+    /// What delivering an ask to a session should DO, given the state that session is in.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum Action {
+        /// The session is not running: start it with the request in its launch prompt.
+        ///
+        /// The path that has never failed, and the reason it is kept rather than replaced — a session born
+        /// with the request cannot miss it.
+        StartWith,
+        /// The session is up and its agent is at a prompt: write the request in.
+        Inject,
+        /// The session is up and its agent is running something: interrupt it, then write the request in.
+        /// Only ever chosen when the caller explicitly asked for it.
+        InterruptWith,
+        /// The session is working and the caller did not ask to interrupt. The request stays queued and
+        /// the caller is TOLD, because a delivery that silently did nothing is the failure this whole item
+        /// exists to end.
+        LeaveWorking,
+    }
+
+    impl Action {
+        /// Whether this action writes into a session that is already running.
+        ///
+        /// The two that do are exactly the two that cross `#only-the-user-resumes-a-session`, so they are
+        /// nameable as a set rather than spelled out at each call site.
+        pub fn writes_into_a_live_session(self) -> bool {
+            matches!(self, Action::Inject | Action::InterruptWith)
+        }
+
+        /// A short phrase for the caller's report — what actually happened to their request.
+        pub fn describe(self) -> &'static str {
+            match self {
+                Action::StartWith => "the session was started with your request in its launch prompt",
+                Action::Inject => "your request was delivered to the idle session",
+                Action::InterruptWith => "the session was interrupted and given your request",
+                Action::LeaveWorking => {
+                    "the session is working, so the request was left queued — re-send with --interrupt to \
+                     cut in"
+                }
+            }
+        }
+    }
+
+    /// Decide how to deliver, from the target's measured state.
+    ///
+    /// `live` is "a PTY session exists"; `working` is the AGENT-level probe (`busy::agents_doing_work`) —
+    /// the agent has spawned a child of its own. Deliberately NOT the shell-level `busy`, which for an
+    /// agent session is permanently true because the agent is itself a descendant, and would therefore
+    /// route every single ask to [`Action::LeaveWorking`].
+    ///
+    /// `interrupt` is the caller's explicit request to cut into work in progress. It is honoured ONLY when
+    /// the session is actually working: interrupting an idle agent would send a stray interrupt key for no
+    /// reason, and starting a stopped one is not an interruption at all.
+    pub fn plan(live: bool, working: bool, interrupt: bool) -> Action {
+        match (live, working) {
+            (false, _) => Action::StartWith,
+            (true, false) => Action::Inject,
+            (true, true) if interrupt => Action::InterruptWith,
+            (true, true) => Action::LeaveWorking,
+        }
+    }
+
+    /// The keystroke that interrupts an agent mid-turn, and the pause after it.
+    ///
+    /// ESC is what a Claude Code TUI reads as "stop the current turn"; the pause gives it time to unwind
+    /// before the next line arrives, so the request is typed at a prompt rather than into a turn that is
+    /// still tearing down. Ctrl-C is deliberately NOT used: in a TUI it is as likely to kill the agent as
+    /// to interrupt its turn, and this verb is meant to redirect a session, not end it.
+    pub const INTERRUPT_KEY: &str = "\x1b";
+    pub const INTERRUPT_SETTLE_MS: u64 = 250;
+
+    /// The bytes that deliver `text` to an agent sitting at its prompt.
+    ///
+    /// The trailing CR is what SUBMITS the line — without it the request sits in the agent's input box
+    /// unsent, which looks identical to a delivery that worked right up until nobody answers. Any interior
+    /// CR/LF is flattened to a space for the same reason: a multi-line request would submit at its first
+    /// newline and send the remainder as a second, truncated turn.
+    pub fn submission(text: &str) -> String {
+        let flattened: String = text
+            .chars()
+            .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+            .collect();
+        format!("{}\r", flattened.trim())
+    }
+
+    #[cfg(test)]
+        mod tests {
+        use super::*;
+
+        #[test]
+        fn a_stopped_session_is_started_with_the_request() {
+            // The path that has never failed. `interrupt` is irrelevant here — there is nothing to cut in
+            // on, and a stopped session cannot miss a request it is born holding.
+            assert_eq!(plan(false, false, false), Action::StartWith);
+            assert_eq!(plan(false, false, true), Action::StartWith);
+            assert_eq!(plan(false, true, true), Action::StartWith, "not live wins over any staleness in `working`");
+        }
+
+        #[test]
+        fn an_idle_session_is_given_the_request_rather_than_asked_to_look_for_it() {
+            // THE REGRESSION. This is the state all four stranded asks were in: up, idle, and never told.
+            assert_eq!(plan(true, false, false), Action::Inject);
+        }
+
+        #[test]
+        fn an_idle_session_is_never_interrupted_even_when_interrupt_is_asked_for() {
+            // There is nothing to interrupt, and a stray ESC into an idle agent is a keystroke nobody sent.
+            assert_eq!(plan(true, false, true), Action::Inject);
+        }
+
+        #[test]
+        fn a_working_session_is_left_alone_by_default_and_cut_into_only_on_request() {
+            assert_eq!(plan(true, true, false), Action::LeaveWorking);
+            assert_eq!(plan(true, true, true), Action::InterruptWith);
+        }
+
+        #[test]
+        fn leaving_a_working_session_alone_still_tells_the_caller_what_to_do() {
+            // A delivery that silently did nothing is the failure this item exists to end, so the one
+            // action that delivers nothing has to carry the way to get through.
+            let msg = Action::LeaveWorking.describe();
+            assert!(msg.contains("--interrupt"), "it names the flag that would cut in: {msg}");
+        }
+
+        #[test]
+        fn exactly_two_actions_write_into_a_live_session() {
+            // These two are what cross #only-the-user-resumes-a-session. Naming them as a set is what lets
+            // the guard and the audit line agree about which they are.
+            assert!(Action::Inject.writes_into_a_live_session());
+            assert!(Action::InterruptWith.writes_into_a_live_session());
+            assert!(!Action::StartWith.writes_into_a_live_session(), "a launch prompt is not an injection");
+            assert!(!Action::LeaveWorking.writes_into_a_live_session());
+        }
+
+        #[test]
+        fn a_submission_ends_in_a_carriage_return_or_it_was_never_sent() {
+            // Without the CR the text sits in the agent's input box unsent — indistinguishable from a
+            // working delivery until nobody ever answers.
+            let s = submission("review the kickoff");
+            assert!(s.ends_with('\r'), "{s:?}");
+            assert_eq!(s, "review the kickoff\r");
+        }
+
+        #[test]
+        fn interior_newlines_are_flattened_so_a_request_cannot_submit_itself_halfway() {
+            // A multi-line request would submit at its FIRST newline and send the rest as a second,
+            // truncated turn — the receiving agent would answer half a question.
+            let s = submission("line one\nline two\r\nline three");
+            assert_eq!(s, "line one line two  line three\r");
+            assert_eq!(s.matches('\r').count(), 1, "exactly one submission");
+        }
+
+        #[test]
+        fn surrounding_whitespace_is_trimmed_but_the_text_is_otherwise_verbatim() {
+            assert_eq!(submission("  spaced  "), "spaced\r");
+            // Not mangled: the request is prose the receiving agent has to read.
+            assert_eq!(submission("use `bsc ui set` — and check --coverage"), "use `bsc ui set` — and check --coverage\r");
+        }
+    }
+}

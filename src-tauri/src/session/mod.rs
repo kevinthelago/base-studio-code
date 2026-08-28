@@ -25,3 +25,7 @@ pub mod persona_use;
 /// (#architect-starts-and-stops-system-sessions). Lives here rather than under `fleet/` because these
 /// are the APP's own studios, not a project's fleet.
 pub mod system;
+/// How an ask REACHES its target — started with it, injected at idle, or interrupted with it
+/// (#an-ask-is-delivered-not-left-to-be-found). Crosses `#only-the-user-resumes-a-session` on the
+/// maintainer's explicit call; see the module doc.
+pub mod deliver;

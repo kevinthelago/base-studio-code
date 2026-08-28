@@ -1166,6 +1166,30 @@ fn first_write_to_missing(pane_id: &str) -> bool {
         .unwrap_or(true)
 }
 
+/// Write bytes into a pane's PTY, reporting whether a session was actually there to take them.
+///
+/// Split out of [`pty_write`] so the BACKEND can deliver an ask to a live session
+/// (`session::deliver`) without routing through the frontend command — and, unlike the command, it
+/// says whether the write landed. A caller that is delivering a request has to be able to tell "sent"
+/// from "there was no session", which is exactly the distinction `pty_write` swallows on purpose for
+/// the keystroke path.
+///
+/// EVERY caller of this is an injector. See `rust_injectors_are_ratcheted` in `crate::tests` and the
+/// module doc of `session::deliver` before adding one.
+pub(crate) fn write_pane(pane_id: &str, data: &str, state: &PtyState) -> bool {
+    let mut sessions = state.0.lock().unwrap();
+    match sessions.get_mut(pane_id) {
+        Some(s) => match s.writer.write_all(data.as_bytes()) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("pty[{pane_id}] write failed: {e}");
+                false
+            }
+        },
+        None => false,
+    }
+}
+
 #[tauri::command]
 pub(crate) fn pty_write(
     pane_id: String,
