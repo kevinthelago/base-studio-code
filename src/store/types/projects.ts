@@ -14,11 +14,17 @@ export interface ProjectsState {
   // the same way (formerly its own rail Workspace).
   projectsPageMode: "projects" | "teams" | "designs" | "algorithms" | "sounds";
   setProjectsPageMode: (v: "projects" | "teams" | "designs" | "algorithms" | "sounds") => void;
-  // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
-  // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
-  // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
-  glanceDrill: string | null;
-  setGlanceDrill: (id: string | null) => void;
+  // Glance drill target (#…), PER TAB: for each Glance tab, the project whose fleet graph is open on it,
+  // or null/absent for that tab's project network. Lifted into the store (transient, not persisted) so
+  // the app-wide navigation history (mouse back/forward) can drive it alongside the active workspace.
+  // See useNavHistory.
+  //
+  // KEYED BY TAB, exactly as `activePageTab` is keyed by workspace. It was ONE value shared by every
+  // tab, so drilling on one network applied that navigation to all of them — switching tabs landed you
+  // inside a drill belonging to a different domain, on a graph that does not contain the node. Nothing
+  // re-scoped it on a tab change, because a single value has nothing to re-scope.
+  glanceDrill: Record<string, string | null>;
+  setGlanceDrill: (tab: string, id: string | null) => void;
   // Verify-preview (#2623, transient): the PreviewSource the verify-build produced per project (what the
   // graph's preview node renders), and whether a build is in flight. Not persisted — a served preview
   // URL dies with its process, so it's re-built on demand.
