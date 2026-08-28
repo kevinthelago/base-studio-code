@@ -19,7 +19,6 @@
   "variants": [
     "default"
   ],
-  "version": "",
   "whenNot": [],
   "whenUse": [],
   "feature": "settings"
