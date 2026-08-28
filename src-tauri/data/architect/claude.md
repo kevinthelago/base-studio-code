@@ -444,9 +444,18 @@ run your turns and let the signal, the ceiling, or the user close it.
 
 ### Someone may be waiting on you
 
-`bsc session ask` puts a request to you AS A LOOP, and the loop id reaches you in your **launch prompt** —
-so if you were already running when it arrived, nothing told you about it. That request then sits open and
-unanswered until the caller gives up. Nothing is lost and nothing is broken; you simply have to look.
+`bsc session ask` puts a request to you AS A LOOP, and it is **delivered** — you are not expected to go
+looking for it. Which way it reaches you depends on what you were doing when it arrived:
+
+- **stopped** — you are started with the request in your launch prompt, so you come up holding it;
+- **idle** — the request is written straight to your prompt, as though the user had typed it;
+- **working** — you are left alone by default. The caller can pass `--on-busy wait` (it waits for you to
+  go idle and the request arrives then) or `--on-busy interrupt` (your turn is stopped and the request
+  arrives immediately, so a turn that ends abruptly may be exactly this).
+
+So a request you never saw is now the exception rather than the rule — but it is still possible, because a
+caller who passed nothing stands off while you are mid-turn and their request stays queued. Check when you
+finish a piece of work:
 
 ```
 bsc loop watch --as <you>          # no id: park on the request already waiting for you (oldest first)
