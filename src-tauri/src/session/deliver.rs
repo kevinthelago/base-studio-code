@@ -33,7 +33,9 @@
 //! policy — including the case that does nothing — is a table a test can read. The effectful half only
 //! carries it out.
 
-use bsc_session::deliver::{plan, submission, Action, INTERRUPT_KEY, INTERRUPT_SETTLE_MS};
+use bsc_session::deliver::{
+    plan, submission, Action, INTERRUPT_KEY, INTERRUPT_SETTLE_MS, SUBMIT_KEY, SUBMIT_SETTLE_MS,
+};
 use tauri::Manager;
 
 // ── The effectful half ───────────────────────────────────────────────────────
@@ -93,14 +95,28 @@ pub fn deliver(
                 session.id,
                 action
             );
+            // TWO WRITES, and the separation is the whole point. Both in one write land in a single
+            // read on the PTY, which Claude's TUI reads as a PASTE — and a carriage return inside a
+            // paste is a newline in the buffer, not a submit. The request arrived and was never sent.
+            // See `SUBMIT_KEY` for the measurement.
+            let gone = |what: &str| {
+                format!(
+                    "'{}' reported live but its PTY was gone when the {what} was written — it is \
+                     being torn down; re-send once it has settled",
+                    session.id
+                )
+            };
             if !crate::console::pty::write_pane(&session.pane_id, &submission(&req.text), &state) {
                 // The probe said live and the write found nothing: a teardown race. Reported rather
                 // than returned as success, because a caller told "delivered" would wait forever.
-                return Err(format!(
-                    "'{}' reported live but its PTY was gone when the request was written — it is \
-                     being torn down; re-send once it has settled",
-                    session.id
-                ));
+                return Err(gone("request"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(SUBMIT_SETTLE_MS));
+            // CHECKED TOO. A text write that lands and an Enter that does not is the exact failure
+            // this change exists to end — the request visible in the box, unsent, reported as
+            // delivered.
+            if !crate::console::pty::write_pane(&session.pane_id, SUBMIT_KEY, &state) {
+                return Err(gone("submit key"));
             }
         }
         // Nothing to do, and that is the point: the caller is TOLD rather than left to assume.
