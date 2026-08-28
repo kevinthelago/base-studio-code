@@ -405,6 +405,7 @@
   "@data/components/app/app/console/panes/views/changesview.json",
   "@data/components/app/app/console/panes/views/filesview.json",
   "@data/components/app/app/console/panes/views/logview.json",
+  "@data/components/app/app/console/panes/views/modelsview.json",
   "@data/components/app/app/console/panes/views/telemetryview.json",
   "@data/components/app/app/console/panes/views/terminalbanners.json",
   "@data/components/app/app/console/panes/views/terminalview.json",
