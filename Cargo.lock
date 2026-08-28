@@ -729,6 +729,7 @@ dependencies = [
  "bsc-loop",
  "bsc-mcp",
  "bsc-navigate",
+ "bsc-network",
  "bsc-persona",
  "bsc-project",
  "bsc-publish",
@@ -971,6 +972,15 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-network"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
+ "serde_json",
 ]
 
 [[package]]
