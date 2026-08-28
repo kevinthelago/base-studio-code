@@ -228,6 +228,65 @@ pub struct SystemSessionState {
     pub busy: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    /// What this session IS, printed in the listing. For a registry row it is the registry's own
+    /// summary; for a DISCOVERED one it says what the session is and why it exists, which is the
+    /// question a caller actually has when an unexpected row appears.
+    ///
+    /// `#[serde(default)]` so a newer CLI reading an OLDER app's reply lists rather than failing the
+    /// whole read — the binary is staged from `target/` at app boot, so the two are routinely a build
+    /// apart.
+    #[serde(default)]
+    pub summary: String,
+    /// Whether the WRITE half of this verb can name this session.
+    ///
+    /// True for the fixed registry. False for anything DISCOVERED, and that is not a check to be
+    /// remembered: a per-request debug session's id is minted at runtime, so it is not expressible in
+    /// the argument space `resolve` searches. The flag exists so a listing can SAY so rather than
+    /// leaving the caller to find out by being refused.
+    ///
+    /// Defaults to `true` so an older app's reply — which predates the field and only ever contained
+    /// registry rows — is read as exactly what it was.
+    #[serde(default = "yes")]
+    pub managed: bool,
+}
+
+/// The `serde` default for [`SystemSessionState::managed`] — see its doc for why it is `true`.
+fn yes() -> bool {
+    true
+}
+
+/// The pane-id prefix every Debug Studio session shares: the standing `debug-studio:debugger` and each
+/// auto-spawned per-request `debug-studio:req-<n>`.
+///
+/// Mirrors `DEBUG_STUDIO_PANE_PREFIX` in `src/shared/lib/session/systemSessions.ts`. It is the one
+/// class of app-owned session with a RUNTIME id, which is exactly why it cannot join [`SYSTEM_SESSIONS`]
+/// and why it has to be discovered instead.
+pub const DEBUG_STUDIO_PREFIX: &str = "debug-studio:";
+
+/// The short id and summary for a DISCOVERED session — one the app is running that this verb does not
+/// manage.
+///
+/// Returns `None` for a pane that is not a discovered session, so the caller has one predicate rather
+/// than a prefix test at each site.
+///
+/// The summary is the whole point of the row. "Two debug sessions started and I'm not sure where they
+/// came from" is answerable only if the listing says which REQUEST a session belongs to; a row that
+/// only proved something was running would restate the mystery.
+pub fn discovered(pane_id: &str) -> Option<(String, String)> {
+    let tail = pane_id.strip_prefix(DEBUG_STUDIO_PREFIX)?;
+    if tail.is_empty() {
+        return None;
+    }
+    let summary = match tail.strip_prefix("req-") {
+        // The per-request session (#one-request-one-debug-session): spawned because a request exists,
+        // which is a decision nobody makes — see `the-director-triages-requests-instead-of-auto-spawning`.
+        Some(n) => format!(
+            "a per-request debug session for request {n} — `bsc request get {n}` says what it is for              (auto-spawned; NOT started by this verb)"
+        ),
+        None => "the standing Debug Studio session — full capability in the app's own source tree                  (NOT started by this verb)"
+            .to_string(),
+    };
+    Some((tail.to_string(), summary))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -341,6 +400,66 @@ mod tests {
         }
     }
 
+    /// A discovered session is READ-ONLY here, and the two halves have to agree about which rows those
+    /// are — the listing marks them `managed: false`, and `resolve` must actually refuse them.
+    #[test]
+    fn a_discovered_session_is_listable_but_not_nameable() {
+        for pane in ["debug-studio:debugger", "debug-studio:req-158"] {
+            let (id, summary) = discovered(pane).expect("{pane} is a discovered session");
+            assert!(!summary.is_empty());
+            // It says it is not this verb's to start, so the listing does not read as an invitation.
+            assert!(summary.contains("NOT started by this verb"), "{pane}: {summary}");
+            // ...and the write half agrees, by the id simply not being in the space it searches.
+            assert!(resolve(&id).is_err(), "{id} must not resolve");
+            assert!(resolve(pane).is_err(), "{pane} must not resolve either");
+        }
+    }
+
+    /// The per-request row has to name its REQUEST. Without that number, a listing proves a session is
+    /// running and leaves "where did it come from" exactly where it was — which is the whole reason
+    /// this row exists.
+    #[test]
+    fn a_per_request_row_names_the_request_it_belongs_to() {
+        let (id, summary) = discovered("debug-studio:req-158").unwrap();
+        assert_eq!(id, "req-158");
+        assert!(summary.contains("158"), "the request number is the answer: {summary}");
+        assert!(summary.contains("bsc request get 158"), "…and the command that reads it: {summary}");
+
+        let (id, summary) = discovered("debug-studio:debugger").unwrap();
+        assert_eq!(id, "debugger");
+        assert!(!summary.contains("request"), "the standing session belongs to no request: {summary}");
+    }
+
+    /// Discovery is a PREFIX match, so anything that is not a debug-studio pane must fall through
+    /// rather than being listed as one. A registry pane in particular: it has its own row already, and
+    /// two rows for one session would read as two sessions.
+    #[test]
+    fn only_a_debug_studio_pane_is_discovered() {
+        for pane in [
+            "design-studio:designer-react",
+            "teams-studio:architect",
+            "studio-code:director",
+            "debug-studio:", // the bare prefix names no session
+            "debug-studio",
+            "",
+        ] {
+            assert!(discovered(pane).is_none(), "{pane} must not be discovered");
+        }
+    }
+
+    /// A newer CLI against an OLDER app is the routine case — the binary is staged from `target/` at
+    /// app boot, so the two are often a build apart. The two added fields must therefore DEFAULT rather
+    /// than failing the whole read, and `managed` must default to TRUE: every row an older app can send
+    /// is a registry row.
+    #[test]
+    fn an_older_apps_reply_still_lists() {
+        let old = r#"{"sessions":[{"id":"designerReact","paneId":"design-studio:designer-react","live":true,"busy":false}]}"#;
+        let res: SessionListResult = serde_json::from_str(old).expect("an older reply must still parse");
+        assert_eq!(res.sessions.len(), 1);
+        assert!(res.sessions[0].managed, "a row from before the field existed is a registry row");
+        assert_eq!(res.sessions[0].summary, "");
+    }
+
     /// The whole point of the verb's argument space: a DIRECTOR is not expressible. Stopping a director
     /// is not refused by a check somewhere downstream that could be dropped in a refactor — there is no
     /// spelling of this argument that names one.
@@ -409,6 +528,8 @@ mod tests {
                 live: true,
                 busy: false,
                 pid: Some(42),
+                summary: "the Algorithms Studio".into(),
+                managed: true,
             }],
         };
         let back: SessionListResult =
