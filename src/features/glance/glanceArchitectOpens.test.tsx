@@ -39,7 +39,7 @@ describe("a network architect opens from L0 (#the-architect-morph-is-drilled-onl
     useAppStore.setState({
       networks: [{ id: NETWORK, name: "finance", position: 0 }],
       // L0 — NOT drilled. This is the whole point: the architect node only ever exists here.
-      glanceDrill: null,
+      glanceDrill: {},
       activePageTab: { glance: NETWORK },
       localDraftProjects: {}, triagedProjects: {},
       projectLinks: [], githubToken: "", githubState: null, tabs: [], bscBaseDir: "/base",

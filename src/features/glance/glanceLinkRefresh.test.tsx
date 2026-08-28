@@ -40,7 +40,7 @@ describe("Glance re-reads the project relationships on mount (#architect-wires-p
       },
       triagedProjects: { app: 1, billing: 1 },
       // The stale cache: the app has never seen the contract the architect just wrote.
-      projectLinks: [], githubToken: "", githubState: null, glanceDrill: null, tabs: [], bscBaseDir: "/base",
+      projectLinks: [], githubToken: "", githubState: null, glanceDrill: {}, tabs: [], bscBaseDir: "/base",
     });
   });
 
