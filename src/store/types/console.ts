@@ -50,6 +50,17 @@ export interface EndedInfo {
   summary: string;
   /** Epoch ms when it ended. */
   at: number;
+  /** HOW THE PROCESS ENDED, as Rust classified it — distinct from `state`, which says whether the
+   *  LANE is done.
+   *
+   *  Both belong on the card and neither implies the other: a worker can crash with its issues
+   *  complete, or exit cleanly with none of them done. Reporting only `state` is what let a cage
+   *  that never started, an agent that crashed, and a genuine completion all render as
+   *  "finished its work".
+   *
+   *  Absent for the `bsc-done` path, where the worker asked to close and there is no `pty_exit`
+   *  payload — which is the one case `auto-ended` still names honestly. */
+  exit?: { reason?: StopReason; detail?: string; lastOutput?: string };
 }
 
 /** Console domain slice of {@link AppStore}: navigation + the tabs/panes/focus core app state. */
