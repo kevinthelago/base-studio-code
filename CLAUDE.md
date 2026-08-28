@@ -59,6 +59,29 @@ discovery, so `npm run typecheck` / `npm test` cannot break for a checkout that 
 zero-install nested-worktree workflow (#1669) stays intact and no worktree agent pays for a browser it never
 asked for. `npm run lint` **does** cover `e2e/`, so the dir is never unchecked by accident.
 
+**Profiling the app in Chromium (`e2e/glanceProfile.spec.ts`).** The same harness is the only place we
+can PROFILE the frontend. The app ships on WebKitGTK, which exposes nothing: its remote inspector speaks
+a proprietary protocol with no installed client, `performance.memory` is Chromium-only so `readHeap()`
+returns null, and `measureUserAgentSpecificMemory` is unimplemented. Chromium supplies the missing
+instruments over CDP — `Performance.getMetrics` (JSEventListeners · Nodes · JSHeapUsedSize ·
+RecalcStyleCount) and `HeapProfiler` allocation sampling, which ranks allocation BY CALL STACK.
+
+```bash
+npm run profile:glance                       # ~2.5 min; prints a population table + top allocators
+PROFILE_SECONDS=600 npm run profile:glance   # a longer window
+```
+
+> ⚠️ **A clean run is evidence about the APP, never about the renderer that dies.** Chromium is not
+> WebKitGTK, so an engine-level WebKit leak will not reproduce; what does carry over is anything
+> application-level (accumulating listeners, retained JS, a runaway render loop). The harness also mounts
+> against PACKAGED SEED data, not a live fleet, so a population that only grows with real traffic stays
+> flat here. Both limits are restated in the spec's header.
+
+> If Vite dies at startup with `ENOSPC: System limit for number of file watchers reached`, the box is out
+> of inotify watches — 36 worktrees against a stock 65536 limit. Prefix with `CHOKIDAR_USEPOLLING=1`; the
+> real fixes are raising `fs.inotify.max_user_watches` and `npm run worktrees:cap`. `devWatchIgnore.ts` is
+> NOT at fault — it already anchor-ignores `wt-*` and `.claude/worktrees/*`.
+
 > **Gotcha — gesture granularity is load-bearing.** The preview's pan engine ignores movement under a 5px
 > threshold. A coarse drag (`{ steps: 24 }` over 300px) crosses it on the first move, so the engine
 > `preventDefault`s before the browser can start a selection and the #3251 bug becomes **invisible**. Drive
