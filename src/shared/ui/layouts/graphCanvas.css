@@ -12,3 +12,21 @@
    248-node graph flickering grabbing → pointer → grabbing. The `*` rule is scoped to the duration of the
    gesture: `useGraphViewport` adds this class on mousedown and removes it on mouseup. */
 .graph-panning, .graph-panning * { cursor: grabbing !important; }
+
+/* The LEFT RAIL does not select either (#the-graph-rail-is-not-selectable-either).
+   #2527 put `user-select: none` on the world layer and 3005dc42 moved it up to the viewport, to catch
+   the overlays drawn inside the viewport but outside the world. Both are INLINE styles on those two
+   divs, and the rail is a SIBLING of the viewport in GraphCanvas's `rail · content · inspector` row —
+   so nothing inherits into it and a drag down the project list still painted a blue smear.
+   Deliberately the LEFT rail only: the toolbar and the right-hand inspector stay selectable, which is
+   what 3005dc42 argued for and what was asked to change here.
+   On `.graph-rail` (GraphRail's own root) rather than on a GraphCanvas wrapper, because GraphCanvas
+   renders `rail` BARE when it is not resizable and only wraps it in a Box when it is — a wrapper-side
+   rule would cover Glance and silently miss every non-resizable rail. */
+.graph-rail { user-select: none; -webkit-user-select: none; }
+
+/* …except form fields, which the rail leads with: Glance puts a SearchField in the `tools` slot, and a
+   `none` ancestor makes the text inside an input unselectable in WebKit — no caret drag, no copy out of
+   your own search box. `text`, not `auto`: under a `none` ancestor `auto` still computes to `none`
+   there, so it would read as correct while doing nothing. Same trap as the `.xterm` carve-out. */
+.graph-rail input, .graph-rail textarea { user-select: text; -webkit-user-select: text; }
