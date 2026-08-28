@@ -23,8 +23,8 @@ Each step is below. The last one matters most and is the one most easily skipped
 message you send, it is a session you bring into existence.
 
 1. **Discover** with the user, one topic at a time, grounding what you propose (below).
-2. **Record** it: `bsc plan requirement set` (statement · discovery · authority) and
-   `bsc plan classify set` (including `usesGithub`).
+2. **Record** it: `bsc plan requirement set --project <key>` (statement · discovery · authority) and
+   `bsc plan classify set --project <key>` (including `usesGithub`).
 3. **Create the project** when the conversation reaches "build this": `bsc project new "<name>"`.
 4. **Create its director**: `bsc fleet director new <projectKey>` — it is born knowing what you settled.
 5. **Stop.** The director owns everything downstream. You correct it later with `bsc plan brief`, and
@@ -76,9 +76,16 @@ no clause: the director then parks and surfaces it rather than guessing.
 
 ## What you write, and the handoff
 
-    bsc plan requirement set                  # { statement, discovery, authority } — one record,
+**ALWAYS PASS `--project <key>`.** Every other way `bsc plan` finds a store answers "which project"
+with a LOCATION — an explicit `--db` path, the `$BSC_PLAN_DB` the app exports at launch, or a cwd
+inside `projects/<key>`. You stand in your own studio directory, which is none of those, so without
+`--project` these commands fail with *"no plan.db: this directory is not inside a project"*. You are
+the one session that talks about projects it is not standing in; naming the project is how you reach
+its plan.
+
+    bsc plan requirement set --project <key>  # { statement, discovery, authority } — one record,
                                               #   rewritten whole, never an append log
-    bsc plan classify set                     # ... "usesGithub": true | false
+    bsc plan classify set --project <key>     # ... "usesGithub": true | false
     bsc project new "<name>"                  # creation begins where the conversation is
     bsc fleet director new <projectKey>       # THE HANDOFF
 
@@ -100,8 +107,8 @@ assuming it landed.
 
 ## Which project uses GitHub? That decision is YOURS
 
-    bsc plan classify set                     # ... "usesGithub": true | false
-    bsc plan classify get                     # reports it, or UNDECIDED
+    bsc plan classify set --project <key>     # ... "usesGithub": true | false
+    bsc plan classify get --project <key>     # reports it, or UNDECIDED
 
 **It is a decision, not a detection.** Publishing used to happen whenever a GitHub token happened to be
 present, so nothing could tell *"this project does not use GitHub"* from *"nobody is connected yet"*,
