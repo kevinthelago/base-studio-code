@@ -38,6 +38,36 @@ use std::path::{Path, PathBuf};
 /// a boundary, large enough that the index stays a rounding error beside the stream itself.
 const MARK_EVERY_BYTES: u64 = 64 * 1024;
 
+/// How much of one pane's stream to keep on disk before trimming the front.
+///
+/// 8 MB is roughly 100k lines of dense output — far past what anyone scrolls back through, and two
+/// orders of magnitude past the 500-line in-memory budget this replaces. Across 32 fleet panes it caps
+/// the store at ~256 MB of SSD, which is the trade this whole design makes: disk is the cheap resource.
+const MAX_RECORDING_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Only trim once there is a worthwhile amount to reclaim, so a pane sitting at the cap does not
+/// rewrite its file on every write. One mark's worth of slack is the natural granularity — below that
+/// there may be no boundary to trim to anyway.
+const TRIM_SLACK_BYTES: u64 = MARK_EVERY_BYTES;
+
+/// How many bytes have been trimmed off the front of `stem`'s recording — the absolute offset of the
+/// file's first byte. Absent or unreadable means nothing has been trimmed.
+fn read_base(dir: &Path, stem: &str) -> u64 {
+    std::fs::read_to_string(dir.join(format!("{stem}.base")))
+        .ok()
+        .and_then(|t| t.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// The recorded safe-boundary offsets for `stem`, ascending. Absolute, like every offset here.
+fn read_marks(dir: &Path, stem: &str) -> Vec<u64> {
+    std::fs::read_to_string(dir.join(format!("{stem}.idx")))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect()
+}
+
 /// Where a pane's recording lives.
 pub fn scrollback_dir() -> PathBuf {
     crate::platform::paths::bsc_base_dir().join("scrollback")
@@ -161,12 +191,26 @@ fn next(state: AnsiState, b: u8) -> AnsiState {
 
 /// Appends one pane's raw output to disk and records the offsets that are safe to replay from.
 ///
+/// ## Offsets are ABSOLUTE stream positions, not file positions
+///
+/// The recording is trimmed from the front once it passes [`MAX_RECORDING_BYTES`], and if offsets
+/// addressed the file they would all shift when that happened — silently invalidating every cursor
+/// published to the frontend, which is the one number the seamless handoff depends on.
+///
+/// So an offset always counts bytes since the session began, and a sidecar records how many were
+/// discarded (the `base`). A trim moves the base and rewrites the window; no offset anyone is holding
+/// ever changes meaning. Reads map absolute → file by subtracting the base.
+///
 /// Every method is best-effort. A recorder that cannot write simply stops recording; it never
 /// propagates an error into the session.
 pub struct ScrollbackRecorder {
+    dir: PathBuf,
+    stem: String,
     stream: File,
     index: File,
     scan: AnsiScan,
+    /// Absolute offset of byte 0 of the retained window — how much has been trimmed away.
+    base: u64,
     /// Bytes appended by THIS recorder plus whatever the file already held, so offsets in the index
     /// address the file rather than this run.
     written: u64,
@@ -187,8 +231,18 @@ impl ScrollbackRecorder {
         let index = OpenOptions::new().create(true).append(true).open(dir.join(format!("{stem}.idx"))).ok()?;
         // Resume from the real end of the file: a fresh recorder appending to an existing recording
         // must not hand out offsets that address its own run.
-        let written = stream.metadata().map(|m| m.len()).unwrap_or(0);
-        Some(Self { stream, index, scan: AnsiScan::new(), written, last_mark: written })
+        let base = read_base(dir, &stem);
+        let written = base + stream.metadata().map(|m| m.len()).unwrap_or(0);
+        Some(Self {
+            dir: dir.to_path_buf(),
+            stem,
+            stream,
+            index,
+            scan: AnsiScan::new(),
+            base,
+            written,
+            last_mark: written,
+        })
     }
 
     /// Append `bytes` and record a replay point if the stream is at a boundary and far enough past the
@@ -214,6 +268,60 @@ impl ScrollbackRecorder {
         {
             self.last_mark = self.written;
         }
+        self.maybe_trim();
+    }
+
+    /// Drop the oldest part of the recording once it exceeds the cap, cutting AT A RECORDED BOUNDARY.
+    ///
+    /// This is the same rule the whole module turns on, applied to the one operation that could
+    /// quietly break it: trimming at an arbitrary offset would leave the file starting mid-sequence,
+    /// which is exactly the corruption `PendingPtyData` causes and this replaces. So the cut is only
+    /// ever made at a mark, and if no mark is far enough in, nothing is trimmed this time — the file
+    /// runs over the cap until one is.
+    ///
+    /// Best-effort throughout: any failure leaves the recording exactly as it was.
+    fn maybe_trim(&mut self) {
+        if self.written.saturating_sub(self.base) <= MAX_RECORDING_BYTES + TRIM_SLACK_BYTES {
+            return;
+        }
+        let marks = read_marks(&self.dir, &self.stem);
+        // The oldest mark that leaves us within the cap. `>` not `>=` so a cut that reclaims nothing
+        // is never attempted.
+        let Some(&cut) = marks.iter().find(|&&m| m > self.base && self.written - m <= MAX_RECORDING_BYTES)
+        else {
+            return; // no boundary far enough in yet — carry the overage rather than cut blind
+        };
+        if self.rewrite_from(cut, &marks).is_none() {
+            log::warn!("pty scrollback: trim of {} failed; the recording keeps growing", self.stem);
+        }
+    }
+
+    /// Rewrite the window to start at absolute offset `cut`, and move the base to match.
+    fn rewrite_from(&mut self, cut: u64, marks: &[u64]) -> Option<()> {
+        use std::io::{Seek, SeekFrom};
+        let bin = self.dir.join(format!("{}.bin", self.stem));
+        let tmp = self.dir.join(format!("{}.bin.trim", self.stem));
+        {
+            let mut src = File::open(&bin).ok()?;
+            src.seek(SeekFrom::Start(cut - self.base)).ok()?;
+            let mut dst = File::create(&tmp).ok()?;
+            std::io::copy(&mut src, &mut dst).ok()?;
+            dst.flush().ok()?;
+        }
+        std::fs::rename(&tmp, &bin).ok()?;
+        // Reopen for append: the old handle still points at the replaced inode.
+        self.stream = OpenOptions::new().create(true).append(true).open(&bin).ok()?;
+        // Marks before the cut now address bytes that are gone.
+        let kept: Vec<String> = marks.iter().filter(|&&m| m >= cut).map(|m| m.to_string()).collect();
+        std::fs::write(self.dir.join(format!("{}.idx", self.stem)), kept.join("\n") + "\n").ok()?;
+        self.index = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.dir.join(format!("{}.idx", self.stem)))
+            .ok()?;
+        std::fs::write(self.dir.join(format!("{}.base", self.stem)), cut.to_string()).ok()?;
+        self.base = cut;
+        Some(())
     }
 
     /// Bytes recorded so far, counting whatever the file already held. This is the offset the reader
@@ -312,16 +420,16 @@ pub fn read_upto(dir: &Path, pane_id: &str, end: u64, max_bytes: u64) -> Option<
     use std::io::{Read, Seek, SeekFrom};
     let stem = safe_stem(pane_id);
     let mut f = File::open(dir.join(format!("{stem}.bin"))).ok()?;
-    let len = f.metadata().ok()?.len().min(end);
-    let marks: Vec<u64> = std::fs::read_to_string(dir.join(format!("{stem}.idx")))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| l.trim().parse().ok())
-        .collect();
-    let start = replay_start(&marks, len, max_bytes);
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut out = Vec::with_capacity((len - start) as usize);
-    f.take(len - start).read_to_end(&mut out).ok()?;
+    let base = read_base(dir, &stem);
+    // Everything below is in ABSOLUTE stream offsets; only the seek converts to a file position.
+    let end_abs = (base + f.metadata().ok()?.len()).min(end);
+    if end_abs <= base {
+        return Some(String::new()); // the whole window was trimmed past what the caller asked for
+    }
+    let start = replay_start(&read_marks(dir, &stem), end_abs, max_bytes).max(base);
+    f.seek(SeekFrom::Start(start - base)).ok()?;
+    let mut out = Vec::with_capacity((end_abs - start) as usize);
+    f.take(end_abs - start).read_to_end(&mut out).ok()?;
     Some(String::from_utf8_lossy(&out).into_owned())
 }
 
@@ -330,20 +438,11 @@ pub fn read_upto(dir: &Path, pane_id: &str, end: u64, max_bytes: u64) -> Option<
 /// Returns the bytes as a lossy string: they are handed straight to a terminal, which is the one
 /// consumer that wants them, and a partial UTF-8 character at either edge must not fail the read.
 pub fn read_tail(dir: &Path, pane_id: &str, max_bytes: u64) -> Option<String> {
-    use std::io::{Read, Seek, SeekFrom};
     let stem = safe_stem(pane_id);
-    let mut f = File::open(dir.join(format!("{stem}.bin"))).ok()?;
-    let len = f.metadata().ok()?.len();
-    let marks: Vec<u64> = std::fs::read_to_string(dir.join(format!("{stem}.idx")))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| l.trim().parse().ok())
-        .collect();
-    let start = replay_start(&marks, len, max_bytes);
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut out = Vec::with_capacity((len - start) as usize);
-    f.take(len - start).read_to_end(&mut out).ok()?;
-    Some(String::from_utf8_lossy(&out).into_owned())
+    let end = read_base(dir, &stem) + File::open(dir.join(format!("{stem}.bin"))).ok()?.metadata().ok()?.len();
+    // ONE mapping from absolute offsets to file positions, in `read_upto`. A second copy here is
+    // exactly how the two would drift once trimming shifted a base.
+    read_upto(dir, pane_id, end, max_bytes)
 }
 
 #[cfg(test)]
@@ -543,6 +642,88 @@ mod tests {
         assert_eq!(*cs.get("pane").unwrap().lock().unwrap(), None);
         cs.remove("pane");
         assert!(cs.get("pane").is_none(), "an exited pane leaves nothing in the map");
+    }
+
+    /// Drive a recorder past the cap and return its directory + the offsets it ends up holding.
+    fn recorder_over_cap(tag: &str) -> (PathBuf, u64) {
+        let dir = std::env::temp_dir().join(format!("sb-{tag}-{}-{}", std::process::id(), now_nanos()));
+        let mut r = ScrollbackRecorder::open(&dir, "p").expect("opens");
+        // Write in mark-sized, boundary-clean blocks so marks accrue, well past the cap.
+        let block = vec![b'z'; MARK_EVERY_BYTES as usize];
+        for _ in 0..(MAX_RECORDING_BYTES / MARK_EVERY_BYTES + 4) {
+            r.write(&block);
+        }
+        let written = r.len();
+        drop(r);
+        (dir, written)
+    }
+
+    #[test]
+    fn a_recording_is_trimmed_once_it_passes_the_cap() {
+        let (dir, written) = recorder_over_cap("trim");
+        let bin = std::fs::metadata(dir.join("p.bin")).unwrap().len();
+        assert!(bin <= MAX_RECORDING_BYTES + TRIM_SLACK_BYTES, "window {bin} should be capped");
+        assert!(bin > 0);
+        // The stream position kept going even though the file shrank — that is the whole point.
+        assert!(written > bin, "absolute offsets outrun the retained window");
+        let base: u64 = std::fs::read_to_string(dir.join("p.base")).unwrap().trim().parse().unwrap();
+        assert_eq!(base + bin, written, "base + window must account for every byte ever written");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_offset_still_inside_the_window_names_the_same_bytes_after_a_trim() {
+        // THE HAZARD this design exists to avoid. A cursor published to the frontend is an ABSOLUTE
+        // offset. If a trim renumbered things, that number would silently start addressing different
+        // bytes — a corruption nobody could see until they read the scrollback.
+        //
+        // Note what is NOT claimed: an offset the trim DISCARDED is gone, and must read as empty (its
+        // own test below). The invariant is about offsets the window still covers.
+        let dir = std::env::temp_dir().join(format!("sb-abs-{}-{}", std::process::id(), now_nanos()));
+        let mut r = ScrollbackRecorder::open(&dir, "p").expect("opens");
+        let block = vec![b'q'; MARK_EVERY_BYTES as usize];
+        for _ in 0..(MAX_RECORDING_BYTES / MARK_EVERY_BYTES + 4) {
+            r.write(&block);
+        }
+        let base_after_trim: u64 = std::fs::read_to_string(dir.join("p.base")).unwrap().trim().parse().unwrap();
+        assert!(base_after_trim > 0, "the setup must actually have trimmed");
+
+        // An offset taken AFTER the trim, i.e. one the window covers.
+        r.write(b"MARKER");
+        let at = r.len();
+        let before = read_upto(&dir, "p", at, 32).expect("reads");
+        assert!(before.ends_with("MARKER"), "reads through the base mapping: {before:?}");
+
+        // More output, no further trim — the base is unchanged and `at` must still mean what it did.
+        r.write(b"tail after the marker");
+        drop(r);
+        let after = read_upto(&dir, "p", at, 32).expect("still reads");
+        assert_eq!(before, after, "the same absolute offset must still name the same bytes");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_trim_only_ever_cuts_at_a_recorded_boundary() {
+        // Cutting anywhere else would leave the window starting mid-sequence — the exact corruption
+        // this module replaces, reintroduced by its own housekeeping.
+        let (dir, _) = recorder_over_cap("cut");
+        let base: u64 = std::fs::read_to_string(dir.join("p.base")).unwrap().trim().parse().unwrap();
+        // Every retained mark is >= base, and base is itself one of the marks that WAS recorded.
+        let marks = read_marks(&dir, "p");
+        assert!(base > 0);
+        assert!(marks.iter().all(|&m| m >= base), "marks before the cut are dropped");
+        assert_eq!(base % MARK_EVERY_BYTES, 0, "the cut landed on a mark, not an arbitrary offset");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_offset_below_the_base_reads_as_empty_not_as_garbage() {
+        // A cursor older than the retained window is history that is simply gone. Returning the wrong
+        // bytes would be far worse than returning none.
+        let (dir, _) = recorder_over_cap("old");
+        let stale = 16u64; // long since trimmed away
+        assert_eq!(read_upto(&dir, "p", stale, 1024).as_deref(), Some(""));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn now_nanos() -> u128 {
