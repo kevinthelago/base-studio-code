@@ -5,6 +5,7 @@ import type { Dispatch } from "@/features/designs/lib/propagation";
 import { makeChange } from "@/features/designs/lib/propagation";
 import { contractChanged, mergeDispatches, foldTouches, AI_RING_MAX, AI_HYDRATE_DEBOUNCE_MS, type AiTouch } from "./store";
 import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
+import { APP_RECONCILE_WRITER } from "./lib/componentBridge";
 import { SEED_THEMES, type KitThemeRecord } from "@/features/designs/lib/themes";
 import { stampSeedHash } from "@/features/designs/lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
@@ -55,9 +56,12 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().kits.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
     expect(useAppStore.getState().components).toEqual(SEED_COMPONENTS);
     expect(pushK).toHaveBeenCalledTimes(1);
-    expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: BASE_STUDIO_CODE_KIT_ID }));
+    // #98: a converge push is the app's OWN background write — tagged `app-reconcile` (2nd arg to
+    // `pushKit`) so `bsc ui log` can tell it apart from a write some other session made.
+    expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: BASE_STUDIO_CODE_KIT_ID }), APP_RECONCILE_WRITER);
     // Each packaged component is pushed through the bridge too (recover/shadow-proof, same as the kit).
     expect(pushC).toHaveBeenCalledTimes(SEED_COMPONENTS.length);
+    for (const [, opts] of pushC.mock.calls) expect(opts?.by).toBe(APP_RECONCILE_WRITER);
   });
 
   // #3543: the wipe at the STORE/bridge layer — a pre-#3543 store still holding the retired packaged kits
