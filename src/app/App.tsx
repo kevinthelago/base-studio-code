@@ -205,16 +205,19 @@ export default function App() {
               would kill and relaunch that PTY every time. They were previously kept mounted INSIDE the
               Planner — leaving them as plain `activeWorkspace === x && <X />` would have quietly
               regressed that, and a killed-and-restarted session looks like a slow page, not a bug. */}
-          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />}>
+          {/* `label` tags the un-hide timing `bsc perf phases` can read
+              (`request-177-components-graph-real-app-instrumentation`) — real-app numbers for exactly
+              the visit KeptMountedPage exists to make cheap, instead of another synthetic-shell guess. */}
+          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />} label="components">
             <ComponentsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />} label="algorithms">
             <AlgorithmsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />} label="teams">
             <TeamsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />} label="sounds">
             <SoundsWorkspace />
           </KeptMountedPage>
           {/* Data is the one graph with no studio and no PTY, so it mounts only while active. */}
