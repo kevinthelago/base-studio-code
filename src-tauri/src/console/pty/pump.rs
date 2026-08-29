@@ -54,10 +54,14 @@ impl EndReason {
 pub(crate) struct SessionEnd {
     pub pane_id: String,
     pub reason: EndReason,
-    /// The raw exit code, when there was one.
+    /// The raw exit code, when there was one — `None` for a KILLED child, which has no exit code.
     pub exit_code: Option<u32>,
-    /// The fatal signal, decoded from the shell's 128+N convention.
+    /// The fatal signal: the OS's own verdict when the child was killed, else the shell's 128+N.
     pub signal: Option<u32>,
+    /// That signal's name (`Killed`, `Terminated`, …), so a reader does not have to remember which
+    /// number SIGKILL is. Present whenever `signal` is, and on the rare kill whose name maps to no
+    /// number — which is still far more than the `exit=1` this replaced.
+    pub signal_name: Option<String>,
     /// The cage this pane ran in, if any — a caged death reads differently from a host one.
     pub sandbox_role: Option<String>,
     /// One sentence, already phrased for a human. The banner shows this verbatim.
@@ -164,6 +168,102 @@ pub(super) fn signal_from_code(code: u32) -> Option<u32> {
     code.checked_sub(128).filter(|n| (1..=64).contains(n))
 }
 
+/// How the session's child ACTUALLY ended, with the two outcomes kept apart.
+///
+/// ## `exit=1` was covering a kill, and that is why nothing could be diagnosed
+///
+/// `portable_pty::ExitStatus` keeps the signal in a PRIVATE field with no accessor, and its
+/// `From<std::process::ExitStatus>` writes:
+///
+/// ```text
+/// code: status.code().map(|c| c as u32).unwrap_or(1),   // ← `code()` is None when SIGNALLED
+/// signal: Some(signame),
+/// ```
+///
+/// So a child killed by SIGKILL and a child that genuinely returned 1 both answer `exit_code() == 1`,
+/// and `reap` — which read `exit_code()` and nothing else — reported them identically. The shell's
+/// 128+N convention (`137`) never appears on this path either, because the status here is the
+/// LAUNCHER's own, straight from `waitpid`, not a shell's report of a child. `signal_from_code` was
+/// therefore decoding a number that could not occur, and every session killed from outside the app
+/// was filed as "the agent exited with status 1".
+///
+/// That is not a cosmetic error. It is the fact the whole investigation rests on: a worker dying
+/// ~10 s after every launch reads as an agent that crashes on startup, when what the kernel actually
+/// recorded may have been "somebody killed this". The two have nothing in common except the number.
+///
+/// The only public route back to the signal is `Display`, which renders `Terminated by <signame>`
+/// — so that is what [`signal_name_of`] reads, and `code` is `None` for a killed child because a
+/// killed child HAS no exit code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ChildEnd {
+    /// The exit code, or `None` when the child was killed by a signal.
+    pub code: Option<u32>,
+    /// The fatal signal's name, exactly as the OS spelled it (`strsignal`), when it was killed.
+    pub signal_name: Option<String>,
+}
+
+impl ChildEnd {
+    /// An ordinary exit with `code` — the constructor the tests and the non-signal path use.
+    pub(super) fn from_code(code: u32) -> Self {
+        Self { code: Some(code), signal_name: None }
+    }
+
+    /// Read a `portable_pty` status without losing the signal. See the type docs for why the
+    /// round-trip goes through `Display`.
+    pub(super) fn from_status(status: &portable_pty::ExitStatus) -> Self {
+        match signal_name_of(&status.to_string()) {
+            Some(name) => Self { code: None, signal_name: Some(name) },
+            None => Self::from_code(status.exit_code()),
+        }
+    }
+}
+
+/// The signal name out of `portable_pty::ExitStatus`'s `Display`, which is the only public place it
+/// survives. Pure, and pinned against the real type by `the_signal_survives_portable_ptys_display`
+/// — a crate bump that re-words this string must fail a test, not silently go back to reporting
+/// every kill as `exit=1`.
+pub(super) fn signal_name_of(rendered: &str) -> Option<String> {
+    rendered.strip_prefix("Terminated by ").map(str::to_string)
+}
+
+/// The number behind a signal NAME, asked of the same `strsignal` that produced the name — so the
+/// mapping cannot drift from the C library's own spelling the way a hardcoded table would. `None`
+/// off Unix (there are no signals to map) and for a name nothing in 1..=64 answers to.
+#[cfg(unix)]
+pub(super) fn signal_number(name: &str) -> Option<u32> {
+    (1..=64u32).find(|n| signal_label(*n).as_deref() == Some(name))
+}
+
+#[cfg(not(unix))]
+pub(super) fn signal_number(_name: &str) -> Option<u32> {
+    None
+}
+
+/// The OS's own name for signal `n` — so a decoded 128+N reads as `signal 9 (Killed)` rather than
+/// leaving the reader to remember which number SIGKILL is.
+#[cfg(unix)]
+pub(super) fn signal_label(n: u32) -> Option<String> {
+    // SAFETY: `strsignal` takes an int and returns a pointer to a static (or thread-local) string;
+    // it has no memory effects of ours and we copy out before doing anything else.
+    let p = unsafe { libc::strsignal(n as i32) };
+    if p.is_null() {
+        return None;
+    }
+    let s = unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy().to_string();
+    // glibc answers an unknown number with "Unknown signal 61" rather than NULL, and that is not a
+    // name — reporting it would dress a failed lookup up as a successful one.
+    if s.starts_with("Unknown signal") {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+#[cfg(not(unix))]
+pub(super) fn signal_label(_n: u32) -> Option<String> {
+    None
+}
+
 /// Classify a finished session from the facts the emitter already holds. PURE, so every arm is
 /// testable without a Tauri handle or a real child — which is what `child_outcome` never was.
 ///
@@ -171,14 +271,22 @@ pub(super) fn signal_from_code(code: u32) -> Option<u32> {
 /// the app took it out: that is the answer, not a missing one.
 pub(super) fn classify_end(
     pane_id: &str,
-    exit: Option<u32>,
+    child: Option<&ChildEnd>,
     removed: bool,
     sandbox_role: Option<&str>,
     tail: &str,
 ) -> SessionEnd {
     let role = sandbox_role.filter(|r| !r.is_empty()).map(str::to_string);
     let launcher = role.is_some() && LAUNCHER_MARKERS.iter().any(|m| tail.contains(m));
-    let signal = exit.and_then(signal_from_code);
+    let exit = child.and_then(|c| c.code);
+    // The OS's own verdict outranks the shell convention, because it IS the verdict: `killed` came
+    // straight from `waitpid`, where 128+N is a shell's second-hand report of one.
+    let killed = child.and_then(|c| c.signal_name.clone());
+    let signal = killed
+        .as_deref()
+        .and_then(signal_number)
+        .or_else(|| exit.and_then(signal_from_code));
+    let signal_name = killed.clone().or_else(|| signal.and_then(signal_label));
 
     let (reason, detail) = if launcher {
         (EndReason::LauncherFailed, format!(
@@ -187,6 +295,19 @@ pub(super) fn classify_end(
         ))
     } else if removed {
         (EndReason::AppClosed, "Closed by the app — a kill, a project teardown, or app exit.".to_string())
+    } else if let Some(name) = killed.as_deref() {
+        // THE ARM THAT DID NOT EXIST. `reap` handed this case over as `exit=1`, so a session that
+        // something KILLED was reported as an agent that failed — and `removed` is already false
+        // here, which means the app's own kill paths (`pty_kill`, project teardown, app exit) are
+        // ruled out. That last clause is the whole diagnostic value: it says look outside the app.
+        (EndReason::Signalled, match signal {
+            Some(sig) => format!(
+                "Killed by signal {sig} ({name}) — the app did not close it, so something outside it did."
+            ),
+            None => format!(
+                "Killed by {name} — the app did not close it, so something outside it did."
+            ),
+        })
     } else {
         match (exit, signal) {
             (_, Some(sig)) => (EndReason::Signalled, format!("Killed by signal {sig}.")),
@@ -206,6 +327,7 @@ pub(super) fn classify_end(
         reason,
         exit_code: exit,
         signal,
+        signal_name,
         sandbox_role: role,
         detail,
         last_output,
@@ -219,9 +341,14 @@ pub(super) fn child_status_phrase(end: &SessionEnd) -> String {
     match end.reason {
         EndReason::AppClosed => "exit=n/a (session already removed — the app closed it)".into(),
         EndReason::Unknown => "exit=unknown".into(),
-        _ => match (end.exit_code, end.signal) {
-            (Some(code), Some(sig)) => format!("exit={code} (killed by signal {sig})"),
-            (Some(code), None) => format!("exit={code}"),
+        // A KILLED child has no exit code, so there is no `exit=` to print — printing one is
+        // exactly the fiction this replaced. It reads as a kill because it WAS a kill.
+        _ => match (end.exit_code, end.signal, end.signal_name.as_deref()) {
+            (None, Some(sig), Some(name)) => format!("killed by signal {sig} ({name})"),
+            (None, Some(sig), None) => format!("killed by signal {sig}"),
+            (None, None, Some(name)) => format!("killed by {name}"),
+            (Some(code), Some(sig), _) => format!("exit={code} (killed by signal {sig})"),
+            (Some(code), None, _) => format!("exit={code}"),
             _ => "exit=unknown".into(),
         },
     }
@@ -338,14 +465,16 @@ pub(super) fn spawn_reader(
 /// is collectable, so a single `try_wait` reports `None` and leaves the zombie behind — but a
 /// blocking wait would hang this thread forever on the case where the pty closed and the process
 /// genuinely did not (`exit=none` in the log, which is a real state worth still reporting).
-fn reap(app: &AppHandle, pane_id: &str) -> Option<u32> {
+fn reap(app: &AppHandle, pane_id: &str) -> Option<ChildEnd> {
     let state = app.try_state::<super::PtyState>()?;
     for attempt in 0..20 {
         {
             let mut sessions = state.0.lock().unwrap_or_else(|e| e.into_inner());
             let session = sessions.get_mut(pane_id)?;
             match session.child.try_wait() {
-                Ok(Some(status)) => return Some(status.exit_code()),
+                // NOT `exit_code()`. It answers 1 for every signalled child, which is how a kill
+                // spent months being reported as "the agent exited with status 1" — see `ChildEnd`.
+                Ok(Some(status)) => return Some(ChildEnd::from_status(&status)),
                 Ok(None) => {}
                 Err(_) => return None,
             }
@@ -397,32 +526,25 @@ const LAUNCHER_MARKERS: &[&str] = &[
 /// "NOT sandboxed: …". There was no equivalent for a cage that was built, launched and died, so the
 /// refusal path was legible and the failure path silent. That is backwards: a refusal is a decision,
 /// a death is a fault.
-pub(super) fn cage_death_notice(
-    role: Option<&str>,
-    exit: Option<u32>,
-    tail: &str,
-) -> Option<String> {
+pub(super) fn cage_death_notice(end: &SessionEnd) -> Option<String> {
     // Only a caged pane has a cage to report on; everything else keeps today's silence.
-    let role = role.filter(|r| !r.is_empty())?;
+    let role = end.sandbox_role.as_deref().filter(|r| !r.is_empty())?;
 
-    let launcher = LAUNCHER_MARKERS.iter().any(|m| tail.contains(m));
-    // Nothing to say about a clean exit, and nothing HONEST to say about an unknown one that
-    // carried no launcher marker either.
-    let kind = match (launcher, exit) {
-        (true, _) => CageDeath::Launcher,
-        (false, Some(code)) if code != 0 => CageDeath::Harness,
-        _ => return None,
+    // It READS the classification rather than re-deriving one. It used to take the raw exit code and
+    // decode the signal a second time, which is how the pane notice and the log line could describe
+    // the same death differently — and did, the moment the kill arm existed in only one of them.
+    let kind = match end.reason {
+        EndReason::LauncherFailed => CageDeath::Launcher,
+        // A signal is a death as much as a non-zero exit is, and the arm that named it was exactly
+        // the arm this notice used to be unable to reach (its input was a code that could not
+        // express one).
+        EndReason::Failed | EndReason::Signalled => CageDeath::Harness,
+        // Nothing to say about a clean exit, a deliberate close, or an unknown status that carried
+        // no launcher marker either.
+        EndReason::Finished | EndReason::AppClosed | EndReason::Unknown => return None,
     };
 
-    let status = match exit {
-        // 128+N is how a shell reports a fatal signal; naming it turns 137 into something a reader
-        // can act on. Same decode as `child_outcome`, and the test below pins them together.
-        Some(code) => match signal_from_code(code) {
-            Some(sig) => format!("exit={code} (killed by signal {sig})"),
-            None => format!("exit={code}"),
-        },
-        None => "exit=unknown".to_string(),
-    };
+    let status = child_status_phrase(end);
 
     let body = match kind {
         CageDeath::Launcher => format!(
@@ -530,11 +652,11 @@ pub(super) fn spawn_emitter(
         // Reap BEFORE reporting, for both reasons at once: it collects the defunct child (a caged
         // launch that died left `[bwrap] <defunct>` for the app's whole lifetime), and it is what
         // makes an exit status readable at all.
-        let exit = reap(&app, &pane_id);
+        let child = reap(&app, &pane_id);
         // ONE classification, three consumers (#a-stopped-session-says-why). The registry probe
         // happens here, before anything else can remove the session, so "the app closed it" is a
         // fact observed at the right moment rather than inferred later from a missing status.
-        let end = classify_end(&pane_id, exit, !session_present(&app, &pane_id), sandbox_role.as_deref(), &tail);
+        let end = classify_end(&pane_id, child.as_ref(), !session_present(&app, &pane_id), sandbox_role.as_deref(), &tail);
         // ...and say so in the pane. A refusal to cage was already legible (`NOT sandboxed: …`);
         // a cage that was built, launched and died was not.
         //
@@ -542,7 +664,7 @@ pub(super) fn spawn_emitter(
         // died: the reported worker was recreated seconds later and the notice went with the old
         // terminal. It is for whoever is looking AT the pane when it happens; the payload below is
         // for everyone else.
-        if let Some(notice) = cage_death_notice(sandbox_role.as_deref(), exit, &tail) {
+        if let Some(notice) = cage_death_notice(&end) {
             let _ = app.emit(&evt, notice);
         }
         // The payload the frontend needs to say WHY. This used to be `()` — the emitter had the exit
@@ -571,7 +693,15 @@ mod end_tests {
     use super::*;
 
     fn end(exit: Option<u32>, removed: bool, role: Option<&str>, tail: &str) -> SessionEnd {
-        classify_end("proj:stream", exit, removed, role, tail)
+        let child = exit.map(ChildEnd::from_code);
+        classify_end("proj:stream", child.as_ref(), removed, role, tail)
+    }
+
+    /// A child the OS KILLED — the state `reap` could not express before, and the one the reported
+    /// worker was almost certainly in every time the log said `exit=1`.
+    fn killed(name: &str, removed: bool, role: Option<&str>) -> SessionEnd {
+        let child = ChildEnd { code: None, signal_name: Some(name.to_string()) };
+        classify_end("proj:stream", Some(&child), removed, role, "")
     }
 
     /// THE REPORTED SHAPE. Nine of the fifteen session endings in one run were `exit=1` on ONE
@@ -750,6 +880,7 @@ mod end_tests {
         assert_eq!(json["reason"], "signalled");
         assert_eq!(json["exitCode"], 137);
         assert_eq!(json["signal"], 9);
+        assert_eq!(json["signalName"], "Killed", "the name rides along so a banner need not decode 9");
         assert_eq!(json["sandboxRole"], "worker");
         assert!(json["detail"].as_str().is_some_and(|d| !d.is_empty()));
         assert_eq!(serde_json::to_value(end(Some(1), false, Some("w"), "bwrap: x")).unwrap()["reason"],
@@ -764,6 +895,82 @@ mod end_tests {
         assert_eq!(child_status_phrase(&end(Some(137), false, None, "")), "exit=137 (killed by signal 9)");
         assert_eq!(child_status_phrase(&end(Some(1), true, None, "")),
                    "exit=n/a (session already removed — the app closed it)");
+    }
+
+    // ── the kill that was being reported as `exit=1` ──────────────────────────────────────────
+    //
+    // `portable_pty::ExitStatus::from` writes `code: status.code().…unwrap_or(1)` for a SIGNALLED
+    // child and hides the signal in a private field. `reap` read `exit_code()`, so every kill came
+    // back as 1 — indistinguishable from an agent that genuinely returned 1, and the shell's 128+N
+    // convention never appears on this path at all (the status is the launcher's own, from
+    // `waitpid`). A worker dying ~10 s after every launch therefore read as "the agent crashes on
+    // startup" when the kernel may have recorded "somebody killed this".
+
+    /// A killed child reports the KILL, and does not invent an exit code it never had.
+    #[test]
+    fn a_killed_child_is_reported_as_killed_not_as_exit_1() {
+        let e = killed("Killed", false, Some("worker"));
+        assert_eq!(e.reason, EndReason::Signalled);
+        assert_eq!(e.exit_code, None, "a killed process HAS no exit code — 1 was portable_pty's filler");
+        assert_eq!(e.signal, Some(9), "the name maps back through the same strsignal that produced it");
+        assert_eq!(e.signal_name.as_deref(), Some("Killed"));
+        assert_eq!(child_status_phrase(&e), "killed by signal 9 (Killed)");
+        assert!(e.reason.is_fault());
+    }
+
+    /// SIGTERM reads differently from SIGKILL, which is the point of carrying the signal at all:
+    /// a TERM is something asking politely (a systemd scope stopping), a KILL is not.
+    #[test]
+    fn a_terminated_child_names_its_own_signal() {
+        let e = killed("Terminated", false, None);
+        assert_eq!(e.signal, Some(15));
+        assert_eq!(child_status_phrase(&e), "killed by signal 15 (Terminated)");
+    }
+
+    /// THE DIAGNOSTIC SENTENCE. `removed` false means the app's own kill paths — `pty_kill`, a
+    /// project teardown, app exit — are already ruled out at this point, so the detail may say so.
+    /// Without it a reader has to re-derive that exclusion by hand every time.
+    #[test]
+    fn a_kill_the_app_did_not_order_says_to_look_outside_the_app() {
+        let e = killed("Killed", false, Some("worker"));
+        assert!(e.detail.contains("the app did not close it"), "{}", e.detail);
+        // ...and when the app DID close it, that is the answer instead — no outside-the-app claim.
+        let a = killed("Killed", true, Some("worker"));
+        assert_eq!(a.reason, EndReason::AppClosed);
+        assert!(!a.detail.contains("outside"), "{}", a.detail);
+    }
+
+    /// A name nothing maps to still beats `exit=1`: the kill is reported, unnumbered.
+    #[test]
+    fn an_unmappable_signal_name_still_reports_the_kill() {
+        let e = killed("Signal 999", false, None);
+        assert_eq!(e.reason, EndReason::Signalled);
+        assert_eq!(e.signal, None);
+        assert_eq!(child_status_phrase(&e), "killed by Signal 999");
+    }
+
+    /// THE CRATE CONTRACT. The signal survives only in `Display`, so a `portable-pty` bump that
+    /// re-words that string must fail HERE — not silently put every kill back to `exit=1`.
+    #[test]
+    fn the_signal_survives_portable_ptys_display() {
+        let sig = portable_pty::ExitStatus::with_signal("Killed");
+        assert_eq!(sig.exit_code(), 1, "the collapse this whole type exists to undo");
+        assert_eq!(ChildEnd::from_status(&sig),
+                   ChildEnd { code: None, signal_name: Some("Killed".into()) });
+        // ...and an ordinary exit is NOT read as a signal.
+        let ok = portable_pty::ExitStatus::with_exit_code(1);
+        assert_eq!(ChildEnd::from_status(&ok), ChildEnd::from_code(1));
+    }
+
+    /// The number↔name round-trip goes through the C library both ways, so it cannot drift from a
+    /// hardcoded table that was right when it was written.
+    #[cfg(unix)]
+    #[test]
+    fn a_signal_name_and_its_number_agree_with_the_os() {
+        assert_eq!(signal_number("Killed"), Some(9));
+        assert_eq!(signal_number("Terminated"), Some(15));
+        assert_eq!(signal_label(9).as_deref(), Some("Killed"));
+        assert_eq!(signal_number("not a signal at all"), None);
     }
 }
 
@@ -816,13 +1023,20 @@ mod outcome_tests {
 
 #[cfg(test)]
 mod cage_death_tests {
-    use super::{cage_death_notice, LAUNCHER_MARKERS};
+    use super::{cage_death_notice, classify_end, ChildEnd, LAUNCHER_MARKERS};
+
+    /// The notice now reads a CLASSIFICATION rather than a raw exit code, so the tests build one —
+    /// which is also what stopped the pane notice and the log line from decoding a death twice.
+    fn notice(role: Option<&str>, exit: Option<u32>, tail: &str) -> Option<String> {
+        let child = exit.map(ChildEnd::from_code);
+        cage_death_notice(&classify_end("proj:stream", child.as_ref(), false, role, tail))
+    }
 
     /// The launcher failing is DEFINITE, so the notice may say so outright.
     #[test]
     fn a_bwrap_failure_names_the_cage_not_the_agent() {
         let tail = "bwrap: Can't mkdir /coord/out: Read-only file system\n";
-        let n = cage_death_notice(Some("worker"), Some(1), tail).expect("a notice");
+        let n = notice(Some("worker"), Some(1), tail).expect("a notice");
         assert!(n.contains("SANDBOX failed to start"), "{n}");
         assert!(n.contains("never ran"), "the agent did not run — say so: {n}");
         assert!(n.contains("host problem"), "and that the fix is not in the session: {n}");
@@ -834,7 +1048,7 @@ mod cage_death_tests {
     #[test]
     fn every_launcher_marker_is_read_as_a_launcher_failure() {
         for m in LAUNCHER_MARKERS {
-            let n = cage_death_notice(Some("director"), Some(1), &format!("...\n{m} something\n"))
+            let n = notice(Some("director"), Some(1), &format!("...\n{m} something\n"))
                 .expect("a notice");
             assert!(n.contains("SANDBOX failed to start"), "{m} must read as a launcher failure: {n}");
         }
@@ -844,7 +1058,7 @@ mod cage_death_tests {
     /// notice must not claim the sandbox broke.
     #[test]
     fn a_harness_failure_says_the_cage_started() {
-        let n = cage_death_notice(Some("director"), Some(1), "Auto-update failed\n").expect("a notice");
+        let n = notice(Some("director"), Some(1), "Auto-update failed\n").expect("a notice");
         assert!(n.contains("ended inside its sandbox"), "{n}");
         assert!(n.contains("cage started"), "{n}");
         assert!(!n.contains("SANDBOX failed to start"), "must not blame the cage: {n}");
@@ -855,25 +1069,25 @@ mod cage_death_tests {
     /// gets nothing at all, however quick it was.
     #[test]
     fn a_clean_exit_says_nothing_however_fast_it_was() {
-        assert_eq!(cage_death_notice(Some("worker"), Some(0), "done\n"), None);
+        assert_eq!(notice(Some("worker"), Some(0), "done\n"), None);
         // ...and neither does an unknown status with no launcher marker: there is nothing honest
         // to report, and a notice on every ambiguous exit is how a warning becomes noise.
-        assert_eq!(cage_death_notice(Some("worker"), None, "some output\n"), None);
+        assert_eq!(notice(Some("worker"), None, "some output\n"), None);
     }
 
     /// An UNCAGED pane keeps today's silence — this notice is about a cage, and a pane without one
     /// has nothing for it to say.
     #[test]
     fn an_uncaged_pane_is_untouched() {
-        assert_eq!(cage_death_notice(None, Some(1), "bwrap: boom"), None);
-        assert_eq!(cage_death_notice(Some(""), Some(1), "bwrap: boom"), None);
+        assert_eq!(notice(None, Some(1), "bwrap: boom"), None);
+        assert_eq!(notice(Some(""), Some(1), "bwrap: boom"), None);
     }
 
     /// A fatal signal is named, not left as a number — 137 is the cage's own OOM kill, which is
     /// exactly the case a reader must not have to decode by hand.
     #[test]
     fn a_fatal_signal_is_named() {
-        let n = cage_death_notice(Some("worker"), Some(137), "").expect("a notice");
+        let n = notice(Some("worker"), Some(137), "").expect("a notice");
         assert!(n.contains("exit=137 (killed by signal 9)"), "{n}");
     }
 
@@ -901,26 +1115,47 @@ mod cage_death_tests {
         };
 
         assert!(body_of("fn signal_from_code").contains(DECODE), "the one definition lives here");
+        assert!(
+            // By NAME, not `name(` — `classify_end` passes it as a function value
+            // (`and_then(signal_from_code)`), which is a call site just as much as a paren is.
+            body_of("fn classify_end").contains("signal_from_code"),
+            "classify_end must CALL the shared decode, not carry its own",
+        );
         for f in ["fn classify_end", "fn cage_death_notice"] {
-            assert!(
-                // By NAME, not `name(` — `classify_end` passes it as a function value
-                // (`and_then(signal_from_code)`), which is a call site just as much as a paren is.
-                body_of(f).contains("signal_from_code"),
-                "{f} must CALL the shared decode, not carry its own — the pane, the log and the \
-                 banner describe the SAME death, and a second copy is how they start disagreeing",
-            );
             assert!(
                 !body_of(f).contains(DECODE),
                 "{f} re-implements the decode instead of calling it",
             );
         }
+        // ...and the notice does not decode AT ALL any more. It takes the `SessionEnd` that
+        // `classify_end` produced and reads its verdict, which is the stronger version of the same
+        // guarantee: there is one classification, not two that are merely asked to agree. The
+        // difference stopped being theoretical when the KILL arm existed — `cage_death_notice`'s
+        // old input was an exit code, which cannot express a signal at all, so a killed cage was
+        // silent in the pane while the log called it `exit=1`.
+        assert!(
+            !body_of("fn cage_death_notice").contains("signal_from_code"),
+            "cage_death_notice must read the classification, not re-derive one",
+        );
+    }
+
+    /// A cage whose session was KILLED gets a notice too. It could not before: the input was an
+    /// exit code, and a kill has none — so the one death most worth reporting in the pane was the
+    /// one death the pane stayed silent about.
+    #[test]
+    fn a_killed_cage_is_reported_and_names_the_signal() {
+        let child = ChildEnd { code: None, signal_name: Some("Killed".into()) };
+        let n = cage_death_notice(&classify_end("proj:stream", Some(&child), false, Some("worker"), ""))
+            .expect("a killed cage must not be silent");
+        assert!(n.contains("killed by signal 9 (Killed)"), "{n}");
+        assert!(n.contains("ended inside its sandbox"), "the cage started; what ran in it was killed: {n}");
     }
 
     /// The notice ends the line it lands on and terminates its own, so it cannot be swallowed by a
     /// half-written line the dying session left behind.
     #[test]
     fn the_notice_stands_on_its_own_line() {
-        let n = cage_death_notice(Some("worker"), Some(1), "half a line").expect("a notice");
+        let n = notice(Some("worker"), Some(1), "half a line").expect("a notice");
         assert!(n.starts_with("\r\n"), "{n:?}");
         assert!(n.ends_with("\r\n"), "{n:?}");
     }
