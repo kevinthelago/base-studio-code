@@ -1,0 +1,40 @@
+[package]
+name = "bsc-secret"
+version = "0.1.0"
+edition = "2021"
+description = "Credential store for base-studio-code — the METADATA half of a paired service credential (what it is, how it last behaved) at ~/.base-studio-code/secrets.db, over the shared bsc-json-store. The secret VALUE never enters this store: it stays in the OS keychain, and this crate only ever asks whether one is present."
+
+# Tauri-free, like every other `bsc <noun>` store crate: the desktop app reaches it through the generic
+# `bsc` bridge (console/bsc.rs) and a live session reaches the same store through the CLI.
+[lib]
+name = "bsc_secret"
+
+[dependencies]
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies the credential
+# nouns, the enriched `list`, and the write-time gate that keeps a secret OUT of the metadata store.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog + `resolve_store_path`.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The ONE home-dir resolver (#1646) — the store dir resolves the same way every other store's does.
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The SECRET half. Mirrors src-tauri + crates/data's versions/features so all three processes reach
+# the same platform store (#1194).
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+
+# THE LINUX BACKEND, and it is not optional.
+#
+# keyring 3 compiles a platform store only when its feature is on. With just the apple/windows
+# features above, a Linux build gets NEITHER — and keyring's fallback is the in-process `mock` store,
+# which accepts every write and is empty in the next process. Measured before this line existed:
+# `bsc secret put github-acme` printed `{"stored":true}` and the very next `bsc secret list` reported
+# `missing`. Nothing errors; the secret is simply gone, which is the worst possible way for a
+# credential store to fail.
+#
+# `sync-secret-service` is the Secret Service (gnome-keyring / KWallet) — persistent across processes
+# and logins, matching what apple-native and windows-native give the other two platforms.
+# `linux-native` (kernel keyutils) was the alternative and is wrong here: it is session-scoped, so
+# every stored credential would vanish at logout.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
