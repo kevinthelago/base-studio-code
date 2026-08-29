@@ -144,6 +144,59 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
     Ok(wt_str)
 }
 
+/// Write a conservative PLACEHOLDER `.claude/settings.json` at `cwd` when it has none — the same
+/// self-healing `ensure_worktree` already does for a missing worktree, applied to the OTHER thing a
+/// wake needs before a launch can be admitted (request #142; `bsc fleet doctor`'s `no-gate` finding).
+///
+/// THE DEADLOCK THIS BREAKS: `pty_launch_refusal` refuses to auto-launch claude at a cwd with no
+/// `.claude/settings.json` — correctly, since a settings-less launch runs permission-less (#1819). But
+/// that refusal fires BEFORE `wakePane`, which is the very thing that would trigger the real launch
+/// (`TerminalView`) that writes the FULL role+profile settings. A worktree that was created (by an
+/// earlier `fleet start`/`wake`) but never actually reached that launch — the plan store confirms this
+/// happened for real: four network-monitor worktrees were `.claude`-less, complete in every other
+/// respect — has no path back: it is refused every time, forever, and "relaunch the pane from its
+/// project" names an action with no single-stream command behind it.
+///
+/// So this writes JUST ENOUGH to pass the gate — not the final one. The instant this wake lands, the
+/// pane's real launch re-derives the actual role+profile permissions from the store and overwrites this
+/// with `replacePermissions: true` (`ensure_session_settings`), so a placeholder never outlives the
+/// wake that needed it. What it writes in the meantime is deliberately the SAFEST shape rather than the
+/// most convenient one, for the case that overwrite never lands: the `ask` posture with no bypass — the
+/// mandatory gh/git/bsc tier plus read-only inspection auto-run, everything else prompts the user, and
+/// the curated dangerous-command floor stays denied. Never a bare-Bash allow, never `bypassPermissions`.
+///
+/// Never touches an EXISTING file, right or wrong — a worktree whose gate is present but stale, or
+/// whose hooks only resolve in a cage (`bsc fleet doctor`'s `caged-floor` finding), is a different
+/// problem with a different fix, and clobbering it here would destroy whatever an operator or a prior
+/// launch already got right.
+pub(crate) fn ensure_session_gate(cwd: &str) {
+    if cwd.is_empty() {
+        return;
+    }
+    let path = std::path::Path::new(cwd).join(".claude").join("settings.json");
+    if path.is_file() {
+        return;
+    }
+    let spec = crate::session::settings::SessionSettingsSpec {
+        cwd,
+        allowed_commands: &[],
+        denied_commands: &[],
+        mcp_servers: &[],
+        hooks: &[],
+        allow_tool_rules: &[],
+        deny_tool_rules: &[],
+        ask_tool_rules: &[],
+        skills: &[],
+        replace_permissions: false,
+        bash_posture: "ask",
+        bypass: false,
+        restricted_allow: false,
+    };
+    if let Err(e) = crate::session::settings::write_session_settings(&spec) {
+        log::warn!("fleet wake: could not write a placeholder gate at {cwd}: {e}");
+    }
+}
+
 /// Create the git worktree for branch `slug` at `wt_str` in the clone at `clone_str`, capturing
 /// git's stderr so a failure is self-describing, and self-healing the two ways a prior aborted run
 /// leaves the repo unable to re-launch.
@@ -767,6 +820,70 @@ mod tests {
         seed_union_merge_gitattributes(&dir);
         assert!(!dir.join(".gitattributes").exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ── #142: a wake self-heals a worktree/hub with a missing gate ─────────────────────────────────
+    //
+    // `bsc fleet doctor`'s `no-gate` finding: a cwd plan.db names can exist with no
+    // `.claude/settings.json` at all — an earlier `start`/`wake` that built the cwd but never reached
+    // the settings write. `pty_launch_refusal` refuses that cwd FOREVER, because the only thing that
+    // would ever write the real gate is the launch the refusal is blocking. `ensure_session_gate`
+    // writes just enough to pass the refusal; the pane's own launch overwrites it moments later.
+
+    /// The normal case: no gate on disk, so a conservative placeholder is written.
+    #[test]
+    fn ensure_session_gate_writes_a_safe_placeholder_when_absent() {
+        let dir = unique_dir("bsc-wt", "gate-missing");
+        fs::create_dir_all(&dir).unwrap();
+        let settings = dir.join(".claude").join("settings.json");
+        assert!(!settings.is_file(), "starts with no gate — the state this function exists for");
+
+        ensure_session_gate(&dir.to_string_lossy());
+
+        assert!(settings.is_file(), "a placeholder gate is written when none exists");
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&settings).unwrap()).unwrap();
+        // Safe by construction, for the case the real overwrite never lands: no bypass posture, no
+        // bare-Bash allow — only the mandatory + read-only baselines auto-run, everything else prompts.
+        assert!(v["permissions"]["defaultMode"].is_null(), "never the bypass posture");
+        let allow: Vec<String> = v["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect();
+        assert!(!allow.contains(&"Bash".to_string()), "never a bare-Bash allow in the placeholder");
+        assert!(allow.contains(&"Bash(git *)".to_string()));
+        assert!(allow.contains(&"Bash(gh *)".to_string()));
+        assert!(allow.contains(&"Bash(bsc *)".to_string()));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Never touches an EXISTING file, right or wrong — that is a different problem
+    /// (`bsc fleet doctor`'s `caged-floor`, or an operator's own edit) with a different fix, and
+    /// clobbering it here would destroy whatever was already correct.
+    #[test]
+    fn ensure_session_gate_never_touches_an_existing_file() {
+        let dir = unique_dir("bsc-wt", "gate-present");
+        fs::create_dir_all(dir.join(".claude")).unwrap();
+        let settings = dir.join(".claude").join("settings.json");
+        fs::write(&settings, r#"{"marker":"pre-existing"}"#).unwrap();
+
+        ensure_session_gate(&dir.to_string_lossy());
+
+        assert_eq!(
+            fs::read_to_string(&settings).unwrap(),
+            r#"{"marker":"pre-existing"}"#,
+            "an existing gate — right or wrong — is left exactly as it is"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Mirrors #1819's "never write to an empty cwd" rule elsewhere in the launch path: an empty cwd
+    /// means there is no directory to write into, not license to fall back to the process cwd.
+    #[test]
+    fn ensure_session_gate_is_a_noop_for_an_empty_cwd() {
+        ensure_session_gate("");
     }
 
     // ── #3963: the integration branch ───────────────────────────────────────────────────────────

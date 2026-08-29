@@ -96,8 +96,44 @@ npm run tauri -- dev      # the same launch, unrecorded
 npm run tauri -- build    # Production build (creates platform installer)
 cargo test                # Run Rust backend tests
 npm run typecheck    # TypeScript type-check without emit
-npm run promote           # gate develop, then fast-forward the app's tree (never restarts it)
+npm run app:dev           # the app, with NOTHING able to relaunch it (see below)
+npm run app:status        # is the built app behind main?
+npm run promote           # gate develop, then fast-forward the app's tree
 ```
+
+### Run the app so nothing can relaunch it: `npm run app:dev`
+
+```bash
+npm run app:dev       # tauri dev --no-watch — NOTHING restarts the app but you
+npm run app:status    # is the built app behind main? (app:dev prints this at launch)
+npm run dev:app       # the old watching launch — kept, for iterating on Rust
+```
+
+**`--no-watch` turns off the Rust file watcher, and that is the whole fix.** The interruption was never
+really about merges: MEASURED 2026-08-29, a session had the repo ROOT as its working directory and was
+editing `crates/bsc-graph/src/cli.rs` in place — 88 uncommitted lines calling a function it had not
+written yet. No amount of routing merges elsewhere helps when the writes are already there. With the
+watcher off, another session can edit, build and merge in the app's tree all day and the running app
+does not notice.
+
+**Vite is untouched**, because it is a separate process started by `beforeDevCommand`, not by the Rust
+watcher. So the frontend keeps hot-reloading: a `.tsx` component hot-updates in place (Fast Refresh is
+configured), a `.ts` lib module triggers a page reload, and a page reload does NOT cost you a session —
+PTY sessions are backend-owned by paneId and re-attach rather than forking.
+
+**The trade is honest staleness, and `app:status` is why it is not a bug.** With the watcher off, the
+binary silently stops matching `main`; nothing announces it, because announcing it was the watcher's
+job. `app:dev` prints the verdict at launch and `app:status` answers on demand. It counts COMMITS on
+main since the binary was built rather than trusting mtime — a rebuild touches the mtime without
+changing what it was built from, so mtime alone calls a fresh rebuild of old code "current".
+
+Rust changes therefore wait for a restart you choose. That restart is recoverable: a pane resumes its
+OWN conversation by session id (`a-pane-resumes-its-own-conversation-by-id`) and its scrollback replays
+from a provably safe ANSI boundary (`pty-data-carries-its-recording-offset`).
+
+Keeping a PTY host alive ACROSS a restart was weighed and declined: it inverts "the desktop is
+authoritative — it owns the agent processes", and it reintroduces the same problem one level down,
+since upgrading the host would kill the sessions it exists to preserve.
 
 ### The ROOT runs the app; integration happens in `wt-integrate`
 
