@@ -163,58 +163,221 @@ pub(crate) fn embedded_paths_ending_with(suffix: &str) -> Vec<String> {
     out
 }
 
-/// First-run seed: mirror the embedded tree into [`config_root`], writing only files that are ABSENT
-/// so a user edit is never clobbered. Idempotent — safe to call on every boot. Best-effort; on an I/O
-/// error the embedded fallback stays in force, so a seed failure is non-fatal.
-pub(crate) fn ensure_seeded() -> std::io::Result<()> {
+/// What a [`ensure_seeded`] pass did, so staleness is REPORTED rather than silent.
+///
+/// The whole defect this replaces was invisible: the mirror won at read time and nothing ever said
+/// it had stopped matching what shipped. A pass that refreshes nine files and preserves two edits
+/// must be able to say so.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SeedReport {
+    /// Files written because the config dir had no copy (a genuine first run, or a new seed file).
+    pub written: Vec<String>,
+    /// Files overwritten because the on-disk copy still hashed to what we last seeded — i.e. nobody
+    /// had edited it, so it was a stale mirror of an older release and not a user's config.
+    pub refreshed: Vec<String>,
+    /// Files left alone because the on-disk copy does NOT hash to what we seeded: a real edit (or an
+    /// unknown-provenance copy from before the manifest existed). Never clobbered — reported.
+    pub diverged: Vec<String>,
+    /// Files removed because the seed that put them there is gone and the copy was untouched. This
+    /// is what stops a retired blueprint/persona resurrecting forever through the overlay.
+    pub retired: Vec<String>,
+    /// Files whose seed is gone but whose copy was EDITED — left in place, surfaced as orphaned.
+    pub orphaned: Vec<String>,
+}
+
+impl SeedReport {
+    /// A one-line summary for the boot log, or `None` when the pass changed and found nothing —
+    /// the steady state, which should stay silent so the interesting passes are visible.
+    pub(crate) fn summary(&self) -> Option<String> {
+        let counts = [
+            ("written", self.written.len()),
+            ("refreshed", self.refreshed.len()),
+            ("diverged", self.diverged.len()),
+            ("retired", self.retired.len()),
+            ("orphaned", self.orphaned.len()),
+        ];
+        let parts: Vec<String> = counts
+            .iter()
+            .filter(|(_, n)| *n > 0)
+            .map(|(label, n)| format!("{n} {label}"))
+            .collect();
+        (!parts.is_empty()).then(|| parts.join(", "))
+    }
+}
+
+/// Bump when the manifest's shape changes incompatibly. A manifest whose version we don't recognise
+/// is treated as ABSENT (every file becomes unknown-provenance and is preserved), never as an error:
+/// downgrading the app must not license clobbering a user's config.
+const SEED_MANIFEST_VERSION: u32 = 1;
+
+/// rel-path → the lowercase-hex sha256 of the bytes WE last wrote there.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct SeedManifest {
+    version: u32,
+    #[serde(default)]
+    files: BTreeMap<String, String>,
+}
+
+/// Where the manifest lives — a SIBLING of the config root, never inside it.
+///
+/// That placement is load-bearing twice over. `get_config_files` walks the config root and serves
+/// every file it finds, so a manifest inside would be handed to the frontend as a config surface;
+/// and the export bundle (`export_from`) would carry one machine's seed bookkeeping into another
+/// machine's import. Deriving it from the root rather than from `bsc_base_dir()` also keeps the
+/// test seam honest: [`with_config_root`] repoints the root, and the manifest follows it.
+fn manifest_path(root: &Path) -> PathBuf {
+    let mut name = root.file_name().unwrap_or_default().to_os_string();
+    name.push(".seed-manifest.json");
+    root.with_file_name(name)
+}
+
+/// Lowercase hex sha256 — the one content-hash form, matching `bsc_ui::kit::sha256_hex`.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Every embedded file as `(forward-slash rel path, bytes)`.
+fn embedded_files(dir: &Dir<'static>) -> Vec<(String, &'static [u8])> {
+    fn walk(d: &Dir<'static>, out: &mut Vec<(String, &'static [u8])>) {
+        for f in d.files() {
+            out.push((f.path().to_string_lossy().replace('\\', "/"), f.contents()));
+        }
+        for sub in d.dirs() {
+            walk(sub, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Mirror the embedded tree into [`config_root`], REFRESHING what the user never touched.
+///
+/// The config dir wins at read time ([`load_str`]), which is the point — a prompt or protocol can be
+/// edited without a rebuild. The original seeder wrote only where a file was ABSENT, so that same
+/// precedence meant a mirror written on first boot kept winning forever and no packaged improvement
+/// could ever reach an existing install: measured on one machine, 20 of 154 mirrored files were
+/// stale, including every studio charter and the persona capability floors, plus (in an earlier
+/// audit) `permissions/base.json` and the `bsc-*` shell hooks — the security surface.
+///
+/// The fix is the one `components/` already got in #2483: record what we wrote, so "the user edited
+/// this" and "this is our own stale copy" stop being indistinguishable. `components/` was excluded
+/// from seeding outright (#2514); that is not available here, because the overlay exists precisely so
+/// these files CAN be customised and dropping that silently is a behaviour change for anyone who has.
+///
+/// Idempotent — safe on every boot. Best-effort at the call site: on an I/O error the embedded
+/// fallback stays in force, so a seed failure is non-fatal.
+pub(crate) fn ensure_seeded() -> std::io::Result<SeedReport> {
     seed_root(&EMBEDDED, &config_root())
 }
 
-/// The top level of the seed mirror.
+/// The testable core of [`ensure_seeded`], against an explicit destination.
 ///
-/// This used to filter out a `SEED_SKIP_DIRS` list whose only member was `components/` — the packaged
-/// kits (#2305), owned by the `bsc ui` kit store and its hash-based refresh (#2483). An auto-seeded
-/// copy became a de-facto override pinning every install's effective seed at its first-run roster, so
-/// refresh/retire verdicts could never fire (#2514).
-///
-/// That list is now RETIRED rather than kept as a second line of defence: `components/` is no longer
-/// in the embedded tree at all (`build.rs`'s `NON_CONFIG_DIRS`), so the filter had become vacuous —
-/// and a guard that can no longer fire reads to the next author as protection that is still active.
-/// The `config/components must not be seeded` guarantee is unchanged and still tested; it is now
-/// enforced one layer earlier, by never embedding the directory.
-fn seed_root(dir: &Dir, dest: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dest)?;
-    seed_files(dir, dest)?;
-    for sub in dir.dirs() {
-        if let Some(name) = sub.path().file_name() {
-            seed_dir(sub, &dest.join(name))?;
-        }
-    }
-    Ok(())
+/// The `components/` exclusion this used to carry as a `SEED_SKIP_DIRS` filter is gone and stays
+/// gone: `components/` is no longer in the embedded tree at all (`build.rs`'s `NON_CONFIG_DIRS`), so
+/// the filter was vacuous — and a guard that can no longer fire reads to the next author as
+/// protection that is still active. The `config/components must not be seeded` guarantee is
+/// unchanged and still tested, enforced one layer earlier by never embedding the directory.
+fn seed_root(dir: &Dir<'static>, dest: &Path) -> std::io::Result<SeedReport> {
+    seed_from(&embedded_files(dir), dest)
 }
 
-fn seed_dir(dir: &Dir, dest: &Path) -> std::io::Result<()> {
+/// The seeding ALGORITHM, over an explicit seed set — separated from the embedded tree so the tests
+/// can drive it with a seed that CHANGES between passes.
+///
+/// That separation is the difference between testing this and not. The five behaviours all turn on
+/// what happened on a previous pass with a DIFFERENT seed — refresh needs the packaged bytes to move
+/// under an untouched copy, and retirement needs a seed file to stop shipping. Against the real
+/// `EMBEDDED` tree (a build-time constant) neither is expressible, so a test could only ever observe
+/// the first-run case — which is the one case that never broke.
+fn seed_from(seeds: &[(String, &[u8])], dest: &Path) -> std::io::Result<SeedReport> {
     std::fs::create_dir_all(dest)?;
-    seed_files(dir, dest)?;
-    for sub in dir.dirs() {
-        if let Some(name) = sub.path().file_name() {
-            seed_dir(sub, &dest.join(name))?;
-        }
-    }
-    Ok(())
-}
+    let mpath = manifest_path(dest);
+    // An unreadable or unrecognised manifest degrades to "no manifest": every file becomes
+    // unknown-provenance and is therefore PRESERVED. Failing safe here means the worst case of a
+    // corrupt manifest is a stale mirror, never a destroyed edit.
+    let mut manifest: SeedManifest = std::fs::read_to_string(&mpath)
+        .ok()
+        .and_then(|s| serde_json::from_str::<SeedManifest>(&s).ok())
+        .filter(|m| m.version == SEED_MANIFEST_VERSION)
+        .unwrap_or_default();
 
-/// Write `dir`'s direct files into `dest`, only where absent (a user edit is never clobbered).
-fn seed_files(dir: &Dir, dest: &Path) -> std::io::Result<()> {
-    for f in dir.files() {
-        if let Some(name) = f.path().file_name() {
-            let target = dest.join(name);
-            if !target.exists() {
-                std::fs::write(&target, f.contents())?;
+    let mut report = SeedReport::default();
+    let mut seeded_now: BTreeMap<String, String> = BTreeMap::new();
+
+    for (rel, bytes) in seeds {
+        let target = dest.join(rel);
+        let seed_hash = sha256_hex(bytes);
+        let on_disk = std::fs::read(&target).ok();
+
+        match on_disk {
+            // Absent — a first run, or a seed file that did not exist in the last release.
+            None => {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&target, bytes)?;
+                report.written.push(rel.clone());
+                seeded_now.insert(rel.clone(), seed_hash);
+            }
+            Some(current) => {
+                let current_hash = sha256_hex(&current);
+                if current_hash == seed_hash {
+                    // Already current. Adopt it into the manifest — this is also the MIGRATION path
+                    // for an install that predates the manifest and happens to be up to date.
+                    seeded_now.insert(rel.clone(), seed_hash);
+                } else if manifest.files.get(rel).is_some_and(|h| *h == current_hash) {
+                    // Hashes to exactly what we last wrote, so nobody has touched it: our own stale
+                    // copy, and safe to move forward.
+                    std::fs::write(&target, bytes)?;
+                    report.refreshed.push(rel.clone());
+                    seeded_now.insert(rel.clone(), seed_hash);
+                } else {
+                    // Either a genuine edit, or a pre-manifest copy whose provenance we cannot know.
+                    // Both are PRESERVED: we cannot tell a stale copy from an edited one without
+                    // history, and guessing wrong destroys the user's work. Reported, not silent.
+                    report.diverged.push(rel.clone());
+                    // Keep the prior expectation so this stays classified as diverged next boot,
+                    // rather than oscillating.
+                    if let Some(prev) = manifest.files.get(rel) {
+                        seeded_now.insert(rel.clone(), prev.clone());
+                    }
+                }
             }
         }
     }
-    Ok(())
+
+    // Retirement: a file we seeded whose seed no longer ships. Untouched ⇒ remove, which is what
+    // stops a deleted blueprint/persona being offered forever through the additive overlay. Edited
+    // ⇒ leave it and say so.
+    let live: std::collections::BTreeSet<&String> = seeds.iter().map(|(r, _)| r).collect();
+    for (rel, seeded_hash) in &manifest.files {
+        if live.contains(rel) {
+            continue;
+        }
+        let target = dest.join(rel);
+        match std::fs::read(&target) {
+            Ok(current) if sha256_hex(&current) == *seeded_hash => {
+                std::fs::remove_file(&target)?;
+                report.retired.push(rel.clone());
+            }
+            Ok(_) => {
+                report.orphaned.push(rel.clone());
+                seeded_now.insert(rel.clone(), seeded_hash.clone());
+            }
+            // Already gone — drop it from the manifest silently.
+            Err(_) => {}
+        }
+    }
+
+    manifest.version = SEED_MANIFEST_VERSION;
+    manifest.files = seeded_now;
+    if let Ok(json) = serde_json::to_string_pretty(&manifest) {
+        std::fs::write(&mpath, json)?;
+    }
+    Ok(report)
 }
 
 // ── Config bundle: export / import (#2027 P3) ────────────────────────────────
@@ -391,20 +554,177 @@ mod tests {
     #[test]
     fn seed_dir_mirrors_the_embedded_tree_and_never_clobbers_a_user_edit() {
         let root = scratch_dir("seed");
-        seed_dir(&EMBEDDED, &root).unwrap();
+        seed_root(&EMBEDDED, &root).unwrap();
         // a NESTED packaged file was materialized to disk
         let base = root.join("permissions/base.json");
         assert!(base.exists(), "a nested embedded file is seeded onto disk");
         assert!(!std::fs::read_to_string(&base).unwrap().trim().is_empty());
         // a subsequent re-seed preserves a user edit (only-absent-files rule)
         std::fs::write(&base, "USER_EDIT").unwrap();
-        seed_dir(&EMBEDDED, &root).unwrap();
+        seed_root(&EMBEDDED, &root).unwrap();
         assert_eq!(
             std::fs::read_to_string(&base).unwrap(),
             "USER_EDIT",
             "a re-seed must never overwrite a file the user has edited",
         );
         std::fs::remove_dir_all(&root).ok();
+    }
+
+
+    // ── Hash-based refresh (#4251) ───────────────────────────────────────────
+    //
+    // These drive `seed_from` with a SYNTHETIC seed rather than `EMBEDDED`, because every behaviour
+    // that broke turns on the packaged bytes CHANGING between two passes — which a build-time
+    // constant cannot express. Against `EMBEDDED` the only observable case is the first run, and the
+    // first run is the one case the old seeder got right.
+
+    /// A synthetic packaged tree: `(rel path, contents)`.
+    fn seed_set(entries: &[(&str, &'static str)]) -> Vec<(String, &'static [u8])> {
+        entries.iter().map(|(rel, body)| (rel.to_string(), body.as_bytes())).collect()
+    }
+
+    fn read(root: &Path, rel: &str) -> String {
+        std::fs::read_to_string(root.join(rel)).unwrap_or_default()
+    }
+
+    /// THE DEFECT, stated as a test: a packaged improvement must reach an install that already has a
+    /// mirror. Before #4251 the second pass was a no-op because the file merely EXISTED, which is how
+    /// 20 of this machine's 154 mirrored files — every studio charter, the persona capability floors,
+    /// and in an earlier audit `permissions/base.json` and the `bsc-*` hooks — sat stale while the
+    /// repo shipped the fix and the gate stayed green.
+    #[test]
+    fn an_untouched_copy_is_refreshed_when_the_packaged_bytes_move() {
+        let root = scratch_dir("refresh");
+        seed_from(&seed_set(&[("fleet/protocol.md", "v1")]), &root).unwrap();
+        assert_eq!(read(&root, "fleet/protocol.md"), "v1", "first run writes the seed");
+
+        let report = seed_from(&seed_set(&[("fleet/protocol.md", "v2")]), &root).unwrap();
+        assert_eq!(read(&root, "fleet/protocol.md"), "v2", "an untouched copy follows the seed forward");
+        assert_eq!(report.refreshed, vec!["fleet/protocol.md".to_string()]);
+        assert!(report.diverged.is_empty(), "an untouched copy is not a divergence");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The other half, and the one that must never regress: the overlay exists so config CAN be
+    /// customised, so an edit outranks a packaged change and is REPORTED rather than silently kept.
+    #[test]
+    fn a_user_edit_is_never_clobbered_by_a_refresh_and_is_reported() {
+        let root = scratch_dir("edit");
+        seed_from(&seed_set(&[("planner/process.md", "v1")]), &root).unwrap();
+        std::fs::write(root.join("planner/process.md"), "MY EDIT").unwrap();
+
+        let report = seed_from(&seed_set(&[("planner/process.md", "v2")]), &root).unwrap();
+        assert_eq!(read(&root, "planner/process.md"), "MY EDIT", "an edit is never clobbered");
+        assert_eq!(report.diverged, vec!["planner/process.md".to_string()]);
+        assert!(report.refreshed.is_empty());
+
+        // And it stays classified — a diverged file must not oscillate back to "refreshable".
+        let again = seed_from(&seed_set(&[("planner/process.md", "v3")]), &root).unwrap();
+        assert_eq!(read(&root, "planner/process.md"), "MY EDIT");
+        assert_eq!(again.diverged, vec!["planner/process.md".to_string()]);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Retirement — the half that stops a deleted record resurrecting. The frontend overlay is
+    /// ADDITIVE BY STEM, so a retired blueprint left in the mirror keeps being offered forever; an
+    /// audit found 26 retired seeds still overlaying, including blueprints deleted releases ago.
+    #[test]
+    fn a_retired_seed_removes_an_untouched_copy_but_keeps_an_edited_one() {
+        let root = scratch_dir("retire");
+        seed_from(&seed_set(&[("blueprints/keep.json", "{}"), ("blueprints/gone.json", "{}"),
+                              ("blueprints/mine.json", "{}")]), &root).unwrap();
+        std::fs::write(root.join("blueprints/mine.json"), "{\"edited\":true}").unwrap();
+
+        let report = seed_from(&seed_set(&[("blueprints/keep.json", "{}")]), &root).unwrap();
+        assert!(!root.join("blueprints/gone.json").exists(), "an untouched retired seed is removed");
+        assert_eq!(report.retired, vec!["blueprints/gone.json".to_string()]);
+        assert!(root.join("blueprints/mine.json").exists(), "an EDITED retired seed is kept");
+        assert_eq!(report.orphaned, vec!["blueprints/mine.json".to_string()]);
+        assert!(root.join("blueprints/keep.json").exists());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// MIGRATION, the case every existing install lands in: a mirror with no manifest.
+    ///
+    /// We cannot tell a stale copy from an edited one without history, so an unmatched file is
+    /// PRESERVED and reported — never adopted, never clobbered. A file that already matches the
+    /// shipped seed is adopted silently, which is what lets a current install start tracking.
+    #[test]
+    fn a_preexisting_mirror_with_no_manifest_is_preserved_or_adopted_but_never_clobbered() {
+        let root = scratch_dir("migrate");
+        std::fs::create_dir_all(root.join("personas")).unwrap();
+        // Hand-written, no manifest: one matches the shipped seed, one does not.
+        std::fs::write(root.join("personas/current.json"), "v1").unwrap();
+        std::fs::write(root.join("personas/unknown.json"), "SOMETHING ELSE").unwrap();
+        assert!(!manifest_path(&root).exists(), "the premise: no manifest yet");
+
+        let report = seed_from(
+            &seed_set(&[("personas/current.json", "v1"), ("personas/unknown.json", "v1")]),
+            &root,
+        )
+        .unwrap();
+        assert_eq!(read(&root, "personas/unknown.json"), "SOMETHING ELSE", "unknown provenance is kept");
+        assert_eq!(report.diverged, vec!["personas/unknown.json".to_string()]);
+
+        // The matching one was ADOPTED — proven by it now refreshing, which it could not do unless
+        // the migration pass recorded its hash.
+        let next = seed_from(
+            &seed_set(&[("personas/current.json", "v2"), ("personas/unknown.json", "v2")]),
+            &root,
+        )
+        .unwrap();
+        assert_eq!(read(&root, "personas/current.json"), "v2", "an adopted file refreshes");
+        assert_eq!(next.refreshed, vec!["personas/current.json".to_string()]);
+        assert_eq!(read(&root, "personas/unknown.json"), "SOMETHING ELSE", "still preserved");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The manifest must not live inside the config root.
+    ///
+    /// Two concrete consequences if it did: `get_config_files` walks the root and hands everything it
+    /// finds to the frontend as a config surface, and `export_from` would carry one machine's seed
+    /// bookkeeping into another machine's import.
+    #[test]
+    fn the_manifest_lives_outside_the_config_root() {
+        let root = scratch_dir("manifest-outside");
+        seed_from(&seed_set(&[("permissions/base.json", "{}")]), &root).unwrap();
+
+        assert!(manifest_path(&root).exists(), "the manifest is written");
+        assert!(!manifest_path(&root).starts_with(&root), "and it is NOT inside the config root");
+        let bundle = export_from(&root);
+        assert!(
+            bundle.files.keys().all(|k| !k.contains("seed-manifest")),
+            "the export bundle must not carry seed bookkeeping: {:?}",
+            bundle.files.keys().collect::<Vec<_>>(),
+        );
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_file(manifest_path(&root)).ok();
+    }
+
+    /// Fail SAFE: an unreadable manifest must degrade to preserving everything, never to clobbering.
+    /// The worst case of a corrupt manifest is a stale mirror; a destroyed edit is not acceptable.
+    #[test]
+    fn a_corrupt_manifest_preserves_rather_than_clobbers() {
+        let root = scratch_dir("corrupt");
+        seed_from(&seed_set(&[("shell/confine.sh", "v1")]), &root).unwrap();
+        std::fs::write(manifest_path(&root), "{ not json").unwrap();
+
+        let report = seed_from(&seed_set(&[("shell/confine.sh", "v2")]), &root).unwrap();
+        assert_eq!(read(&root, "shell/confine.sh"), "v1", "no manifest ⇒ preserve, never clobber");
+        assert_eq!(report.diverged, vec!["shell/confine.sh".to_string()]);
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_file(manifest_path(&root)).ok();
+    }
+
+    /// The steady state stays quiet, so the passes that DID something are visible in the boot log.
+    #[test]
+    fn the_report_is_silent_when_a_pass_changes_nothing() {
+        let root = scratch_dir("quiet");
+        let seeds = seed_set(&[("roles/x.json", "{}")]);
+        assert!(seed_from(&seeds, &root).unwrap().summary().is_some(), "a first run reports its writes");
+        assert_eq!(seed_from(&seeds, &root).unwrap().summary(), None, "an unchanged pass is silent");
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_file(manifest_path(&root)).ok();
     }
 
     /// The `#2514` guarantee, now enforced one layer earlier.
@@ -515,7 +835,7 @@ mod tests {
     #[test]
     fn export_import_round_trips_the_config_tree() {
         let src = scratch_dir("bundle-src");
-        seed_dir(&EMBEDDED, &src).unwrap();
+        seed_root(&EMBEDDED, &src).unwrap();
         std::fs::write(src.join("permissions/base.json"), "EDITED").unwrap();
         let bundle = export_from(&src);
         assert_eq!(bundle.version, BUNDLE_VERSION);
