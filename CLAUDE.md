@@ -128,7 +128,11 @@ npm run promote -- --skip-gate   # you just gated develop yourself
 ```
 
 `npm run promote` is **explicit and never automatic** — choosing the moment the app changes is the
-entire point, and an automatic restart would reintroduce the problem with extra steps. It refuses
+entire point. Be clear about what it does and does not buy: a promote writes working-tree files that
+`tauri dev` and vite are watching, so **a running app will rebuild and relaunch itself**. That is
+inherent — new Rust means a new binary. What changes is that it happens when YOU ran the command
+rather than when somebody else merged, and the script says which case you are in rather than claiming
+no restart will happen. It refuses
 rather than works around: a dirty app tree (uncommitted work in the RUNNING copy is the only thing here
 that cannot be recovered), a detached HEAD, and an app branch AHEAD of develop — which means something
 committed straight to `main`, a fault to look at rather than paper over with a merge commit. The
