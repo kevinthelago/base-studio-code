@@ -156,6 +156,34 @@ window reports absence (an explicit 'not enough data' line, or `null` under --js
 fabricated zero rate.",
     },
     CmdDoc {
+        name: "pss",
+        summary: "system-wide memory by process category (PSS, not RSS) — the fleet-load sampler",
+        usage: "\
+USAGE:
+  bsc logs pss [--json|--pretty]
+  bsc logs pss --watch [--interval N] [--duration N] [--json|--pretty]
+
+Sums `Pss` (proportional set size — shared pages divided by their sharer count, so the categories
+add up honestly instead of double-counting shared libraries) out of every `/proc/<pid>/smaps_rollup`,
+bucketed by what the process actually IS: vitest workers, vitest runner, rustc, sccache, cargo,
+C++ (libduckdb), claude sessions, the app, node (other), other. Categorized by argv[0] — never by a
+free-text search of the whole cmdline, since a claude session's own prompt routinely contains words
+like \"cargo\" or \"vitest\" as PROSE, not as the process it names.
+
+A bare call takes ONE sample: category table + system memory-in-use + swap resident.
+
+`--watch` samples repeatedly (`--interval` seconds apart, default 9, for `--duration` seconds total,
+default 60 — the BEFORE measurement's own cadence) and reports the climb in memory-in-use from the
+first sample to the last, the swap resident at the start, and each category's OWN peak across the
+whole window (independently — a category's peak sample need not be the same sample another
+category's peak came from), plus their sum. This is the repeatable replacement for the ad-hoc python
+PSS sampler used to produce the BEFORE figures on `a-scoped-gate-runs-the-whole-vitest-suite-and-
+takes-no-slot` (#182).
+
+Linux-only: `smaps_rollup` does not exist on macOS or Windows. `--json` on an unsupported platform
+reports an explicit error rather than a fabricated empty table.",
+    },
+    CmdDoc {
         name: "summary",
         summary: "a one-line recap for a session",
         usage: "\
@@ -195,6 +223,14 @@ struct Args {
     /// (#coord-log-is-app-wide-answers-cross-projects).
     all: bool,
     dir: Option<PathBuf>,
+    /// `pss`: repeated sampling instead of one shot.
+    watch: bool,
+    /// `pss --watch`: seconds between samples (default 9, the BEFORE measurement's own cadence).
+    interval: Option<u64>,
+    /// `pss --watch`: total seconds to sample for (default 60).
+    duration: Option<u64>,
+    /// `pss`: override `/proc` — a test seam, not something a real run needs to pass.
+    proc_dir: Option<PathBuf>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -210,6 +246,10 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         full: false,
         all: false,
         dir: None,
+        watch: false,
+        interval: None,
+        duration: None,
+        proc_dir: None,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -219,6 +259,10 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--oldest" => a.oldest = true,
             "--full" => a.full = true,
             "--all" => a.all = true,
+            "--watch" => a.watch = true,
+            "--interval" => a.interval = Some(it.next().ok_or("--interval needs a value")?.parse().map_err(|_| "--interval must be seconds")?),
+            "--duration" => a.duration = Some(it.next().ok_or("--duration needs a value")?.parse().map_err(|_| "--duration must be seconds")?),
+            "--proc" => a.proc_dir = Some(PathBuf::from(it.next().ok_or("--proc needs a value")?)),
             "--session" => a.session = Some(it.next().ok_or("--session needs a value")?),
             "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
             "--since" => a.since = Some(it.next().ok_or("--since needs a value")?.parse().map_err(|_| "--since must be epoch ms")?),
@@ -425,6 +469,57 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 lines.join("\n")
             });
         }
+        // System-wide memory by process category (#182) — the repeatable replacement for the ad-hoc
+        // python PSS sampler.
+        "pss" => {
+            if !cfg!(target_os = "linux") {
+                return Err("bsc logs pss needs /proc/*/smaps_rollup, which only exists on Linux".to_string());
+            }
+            let proc_dir = a.proc_dir.clone().unwrap_or_else(|| PathBuf::from("/proc"));
+            let gb = |b: u64| format!("{:.2} GB", b as f64 / 1_073_741_824.0);
+            let dash_gb = |b: Option<u64>| b.map(gb).unwrap_or_else(|| "-".into());
+
+            if !a.watch {
+                let s = crate::pss::sample(&proc_dir, bsc_util::now_ms());
+                let totals = crate::pss::aggregate(&s.procs);
+                emit(a.pretty, a.json, &s, || {
+                    let mut lines = vec!["category\tpss\tprocs".to_string()];
+                    lines.extend(totals.iter().map(|c| format!("{}\t{}\t{}", c.category, gb(c.pss_bytes), c.procs)));
+                    if let Some(mem) = s.mem {
+                        lines.push(format!("--\tmemory in use\t{}", gb(mem.used_bytes)));
+                        lines.push(format!("--\tswap resident\t{}", gb(mem.swap_used_bytes)));
+                    }
+                    lines.join("\n")
+                });
+                return Ok(());
+            }
+
+            let interval = std::time::Duration::from_secs(a.interval.unwrap_or(9).max(1));
+            let duration = std::time::Duration::from_secs(a.duration.unwrap_or(60));
+            let start = std::time::Instant::now();
+            let mut samples = Vec::new();
+            loop {
+                samples.push(crate::pss::sample(&proc_dir, bsc_util::now_ms()));
+                if start.elapsed() + interval > duration {
+                    break;
+                }
+                std::thread::sleep(interval);
+            }
+            let w = crate::pss::summarize_watch(&samples);
+            emit(a.pretty, a.json, &w, || {
+                let mut lines = vec![format!(
+                    "{} sample(s) · memory in use {} -> {} · swap resident {}",
+                    w.samples,
+                    dash_gb(w.used_from_bytes),
+                    dash_gb(w.used_to_bytes),
+                    dash_gb(w.swap_used_bytes),
+                )];
+                lines.push("category (peak, independent)\tpss\tprocs".to_string());
+                lines.extend(w.peak_by_category.iter().map(|c| format!("{}\t{}\t{}", c.category, gb(c.pss_bytes), c.procs)));
+                lines.push(format!("--\tpeak sum\t{}", gb(w.peak_sum_bytes)));
+                lines.join("\n")
+            });
+        }
         // A one-line recap for a session.
         "summary" => {
             let id = a.session.clone().or_else(|| a.positional.get(1).cloned())
@@ -521,9 +616,37 @@ mod tests {
     }
 
     #[test]
+    fn pss_dispatches_single_shot_and_watch_against_a_fake_proc_tree() {
+        let root = std::env::temp_dir().join(format!("bsc-logs-cli-pss-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("meminfo"),
+            "MemTotal:       32000000 kB\nMemAvailable:   12000000 kB\nSwapTotal:      16000000 kB\nSwapFree:        8000000 kB\n",
+        )
+        .unwrap();
+        let pid_dir = root.join("4242");
+        std::fs::create_dir_all(&pid_dir).unwrap();
+        std::fs::write(pid_dir.join("cmdline"), b"/usr/bin/rustc\0").unwrap();
+        std::fs::write(pid_dir.join("comm"), "rustc\n").unwrap();
+        std::fs::write(pid_dir.join("smaps_rollup"), "Rss:              100000 kB\nPss:              100000 kB\n").unwrap();
+        let proc = root.to_string_lossy().into_owned();
+
+        let go = |v: Vec<&str>| {
+            let mut args: Vec<String> = v.into_iter().map(String::from).collect();
+            args.extend(["--proc".into(), proc.clone(), "--json".into()]);
+            run(args, "bsc logs")
+        };
+        assert!(go(vec!["pss"]).is_ok());
+        // duration 0 takes exactly one sample and returns immediately — no real sleeping in a test.
+        assert!(go(vec!["pss", "--watch", "--interval", "1", "--duration", "0"]).is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc logs", TAGLINE, COMMANDS);
-        for c in ["sessions", "session", "cost", "perf", "summary", "<stream>"] {
+        for c in ["sessions", "session", "cost", "perf", "pss", "summary", "<stream>"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // Per-command help shows that one command's detail only.
