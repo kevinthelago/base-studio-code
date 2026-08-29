@@ -125,6 +125,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .manage(crate::console::pty::PtyState::new())
+        // Per-pane scrollback cursors — how far each pane's frontend has been sent. The emitter
+        // publishes into these and `pty_scrollback_reveal` reads them; see `scrollback::Cursor`.
+        .manage(crate::console::pty::scrollback::Cursors::default())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
@@ -321,6 +324,7 @@ pub fn run() {
             pty::pty_broadcast,
             pty::pty_resize,
             pty::pty_scrollback_tail,
+            pty::pty_scrollback_reveal,
             pty::pty_kill,
             pty::pty_launch_refusal,
             pty::pty_set_app_runner,

@@ -215,6 +215,63 @@ impl ScrollbackRecorder {
             self.last_mark = self.written;
         }
     }
+
+    /// Bytes recorded so far, counting whatever the file already held. This is the offset the reader
+    /// hands to the emitter, so it addresses the FILE rather than this recorder's own run.
+    pub fn len(&self) -> u64 {
+        self.written
+    }
+}
+
+/// How far into a pane's recording the frontend has actually been SENT.
+///
+/// This is the whole reason the handoff can be seamless, and why it lives in Rust rather than being
+/// negotiated over IPC. The emitter holds this lock across the emit, so at any instant the value is
+/// exactly "the last byte the frontend has been given". A reveal takes the same lock, reads the
+/// recording up to that offset, and releases — so the replay ends precisely where the live stream
+/// resumes. No gap to lose bytes in, no overlap to duplicate.
+///
+/// `None` while the pane has no recording (the recorder could not open), which a reveal reads as "no
+/// history to replay" rather than as an error.
+pub type Cursor = std::sync::Arc<std::sync::Mutex<Option<u64>>>;
+
+/// Every live pane's cursor, keyed by pane id. Tauri-managed so a command can find one.
+#[derive(Default)]
+pub struct Cursors(pub std::sync::Mutex<std::collections::HashMap<String, Cursor>>);
+
+impl Cursors {
+    /// Register a fresh cursor for `pane_id`, replacing any stale one from a previous session with
+    /// the same id — a relaunched pane starts its recording again and must not inherit an offset
+    /// that addressed the old stream.
+    pub fn register(&self, pane_id: &str) -> Cursor {
+        let cur: Cursor = std::sync::Arc::new(std::sync::Mutex::new(None));
+        if let Ok(mut m) = self.0.lock() {
+            m.insert(pane_id.to_string(), cur.clone());
+        }
+        cur
+    }
+
+    pub fn get(&self, pane_id: &str) -> Option<Cursor> {
+        self.0.lock().ok()?.get(pane_id).cloned()
+    }
+
+    pub fn remove(&self, pane_id: &str) {
+        if let Ok(mut m) = self.0.lock() {
+            m.remove(pane_id);
+        }
+    }
+}
+
+/// What a reveal hands back: the replay text, and the offset it ends at.
+///
+/// `upto` is returned rather than kept private because the frontend needs it to reconcile: once the
+/// event payload carries offsets too, any live event at or before `upto` is already in `text` and can
+/// be dropped. Until then it is the value that makes the handoff auditable.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reveal {
+    pub text: String,
+    pub upto: u64,
 }
 
 /// Choose where to start replaying so the result is at most `max_bytes` AND begins at a boundary.
@@ -245,6 +302,27 @@ pub fn replay_start(marks: &[u64], len: u64, max_bytes: u64) -> u64 {
         // tiny budget still gets a bounded (if over-budget) replay rather than the entire history.
         None => usable.last().copied().unwrap_or(0),
     }
+}
+
+/// Read a pane's recording between a safe start and `end`, at most `max_bytes` long.
+///
+/// `end` is what makes this different from [`read_tail`]: a reveal must stop exactly where the live
+/// stream resumes, NOT at the current end of the file, or the bytes in between arrive twice.
+pub fn read_upto(dir: &Path, pane_id: &str, end: u64, max_bytes: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let stem = safe_stem(pane_id);
+    let mut f = File::open(dir.join(format!("{stem}.bin"))).ok()?;
+    let len = f.metadata().ok()?.len().min(end);
+    let marks: Vec<u64> = std::fs::read_to_string(dir.join(format!("{stem}.idx")))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect();
+    let start = replay_start(&marks, len, max_bytes);
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut out = Vec::with_capacity((len - start) as usize);
+    f.take(len - start).read_to_end(&mut out).ok()?;
+    Some(String::from_utf8_lossy(&out).into_owned())
 }
 
 /// Read a pane's recorded tail, starting at a safe boundary, at most `max_bytes` long.
@@ -430,6 +508,41 @@ mod tests {
         // A pane that never recorded is absent, NOT an error — the caller shows a fresh terminal.
         assert!(read_tail(&dir, "never-ran", 1024).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_reveal_stops_exactly_where_the_live_stream_resumes() {
+        // THE SEAM, as a test. The recording runs ahead of what the frontend has been sent; a reveal
+        // bounded by the cursor must return the sent part and NOTHING after it, or those bytes arrive
+        // twice — once replayed, once live.
+        let dir = std::env::temp_dir().join(format!("sb-seam-{}-{}", std::process::id(), now_nanos()));
+        let mut r = ScrollbackRecorder::open(&dir, "p").expect("opens");
+        r.write(b"SENT-");
+        let sent = r.len(); // the cursor the emitter would publish
+        r.write(b"NOT-YET");
+        drop(r);
+
+        let replay = read_upto(&dir, "p", sent, 1024).expect("reads");
+        assert_eq!(replay, "SENT-", "a reveal must not include bytes still to arrive live");
+
+        // …while an unbounded tail read DOES see them, so the bound is what is doing the work here
+        // and not some accident of the recording.
+        assert_eq!(read_tail(&dir, "p", 1024).as_deref(), Some("SENT-NOT-YET"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_cursor_is_replaced_when_a_pane_id_is_reused() {
+        // A relaunched pane records afresh; inheriting the old offset would bound its first reveal by
+        // a number that addressed a different stream.
+        let cs = Cursors::default();
+        let first = cs.register("pane");
+        *first.lock().unwrap() = Some(4096);
+        let second = cs.register("pane");
+        assert_eq!(*second.lock().unwrap(), None, "a re-registered pane starts with no cursor");
+        assert_eq!(*cs.get("pane").unwrap().lock().unwrap(), None);
+        cs.remove("pane");
+        assert!(cs.get("pane").is_none(), "an exited pane leaves nothing in the map");
     }
 
     fn now_nanos() -> u128 {
