@@ -23,6 +23,7 @@
   "@/app/console/lib/terminal",
   "@/app/console/lib/terminalAdmission",
   "@/app/console/lib/terminalConstants",
+  "@/app/console/lib/terminalHandoff",
   "@/app/console/lib/terminalKeys",
   "@/app/console/lib/terminalNudge",
   "@/app/console/lib/terminalWheel",

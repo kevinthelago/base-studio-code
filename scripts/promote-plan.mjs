@@ -24,7 +24,11 @@ export function planPromote(state) {
   if (!branch || branch === "HEAD") {
     return { action: "fail", reason: "detached-head" };
   }
-  // Someone edited the RUNNING copy. Promoting would either fail or carry those edits forward silently.
+  // Someone edited the RUNNING copy. `dirty` is deliberately TRACKED modifications only: a
+  // fast-forward cannot destroy an untracked file — git leaves it alone, and at worst refuses the
+  // merge itself with "untracked working tree file would be overwritten", which is a clearer error
+  // than anything this could invent. Counting untracked files here made every promote refuse over
+  // 0-byte editor/shell dotfiles that a tooling sandbox materialises at the repo root.
   if (dirty.length > 0) {
     return { action: "fail", reason: "dirty-app-tree" };
   }

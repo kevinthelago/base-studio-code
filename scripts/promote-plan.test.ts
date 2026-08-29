@@ -59,6 +59,15 @@ describe("planPromote", () => {
     expect(planPromote(state({ dirty: [" M x.ts"], ahead: 2 })).reason).toBe("dirty-app-tree");
   });
 
+  /// `dirty` carries TRACKED modifications only. A fast-forward cannot destroy an untracked file, so
+  /// counting them here refused every promote over 0-byte editor/shell dotfiles a tooling sandbox
+  /// leaves at the repo root — a guard that never lets you through is not a guard.
+  it("treats only tracked modifications as dirty", () => {
+    expect(planPromote(state({ dirty: [" M src/app/App.tsx"] })).reason).toBe("dirty-app-tree");
+    // The caller passes an untracked-free list; an empty one must promote.
+    expect(planPromote(state({ dirty: [] })).action).toBe("promote");
+  });
+
   it("never promotes on a malformed or empty state", () => {
     expect(planPromote(undefined as never).action).toBe("fail");
     expect(planPromote({} as never).action).toBe("fail");
