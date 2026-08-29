@@ -776,6 +776,11 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     gl.deleteProgram(nodeProg);
     gl.deleteProgram(edgeProg);
     gl.deleteProgram(labelProg);
+    // Deleting objects returns GPU memory; it does not return the CONTEXT. Browsers cap live WebGL
+    // contexts (Chromium ~16) and force-lose the OLDEST past the cap, so a caller that creates and
+    // disposes renderers repeatedly (a mount/unmount cycle, hasWebgl2's throwaway probe) can silently
+    // evict a context another part of the page is still using.
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 
   return {
