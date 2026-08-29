@@ -853,7 +853,14 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
     // the record was carrying, and #145's sync then faithfully propagated the loss to the seed
     // — the second test stopped being emitted and stopped running, gate green throughout,
     // because a test that no longer exists cannot fail.
-    let entry = serde_json::json!({ "name": name, "src": contents });
+    // Carry the source file's REAL extension (#148). The emitter otherwise guesses, and a `.ts` file
+    // holding a generic like `<T,>` reads as JSX and is emitted `.tsx` — the flip that renamed
+    // `useNavHistory.test.tsx` to `.test.ts` during a harvest. `None` for a non-test extension leaves
+    // the facet absent rather than asserting a wrong one.
+    let mut entry = serde_json::json!({ "name": name, "src": contents });
+    if let Some(e) = bsc_util::test_source_ext(path) {
+        entry["ext"] = serde_json::json!(e);
+    }
     match next.get_mut("tests").and_then(Value::as_array_mut) {
         Some(arr) => match arr.iter_mut().find(|t| t.get("name").and_then(Value::as_str) == Some(name.as_str())) {
             Some(existing) => *existing = entry,
@@ -4058,7 +4065,7 @@ mod tests {
             .and_then(|i| i.get("tests").cloned());
         assert_eq!(
             stored,
-            Some(serde_json::json!([{ "name": "paired.test.ts", "src": contents }])),
+            Some(serde_json::json!([{ "name": "paired.test.ts", "src": contents, "ext": ".ts" }])),
             "the test file's contents landed on the record verbatim, named by its basename \
              (no `describe(` title to prefer)",
         );
@@ -4089,6 +4096,80 @@ mod tests {
     /// `src-tauri/data/knowledge/algorithms.json`. This pins that `--seed` writes the SAME test onto
     /// the packaged seed file directly, verified by reading that file back off disk (not through
     /// `crate::seed()`, which caches its first read for the process and would not see this write).
+    #[test]
+    // #148: `tests set` on a `.ts` file whose body contains a TS generic must carry the REAL
+    // extension, so the emitter never falls back to `extFor`'s body-sniffing guess — which reads
+    // `<T>(a: readonly T[])` as a JSX open tag and would re-emit this as `.tsx` (wrong vitest project,
+    // still green, ~35x slower).
+    fn tests_set_carries_the_real_extension_past_a_ts_generic_the_emitter_would_misread_as_jsx() {
+        let dir = crate::unique_temp("testsset-ext");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "session-roles.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "sessionRoles".into(),
+                "--code".into(), "export function sessionRoles() {}".into(),
+                "--src".into(), "src/sessionRoles.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-ext-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("sr0.ts");
+        // The exact shape from the request: an ordinary TS generic that `extFor`'s
+        // `/<[A-Za-z][^>]*>/` regex matches just as readily as a real JSX element.
+        let contents =
+            "function scopeWriteGlobs<T>(a: readonly T[]): T[] { return a; }\nit('#1297', () => scopeWriteGlobs([]));\n";
+        std::fs::write(&test_file, contents).unwrap();
+
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--name".into(), "scopeWriteGlobs (#1297)".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let stored = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("session-roles.ts"))
+            .and_then(|i| i.get("tests").cloned());
+        // Asserted on the ENTRY, not the whole array: #147 made `tests set` UPSERT, so the record's
+        // other sibling test survives the write — which is the point of that fix. Comparing the array
+        // to a single element would re-assert the destructive behaviour #147 removed.
+        let entry = stored
+            .as_ref()
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().find(|t| t.get("name").and_then(Value::as_str) == Some("scopeWriteGlobs (#1297)")))
+            .cloned()
+            .expect("the named test is stored");
+        assert_eq!(
+            entry,
+            serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": contents, "ext": ".ts" }),
+            "the stored test states its own `.ts` extension rather than leaving the emitter to guess \
+             from a body whose TS generic reads as JSX",
+        );
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
     #[test]
     fn tests_set_upserts_by_name_and_does_not_drop_sibling_tests() {
         let dir = crate::unique_temp("testsset-siblings");
@@ -4157,10 +4238,11 @@ mod tests {
         assert_eq!(
             tests,
             vec![
-                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_contents }),
+                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_contents, "ext": ".ts" }),
                 serde_json::json!({
                     "name": "the persona floors are the role capability table",
                     "src": e1_contents,
+                    "ext": ".ts",
                 }),
             ],
         );
@@ -4192,10 +4274,11 @@ mod tests {
         assert_eq!(
             tests,
             vec![
-                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_updated_contents }),
+                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_updated_contents, "ext": ".ts" }),
                 serde_json::json!({
                     "name": "the persona floors are the role capability table",
                     "src": e1_contents,
+                    "ext": ".ts",
                 }),
             ],
         );
