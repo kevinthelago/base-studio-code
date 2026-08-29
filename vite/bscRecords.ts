@@ -73,6 +73,9 @@ function reEmitIfSeedsMoved(repoRoot: string): boolean {
   return true;
 }
 
+/** How often the dev server re-checks the seeds for an EDIT. See `configureServer` below. */
+const SEED_POLL_MS = 2_000;
+
 export function bscRecords(opts: { repoRoot: string }): Plugin {
   const { repoRoot } = opts;
   const records = resolve(repoRoot, ".bsc-records");
@@ -101,6 +104,50 @@ export function bscRecords(opts: { repoRoot: string }): Plugin {
       emitted = true;
       emitRecords({ quiet: true });
       emittedInputStamp = newestInputMtime(repoRoot);
+    },
+    // WATCH THE SEEDS FOR AN EDIT — the half `resolveId` structurally cannot see.
+    //
+    // The re-emit below hangs off a resolve that misses BOTH trees, which is the moment a RETIREMENT
+    // becomes visible: a specifier nothing can answer. An EDIT to a record already in the tree is the
+    // opposite shape. The first probe HITS, `resolveId` returns the stale file, and the staleness check
+    // three lines further down is never reached — and an edit does not re-resolve anything in the first
+    // place, so no amount of reordering inside that hook would help. The dev server therefore served a
+    // frozen copy of every record for its whole life, and nothing else covered the gap: `bsc ui set`
+    // writes the LIVE STORE, `emitRecords` reads the PACKAGED SEED, and vite watches neither.
+    //
+    // MEASURED COST OF NOT HAVING THIS. The `pty_data` listener was made payload-tolerant at 1e914e11
+    // (09:56, seed and store in sync); the emitted copy stayed at 09:05 holding the previous,
+    // string-only listener. One minute later Rust began sending `{data, upto}`, that stale listener read
+    // `.length` off an object, and every perf line went `NaNKB` while `[object Object]` was written into
+    // every terminal. `tauri dev` restarts the Rust binary WITHOUT re-running `beforeDevCommand`, so the
+    // restart that should have proved it never re-emitted either. The change was reverted at b7e785ad
+    // against a diagnosis that blamed the wrong half — the payload was fine all along. That is the real
+    // cost here: "verify against the RUNNING app" is this repo's strongest check, and a frozen record
+    // tree turns it into a confident false negative.
+    //
+    // POLLED, NOT WATCHED, and both halves of that are deliberate. `devWatchIgnore` ignores
+    // `**/src-tauri/**` wholesale, so vite's own watcher cannot be asked for these paths; and a
+    // recursive `fs.watch` would add ~100 inotify watches per dev server on a box that is already out of
+    // them (`the-box-is-out-of-inotify-watches` — 36 worktrees against a stock 65,536 limit, where a new
+    // Vite server simply fails to start). The poll is the same walk `newestInputMtime` already does:
+    // MEASURED at 2.29ms over 309 seed files, every 2s. Nothing is spent when nothing changed, because
+    // `emitRecords` now reconciles rather than rewrites — a no-op emit touches zero files, so HMR sees
+    // nothing and the one edited record is the only module that updates.
+    configureServer(server) {
+      const tick = setInterval(() => {
+        // `buildStart` owns the FIRST emit and the stamp it sets. Polling before that would emit against
+        // a stamp of 0 and race it for the tree.
+        if (!emitted) return;
+        try {
+          reEmitIfSeedsMoved(repoRoot);
+        } catch (e) {
+          // A seed being written as we walk it is normal, and a dev server must not die of it.
+          server.config.logger.warn(`[bsc-records] re-emit skipped: ${(e as Error).message}`);
+        }
+      }, SEED_POLL_MS);
+      // Unref'd so the timer can never be the reason a `vite build` or a test run refuses to exit.
+      tick.unref?.();
+      server.httpServer?.on("close", () => clearInterval(tick));
     },
     // Ahead of the `@` alias, so the specifier is still in `@/…` form and matches exactly instead of
     // guessing which extension the alias resolved to.
