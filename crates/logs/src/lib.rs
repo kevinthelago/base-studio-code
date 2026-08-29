@@ -36,6 +36,10 @@ pub use cost::{usage, Cost, Usage};
 pub mod perf;
 pub use perf::PerfSample;
 
+/// System-wide PSS-by-process-category sampling (`bsc logs pss`, #182) — Linux-only, reads
+/// `/proc/*/smaps_rollup` directly rather than the app's own per-session `perf.db`.
+pub mod pss;
+
 /// One normalized event from any stream. `ts_ms` is epoch milliseconds (normalized from the
 /// stream's native ISO-8601 or epoch-ms timestamp); `session` is the pane id (or `"?"` for a legacy
 /// column-less mcp/hooks line written before #1743); `summary` is a one-line human rendering.

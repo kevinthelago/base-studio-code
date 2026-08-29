@@ -82,6 +82,41 @@ describe("a Claude tier is not a local model", () => {
   });
 });
 
+describe("a per-stream local model reaches Ollama even inside a Claude-default fleet (#173)", () => {
+  beforeEach(() => {
+    // The fleet-wide/global provider stays Claude — this is the "no harness actually consumes the
+    // model string" repro: `bsc plan fleet model blueprint qwen3.5:9b` on ONE stream, with nothing
+    // else in Settings ever touched. `streamPaneWiring` (the harness half of #173) is what puts THIS
+    // pane's `paneProviders` at "bsc-agent" in the first place — `buildAgentEnv` only reaches
+    // `paneLlmConfig` at all once that has already happened, so `providerId` here is exactly what a
+    // real launch would pass for this pane.
+    useAppStore.setState({
+      llmProvider: "anthropic",
+      llmModel: "sonnet-4.5",
+      claudeApiKey: "sk-ant-x",
+      localBaseUrl: "http://localhost:11434/v1",
+      paneModels: { "studio-code:blueprint": "qwen3.5:9b" },
+    } as never);
+  });
+
+  it("routes the pane at the local endpoint with its own model, not the global hosted config", () => {
+    const env = envFor("studio-code:blueprint");
+    // Before the fix: `providerNeedsBscAgent(cfg.provider)` gated on the GLOBAL provider ("anthropic"),
+    // so this branch never fired and BSC_AGENT_MODEL/PROVIDER stayed "sonnet-4.5"/"anthropic" — a
+    // bsc-agent process configured to hit Anthropic with a Claude-tier id, never qwen3.5:9b.
+    expect(env.BSC_AGENT_MODEL).toBe("qwen3.5:9b");
+    expect(env.BSC_AGENT_PROVIDER).toBe("ollama");
+    expect(env.BSC_AGENT_API_KEY).toBeUndefined();
+  });
+
+  it("leaves the director's pane (no stream model) alone — only the overridden pane switches", () => {
+    // The director never got a per-stream model, so it never becomes a `bsc-agent` pane in the first
+    // place (`streamPaneWiring` only sets `provider` when a stream resolves one) — `providerId` for it
+    // stays "claude", and `buildAgentEnv` never even calls `paneLlmConfig` for it.
+    expect(envFor("studio-code:director", "claude").BSC_AGENT_MODEL).toBeUndefined();
+  });
+});
+
 describe("Claude CLI stays the default", () => {
   it("does not touch a Claude pane's env — its model is a CLI flag, not an env var", () => {
     // `buildAgentEnv` only assembles BSC_AGENT_* for a bsc-agent pane. A Claude pane's model still

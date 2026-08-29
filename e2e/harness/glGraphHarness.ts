@@ -40,6 +40,24 @@ declare global {
       drawnExtentOf(i: number): { w: number; h: number; ratio: number } | string;
       cardSample(): { centre: number[]; dot: number[]; edge: number[]; distinctColours: number } | string;
       labelContrast(text: number[]): { surface: number[]; brightestGlyph: number[]; contrast: number; glyphPixels: number } | string;
+      contextLossRoundTrip(): Promise<
+        | string
+        | {
+            hasExtension: boolean;
+            litBefore?: number;
+            lostFired?: boolean;
+            contextLostWhileLost?: boolean;
+            drawWhileLostThrew?: boolean;
+            litWhileLost?: number;
+            restoredFired?: boolean;
+            contextLostAfterRestore?: boolean;
+            litAfterRestore?: number;
+            nodeCountAfterRestore?: number;
+            edgeCountAfterRestore?: number;
+            borderBefore?: number[];
+            borderAfterRestore?: number[];
+          }
+      >;
     };
   }
 }
@@ -325,4 +343,96 @@ window.__glGraphHarness = {
     return { surface, brightestGlyph: sample, contrast: Math.round(sum / n), glyphPixels: n };
   },
   isSoftware() { return /swiftshader|llvmpipe|software|swrast/i.test(rendererName); },
+  /**
+   * Force a real WebGL context loss and restore through `WEBGL_lose_context` — the only way to see
+   * `webglcontextlost`/`webglcontextrestored` fire without an actual GPU/driver reset — and check that
+   * the renderer both reports it (`contextLost`) and comes back drawing the SAME thing.
+   *
+   * Isolated on its own small canvas, same reasoning as `drawnExtentOf`/`cardSample`: losing the shared
+   * million-node fixture's context would poison every test after it in this serial file.
+   */
+  async contextLossRoundTrip() {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 256;
+    let lostFired = false, restoredFired = false;
+    const r = createGraphRenderer(c, {
+      preserveDrawingBuffer: true,
+      onContextLost: () => { lostFired = true; },
+      onContextRestored: () => { restoredFired = true; },
+    });
+    if (!r) return "no renderer";
+    const g2 = c.getContext("webgl2");
+    if (!g2) return "no context";
+    const ext = g2.getExtension("WEBGL_lose_context");
+    if (!ext) return { hasExtension: false }; // reported, not asserted — see the test
+
+    // One selected node + one self-loop edge: enough surface to prove BOTH geometry and per-instance
+    // state (the border colour a selection writes) survive the round trip, not just the node count.
+    r.setPalette?.([0.11, 0.12, 0.14, 1], [0.35, 0.37, 0.40, 1], [0.36, 0.62, 1, 1]);
+    r.resize(256, 256, 1);
+    r.setNodes(new Float32Array([0, 0]), new Float32Array([CARD_W, CARD_H]), new Uint32Array([0xff00a0ff]), 1);
+    r.setEdges(new Uint32Array([0, 0]), 1);
+    r.setState(0, NODE_SELECTED);
+    r.setView({ tx: 128, ty: 128, scale: 1 });
+    r.draw();
+
+    const readLit = (): number => {
+      const px = new Uint8Array(256 * 256 * 4);
+      g2.readPixels(0, 0, 256, 256, g2.RGBA, g2.UNSIGNED_BYTE, px);
+      let lit = 0;
+      for (let i = 3; i < px.length; i += 4) if (px[i] > 24) lit++;
+      return lit;
+    };
+    // The selected border, one world unit inside the left edge — same sample point `cardSample` uses.
+    const readBorder = (): number[] => {
+      const px = new Uint8Array(256 * 256 * 4);
+      g2.readPixels(0, 0, 256, 256, g2.RGBA, g2.UNSIGNED_BYTE, px);
+      const x = Math.round(128 - CARD_W / 2 + 1), y = 128;
+      const i = ((255 - y) * 256 + x) * 4;
+      return [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    };
+
+    const litBefore = readLit();
+    const borderBefore = readBorder();
+
+    const nextFrame = (): Promise<void> => new Promise((res) => requestAnimationFrame(() => res()));
+
+    ext.loseContext();
+    // `webglcontextlost` fires asynchronously (a microtask/task, not synchronously with the call) —
+    // give the browser real frames to deliver it rather than guessing a timeout.
+    for (let i = 0; i < 5 && !lostFired; i++) await nextFrame();
+
+    const contextLostWhileLost = r.contextLost;
+    let drawWhileLostThrew = false;
+    try { r.draw(); } catch { drawWhileLostThrew = true; }
+    const litWhileLost = readLit();
+
+    ext.restoreContext();
+    // The spec schedules the actual restoration for "sometime later", not the next microtask — Chromium
+    // needs multiple frames in practice.
+    for (let i = 0; i < 30 && !restoredFired; i++) await nextFrame();
+
+    const contextLostAfterRestore = r.contextLost;
+    r.draw();
+    const litAfterRestore = readLit();
+    const borderAfterRestore = readBorder();
+
+    const out = {
+      hasExtension: true,
+      litBefore,
+      lostFired,
+      contextLostWhileLost,
+      drawWhileLostThrew,
+      litWhileLost,
+      restoredFired,
+      contextLostAfterRestore,
+      litAfterRestore,
+      nodeCountAfterRestore: r.nodeCount,
+      edgeCountAfterRestore: r.edgeCount,
+      borderBefore,
+      borderAfterRestore,
+    };
+    r.dispose();
+    return out;
+  },
 };
