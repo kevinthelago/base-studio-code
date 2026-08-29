@@ -22,6 +22,7 @@ import { createSkillsSlice } from "@/features/skills/store";
 
 import { type AppStore } from "@/store/types";
 import { persistedState, migrateAutoResumeOff } from "@/store/persist";
+import { leanRepos } from "@/store/types/github";
 import { migrateRetiredWorkspace, migrateGraphPage } from "@/store/retiredWorkspaces";
 import { createSessionSlice } from "@/store/slices/session";
 import { createPlanSlice } from "@/store/slices/plan";
@@ -103,6 +104,14 @@ export const useAppStore = create<AppStore>()(
         // project-tab identity (projectKey/kind/seq), derived once from the frozen name
         // so the next fleet/triage launch can find-and-reuse the tab instead of forking
         // a duplicate. Both are one-time legacy upgrades and no-ops thereafter.
+        // Normalise a legacy persisted repo list to its declared fields (#githubrepos-projected…).
+        // A one-time upgrade, like the tab back-fills below: `setGithubRepos` keeps every FUTURE write
+        // lean, but it only runs on connect, so without this an existing install carries ~494 KB of
+        // unread `*_url` templates — through every `JSON.stringify` the persist middleware does per
+        // store `set()` — until the user happens to reconnect.
+        if (state?.githubRepos?.length) {
+          state.githubRepos = leanRepos(state.githubRepos as unknown as Record<string, unknown>[]);
+        }
         if (state?.tabs) {
           state.tabs = state.tabs.map((t) => {
             let next = t.id ? t : { ...t, id: newTabId() };
