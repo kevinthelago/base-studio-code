@@ -21,6 +21,30 @@ export default defineConfig({
     "@data": fileURLToPath(new URL("./src-tauri/data", import.meta.url)),
   } },
   test: {
+    // ── WORKER FAN-OUT (#vitest-worker-fan-out-is-capped-like-cargos) ──
+    //
+    // Uncapped, vitest forks one worker per available thread — 16 on this box — and ONE run then peaks
+    // at the entire memory budget a FULL gate is allowed. MEASURED as peak PSS of the run's own process
+    // tree, sampled every 500ms:
+    //
+    //     maxWorkers      peak      procs    wall
+    //     default (~16)   8.09 GB     18     99.1s
+    //     8               5.36 GB     11    120.7s     <- here
+    //     4               4.15 GB      7    177.3s
+    //
+    // ⚠️ DO NOT CARRY CARGO'S CONCLUSION ACROSS. `.cargo/config.toml` caps `jobs = 4` because 16 jobs was
+    // measured NO FASTER than 4 at 2.2x the memory — capping cargo was free. Vitest is not that shape: it
+    // genuinely uses the parallelism, and 4 workers costs +79% wall time to save 49% of the memory. 8 is
+    // the knee (-34% memory, +22% time), so this is a deliberate TRADE and not a free win.
+    //
+    // THIS IS A FLEET SETTING. It exists because ~10 sessions share one box and each gate that runs
+    // vitest unscoped brings a whole suite with it; alone on a bigger machine, `--maxWorkers=16` on the
+    // command line overrides it and is ~20% quicker.
+    //
+    // The wall times above were taken on a CONTENDED box (19 other vitest processes, CPU PSI avg10
+    // 18.5). Peak memory is attributable to the measured tree whatever else runs, so those figures
+    // stand; read the times as ratios between arms, not as absolutes.
+    maxWorkers: 8,
     // Default for anything a project does not override. The `node` project below flips it for
     // `lib/`; everything else keeps jsdom.
     environment: "jsdom",
