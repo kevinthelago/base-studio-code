@@ -189,8 +189,10 @@ NEEDS NO APP, unlike `fleet list`. Every check is a filesystem fact about a work
 when the app is DOWN — which is exactly when a director most needs it.
 
   no-gate       the worktree has no `.claude/settings.json`, so the pane has no role gate and no shell
-                allow-list. A launch or wake of it is REFUSED (#1819) — and a wake KILLS the session
-                before it finds that out, which is how four workers were destroyed by being woken.
+                allow-list. A launch is REFUSED rather than run permission-less (#1819) — `bsc fleet
+                wake` (#142) provisions a placeholder gate itself when one is missing, which is enough
+                to pass the refusal; the pane's own launch overwrites it with the real settings moments
+                later, so waking the pane is the fix.
   caged-floor   its PreToolUse hooks invoke `/bsc-hook`, which exists only inside a mount namespace.
                 Launched uncaged, those gates cannot execute and fail NON-BLOCKING — the session runs
                 with no write-scope and no dangerous-command floor, looking exactly like one that is
@@ -250,6 +252,14 @@ built if it has none, and the pane comes up wired exactly as a fleet launch woul
 `bsc fleet start` is for bringing up a WHOLE fleet, never for the one stream that did not come up —
 it refuses outright while any pane is live. Pass a real --prompt for a never-launched stream: it has
 no assignment in its pane yet, so the standard wake would tell it to re-read nothing.
+
+IT ALSO PROVISIONS A MISSING GATE (#142). A worktree can exist with no `.claude/settings.json` — an
+earlier `start`/`wake` that built it but never reached the settings write, `bsc fleet doctor`'s
+`no-gate` finding. Left alone that pane is refused FOREVER: the launch that would write the real gate
+never runs BECAUSE the gate is missing. This wake writes a conservative placeholder gate (the `ask`
+posture — mandatory gh/git/bsc plus read-only auto-run, everything else prompts) before asking to
+launch, which is enough to pass the refusal; the pane's own launch overwrites it with the real
+role+profile settings moments later.
 
 A stream plan.db does NOT name is still an error, and says so — an unknown stream is not the same
 thing as an unlaunched one.

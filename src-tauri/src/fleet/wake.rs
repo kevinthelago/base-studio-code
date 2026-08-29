@@ -263,6 +263,13 @@ fn resolve_stream(pane_id: &str) -> Result<Option<serde_json::Value>, String> {
             })?
     };
 
+    // Close the OTHER gap `resolve_stream` can hit alongside a missing worktree: a cwd that exists but
+    // has no `.claude/settings.json` yet (request #142; `bsc fleet doctor`'s `no-gate` finding). Without
+    // this, `pty_launch_refusal` refuses every wake of it forever — the refusal fires before `wakePane`,
+    // which is the only thing that would ever trigger the real settings write. See
+    // `ensure_session_gate`'s doc comment for why a placeholder here is safe.
+    crate::fleet::worktree::ensure_session_gate(&cwd);
+
     if let Some(obj) = row.as_object_mut() {
         obj.insert("cwd".into(), serde_json::Value::String(cwd));
     }
@@ -407,6 +414,33 @@ mod tests {
             store.fleet_stream_list().unwrap().len(),
             before,
             "waking an already-provisioned lane does not duplicate it"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #142 (network-monitor:director): a worktree/hub that plan.db names can exist with NO
+    /// `.claude/settings.json` — an earlier `start`/`wake` that built the cwd but never reached the
+    /// settings write. Left alone, `pty_launch_refusal` refuses it FOREVER: the refusal fires before the
+    /// only thing (a real launch) that would ever write the real gate. `resolve_stream` must close that
+    /// gap itself, the same way it already closes a missing WORKTREE.
+    #[test]
+    fn resolve_stream_provisions_a_missing_gate_at_the_hub_for_a_repo_less_stream() {
+        let _lock = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = crate::testutil::temp_home("wake-hub-gate");
+
+        let store = plandb::Store::open(&crate::platform::paths::plan_db_path("proj")).unwrap();
+        // A repo-less stream (a hub role-actor, #3103) — no "repo" key, so `resolve_stream` takes the
+        // hub branch rather than building a worktree.
+        store
+            .fleet_stream_set("triage-lead", &serde_json::json!({ "id": "triage-lead", "dependsOn": [] }))
+            .unwrap();
+
+        let row = resolve_stream("proj:triage-lead").unwrap().expect("a planned repo-less stream resolves");
+        let cwd = row.get("cwd").and_then(|v| v.as_str()).expect("cwd is carried on the row");
+        assert!(
+            std::path::Path::new(cwd).join(".claude").join("settings.json").is_file(),
+            "resolve_stream provisions the missing gate at the hub cwd (#142): {cwd}"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

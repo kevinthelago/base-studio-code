@@ -88,16 +88,17 @@ pub fn findings_for(pane_id: &str, facts: Option<WorktreeFacts>) -> Vec<Finding>
     // ── no-gate ──────────────────────────────────────────────────────────────────────────────────
     // Sources: the pane's IDENTITY (a project pane must be gated) vs the FILESYSTEM (is the file
     // there). MEASURED: four network-monitor worktrees were in this state — complete in every other
-    // respect, `CLAUDE.local.md` present, only `.claude/` missing — and it is why waking them
-    // destroyed them. `pty_create` refuses rather than starting a director or worker permission-less,
-    // which is right; the wake had simply never asked before it killed.
+    // respect, `CLAUDE.local.md` present, only `.claude/` missing. `pty_create` refuses rather than
+    // starting a director or worker permission-less, which is right — and `bsc fleet wake` (#142) now
+    // provisions a conservative placeholder gate itself before asking to launch, closing the deadlock
+    // where the refusal fired before the one thing (a real launch) that would ever write the real one.
     if !f.gate_present {
         out.push(Finding {
             pane_id: pane_id.to_string(),
             category: "no-gate",
             detail: "the worktree has no .claude/settings.json, so this pane has no role gate and no shell allow-list".into(),
-            consequence: "a launch or wake of this pane is REFUSED (#1819) — and a wake kills the session before it finds out",
-            fix: "relaunch the pane from its project so the settings are written, then wake it",
+            consequence: "a launch or wake of this pane is REFUSED (#1819) until something provisions the gate",
+            fix: "wake the pane — `bsc fleet wake` provisions a placeholder gate itself when one is missing (#142), which is enough to pass the refusal; the pane's own launch overwrites it with the real role+profile settings moments later",
         });
     }
 
@@ -175,7 +176,7 @@ mod tests {
 
     #[test]
     fn a_worktree_with_no_gate_file_is_reported_with_what_it_costs() {
-        // The state four network-monitor worktrees were in, and the reason waking them destroyed them.
+        // The state four network-monitor worktrees were in.
         let f = findings_for("nm:omada-controller-adapter", facts(false, false));
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].category, "no-gate");
@@ -184,7 +185,9 @@ mod tests {
         // The consequence is the half that makes anyone act — "no settings.json" alone reads as
         // tidiness, and this sat unnoticed through four worktrees for exactly that reason.
         assert!(f[0].consequence.contains("REFUSED"));
-        assert!(f[0].consequence.contains("kills the session"));
+        // The fix names the ACTUAL move now available (#142) — a wake self-heals this, rather than the
+        // stale "relaunch the pane from its project" advice, which named no single-stream command.
+        assert!(f[0].fix.contains("bsc fleet wake"), "names the self-healing move: {:?}", f[0]);
         assert!(!f[0].fix.is_empty(), "a finding with no move is a complaint");
     }
 
