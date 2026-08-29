@@ -113,6 +113,9 @@ pub(super) fn build_bash_init_line(
     launch: Option<&str>,
     claude_fn: &str,
     rc_bash: &str,
+    // The per-project store exports (`export BSC_PLAN_DB=…; …`), emitted AFTER the rc source so the
+    // app's per-session answer outranks anything `~/.bashrc` exports. See `store_exports_for_cwd`.
+    store_exports: &str,
     sandboxed: bool,
     // Why a REQUESTED sandbox was refused, if it was. `None` covers both "it is sandboxed" and
     // "it was never going to be" — a pane with no role gets no notice, because there is nothing to say.
@@ -186,7 +189,13 @@ pub(super) fn build_bash_init_line(
     let helpers_src = if sandboxed {
         String::new()
     } else {
-        format!("source \"{}\" 2>/dev/null; ", rc_bash)
+        // The per-project store exports follow the rc source, and the ORDER is the whole point: an
+        // interactive bash has already sourced `~/.bashrc` by now, and an rc that exports BSC_PLAN_DB
+        // (this repo's own dev workflow prescribes exactly that) would otherwise outlive the value the
+        // app set on the process — pointing a session at ANOTHER project's plan store, silently. Last
+        // word wins, so the app goes last. `store_exports` is empty for a caged session, whose env is
+        // baked into the sandbox init line instead.
+        format!("source \"{}\" 2>/dev/null; {}", rc_bash, store_exports)
     };
     // #3937: an inert warning shell must NOT report its cwd. `__bsc_osc7` echoes `$(pwd)`, which the
     // frontend writes straight back into `paneCwds` — so a session sitting in the fallback ancestor
@@ -241,8 +250,7 @@ mod tests {
         let host_cwd = "/home/u/.base-studio-code/projects/demoproj";
         let host_rc = "/home/u/.base-studio-code/bsc-env.sh";
         let line = super::build_bash_init_line(
-            host_cwd, false, host_cwd, Some("claude $'go'"), "claude() { :; }; ", host_rc, true, None,
-        );
+            host_cwd, false, host_cwd, Some("claude $'go'"), "claude() { :; }; ", host_rc, "", true, None);
 
         assert!(!line.contains(host_cwd), "the cwd is a HOST path; bwrap --chdir already set it: {line}");
         assert!(!line.contains(host_rc), "the host rc does not exist in the cage: {line}");
@@ -260,8 +268,7 @@ mod tests {
     #[test]
     fn an_uncaged_init_line_still_cds_and_sources_the_host_rc() {
         let line = super::build_bash_init_line(
-            "/home/u/wt", false, "/home/u/wt", Some("claude"), "", "/home/u/.base-studio-code/bsc-env.sh", false, None,
-        );
+            "/home/u/wt", false, "/home/u/wt", Some("claude"), "", "/home/u/.base-studio-code/bsc-env.sh", "", false, None);
         assert!(line.starts_with("cd \"/home/u/wt\" 2>/dev/null; "), "{line}");
         assert!(line.contains("source \"/home/u/.base-studio-code/bsc-env.sh\""), "{line}");
     }
@@ -269,9 +276,8 @@ mod tests {
     #[test]
     fn a_refused_sandbox_prints_why_where_the_user_is_looking() {
         let line = super::build_bash_init_line(
-            "/home/u", false, "/home/u", Some("claude"), "", "/rc", false,
-            Some("this pane's directory is your HOME (/home/u). Point it at a worktree."),
-        );
+            "/home/u", false, "/home/u", Some("claude"), "", "/rc", "", false,
+            Some("this pane's directory is your HOME (/home/u). Point it at a worktree."));
         assert!(line.contains("NOT sandboxed"), "the downgrade must be visible: {line}");
         assert!(line.contains("/home/u"), "and must name the actual directory: {line}");
         // A refused cage is a DOWNGRADE, not a failure — the agent still starts, unlike `cwd_missing`.
@@ -291,9 +297,8 @@ mod tests {
     #[test]
     fn the_init_line_is_a_single_line_even_when_a_refusal_is_printed() {
         let line = super::build_bash_init_line(
-            "/home/u", false, "/home/u", Some("claude"), "", "/rc", false,
-            Some("this pane's directory is your HOME (/home/u). Point it at a worktree."),
-        );
+            "/home/u", false, "/home/u", Some("claude"), "", "/rc", "", false,
+            Some("this pane's directory is your HOME (/home/u). Point it at a worktree."));
         assert_eq!(
             line.matches('\n').count(),
             1,
@@ -310,8 +315,7 @@ mod tests {
         // Silence is correct here: a pane with no role never asked for isolation, so a notice would
         // be noise. `None` covers both that and "it IS sandboxed".
         let line = super::build_bash_init_line(
-            "/home/u/wt", false, "/home/u/wt", Some("claude"), "", "/rc", false, None,
-        );
+            "/home/u/wt", false, "/home/u/wt", Some("claude"), "", "/rc", "", false, None);
         assert!(!line.contains("NOT sandboxed"), "no notice without a refusal: {line}");
     }
 
@@ -321,8 +325,7 @@ mod tests {
         // whole session with it — a 4096-byte truncation already did exactly that once.
         let nasty = format!("home {}{} {} x", char::from_u32(34).unwrap(), char::from_u32(96).unwrap(), char::from_u32(36).unwrap());
         let line = super::build_bash_init_line(
-            "/home/u", false, "/home/u", Some("claude"), "", "/rc", false, Some(&nasty),
-        );
+            "/home/u", false, "/home/u", Some("claude"), "", "/rc", "", false, Some(&nasty));
         // Check the INTERPOLATED REASON, not the whole notice: the notice legitimately contains the
         // double quotes that wrap the argument, so asserting over it forbids our own escaping.
         //
@@ -347,7 +350,7 @@ mod tests {
         let kickoff = "x".repeat(3000); // a realistic agent kickoff
         let line = super::build_bash_init_line(
             "/home/u/wt/repo", false, "/home/u/wt/repo", Some(&kickoff),
-            "claude() { :; }; ", "/rc.sh", true, None);
+            "claude() { :; }; ", "/rc.sh", "", true, None);
         let longest = line.lines().map(str::len).max().unwrap_or(0);
         assert!(longest < 4096, "a canonical-mode line is truncated past 4096: {longest}");
         // And the emitters are reached by SOURCE, not by inlining them into that line.
@@ -376,14 +379,14 @@ mod tests {
     #[test]
     fn a_sandboxed_session_does_not_report_its_guest_cwd() {
         let sandboxed = super::build_bash_init_line(
-            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", true, None);
+            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", "", true, None);
         assert!(!sandboxed.contains("__bsc_osc7; "), "no cwd report inside a namespace: {sandboxed}");
         // The helper itself is still DEFINED — only the reporting call is withheld, so anything
         // else referencing it keeps working.
         assert!(sandboxed.contains("__bsc_osc7() {"));
         // ...and an ordinary session still reports, or the pane would never learn its cwd at all.
         let normal = super::build_bash_init_line(
-            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", false, None);
+            "/home/u/wt/repo", false, "/home/u/wt/repo", None, "", "/rc.sh", "", false, None);
         assert!(normal.contains("__bsc_osc7; "), "an unsandboxed session still reports: {normal}");
     }
 
@@ -395,7 +398,7 @@ mod tests {
     fn build_bash_init_line_cds_installs_markers_and_appends_launch() {
         let line = build_bash_init_line(
             "/home/u/projects/acme", false, "/home/u/projects/acme",
-            Some("claude --continue"), "claude() { :; }; ", "/home/u/.base-studio-code/bsc-env.sh",
+            Some("claude --continue"), "claude() { :; }; ", "/home/u/.base-studio-code/bsc-env.sh", "",
             false, None);
         // cd's into the (bash-form) cwd before anything else, sources the helpers, and appends the
         // launch as a `; <launch>` suffix; the whole line is one trailing-newline-terminated command.
@@ -408,7 +411,7 @@ mod tests {
 
     #[test]
     fn build_bash_init_line_empty_cwd_has_no_cd_and_no_launch_suffix() {
-        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh", false, None);
+        let line = build_bash_init_line("", false, "", None, "claude() { :; }; ", "/rc.sh", "", false, None);
         assert!(!line.contains("cd \""), "no cd when cwd is empty: {line}");
         // No launch ⇒ the line ends right after the screen clear, no `;` suffix.
         assert!(line.ends_with("printf '\\033[2J\\033[3J\\033[H'\n"), "no launch suffix: {line}");
@@ -421,7 +424,7 @@ mod tests {
         // of EVERY worktree; the role gate was written into the missing configured path).
         let line = build_bash_init_line(
             "/home/u/projects/gone", true, "/home/u/projects",
-            Some("claude --continue"), "claude() { :; }; ", "/rc.sh",
+            Some("claude --continue"), "claude() { :; }; ", "/rc.sh", "",
             false, None);
         assert!(line.contains("WARNING: configured directory"), "loud warning printed: {line}");
         assert!(line.contains("cd \"/home/u/projects\" 2>/dev/null; "), "cd's into the nearest ancestor: {line}");
@@ -438,7 +441,7 @@ mod tests {
     fn build_bash_init_line_reproduces_the_original_inline_string() {
         // Guards the byte-exact extraction (#2067) — one full render locked against the wire format.
         let line = build_bash_init_line(
-            "/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc",
+            "/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc", "",
             false, None);
         assert_eq!(
             line,
@@ -518,7 +521,7 @@ mod tests {
     /// forever and the agent genuinely launches in the app's data dir with no repo and no role gate.
     #[test]
     fn a_missing_cwd_shell_never_reports_its_fallback_dir() {
-        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc", false, None);
+        let line = build_bash_init_line("/c/gone/networkmonitor--auth", true, "/c/gone", Some(INIT), "", "/rc", "", false, None);
         assert!(!line.contains("__bsc_osc7; __bsc_state idle"), "no osc7 report when the cwd is missing: {line}");
         assert!(line.contains("PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }__bsc_state idle\""),
             "PROMPT_COMMAND keeps the state marker but drops the cwd report: {line}");
@@ -530,7 +533,7 @@ mod tests {
     /// The healthy path is unchanged: a real cwd still reports, or the app loses cwd tracking entirely.
     #[test]
     fn a_present_cwd_still_reports_over_osc7() {
-        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc", false, None);
+        let line = build_bash_init_line("/c/wt/networkmonitor--auth", false, "/c/wt/networkmonitor--auth", Some(INIT), "", "/rc", "", false, None);
         assert!(line.contains("}__bsc_osc7; __bsc_state idle\""), "PROMPT_COMMAND reports the cwd: {line}");
         assert!(line.contains("__bsc_osc7; __bsc_state idle; printf"), "and reports once up front: {line}");
     }
@@ -540,7 +543,38 @@ mod tests {
     /// `3J` drops the scrollback as well.
     #[test]
     fn the_screen_clear_also_clears_scrollback() {
-        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc", false, None);
+        let line = build_bash_init_line("/c/wt/x", false, "/c/wt/x", Some(INIT), "", "/rc", "", false, None);
         assert!(line.contains("printf '\\033[2J\\033[3J\\033[H'"), "clears screen AND scrollback: {line}");
+    }
+
+    /// The app's store exports must come AFTER the rc source — the ordering IS the fix.
+    ///
+    /// A PTY runs an INTERACTIVE bash, which has already sourced `~/.bashrc` by the time this line
+    /// runs. If the exports were emitted first (or only set on the process, as they were), an rc that
+    /// exports `BSC_PLAN_DB` wins — and this repo's own dev workflow tells developers to export exactly
+    /// that. `pain-point-finder`'s director consequently read, and could write, studio-code's board.
+    #[test]
+    fn the_store_exports_follow_the_rc_source_so_they_outrank_a_users_bashrc() {
+        let rc = "/home/u/.base-studio-code/bsc-env.sh";
+        let exports = "export BSC_PLAN_DB='/home/u/.base-studio-code/plans/acme.db'; ";
+        let line = build_bash_init_line(
+            "/home/u/projects/acme", false, "/home/u/projects/acme",
+            Some("claude"), "claude() { :; }; ", rc, exports, false, None,
+        );
+        let rc_at = line.find(rc).expect("the rc is sourced");
+        let export_at = line.find("export BSC_PLAN_DB=").expect("the store export is emitted");
+        assert!(export_at > rc_at, "the export must come after the rc source, else the rc wins: {line}");
+    }
+
+    /// A CAGED session takes its env from the sandbox init line instead, so the host exports would be
+    /// a second, host-path-shaped source of truth inside a cage that cannot see those paths.
+    #[test]
+    fn a_caged_session_gets_no_host_store_exports() {
+        let line = build_bash_init_line(
+            "/home/u/projects/acme", false, "/home/u/projects/acme",
+            Some("claude"), "claude() { :; }; ", "/home/u/.base-studio-code/bsc-env.sh",
+            "export BSC_PLAN_DB='/host/only.db'; ", true, None,
+        );
+        assert!(!line.contains("/host/only.db"), "host paths do not belong in the cage: {line}");
     }
 }
