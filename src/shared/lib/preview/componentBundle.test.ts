@@ -188,20 +188,79 @@ describe("componentBundle — the import.meta.glob shim (#81, designer request)"
     expect(PREVIEW_GLOB_SHIM).toMatch(/^[A-Za-z_$][A-Za-z0-9_$]*$/);
   });
 
-  it("the shim RETURNS an empty object rather than throwing or being undefined", () => {
+  it("the shim NEVER throws or returns undefined — the consuming code does Object.values()/keys() on the result", () => {
     // Evaluate the banner exactly as esbuild prepends it, then call what it declared.
     const shim = new Function(`${PREVIEW_GLOB_BANNER} return ${PREVIEW_GLOB_SHIM};`)() as
-      (pattern: string, opts?: unknown) => Record<string, unknown>;
+      (pattern: string | string[], opts?: { eager?: boolean; import?: string }) => Record<string, unknown>;
     expect(typeof shim).toBe("function");
-    // Called with the real call's shape — a pattern plus Vite's options bag.
-    expect(shim("@data/roles/*.json", { eager: true })).toEqual({});
-    // The consuming code does `Object.values(...)` / `Object.keys(...)` on the result, so an empty
-    // OBJECT is what keeps the module body running; undefined or null would throw one line later.
-    expect(Object.values(shim("@data/a/*.png", { eager: true, query: "?url" }))).toEqual([]);
+    // A pattern reaching no vendored data (not `@data/…`, or a `@data` path nothing seeds) is the honest
+    // empty object, exactly as before this fix — never a throw or undefined one line before the caller's
+    // own `Object.values(...)`/`Object.keys(...)`.
+    expect(shim("./app/**/*.tsx", { eager: true })).toEqual({});
+    expect(Object.values(shim("@data/a/*.png", { eager: true, import: "default" }))).toEqual([]);
   });
 
   it("names a shim unlikely to collide with anything in a bundled module", () => {
     expect(PREVIEW_GLOB_SHIM.startsWith("__bsc")).toBe(true);
+  });
+});
+
+describe("componentBundle — the glob shim answers @data/… from the vendored set (request #131)", () => {
+  // The gap: the shim above ALWAYS returned {} (#81) — honest for an app-source glob the preview
+  // genuinely cannot answer, but wrong for `@data/…`, which is already vendored whole for the static
+  // `import x from "@data/…json"` form (see `DATA_JSON`) and simply wasn't offered to the GLOB form of
+  // the same import. `soundKits.ts` loads its ONLY seed this way (`import.meta.glob("@data/sounds/*.json",
+  // { eager: true })`), so `BUILTIN_KITS` came back `[]` in a preview and `STARTER_KIT = BUILTIN_KITS[0]`
+  // was `undefined` — then `libraryModules.ts` reads `STARTER_KIT.id` EAGERLY at ITS OWN module top level,
+  // and the Design Studio's preview host reaches that module for EVERY preview, so the crash hit any
+  // component's build (matching the filed symptom: `app`, `detachedwindow`, `consolepage`, and the
+  // Studio's own `ComponentNode`/`ComponentPreviewFrame` chrome all hit it, none of them sound-related).
+  //
+  // `DATA_JSON` is built by the SAME `import.meta.glob` mechanism here in the test file (vitest runs real
+  // Vite transforms), so these assertions run against the actual vendored `@data/sounds/signal.json`
+  // rather than a fixture — a regression here means the fix has drifted from what `DATA_JSON` really holds.
+
+  function shim() {
+    return new Function(`${PREVIEW_GLOB_BANNER} return ${PREVIEW_GLOB_SHIM};`)() as
+      (pattern: string | string[], opts?: { eager?: boolean; import?: string }) => Record<string, unknown>;
+  }
+
+  it("answers a @data/… glob from the real vendored data instead of {}", () => {
+    const out = shim()("@data/sounds/*.json", { eager: true, import: "default" });
+    const keys = Object.keys(out);
+    expect(keys).toEqual(["@data/sounds/signal.json"]);
+    // The exact shape request #131's STARTER_KIT crash depended on: BUILTIN_KITS[0].id must be a string,
+    // not undefined — this is `soundKits.ts`'s own `SoundKit`, vendored whole.
+    const kit = out["@data/sounds/signal.json"] as { id?: unknown; cues?: unknown };
+    expect(kit.id).toBe("signal");
+    expect(Array.isArray(kit.cues)).toBe(true);
+  });
+
+  it("honors eager:false — each match is a thunk returning a Promise, not the value itself", async () => {
+    const out = shim()("@data/sounds/*.json", { eager: false, import: "default" });
+    const loader = out["@data/sounds/signal.json"] as () => Promise<{ id: string }>;
+    expect(typeof loader).toBe("function");
+    await expect(loader()).resolves.toMatchObject({ id: "signal" });
+  });
+
+  it("without import:'default', wraps the value in a { default } module shape — Vite's own contract", () => {
+    const out = shim()("@data/sounds/*.json", { eager: true }) as Record<string, { default?: { id?: unknown } }>;
+    expect(out["@data/sounds/signal.json"].default?.id).toBe("signal");
+  });
+
+  it("a negative pattern excludes, mirroring how DATA_JSON itself is built a few lines above", () => {
+    const out = shim()(["@data/sounds/*.json", "!@data/sounds/signal.json"], { eager: true });
+    expect(out).toEqual({});
+  });
+
+  it("still degrades to {} for a directory DATA_JSON excludes for size (components/knowledge)", () => {
+    const out = shim()("@data/components/**", { eager: true });
+    expect(out).toEqual({});
+  });
+
+  it("still degrades to {} for a non-@data pattern — this only ever answers from what is already vendored", () => {
+    const out = shim()("./features/**/*.tsx", { eager: true });
+    expect(out).toEqual({});
   });
 });
 
