@@ -242,10 +242,10 @@ pub fn run() {
             // symptom was `unknown command 'change'` inside an agent session.
             for (name, older_by) in crate::console::pty::stale_sidecars() {
                 log::error!(
-                    "[startup] sidecar `{name}` is STALE — built {}h before this app. It may be missing \
+                    "[startup] sidecar `{name}` is STALE — built {} before this app. It may be missing \
                      subcommands this build expects, which surfaces as `bsc: unknown command …` mid-session. \
                      Rebuild + restage: `npm run build:plan`.",
-                    older_by.as_secs() / 3600
+                    crate::console::pty::humanize_gap(older_by)
                 );
             }
             // Cap unbounded log files to reclaim disk space — OFF the synchronous boot path

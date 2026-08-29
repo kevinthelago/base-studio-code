@@ -435,6 +435,7 @@ fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()
         return Err(e);
     }
     ensure_executable(&tmp);
+    preserve_mtime(src, &tmp);
 
     match std::fs::rename(&tmp, dst) {
         Ok(()) => return Ok(()),
@@ -468,6 +469,26 @@ fn stage_one(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()
 
 fn is_in_use(e: &std::io::Error) -> bool {
     e.raw_os_error() == Some(32) || e.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+/// Give `dst` the SAME mtime as `src` — `fs::copy` does not preserve it on POSIX (unlike Windows
+/// `CopyFileExW`, which does), so without this every staged copy reads as built at COPY time rather than
+/// the time the source binary was actually compiled (#187, `bsc request get 187`). That is not cosmetic:
+/// [`staging_would_downgrade`] and [`stale_sidecars`] both compare mtimes across this exact copy step, so
+/// a staged file that reads a few seconds — or, for a 261 MB binary, much longer — newer than the source
+/// it was just copied FROM is indistinguishable from a genuinely newer build. Measured on a clean build
+/// (request #187): `target/debug/bsc` at 16:44:44, the staged copy at 16:44:53 — nine seconds of pure
+/// copy time read back as "the staged copy is newer," which made every subsequent boot refuse to
+/// re-stage a byte-identical rebuild.
+///
+/// Best-effort: a failed `set_modified` (an unusual filesystem, a permissions quirk) leaves the tmp file
+/// with its copy-time mtime, which is exactly today's behavior — never worse, and never worth failing
+/// the stage over.
+fn preserve_mtime(src: &std::path::Path, dst: &std::path::Path) {
+    let Ok(mtime) = std::fs::metadata(src).and_then(|m| m.modified()) else { return };
+    if let Ok(f) = std::fs::OpenOptions::new().write(true).open(dst) {
+        let _ = f.set_modified(mtime);
+    }
 }
 
 /// Assert that `dst` is actually a copy of `src`, by size. `Ok(())` or a reason to log.
@@ -525,9 +546,55 @@ fn sidecar_predates_app(sidecar: std::time::SystemTime, app: std::time::SystemTi
     sidecar < app
 }
 
-/// The sidecars that are OLDER than the running app exe, as `(name, how much older)`. Empty is the
-/// healthy case. Called at boot by `app::run` so the mismatch is reported where someone reads it,
-/// rather than surfacing later as an unknown-subcommand error in an agent session.
+/// Below this gap, `stale_sidecars` reports nothing (#187, `bsc request get 187`).
+///
+/// `bsc`/`bsc-agent`/`bsc-hook` are built by a SEPARATE cargo invocation from the app
+/// (`npm run build:plan` vs `npm run dev:app`/`tauri dev`), so even a perfectly healthy same-session
+/// rebuild routinely finishes the two build steps anywhere from sub-second to a couple of minutes
+/// apart — that is build ORDER, not drift. With no floor, `sidecar_predates_app` fired on that ordering
+/// noise on nearly every clean build, and the log line divided the gap by 3600 unconditionally, so the
+/// false alarm read as "sidecar `bsc` is STALE — built 0h before this app": a message that named its own
+/// bug in the word "0h". `bsc-cli-util::behind_by` set the precedent for this exact split (a 2s floor
+/// there, for a single-process mtime-vs-source-scan comparison); this one is wider because it compares
+/// two independently-timed BUILD PROCESSES, not one process reading two files it just touched.
+///
+/// The floor is jitter tolerance, not a judgement about how stale is too stale: sidecars observed
+/// genuinely stale in the wild were weeks old (`staging_refuses_to_replace_a_newer_binary_with_an_older_one`),
+/// far past any window generous enough to also swallow same-session build-order noise.
+const SIDECAR_STALE_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// How much `sidecar` predates `app` by, or `None` when it does not predate it at all, or predates it by
+/// less than [`SIDECAR_STALE_GRACE`]. Split out from [`stale_sidecars`] so the threshold is
+/// unit-testable without touching a filesystem.
+fn stale_gap(
+    sidecar: std::time::SystemTime,
+    app: std::time::SystemTime,
+) -> Option<std::time::Duration> {
+    if !sidecar_predates_app(sidecar, app) {
+        return None;
+    }
+    let gap = app.duration_since(sidecar).unwrap_or_default();
+    (gap >= SIDECAR_STALE_GRACE).then_some(gap)
+}
+
+/// A duration as the coarsest unit that still says something ("45 seconds", "3 minutes", "2 hours", "27
+/// days") — for `stale_sidecars`'s log line (#187), replacing an unconditional `/3600` that truncated
+/// any sub-hour gap to a nonsensical "0h" and made the false-alarm message look like its own bug report.
+pub(crate) fn humanize_gap(d: std::time::Duration) -> String {
+    let s = d.as_secs();
+    let (n, unit) = match s {
+        0..=119 => (s, "second"),
+        120..=7199 => (s / 60, "minute"),
+        7200..=172_799 => (s / 3600, "hour"),
+        _ => (s / 86_400, "day"),
+    };
+    format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
+}
+
+/// The sidecars that are OLDER than the running app exe by more than [`SIDECAR_STALE_GRACE`], as
+/// `(name, how much older)`. Empty is the healthy case. Called at boot by `app::run` so the mismatch is
+/// reported where someone reads it, rather than surfacing later as an unknown-subcommand error in an
+/// agent session.
 pub(crate) fn stale_sidecars() -> Vec<(&'static str, std::time::Duration)> {
     let Ok(app_exe) = std::env::current_exe() else { return Vec::new() };
     let Ok(app_at) = std::fs::metadata(&app_exe).and_then(|m| m.modified()) else {
@@ -537,8 +604,8 @@ pub(crate) fn stale_sidecars() -> Vec<(&'static str, std::time::Duration)> {
     for (name, path) in sidecar_status() {
         let Some(p) = path else { continue }; // missing is already reported, and louder
         let Ok(at) = std::fs::metadata(&p).and_then(|m| m.modified()) else { continue };
-        if sidecar_predates_app(at, app_at) {
-            out.push((name, app_at.duration_since(at).unwrap_or_default()));
+        if let Some(gap) = stale_gap(at, app_at) {
+            out.push((name, gap));
         }
     }
     out
@@ -1040,7 +1107,10 @@ pub(super) fn wire_bsc_env(
 
 #[cfg(test)]
 mod swap_tests {
-    use super::{ensure_executable, sidecar_predates_app, source_is_plausible, staging_would_downgrade, verify_staged};
+    use super::{
+        ensure_executable, humanize_gap, sidecar_predates_app, source_is_plausible, stage_one,
+        stale_gap, staging_would_downgrade, verify_staged, SIDECAR_STALE_GRACE,
+    };
     use std::time::{Duration, SystemTime};
 
     /// Which errors earn the rename-aside dance in [`super::stage_one`].
@@ -1189,6 +1259,67 @@ mod swap_tests {
         assert!(!sidecar_predates_app(newer, app), "a sidecar built after the app is fine");
         // Equal timestamps are the normal case for one build step producing both — never flag it.
         assert!(!sidecar_predates_app(app, app), "same-build timestamps must not be reported stale");
+    }
+
+    /// #187 (`bsc request get 187`): `bsc`/`bsc-agent`/`bsc-hook` are built by a SEPARATE cargo
+    /// invocation from the app, so even a healthy same-session rebuild routinely finishes the two build
+    /// steps seconds to a couple of minutes apart. Without a floor that ordinary ordering noise reported
+    /// as STALE on nearly every clean build; a genuinely stale sidecar (observed: weeks old) must still
+    /// be caught.
+    #[test]
+    fn stale_gap_has_a_jitter_floor_but_still_catches_real_staleness() {
+        let app = SystemTime::UNIX_EPOCH + Duration::from_secs(1_760_000_000);
+        let barely_older = app - Duration::from_secs(5); // ordinary cross-process build-order noise
+        let right_at_the_floor = app - SIDECAR_STALE_GRACE;
+        let weeks_older = app - Duration::from_secs(27 * 24 * 3600);
+
+        assert_eq!(stale_gap(barely_older, app), None, "a few seconds of build-order noise must not cry wolf");
+        assert_eq!(stale_gap(app, app), None, "identical timestamps are never stale");
+        assert_eq!(
+            stale_gap(right_at_the_floor, app),
+            Some(SIDECAR_STALE_GRACE),
+            "the floor itself counts as stale, not just what's strictly past it"
+        );
+        assert_eq!(stale_gap(weeks_older, app), Some(Duration::from_secs(27 * 24 * 3600)));
+    }
+
+    /// The bug the message itself had: dividing by 3600 unconditionally made any sub-hour gap print as
+    /// "0h", so a false alarm read as its own bug report. A real duration must always name a nonzero unit.
+    #[test]
+    fn humanize_gap_never_reads_as_a_zero_of_a_unit() {
+        assert_eq!(humanize_gap(Duration::from_secs(45)), "45 seconds");
+        assert_eq!(humanize_gap(Duration::from_secs(1)), "1 second");
+        assert_eq!(humanize_gap(Duration::from_secs(150)), "2 minutes");
+        assert_eq!(humanize_gap(Duration::from_secs(3 * 3600)), "3 hours");
+        assert_eq!(humanize_gap(Duration::from_secs(27 * 24 * 3600)), "27 days");
+    }
+
+    /// The other half of #187: `fs::copy` does not preserve mtime on POSIX, so without an explicit fix
+    /// every staged binary reads as built at COPY time — always at or after the source's real build
+    /// time, often by enough to make `staging_would_downgrade` refuse a byte-identical re-stage as a
+    /// "downgrade" on the very next boot. `stage_one` must hand the staged copy the SOURCE's mtime.
+    #[test]
+    fn stage_one_preserves_the_sources_mtime_so_a_copy_never_reads_newer_than_its_build() {
+        let dir = crate::testutil::unique_dir("bsc-stage", "mtime");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("bsc");
+        std::fs::write(&src, vec![0u8; 64]).unwrap();
+
+        // Force the source's mtime to a moment clearly in the past — the ordinary case of a build that
+        // finished a couple of minutes ago, not "whatever `now` happens to be when this test runs".
+        let built = SystemTime::now() - Duration::from_secs(120);
+        std::fs::OpenOptions::new().write(true).open(&src).unwrap().set_modified(built).unwrap();
+
+        let dst = dir.join("staged-bsc");
+        stage_one(&src, &dst).expect("a plain copy onto an absent destination must succeed");
+
+        let dst_at = std::fs::metadata(&dst).unwrap().modified().unwrap();
+        assert_eq!(
+            dst_at, built,
+            "the staged copy's mtime must equal the source's build time, not the moment it was copied"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

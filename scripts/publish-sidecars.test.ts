@@ -3,8 +3,11 @@
 // The fs half (copy → chmod → rename) is three calls and is exercised for real by `build:plan` on
 // every build; what is worth pinning is the decision, because each refusal here corresponds to a
 // failure that has actually happened and cost a session hours of wrong diagnosis.
+import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { publishDecision, stagingPathFor } from "./publish-sidecars.mjs";
+import { copyPreservingMtime, publishDecision, stagingPathFor } from "./publish-sidecars.mjs";
 import { classifyArtifact } from "./build-artifact-plan.mjs";
 
 type Stat = { size: number; mode: number; isFile: boolean } | null;
@@ -70,5 +73,30 @@ describe("publish-sidecars: the staging path", () => {
 
   it("hides the temp with a leading dot, so a half-written file is not mistaken for a sidecar", () => {
     expect(stagingPathFor("/d/bsc", 7)).toContain("/.bsc.");
+  });
+});
+
+describe("publish-sidecars: mtime preservation (#187)", () => {
+  it("gives the copy the SOURCE's mtime, not the moment it was copied", () => {
+    // `copyFileSync` alone stamps the destination with "now" — the exact bug (#187): a staged copy
+    // read as a few seconds NEWER than the build that produced it, which the boot-side staleness check
+    // in src-tauri/src/console/pty/env.rs then read as a different, newer build and refused to
+    // re-stage a byte-identical rebuild.
+    const dir = mkdtempSync(join(tmpdir(), "bsc-publish-mtime-"));
+    try {
+      const src = join(dir, "bsc");
+      writeFileSync(src, "not a real binary");
+      // Force the source's mtime to a moment clearly in the past, so "did the copy preserve it" and
+      // "is the copy merely recent" can never be confused.
+      const built = new Date(Date.now() - 120_000);
+      utimesSync(src, built, built);
+
+      const tmp = join(dir, ".bsc.publishing-test");
+      copyPreservingMtime(src, tmp);
+
+      expect(statSync(tmp).mtime.getTime()).toBe(built.getTime());
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -23,7 +23,7 @@ pub(crate) mod scrollback;
 // Session env wiring + the sidecar resolvers used at the same `crate::console::pty::*` paths as
 // before the split (`extensions/mcp.rs`, `app/run.rs`, `github/readiness.rs`).
 pub(crate) use env::{
-    bsc_bin_path, session_env, sidecar_status, stage_dev_sidecars, stale_sidecars,
+    bsc_bin_path, humanize_gap, session_env, sidecar_status, stage_dev_sidecars, stale_sidecars,
 };
 #[cfg(target_os = "linux")]
 use env::bsc_hook_bin_path;
