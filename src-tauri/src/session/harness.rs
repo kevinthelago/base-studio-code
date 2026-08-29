@@ -24,7 +24,7 @@ pub trait HarnessAdapter {
     }
     /// The shell command that launches the harness, baking the startup `prompt` and requesting
     /// `resume` when supported.
-    fn launch_command(&self, prompt: &str, resume: bool) -> String;
+    fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String;
     /// Map a UI model id to this harness's model selector (None ⇒ the harness's own default).
     fn model_flag(&self, model: &str) -> Option<String>;
     /// The shell wrapper function the session installs so both the auto-launch and user-typed runs
@@ -52,7 +52,7 @@ impl HarnessAdapter for ClaudeCodeAdapter {
         crate::session::launch::dir_holds_a_transcript(dir)
     }
 
-    fn launch_command(&self, prompt: &str, resume: bool) -> String {
+    fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String {
         crate::claude_launch(prompt, resume)
     }
 
@@ -99,11 +99,14 @@ impl HarnessAdapter for BscAgentAdapter {
         crate::has_bsc_agent_history(cwd)
     }
 
-    fn launch_command(&self, prompt: &str, resume: bool) -> String {
+    fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String {
         // The `bsc-agent` shell name resolves to the sidecar via `$BSC_AGENT_BIN` (see shell_fn).
-        // `--continue` resumes the prior conversation (path via $BSC_AGENT_SESSION), mirroring
-        // `claude --continue`; the flag must precede the baked prompt. (#1144)
-        let flag = if resume { "--continue " } else { "" };
+        // `--continue` resumes the prior conversation (path via $BSC_AGENT_SESSION); the flag must
+        // precede the baked prompt. (#1144)
+        //
+        // It takes no session ID and wants none: bsc-agent's conversation is addressed by a PATH, so
+        // there is nothing to name. Only the presence of a resume request matters here.
+        let flag = if resume.is_some() { "--continue " } else { "" };
         format!("bsc-agent {flag}{}", crate::bash_ansi_c_quote(prompt))
     }
 
@@ -133,11 +136,14 @@ mod tests {
     #[test]
     fn launch_command_matches_free_fn() {
         let a = ClaudeCodeAdapter;
-        assert_eq!(a.launch_command("hi", false), crate::claude_launch("hi", false));
-        assert_eq!(a.launch_command("hi", true), crate::claude_launch("hi", true));
-        // sanity: resume adds --continue, fresh does not.
-        assert!(a.launch_command("hi", true).contains("--continue"));
-        assert!(!a.launch_command("hi", false).contains("--continue"));
+        assert_eq!(a.launch_command("hi", None), crate::claude_launch("hi", None));
+        let id = "bf36a25c-b331-48b0-a78c-3bf4e6b51354";
+        assert_eq!(a.launch_command("hi", Some(id)), crate::claude_launch("hi", Some(id)));
+        // sanity: a resume NAMES its session rather than guessing the newest one.
+        assert!(a.launch_command("hi", Some(id)).contains("--resume"));
+        assert!(a.launch_command("hi", Some(id)).contains(id));
+        assert!(!a.launch_command("hi", None).contains("--resume"));
+        assert!(!a.launch_command("hi", None).contains("--continue"));
     }
 
     #[test]
@@ -170,12 +176,12 @@ mod tests {
     #[test]
     fn bsc_agent_launch_bakes_prompt_and_has_no_model_flag() {
         let a = BscAgentAdapter;
-        let cmd = a.launch_command("do the thing", false);
+        let cmd = a.launch_command("do the thing", None);
         assert!(cmd.starts_with("bsc-agent "));
         assert_eq!(cmd, format!("bsc-agent {}", crate::bash_ansi_c_quote("do the thing")));
         assert!(!cmd.contains("--continue"));
         // Resume prepends --continue before the baked prompt.
-        let resumed = a.launch_command("do the thing", true);
+        let resumed = a.launch_command("do the thing", Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
         assert_eq!(resumed, format!("bsc-agent --continue {}", crate::bash_ansi_c_quote("do the thing")));
         assert_eq!(a.model_flag("gpt-5"), None);
     }

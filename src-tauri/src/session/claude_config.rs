@@ -67,6 +67,57 @@ fn claude_project_key(path: &str) -> String {
     s
 }
 
+/// The session id Claude Code last used in `cwd`, from `~/.claude.json`.
+///
+/// # Why THIS and not `--continue`
+///
+/// `--continue` means "the most recent conversation in this directory", judged by file mtime — and
+/// that is not the same question as "the conversation this pane was having". Three ways it diverges,
+/// all observed:
+///
+///  - a session that wrote only METADATA (a cancelled `/resume`, a launch that died before its first
+///    turn) becomes the newest file and shadows the real thread permanently;
+///  - a stale transcript keeps receiving `cost-state`/`bridge-session` appends after its turns are
+///    done, so mtime can crown a conversation that ended long ago;
+///  - two sessions in one directory race, and the winner is whichever flushed last.
+///
+/// `lastSessionId` is Claude's own explicit statement rather than an inference from timestamps, and
+/// Claude MAINTAINS IT: a `/clear` forks a new session and the field follows, so a pinned pane tracks
+/// the user clearing their context instead of resurrecting what they cleared. That is the property
+/// that makes pinning safe — the id is stable across restarts and still moves when the user moves it.
+///
+/// `None` when the file is absent or unparseable, when the directory has no entry, or when the id is
+/// not a plausible session id — every one of which means "launch fresh", never "guess".
+pub(crate) fn last_session_id(cwd: &str) -> Option<String> {
+    if cwd.is_empty() {
+        return None;
+    }
+    let raw = std::fs::read_to_string(home_dir().join(".claude.json")).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let id = config
+        .get("projects")?
+        .get(claude_project_key(cwd))?
+        .get("lastSessionId")?
+        .as_str()?
+        .trim()
+        .to_string();
+    plausible_session_id(&id).then_some(id)
+}
+
+/// Whether `id` looks like the UUID Claude Code names a session with.
+///
+/// Checked because the value lands on a COMMAND LINE. Anything reaching `claude --resume <id>` is
+/// shell-quoted at the call site, but a shape check here means a corrupted or hand-edited config
+/// cannot put an arbitrary string there in the first place — the same reason
+/// [`crate::claude_model_flag`] returns a fixed literal rather than the caller's text.
+fn plausible_session_id(id: &str) -> bool {
+    id.len() == 36
+        && id.as_bytes().iter().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => *b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
+}
+
 /// Sets `projects[key].hasTrustDialogAccepted = true` in a parsed `~/.claude.json`
 /// value, creating the `projects` map and the per-directory entry if absent and
 /// preserving every other field (history, allowedTools, sibling projects, …).
@@ -223,8 +274,29 @@ pub(crate) fn write_claude_config(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     use super::{claude_project_key, mark_dir_trusted, trust_keys};
+
+    /// The shape check is what keeps a corrupted or hand-edited `~/.claude.json` from putting an
+    /// arbitrary string on a command line. It is not a UUID validator — it is a refusal to pass
+    /// anything that is not shaped like the id Claude writes.
+    #[test]
+    fn only_a_session_shaped_id_is_accepted() {
+        assert!(plausible_session_id("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
+        assert!(plausible_session_id("00000000-0000-0000-0000-000000000000"));
+        for bad in [
+            "",
+            "bf36a25c",                                     // truncated
+            "bf36a25c-b331-48b0-a78c-3bf4e6b5135",          // one short
+            "bf36a25c-b331-48b0-a78c-3bf4e6b513545",        // one long
+            "bf36a25cXb331-48b0-a78c-3bf4e6b51354",         // dash in the wrong place
+            "bf36a25c-b331-48b0-a78c-3bf4e6b5135z",         // not hex
+            "; rm -rf ~ #-0000-0000-0000-00000000",         // the reason this exists
+        ] {
+            assert!(!plausible_session_id(bad), "{bad:?} must be refused");
+        }
+    }
 
     #[test]
     fn claude_project_key_uses_forward_slashes_and_upper_drive() {

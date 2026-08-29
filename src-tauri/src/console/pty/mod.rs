@@ -895,10 +895,52 @@ fn pty_create_inner(
         LaunchPlan::Init(s) => s.contains("--continue") && has_history,
         LaunchPlan::None => false,
     };
-    log::info!("pty[{pane_id}] launch decision · has_history={has_history} · resumed={resumed}");
+    // WHICH conversation, not merely whether to resume one.
+    //
+    // `--continue` means "the newest transcript in this directory" by mtime, and that is a different
+    // question from "the conversation this pane was having". Measured on a live architect: a 24KB
+    // conversation sat unreachable beside a 3KB metadata-only stub, because the stub was newer. A
+    // cancelled `/resume`, a launch that died before its first turn, or late `cost-state` appends to a
+    // finished transcript are all enough to shadow the real thread permanently.
+    //
+    // `lastSessionId` is Claude's own record for this directory, and Claude MAINTAINS it — a `/clear`
+    // forks a new session and the field follows — so naming it pins the pane to its own conversation
+    // WITHOUT freezing it against the user clearing context.
+    //
+    // A CAGED session is deliberately excluded: its transcripts live in the cage's private HOME under
+    // the guest cwd, so the host's `~/.claude.json` says nothing about it and `--continue` remains the
+    // only honest answer there.
+    let resume_id: Option<String> = if resumed && ns_argv.is_none() {
+        crate::session::claude_config::last_session_id(&cwd)
+    } else {
+        None
+    };
+    log::info!(
+        "pty[{pane_id}] launch decision · has_history={has_history} · resumed={resumed}{}",
+        match &resume_id {
+            Some(id) => format!(" · session={id}"),
+            // Said out loud: a resume with no id falls back to newest-wins, which is the behaviour
+            // that loses a conversation, so it should never be silent.
+            None if resumed => " · session=unknown (falling back to --continue)".to_string(),
+            None => String::new(),
+        }
+    );
     let launch = match plan {
-        LaunchPlan::Prompt { resume } => Some(harness.launch_command(startup_prompt.as_deref().unwrap_or(""), resume)),
-        LaunchPlan::Init(s) => Some(s),
+        LaunchPlan::Prompt { resume } => Some(harness.launch_command(
+            startup_prompt.as_deref().unwrap_or(""),
+            // `resume` says WHETHER; `resume_id` says WHICH. Without an id the harness keeps its old
+            // behaviour rather than launching fresh — a worse resume beats no resume.
+            if resume { resume_id.as_deref() } else { None },
+        )),
+        // An `initCmd` is a literal shell line the caller composed (`claude --continue || claude` for
+        // a studio), so the substitution happens on the STRING. Rewriting rather than re-composing
+        // keeps every existing caller — studio, triage, fleet — on one code path.
+        LaunchPlan::Init(s) => Some(match &resume_id {
+            Some(id) if s.contains("--continue") => {
+                s.replace("--continue", &format!("--resume {}", crate::bash_ansi_c_quote(id)))
+            }
+            _ => s,
+        }),
         LaunchPlan::None => None,
     };
     // Whether the launch would start `claude` — the only command the degraded

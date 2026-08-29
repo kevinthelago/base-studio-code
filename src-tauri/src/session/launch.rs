@@ -1,10 +1,26 @@
 use crate::prelude::*;
 
 /// Build the shell command that launches `claude` with the baked startup prompt.
-/// Triage sessions pass `continue_session = true` to resume the repo's most recent
-/// conversation (`--continue`) instead of starting a fresh one.
-pub(crate) fn claude_launch(prompt: &str, continue_session: bool) -> String {
-    let flag = if continue_session { "--continue " } else { "" };
+///
+/// `resume` is the session to reattach to — `Some(id)` emits `--resume <id>`, `None` starts fresh.
+///
+/// # Why an ID and not `--continue`
+///
+/// `--continue` resumes "the most recent conversation in this directory" by mtime, which is a
+/// different question from "the conversation this pane was having". A metadata-only transcript (a
+/// cancelled `/resume`, a launch that died before its first turn) becomes the newest file and shadows
+/// the real thread permanently — measured on a live architect, whose 24KB conversation sat unreachable
+/// beside a 3KB stub. Naming the session removes the guess.
+///
+/// The id comes from Claude's own `lastSessionId` (see [`crate::session::claude_config::last_session_id`]),
+/// so it follows a `/clear` rather than resurrecting cleared context.
+pub(crate) fn claude_launch(prompt: &str, resume: Option<&str>) -> String {
+    let flag = match resume {
+        // The id is shell-quoted even though it is shape-checked upstream: quoting at the point of
+        // interpolation is what makes the guarantee local to the line that needs it.
+        Some(id) => format!("--resume {} ", bash_ansi_c_quote(id)),
+        None => String::new(),
+    };
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
 /// Map a UI model id (`sonnet-4.5`, `opus-4.5`, `haiku-4.5`) to the alias Claude
@@ -99,12 +115,30 @@ mod relocated_tests {
 
     #[test]
     fn claude_launch_bakes_prompt_fresh() {
-        assert_eq!(claude_launch("triage the issues", false), "claude $'triage the issues'");
+        assert_eq!(claude_launch("triage the issues", None), "claude $'triage the issues'");
     }
+
+    /// A RESUME NAMES ITS SESSION. `--continue` resumes "the newest transcript in this directory" by
+    /// mtime, which is not the same question as "the conversation this pane was having" — measured on
+    /// a live architect, a 24KB conversation sat unreachable beside a 3KB metadata-only stub that
+    /// happened to be newer.
     #[test]
-    fn claude_launch_adds_continue_flag() {
-        // Triage resumes the repo's prior conversation instead of starting fresh.
-        assert_eq!(claude_launch("triage the issues", true), "claude --continue $'triage the issues'");
+    fn claude_launch_resumes_by_session_id_rather_than_by_recency() {
+        let id = "bf36a25c-b331-48b0-a78c-3bf4e6b51354";
+        let cmd = claude_launch("triage the issues", Some(id));
+        assert!(cmd.contains("--resume"), "{cmd}");
+        assert!(cmd.contains(id), "the id travels: {cmd}");
+        assert!(!cmd.contains("--continue"), "and recency is not consulted: {cmd}");
+        // The flag precedes the baked prompt, or claude reads the id as the prompt.
+        assert!(cmd.find("--resume").unwrap() < cmd.find("triage").unwrap(), "{cmd}");
+    }
+
+    /// The id lands on a command line, so it is quoted at the point of interpolation — local to the
+    /// line that needs the guarantee, rather than resting on a check somewhere upstream.
+    #[test]
+    fn a_session_id_is_quoted_into_the_command() {
+        let cmd = claude_launch("go", Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
+        assert!(cmd.contains("$'bf36a25c-b331-48b0-a78c-3bf4e6b51354'"), "{cmd}");
     }
     #[test]
     fn claude_project_dir_name_replaces_non_alnum_with_dash() {
