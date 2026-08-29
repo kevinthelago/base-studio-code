@@ -42,13 +42,19 @@ pub const BOOL_FLAGS: [&str; 13] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 51] = [
+pub const FLAGS: [&str; 52] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
+    // `impl suppress` (#170) reuses the same flag name for the same reason: ALSO retire the id from
+    // the packaged seed, not only the runtime store.
     "--seed",
+    // Optimistic concurrency: refuse the write when the record has moved on since it was read.
+    // The algorithms store had none while a librarian session wrote it live — see `set_impl_versioned`.
+    "--if-version",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
-    // `--root` names the repo when the cwd is not it.
+    // `--root` names the repo when the cwd is not it, `--seed` retargets the PACKAGED seed instead of
+    // the build-readable repo store.
     "--check",
     "--root",
     // `impl sync-seed` (#157) — the directory holding the packaged `algorithms.json` seed, and
@@ -929,6 +935,37 @@ fn write_seed_tests(path: &std::path::Path, doc: &mut Value, id: &str, tests: Va
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
+/// Resolve and parse the packaged seed for `impl suppress --seed` (#170) — the read half, split from
+/// [`write_seed_doc`] the same way [`load_seed_doc`] is split from [`write_seed_tests`].
+///
+/// Unlike [`load_seed_doc`], an id ABSENT from the seed's `implementations` is not an error here:
+/// suppressing an id a second time (already retired from the seed) or one that only ever lived in the
+/// runtime store must stay a no-op on the seed half, exactly as [`crate::add_suppression`] is
+/// idempotent on the runtime half (#77) — a caller re-running the same suppress must not have it start
+/// failing the moment the first run finishes.
+fn load_seed_doc_for_suppress() -> Result<(std::path::PathBuf, Value), String> {
+    let path = crate::seed_path().ok_or(
+        "packaged seed `knowledge/algorithms.json` not found — set BSC_DATA_DIR to the directory \
+         holding the packaged `data/` tree, or run from a dev checkout",
+    )?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let doc: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+    Ok((path, doc))
+}
+
+/// Persist an already-mutated packaged-seed `doc` back to `path` — `impl suppress --seed`'s write half.
+/// Same tmp-then-rename dance as [`write_seed_tests`], kept as its own small function rather than a
+/// shared extraction: the two callers mutate the doc differently (one field on one record vs. an
+/// implementations-array removal plus a `suppressed` tombstone), and the only thing genuinely shared is
+/// this four-line persist tail.
+fn write_seed_doc(path: &std::path::Path, doc: &Value) -> Result<(), String> {
+    let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
 /// `tests harvest <dir> [--dry-run]` (#4126) — carry each impl's COLOCATED test file onto its node,
 /// the algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
 /// `bsc_util::test_path_for` so the two libraries cannot drift.
@@ -945,7 +982,13 @@ fn write_seed_tests(path: &std::path::Path, doc: &mut Value, id: &str, tests: Va
 ///
 /// TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling file, so
 /// path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
-fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
+fn tests_harvest(
+    dir: &str,
+    dry: bool,
+    // #123 — SCOPE the pairing to named ids, so harvesting one record does not re-pair every other
+    // impl that happens to share its colocated-test pass. `None` walks the whole store, as before.
+    ids: Option<&std::collections::HashSet<String>>,
+) -> Result<Value, String> {
     let root = std::path::Path::new(dir);
     if !root.is_dir() {
         return Err(format!("no such directory: {dir}"));
@@ -980,6 +1023,13 @@ fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
 
     let (mut paired, mut no_src, mut no_test, mut retired_no_test) = (Vec::new(), 0usize, 0usize, 0usize);
     for im in impls {
+        // #123 — out of scope for this run. Skipped BEFORE the counters so a scoped harvest's report
+        // describes what it actually considered, rather than counting the whole store as unpaired.
+        if let Some(want) = ids {
+            if !im.get("id").and_then(Value::as_str).is_some_and(|id| want.contains(id)) {
+                continue;
+            }
+        }
         let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else {
             // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
             no_src += 1;
@@ -1348,7 +1398,24 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         crate::ensure_array(&mut g, "implementations").push(repo_rec.clone());
                     }
                 }
-                let replaced = crate::set_impl_by(&mut g, im.clone(), &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()), flag_value(&args, "--note").as_deref())?;
+                // Optimistic concurrency. A librarian session writes this store LIVE, and until now
+                // nothing here could refuse a stale overwrite — the sixteen `algorithms.json.bak-*`
+                // files beside the store are what a human does instead. An ABSENT record, and one
+                // never written since #72, both read as rev 0, so `--if-version 0` is the honest guard
+                // for them and no backfill is needed to make them safe.
+                let if_version = match flag_value(&args, "--if-version") {
+                    Some(raw) => Some(raw.parse::<i64>().map_err(|_| {
+                        format!("--if-version '{raw}' is not an integer (read the current rev with `bsc graph impl history <id>`)")
+                    })?),
+                    None => None,
+                };
+                let replaced = crate::set_impl_versioned(
+                    &mut g,
+                    im.clone(),
+                    &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()),
+                    flag_value(&args, "--note").as_deref(),
+                    if_version,
+                )?;
                 crate::save(&g)?;
                 // Report the STORED record, not the write payload (#4154). Echoing `im` showed only the
                 // fields this call restated, so a `--domain`-only edit answered without `src`, `summary`
@@ -1372,7 +1439,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     ));
                 }
                 let mut g = crate::load();
-                if crate::remove_impl(&mut g, id) {
+                if crate::remove_impl_by(&mut g, id, &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref())) {
                     crate::save(&g)?;
                     emit(&serde_json::json!({ "ok": true, "removed": id }))
                 } else {
@@ -1428,11 +1495,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&serde_json::json!({ "ok": true, "reverted": id, "to": want }))
             }
             Some("suppress") => {
-                let id = positional.get(2).ok_or("usage: bsc graph impl suppress <id> [--superseded-by <new-id>]")?;
+                let id = positional.get(2).ok_or(
+                    "usage: bsc graph impl suppress <id> [--superseded-by <new-id>] [--seed]",
+                )?;
                 let mut g = crate::load();
                 let live: Vec<Value> = crate::implementations_of(&g);
                 let known = |x: &str| live.iter().any(|im| im.get("id").and_then(Value::as_str) == Some(x));
-                if !known(id) && !crate::is_seeded(id) {
+                // An id already tombstoned is known too (#170 follow-up) — `--seed` PHYSICALLY strips a
+                // packaged id from the on-disk seed, so a SECOND, separate `bsc` process (a real re-run,
+                // not the same process re-checking a cached `seed()`) finds it neither live nor
+                // `is_seeded` any more and would wrongly refuse the very re-suppress the idempotence
+                // comment below promises. `is_suppressed` is the third, durable source of "this id is
+                // real" that survives the seed file being edited out from under it.
+                if !known(id) && !crate::is_seeded(id) && !crate::is_suppressed(&g, id) {
                     return Err(format!("unknown implementation '{id}'"));
                 }
                 let mut tomb = serde_json::json!({ "id": id });
@@ -1449,15 +1524,50 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     }
                     tomb["supersededBy"] = Value::String(new_id);
                 }
-                crate::remove_impl(&mut g, id);
+                let superseded_by = tomb.get("supersededBy").and_then(Value::as_str).map(str::to_owned);
+                // `--seed` (#170, request from claude): a store-only tombstone is TRANSIENT the same way
+                // an un-seeded test pairing was (#141) — it stops the RUNTIME reconcile from re-adding
+                // the id, but `scripts/emit-records.mjs` builds `.bsc-records/` by reading
+                // `src-tauri/data/knowledge/algorithms.json` DIRECTLY and has never heard of the runtime
+                // store, so the retired module kept shipping. Read (never written) BEFORE the runtime
+                // store is touched, mirroring `tests set --seed`: an unreadable/corrupt packaged seed is
+                // the likely failure here and must not leave the runtime store half-suppressed.
+                let want_seed = args.iter().any(|a| a == "--seed");
+                let seed_doc = want_seed.then(load_seed_doc_for_suppress).transpose()?;
+                crate::remove_impl_by(&mut g, id, &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()));
                 // Idempotent (#77) — suppressing an already-suppressed id refreshes its pointer
                 // instead of appending a second tombstone for the same id.
-                crate::add_suppression(&mut g, id, tomb.get("supersededBy").and_then(Value::as_str));
+                crate::add_suppression(&mut g, id, superseded_by.as_deref());
                 crate::save(&g)?;
-                emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
+                if let Some((path, mut doc)) = seed_doc {
+                    // Idempotent the same way the runtime half is: an id already absent from the seed
+                    // (suppressed a second time, or never seeded) is a no-op remove, and a tombstone
+                    // already there just refreshes its pointer rather than duplicating.
+                    crate::remove_impl(&mut doc, id);
+                    crate::add_suppression(&mut doc, id, superseded_by.as_deref());
+                    write_seed_doc(&path, &doc)?;
+                }
+                emit(&serde_json::json!({
+                    "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy"), "seeded": want_seed,
+                }))
             }
             Some("unsuppress") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl unsuppress <id>")?;
+                // `--seed` restoration is deliberately UNSUPPORTED: `suppress --seed` physically removes
+                // the record from the committed packaged seed, so there is no body left in this process
+                // to resurrect it from — unlike the runtime tombstone, which the embedded seed can still
+                // refill. Reversing a seeded suppression is a git operation on
+                // `knowledge/algorithms.json` (checkout/revert the commit that removed it), not a `bsc`
+                // one — refuse loudly rather than silently accepting a flag that does nothing.
+                if args.iter().any(|a| a == "--seed") {
+                    return Err(
+                        "impl unsuppress has no --seed counterpart — `suppress --seed` removes the \
+                         record from the packaged seed entirely, so nothing here can restore its body; \
+                         use git to revert the commit that removed it from \
+                         src-tauri/data/knowledge/algorithms.json, or re-author it with `impl set`"
+                            .to_string(),
+                    );
+                }
                 let mut g = crate::load();
                 let is_tomb = crate::is_suppressed(&g, id);
                 // REFUSES on a live impl: a real record goes through `remove`, never this. Otherwise
@@ -1620,7 +1730,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
                       | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
-                      | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
+                      | impl suppress <id> [--superseded-by <new-id>] [--seed] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>] \
                       | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply]"
                 .to_string()),
@@ -1631,6 +1741,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // project-glue with a score + reasons (#2745 slice 2). `--worthy-only` keeps just the worthy
         // ones. Emits candidates ONLY — storing them into the library is the curation gate, never here.
         "harvest" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph harvest <dir-or-file> [--tech typescript|rust] [--worthy-only] [--module [--apply]]")?;
@@ -1781,7 +1892,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(p) = &c.provides {
                         im["provides"] = Value::String(p.clone());
                     }
-                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired, &writer, "harvest --module --apply: lift a module as one record")?;
                     // ROUTE THE INTEGRATION TEST (edges-fill-themselves-at-retirement). A colocated test
                     // that reaches other modules is not paired onto the node — but it must not be left
                     // behind either, because the file it lives in goes when the module retires. It
@@ -1862,6 +1973,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // or an `optimize` when the store already holds that id (the harvested version replaces it).
         // `--apply` writes them to the runtime store (`impl set` semantics); without it, a dry-run plan.
         "curate" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph curate <dir> [--tech typescript|rust] [--apply]")?;
@@ -1905,7 +2017,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
                     }
-                    set_impl_skipping_retired(&mut g, im, &mut retired)?;
+                    set_impl_skipping_retired(&mut g, im, &mut retired, &writer, "curate --apply: write a worthy candidate into the library")?;
                 }
                 crate::save(&g)?;
             }
@@ -1937,6 +2049,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `folder_from_src` is a fixed point on an already-clean path, so only records that actually
         // MOVED are rewritten, and a re-run reports zero.
         "refolder" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let mut g = crate::load();
             let mut moved = Vec::new();
             let mut srcless = 0usize;
@@ -1961,7 +2074,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         next.as_object_mut().map(|o| o.remove("folder"));
                     }
                 }
-                crate::set_impl(&mut g, next)?;
+                // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                // could not tell a refolder from a hand edit).
+                crate::set_impl_by(&mut g, next, &writer, Some("refolder: re-derive folder from src"))?;
                 moved.push(serde_json::json!({ "id": id, "from": cur, "to": next_folder }));
             }
             if !moved.is_empty() {
@@ -1984,6 +2099,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         //
         // Idempotent: an impl that already carries `src` is left alone, so a re-run reports zero.
         "relink" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph relink <dir> [--tech typescript|rust] [--dry-run] [--pretty]")?;
@@ -2031,7 +2147,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                             if let Some(f) = folder {
                                 next["folder"] = Value::String(f.clone());
                             }
-                            crate::set_impl(&mut g, next)?;
+                            // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                            // could not tell a relink from a hand edit).
+                            crate::set_impl_by(&mut g, next, &writer, Some("relink: recover src by matching a fresh harvest"))?;
                         }
                         linked.push(serde_json::json!({ "id": id, "src": src, "folder": folder }));
                     }
@@ -2177,9 +2295,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             Some("harvest") => {
                 let dir = positional
                     .get(2)
-                    .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
+                    .ok_or("usage: bsc graph tests harvest <dir> [--id a,b] [--dry-run] [--pretty]")?;
                 let dry = args.iter().any(|a| a == "--dry-run");
-                emit(&tests_harvest(dir, dry)?)
+                let ids: Option<std::collections::HashSet<String>> = flag_value(&args, "--id").map(|s| {
+                    s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                });
+                emit(&tests_harvest(dir, dry, ids.as_ref())?)
             }
             _ => Err(
                 "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed]"
@@ -2209,10 +2330,24 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 return Ok(());
             }
             let check = args.iter().any(|a| a == "--check");
+            // TWO TARGETS, ONE VERB. `graph/algorithms.json` is what the BUILD compiles; the packaged
+            // seed is what SHIPS and what a fresh install reconciles against. Same source store, same
+            // machinery, different destination and a narrower projection — so `--seed` is a flag here
+            // rather than a second verb that would drift out of step with this one.
+            let to_seed = args.iter().any(|a| a == "--seed");
             let root = flag_value(&args, "--root")
                 .map(std::path::PathBuf::from)
                 .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
-            let path = crate::repo_store::path_under(&root);
+            let path = if to_seed {
+                crate::repo_store::seed_path_under(&root)
+            } else {
+                crate::repo_store::path_under(&root)
+            };
+            let project: fn(&serde_json::Value) -> serde_json::Value = if to_seed {
+                crate::repo_store::seed_content_of
+            } else {
+                crate::repo_store::content_of
+            };
             let repo = crate::repo_store::read_at(&path)?.unwrap_or_else(crate::repo_store::empty);
             let runtime = crate::implementations_of(&crate::load());
 
@@ -2241,8 +2376,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "note": "no runtime store on this machine — nothing was authored here to compare against",
                     }));
                 };
-                let upstream = crate::repo_store::impls_of(&direct);
-                let repo_impls = crate::repo_store::impls_of(&repo);
+                // Compare through the SAME projection the write would use, or every seed record reads
+                // as drifted for carrying fields the seed never ships.
+                let upstream: Vec<serde_json::Value> =
+                    crate::repo_store::impls_of(&direct).iter().map(project).collect();
+                let repo_impls: Vec<serde_json::Value> =
+                    crate::repo_store::impls_of(&repo).iter().map(project).collect();
                 let mut differs = Vec::new();
                 let mut absent = Vec::new();
                 let mut behind = Vec::new();
@@ -2268,10 +2407,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // failure mode this guards is an edit that never reached what the compiler reads.
                 if !differs.is_empty() {
                     return Err(format!(
-                        "the repo store is out of date — {} drifted ({}). \
-                         Run `bsc graph promote` to bring it forward.",
+                        "the {} is out of date — {} drifted ({}). \
+                         Run `bsc graph promote{}` to bring it forward.",
+                        if to_seed { "packaged seed" } else { "repo store" },
                         differs.len(),
                         differs.join(", "),
+                        if to_seed { " --seed" } else { "" },
                     ));
                 }
                 return Ok(());
@@ -2299,7 +2440,50 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }));
             }
 
-            let (next, missing, refused) = crate::repo_store::promote_into(&repo, &runtime, &ids);
+            let (mut next, missing, refused) =
+                crate::repo_store::promote_into_with(&repo, &runtime, &ids, project);
+            // Only the seed carries the referential-integrity guard that rejects a dangling `composes`.
+            let pruned = if to_seed {
+                crate::repo_store::prune_dangling_composes(&mut next)
+            } else {
+                Vec::new()
+            };
+
+            // WHAT STILL NAMES A SPECIFIER — gathered from both graphs, because an impl's provider is
+            // routinely imported by a COMPONENT record and a components-only view would miss it.
+            let mut imported: std::collections::BTreeSet<String> = Default::default();
+            if to_seed {
+                for i in crate::repo_store::impls_of(&next) {
+                    if let Some(c) = i.get("code").and_then(serde_json::Value::as_str) {
+                        crate::repo_store::quoted_specifiers(c, &mut imported);
+                    }
+                }
+                let comps = root.join("src-tauri/data/components/app");
+                let mut stack = vec![comps];
+                while let Some(d) = stack.pop() {
+                    let Ok(rd) = std::fs::read_dir(&d) else { continue };
+                    for e in rd.flatten() {
+                        let p = e.path();
+                        if p.is_dir() {
+                            stack.push(p);
+                        } else if p.extension().is_some_and(|x| x == "json") {
+                            if let Some(t) = std::fs::read_to_string(&p).ok().and_then(|t| {
+                                serde_json::from_str::<serde_json::Value>(&t).ok()
+                            }) {
+                                if let Some(src) = t.get("srcText").and_then(serde_json::Value::as_str) {
+                                    crate::repo_store::quoted_specifiers(src, &mut imported);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let orphaned = if to_seed {
+                crate::repo_store::refuse_orphaning_promotions(&repo, &mut next, &imported)
+            } else {
+                Vec::new()
+            };
+            let next = next;
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)
                     .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
@@ -2315,6 +2499,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // would delete fields. Named so a caller sees a decision rather than a silent no-op.
                 "refusedWouldLoseFields": refused,
                 "tracked": crate::repo_store::tracked_ids(&next).len(),
+                // Reported, never silent: a pruned edge is a claim the record made that the graph
+                // could not honour, and the author should see which.
+                "prunedComposes": pruned.iter().map(|(id, gone)| {
+                    serde_json::json!({ "id": id, "dropped": gone })
+                }).collect::<Vec<_>>(),
+                // Held back because promoting would have stopped a specifier something still imports
+                // from resolving — the store being behind the seed on a move.
+                "declined": orphaned.iter().map(|(id, spec)| {
+                    serde_json::json!({ "id": id, "wouldOrphan": spec })
+                }).collect::<Vec<_>>(),
             }))
         }
         // `build [<id>|--all] [--wasm] [--force]` — compile a Tier-R node and STAMP the verdict onto it,
@@ -2405,6 +2599,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // invalid-kind / mistyped / missing-viz. `--fix` assigns the heuristic kind to UNTYPED-but-
         // classifiable impls (never overwriting an assigned kind), then re-diagnoses.
         "doctor" => {
+            let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let fix = args.iter().any(|a| a == "--fix");
             let mut g = crate::load();
             // #78 — a FOCUSED mode, not another section bolted onto the default report. The default
@@ -2425,7 +2620,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                             let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                             let mut next = im.clone();
                             next["kind"] = Value::String(k.to_string());
-                            crate::set_impl(&mut g, next)?;
+                            // Attributed, not "unknown" (#72 stamped these writes but named nobody, so history
+                            // could not tell a doctor from a hand edit).
+                            crate::set_impl_by(&mut g, next, &writer, Some("doctor --fix: assign the inferred viz kind"))?;
                             fixed.push(serde_json::json!({ "id": id, "kind": k }));
                         }
                     }
@@ -2621,7 +2818,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let from = positional.get(1).copied().ok_or("usage: bsc graph merge <from-id> <into-id>")?;
             let into = positional.get(2).copied().ok_or("usage: bsc graph merge <from-id> <into-id> — the survivor id is required")?;
             let mut g = crate::load();
-            let repointed = crate::merge_impls(&mut g, from, into)?;
+            // Attributed: the fold edits records the caller never named, so every repointed
+            // `composes` lands in that record's own history with a who and a why.
+            let repointed = crate::merge_impls_by(
+                &mut g, from, into,
+                &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()),
+            )?;
             crate::save(&g)?;
             emit(&serde_json::json!({ "from": from, "into": into, "repointed": repointed, "removed": from }))
         }
@@ -2826,13 +3028,19 @@ fn field_text(value: &Value, raw: bool, pretty: bool) -> Result<String, String> 
 ///
 /// Skipped ids are RETURNED, never swallowed: a silent skip is how the caller ends up believing a
 /// record was written when it was not — the same class of quiet wrongness as the resurrection itself.
-fn set_impl_skipping_retired(g: &mut Value, im: Value, skipped: &mut Vec<String>) -> Result<(), String> {
+fn set_impl_skipping_retired(
+    g: &mut Value,
+    im: Value,
+    skipped: &mut Vec<String>,
+    writer: &str,
+    note: &str,
+) -> Result<(), String> {
     let id = im.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
     if !id.is_empty() && crate::is_suppressed(g, &id) {
         skipped.push(id);
         return Ok(());
     }
-    crate::set_impl(g, im).map(|_| ())
+    crate::set_impl_by(g, im, writer, Some(note)).map(|_| ())
 }
 
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
@@ -3079,18 +3287,18 @@ fn help(prog: &str) -> String {
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
-  \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
+  \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--required-by p:f,q:g] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --required-by is the USAGE mirror of a plan feature's `requires` — which features, in which projects, need this record; entries are `<projectKey>:<feature>` and an unqualified one is REFUSED, since a bare slug is ambiguous across projects. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--required-by p:f,q:g] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>] [--if-version <n>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --required-by is the USAGE mirror of a plan feature's `requires` — which features, in which projects, need this record; entries are `<projectKey>:<feature>` and an unqualified one is REFUSED, since a bare slug is ambiguous across projects. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). --if-version <n> is OPTIMISTIC CONCURRENCY: the write is REJECTED (nothing changes) unless the record's current rev is exactly n, so a bulk pass cannot clobber a librarian edit that landed since it read. Read the current rev with `{prog} impl history <id>`; a record that has never been stamped, and one that does not exist yet, both read as rev 0. PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
-         {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
+         {prog} impl suppress <id> [--superseded-by <new-id>] [--seed]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored). --seed (#170) ALSO removes the id from the PACKAGED seed (`src-tauri/data/knowledge/algorithms.json`) that `scripts/emit-records.mjs` and the build actually read — a store-only tombstone stops the runtime reconcile but is invisible to the build, so the retired module kept shipping
   \
-         {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`
+         {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`. Has no --seed counterpart: `suppress --seed` removes the record from the packaged seed entirely, so nothing is left in the process to restore — revert that with git
          {prog} impl history <id>                       # the write log (#72): rev, who, when, what CHANGED and what was DROPPED per write — the same shape as `bsc ui log`, from the same shared stamp
   \
          {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
@@ -3101,7 +3309,7 @@ fn help(prog: &str) -> String {
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
          {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest each top-level module as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has nested module directories, declares a module with no matching file, or declares a *_test/*_tests module harvest skips — and VERIFIES with a real build before it finishes\n\n\
          {prog} reseed [--id a,b] [--all] [--check] [--root <dir>]   # the SEED → RUNTIME STORE direction, the exact inverse of `promote --seed`. The per-user runtime store is the AUTHORING copy, and it can fall BEHIND what ships: after a refactor lands in the packaged seed, a machine that did not author it keeps serving the old body — and an impl's `provides` BEATS the platform registry, so the stale copy is handed to the page even when the bundle is perfectly correct. NO GATE CAN SEE THIS: tsc and vitest read `.bsc-records/`, emitted FROM the seed, so every gate reads a copy that is right and the only wrong one is on the user's disk. `--check` reports and exits non-zero. There is deliberately NO bare form — this OVERWRITES authoring, so name `--id a,b` or say `--all`
-         {prog} promote [--id a,b] [--check] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
+         {prog} promote [--id a,b] [--check] [--seed] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — or, with --seed, into the PACKAGED seed at src-tauri/data/knowledge/algorithms.json (what SHIPS and what a fresh install reconciles against; a record can legitimately be in one and not the other). --seed projects to the 15 fields the seed actually carries, normalises a file EXTENSION found in `tech` (`ts` -> `typescript`), prunes a `composes` target that is not an impl, and DECLINES any record whose promotion would stop a specifier something still imports from resolving — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
          {prog} build <id> | build --all [--wasm] [--force]   # compile a Tier-R node from its own composes closure and STAMP the verdict onto it, so `impl get` answers 'does this compile?' without running anything. The hash covers the MATERIALIZED source + the toolchain + the flags, because all three change the answer; an unchanged hash is reported `cached` and recompiles nothing, unless the artifact it names is gone — a cache that vanished must re-derive, never be trusted. `--wasm` adds the wasm32 target and writes the artifact to a CONTENT-ADDRESSED sidecar (~/.base-studio-code/knowledge/artifacts/<sha>.wasm), never inline: the store is 8.74 MB and every reader parses it\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): ANY language — `--tech` is not validated and never has been. Each impl `composes` other same-tech impls, rooted in that language's primitives, so a new tech simply starts its own kit (`--tech python` works today; the packaged kits are typescript · rust).\n\
@@ -3859,6 +4067,84 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #123 — a bare `tests harvest` walks the WHOLE store, so pairing one just-harvested record used to
+    /// rewrite every other impl that happened to share the pass. `--id` scopes the write to the named
+    /// ids: `b.ts` carries an equally real colocated test and must be left untouched when only `a.ts` is
+    /// named.
+    #[test]
+    fn tests_harvest_scopes_pairing_to_named_ids_via_id_flag() {
+        let dir = crate::unique_temp("testsharvest-id");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env — the same
+        // accepted-racy pattern `impl_set_writes_and_clears_module_state` already uses, since
+        // `BSC_GRAPH_STORE` is process-global while Rust tests run in parallel.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(repo.join("src/x")).unwrap();
+        std::fs::write(repo.join("src/x/a.ts"), "export function a() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/a.test.ts"),
+            "describe(\"a\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+        std::fs::write(repo.join("src/x/b.ts"), "export function b() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/b.test.ts"),
+            "describe(\"b\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+
+        let set = |id: &str, src: &str| {
+            run(
+                vec![
+                    "impl".into(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), id.into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), id.into(),
+                    "--code".into(), "export function x() {}".into(),
+                    "--src".into(), src.into(),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+        };
+        set("a.ts", "src/x/a.ts");
+        set("b.ts", "src/x/b.ts");
+
+        // Unconfined for this call, like `harvest_and_curate_refuse_a_target_outside_the_sessions_
+        // confinement_root` — the fixture lives under the OS temp dir, not this crate's own root, and
+        // this test's own confinement is not what it is checking. Without this the test's result
+        // depends on whether the CALLING session happens to have `$BSC_REPO_ROOT` set, which is exactly
+        // the ambient-env dependency #3475 exists to avoid asserting around.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
+                    "--id".into(), "a.ts".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let has_tests = |id: &str| {
+            crate::implementations()
+                .into_iter()
+                .find(|i| i.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|i| i.get("tests").cloned())
+                .is_some()
+        };
+        assert!(has_tests("a.ts"), "the named id is paired");
+        assert!(!has_tests("b.ts"), "an unnamed id is left alone even though it also has a colocated test");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn impl_get_field_raw_out_writes_the_code_verbatim_to_the_scratch_dir() {
         // #137, the motivating case: `impl set --code-file` already reads a module from DISK (#76)
@@ -4456,6 +4742,219 @@ mod tests {
     }
 
     #[test]
+    fn impl_suppress_seed_removes_it_from_the_packaged_seed_too() {
+        // #170 (request from claude): a runtime-only tombstone is invisible to
+        // `scripts/emit-records.mjs`, which builds `.bsc-records/` straight off
+        // `src-tauri/data/knowledge/algorithms.json` and has never heard of the runtime store — so
+        // `bsc graph impl suppress pending-pty-data.ts && npm run emit:records` still emitted
+        // `.bsc-records/app/console/lib/pendingPtyData.ts`. This is the Rust half of that exact repro:
+        // `--seed` must remove the record from the packaged file emit-records actually reads, not only
+        // stamp a runtime tombstone.
+        let dir = crate::unique_temp("implsuppress-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = dir.join("store.json");
+        let data_dir = dir.join("data");
+        let seed_path = data_dir.join("knowledge").join("algorithms.json");
+        std::fs::create_dir_all(seed_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &seed_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": 2,
+                "implementations": [
+                    { "id": "pending-pty-data.ts", "role": "algorithm", "tech": "typescript",
+                      "name": "pendingPtyData", "provides": "@/app/console/lib/pendingPtyData",
+                      "code": "export const pendingPtyData = 1;", "composes": [] },
+                    { "id": "consumer.ts", "role": "algorithm", "tech": "typescript", "name": "consumer",
+                      "provides": "@/app/console/lib/consumer", "code": "export const consumer = 1;",
+                      "composes": ["pending-pty-data.ts"] },
+                ],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        // SAFETY: single-threaded test setup, before any other thread reads either var.
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        // `suppress` requires the id to be KNOWN — a real seeded id is checked via `is_seeded`, which
+        // reads the CACHED, process-wide `crate::seed()` (not `BSC_DATA_DIR`-aware once initialized).
+        // Landing it in the runtime store first sidesteps that cache, exactly as
+        // `tests_set_seed_lands_the_test_on_the_packaged_seed_record_too` does above.
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "pending-pty-data.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "pendingPtyData".into(),
+                "--code".into(), "export const pendingPtyData = 1;".into(),
+                "--provides".into(), "@/app/console/lib/pendingPtyData".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let out = run(
+            vec!["impl".into(), "suppress".into(), "pending-pty-data.ts".into(), "--seed".into()],
+            "bsc graph",
+        );
+        assert!(out.is_ok(), "{out:?}");
+
+        // The PACKAGED SEED FILE — what `emit-records.mjs`'s `collectSeeds()` reads — no longer
+        // carries an `implementations` entry for it, so a re-emit cannot materialize the module.
+        let seed_after: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let ids: Vec<String> = seed_after
+            .get("implementations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        assert!(
+            !ids.contains(&"pending-pty-data.ts".to_string()),
+            "the packaged seed must no longer carry the suppressed id: {ids:?}"
+        );
+
+        // A tombstone is recorded on the seed too, mirroring the runtime shape.
+        let seed_tomb = seed_after
+            .get("suppressed")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|t| t.get("id").and_then(Value::as_str) == Some("pending-pty-data.ts"));
+        assert!(seed_tomb.is_some(), "the seed itself should record why the id is gone");
+
+        // The scrub reaches other seed records' `composes` too, exactly as the runtime store's does.
+        let consumer_composes = seed_after
+            .get("implementations")
+            .and_then(Value::as_array)
+            .and_then(|arr| {
+                arr.iter().find(|im| im.get("id").and_then(Value::as_str) == Some("consumer.ts"))
+            })
+            .and_then(|im| im.get("composes").cloned());
+        assert_eq!(consumer_composes, Some(serde_json::json!([])));
+
+        // The RUNTIME store still carries its own tombstone too — `--seed` is additive, never a
+        // substitute for it.
+        let g = crate::load();
+        assert!(crate::is_suppressed(&g, "pending-pty-data.ts"));
+
+        // Idempotent (#77), same as a store-only suppress: running it again must not error, and must
+        // not duplicate the seed tombstone.
+        let out2 = run(
+            vec!["impl".into(), "suppress".into(), "pending-pty-data.ts".into(), "--seed".into()],
+            "bsc graph",
+        );
+        assert!(out2.is_ok(), "{out2:?}");
+        let seed_after2: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let tomb_count = seed_after2
+            .get("suppressed")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|t| t.get("id").and_then(Value::as_str) == Some("pending-pty-data.ts"))
+            .count();
+        assert_eq!(tomb_count, 1, "re-suppressing must not append a second tombstone");
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn impl_unsuppress_seed_is_refused() {
+        // Reversing `suppress --seed` needs the retired body back, and that body is gone from the
+        // packaged file — nothing in this process can resurrect it. `unsuppress --seed` must refuse
+        // loudly rather than silently accept a flag that does nothing.
+        let dir = crate::unique_temp("implunsuppress-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("store.json");
+
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let err = run(
+            vec!["impl".into(), "unsuppress".into(), "whatever.ts".into(), "--seed".into()],
+            "bsc graph",
+        )
+        .unwrap_err();
+        assert!(err.contains("no --seed counterpart"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn impl_suppress_is_idempotent_for_a_custom_id_not_masked_by_the_cached_seed() {
+        // Found while verifying #170 end-to-end with the REAL binary across two separate process
+        // invocations. The in-process idempotency test above (`impl_suppress_seed_removes_it_from_the_
+        // packaged_seed_too`) suppresses the SAME id twice inside ONE test process, and `crate::seed()`
+        // caches the packaged JSON for the process's lifetime — so its second call still sees
+        // `is_seeded("pending-pty-data.ts") == true` even though the on-disk seed file was just
+        // stripped, and the "known" gate below never actually re-evaluates against the post-removal
+        // world. A real second `bsc` process does re-evaluate it, found it neither live nor seeded, and
+        // wrongly refused with "unknown implementation" — breaking the exact idempotence #77 promises.
+        //
+        // This reproduces the SAME "known" gate bug WITHOUT any process boundary, and shows it predates
+        // `--seed` entirely: a CUSTOM id (never in any seed) that is suppressed once is neither live
+        // (removed) nor seeded (never was) on a second call — the runtime tombstone (`is_suppressed`)
+        // was the only truthful "this id is real" signal missing from the gate.
+        let dir = crate::unique_temp("implsuppress-idempotent-custom");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("store.json");
+        // An empty seed — `is_seeded` is genuinely, not cache-masked, false for any id here.
+        let data_dir = dir.join("data");
+        let seed_path = data_dir.join("knowledge").join("algorithms.json");
+        std::fs::create_dir_all(seed_path.parent().unwrap()).unwrap();
+        std::fs::write(&seed_path, serde_json::to_string(&serde_json::json!({ "implementations": [] })).unwrap())
+            .unwrap();
+
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "custom-x.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "customX".into(),
+                "--code".into(), "export const customX = 1;".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        run(vec!["impl".into(), "suppress".into(), "custom-x.ts".into()], "bsc graph").unwrap();
+
+        // The second call is the regression: `custom-x.ts` is now neither live nor seeded, and before
+        // the fix that combination was refused as "unknown implementation" instead of being treated as
+        // the idempotent re-suppress #77 promises.
+        let out2 = run(vec!["impl".into(), "suppress".into(), "custom-x.ts".into()], "bsc graph");
+        assert!(out2.is_ok(), "{out2:?}");
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn provenance_is_declared_by_src_folder_or_an_explicit_opt_out() {
         let bare = serde_json::json!({ "id": "x.rs" });
         let with_src = serde_json::json!({ "id": "x.rs", "src": "crates/x/src/lib.rs" });
@@ -4748,8 +5247,8 @@ mod batch_retired_tests {
         });
         let mut skipped = Vec::new();
 
-        set_impl_skipping_retired(&mut g, impl_json("llm-energy.ts"), &mut skipped).expect("not fatal");
-        set_impl_skipping_retired(&mut g, impl_json("fresh.ts"), &mut skipped).expect("the rest still land");
+        set_impl_skipping_retired(&mut g, impl_json("llm-energy.ts"), &mut skipped, "test", "test").expect("not fatal");
+        set_impl_skipping_retired(&mut g, impl_json("fresh.ts"), &mut skipped, "test", "test").expect("the rest still land");
 
         assert_eq!(skipped, vec!["llm-energy.ts".to_string()], "the skip is NAMED, not swallowed");
         let live: Vec<String> = crate::implementations_of(&g)
@@ -4766,7 +5265,7 @@ mod batch_retired_tests {
         let mut g = serde_json::json!({ "implementations": [] });
         let mut skipped = Vec::new();
         let bad = serde_json::json!({ "id": "b.ts", "tech": "typescript", "role": "not-a-role", "name": "B" });
-        assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped).is_err(), "a bad role still aborts");
+        assert!(set_impl_skipping_retired(&mut g, bad, &mut skipped, "test", "test").is_err(), "a bad role still aborts");
         assert!(skipped.is_empty());
     }
 }

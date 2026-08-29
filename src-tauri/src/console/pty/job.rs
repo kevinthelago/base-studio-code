@@ -138,6 +138,14 @@ impl Drop for PtyJob {
             // case, so we ignore the return value. SIGKILL (not SIGTERM) matches
             // the Windows job's unconditional kill-on-close and can't be trapped,
             // guaranteeing no surviving `claude`/`gh`/`git` descendants.
+            //
+            // ...and it SAYS SO. This is the app's own kill and it used to happen in silence, which
+            // is the one thing that makes an unexplained death unreadable: the session's own report
+            // now names the signal (`ChildEnd`), so the reader's next question is "did we send it?"
+            // and there has to be a line that answers yes. `pgid` is the session's child pid, which
+            // `pty_create` logs — so the two join, and an absent line here means the kill came from
+            // outside the app (systemd, the OOM killer, a PDEATHSIG) rather than from us.
+            log::warn!("pty-job: SIGKILL process group {pgid} — the app is tearing this session down");
             unsafe { libc::killpg(pgid, libc::SIGKILL); }
         }
     }

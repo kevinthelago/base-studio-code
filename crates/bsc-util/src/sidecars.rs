@@ -93,6 +93,11 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "secret", context_env: None,
+        blurb: "the credential store: which services we are paired with and whether those pairings still work (metadata + status only — no verb reads a secret back)",
+        advertise: true,
+    },
+    Sidecar {
         name: "component", context_env: None,
         blurb: "the component library: proven components in technology-scoped kits (reuse, don't re-invent)",
         advertise: true,
@@ -174,7 +179,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "errors", "usage", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "teams", "component", "ui", "project", "files"],
+            ["plan", "errors", "usage", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "teams", "secret", "component", "ui", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }

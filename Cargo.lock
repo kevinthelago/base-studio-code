@@ -737,6 +737,7 @@ dependencies = [
  "bsc-request",
  "bsc-runtime",
  "bsc-sandbox",
+ "bsc-secret",
  "bsc-session",
  "bsc-shot",
  "bsc-sound",
@@ -1072,6 +1073,18 @@ dependencies = [
  "bsc-util",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-secret"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
+ "bsc-util",
+ "keyring",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1824,6 +1837,16 @@ dependencies = [
  "libc",
  "libdbus-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "dbus-secret-service"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "708b509edf7889e53d7efb0ffadd994cc6c2345ccb62f55cfd6b0682165e4fa6"
+dependencies = [
+ "dbus",
+ "zeroize",
 ]
 
 [[package]]
@@ -3403,6 +3426,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "byteorder",
+ "dbus-secret-service",
  "log",
  "security-framework 2.11.1",
  "security-framework 3.7.0",
