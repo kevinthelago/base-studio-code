@@ -168,6 +168,62 @@ pub fn content_of(rec: &Value) -> Value {
     c
 }
 
+
+/// Where the PACKAGED seed lives — the other store-to-file direction.
+///
+/// Not the same target as [`path_under`], and the difference matters: `graph/algorithms.json` is what
+/// the BUILD compiles, while this is what SHIPS and what a fresh install reconciles against. A record
+/// can legitimately be in one and not the other.
+pub fn seed_path_under(root: &Path) -> PathBuf {
+    root.join("src-tauri").join("data").join("knowledge").join("algorithms.json")
+}
+
+/// Every field the packaged impl seed actually carries, in the order it reads best.
+///
+/// Derived from the 667 shipped records rather than hand-maintained — the list this replaces had
+/// drifted to omit `kind`, `summary`, `tests` and `vizCode`, so promoting over an existing entry
+/// silently dropped whichever of those it had.
+pub const SEED_FIELDS: &[&str] = &[
+    "id", "tech", "name", "role", "domain", "folder", "src", "provides", "composes", "kind",
+    "summary", "ref", "tests", "code", "vizCode",
+];
+
+/// Project a runtime record down to what the SEED ships.
+///
+/// [`content_of`] drops the provenance; this additionally drops the store-side harvest metadata
+/// (`moduleAttrs`, `moduleVis`) that none of the 667 packaged records carries and that nothing in the
+/// tree reads by name. Keeping the projection to the seed's own observed shape is what makes a
+/// promoted record byte-comparable with the ones already there.
+pub fn seed_content_of(rec: &Value) -> Value {
+    let full = content_of(rec);
+    let mut out = serde_json::Map::new();
+    for k in SEED_FIELDS {
+        if let Some(v) = full.get(*k) {
+            if !v.is_null() {
+                out.insert((*k).to_string(), v.clone());
+            }
+        }
+    }
+    // `composes` is required by the seed's own integrity guard, and an absent one reads as a missing
+    // field rather than "composes nothing".
+    out.entry("composes".to_string()).or_insert_with(|| Value::Array(vec![]));
+    // NORMALISE `tech`. A runtime record can carry the file EXTENSION where the tech belongs —
+    // `extract.rs` maps the extension `ts` to the tech `typescript`, and the packaged seed is
+    // uniformly `typescript` (640) and `rust` (26) with exactly one stray `ts`. Promoting that stray
+    // verbatim drops the record out of its technology tab, which nothing surfaces as an error.
+    if let Some(t) = out.get("tech").and_then(Value::as_str) {
+        let canon = match t {
+            "ts" | "tsx" => Some("typescript"),
+            "rs" => Some("rust"),
+            _ => None,
+        };
+        if let Some(c) = canon {
+            out.insert("tech".into(), Value::String(c.to_string()));
+        }
+    }
+    Value::Object(out)
+}
+
 /// Apply a promotion: return the repo store with each named id replaced by the runtime version.
 ///
 /// Ids absent upstream are reported rather than dropped — silently removing a record because the
