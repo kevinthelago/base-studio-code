@@ -847,7 +847,20 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
                  with `impl set`"
             )
         })?;
-    next["tests"] = tests.clone();
+    // UPSERT by name, not replace: a record's `tests` array can carry several sibling tests
+    // (#147) — session-roles.ts carries two, one per exported symbol. `--src`/`--name` name
+    // exactly ONE of them; overwriting the whole array here silently dropped every other test
+    // the record was carrying, and #145's sync then faithfully propagated the loss to the seed
+    // — the second test stopped being emitted and stopped running, gate green throughout,
+    // because a test that no longer exists cannot fail.
+    let entry = serde_json::json!({ "name": name, "src": contents });
+    match next.get_mut("tests").and_then(Value::as_array_mut) {
+        Some(arr) => match arr.iter_mut().find(|t| t.get("name").and_then(Value::as_str) == Some(name.as_str())) {
+            Some(existing) => *existing = entry,
+            None => arr.push(entry),
+        },
+        None => next["tests"] = serde_json::json!([entry]),
+    }
     crate::set_impl(&mut g, next)?;
     crate::save(&g)?;
 
@@ -2023,6 +2036,123 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `tests harvest <dir>` (#4126) mirrors every impl's colocated test onto its node; `tests set`
         // (#140) pairs ONE record's test without needing a whole repo tree to resolve against. See
         // [`tests_harvest`] and [`tests_set`] for the reasoning behind each.
+        "reseed" => {
+            let check = args.iter().any(|a| a == "--check");
+            let all = args.iter().any(|a| a == "--all");
+            let named = flag_value(&args, "--id");
+            // REFUSE BEFORE READING ANYTHING. A usage error should not depend on whether a seed and a
+            // runtime store happen to exist — and reaching this check only after the reads made it
+            // unreachable in any test harness that points `--root` at an empty dir.
+            if !check && named.is_none() && !all {
+                return Err(
+                    "reseed OVERWRITES the runtime store from the packaged seed — name what to \
+                     take with `--id a,b`, or `--all` for every drifted record. Run `--check` first."
+                        .to_string(),
+                );
+            }
+            let root = flag_value(&args, "--root")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+            let seed_path = crate::repo_store::seed_path_under(&root);
+            let seed = crate::repo_store::read_at(&seed_path)?
+                .ok_or_else(|| format!("no packaged seed at {}", seed_path.display()))?;
+
+            // The runtime store is read DIRECTLY, never through `load()`: load() reconciles the
+            // packaged seed, so on a machine with no store it would report everything as identical
+            // and this verb would silently do nothing.
+            let store_path = crate::store_path().ok_or("no home dir — cannot reach the runtime store")?;
+            let store = crate::repo_store::read_at(&store_path)?
+                .ok_or_else(|| format!("no runtime store at {}", store_path.display()))?;
+
+            let seed_impls = crate::repo_store::impls_of(&seed);
+            let store_impls = crate::repo_store::impls_of(&store);
+            let by_id = |v: &[serde_json::Value]| -> std::collections::BTreeMap<String, serde_json::Value> {
+                v.iter()
+                    .filter_map(|i| {
+                        i.get("id").and_then(serde_json::Value::as_str).map(|k| (k.to_string(), i.clone()))
+                    })
+                    .collect()
+            };
+            let seeded = by_id(&seed_impls);
+            let stored = by_id(&store_impls);
+
+            // Drifted = present in BOTH and differing through the seed projection. A record the store
+            // does not have is an ADDITION, reported separately: putting it there is a different
+            // decision from refreshing one that is already there and stale.
+            let mut drifted: Vec<String> = Vec::new();
+            let mut absent: Vec<String> = Vec::new();
+            for (id, s_rec) in &seeded {
+                match stored.get(id) {
+                    None => absent.push(id.clone()),
+                    Some(t) => {
+                        if crate::repo_store::seed_content_of(s_rec)
+                            != crate::repo_store::seed_content_of(t)
+                        {
+                            drifted.push(id.clone());
+                        }
+                    }
+                }
+            }
+            drifted.sort();
+            absent.sort();
+
+            if check {
+                emit(&serde_json::json!({
+                    "seed": seed_path.to_string_lossy(), "store": store_path.to_string_lossy(),
+                    "drifted": drifted, "absentFromStore": absent, "ok": drifted.is_empty(),
+                }))?;
+                if !drifted.is_empty() {
+                    return Err(format!(
+                        "the runtime store is behind the packaged seed — {} drifted ({}). \
+                         Run `bsc graph reseed --all` to bring it forward.",
+                        drifted.len(),
+                        drifted.join(", "),
+                    ));
+                }
+                return Ok(());
+            }
+
+            // OVERWRITING SOMEONE'S AUTHORING IS AN EXPLICIT DECISION, which is why there is no bare
+            // form. `promote` defaults to "refresh what is already tracked" because the worst case
+            // there is shipping a stale record; here the worst case is destroying the only copy of an
+            // edit, so the caller has to say `--all` or name the ids.
+            // Guarded above, before any I/O.
+            let ids: Vec<String> = match named {
+                Some(v) => v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                None => drifted.clone(),
+            };
+
+            let mut next = store.clone();
+            let mut wrote = Vec::new();
+            let mut unknown = Vec::new();
+            {
+                let list = next
+                    .get_mut("implementations")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .ok_or("the runtime store has no `implementations` array")?;
+                for id in &ids {
+                    let Some(fresh) = seeded.get(id) else {
+                        unknown.push(id.clone());
+                        continue;
+                    };
+                    match list.iter().position(|i| {
+                        i.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())
+                    }) {
+                        Some(at) => list[at] = fresh.clone(),
+                        None => list.push(fresh.clone()),
+                    }
+                    wrote.push(id.clone());
+                }
+            }
+            if !unknown.is_empty() {
+                return Err(format!("not in the packaged seed: {}", unknown.join(", ")));
+            }
+            crate::save_at(&store_path, &next)?;
+            emit(&serde_json::json!({
+                "ok": true, "store": store_path.to_string_lossy(),
+                "reseeded": wrote.len(), "records": wrote,
+            }))
+        }
         "tests" => match positional.get(1).copied() {
             Some("set") => emit(&tests_set(&args)?),
             Some("harvest") => {
@@ -3960,6 +4090,121 @@ mod tests {
     /// the packaged seed file directly, verified by reading that file back off disk (not through
     /// `crate::seed()`, which caches its first read for the process and would not see this write).
     #[test]
+    fn tests_set_upserts_by_name_and_does_not_drop_sibling_tests() {
+        let dir = crate::unique_temp("testsset-siblings");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "session-roles.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "session-roles".into(),
+                "--code".into(), "export function sessionRoles() {}".into(),
+                "--src".into(), "src/shared/lib/session/sessionRoles.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-siblings-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let e0 = src_dir.join("e0.ts");
+        let e0_contents = "it('scopeWriteGlobs (#1297)', () => {});\n";
+        std::fs::write(&e0, e0_contents).unwrap();
+        let e1 = src_dir.join("e1.ts");
+        let e1_contents = "it('the persona floors are the role capability table', () => {});\n";
+        std::fs::write(&e1, e1_contents).unwrap();
+
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), e0.to_string_lossy().into_owned(),
+                    "--name".into(), "scopeWriteGlobs (#1297)".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), e1.to_string_lossy().into_owned(),
+                    "--name".into(), "the persona floors are the role capability table".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let tests = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("session-roles.ts"))
+            .and_then(|i| i.get("tests").cloned())
+            .and_then(|t| t.as_array().cloned())
+            .expect("session-roles.ts carries a tests array");
+        assert_eq!(tests.len(), 2, "both sibling tests must survive: {tests:?}");
+        assert_eq!(
+            tests,
+            vec![
+                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_contents }),
+                serde_json::json!({
+                    "name": "the persona floors are the role capability table",
+                    "src": e1_contents,
+                }),
+            ],
+        );
+
+        // Re-setting an EXISTING name replaces only that entry, not the array.
+        let e0_updated = src_dir.join("e0-updated.ts");
+        let e0_updated_contents = "it('scopeWriteGlobs (#1297)', () => { /* updated */ });\n";
+        std::fs::write(&e0_updated, e0_updated_contents).unwrap();
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), e0_updated.to_string_lossy().into_owned(),
+                    "--name".into(), "scopeWriteGlobs (#1297)".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let tests = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("session-roles.ts"))
+            .and_then(|i| i.get("tests").cloned())
+            .and_then(|t| t.as_array().cloned())
+            .expect("session-roles.ts carries a tests array");
+        assert_eq!(tests.len(), 2, "re-setting an existing name must not grow the array: {tests:?}");
+        assert_eq!(
+            tests,
+            vec![
+                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_updated_contents }),
+                serde_json::json!({
+                    "name": "the persona floors are the role capability table",
+                    "src": e1_contents,
+                }),
+            ],
+        );
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+    #[test]
     fn tests_set_seed_lands_the_test_on_the_packaged_seed_record_too() {
         let dir = crate::unique_temp("testsset-seed");
         let _ = std::fs::remove_dir_all(&dir);
@@ -4777,4 +5022,5 @@ mod reseed_tests {
         // The drift guard: a verb missing from VERBS drops out of the help-coverage test.
         assert!(VERBS.contains(&"reseed"));
     }
+
 }
