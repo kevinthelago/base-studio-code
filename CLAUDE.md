@@ -91,12 +91,54 @@ PROFILE_SECONDS=600 npm run profile:glance   # a longer window
 
 ```bash
 npm run dev               # Vite dev server — frontend only (hot-reload)
-npm run dev:app           # the FULL app, with build/launch failures recorded (see below)
+npm run dev:app           # the FULL app — run this from wt-app, NOT the repo root (see below)
 npm run tauri -- dev      # the same launch, unrecorded
 npm run tauri -- build    # Production build (creates platform installer)
 cargo test                # Run Rust backend tests
 npm run typecheck    # TypeScript type-check without emit
+npm run promote           # gate develop, then fast-forward the app's tree (never restarts it)
 ```
+
+### The app runs from its OWN worktree — never from the tree you merge into
+
+**`npm run dev:app` belongs in `wt-app`, not at the repo root.** `tauri dev` watches its checkout and
+relaunches on a source change, and the repo root is where every `git merge --no-ff` lands — so
+integrating work restarted the app under whoever was using it, and the person doing the integrating was
+the person being interrupted. MEASURED across one session's five merges: 4 of 5 wrote files under
+`src/`, `src-tauri/src/` or `crates/` (4, 2, 1, 0 and 7 watched files). Every one would have rebuilt and
+relaunched.
+
+That is not fixable by narrowing a watcher — those are real source changes it is right to notice. Two
+narrower causes WERE fixed and are still in force: `.taurignore` stops a record write rebuilding
+(`data/components/`, `data/knowledge/`), and the vite watcher ignores `.claude/worktrees` as it does
+`wt-*`. What remained was integration itself.
+
+```
+main     ← the ref the app RUNS from; wt-app is checked out on it
+develop  ← where every branch integrates, in the main checkout
+```
+
+```bash
+git worktree add wt-app main     # ONE TIME (zero-install — vite pre-bundles from the shared node_modules)
+cd wt-app && npm run dev:app     # run the app from here, always
+
+npm run promote                  # full gate on develop, then fast-forward main. NEVER restarts the app.
+npm run promote -- --dry-run     # what would move
+npm run promote -- --skip-gate   # you just gated develop yourself
+```
+
+`npm run promote` is **explicit and never automatic** — choosing the moment the app changes is the
+entire point, and an automatic restart would reintroduce the problem with extra steps. It refuses
+rather than works around: a dirty app tree (uncommitted work in the RUNNING copy is the only thing here
+that cannot be recovered), a detached HEAD, and an app branch AHEAD of develop — which means something
+committed straight to `main`, a fault to look at rather than paper over with a merge commit. The
+fast-forward happens INSIDE `wt-app`, because git refuses to move a branch checked out elsewhere and
+that is the right place anyway. Guards are pinned in `scripts/promote-plan.test.ts`.
+
+Hot-swapping the app instead is **not** available and that is settled: the `bsc` sidecar swaps because
+it is a separate short-lived binary (`a-resolved-request-goes-live-without-a-restart`), while the app's
+Rust half is a live process behind a webview — `sub-second-command-surface-requires-an-interpreted-surface`
+records that a rebuild cannot get there.
 
 ### When a build or launch fails, it records itself
 
