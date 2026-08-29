@@ -54,3 +54,19 @@ Thumbs.db
 # which is a confusing mess to unpick and easy to commit by accident. Ignoring the convention itself is
 # cheaper than remembering not to.
 wt-*/
+
+# Editor / shell config that must never be tracked, and which tooling sandboxes
+# materialise as empty files at the repo root. Left untracked they show up in
+# `git status --porcelain`, which is what `npm run promote` reads to decide whether
+# the app tree is dirty — so stray 0-byte dotfiles would block every promote.
+.bashrc
+.bash_profile
+.profile
+.zshrc
+.zprofile
+.gitconfig
+.ripgreprc
+.idea/
+.idea
+.vscode/
+.vscode
