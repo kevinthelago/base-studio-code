@@ -209,8 +209,100 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             refuse_if_builtin(&bsc_json_store::Store::new(dir.clone(), SPEC.noun), id, prog, "remove")?;
         }
     }
+    // `set` is intercepted too — see `set_persona`'s doc comment for why a plain verbatim upsert
+    // silently destroys a builtin's `proseSeal` (#172).
+    if args.first().map(String::as_str) == Some("set") && args.get(1).map(String::as_str) != Some("help") {
+        return set_persona(&args, &dir, prog);
+    }
     let validate = |items: &[serde_json::Value]| validate_floor_batch(items, &dir, prog);
     bsc_json_store::cli::run_hooked_validated(args, prog, &SPEC, None, Some(&validate))
+}
+
+/// `set` — upsert, carrying a builtin's `proseSeal`/`replacedProse` FORWARD when the payload omits them.
+///
+/// The generic store CLI's `set` is a whole-record verbatim upsert (see `rename`'s doc comment above
+/// for why that is right for nearly everything a persona carries): a session that `get`s a persona,
+/// edits it, and `set`s the whole object back — the ONLY way to author into this store — will do so
+/// without `proseSeal`/`replacedProse`, since nothing outside the frontend's `reconcilePersonas`
+/// (`persona.ts`) ever computes a prose fingerprint.
+///
+/// A plain verbatim overwrite therefore DROPS a builtin's existing seal whenever a caller edits its
+/// prose this way — and dropping it is not neutral: `reconcilePersonas` reads an absent `proseSeal` as
+/// "never sealed" (bootstrap provenance), which it treats as safe to re-seed from the packaged prose
+/// on the very next hydrate — silently REVERTING the just-written edit and filing it away into
+/// `replacedProse` instead. That is exactly what happened to the director's first attempt at
+/// `bsc request 172` (`bsc plan get request-172-persona-worker-logging-perf-ownership`): a correct
+/// `get` → edit → `set` round-trip on `persona-worker`'s `startPrompt` landed, then vanished on the
+/// next app hydrate.
+///
+/// The fix is narrow: when the incoming item does not mention `proseSeal`/`replacedProse` at all, carry
+/// the STORED record's existing value forward rather than writing an absent one. Left untouched, an old
+/// seal correctly MISMATCHES the newly-written prose on the next reconcile — which is precisely the
+/// signal `reconcilePersonas` uses to recognize "a real edit happened, keep it" (see its doc comment).
+/// A user-authored persona (which never has a seal) round-trips exactly as before.
+fn set_persona(args: &[String], dir: &std::path::Path, prog: &str) -> Result<(), String> {
+    let mut pretty = false;
+    let mut file: Option<String> = None;
+    let mut it = args.iter().skip(1); // skip "set" itself
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--pretty" => pretty = true,
+            "--file" => {
+                file = Some(it.next().cloned().ok_or_else(|| format!("{prog} set: --file needs a bare filename in $BSC_SCRATCH"))?)
+            }
+            "--dir" => {
+                it.next(); // already resolved into `dir` by the caller
+            }
+            other => return Err(format!("{prog} set: unknown flag '{other}'")),
+        }
+    }
+
+    let raw = bsc_cli_util::read_payload(file.as_deref())?;
+    let items: Vec<serde_json::Value> = bsc_sqlite_util::parse_json_items(&raw, SPEC.noun)?;
+    validate_floor_batch(&items, dir, prog)?;
+
+    let store = bsc_json_store::Store::new(dir.to_path_buf(), SPEC.noun);
+    let items: Vec<serde_json::Value> = items
+        .into_iter()
+        .map(|item| {
+            let id = item.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+            let existing = store
+                .get(id)
+                .ok()
+                .flatten()
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+            carry_forward_prose_seal(existing.as_ref(), item)
+        })
+        .collect();
+
+    // `bsc_json_store::cli::set_items` (the write loop) is private to that module, so it is inlined
+    // here over the same public `id_of` helper that module uses — upsert by `id`, verbatim, in order.
+    let mut ids = Vec::with_capacity(items.len());
+    for item in items {
+        let id = bsc_json_store::cli::id_of(&item, SPEC.noun)?;
+        let json = serde_json::to_string(&item).map_err(|e| format!("{prog} set: {e}"))?;
+        store.set(&id, &json)?;
+        ids.push(id);
+    }
+    bsc_sqlite_util::print_json(&ids, pretty);
+    Ok(())
+}
+
+/// For each of `proseSeal`/`replacedProse`: if `item` does not carry the key at all, and `existing`
+/// (the currently stored record, if any) does, copy `existing`'s value onto `item`. A key present in
+/// `item` — including an explicit `null`, which is how a caller would clear one deliberately — is
+/// always left as the caller wrote it.
+fn carry_forward_prose_seal(existing: Option<&serde_json::Value>, mut item: serde_json::Value) -> serde_json::Value {
+    let Some(existing) = existing.and_then(serde_json::Value::as_object) else { return item };
+    let Some(obj) = item.as_object_mut() else { return item };
+    for field in ["proseSeal", "replacedProse"] {
+        if !obj.contains_key(field) {
+            if let Some(v) = existing.get(field) {
+                obj.insert(field.to_string(), v.clone());
+            }
+        }
+    }
+    item
 }
 
 /// Resolve the store dir exactly as the shared scaffold does (`--dir` > env > default), so the clamp
@@ -1163,6 +1255,157 @@ mod tests {
         assert!(bsc_cli_util::help_for("bsc persona", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
 
+    // ── `set` carries a builtin's `proseSeal`/`replacedProse` forward (#172 follow-up) ─────────────
+    //
+    // `--file` (over `with_scratch`) rather than piped stdin — it is the same channel a restricted
+    // studio session must use, and the one this crate's own doc comments point to for exactly this
+    // reason: driving real stdin from a test is neither reliable nor how a caged session gets here.
+
+    fn set_via_file(dir: &std::path::Path, payload: &str) -> Result<(), String> {
+        let scratch_dir = std::env::temp_dir().join(format!("bsc-persona-set-scratch-{}-{:p}", std::process::id(), payload));
+        std::fs::create_dir_all(&scratch_dir).unwrap();
+        std::fs::write(scratch_dir.join("payload.json"), payload).unwrap();
+        let out = bsc_cli_util::with_scratch(Some(&scratch_dir.to_string_lossy()), || {
+            set_persona(&["set".into(), "--file".into(), "payload.json".into()], dir, "bsc persona")
+        });
+        let _ = std::fs::remove_dir_all(&scratch_dir);
+        out
+    }
+
+    /// The bug behind `bsc request 172`: a `get` → edit → `set` round trip on a BUILTIN's prose, with
+    /// the payload omitting `proseSeal`/`replacedProse` exactly as `bsc persona get`'s own output
+    /// would if a caller forgot to paste them back (or, per the request's own instructions, was told
+    /// to omit them and "let the store recompute them" — the store does not, so this is what makes
+    /// that instruction true rather than a trap). The old seal must survive the write UNCHANGED, not
+    /// be dropped and not be recomputed from the new content.
+    #[test]
+    fn set_carries_an_existing_prosseal_forward_when_the_payload_omits_it() {
+        let dir = scratch("seal-carry");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store
+            .set(
+                "persona-worker",
+                r#"{"id":"persona-worker","name":"Worker","role":"worker","builtin":true,
+                    "startPrompt":"old packaged prose",
+                    "proseSeal":{"startPrompt":"oldhash1","blurb":"oldhash2","responsibilities":"oldhash3"}}"#,
+            )
+            .unwrap();
+
+        // The realistic shape: `bsc persona get` verbatim, with just `startPrompt` edited — no
+        // `proseSeal` key at all, because nothing outside the frontend computes one.
+        set_via_file(
+            &dir,
+            r#"{"id":"persona-worker","name":"Worker","role":"worker","builtin":true,
+                "startPrompt":"NEW prose with the logging/perf section added"}"#,
+        )
+        .unwrap();
+
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-worker").unwrap().unwrap()).unwrap();
+        assert_eq!(v["startPrompt"], "NEW prose with the logging/perf section added", "the edit itself must land");
+        assert_eq!(
+            v["proseSeal"],
+            serde_json::json!({"startPrompt": "oldhash1", "blurb": "oldhash2", "responsibilities": "oldhash3"}),
+            "the OLD seal must survive untouched — recomputing or dropping it is what let reconcilePersonas \
+             read this as an unsealed bootstrap edit and revert it (see the fn doc comment)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `replacedProse` gets the identical treatment, and independently of `proseSeal` — a payload can
+    /// omit one and carry the other explicitly.
+    #[test]
+    fn set_carries_replaced_prose_forward_independently_of_prose_seal() {
+        let dir = scratch("seal-carry-replaced");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store
+            .set(
+                "persona-worker",
+                r#"{"id":"persona-worker","builtin":true,"startPrompt":"current",
+                    "proseSeal":{"startPrompt":"h1"},
+                    "replacedProse":{"startPrompt":"whatever an earlier bootstrap displaced"}}"#,
+            )
+            .unwrap();
+
+        set_via_file(&dir, r#"{"id":"persona-worker","builtin":true,"startPrompt":"edited again"}"#).unwrap();
+
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-worker").unwrap().unwrap()).unwrap();
+        assert_eq!(v["replacedProse"], serde_json::json!({"startPrompt": "whatever an earlier bootstrap displaced"}));
+    }
+
+    /// An explicit value in the payload — including a deliberate `null` clear — always wins. Carrying
+    /// forward is only for the OMITTED case; a caller who does state the field is never overridden.
+    #[test]
+    fn set_never_overrides_an_explicitly_stated_prose_seal() {
+        let dir = scratch("seal-explicit");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store.set("persona-worker", r#"{"id":"persona-worker","builtin":true,"proseSeal":{"startPrompt":"old"}}"#).unwrap();
+
+        set_via_file(
+            &dir,
+            r#"{"id":"persona-worker","builtin":true,"startPrompt":"x","proseSeal":{"startPrompt":"NEW-EXPLICIT"}}"#,
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-worker").unwrap().unwrap()).unwrap();
+        assert_eq!(v["proseSeal"], serde_json::json!({"startPrompt": "NEW-EXPLICIT"}));
+
+        // A literal `null` is a stated value too (a deliberate clear) — never backfilled.
+        set_via_file(&dir, r#"{"id":"persona-worker","builtin":true,"proseSeal":null}"#).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-worker").unwrap().unwrap()).unwrap();
+        assert!(v["proseSeal"].is_null());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A brand-new persona (nothing stored yet) has no existing record to carry anything forward from
+    /// — `set` must not error just because `store.get` came back empty.
+    #[test]
+    fn set_creates_a_new_persona_with_no_existing_record_to_carry_forward() {
+        let dir = scratch("seal-new");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        set_via_file(&dir, r#"{"id":"persona-new","name":"New","role":"reviewer"}"#).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&store.get("persona-new").unwrap().unwrap()).unwrap();
+        assert_eq!(v["name"], "New");
+        assert!(v.get("proseSeal").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A user-authored persona (never sealed) round-trips exactly as it always did: no `proseSeal` in,
+    /// none appears out.
+    #[test]
+    fn set_leaves_an_unsealed_user_persona_unaffected() {
+        let dir = scratch("seal-user");
+        let store = bsc_json_store::Store::new(dir.clone(), "persona");
+        store.set("p1", r#"{"id":"p1","name":"One","role":"reviewer","startPrompt":"a"}"#).unwrap();
+        set_via_file(&dir, r#"{"id":"p1","name":"One","role":"reviewer","startPrompt":"b"}"#).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&store.get("p1").unwrap().unwrap()).unwrap();
+        assert_eq!(v["startPrompt"], "b");
+        assert!(v.get("proseSeal").is_none());
+    }
+
+    /// The floor clamp still runs FIRST — carrying the seal forward must not become a backdoor around
+    /// the narrow-only guard the batch validator enforces.
+    #[test]
+    fn set_still_refuses_a_widening_floor_even_with_a_sealed_prose_payload() {
+        isolated(|| {
+            let dir = scratch("seal-floor");
+            let store = bsc_json_store::Store::new(dir.clone(), "persona");
+            store
+                .set(
+                    "p1",
+                    r#"{"id":"p1","role":"designer","floor":{"github":"none","git":"none","code":"none","net":"none","ui":"read"},
+                        "proseSeal":{"startPrompt":"h"}}"#,
+                )
+                .unwrap();
+            let err = set_via_file(
+                &dir,
+                r#"{"id":"p1","role":"designer","floor":{"github":"none","git":"none","code":"none","net":"none","ui":"write"}}"#,
+            )
+            .unwrap_err();
+            assert!(err.contains("would WIDEN"), "{err}");
+            let v: serde_json::Value = serde_json::from_str(&store.get("p1").unwrap().unwrap()).unwrap();
+            assert_eq!(v["floor"]["ui"], "read", "the rejected batch must not have written anything");
+        });
+    }
+
     // ── `bsc persona use` — the checks that happen BEFORE the app is ever contacted ────────────────
     //
     // Everything here is deliberately reachable without a running app: the point of validating the
@@ -1352,18 +1595,39 @@ mod builtin_guard_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `set` stays open, and that is deliberate: `hydratePersonas` reconciles the packaged built-ins
-    /// and pushes newly-seeded ones back through it, so guarding `set` would break the mechanism that
-    /// RESTORES these records. Pinned as a decision so nobody "completes" the guard and breaks boot.
+    /// `set` stays OPEN to a builtin, and that is deliberate: `hydratePersonas` reconciles the
+    /// packaged built-ins and pushes newly-seeded ones back through it, so refusing a builtin write
+    /// the way `remove`/`rename` do would break the mechanism that RESTORES these records.
+    ///
+    /// Pinned BEHAVIORALLY rather than by grepping `run`'s source for the literal token `Some("set")`
+    /// (the previous form of this test): `set` gained its OWN interception in #172's follow-up, to
+    /// carry a builtin's `proseSeal`/`replacedProse` forward rather than dropping them (see
+    /// `set_persona`'s doc comment) — a change that does not refuse anything, but would have failed
+    /// the old text-matching assertion regardless. What this test actually needs to keep true is that
+    /// a builtin persona is still WRITABLE end to end through the public `run` entrypoint.
     #[test]
     fn set_is_deliberately_not_guarded() {
-        let src = include_str!("cli.rs");
-        let run = &src[src.find("pub fn run(").expect("run present")..];
-        let run = &run[..run.find("\n}").expect("end of run")];
-        assert!(run.contains("Some(\"remove\")"), "remove is intercepted");
-        assert!(
-            !run.contains("Some(\"set\")"),
-            "set must NOT be intercepted — seeding pushes built-ins back through it",
-        );
+        let dir = scratch("set-open");
+        let s = store_with(&dir, "persona-designer", true);
+
+        let scratch_dir = std::env::temp_dir().join(format!("bsc-persona-guard-set-scratch-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch_dir).unwrap();
+        std::fs::write(
+            scratch_dir.join("payload.json"),
+            r#"{"id":"persona-designer","name":"Renamed via set","role":"designer","builtin":true}"#,
+        )
+        .unwrap();
+        let result = bsc_cli_util::with_scratch(Some(&scratch_dir.to_string_lossy()), || {
+            run(
+                vec!["set".into(), "--file".into(), "payload.json".into(), "--dir".into(), dir.to_string_lossy().into_owned()],
+                "bsc persona",
+            )
+        });
+        let _ = std::fs::remove_dir_all(&scratch_dir);
+        result.expect("a builtin persona must remain settable — reseeding depends on it");
+
+        let v: serde_json::Value = serde_json::from_str(&s.get("persona-designer").unwrap().unwrap()).unwrap();
+        assert_eq!(v["name"], "Renamed via set");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
