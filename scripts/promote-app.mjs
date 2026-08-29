@@ -1,4 +1,5 @@
-// Promote `develop` into the tree the app RUNS from — explicitly, never on your behalf.
+// Promote `develop` into `main` AT THE REPO ROOT — the tree the app runs from — explicitly, never on
+// your behalf.
 // (#the-app-runs-from-its-own-tree-so-a-merge-never-restarts-it)
 //
 //   node scripts/promote-app.mjs [--dry-run] [--skip-gate] [--tree wt-app]
@@ -12,8 +13,16 @@
 // rebuilds and relaunches.
 //
 // Narrowing a watcher cannot fix that: those are real source changes the watcher is RIGHT to notice.
-// The fix is that the app does not run from the tree you merge into. `main` is the ref the app runs
-// from, `develop` is where work integrates, and `wt-app` is a worktree on `main`.
+// The fix is that the app does not run from the tree you merge into.
+//
+// THE ROOT IS THE APP'S TREE, and integration moved out. The root checks out `main` and is where
+// `npm run dev:app` runs; a worktree checks out `develop` and is where every branch merges. That
+// direction was chosen over parking the app in `wt-app` because the root is where a person expects to
+// find the application, and the surprise belongs on the transient activity (integrating) rather than
+// on the persistent one (running the thing you are building).
+//
+// Note what this needs and does not need: merging `develop` into `main` here requires only the
+// `develop` REF, not its checkout. So this script never has to know where the integration tree is.
 //
 // Two things this deliberately does NOT do:
 //
@@ -70,11 +79,9 @@ function appIsRunning(port = 1420) {
 }
 
 function parseArgs(argv) {
-  const t = argv.indexOf("--tree");
   return {
     dryRun: argv.includes("--dry-run"),
     skipGate: argv.includes("--skip-gate"),
-    tree: t === -1 ? "wt-app" : argv[t + 1],
   };
 }
 
@@ -85,29 +92,18 @@ function fail(msg) {
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const appTree = join(REPO_ROOT, opts.tree);
 
-  if (!existsSync(appTree)) {
-    fail(
-      `no app worktree at ${opts.tree}. Create it once:\n` +
-        `    git worktree add ${opts.tree} main\n` +
-        `  then run the app from there (npm run dev:app) instead of from the repo root.`,
-    );
-  }
-
-  const branch = existsSync(appTree)
-    ? git(["-C", appTree, "rev-parse", "--abbrev-ref", "HEAD"])
-    : null;
-  const dirty = branch ? git(["-C", appTree, "status", "--porcelain"]).split("\n").filter(Boolean) : [];
-  const behind = branch && branch !== "HEAD" ? Number(git(["rev-list", "--count", `${branch}..develop`])) : 0;
-  const ahead = branch && branch !== "HEAD" ? Number(git(["rev-list", "--count", `develop..${branch}`])) : 0;
+  const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+  const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
+  const behind = branch !== "HEAD" ? Number(git(["rev-list", "--count", `${branch}..develop`])) : 0;
+  const ahead = branch !== "HEAD" ? Number(git(["rev-list", "--count", `develop..${branch}`])) : 0;
 
   const { action, reason } = planPromote({ treeExists: true, branch, dirty, ahead, behind });
   if (action === "fail") {
     const why = {
-      "detached-head": `${opts.tree} is in detached HEAD; check out the app branch first.`,
+      "detached-head": "the repo root is in detached HEAD; check out the app branch (main) first.",
       "dirty-app-tree":
-        `${opts.tree} has uncommitted changes — refusing to promote over them:\n` +
+        "the repo root has uncommitted changes — refusing to promote over them:\n" +
         dirty.map((l) => `    ${l}`).join("\n"),
       "app-tree-ahead":
         `${branch} is ${ahead} commit(s) AHEAD of develop — it has history develop does not.\n` +
@@ -133,7 +129,9 @@ function main() {
   if (!opts.skipGate) {
     console.log(`[promote-app] running the FULL gate on develop before promoting…`);
     try {
-      execFileSync("npm", ["run", "gate", "--", "--full"], { cwd: REPO_ROOT, stdio: "inherit" });
+      // In the INTEGRATION tree, never here: `gate-tree-guard` refuses to run a second cargo over the
+      // target/ that `tauri dev` owns, and after the inversion that target/ is this one.
+      execFileSync("npm", ["run", "gate", "--", "--full"], { cwd: integrationTree(), stdio: "inherit" });
     } catch {
       fail("the gate FAILED — develop is not promotable. Nothing was moved.");
     }
@@ -146,15 +144,26 @@ function main() {
     return;
   }
 
-  // Fast-forward INSIDE the app tree: git refuses to move a branch that is checked out elsewhere, and
-  // this is the right place anyway — it is the moment the running copy changes.
-  git(["-C", appTree, "merge", "--ff-only", "develop"]);
+  git(["merge", "--ff-only", "develop"]);
   console.log(`[promote-app] ${branch} → ${git(["rev-parse", "--short", branch])}`);
   console.log(
     appIsRunning()
       ? `[promote-app] The app is RUNNING — it is rebuilding and will relaunch itself now.`
       : `[promote-app] The app is not running; it picks this up on its next launch.`,
   );
+}
+
+/** Where `develop` is checked out — the integration tree. Only the GATE needs it; the merge itself
+ *  needs just the ref. Falls back to the root, which is wrong but only costs a refusal from
+ *  `gate-tree-guard` rather than a corrupt build. */
+function integrationTree() {
+  const out = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: REPO_ROOT, encoding: "utf8" });
+  let path = null;
+  for (const line of out.split(/\r?\n/)) {
+    if (line.startsWith("worktree ")) path = line.slice("worktree ".length);
+    else if (line === "branch refs/heads/develop" && path) return path;
+  }
+  return REPO_ROOT;
 }
 
 main();
