@@ -29,6 +29,7 @@ compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-secret = { path = "../bsc-secret" }
+bsc-mem = { path = "../bsc-mem" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 bsc-mcp = { path = "../bsc-mcp" }

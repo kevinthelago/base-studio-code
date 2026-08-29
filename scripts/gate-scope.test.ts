@@ -341,3 +341,42 @@ describe("needsGateSlot", () => {
     expect(needsGateSlot(plan), "a scoped plan running the whole suite must queue").toBe(true);
   });
 });
+
+// Every leg is MEASURED, and the id it is measured under has to be stable — see `gateCommands`.
+describe("gate legs carry a stable measurement key", () => {
+  const full = gateCommands({ full: true }, "develop");
+  const scoped = gateCommands(
+    { full: false, runTsc: true, frontendFiles: ["src/a.ts"], runVitest: true, vitestUnscoped: false,
+      rustCrates: ["bsc-util"], runGraph: true },
+    "develop",
+  );
+
+  it("gives EVERY leg a key and a stage, so none is silently unmeasured", () => {
+    for (const leg of [...full, ...scoped]) {
+      expect(leg.key, `no key on "${leg.label}"`).toBeTruthy();
+      expect(leg.stage, `no stage on "${leg.label}"`).toBeTruthy();
+    }
+  });
+
+  it("uses only stages the fault taxonomy already knows", () => {
+    // A stage `errordb` does not recognise is refused by `bsc errors run`, which would turn a measured
+    // leg into a failed one — the gate breaking on its own instrumentation.
+    const KNOWN = ["install", "compile", "typecheck", "lint", "test", "build", "package", "deploy", "launch", "runtime", "supply"];
+    for (const leg of [...full, ...scoped]) expect(KNOWN).toContain(leg.stage);
+  });
+
+  // THE POINT OF SPLITTING key FROM label. The label moves between a scoped and a full run ("vitest"
+  // vs "vitest (--changed: module-graph affected)"); filing measurements under it would split one
+  // surface into two histories that can never be compared, which is what makes a trend worthless.
+  it("keys a scoped leg and its full-run twin identically, even though the labels differ", () => {
+    const pair = (key: string) => [full, scoped].map((set) => set.find((l) => l.key === key));
+    for (const key of ["vitest", "clippy", "nextest", "typecheck", "lint"]) {
+      const [f, sc] = pair(key);
+      expect(f, `full run has no ${key}`).toBeTruthy();
+      expect(sc, `scoped run has no ${key}`).toBeTruthy();
+      expect(f!.key).toBe(sc!.key);
+      expect(f!.stage).toBe(sc!.stage);
+    }
+    expect(scoped.find((l) => l.key === "vitest")!.label).not.toBe(full.find((l) => l.key === "vitest")!.label);
+  });
+});

@@ -4,7 +4,7 @@
 // -- dev` carries a second one) and the capability probe (because the first candidate binary predated
 // the verb, and delegating to it stopped the command it was supposed to be wrapping).
 import { describe, it, expect } from "vitest";
-import { splitArgs, helpAdvertisesRun } from "./record-run.mjs";
+import { splitArgs, helpAdvertisesRun, helpAdvertisesMeasureOnly } from "./record-run.mjs";
 
 describe("record-run: splitting our flags from the child's command", () => {
   it("splits at the FIRST bare `--`, so a command carrying its own still arrives whole", () => {
@@ -53,5 +53,36 @@ describe("record-run: is this bsc capable of `errors run`?", () => {
     // records nothing forever.
     expect(helpAdvertisesRun("")).toBe(false);
     expect(helpAdvertisesRun(undefined)).toBe(false);
+  });
+});
+
+describe("record-run: is this bsc capable of `--measure-only`?", () => {
+  // The SECOND version of the same failure the probe above exists for, and the reason it needed its
+  // own check: a binary can have `run` and still predate this flag. The staged `bsc` routinely does —
+  // it is refreshed only when the app boots — so the gate would hand `--measure-only` to a binary that
+  // exits 1 on an unknown flag, and every leg would fail with a flag error while the code under test
+  // was never compiled. A wrapper that can stop the build it wraps is worse than no wrapper.
+  it("says yes only when the run help actually advertises the flag", () => {
+    const withFlag = [
+      "USAGE:",
+      "  bsc errors run --stage <stage> [--source <tag>] [--measure-only] -- <cmd>…",
+      "  --measure-only record what the command COST and file NO fault.",
+    ].join("\n");
+    expect(helpAdvertisesMeasureOnly(withFlag)).toBe(true);
+  });
+
+  it("says no for a run-capable binary that predates the flag", () => {
+    const older = [
+      "USAGE:",
+      "  bsc errors run --stage <stage> [--project <key>] [--source <tag>] -- <cmd>…",
+      "  --source <t>   this producer's identity; defaults to the command itself.",
+    ].join("\n");
+    expect(helpAdvertisesRun("COMMANDS:\n  run      wrap a command")).toBe(true);
+    expect(helpAdvertisesMeasureOnly(older)).toBe(false);
+  });
+
+  it("treats no output at all as incapable", () => {
+    expect(helpAdvertisesMeasureOnly("")).toBe(false);
+    expect(helpAdvertisesMeasureOnly(undefined)).toBe(false);
   });
 });

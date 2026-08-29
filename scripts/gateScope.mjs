@@ -28,33 +28,38 @@
  * verdict. Same species as everything else this feature guards against: not a wrong answer, a
  * narrower one presented as the whole.
  */
+/// Each leg carries a stable `key` and a `stage` alongside its human `label`, and the two are separate
+/// on purpose. The LABEL is prose and moves ("vitest" vs "vitest (--changed: module-graph affected)");
+/// the KEY is what a recorded measurement is filed under, so a scoped run and a full run of the same
+/// leg land in ONE history rather than two that can never be compared. `stage` maps the leg onto the
+/// existing fault taxonomy rather than inventing a "gate" stage for it.
 export function gateCommands(plan, base) {
   const c = [];
   if (plan.full) {
-    c.push({ label: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
-    c.push({ label: "lint", cmd: "npm", args: ["run", "lint"] });
-    c.push({ label: "vitest", cmd: "npx", args: ["vitest", "run"] });
-    c.push({ label: "clippy", cmd: "cargo", args: ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"] });
-    c.push({ label: "nextest", cmd: "cargo", args: ["nextest", "run", "--workspace", "--no-fail-fast"] });
+    c.push({ label: "typecheck", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
+    c.push({ label: "lint", key: "lint", stage: "lint", cmd: "npm", args: ["run", "lint"] });
+    c.push({ label: "vitest", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] });
+    c.push({ label: "clippy", key: "clippy", stage: "lint", cmd: "cargo", args: ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"] });
+    c.push({ label: "nextest", key: "nextest", stage: "test", cmd: "cargo", args: ["nextest", "run", "--workspace", "--no-fail-fast"] });
     c.push(...graphCommands());
     return c;
   }
-  if (plan.runTsc) c.push({ label: "typecheck (whole-program — never scoped)", cmd: "npm", args: ["run", "typecheck"] });
+  if (plan.runTsc) c.push({ label: "typecheck (whole-program — never scoped)", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
   if (plan.frontendFiles.length) {
-    c.push({ label: "lint (changed files)", cmd: "npx", args: ["eslint", ...plan.frontendFiles] });
+    c.push({ label: "lint (changed files)", key: "lint", stage: "lint", cmd: "npx", args: ["eslint", ...plan.frontendFiles] });
   }
   if (plan.runVitest) {
     // A record-store change runs the suite UNSCOPED: `--changed` walks the module graph, and there is no
     // edge from a JSON blob to the modules `emit:records` materializes out of it. Scoping there would
     // report a green gate over tests it never selected.
     c.push(plan.vitestUnscoped
-      ? { label: "vitest (unscoped — a record store changed)", cmd: "npx", args: ["vitest", "run"] }
-      : { label: "vitest (--changed: module-graph affected)", cmd: "npx", args: ["vitest", "run", "--changed", base] });
+      ? { label: "vitest (unscoped — a record store changed)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] }
+      : { label: "vitest (--changed: module-graph affected)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run", "--changed", base] });
   }
   if (plan.rustCrates.length) {
     const p = plan.rustCrates.flatMap((x) => ["-p", x]);
-    c.push({ label: "clippy (scoped)", cmd: "cargo", args: ["clippy", ...p, "--all-targets", "--", "-D", "warnings"] });
-    c.push({ label: "nextest (scoped)", cmd: "cargo", args: ["nextest", "run", ...p, "--no-fail-fast"] });
+    c.push({ label: "clippy (scoped)", key: "clippy", stage: "lint", cmd: "cargo", args: ["clippy", ...p, "--all-targets", "--", "-D", "warnings"] });
+    c.push({ label: "nextest (scoped)", key: "nextest", stage: "test", cmd: "cargo", args: ["nextest", "run", ...p, "--no-fail-fast"] });
   }
   if (plan.runGraph) c.push(...graphCommands());
   return c;
@@ -88,9 +93,9 @@ export function gateCommands(plan, base) {
  */
 export function graphCommands() {
   return [
-    { label: "graph (rust nodes compile)", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
-    { label: "graph (repo store is current)", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
-    { label: "graph (the kits agree)", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
+    { label: "graph (rust nodes compile)", key: "graph-rust-compile", stage: "compile", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
+    { label: "graph (repo store is current)", key: "graph-promote-check", stage: "compile", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
+    { label: "graph (the kits agree)", key: "graph-cross-kit", stage: "test", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
   ];
 }
 

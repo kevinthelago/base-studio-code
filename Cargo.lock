@@ -729,6 +729,7 @@ dependencies = [
  "bsc-graph",
  "bsc-loop",
  "bsc-mcp",
+ "bsc-mem",
  "bsc-navigate",
  "bsc-network",
  "bsc-persona",
@@ -973,6 +974,19 @@ dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
  "bsc-util",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-mem"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "errordb",
+ "logs",
+ "rusqlite",
+ "serde",
  "serde_json",
 ]
 
@@ -2176,6 +2190,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sysinfo",
 ]
 
 [[package]]
