@@ -470,7 +470,20 @@ pub(super) fn cage_death_notice(
     Some(format!("\r\n\x1b[1;33m{body}\x1b[0m\r\n"))
 }
 
-/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee
+/// One batch of PTY output as the frontend receives it.
+///
+/// `upto` is the RECORDING offset this batch reaches — the number that lets a reveal tell bytes it
+/// has already replayed from bytes still to arrive live, which closes the last seam in the handoff
+/// (see `scrollback::Cursor`). `None` when nothing is being recorded, and for a synthetic notice that
+/// is not in the recording at all, which the frontend must therefore always write.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PtyChunk {
+    pub data: String,
+    pub upto: Option<u64>,
+}
+
+/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee
 /// to the mobile tunnel when paired). Coalescing collapses per-read emits — the dominant UI-lag source
 /// when many sessions stream at once — into one event per frame per session. Emits `pty_exit_<pane>`
 /// when the reader's `tx` disconnects.
@@ -552,9 +565,10 @@ pub(super) fn spawn_emitter(
                 // or the state after (and the batch is already in its replay) — never half of each.
                 // That is the entire seam, closed in the one place that owns the bytes.
                 {
+                    let at = pending_at.take();
                     let guard = cursor.lock();
-                    let _ = app.emit(&evt, data);
-                    if let (Ok(mut c), Some(at)) = (guard, pending_at.take()) {
+                    let _ = app.emit(&evt, PtyChunk { data, upto: at });
+                    if let (Ok(mut c), Some(at)) = (guard, at) {
                         *c = Some(at);
                     }
                 }
@@ -597,7 +611,9 @@ pub(super) fn spawn_emitter(
         // terminal. It is for whoever is looking AT the pane when it happens; the payload below is
         // for everyone else.
         if let Some(notice) = cage_death_notice(sandbox_role.as_deref(), exit, &tail) {
-            let _ = app.emit(&evt, notice);
+            // `upto: None` — this text is generated HERE and is not in the recording, so a reveal can
+            // never have replayed it and the frontend must always write it.
+            let _ = app.emit(&evt, PtyChunk { data: notice, upto: None });
         }
         // The payload the frontend needs to say WHY. This used to be `()` — the emitter had the exit
         // status in hand, spent it on one log line, and handed the one consumer that could show a
@@ -870,7 +886,7 @@ mod outcome_tests {
 
 #[cfg(test)]
 mod cage_death_tests {
-    use super::{cage_death_notice, LAUNCHER_MARKERS};
+    use super::{cage_death_notice, PtyChunk, LAUNCHER_MARKERS};
 
     /// The launcher failing is DEFINITE, so the notice may say so outright.
     #[test]
@@ -977,5 +993,30 @@ mod cage_death_tests {
         let n = cage_death_notice(Some("worker"), Some(1), "half a line").expect("a notice");
         assert!(n.starts_with("\r\n"), "{n:?}");
         assert!(n.ends_with("\r\n"), "{n:?}");
+    }
+
+    /// The WIRE SHAPE of a batch, pinned by name.
+    ///
+    /// This is a cross-language contract with a listener that is a graph RECORD, and the field names
+    /// are the whole of it: the frontend reads `chunk.data`, so renaming this field writes `undefined`
+    /// into a terminal rather than failing anywhere a compiler can see it. (`rename_all` is inert for
+    /// these two names and is carried for the next field that is not one word — which is exactly when
+    /// a silent rename would be easiest to miss.)
+    ///
+    /// IT ALREADY COST A REVERT, and not even for a real mismatch. `2332ce6d` introduced this struct,
+    /// the running app began reporting `NaNKB`, and the payload was reverted at `b7e785ad` — while the
+    /// actual cause was a dev server serving a STALE COPY of the listener, so the payload-tolerant
+    /// version written 90 seconds earlier was never the code that ran. A test that states the shape is
+    /// what lets the next such question be answered here instead of by inference from a symptom.
+    #[test]
+    fn a_batch_serializes_as_data_and_upto() {
+        let tagged = serde_json::to_value(PtyChunk { data: "hi".into(), upto: Some(42) }).unwrap();
+        assert_eq!(tagged, serde_json::json!({ "data": "hi", "upto": 42 }));
+
+        // `None` must reach the frontend as an explicit null, not as a MISSING key: the listener
+        // distinguishes "not in the recording, always write it" from "recorded up to here", and a
+        // key that vanished would be indistinguishable from a field the frontend forgot to read.
+        let untagged = serde_json::to_value(PtyChunk { data: "notice".into(), upto: None }).unwrap();
+        assert_eq!(untagged, serde_json::json!({ "data": "notice", "upto": null }));
     }
 }
