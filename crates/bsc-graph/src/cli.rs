@@ -51,7 +51,8 @@ pub const FLAGS: [&str; 52] = [
     // The algorithms store had none while a librarian session wrote it live — see `set_impl_versioned`.
     "--if-version",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
-    // `--root` names the repo when the cwd is not it.
+    // `--root` names the repo when the cwd is not it, `--seed` retargets the PACKAGED seed instead of
+    // the build-readable repo store.
     "--check",
     "--root",
     // `impl sync-seed` (#157) — the directory holding the packaged `algorithms.json` seed, and
@@ -948,7 +949,13 @@ fn write_seed_tests(path: &std::path::Path, doc: &mut Value, id: &str, tests: Va
 ///
 /// TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling file, so
 /// path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
-fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
+fn tests_harvest(
+    dir: &str,
+    dry: bool,
+    // #123 — SCOPE the pairing to named ids, so harvesting one record does not re-pair every other
+    // impl that happens to share its colocated-test pass. `None` walks the whole store, as before.
+    ids: Option<&std::collections::HashSet<String>>,
+) -> Result<Value, String> {
     let root = std::path::Path::new(dir);
     if !root.is_dir() {
         return Err(format!("no such directory: {dir}"));
@@ -983,6 +990,13 @@ fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
 
     let (mut paired, mut no_src, mut no_test, mut retired_no_test) = (Vec::new(), 0usize, 0usize, 0usize);
     for im in impls {
+        // #123 — out of scope for this run. Skipped BEFORE the counters so a scoped harvest's report
+        // describes what it actually considered, rather than counting the whole store as unpaired.
+        if let Some(want) = ids {
+            if !im.get("id").and_then(Value::as_str).is_some_and(|id| want.contains(id)) {
+                continue;
+            }
+        }
         let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else {
             // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
             no_src += 1;
@@ -2205,9 +2219,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             Some("harvest") => {
                 let dir = positional
                     .get(2)
-                    .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
+                    .ok_or("usage: bsc graph tests harvest <dir> [--id a,b] [--dry-run] [--pretty]")?;
                 let dry = args.iter().any(|a| a == "--dry-run");
-                emit(&tests_harvest(dir, dry)?)
+                let ids: Option<std::collections::HashSet<String>> = flag_value(&args, "--id").map(|s| {
+                    s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                });
+                emit(&tests_harvest(dir, dry, ids.as_ref())?)
             }
             _ => Err(
                 "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed]"
@@ -2237,10 +2254,24 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 return Ok(());
             }
             let check = args.iter().any(|a| a == "--check");
+            // TWO TARGETS, ONE VERB. `graph/algorithms.json` is what the BUILD compiles; the packaged
+            // seed is what SHIPS and what a fresh install reconciles against. Same source store, same
+            // machinery, different destination and a narrower projection — so `--seed` is a flag here
+            // rather than a second verb that would drift out of step with this one.
+            let to_seed = args.iter().any(|a| a == "--seed");
             let root = flag_value(&args, "--root")
                 .map(std::path::PathBuf::from)
                 .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
-            let path = crate::repo_store::path_under(&root);
+            let path = if to_seed {
+                crate::repo_store::seed_path_under(&root)
+            } else {
+                crate::repo_store::path_under(&root)
+            };
+            let project: fn(&serde_json::Value) -> serde_json::Value = if to_seed {
+                crate::repo_store::seed_content_of
+            } else {
+                crate::repo_store::content_of
+            };
             let repo = crate::repo_store::read_at(&path)?.unwrap_or_else(crate::repo_store::empty);
             let runtime = crate::implementations_of(&crate::load());
 
@@ -2269,8 +2300,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "note": "no runtime store on this machine — nothing was authored here to compare against",
                     }));
                 };
-                let upstream = crate::repo_store::impls_of(&direct);
-                let repo_impls = crate::repo_store::impls_of(&repo);
+                // Compare through the SAME projection the write would use, or every seed record reads
+                // as drifted for carrying fields the seed never ships.
+                let upstream: Vec<serde_json::Value> =
+                    crate::repo_store::impls_of(&direct).iter().map(project).collect();
+                let repo_impls: Vec<serde_json::Value> =
+                    crate::repo_store::impls_of(&repo).iter().map(project).collect();
                 let mut differs = Vec::new();
                 let mut absent = Vec::new();
                 let mut behind = Vec::new();
@@ -2296,10 +2331,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // failure mode this guards is an edit that never reached what the compiler reads.
                 if !differs.is_empty() {
                     return Err(format!(
-                        "the repo store is out of date — {} drifted ({}). \
-                         Run `bsc graph promote` to bring it forward.",
+                        "the {} is out of date — {} drifted ({}). \
+                         Run `bsc graph promote{}` to bring it forward.",
+                        if to_seed { "packaged seed" } else { "repo store" },
                         differs.len(),
                         differs.join(", "),
+                        if to_seed { " --seed" } else { "" },
                     ));
                 }
                 return Ok(());
@@ -2327,7 +2364,50 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }));
             }
 
-            let (next, missing, refused) = crate::repo_store::promote_into(&repo, &runtime, &ids);
+            let (mut next, missing, refused) =
+                crate::repo_store::promote_into_with(&repo, &runtime, &ids, project);
+            // Only the seed carries the referential-integrity guard that rejects a dangling `composes`.
+            let pruned = if to_seed {
+                crate::repo_store::prune_dangling_composes(&mut next)
+            } else {
+                Vec::new()
+            };
+
+            // WHAT STILL NAMES A SPECIFIER — gathered from both graphs, because an impl's provider is
+            // routinely imported by a COMPONENT record and a components-only view would miss it.
+            let mut imported: std::collections::BTreeSet<String> = Default::default();
+            if to_seed {
+                for i in crate::repo_store::impls_of(&next) {
+                    if let Some(c) = i.get("code").and_then(serde_json::Value::as_str) {
+                        crate::repo_store::quoted_specifiers(c, &mut imported);
+                    }
+                }
+                let comps = root.join("src-tauri/data/components/app");
+                let mut stack = vec![comps];
+                while let Some(d) = stack.pop() {
+                    let Ok(rd) = std::fs::read_dir(&d) else { continue };
+                    for e in rd.flatten() {
+                        let p = e.path();
+                        if p.is_dir() {
+                            stack.push(p);
+                        } else if p.extension().is_some_and(|x| x == "json") {
+                            if let Some(t) = std::fs::read_to_string(&p).ok().and_then(|t| {
+                                serde_json::from_str::<serde_json::Value>(&t).ok()
+                            }) {
+                                if let Some(src) = t.get("srcText").and_then(serde_json::Value::as_str) {
+                                    crate::repo_store::quoted_specifiers(src, &mut imported);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let orphaned = if to_seed {
+                crate::repo_store::refuse_orphaning_promotions(&repo, &mut next, &imported)
+            } else {
+                Vec::new()
+            };
+            let next = next;
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)
                     .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
@@ -2343,6 +2423,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // would delete fields. Named so a caller sees a decision rather than a silent no-op.
                 "refusedWouldLoseFields": refused,
                 "tracked": crate::repo_store::tracked_ids(&next).len(),
+                // Reported, never silent: a pruned edge is a claim the record made that the graph
+                // could not honour, and the author should see which.
+                "prunedComposes": pruned.iter().map(|(id, gone)| {
+                    serde_json::json!({ "id": id, "dropped": gone })
+                }).collect::<Vec<_>>(),
+                // Held back because promoting would have stopped a specifier something still imports
+                // from resolving — the store being behind the seed on a move.
+                "declined": orphaned.iter().map(|(id, spec)| {
+                    serde_json::json!({ "id": id, "wouldOrphan": spec })
+                }).collect::<Vec<_>>(),
             }))
         }
         // `build [<id>|--all] [--wasm] [--force]` — compile a Tier-R node and STAMP the verdict onto it,
@@ -3121,7 +3211,7 @@ fn help(prog: &str) -> String {
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
-  \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
+  \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
@@ -3143,7 +3233,7 @@ fn help(prog: &str) -> String {
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
          {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest each top-level module as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has nested module directories, declares a module with no matching file, or declares a *_test/*_tests module harvest skips — and VERIFIES with a real build before it finishes\n\n\
          {prog} reseed [--id a,b] [--all] [--check] [--root <dir>]   # the SEED → RUNTIME STORE direction, the exact inverse of `promote --seed`. The per-user runtime store is the AUTHORING copy, and it can fall BEHIND what ships: after a refactor lands in the packaged seed, a machine that did not author it keeps serving the old body — and an impl's `provides` BEATS the platform registry, so the stale copy is handed to the page even when the bundle is perfectly correct. NO GATE CAN SEE THIS: tsc and vitest read `.bsc-records/`, emitted FROM the seed, so every gate reads a copy that is right and the only wrong one is on the user's disk. `--check` reports and exits non-zero. There is deliberately NO bare form — this OVERWRITES authoring, so name `--id a,b` or say `--all`
-         {prog} promote [--id a,b] [--check] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
+         {prog} promote [--id a,b] [--check] [--seed] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — or, with --seed, into the PACKAGED seed at src-tauri/data/knowledge/algorithms.json (what SHIPS and what a fresh install reconciles against; a record can legitimately be in one and not the other). --seed projects to the 15 fields the seed actually carries, normalises a file EXTENSION found in `tech` (`ts` -> `typescript`), prunes a `composes` target that is not an impl, and DECLINES any record whose promotion would stop a specifier something still imports from resolving — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
          {prog} build <id> | build --all [--wasm] [--force]   # compile a Tier-R node from its own composes closure and STAMP the verdict onto it, so `impl get` answers 'does this compile?' without running anything. The hash covers the MATERIALIZED source + the toolchain + the flags, because all three change the answer; an unchanged hash is reported `cached` and recompiles nothing, unless the artifact it names is gone — a cache that vanished must re-derive, never be trusted. `--wasm` adds the wasm32 target and writes the artifact to a CONTENT-ADDRESSED sidecar (~/.base-studio-code/knowledge/artifacts/<sha>.wasm), never inline: the store is 8.74 MB and every reader parses it\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): ANY language — `--tech` is not validated and never has been. Each impl `composes` other same-tech impls, rooted in that language's primitives, so a new tech simply starts its own kit (`--tech python` works today; the packaged kits are typescript · rust).\n\
@@ -3896,6 +3986,84 @@ mod tests {
         // every colliding id, so the caller can retry with the exact one it means.
         let err = run(vec!["impl".into(), "get".into(), "dup".into()], "bsc graph").unwrap_err();
         assert!(err.contains("dup-a.ts") && err.contains("dup-b.ts"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #123 — a bare `tests harvest` walks the WHOLE store, so pairing one just-harvested record used to
+    /// rewrite every other impl that happened to share the pass. `--id` scopes the write to the named
+    /// ids: `b.ts` carries an equally real colocated test and must be left untouched when only `a.ts` is
+    /// named.
+    #[test]
+    fn tests_harvest_scopes_pairing_to_named_ids_via_id_flag() {
+        let dir = crate::unique_temp("testsharvest-id");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env — the same
+        // accepted-racy pattern `impl_set_writes_and_clears_module_state` already uses, since
+        // `BSC_GRAPH_STORE` is process-global while Rust tests run in parallel.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(repo.join("src/x")).unwrap();
+        std::fs::write(repo.join("src/x/a.ts"), "export function a() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/a.test.ts"),
+            "describe(\"a\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+        std::fs::write(repo.join("src/x/b.ts"), "export function b() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/b.test.ts"),
+            "describe(\"b\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+
+        let set = |id: &str, src: &str| {
+            run(
+                vec![
+                    "impl".into(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), id.into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), id.into(),
+                    "--code".into(), "export function x() {}".into(),
+                    "--src".into(), src.into(),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+        };
+        set("a.ts", "src/x/a.ts");
+        set("b.ts", "src/x/b.ts");
+
+        // Unconfined for this call, like `harvest_and_curate_refuse_a_target_outside_the_sessions_
+        // confinement_root` — the fixture lives under the OS temp dir, not this crate's own root, and
+        // this test's own confinement is not what it is checking. Without this the test's result
+        // depends on whether the CALLING session happens to have `$BSC_REPO_ROOT` set, which is exactly
+        // the ambient-env dependency #3475 exists to avoid asserting around.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
+                    "--id".into(), "a.ts".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let has_tests = |id: &str| {
+            crate::implementations()
+                .into_iter()
+                .find(|i| i.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|i| i.get("tests").cloned())
+                .is_some()
+        };
+        assert!(has_tests("a.ts"), "the named id is paired");
+        assert!(!has_tests("b.ts"), "an unnamed id is left alone even though it also has a colocated test");
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
