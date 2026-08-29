@@ -300,6 +300,20 @@ pub(super) fn spawn_reader(
         if dump.is_some() {
             log::info!("pty[{pane_id}] raw output is being tapped to $BSC_PTY_DUMP");
         }
+        // Durable scrollback (#pty-output-is-recorded-to-disk-at-safe-boundaries). ALWAYS on, unlike
+        // the diagnostic tap above: this is the store that lets the lossy in-memory buffers go. Placed
+        // here, beside the tap, because this is the one point that sees the bytes VERBATIM — before
+        // `split_utf8_at_boundary` and before any consumer — which is what a faithful replay needs.
+        //
+        // `None` when it cannot be opened, and that is the whole error policy: recording is a
+        // convenience, the session is the product.
+        let mut record = super::scrollback::ScrollbackRecorder::open(
+            &super::scrollback::scrollback_dir(),
+            &pane_id,
+        );
+        if record.is_none() {
+            log::warn!("pty[{pane_id}] scrollback recording unavailable — history stays memory-only");
+        }
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => { log::info!("pty[{pane_id}] reader EOF"); break; }
@@ -310,6 +324,11 @@ pub(super) fn spawn_reader(
                         // Best-effort: a failed write must not end the session it is diagnosing.
                         let _ = f.write_all(&buf[..n]);
                         let _ = f.flush();
+                    }
+                    // Raw, unsplit, before anything interprets it — see the recorder's module doc for
+                    // why an arbitrary offset is not replayable and what it does about that.
+                    if let Some(r) = record.as_mut() {
+                        r.write(&buf[..n]);
                     }
                     leftover.extend_from_slice(&buf[..n]);
                     let (text, keep) = split_utf8_at_boundary(&leftover);

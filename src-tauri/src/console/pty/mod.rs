@@ -18,6 +18,7 @@ pub(crate) mod busy;
 mod env;
 mod launch;
 mod pump;
+pub(crate) mod scrollback;
 
 // Session env wiring + the sidecar resolvers used at the same `crate::console::pty::*` paths as
 // before the split (`extensions/mcp.rs`, `app/run.rs`, `github/readiness.rs`).
