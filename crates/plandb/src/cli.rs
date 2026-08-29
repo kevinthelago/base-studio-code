@@ -973,18 +973,28 @@ fn plan_db_from_cwd() -> Option<PathBuf> {
     Some(base.join("plans").join(format!("{key}.db")))
 }
 
+/// What a caller reads when no route to a plan.db resolved.
+///
+/// NAMED, rather than built inline, so a test can assert its content without depending on the
+/// environment. Asserting it through `resolve_db` cannot work: `resolve_store_path` returns EARLY on
+/// `$BSC_PLAN_DB`, and this repo's own CLAUDE.md tells developers to export it — so on a configured
+/// machine the call SUCCEEDS and there is no message to check. The test that tried was guarded with
+/// `if !msg.is_empty()` and therefore asserted nothing on exactly the machines it ran on.
+///
+/// Still names both explicit routes: the derivation covers a session inside a project, and this is
+/// what is left — a cwd that belongs to no project, where guessing would be worse. Cheapest first:
+/// `--project <key>` leads because it is the one a caller can act on without knowing a path — and
+/// because the session most likely to hit this error, the architect, stands outside both project
+/// roots by design.
+fn no_plan_db_error() -> String {
+    "no plan.db: this directory is not inside a project (…/projects/<key> or \
+     …/worktrees/<key>), so pass --project <key>, or --db <path>, or set BSC_PLAN_DB"
+        .to_string()
+}
+
 fn resolve_db(flag: &Option<String>) -> Result<PathBuf, String> {
     bsc_cli_util::resolve_store_path(flag, "BSC_PLAN_DB", || {
-        plan_db_from_cwd().ok_or_else(|| {
-            // Still names both explicit routes: the derivation covers a session inside a project, and
-            // this is what is left — a cwd that belongs to no project, where guessing would be worse.
-            // Names every explicit route, cheapest first. `--project <key>` leads because it is the
-            // one a caller can act on without knowing a path — and because the session most likely to
-            // hit this error, the architect, stands outside both project roots by design.
-            "no plan.db: this directory is not inside a project (…/projects/<key> or \
-             …/worktrees/<key>), so pass --project <key>, or --db <path>, or set BSC_PLAN_DB"
-                .to_string()
-        })
+        plan_db_from_cwd().ok_or_else(no_plan_db_error)
     })
 }
 
@@ -1101,15 +1111,38 @@ mod tests {
     #[test]
     fn a_cwd_outside_a_project_names_every_explicit_route() {
         // The error is what a session reads when the derivation cannot help, so it has to say what to
-        // do next — and now also WHY the automatic answer did not apply.
-        let msg = resolve_db(&None).err().unwrap_or_default();
-        // (In a project checkout this may resolve; the message is only asserted when it does not.)
-        if !msg.is_empty() {
-            assert!(msg.contains("--project"), "names the route a caller can use without a path: {msg}");
-            assert!(msg.contains("--db"), "names the flag: {msg}");
-            assert!(msg.contains("BSC_PLAN_DB"), "names the env var: {msg}");
-            assert!(msg.contains("not inside a project"), "says why the fallback did not apply: {msg}");
-        }
+        // do next — and WHY the automatic answer did not apply.
+        //
+        // Asserted on the MESSAGE, not through `resolve_db`. This test used to call `resolve_db(&None)`
+        // and guard every assertion with `if !msg.is_empty()` — and `resolve_store_path` returns early
+        // on `$BSC_PLAN_DB`, which this repo's CLAUDE.md tells developers to export. So on a configured
+        // machine the call SUCCEEDED, the message was empty, and the test asserted NOTHING in exactly
+        // the environment it runs in. A guard that makes a test environment-tolerant makes it
+        // environment-blind; naming the message removes the dependence instead of excusing it.
+        let msg = no_plan_db_error();
+        assert!(msg.contains("--project"), "names the route a caller can use without a path: {msg}");
+        assert!(msg.contains("--db"), "names the flag: {msg}");
+        assert!(msg.contains("BSC_PLAN_DB"), "names the env var: {msg}");
+        assert!(msg.contains("not inside a project"), "says why the fallback did not apply: {msg}");
+    }
+
+    #[test]
+    fn with_no_flag_and_no_env_the_resolver_falls_through_to_the_derivation() {
+        // The BEHAVIOUR half, made deterministic without touching process env: a name nothing sets
+        // stands in for "the env var is absent". Mutating the real `BSC_PLAN_DB` would race every
+        // other test in the binary — the ordering hazard `narrowed to ENV_LOCK ordering` records —
+        // and `resolve_store_path` treats any unset name identically, so this proves the same thing.
+        let sentinel = "BSC_PLAN_DB_UNSET_IN_TESTS_A9F3";
+        assert!(std::env::var(sentinel).is_err(), "the sentinel must really be unset");
+        let err = bsc_cli_util::resolve_store_path(&None, sentinel, || Err(no_plan_db_error()))
+            .expect_err("with no flag and no env, the derivation decides");
+        assert_eq!(err, no_plan_db_error(), "the fall-through surfaces the derivation's own error");
+
+        // …and a flag still outranks it, so the fall-through is reached only when there is no route.
+        let flag = Some("/tmp/explicit.db".to_string());
+        let got = bsc_cli_util::resolve_store_path(&flag, sentinel, || Err(no_plan_db_error()))
+            .expect("an explicit --db always wins");
+        assert_eq!(got, PathBuf::from("/tmp/explicit.db"));
     }
 
     /// End-to-end through `run()` — the ONLY level that exercises `parse_args`, and therefore the only
