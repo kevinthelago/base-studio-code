@@ -221,6 +221,41 @@ function ownImplSource(c: ComponentRecord): string | null {
 const ELISION = "…";
 
 /**
+ * Whether the code-elision marker at this position reads as PROSE rather than a stand-in for omitted
+ * code (#125). `before` is every character preceding the marker. Beyond the original "directly after a
+ * word character" case (#3897), two more shapes are prose:
+ *   - preceded (after skipping whitespace) by ordinary running-text punctuation (`/`, `;`, `,`, `.`,
+ *     `:`, `)`, `]`, `%`) — an HTML-entity-heavy path example ending `&lt;project&gt;/…` reads as `/`
+ *     immediately before the marker, not a word character (designer request #125, `WorkspaceCard`);
+ *   - preceded by the `>` that CLOSES a sibling JSX element — `</Text>\n…` (a message continuing after
+ *     an interpolated element, designer request #125, `ConnectGithubCard`) or a self-closing `<Icon />…`.
+ *     An `>` that OPENS an element (`<Card>…`) is deliberately excluded: that shape is the ellipsis
+ *     standing in as the element's ONLY content, which is the actual sketch case #3897 established.
+ * Rust twin: `ellipsis_reads_as_prose`.
+ */
+function ellipsisReadsAsProse(before: string[]): boolean {
+  let j = before.length;
+  while (j > 0 && /\s/.test(before[j - 1])) j -= 1;
+  if (j === 0) return false;
+  const c = before[j - 1];
+  if (/[A-Za-z0-9]/.test(c) || "/;,.:)]%".includes(c)) return true;
+  if (c !== ">") return false;
+  // Walk back to the tag's `<` — bounded, since a tag is short and this must never scan the whole file.
+  const start = Math.max(0, j - 1 - 500);
+  let lt = -1;
+  for (let k = j - 2; k >= start; k -= 1) {
+    if (before[k] === "<") {
+      lt = k;
+      break;
+    }
+  }
+  if (lt === -1) return false;
+  const closing = before[lt + 1] === "/";
+  const selfClosing = j >= 2 && before[j - 2] === "/";
+  return closing || selfClosing;
+}
+
+/**
  * Does the code-elision marker appear in real CODE — not inside a string/template literal or a comment?
  * Only then does it stand in for omitted code. The TS twin of Rust `has_code_elision`
  * (bsc-component::graph_health), ported in #3486; the two must move together, because Rust's
@@ -251,13 +286,8 @@ export function hasCodeElision(src: string): boolean {
       while (i < n && b[i] !== c) i += b[i] === "\\" ? 2 : 1;
       i += 1;
     } else if (c === ELISION) {
-      // An ellipsis DIRECTLY after a word character is PROSE, not an elision marker (#3897). JSX TEXT
-      // (`>Loading projects…</Text>`) is not quoted, so the string-skip above misses it — ProjectsPage read
-      // as "a sketch, not compilable code" over three UI labels while the app mounted it fine. A real
-      // marker sits in code position (`{ … }`, or alone on a line). Rust twin: `has_code_elision`.
-      let j = i - 1;
-      while (j >= 0 && /\s/.test(b[j])) j -= 1;
-      if (j >= 0 && /[A-Za-z0-9]/.test(b[j])) { i += 1; continue; }
+      // An ellipsis in PROSE position, not code (#3897/#125) — see `ellipsisReadsAsProse`.
+      if (ellipsisReadsAsProse(b.slice(0, i))) { i += 1; continue; }
       return true;
     } else {
       i += 1;
