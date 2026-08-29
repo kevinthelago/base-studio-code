@@ -205,6 +205,7 @@ import * as GraphPlatform from "@/app/console/graphPlatform";
 import * as TerminalClipboard from "@/shared/lib/session/terminalClipboard";
 import * as Terminal from "@/app/console/lib/terminal";
 import * as TerminalHost from "@/app/console/terminal/TerminalHost";
+import * as TerminalHandoff from "@/app/console/lib/terminalHandoff";
 import * as TerminalKeys from "@/app/console/lib/terminalKeys";
 import * as TerminalNudge from "@/app/console/lib/terminalNudge";
 import * as JumbleProbe from "@/app/console/lib/jumbleProbe";
@@ -579,6 +580,7 @@ const PLATFORM: Record<string, unknown> = {
   // spawned a PTY at all — `0 terms`, `pty_create` never called, and nothing threw, because a null
   // host is a supported state that renders an inert slot.
   "@/app/console/terminal/TerminalHost": TerminalHost,
+  "@/app/console/lib/terminalHandoff": TerminalHandoff,
   "@/app/console/lib/terminalKeys": TerminalKeys,
   "@/app/console/lib/terminalNudge": TerminalNudge,
   "@/app/console/lib/jumbleProbe": JumbleProbe,
