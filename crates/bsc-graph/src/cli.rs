@@ -17,9 +17,9 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 18] = [
+pub const VERBS: [&str; 19] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
-    "used-by", "features", "merge", "emit", "promote", "build", "migrate-crate", "help",
+    "used-by", "features", "merge", "emit", "promote", "reseed", "build", "migrate-crate", "help",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -1927,6 +1927,125 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "changes": paired,
             }))
         }
+        // `reseed [--id a,b] [--all] [--check] [--root <dir>]` — the SEED → RUNTIME STORE direction,
+        // the exact inverse of `promote --seed`. See the help text for why it exists.
+        "reseed" => {
+            let check = args.iter().any(|a| a == "--check");
+            let all = args.iter().any(|a| a == "--all");
+            let named = flag_value(&args, "--id");
+            // REFUSE BEFORE READING ANYTHING. A usage error should not depend on whether a seed and a
+            // runtime store happen to exist — and reaching this check only after the reads made it
+            // unreachable in any test harness that points `--root` at an empty dir.
+            if !check && named.is_none() && !all {
+                return Err(
+                    "reseed OVERWRITES the runtime store from the packaged seed — name what to \
+                     take with `--id a,b`, or `--all` for every drifted record. Run `--check` first."
+                        .to_string(),
+                );
+            }
+            let root = flag_value(&args, "--root")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+            let seed_path = crate::repo_store::seed_path_under(&root);
+            let seed = crate::repo_store::read_at(&seed_path)?
+                .ok_or_else(|| format!("no packaged seed at {}", seed_path.display()))?;
+
+            // The runtime store is read DIRECTLY, never through `load()`: load() reconciles the
+            // packaged seed, so on a machine with no store it would report everything as identical
+            // and this verb would silently do nothing.
+            let store_path = crate::store_path().ok_or("no home dir — cannot reach the runtime store")?;
+            let store = crate::repo_store::read_at(&store_path)?
+                .ok_or_else(|| format!("no runtime store at {}", store_path.display()))?;
+
+            let seed_impls = crate::repo_store::impls_of(&seed);
+            let store_impls = crate::repo_store::impls_of(&store);
+            let by_id = |v: &[serde_json::Value]| -> std::collections::BTreeMap<String, serde_json::Value> {
+                v.iter()
+                    .filter_map(|i| {
+                        i.get("id").and_then(serde_json::Value::as_str).map(|k| (k.to_string(), i.clone()))
+                    })
+                    .collect()
+            };
+            let seeded = by_id(&seed_impls);
+            let stored = by_id(&store_impls);
+
+            // Drifted = present in BOTH and differing through the seed projection. A record the store
+            // does not have is an ADDITION, reported separately: putting it there is a different
+            // decision from refreshing one that is already there and stale.
+            let mut drifted: Vec<String> = Vec::new();
+            let mut absent: Vec<String> = Vec::new();
+            for (id, s_rec) in &seeded {
+                match stored.get(id) {
+                    None => absent.push(id.clone()),
+                    Some(t) => {
+                        if crate::repo_store::seed_content_of(s_rec)
+                            != crate::repo_store::seed_content_of(t)
+                        {
+                            drifted.push(id.clone());
+                        }
+                    }
+                }
+            }
+            drifted.sort();
+            absent.sort();
+
+            if check {
+                emit(&serde_json::json!({
+                    "seed": seed_path.to_string_lossy(), "store": store_path.to_string_lossy(),
+                    "drifted": drifted, "absentFromStore": absent, "ok": drifted.is_empty(),
+                }))?;
+                if !drifted.is_empty() {
+                    return Err(format!(
+                        "the runtime store is behind the packaged seed — {} drifted ({}). \
+                         Run `bsc graph reseed --all` to bring it forward.",
+                        drifted.len(),
+                        drifted.join(", "),
+                    ));
+                }
+                return Ok(());
+            }
+
+            // OVERWRITING SOMEONE'S AUTHORING IS AN EXPLICIT DECISION, which is why there is no bare
+            // form. `promote` defaults to "refresh what is already tracked" because the worst case
+            // there is shipping a stale record; here the worst case is destroying the only copy of an
+            // edit, so the caller has to say `--all` or name the ids.
+            // Guarded above, before any I/O.
+            let ids: Vec<String> = match named {
+                Some(v) => v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                None => drifted.clone(),
+            };
+
+            let mut next = store.clone();
+            let mut wrote = Vec::new();
+            let mut unknown = Vec::new();
+            {
+                let list = next
+                    .get_mut("implementations")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .ok_or("the runtime store has no `implementations` array")?;
+                for id in &ids {
+                    let Some(fresh) = seeded.get(id) else {
+                        unknown.push(id.clone());
+                        continue;
+                    };
+                    match list.iter().position(|i| {
+                        i.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())
+                    }) {
+                        Some(at) => list[at] = fresh.clone(),
+                        None => list.push(fresh.clone()),
+                    }
+                    wrote.push(id.clone());
+                }
+            }
+            if !unknown.is_empty() {
+                return Err(format!("not in the packaged seed: {}", unknown.join(", ")));
+            }
+            crate::save_at(&store_path, &next)?;
+            emit(&serde_json::json!({
+                "ok": true, "store": store_path.to_string_lossy(),
+                "reseeded": wrote.len(), "records": wrote,
+            }))
+        }
         // `promote [--id a,b] [--check] [--root <dir>]` — move records from the per-user RUNTIME store
         // into the committed, build-readable repo store, or (with `--check`) report the drift for the
         // gate. See `crate::repo_store` for why the two stores exist and why the repo one is read
@@ -2840,6 +2959,7 @@ fn help(prog: &str) -> String {
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
          {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest each top-level module as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has nested module directories, declares a module with no matching file, or declares a *_test/*_tests module harvest skips — and VERIFIES with a real build before it finishes\n\n\
+         {prog} reseed [--id a,b] [--all] [--check] [--root <dir>]   # the SEED → RUNTIME STORE direction, the exact inverse of `promote --seed`. The per-user runtime store is the AUTHORING copy, and it can fall BEHIND what ships: after a refactor lands in the packaged seed, a machine that did not author it keeps serving the old body — and an impl's `provides` BEATS the platform registry, so the stale copy is handed to the page even when the bundle is perfectly correct. NO GATE CAN SEE THIS: tsc and vitest read `.bsc-records/`, emitted FROM the seed, so every gate reads a copy that is right and the only wrong one is on the user's disk. `--check` reports and exits non-zero. There is deliberately NO bare form — this OVERWRITES authoring, so name `--id a,b` or say `--all`
          {prog} promote [--id a,b] [--check] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
          {prog} build <id> | build --all [--wasm] [--force]   # compile a Tier-R node from its own composes closure and STAMP the verdict onto it, so `impl get` answers 'does this compile?' without running anything. The hash covers the MATERIALIZED source + the toolchain + the flags, because all three change the answer; an unchanged hash is reported `cached` and recompiles nothing, unless the artifact it names is gone — a cache that vanished must re-derive, never be trusted. `--wasm` adds the wasm32 target and writes the artifact to a CONTENT-ADDRESSED sidecar (~/.base-studio-code/knowledge/artifacts/<sha>.wasm), never inline: the store is 8.74 MB and every reader parses it\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
@@ -4402,4 +4522,26 @@ fn runtime_report(g: &Value) -> Value {
         .collect();
     let report = bsc_runtime::doctor::analyze(&rows, &records);
     serde_json::to_value(report).unwrap_or(Value::Null)
+}
+
+#[cfg(test)]
+mod reseed_tests {
+    use super::*;
+
+    #[test]
+    fn reseed_refuses_without_being_told_what_to_take() {
+        // `promote` defaults to "refresh what is already tracked" because its worst case is shipping a
+        // stale record. Here the worst case is destroying the only copy of an edit, so there is no
+        // bare form — and the refusal must not depend on a seed or a store existing.
+        let err = run(vec!["reseed".to_string()], "bsc graph").expect_err("must refuse");
+        assert!(err.contains("--id"), "does not say how to proceed: {err}");
+        assert!(err.contains("--all"), "does not offer the sweep: {err}");
+        assert!(err.contains("OVERWRITES"), "does not say what is at stake: {err}");
+    }
+
+    #[test]
+    fn reseed_is_a_known_verb() {
+        // The drift guard: a verb missing from VERBS drops out of the help-coverage test.
+        assert!(VERBS.contains(&"reseed"));
+    }
 }
