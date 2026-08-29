@@ -92,12 +92,27 @@ fn bsc_blocking(
 /// a global-only subcommand doesn't point them at a bogus empty key); `BSC_SKILL_DB` is the one global
 /// skills store, set unconditionally — mirroring `wire_bsc_env` (per-project db is cwd-derived there,
 /// skill db is global).
+///
+/// The `None` arm explicitly `env_remove`s the four per-project vars rather than leaving them
+/// untouched (#128): `std::process::Command` inherits the CALLING process's full environment for
+/// anything it hasn't touched, so a project-less call (or one whose `project_key` turns out empty)
+/// would otherwise silently run `bsc` against whatever BSC_PLAN_DB/BSC_ERROR_DB/BSC_USAGE_DB/
+/// BSC_DATA_DB the app's own process happened to inherit at launch — the same leak `wire_bsc_env`
+/// had for a live session's PTY, fixed there for the same reason.
 pub(crate) fn wire_bsc_stores(cmd: &mut std::process::Command, project_key: Option<&str>) {
-    if let Some(key) = project_key.filter(|k| !k.is_empty()) {
-        cmd.env("BSC_PLAN_DB", plan_db_path(key));
-        cmd.env("BSC_ERROR_DB", error_db_path(key));
-        cmd.env("BSC_USAGE_DB", usage_db_path(key));
-        cmd.env("BSC_DATA_DB", data_db_path(key));
+    match project_key.filter(|k| !k.is_empty()) {
+        Some(key) => {
+            cmd.env("BSC_PLAN_DB", plan_db_path(key));
+            cmd.env("BSC_ERROR_DB", error_db_path(key));
+            cmd.env("BSC_USAGE_DB", usage_db_path(key));
+            cmd.env("BSC_DATA_DB", data_db_path(key));
+        }
+        None => {
+            cmd.env_remove("BSC_PLAN_DB");
+            cmd.env_remove("BSC_ERROR_DB");
+            cmd.env_remove("BSC_USAGE_DB");
+            cmd.env_remove("BSC_DATA_DB");
+        }
     }
     cmd.env("BSC_SKILL_DB", skills_db());
 }
@@ -161,6 +176,43 @@ mod tests {
         let mut cmd2 = std::process::Command::new("bsc");
         wire_bsc_stores(&mut cmd2, Some(""));
         assert!(!envs(&cmd2).contains_key("BSC_PLAN_DB"));
+    }
+
+    /// #128: `std::process::Command` inherits the CALLING process's environment for anything it
+    /// hasn't touched, so omitting `project_key` must not just SKIP setting the four per-project
+    /// vars — it must explicitly `env_remove` them, or a project-less call silently runs `bsc`
+    /// against whatever BSC_PLAN_DB/BSC_ERROR_DB/BSC_USAGE_DB/BSC_DATA_DB the app's own process
+    /// happened to inherit at launch (this repo's own dev workflow leaves exactly that behind:
+    /// `export BSC_PLAN_DB=…studio-code.db` in the shell that then launches the app).
+    ///
+    /// `envs()` above can't tell "never touched" from "explicitly removed" (both read as absent from
+    /// its filter_map), so this reads `get_envs()` directly, where `env_remove` is the ONLY thing
+    /// that produces a `None` value against the key.
+    #[test]
+    fn wire_stores_clears_inherited_project_dbs_without_a_key() {
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+        const KEYS: [&str; 4] = ["BSC_PLAN_DB", "BSC_ERROR_DB", "BSC_USAGE_DB", "BSC_DATA_DB"];
+        let prev: Vec<Option<String>> = KEYS.iter().map(|k| std::env::var(k).ok()).collect();
+        for k in KEYS {
+            std::env::set_var(k, "/leaked/studio-code-value");
+        }
+
+        let mut cmd = std::process::Command::new("bsc");
+        wire_bsc_stores(&mut cmd, None);
+
+        for k in KEYS {
+            let cleared = cmd
+                .get_envs()
+                .any(|(key, val)| key == std::ffi::OsStr::new(k) && val.is_none());
+            assert!(cleared, "{k} must be explicitly cleared (env_remove), not merely left unset");
+        }
+
+        for (k, v) in KEYS.into_iter().zip(prev) {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 
     /// Smoke test: when the bundled binary resolves (it isn't staged in the test target), a benign
