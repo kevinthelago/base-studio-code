@@ -36,7 +36,7 @@
 //     a fault to look at, not to paper over with a merge commit.
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planPromote } from "./promote-plan.mjs";
@@ -61,18 +61,26 @@ function git(args, opts = {}) {
   return execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", ...opts }).trim();
 }
 
-/** Is the app's dev server up? Its vite port listening is the cheap, dependency-free signal.
+/** Is a dev server running FOR THIS TREE?
  *
- *  This exists so the closing message can tell the TRUTH. A promote writes files `tauri dev` and vite
- *  watch, so a running app rebuilds and relaunches — saying otherwise (as the first version of this
- *  script did) is worse than saying nothing, because the whole feature is about the user knowing when
- *  their session is about to be disturbed. */
+ *  Two signals, because either alone lies — the same lesson `gate-tree-guard` records in its own
+ *  header: **the port is MACHINE-GLOBAL**. A listener on 1420 says only that SOME worktree has a dev
+ *  server up, and the first version of this check reported "the app is RUNNING" off that alone while
+ *  the Tauri shell was not running at all. So: find the listener's pid, then ask whether its working
+ *  directory is this tree. A pid we cannot inspect degrades to "cannot tell", which prints the
+ *  conservative message rather than a confident wrong one.
+ */
 function appIsRunning(port = 1420) {
   try {
-    // `ss` is present on this platform; any failure falls through to "cannot tell", which prints the
-    // conservative message rather than a confident wrong one.
-    const out = execFileSync("ss", ["-ltn"], { encoding: "utf8" });
-    return new RegExp(`[.:]${port}\\b`).test(out);
+    const out = execFileSync("ss", ["-ltnp"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const line = out.split(/\r?\n/).find((l) => new RegExp(`[.:]${port}\\s`).test(l));
+    if (!line) return false;
+    const pid = line.match(/pid=(\d+)/)?.[1];
+    if (!pid) return false;
+    // Exactly this tree. A dev server in a WORKTREE has that worktree as its cwd, so an equality
+    // test is both the simplest and the correct one — a prefix match would claim every worktree's
+    // server as ours, which is the machine-global mistake one layer down.
+    return readlinkSync(`/proc/${pid}/cwd`) === REPO_ROOT;
   } catch {
     return false;
   }
@@ -148,8 +156,8 @@ function main() {
   console.log(`[promote-app] ${branch} → ${git(["rev-parse", "--short", branch])}`);
   console.log(
     appIsRunning()
-      ? `[promote-app] The app is RUNNING — it is rebuilding and will relaunch itself now.`
-      : `[promote-app] The app is not running; it picks this up on its next launch.`,
+      ? `[promote-app] A dev server for THIS tree is up — it is rebuilding and will relaunch now.`
+      : `[promote-app] No dev server for this tree; the app picks this up on its next launch.`,
   );
 }
 
