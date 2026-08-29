@@ -168,6 +168,11 @@ pub(crate) fn embedded_paths_ending_with(suffix: &str) -> Vec<String> {
 /// The whole defect this replaces was invisible: the mirror won at read time and nothing ever said
 /// it had stopped matching what shipped. A pass that refreshes nine files and preserves two edits
 /// must be able to say so.
+///
+/// This module only REPORTS `diverged`/`orphaned` (into the boot log); it never acts on them. The
+/// verb that does — `bsc config status` (classify + diff) and `bsc config reset <rel>` (adopt the
+/// packaged copy) — lives in the Tauri-free `bsc-config` crate (#168), which embeds its own copy of
+/// this same config-only seed so a CLI session can reach it without depending on this app crate.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SeedReport {
     /// Files written because the config dir had no copy (a genuine first run, or a new seed file).
