@@ -3523,24 +3523,31 @@ mod tests {
     /// and promoted into the committed store. The compiler caught the consequence two steps later.
     #[test]
     fn a_code_file_that_is_empty_is_refused_rather_than_stored() {
-        let dir = std::env::temp_dir().join(format!("bsc-empty-code-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let empty = dir.join("empty.rs");
-        std::fs::write(&empty, "   
-	
+        // #184: the fixture lives under `std::env::temp_dir()`, outside this repo — a `--code-file`
+        // is a user path and must work from anywhere. `source_flag` checks it against
+        // `require_harvestable_root`, which reads the real `$BSC_REPO_ROOT` when no thread-local
+        // override is set, so this test spuriously failed confinement in a debug-studio pane (its
+        // shell genuinely carries that var). Force the unconfined case hermetically.
+        bsc_cli_util::with_repo_root(None, || {
+            let dir = std::env::temp_dir().join(format!("bsc-empty-code-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let empty = dir.join("empty.rs");
+            std::fs::write(&empty, "
+
 ").unwrap();
 
-        let args = vec!["--code-file".to_string(), empty.to_string_lossy().into_owned()];
-        let err = source_flag(&args, "--code").unwrap_err();
-        assert!(err.contains("is empty"), "{err}");
-        assert!(err.contains("--clear code"), "names the explicit way to clear: {err}");
+            let args = vec!["--code-file".to_string(), empty.to_string_lossy().into_owned()];
+            let err = source_flag(&args, "--code").unwrap_err();
+            assert!(err.contains("is empty"), "{err}");
+            assert!(err.contains("--clear code"), "names the explicit way to clear: {err}");
 
-        // A file with real content still reads through unchanged.
-        let full = dir.join("full.rs");
-        std::fs::write(&full, "pub fn f() {}").unwrap();
-        let args = vec!["--code-file".to_string(), full.to_string_lossy().into_owned()];
-        assert_eq!(source_flag(&args, "--code").unwrap().as_deref(), Some("pub fn f() {}"));
-        let _ = std::fs::remove_dir_all(&dir);
+            // A file with real content still reads through unchanged.
+            let full = dir.join("full.rs");
+            std::fs::write(&full, "pub fn f() {}").unwrap();
+            let args = vec!["--code-file".to_string(), full.to_string_lossy().into_owned()];
+            assert_eq!(source_flag(&args, "--code").unwrap().as_deref(), Some("pub fn f() {}"));
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     /// #155: a record that lives ONLY in the committed repo store must be readable.
@@ -5265,27 +5272,39 @@ mod source_flag_tests {
     /// THE WHOLE POINT. This body is the exact shape argv destroys: a backtick template literal with
     /// an interpolation the shell would command-substitute, and real newlines a double-quoted `\n`
     /// never becomes. It must arrive byte-identical.
+    ///
+    /// #184: the fixture lives under `std::env::temp_dir()`, outside this repo, on purpose — a
+    /// `--code-file` is a user-supplied path and has to work from anywhere. `source_flag` runs it
+    /// through `require_harvestable_root`, which reads the real `$BSC_REPO_ROOT` when no thread-local
+    /// override is set — so this test spuriously failed confinement inside a debug-studio pane, whose
+    /// shell genuinely carries that var. `with_repo_root(None, …)` forces the unconfined case
+    /// hermetically, the same seam `bsc-cli-util` documents for exactly this.
     #[test]
     fn code_file_reads_backticks_interpolation_and_newlines_verbatim() {
-        let body = "export function x() {\n  const n = 1;\n  return `a${n}b`;\n}\n";
-        let p = write_temp("verbatim", body);
-        let got = source_flag(&args(&["--code-file", p.to_str().unwrap()]), "--code").unwrap();
-        assert_eq!(got.as_deref(), Some(body), "read back byte-identical");
-        // And specifically that nothing collapsed: three real newlines, a live backtick, a live ${}.
-        let got = got.unwrap();
-        assert_eq!(got.matches('\n').count(), 4, "real newlines survived: {got:?}");
-        assert!(got.contains("`a${n}b`"), "the template literal survived intact: {got:?}");
-        let _ = std::fs::remove_file(&p);
+        bsc_cli_util::with_repo_root(None, || {
+            let body = "export function x() {\n  const n = 1;\n  return `a${n}b`;\n}\n";
+            let p = write_temp("verbatim", body);
+            let got = source_flag(&args(&["--code-file", p.to_str().unwrap()]), "--code").unwrap();
+            assert_eq!(got.as_deref(), Some(body), "read back byte-identical");
+            // And specifically that nothing collapsed: three real newlines, a live backtick, a live ${}.
+            let got = got.unwrap();
+            assert_eq!(got.matches('\n').count(), 4, "real newlines survived: {got:?}");
+            assert!(got.contains("`a${n}b`"), "the template literal survived intact: {got:?}");
+            let _ = std::fs::remove_file(&p);
+        });
     }
 
     /// The same door for the trace-program, which is the field MOST likely to carry a backtick.
+    /// See #184 on the sibling test above for why this is wrapped in `with_repo_root(None, …)`.
     #[test]
     fn viz_code_file_uses_the_same_door() {
-        let body = "({ run(a) { a.mark(`i${0}`); } })";
-        let p = write_temp("viz", body);
-        let got = source_flag(&args(&["--viz-code-file", p.to_str().unwrap()]), "--viz-code").unwrap();
-        assert_eq!(got.as_deref(), Some(body));
-        let _ = std::fs::remove_file(&p);
+        bsc_cli_util::with_repo_root(None, || {
+            let body = "({ run(a) { a.mark(`i${0}`); } })";
+            let p = write_temp("viz", body);
+            let got = source_flag(&args(&["--viz-code-file", p.to_str().unwrap()]), "--viz-code").unwrap();
+            assert_eq!(got.as_deref(), Some(body));
+            let _ = std::fs::remove_file(&p);
+        });
     }
 
     /// The inline form still works — this ADDS a door, it does not close the existing one.

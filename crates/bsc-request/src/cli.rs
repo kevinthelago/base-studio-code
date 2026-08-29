@@ -475,6 +475,12 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
 
+    /// Serializes tests that mutate `$BSC_AUDIT_PANE`, a process-global env var `cargo test` threads
+    /// share within one binary (#3382's disease, same fix bsc-persona's `PACKAGED_ENV_LOCK` and
+    /// bsc-util's `UI_ENV_LOCK` already apply). nextest forks per test and would not need it, but the
+    /// gate runs both.
+    static AUDIT_PANE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn parse_args_collects_flags_and_positionals() {
         let a = parse_args(vec![
@@ -549,6 +555,15 @@ mod tests {
     /// must not produce an empty column or an empty title.
     #[test]
     fn an_unattributed_request_still_lists_and_labels() {
+        // #184: `cmd_new` resolves origin from the REAL `$BSC_AUDIT_PANE` (line 245 above), not
+        // through a testable seam — so this test, which asserts the no-pane case, spuriously failed
+        // when run from a debug-studio pane whose shell genuinely carries that var. Force it absent
+        // for the duration, same pattern as `whatami_with_no_pane_to_infer_says_so_rather_than_guessing`
+        // in bsc-persona.
+        let _guard = AUDIT_PANE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_pane = std::env::var("BSC_AUDIT_PANE").ok();
+        std::env::remove_var("BSC_AUDIT_PANE");
+
         let dir = std::env::temp_dir().join(format!("bsc-request-anon-cli-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("requests.db");
@@ -563,6 +578,9 @@ mod tests {
         assert!(!request_block(&r).contains("filed by:"), "and is not claimed in the human block");
 
         let _ = std::fs::remove_dir_all(&dir);
+        if let Some(p) = prev_pane {
+            std::env::set_var("BSC_AUDIT_PANE", p);
+        }
     }
 
     #[test]

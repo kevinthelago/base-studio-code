@@ -1428,7 +1428,12 @@ mod tests {
         let probe = outside.clone();
         with_repo_root(Some(&root.to_string_lossy()), || {
             assert!(require_harvestable_root(&outside).is_err(), "this thread is confined");
-            let sibling = std::thread::spawn(move || require_harvestable_root(&probe).is_ok());
+            // The sibling must not see the override — but it also must not see a REAL $BSC_REPO_ROOT
+            // leaked from the process env (#184: this crate's own test binary inherits it when run
+            // from a debug-studio pane). `with_repo_root(None, …)` asserts the unconfined case
+            // hermetically, same as every other seam in this file.
+            let sibling =
+                std::thread::spawn(move || with_repo_root(None, || require_harvestable_root(&probe).is_ok()));
             assert!(sibling.join().unwrap(), "a sibling thread must be unconfined");
         });
     }
