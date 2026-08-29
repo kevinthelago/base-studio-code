@@ -136,12 +136,75 @@ const meta = {
 };
 const metaSerialised = JSON.stringify(meta, null, 2) + "\n";
 
+/** Deterministic stringify — keys sorted recursively — so two objects built with the same content in a
+ *  different key order compare equal (JSON.parse/`toEqual` already ignore order; a raw `JSON.stringify`
+ *  comparison would not). Used only to detect WHETHER an entry differs; `toEqual` below still owns the
+ *  real assertion. */
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  if (v && typeof v === "object") {
+    const keys = Object.keys(v as Record<string, unknown>).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+
+/** Name the FILE that caused kit drift, instead of leaving a reader to spot one changed string inside a
+ *  toEqual diff of two ~86,000-line objects (request #171 — hit three times in one day with no clue which
+ *  of ~100+ components or dozens of runtime modules moved). Compares the on-disk artifact against the
+ *  freshly generated `kitFile` component-by-component and runtime-entry-by-entry, returning one line per
+ *  drifted/added/removed component (by id + its `src`) or runtime module (by path). Empty when nothing
+ *  drifted structurally (a `kit`/`id`/`version` change is still reported, just without a file to name). */
+function describeDrift(onDisk: typeof kitFile, fresh: typeof kitFile): string[] {
+  const reasons: string[] = [];
+  for (const key of ["id", "version", "kit"] as const) {
+    if (stableStringify(onDisk[key]) !== stableStringify(fresh[key])) reasons.push(`"${key}" changed`);
+  }
+  const onDiskById = new Map(onDisk.components.map((c) => [c.id, c]));
+  const freshById = new Map(fresh.components.map((c) => [c.id, c]));
+  for (const [id, freshC] of freshById) {
+    const onDiskC = onDiskById.get(id);
+    if (!onDiskC) reasons.push(`component "${id}" (${freshC.src}) added to the manifest`);
+    else if (stableStringify(onDiskC) !== stableStringify(freshC)) {
+      reasons.push(
+        onDiskC.source !== freshC.source
+          ? `component "${id}" — ${freshC.src} changed on disk since react-ui.json was last generated`
+          : `component "${id}" (${freshC.src}) metadata changed (not its source)`,
+      );
+    }
+  }
+  for (const id of onDiskById.keys()) {
+    if (!freshById.has(id)) reasons.push(`component "${id}" removed from the manifest`);
+  }
+  const onDiskOrder = onDisk.components.map((c) => c.id);
+  const freshOrder = fresh.components.map((c) => c.id);
+  if (onDiskOrder.length === freshOrder.length && stableStringify(onDiskOrder) !== stableStringify(freshOrder)) {
+    reasons.push(`component order changed (same set, different sequence)`);
+  }
+  const runtimePaths = new Set([...Object.keys(onDisk.runtime), ...Object.keys(fresh.runtime)]);
+  for (const path of runtimePaths) {
+    const before = onDisk.runtime[path];
+    const after = fresh.runtime[path];
+    if (before === undefined) reasons.push(`runtime module ${path} added to the manifest closure`);
+    else if (after === undefined) reasons.push(`runtime module ${path} dropped from the manifest closure`);
+    else if (before !== after) reasons.push(`runtime module ${path} changed on disk since react-ui.json was last generated`);
+  }
+  return reasons;
+}
+
 describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
   it("stays in sync with the manifest-generated kit (UPDATE_KITS=1 to regenerate)", () => {
     if (process.env.UPDATE_KITS) writeFileSync(FILE, serialised);
     expect(existsSync(FILE), "react-ui.json missing — run `UPDATE_KITS=1 npx vitest run reactUiKit.gen`").toBe(true);
     // Round-trip the expected value so the comparison ignores `undefined` fields JSON drops.
-    expect(JSON.parse(readFileSync(FILE, "utf8"))).toEqual(JSON.parse(JSON.stringify(kitFile)));
+    const onDisk = JSON.parse(readFileSync(FILE, "utf8"));
+    const fresh = JSON.parse(JSON.stringify(kitFile));
+    const drift = describeDrift(onDisk, fresh);
+    expect(
+      drift,
+      `kit drifted from the manifest — run \`UPDATE_KITS=1 npx vitest run reactUiKit.gen\` to regenerate:\n${drift.join("\n")}`,
+    ).toEqual([]);
+    expect(onDisk).toEqual(fresh);
   });
 
   it("keeps the packaged-kit hash sidecar in sync (#2465; UPDATE_KITS=1 to regenerate)", () => {
@@ -221,5 +284,76 @@ describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
       }
     }
     expect(gaps, `unresolved first-party imports would break an emitted file:\n${gaps.join("\n")}`).toEqual([]);
+  });
+});
+
+describe("describeDrift diagnostic (request #171 — kit drift should name the file that caused it)", () => {
+  // A small, self-contained fixture shaped like `kitFile` — NOT read from the real 86,000-line
+  // artifact, so each case isolates exactly one kind of drift instead of depending on which real
+  // component happens to exist today.
+  const baseline = {
+    order: 0,
+    id: "bsc/react-ui@1.0.0",
+    version: "1.0.0",
+    kit: { name: "react-ui" },
+    components: [
+      { id: "button", src: "shared/ui/controls/Button.tsx", name: "Button", source: "export const Button = () => null;\n" },
+      { id: "card", src: "shared/ui/data/Card.tsx", name: "Card", source: "export const Card = () => null;\n" },
+    ],
+    runtime: { "shared/lib/core/format.ts": "export const fmt = (n: number) => String(n);\n" },
+  } as unknown as typeof kitFile;
+  const clone = () => JSON.parse(JSON.stringify(baseline)) as typeof kitFile;
+
+  it("passes clean when the artifact matches the manifest", () => {
+    expect(describeDrift(clone(), clone())).toEqual([]);
+  });
+
+  it("names the component id + its src path when a bundled source is stale", () => {
+    const fresh = clone();
+    const onDisk = clone();
+    (onDisk.components[0] as { source?: string }).source = "// stale — edited on disk since react-ui.json was generated\n";
+    const drift = describeDrift(onDisk, fresh);
+    expect(drift).toEqual([`component "button" — shared/ui/controls/Button.tsx changed on disk since react-ui.json was last generated`]);
+  });
+
+  it("names the runtime module path when a vendored support file is stale", () => {
+    const fresh = clone();
+    const onDisk = clone();
+    onDisk.runtime["shared/lib/core/format.ts"] = "// stale — edited on disk since react-ui.json was generated\n";
+    const drift = describeDrift(onDisk, fresh);
+    expect(drift).toEqual(["runtime module shared/lib/core/format.ts changed on disk since react-ui.json was last generated"]);
+  });
+
+  it("names an added and a dropped runtime module distinctly", () => {
+    const fresh = clone();
+    fresh.runtime["shared/lib/core/newHelper.ts"] = "export const helper = () => 1;\n";
+    const onDisk = clone();
+    const drift = describeDrift(onDisk, fresh);
+    expect(drift).toEqual(["runtime module shared/lib/core/newHelper.ts added to the manifest closure"]);
+
+    const fresh2 = clone();
+    const onDisk2 = clone();
+    onDisk2.runtime["shared/lib/core/newHelper.ts"] = "export const helper = () => 1;\n";
+    expect(describeDrift(onDisk2, fresh2)).toEqual(["runtime module shared/lib/core/newHelper.ts dropped from the manifest closure"]);
+  });
+
+  it("names a component removed from — or added to — the manifest by id and src", () => {
+    const fresh = clone();
+    const onDisk = clone();
+    onDisk.components = onDisk.components.filter((c) => c.id !== "card");
+    expect(describeDrift(onDisk, fresh)).toEqual(['component "card" (shared/ui/data/Card.tsx) added to the manifest']);
+
+    const fresh2 = clone();
+    fresh2.components = fresh2.components.filter((c) => c.id !== "card");
+    const onDisk2 = clone();
+    expect(describeDrift(onDisk2, fresh2)).toEqual(['component "card" removed from the manifest']);
+  });
+
+  it("distinguishes a metadata-only edit from a source drift, for the same component", () => {
+    const fresh = clone();
+    const onDisk = clone();
+    (onDisk.components[0] as { name?: string }).name = "ButtonRenamed";
+    const drift = describeDrift(onDisk, fresh);
+    expect(drift).toEqual(['component "button" (shared/ui/controls/Button.tsx) metadata changed (not its source)']);
   });
 });
