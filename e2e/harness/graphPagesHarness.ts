@@ -318,6 +318,125 @@ async function verifyAll(): Promise<VerifyResult[]> {
   return out;
 }
 
+/** One visit cycle's numbers, in the units the symptom is reported in: milliseconds to paint. */
+export interface VisitProfile {
+  recordId: string;
+  error?: string;
+  /** Cold mount → painted. The visit the maintainer calls "crisp". */
+  mountMs: number;
+  /** `display:none` → `flex` → painted, with the tree already mounted. The visit they call "very slow". */
+  unhideMs: number;
+  /** React commits during the hidden window, and the time React spent on them. THE load-bearing number:
+   *  a hidden tree that commits is doing work whose paint cost is deferred to the un-hide. */
+  hiddenCommits: number;
+  hiddenCommitMs: number;
+  /** Commits during the un-hide, to tell "React re-rendered it" apart from "the browser re-laid it out". */
+  unhideCommits: number;
+  unhideCommitMs: number;
+  /** Elements in the subtree while SHOWN — the thing style and layout are charged per. */
+  nodes: number;
+  /** Elements in the subtree while HIDDEN. A graph that culls on viewport size collapses to almost
+   *  nothing here, because `display:none` measures 0x0 — and then has to rebuild all of it on the way
+   *  back. That rebuild is invisible to any measurement that only looks at the page while it is shown. */
+  nodesHidden: number;
+}
+
+/**
+ * Measure ONE page across a visit cycle: mount → hide → wait → show.
+ *
+ * WHY THIS SHAPE. `KeptMountedPage` mounts a workspace on first activation and thereafter toggles
+ * `display` rather than unmounting, so a maintainer's "second load" is an UN-HIDE of a tree that never
+ * left the DOM. Timing a second `mount` would measure an operation the app never performs. This
+ * reproduces the real one, and reports the mount beside it so the two are comparable.
+ *
+ * The hidden window is instrumented because that is where the two candidate explanations diverge.
+ * React commits to a hidden tree — only paint is skipped — so if the page keeps committing while
+ * hidden, the un-hide pays for all of it at once and the cost grows with how long you were away. If it
+ * commits zero times, the un-hide is a pure style/layout/paint of a static tree and the fix is a
+ * different one entirely.
+ *
+ * NOT A BUDGET ASSERTION. Headless Chromium is not WebKitGTK and this machine is not that machine, so
+ * these are numbers to COMPARE against each other within a run, never thresholds to fail on.
+ */
+async function visitProfile(recordId: string, hiddenMs = 4000): Promise<VisitProfile> {
+  registerPlatformModules();
+  installTauriShim();
+  const [React, ReactDOMClient] = await Promise.all([import("react"), import("react-dom/client")]);
+
+  // SEED THE STORE THE WAY THE APP DOES. The packaged records are raw JSON; the app runs every one
+  // through `projectComponent`, which fills the fields a record may legally omit. Skipping that step
+  // crashed `DesignsWorkbench` on `…?.variants[0]` — `variants` is a REQUIRED field of
+  // `ComponentRecord`, so the page is right to trust it and the harness was wrong to hand over data the
+  // app would never produce. Normalizing here keeps the measurement about the page's cost rather than
+  // about a shape only the harness can create.
+  const { projectComponent } = await import("@/features/designs/lib/componentBridge");
+  useAppStore.setState({ components: RECORDS.map((r) => projectComponent(r as never)) } as never);
+
+  const host = document.createElement("div");
+  host.style.display = "flex";
+  document.body.appendChild(host);
+  const out: VisitProfile = {
+    recordId, mountMs: 0, unhideMs: 0,
+    hiddenCommits: 0, hiddenCommitMs: 0, unhideCommits: 0, unhideCommitMs: 0, nodes: 0, nodesHidden: 0,
+  };
+
+  /** Resolve after the browser has actually painted, not merely after React returned. Two frames: the
+   *  first is the commit's frame, the second cannot start until that paint is done. */
+  const painted = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+  let phase: "mount" | "hidden" | "unhide" | "idle" = "idle";
+  const onCommit = (_id: string, _p: unknown, actual: number) => {
+    if (phase === "hidden") { out.hiddenCommits++; out.hiddenCommitMs += actual; }
+    else if (phase === "unhide") { out.unhideCommits++; out.unhideCommitMs += actual; }
+  };
+
+  let root: ReturnType<(typeof ReactDOMClient)["createRoot"]> | undefined;
+  const thrown: string[] = [];
+  const onError = (e: ErrorEvent) => thrown.push(String(e.error ?? e.message));
+  window.addEventListener("error", onError);
+  try {
+    const record = BY_ID.get(recordId);
+    if (!record?.srcText) throw new Error(`no packaged record '${recordId}'`);
+    const Loaded = await loadComponentFromSource(record.srcText, resolveGraphSource);
+
+    phase = "mount";
+    const t0 = performance.now();
+    root = ReactDOMClient.createRoot(host);
+    root.render(
+      React.createElement(React.Profiler, { id: recordId, onRender: onCommit }, React.createElement(Loaded)),
+    );
+    await painted();
+    out.mountMs = performance.now() - t0;
+    if (thrown.length) throw new Error(thrown[0]);
+    out.nodes = host.querySelectorAll("*").length;
+
+    // ── away ──
+    phase = "hidden";
+    host.style.display = "none";
+    await new Promise((r) => setTimeout(r, hiddenMs));
+    // Counted at the END of the hidden window, after any cull cascade has settled.
+    out.nodesHidden = host.querySelectorAll("*").length;
+
+    // ── back ──
+    phase = "unhide";
+    const t1 = performance.now();
+    host.style.display = "flex";
+    // Touch a layout-forcing property so the measurement cannot finish before the browser has actually
+    // re-laid the subtree out; without this the two frames can elapse while layout is still deferred.
+    void host.offsetHeight;
+    await painted();
+    out.unhideMs = performance.now() - t1;
+  } catch (e) {
+    out.error = String(e).slice(0, 300);
+  } finally {
+    phase = "idle";
+    window.removeEventListener("error", onError);
+    try { root?.unmount(); } catch { /* already recorded */ }
+    host.remove();
+  }
+  return out;
+}
+
 declare global {
   interface Window {
     __graphPagesHarness?: {
@@ -325,8 +444,9 @@ declare global {
       mountAll: () => Promise<MountResult[]>;
       verifyAll: () => Promise<VerifyResult[]>;
       renderPage: typeof renderPage;
+      visitProfile: typeof visitProfile;
     };
   }
 }
 
-window.__graphPagesHarness = { loadAll, mountAll, verifyAll, renderPage };
+window.__graphPagesHarness = { loadAll, mountAll, verifyAll, renderPage, visitProfile };
