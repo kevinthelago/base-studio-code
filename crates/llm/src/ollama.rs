@@ -196,6 +196,39 @@ fn parse_models(v: &Value) -> Vec<String> {
     names
 }
 
+/// The name before a `:tag` (Ollama installed names commonly carry one, e.g. `qwen3-coder:latest`;
+/// a bare configured name like `qwen3-coder` has none). Pure helper for [`model_is_installed`].
+fn base_name(model: &str) -> &str {
+    model.split(':').next().unwrap_or(model)
+}
+
+/// Whether `model` is present in `installed` (from [`list_models`]) — exact match, or, when `model`
+/// carries no `:tag` of its own, matching by [`base_name`] so a bare `qwen3-coder` still counts as
+/// installed when Ollama only has the tagged `qwen3-coder:latest` (Ollama resolves a bare name to its
+/// `:latest` tag the same way). A model that DOES specify a tag has to match that tag exactly — a
+/// request for `qwen3.5:99b` is not satisfied by an installed `qwen3.5:9b`, a different real model.
+/// Pure — unit-testable without a server. (#176)
+pub fn model_is_installed(model: &str, installed: &[String]) -> bool {
+    if installed.iter().any(|m| m == model) {
+        return true;
+    }
+    !model.contains(':') && installed.iter().any(|m| base_name(m) == model)
+}
+
+/// A clear, actionable error for a configured model that [`list_models`] does not list — the
+/// alternative to letting the request reach `/api/chat` and die on a bare 404 with no hint the MODEL
+/// NAME was the problem (#176: filed after `model-defaults.json`'s packaged `qwen3-coder` default
+/// turned out not to be installed on the filer's machine). Pure — the caller decides WHEN to show it,
+/// skipping it when the endpoint itself is unreachable (that is a connectivity failure, not a verdict
+/// that the model is absent).
+pub fn model_not_installed_error(model: &str, base_url: &str, installed: &[String]) -> String {
+    let list = if installed.is_empty() { "(no models installed)".to_string() } else { installed.join(", ") };
+    format!(
+        "Model '{model}' is not installed on Ollama at {base_url}. Installed: {list}. Run \
+         `ollama pull {model}` or pick an installed model in Settings → LLM provider.",
+    )
+}
+
 /// Query Ollama's `/api/show` for `model` and derive its [`OllamaProfile`]. Best-effort: any failure
 /// (server down, old version, non-Ollama endpoint) yields [`OllamaProfile::default`] so the session
 /// still runs with the generic behavior. Pure derivation is in [`profile_from_show`].
@@ -595,6 +628,32 @@ mod tests {
         assert_eq!(parse_models(&v), vec!["llama3.1:8b", "qwen3-coder:latest"]);
         // No models array (unreachable-ish / empty) → empty list, not a panic.
         assert!(parse_models(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn model_is_installed_matches_exact_or_by_base_name() {
+        // #176: the machine that filed this had qwen3.5 variants installed, not qwen3-coder.
+        let installed = vec!["qwen3.5:9b".to_string(), "qwen3.5:35b-a3b".to_string()];
+        assert!(!model_is_installed("qwen3-coder", &installed));
+        assert!(model_is_installed("qwen3.5:9b", &installed)); // exact
+        assert!(model_is_installed("qwen3.5", &installed)); // bare name matches a tagged install
+        assert!(!model_is_installed("qwen3.5:99b", &installed)); // explicit tag must match exactly
+        assert!(!model_is_installed("qwen3-coder", &[])); // nothing installed
+    }
+
+    #[test]
+    fn model_not_installed_error_names_the_model_and_lists_what_is_there() {
+        let installed = vec!["qwen3.5:9b".to_string(), "qwen3.5:35b-a3b".to_string()];
+        let e = model_not_installed_error("qwen3-coder", "http://localhost:11434/v1", &installed);
+        assert_eq!(
+            e,
+            "Model 'qwen3-coder' is not installed on Ollama at http://localhost:11434/v1. Installed: \
+             qwen3.5:9b, qwen3.5:35b-a3b. Run `ollama pull qwen3-coder` or pick an installed model in \
+             Settings → LLM provider.",
+        );
+        // An empty install list still names itself as such rather than printing a blank list.
+        let e = model_not_installed_error("qwen3-coder", "http://localhost:11434/v1", &[]);
+        assert!(e.contains("Installed: (no models installed)"), "{e}");
     }
 
     #[test]
