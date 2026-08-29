@@ -1,0 +1,18 @@
+{
+  "id": "teamsgraphhost",
+  "name": "TeamsGraphHost",
+  "kitId": "base-studio-code",
+  "role": "primitive",
+  "provides": "@/features/teams/TeamsGraphHost",
+  "composes": [],
+  "src": "src/features/teams/TeamsGraphHost.tsx",
+  "props": [
+    {
+      "name": "pageOverride",
+      "type": "string"
+    }
+  ],
+  "folder": "features/teams",
+  "feature": "teams",
+  "srcText": "// The Teams page host (epic #3604) — renders the Teams workspace FROM THE GRAPH.\n//\n// Teams was the last of the five graph workspaces still resolved by the BUNDLER: `lazyWorkspaces`\n// imported `TeamsPanel` through the feature barrel, so the 26 KB `teamspage` record was compiled into\n// the bundle like any file. Every other rail destination with a page in the graph — glance, console,\n// algorithms, data, sounds, logs, mcp, skills, automations, fleet — already mounts through a host.\n// This closes that gap; it invents nothing.\n//\n// WHAT CHANGES, AND WHAT DOES NOT. The record is the same record either way. What moves is WHEN it is\n// resolved: the loader esbuild-transforms `teamspage`'s source in the browser, keeps its platform\n// imports external and answers them from the live `moduleRegistry`, and evaluates the result — so an\n// edit to the record recompiles that node in the running app with no rebuild. The trade is that a\n// mistake in the record now surfaces at RUNTIME rather than in `tsc`, which is exactly what the error\n// boundary and the fallback below are for.\n//\n// The platform registrar runs at MODULE LOAD, before the workspace ever renders, so the injected\n// modules are already in the registry when the compiled page's `require()` runs. It is idempotent.\n//\n// The stylesheet is loaded by the ENTRY's `@/**/*.css` glob (the-entry-owns-stylesheet-loading), not\n// by a module import here: the runtime loader cannot resolve a CSS side-effect import, so a\n// graph-hosted page must never depend on one.\nimport { GraphComponent } from \"@/shared/lib/runtime/GraphComponent\";\nimport { GraphPageFallback } from \"@/shared/lib/runtime/GraphPageFallback\";\nimport { registerTeamsPlatform } from \"@/features/teams/graphPlatform\";\n\n// Register at module load — before the workspace ever renders — so the injected modules are in the\n// registry when the graph page's compiled `require()` runs. Idempotent.\nregisterTeamsPlatform();\n\nexport function TeamsGraphHost({ pageOverride }: { pageOverride?: string } = {}) {\n  // Fallback offers a one-click re-seed (#3648) when the source isn't in the library yet.\n  return (\n    <GraphComponent\n      id=\"teamspage\"\n      exportName=\"TeamsPanel\"\n      props={pageOverride ? { pageOverride } : undefined}\n      fallback={<GraphPageFallback page=\"Teams\" icon=\"◎\" />}\n    />\n  );\n}\n"
+}
