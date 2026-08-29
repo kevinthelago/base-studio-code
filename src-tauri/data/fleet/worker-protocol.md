@@ -49,6 +49,8 @@ Two limits worth knowing before you hit them, because both look like breakage an
 
 **When a plain FILE is still correct.** The exceptions are narrow, and each was learned by shipping the bug first: a module that holds mutable module state on a specifier something ELSE registers (two live copies — the write is refused); one that uses `import.meta.glob` (a build-time transform, not a runtime function); one imported statically by `main.tsx`/`App.tsx`; a type-only module or a `.d.ts` (read because it is included, never imported); a module a BUILD CONFIG imports (bundled before any plugin runs); and a stylesheet. If your case is not plainly one of those, it is not one — file `bsc plan request new` and let the director answer rather than settling it by writing the file.
 
+**Logging and performance are part of what you own, not a separate stream's job.** Your owned glob is a complete vertical slice: when you write or touch code there, add the log lines and instrumentation that section needs, and watch its cost the same way you watch its correctness. `bsc logs` and `bsc perf` are the read surfaces — check them for your own owned paths as part of normal work, not just when something is visibly on fire. A genuine performance or logging gap inside your own owned glob is yours to fix directly; it does not need a hand-off to a central logging backlog. (The shared logging PLUMBING — schema, store, readers — stays owned by the `logs` stream; this is about instrumenting and watching the code *you* write, not rebuilding the pipeline underneath it.)
+
 **Build against the planned contracts, in parallel — do NOT wait on another stream.** The plan already defines the integration contracts/seams between streams (the interface each one exposes/consumes). Implement your work against those contracts now; you do not park waiting for an upstream stream's work to land — integration is verified at merge. (A genuine artifact dependency is a phase boundary the plan already sequenced, not a runtime wait.)
 
 When you genuinely need a decision you cannot make yourself, defer to the director, not the user:
@@ -60,6 +62,35 @@ When you genuinely need a decision you cannot make yourself, defer to the direct
 
 The line, so the rule stays usable: the trigger is authoring a program that performs an OPERATION. Reading is not — a one-off `grep`/`jq`/`wc` pipeline to answer a question you have right now is ordinary inspection, and the TESTS you ship with your item are the deliverable, not a temp script.
 - `echo "what you decided" | bsc-note` — for a micro-decision, pick the option that best serves the planned solution (a reversible one when you're genuinely unsure), record it, and move on; do not ask, and do not default to the minimal thing.
+
+**Logging and performance are part of what you own, not a separate stream's job.** Your owned glob is a complete vertical slice: when you write or touch code there, add the log lines and instrumentation that section needs, and watch its cost the same way you watch its correctness. `bsc logs`, `bsc perf` and `bsc mem` are the read surfaces — check them for your own owned paths as part of normal work, not just when something is visibly on fire. A genuine performance or logging gap inside your own owned glob is yours to fix directly; it does not need a hand-off to a central logging backlog. (The shared logging PLUMBING — schema, store, readers — stays owned by the `logs` stream; this is about instrumenting and watching the code *you* write, not rebuilding the pipeline underneath it.)
+
+**MAKE IT WORK, THEN MAKE IT CHEAP — and MEASURE, because an unmeasured claim is not evidence.** Correctness is the floor, not the finish. The work is also judged on what it costs to build and to run, and you have the surfaces to answer that yourself rather than guessing:
+
+- `bsc mem build` — what builds cost here: count, median, worst, latest, for time AND peak memory. It reads what `bsc errors run` already recorded, so there is nothing extra to run first.
+- `bsc mem compare --at <epochMs>` — the verb the rest exist for. Take a boundary with `date +%s%3N` BEFORE you start, then compare after. A half with no samples reports ABSENT, never zero — an empty window is not a fast one.
+- `bsc mem app` — what the running app holds: JS heap, DOM nodes, listeners. Needs the browser (`npx playwright install chromium`); it says so plainly when that is missing rather than reporting a zero.
+- `bsc mem growth --session <id>` — is a live session's RSS climbing? The leak question a single reading cannot answer.
+- `bsc perf summary` / `bsc perf compare --at HH:MM:SS` — the COMPUTATION half: render commits, named phases, jank windows, `bsc` spawns.
+
+**THE LOOP IS MEASURE → CHANGE → RE-MEASURE, and the first step is the one that gets skipped.** Every real finding this project has recorded came from diffing two halves around a change, and the estimates were wrong more often than they were right: a culling slice estimated at 5× measured 1.28×, and a previous "fix" turned out to have introduced a 402-spawn regression. Measure first even when the answer seems obvious — especially then, because that is when nobody checks.
+
+**RECORD THE BEFORE AND AFTER on your change record**, the same way you record a gate:
+
+```sh
+bsc plan change perf <ref> build 92s 74s --from <you>
+bsc plan change perf <ref> heap 58MB 41MB --from <you>
+```
+
+Both halves are required and a one-sided reading is refused: an `after` with no `before` cannot show anything changed. It reaches the rendered change, so the director sees what your work cost as well as whether it passed.
+
+**WHERE THE LINE IS, so this does not become a licence to wander.** Three bounds, and the second is the one that gets broken:
+
+- **Do not optimize what you have not measured to be slow.** A change that makes nothing faster still costs a review, a merge and a risk of regression. "This looked inefficient" is not a finding; a number is.
+- **Optimizing is NOT scope.** Your item is the deliverable. If you find a real cost that is outside it, `bsc plan request new "<what you found>" --command "<the measurement>"` and let the director decide — do not widen your branch into a performance project nobody asked for.
+- **A slower, clearer implementation can be the right one.** Cost is one axis among several. If measuring says the fast version is unreadable and the difference is 3ms, record the number, keep the clear one, and say why in a note.
+
+**IN THE CAGE, `bsc mem`/`bsc perf` are not reachable** — they need the binary you do not have, and `bsc mem app` needs a browser the cage has no path to. Measure what your own worktree can (a build's wall clock is `time <cmd>`), record it through `/plan/out` as a note, and ask the director for anything needing the real surfaces. Do not report a cost you did not measure.
 
 **HOW YOUR WORK IS RECORDED — the change record is your PR (`bsc plan change`).** The item says what to DO; the change says what was DONE, and it lives in the same plan.db under the same ref, so one name reaches the item, your branch, your worktree and your record.
 

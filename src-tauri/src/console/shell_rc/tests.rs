@@ -479,14 +479,55 @@ fn bsc_rc_execs_the_one_umbrella_binary_via_bsc_bin() {
     // — so a drift in the seed's wire bytes is caught here, not in a downstream session.
     assert_eq!(
         frag("bsc.sh"),
-        "bsc() { if [ -n \"${BSC_BIN:-}\" ] && [ ! -s \"$BSC_BIN\" ]; then echo \"bsc: BSC_BIN ($BSC_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; \"${BSC_BIN:-bsc}\" \"$@\"; }\n",
+        "bsc() { if [ -n \"${BSC_BIN:-}\" ] && [ ! -s \"$BSC_BIN\" ]; then echo \"bsc: BSC_BIN ($BSC_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; if [ -n \"${BSC_BIN:-}\" ]; then \"$BSC_BIN\" \"$@\"; else command bsc \"$@\"; fi; }\n",
     );
     let rc = frag("bsc.sh");
     assert!(rc.starts_with("bsc() {"), "defines the single `bsc` helper");
-    assert!(rc.contains("${BSC_BIN:-bsc}"), "execs $BSC_BIN, falling back to a bare `bsc` on PATH");
+    // ⚠️ THE FALLBACK MUST BE `command bsc`, NEVER A BARE `bsc`. This function is NAMED `bsc`, so a
+    // bare `bsc` in its own body resolves to the function — not to PATH — and `${BSC_BIN:-bsc}`
+    // therefore recursed until the stack died: SIGSEGV, exit 139, no message, on every call in any
+    // session that loads this rc without `BSC_BIN`. `command` is the one word that bypasses the
+    // function and reaches a real binary.
+    assert!(rc.contains("command bsc"), "the PATH fallback must bypass this function with `command`");
+    assert!(
+        !rc.contains("${BSC_BIN:-bsc}"),
+        "a bare `bsc` fallback is self-recursive — see the note above",
+    );
     assert!(rc.ends_with('\n'), "ends with a trailing newline (#296)");
     // It's wired into the one ordered concat the rc writer + syntax guard both derive from.
     assert!(super::bsc_rc_body().contains("bsc() {"), "the `bsc` helper must be in the concat body");
+}
+
+/// THE RECURSION, pinned by RUNNING it rather than by reading the string.
+///
+/// `${BSC_BIN:-bsc}` looked like a PATH fallback and was not: this function is named `bsc`, so the
+/// fallback word resolved to the function itself and it called itself until the stack died — SIGSEGV,
+/// exit 139, no message, on every `bsc` call in any session that loads this rc without `BSC_BIN`.
+/// Production never saw it because `pty_create` always exports `BSC_BIN`.
+///
+/// A string assertion alone would not have caught the original bug (the old bytes were exactly what
+/// the old test demanded), so this executes the fragment under `bash` with `BSC_BIN` unset and asserts
+/// the process does not die by signal. 139 is the number to look for if this ever fails again.
+#[test]
+fn the_bsc_helper_does_not_recurse_into_itself_when_bsc_bin_is_unset() {
+    let rc = frag("bsc.sh");
+    let out = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(format!("{rc}\nunset BSC_BIN\nbsc --version"))
+        .output();
+    let Ok(out) = out else { return }; // no bash on this platform — nothing to assert
+    let code = out.status.code();
+    assert_ne!(
+        code,
+        Some(139),
+        "the `bsc` helper segfaulted: the PATH fallback is recursing into the function again",
+    );
+    // A missing binary is a 127, which is the honest answer. Anything that is NOT a clean
+    // "not found" (or a working exec) means the fallback stopped behaving like a command lookup.
+    assert!(
+        code.is_some(),
+        "died by signal rather than exiting — the recursion is back",
+    );
 }
 
 #[test]
@@ -497,7 +538,7 @@ fn the_one_bsc_helper_covers_every_advertised_subcommand() {
     // per-CLI `bsc-plan()`/`bsc-data()`/… function definitions are gone from the body.
     let body = super::bsc_rc_body();
     assert!(body.contains("bsc() {"), "the unified `bsc` helper must be defined");
-    assert!(body.contains("${BSC_BIN:-bsc}"), "and exec the staged $BSC_BIN");
+    assert!(body.contains("\"$BSC_BIN\" \"$@\""), "and exec the staged $BSC_BIN");
     assert!(!bsc_util::SIDECARS.is_empty(), "the registry still drives the advertised inventory");
     // The legacy per-CLI EXEC helpers (`bsc-plan()`/`bsc-data()`/…) are gone — every subcommand is
     // now reached through the single `bsc` function. `bsc-skill` is the ONE exception: its name is

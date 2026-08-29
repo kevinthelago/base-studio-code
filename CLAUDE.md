@@ -222,6 +222,37 @@ there is nothing running to do the work. Build failures are different — they h
 The **gate is deliberately not wired to this**: it already fails loudly in your own shell, and ten
 worktree agents gating in parallel would pin every node red and destroy the signal.
 
+### What every build COST — `bsc mem`
+
+The same wrapper also records what a run cost, and that half **is** wired into the gate, because
+recording a cost cannot pin anything red. Every gate leg — `cargo clippy`, `cargo nextest`, `tsc`,
+`eslint`, `vitest`, the graph checks — runs under `bsc errors run --measure-only`, which records wall
+clock and the peak RSS of the whole process tree while filing **no fault**. It also inherits stdio
+rather than piping, so cargo's live progress and colours survive being measured.
+
+```bash
+bsc mem build                              # what builds cost: n · median · worst · latest
+bsc mem build --source gate:clippy         # ONE surface's history
+bsc mem compare --at $(date +%s%3N)        # did my change help? (take the boundary BEFORE you start)
+bsc mem app                                # the running app's JS heap / DOM nodes / listeners
+bsc mem growth --session <id>              # a live session's RSS slope — the leak question
+```
+
+Measurements are per-leg and keyed on a stable id, so a **scoped** run and a **full** run of the same
+leg share one history rather than splitting into two that can never be compared. Peak RSS is the
+maximum over time of the SUMMED tree RSS — the same definition as the `jobs = 4 → 8.04 GB` figures
+above, so the numbers are comparable to the ones already written down here rather than a second
+incompatible metric.
+
+**Every hand-measured figure in this file is now reproducible rather than remembered.** They were
+taken once, by someone, and have no history behind them; `bsc mem build --source gate:<leg>` is the
+trend. An absent measurement reads as ABSENT, never as zero — a build recorded at 0 ms would poison
+every median it entered.
+
+A worker records its before/after on its change record with `bsc plan change perf <ref> <metric>
+<before> <after>`, which renders into the change and reaches the director. **Nothing here can fail a
+gate** — that is deliberate, and it is why the reviewer is the only reader who acts on a regression.
+
 ## Project Structure
 
 ```
@@ -1097,10 +1128,21 @@ Two things follow, and the second is the one that limits the fleet:
 - **A FULL gate is an 8 GB operation** because nextest links ~41 test binaries (9 concurrent `link.exe`
   at the old default; one app link alone peaks at 2.99 GB). So **two** full gates fit in what this
   machine has free, not ten. `npm run gate -- --full` therefore takes a cross-worktree slot from
-  `~/.base-studio-code/locks/`; the SCOPED gate is not serialized, since it compiles one crate plus its
-  dependents. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting gate says so — a
-  silent wait is indistinguishable from a hang — and a lock whose holder died or wedged is stolen, so
-  one crashed agent cannot block the fleet. This repo already has an OOM history (#795).
+  `~/.base-studio-code/locks/`. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting
+  gate says so — a silent wait is indistinguishable from a hang — and a lock whose holder died or
+  wedged is stolen, so one crashed agent cannot block the fleet. This repo already has an OOM history
+  (#795).
+- **THE SLOT FOLLOWS THE COST, NOT THE TIER**, and that distinction was learned the hard way. The rule
+  used to be "`--full` queues, scoped does not, since it compiles one crate plus its dependents" — a
+  statement about CARGO, applied to a gate whose memory is dominated by VITEST. MEASURED on this box
+  over 60s of ordinary fleet work: an 18.19 GB peak of which **vitest was 11.45 GB** (8.59 GB across 28
+  workers, 2.86 GB across **six** concurrent runners) — more than the whole Rust toolchain, the app and
+  every agent session combined, and not one of those six held a slot.
+  A scoped gate is **not automatically a cheap one**: touching a record store sets `vitestUnscoped`
+  (`--changed` cannot see from a JSON blob to the modules `emit:records` materializes out of it), so the
+  whole 768-file suite runs while the plan still calls itself scoped. Since most of this frontend IS
+  records, that is the common path rather than a corner. `needsGateSlot` now queues any plan that runs
+  vitest unscoped, and `gate-scope.test.ts` pins it.
 
 Ten sessions EDITING Rust is fine. Ten sessions GATING at once is not, and without the lock it is an
 out-of-memory failure rather than a slow one.

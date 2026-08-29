@@ -24,6 +24,11 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# The process-tree RSS sampler behind `bsc errors run`'s cost measurement. `default-features = false`
+# with only `system` is the same narrow slice src-tauri takes — it is the process table and nothing
+# else, no components/disks/networks — so this stays a cheap dependency on a crate the gate compiles
+# constantly.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 # The ONE home-dir resolver (#1646) — `--project <key>` and `projects` derive a hub path the same way
 # the app's `error_db_path` does, so the CLI and the app can never disagree about which db a key names.
 bsc-util = { path = "../bsc-util" }

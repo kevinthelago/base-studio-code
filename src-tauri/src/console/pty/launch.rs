@@ -501,6 +501,11 @@ mod tests {
     ///     launch decision · has_history=true · resumed=false
     ///     created · … · init=<none>
     ///
+    /// (That line spells the field `launch=` now. It used to print `init_cmd`, which is empty
+    /// whenever the launch is a baked startup prompt — so a resumed worker logged `init=<none>`
+    /// while really running `claude --continue $'…'`, and the log denied that anything had been
+    /// launched at all. Here the `<none>` was true; the point is that it could not be trusted.)
+    ///
     /// It is CORRECT here and must stay correct — a mount with nothing to launch is a shell, per
     /// `only-the-user-resumes-a-session`. What was wrong lived upstream, in the frontend deciding
     /// there was nothing to launch: `resolveInitCmd` handed back "" for a pane that was being

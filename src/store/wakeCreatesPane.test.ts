@@ -248,6 +248,52 @@ describe("wakePane STARTS a stream the roster never saw", () => {
     expect(useAppStore.getState().wakePane(PANE, "resume")).toBe(true);
     expect(useAppStore.getState().tabs[0].paneIds).toContain(PANE);
   });
+
+  // #173 (studio-code:director): `bsc plan fleet model <id> qwen3.5:9b` stored the model, but no
+  // harness actually consumed it — every pane launched on the fleet-wide toggle (default "claude"),
+  // so a director-assigned local model silently ran on Claude Code's own default, no ollama/bsc-agent
+  // process anywhere in the pane's tree. A stream's own local model must now win the HARNESS too, on
+  // both launch paths — a fresh `fleetStartProject` and a `wakePane` adoption.
+  describe("a stream's own local model overrides the fleet's default harness (#173)", () => {
+    const LOCAL: AgentStream & { cwd: string } = { ...NEVER_LAUNCHED, model: "qwen3.5:9b" };
+
+    it("fleetStartProject launches a local-model stream on bsc-agent, and every other pane on the fleet default", () => {
+      const streamRow: AgentStream = (({ cwd: _cwd, ...row }) => row)(LOCAL);
+      resetFleetPanes();
+      useAppStore.setState({
+        tabs: [], personas: [], blueprints: [], projectBlueprintId: {}, bscBaseDir: "/base",
+        llmProvider: "anthropic", fleetHarness: "claude",
+      } as never);
+      useAppStore.getState().fleetStartProject("Demo", { recommended: 1, reasoning: "t", streams: [streamRow], director: { enabled: true } }, KEY,
+        { hubPath: "/hub", worktreePaths: { [STREAM]: LOCAL.cwd } });
+      const st = useAppStore.getState();
+      expect(st.paneModels[PANE]).toBe("qwen3.5:9b");
+      expect(st.paneProviders[PANE]).toBe("bsc-agent");
+      // The director carries no stream model, so it stays on the fleet-wide default — one local
+      // worker must not drag the rest of the fleet onto bsc-agent with it.
+      expect(st.paneProviders[`${KEY}:director`]).toBe("claude");
+    });
+
+    it("wakePane adopts a local-model stream onto bsc-agent the same way", () => {
+      resetFleetPanes();
+      armUnlaunched();
+      useAppStore.setState({ llmProvider: "anthropic", fleetHarness: "claude" } as never);
+      useAppStore.getState().wakePane(PANE, "go", LOCAL);
+      const st = useAppStore.getState();
+      expect(st.paneModels[PANE]).toBe("qwen3.5:9b");
+      expect(st.paneProviders[PANE]).toBe("bsc-agent");
+    });
+
+    it("a Claude-tier stream model stays on the fleet default — only a NON-tier model forces bsc-agent", () => {
+      resetFleetPanes();
+      armUnlaunched();
+      useAppStore.setState({ llmProvider: "anthropic", fleetHarness: "claude" } as never);
+      useAppStore.getState().wakePane(PANE, "go", { ...NEVER_LAUNCHED, model: "opus-4.5" });
+      const st = useAppStore.getState();
+      expect(st.paneModels[PANE]).toBe("opus-4.5");
+      expect(st.paneProviders[PANE]).toBe("claude");
+    });
+  });
 });
 
 // ── the grid has to have a cell for it (#a-woken-pane-needs-a-cell-in-the-grid) ──────────────────

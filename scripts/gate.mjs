@@ -15,7 +15,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireGateSlot } from "./gateLock.mjs";
-import { planGate, parsePorcelain, gateCommands, isRecordStorePath } from "./gateScope.mjs";
+import { planGate, parsePorcelain, gateCommands, isRecordStorePath, needsGateSlot } from "./gateScope.mjs";
 import { decideGateTree, devPortFrom } from "./gate-tree-guard.mjs";
 import { classifyBuildFailure, failingPackage } from "./build-artifact-plan.mjs";
 
@@ -79,10 +79,34 @@ function workspace() {
   return { graph, dirToCrate };
 }
 
-function run(label, cmd, args) {
+/**
+ * Run one gate leg, and RECORD WHAT IT COST.
+ *
+ * The gate is the one command every worktree agent runs, and it is where the expensive builds actually
+ * happen — cargo, vitest, tsc. It has always printed each leg's seconds and thrown them away, so this
+ * project has hand-measured build figures written into CLAUDE.md and no history behind any of them.
+ * Now every leg lands a row, and `bsc mem build --source gate:clippy` is a trend rather than a memory.
+ *
+ * MEASURE-ONLY, and that is the whole reason this is safe to do here. `CLAUDE.md` is explicit that the
+ * gate must not file faults — ten worktree agents gating in parallel would pin every project node red
+ * and destroy the signal — so the wrapper records cost and files nothing. It also INHERITS stdio
+ * rather than piping, so cargo's live progress survives; a gate that looks frozen is a gate people
+ * stop running.
+ *
+ * Through `record-run.mjs`, not `bsc` directly, for its degrade: on a fresh clone there is no usable
+ * binary yet (the gate may be what builds it), and there the wrapper runs the command plainly and
+ * records nothing. A gate that could not run without a working `bsc` would be a worse trade than
+ * missing measurements.
+ */
+function run(label, cmd, args, leg = {}) {
   process.stdout.write(`\n── ${label}\n   ${cmd} ${args.join(" ")}\n`);
   const t = Date.now();
-  const r = spawnSync(cmd, args, { stdio: "inherit", shell: process.platform === "win32" });
+  const measured = leg.key
+    ? [process.execPath, [join(REPO, "scripts", "record-run.mjs"),
+        "--measure-only", "--stage", leg.stage ?? "build", "--source", `gate:${leg.key}`,
+        "--", cmd, ...args]]
+    : [cmd, args];
+  const r = spawnSync(measured[0], measured[1], { stdio: "inherit", shell: process.platform === "win32" });
   const secs = ((Date.now() - t) / 1000).toFixed(1);
   const ok = r.status === 0;
   process.stdout.write(`   ${ok ? "PASS" : "FAIL"} (${secs}s)\n`);
@@ -116,6 +140,9 @@ if (!plan.full) {
   if (plan.vitestUnscoped) {
     process.stdout.write(`  note: a record store changed, so vitest runs UNSCOPED — --changed cannot see\n`);
     process.stdout.write(`        from a JSON blob to the modules emit:records materializes from it.\n`);
+    // Say it here, BEFORE the wait. This plan calls itself scoped and is about to queue like a full one;
+    // without a line saying why, the pause reads as a hang in the one tier nobody expects to wait.
+    process.stdout.write(`        this makes it a HEAVY gate, so it takes a fleet slot like --full does.\n`);
   }
   if (plan.rustCrates.length >= graph.size - 2) {
     process.stdout.write(`  note: that is nearly the whole workspace — a shared crate changed, so this is\n`);
@@ -175,20 +202,24 @@ try {
   // a janitor must never redden a gate
 }
 
-// Serialize FULL gates across the fleet. One peaks at ~8 GB (jobs = 4) because nextest links ~41 test
-// binaries, and this box has ~16 GB free — so two fit and the 10+ sessions this repo is meant to run
-// do not (#ten-parallel-rust-sessions-will-oom-the-box). The SCOPED gate is deliberately not
-// serialized: it compiles one crate plus its dependents, so making agents queue for it would trade a
-// real cost against a risk they do not pose.
-const releaseSlot = plan.full
+// Serialize the EXPENSIVE gates across the fleet — see `needsGateSlot`, which owns the rule and is
+// unit-tested. A full gate peaks at ~8 GB (jobs = 4) because nextest links ~41 test binaries, and this
+// box has ~16 GB free, so two fit and the 10+ sessions this repo is meant to run do not
+// (#ten-parallel-rust-sessions-will-oom-the-box).
+//
+// A SCOPED GATE IS NOT AUTOMATICALLY A CHEAP ONE, which is what this used to assume. Keying the slot on
+// `plan.full` exempted every gate that ran vitest UNSCOPED — the whole 768-file suite — because such a
+// plan still calls itself scoped. Measured on the live box: 6 concurrent vitest runs and 28 workers,
+// 11.45 GB of an 18.19 GB peak, not one of them holding a slot.
+const releaseSlot = needsGateSlot(plan)
   ? await acquireGateSlot((m) => process.stdout.write(`gate: ${m}\n`))
   : () => {};
 
 // EVERY step runs, even after one fails. A gate that stops at the first failure hands back a partial
 // verdict, and the whole point here is that the reader can trust what was covered.
 const results = [];
-for (const { label, cmd, args } of gateCommands(plan, base)) {
-  results.push([label, run(label, cmd, args)]);
+for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
+  results.push([label, run(label, cmd, args, { key, stage })]);
 }
 
 releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet

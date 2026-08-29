@@ -27,6 +27,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { norm, codeOnly, splitPreamble, fileAsRecordSource, runtimeImports, seedAdoption, blankComments } from "./lib/recordSource.mjs";
 import { libraryCarryClosure } from "./lib/graphClosure.mjs";
+import { serializeSeed as serializeAlgorithms } from "./lib/seedFormat.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -498,22 +499,6 @@ for (const { rec, file } of promote.component) {
   for (const k of SEED_FIELDS) if (rec[k] !== undefined) out[k] = rec[k];
   mkdirSync(dir, { recursive: true });
   writeFileSync(path, JSON.stringify(out, null, 2) + "\n");
-}
-
-/**
- * Re-serialize `algorithms.json` EXACTLY as it is stored on disk: 1-space indent, non-ASCII escaped,
- * and NO trailing newline — Python's `json.dumps(d, indent=1, ensure_ascii=True)`, which is what
- * writes this file.
- *
- * `JSON.stringify(algorithms, null, 2) + "\n"` re-indents all 6.3 MB, so promoting ONE record produced
- * a 22,500-line diff with the real change invisible inside it — and carried a whole-file reformat into
- * every branch that ran this script once. (`sync-impl-seed.mjs` had the identical bug.)
- */
-function serializeAlgorithms(value) {
-  return JSON.stringify(value, null, 1).replace(
-    /[\u0080-\uffff]/g,
-    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
 }
 
 // IMPLS — appended to the one algorithms document, sorted by id so the file stays reviewable and a

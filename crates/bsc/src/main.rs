@@ -88,6 +88,7 @@ const COMMANDS: &[Surface] = &[
     active("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
     active("teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
     active("network", "user network store: a DOMAIN owning a set of projects and one architect session", Some("networks/ — user; membership is the `network` column on the project row")),
+    active("secret", "credential store: which services we are paired with and whether those pairings still work (metadata + derived status; NO verb reads a secret back)", Some("secrets.db — user; the VALUE lives in the OS keychain, not here")),
     active("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)", Some("the Studio snapshot store — user")),
     deprecated("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)", Some("orgs/ — the same store `bsc teams` serves")),
     deprecated("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)", Some("the component library — the same store `bsc ui` serves")),
@@ -107,6 +108,7 @@ const COMMANDS: &[Surface] = &[
     // #command-surface-catalog-is-one-source: `perf` DISPATCHED but was absent from this catalog, so
     // `bsc help` never mentioned it. Same shape as `bsc plan brief` being undiscoverable.
     active("perf", "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)", Some("the frontend instrumentation store")),
+    active("mem", "the MEMORY + COST surface — app heap, build time and build memory (read-only)", Some("the project run store + the browser harness")),
     active("debug", "inspect the RUNNING app's live DOM + preview state (read-only)", None),
     active("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)", Some("the conversation-loop store — user")),
     active("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)", Some("the improvement-request store — user")),
@@ -121,6 +123,7 @@ const COMMANDS: &[Surface] = &[
     // #command-surface-catalog-is-one-source: `serve` (#4152) dispatched but was likewise absent.
     internal("serve", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
     active("version", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
+    active("config", "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)", Some("~/.base-studio-code/config/ — the runtime config-seed mirror")),
 ];
 
 fn top_help() -> String {
@@ -214,6 +217,10 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
+        // The CREDENTIAL store: what services we are paired with and whether those pairings still
+        // work. The secret VALUE is not in it — that stays in the OS keychain, and no verb here can
+        // read one back, so a live session can see WHICH credentials exist without extracting any.
+        "secret" => bsc_secret::cli::run(rest, "bsc secret"),
         // The RELATIONAL corpus store — product feature inventories. Distinct from `bsc data`, which
         // is per-project and whose rows come from connectors scanning a live system.
         "atlas" => atlasdb::cli::run(rest, "bsc atlas"),
@@ -245,6 +252,9 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "logs" => logs::cli::run(rest, "bsc logs"),
         // The FRONTEND instrumentation reader — distinct from `bsc logs perf` (perf.db process samples).
         "perf" => logs::instrument::run(rest, "bsc perf"),
+        // The MEMORY half of the same question `perf` answers for computation — app heap, build time
+        // and build memory. Read-only, so no role needs a grant to reach it.
+        "mem" => bsc_mem::cli::run(rest, "bsc mem"),
         "metrics" => logs::metrics::run(rest, "bsc metrics"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
@@ -261,6 +271,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "cve" => cve::cli::run(rest, "bsc cve"),
+        "config" => bsc_config::cli::run(rest, "bsc config"),
         // The catalog, as data (`command-surface-catalog-is-one-source`) — so a consumer generates
         // the surface set instead of keeping its own copy of it.
         "surface" => surface_cli(rest),

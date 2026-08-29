@@ -28,6 +28,8 @@ skilldb = { path = "../skilldb" }
 compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
+bsc-secret = { path = "../bsc-secret" }
+bsc-mem = { path = "../bsc-mem" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 bsc-mcp = { path = "../bsc-mcp" }
@@ -83,3 +85,6 @@ channel = { path = "../channel" }
 # lockfile / check a package / advisory detail, the data layer the install-time `bsc-supply` hook builds on.
 cve = { path = "../cve" }
 mcp-rpc = { path = "../mcp-rpc" }
+# `bsc config` — read/adopt verbs for the runtime config-seed mirror diverging from the packaged seed
+# (#168): status (classify + diff) and reset (adopt the packaged copy).
+bsc-config = { path = "../bsc-config" }

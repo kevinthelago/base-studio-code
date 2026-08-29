@@ -39,6 +39,7 @@ export const PANE_KEYED_MAPS = [
   "paneNames",
   "panePermsStale",
   "panePersonas",
+  "panePrProbes",
   "paneProfiles",
   "paneProviders",
   "paneRedrawNonce",

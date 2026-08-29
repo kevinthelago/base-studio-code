@@ -721,6 +721,7 @@ dependencies = [
  "bsc-cad",
  "bsc-cli-util",
  "bsc-component",
+ "bsc-config",
  "bsc-data",
  "bsc-debug",
  "bsc-files",
@@ -728,6 +729,7 @@ dependencies = [
  "bsc-graph",
  "bsc-loop",
  "bsc-mcp",
+ "bsc-mem",
  "bsc-navigate",
  "bsc-network",
  "bsc-persona",
@@ -736,6 +738,7 @@ dependencies = [
  "bsc-request",
  "bsc-runtime",
  "bsc-sandbox",
+ "bsc-secret",
  "bsc-session",
  "bsc-shot",
  "bsc-sound",
@@ -823,6 +826,18 @@ dependencies = [
  "bsc-sound",
  "bsc-util",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-config"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "include_dir",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -963,6 +978,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-mem"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "errordb",
+ "logs",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-navigate"
 version = "0.1.0"
 dependencies = [
@@ -991,6 +1019,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-sqlite-util",
  "bsc-util",
  "serde",
  "serde_json",
@@ -1059,6 +1088,18 @@ dependencies = [
  "bsc-util",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-secret"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
+ "bsc-util",
+ "keyring",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1814,6 +1855,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbus-secret-service"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "708b509edf7889e53d7efb0ffadd994cc6c2345ccb62f55cfd6b0682165e4fa6"
+dependencies = [
+ "dbus",
+ "zeroize",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2140,6 +2191,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sysinfo",
 ]
 
 [[package]]
@@ -3390,6 +3442,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "byteorder",
+ "dbus-secret-service",
  "log",
  "security-framework 2.11.1",
  "security-framework 3.7.0",

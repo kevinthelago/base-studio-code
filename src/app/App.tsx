@@ -40,6 +40,7 @@ import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
 import { useCoordSpeaker } from "@/app/a11y/useCoordSpeaker";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
+import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
 import { useNavHistory } from "@/shared/hooks/useNavHistory";
@@ -49,6 +50,7 @@ import {
   SettingsWorkspace,
   LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
   ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
+  CredentialsWorkspace,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -97,7 +99,7 @@ export default function App() {
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
-  useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
+  useWorkerAutoEnd(paneIdFor); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
   useNotificationSounds(); // opt-in Signal-kit cues on fleet coord events (default off) (#3082)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
   useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
@@ -204,16 +206,19 @@ export default function App() {
               would kill and relaunch that PTY every time. They were previously kept mounted INSIDE the
               Planner — leaving them as plain `activeWorkspace === x && <X />` would have quietly
               regressed that, and a killed-and-restarted session looks like a slow page, not a bug. */}
-          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />}>
+          {/* `label` tags the un-hide timing `bsc perf phases` can read
+              (`request-177-components-graph-real-app-instrumentation`) — real-app numbers for exactly
+              the visit KeptMountedPage exists to make cheap, instead of another synthetic-shell guess. */}
+          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />} label="components">
             <ComponentsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />} label="algorithms">
             <AlgorithmsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />} label="teams">
             <TeamsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />} label="sounds">
             <SoundsWorkspace />
           </KeptMountedPage>
           {/* Data is the one graph with no studio and no PTY, so it mounts only while active. */}
@@ -223,6 +228,10 @@ export default function App() {
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
             {activeWorkspace === "logs"       && <LogsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
+            {/* Credentials re-reads `bsc secret` on every mount rather than staying mounted: the
+                store is edited from OUTSIDE the app (a session running `bsc secret`), so a kept-mounted
+                copy would show a stale answer to the one question this screen exists to answer. */}
+            {activeWorkspace === "credentials" && <CredentialsWorkspace />}
           </Suspense>
           </ErrorBoundary>
           </Box>

@@ -21,6 +21,7 @@ pub(crate) fn cmd_change(args: &Args) -> Result<(), String> {
         "new" => cmd_new(args),
         "note" => cmd_note(args),
         "gate" => cmd_gate(args),
+        "perf" => cmd_perf(args),
         "status" => cmd_status(args),
         "link" => cmd_link(args),
         "get" => cmd_get(args),
@@ -91,6 +92,30 @@ fn cmd_gate(args: &Args) -> Result<(), String> {
     }
     if !args.json {
         println!("{r}: {gate} {result}");
+    }
+    Ok(())
+}
+
+/// `change perf <ref> <metric> <before> <after>` — record what the change cost.
+///
+/// The evidence half of an optimization, and the same discipline `gate` applies to correctness: "it's
+/// faster" is not reviewable, `build 92s -> 74s` is. Both halves are required — an `after` with no
+/// `before` is a reading, not a measurement, and cannot show that anything changed.
+fn cmd_perf(args: &Args) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc plan change perf <ref> <metric> <before> <after> [--from WHO]";
+    let r = args.positional.get(2).ok_or(USAGE)?;
+    let metric = args.positional.get(3).ok_or(USAGE)?;
+    let before = args.positional.get(4).ok_or(USAGE)?;
+    let after = args.positional.get(5).ok_or(USAGE)?;
+    let s = open_store(&args.db)?;
+    let n = s
+        .change_add_measure(r, metric, before, after, args.from.as_deref().unwrap_or(""))
+        .map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("no change with ref '{r}'"));
+    }
+    if !args.json {
+        println!("{r}: {metric} {before} → {after}");
     }
     Ok(())
 }

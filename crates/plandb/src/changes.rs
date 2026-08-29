@@ -48,6 +48,34 @@ pub struct ChangeNote {
     pub text: String,
 }
 
+/// One recorded MEASUREMENT — what the change cost, before and after.
+///
+/// The change record already holds gate results as EVIDENCE rather than claims; a performance change
+/// should carry its numbers the same way. "It's faster" is not reviewable. `build: 92s -> 74s` is.
+///
+/// `before` and `after` are free-form STRINGS on purpose. The units differ per metric (seconds,
+/// megabytes, a render count) and a numeric column would force one, or force every caller to
+/// normalize into it — at which point the reader has to know the normalization to interpret the
+/// number. The string is what the measuring surface printed, kept verbatim.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeMeasure {
+    /// Epoch seconds.
+    #[serde(default)]
+    pub at: i64,
+    /// What was measured — `build`, `heap`, `jank`, a surface name. Free-form: the set of things worth
+    /// measuring is not one this store should be deciding in advance.
+    #[serde(default)]
+    pub metric: String,
+    #[serde(default)]
+    pub before: String,
+    #[serde(default)]
+    pub after: String,
+    /// Who measured it — the same provenance field a note carries.
+    #[serde(default)]
+    pub author: String,
+}
+
 /// A **change**: the local PR. Serializes camelCase for the frontend + the `bsc` JSON surface.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +110,9 @@ pub struct Change {
     /// Append-only work notes, oldest first.
     #[serde(default)]
     pub notes: Vec<ChangeNote>,
+    /// Recorded before/after measurements. Append-only, like `notes`.
+    #[serde(default)]
+    pub measures: Vec<ChangeMeasure>,
     /// Who confirmed the acceptance criteria — deliberately separate from whoever wrote the change.
     #[serde(default)]
     pub reviewer: String,
@@ -117,6 +148,7 @@ pub(crate) const CHANGES_DDL: &str = "CREATE TABLE IF NOT EXISTS changes (
     status      TEXT NOT NULL DEFAULT 'draft',
     gates       TEXT NOT NULL DEFAULT '{}',
     notes       TEXT NOT NULL DEFAULT '[]',
+    measures    TEXT NOT NULL DEFAULT '[]',
     reviewer    TEXT NOT NULL DEFAULT '',
     reviewed_at INTEGER NOT NULL DEFAULT 0,
     gh_number   INTEGER,
@@ -127,7 +159,7 @@ pub(crate) const CHANGES_DDL: &str = "CREATE TABLE IF NOT EXISTS changes (
 );";
 
 const CHANGE_COLS: &str = "SELECT ref, title, body, issues, base, head_sha, merge_sha, status, gates, notes, \
-     reviewer, reviewed_at, gh_number, gh_node_id, synced_at, created_at, updated_at FROM changes";
+     reviewer, reviewed_at, gh_number, gh_node_id, synced_at, created_at, updated_at, measures FROM changes";
 
 fn json_vec(s: &str) -> Vec<String> {
     serde_json::from_str(s).unwrap_or_default()
@@ -155,6 +187,9 @@ fn row_to_change(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         synced_at: r.get(14)?,
         created_at: r.get(15)?,
         updated_at: r.get(16)?,
+        // Appended LAST in the SELECT so every existing positional index above is untouched — a new
+        // column inserted mid-list would silently re-map every field after it.
+        measures: serde_json::from_str(&r.get::<_, String>(17)?).unwrap_or_default(),
     })
 }
 
@@ -233,6 +268,48 @@ impl Store {
         self.conn.execute(
             "UPDATE changes SET notes = ?2, updated_at = strftime('%s','now') WHERE ref = ?1",
             params![r.trim(), serde_json::to_string(&c.notes).unwrap_or_else(|_| "[]".into())],
+        )
+    }
+
+    /// Append one MEASUREMENT — what the change cost, before and after.
+    ///
+    /// **Append-only by construction**, exactly like [`Self::change_add_note`]: it reads, pushes and
+    /// writes back rather than exposing a setter, so no verb can drop an earlier measurement. That
+    /// matters more here than it looks — a second measurement of the same metric is usually a LATER
+    /// iteration of the same optimization, and keeping both is what shows the path rather than only
+    /// the destination.
+    ///
+    /// Returns rows changed (0 = unknown ref).
+    pub fn change_add_measure(
+        &self,
+        r: &str,
+        metric: &str,
+        before: &str,
+        after: &str,
+        author: &str,
+    ) -> rusqlite::Result<usize> {
+        let (metric, before, after) = (metric.trim(), before.trim(), after.trim());
+        if metric.is_empty() {
+            return Err(rusqlite::Error::InvalidParameterName("a measurement needs a metric".into()));
+        }
+        // BOTH HALVES ARE REQUIRED. An "after" with no "before" is not a measurement, it is a reading —
+        // it cannot show that anything changed, which is the only claim this record exists to support.
+        if before.is_empty() || after.is_empty() {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "a measurement needs both a before and an after — one number alone shows no change".into(),
+            ));
+        }
+        let Some(mut c) = self.change_get(r)? else { return Ok(0) };
+        c.measures.push(ChangeMeasure {
+            at: now_secs(),
+            metric: metric.to_string(),
+            before: before.to_string(),
+            after: after.to_string(),
+            author: author.trim().to_string(),
+        });
+        self.conn.execute(
+            "UPDATE changes SET measures = ?2, updated_at = strftime('%s','now') WHERE ref = ?1",
+            params![r.trim(), serde_json::to_string(&c.measures).unwrap_or_else(|_| "[]".into())],
         )
     }
 
@@ -329,6 +406,17 @@ pub fn render_change_markdown(c: &Change) -> String {
             .map(|k| format!("{} {}", k, c.gates[*k].as_str().unwrap_or("?")))
             .collect();
         out.push_str(&format!("**Gate:** {}\n\n", line.join(" · ")));
+    }
+    // BEFORE the work notes: a reviewer scanning a performance change wants the numbers first, and the
+    // notes are the long half. Rendered here means they reach the PR body and the CHANGELOG entry,
+    // which is the whole reason `render` is the single source for both.
+    if !c.measures.is_empty() {
+        out.push_str("### Measured\n\n");
+        for m in &c.measures {
+            let who = if m.author.is_empty() { String::new() } else { format!(" _({})_", m.author) };
+            out.push_str(&format!("- `{}` {} → {}{}\n", m.metric, m.before, m.after, who));
+        }
+        out.push('\n');
     }
     if !c.notes.is_empty() {
         out.push_str("### Work notes\n\n");
@@ -507,4 +595,68 @@ mod tests {
         assert!(is_valid_change_status(" merged "));
         assert!(!is_valid_change_status("complete"), "issue statuses are NOT change statuses");
     }
+
+    // ── measurements: the evidence half of an optimization ───────────────────────────────────────
+
+    /// Measurements ACCUMULATE and are append-only, exactly like notes: a second reading of the same
+    /// metric is usually a later iteration of the same optimization, and keeping both shows the path
+    /// rather than only the destination.
+    #[test]
+    fn measurements_accumulate_and_never_replace_an_earlier_one() {
+        let s = Store::open_in_memory().unwrap();
+        seed(&s);
+        s.change_add_measure("42-do-the-thing", "build", "92s", "80s", "worker").unwrap();
+        s.change_add_measure("42-do-the-thing", "build", "80s", "74s", "worker").unwrap();
+        s.change_add_measure("42-do-the-thing", "heap", "58MB", "41MB", "worker").unwrap();
+
+        let c = s.change_get("42-do-the-thing").unwrap().unwrap();
+        assert_eq!(c.measures.len(), 3, "the SAME metric twice keeps both readings");
+        assert_eq!((c.measures[0].before.as_str(), c.measures[0].after.as_str()), ("92s", "80s"));
+        assert_eq!((c.measures[1].before.as_str(), c.measures[1].after.as_str()), ("80s", "74s"));
+        assert_eq!(c.measures[2].metric, "heap");
+        assert!(c.measures[0].at > 0, "a measurement records when it was taken");
+        assert_eq!(c.measures[0].author, "worker");
+    }
+
+    /// ONE NUMBER IS NOT A MEASUREMENT. An `after` with no `before` cannot show that anything changed,
+    /// which is the only claim this record exists to support — so it is refused rather than stored as
+    /// half an answer somebody would later read as evidence.
+    #[test]
+    fn a_measurement_needs_both_halves() {
+        let s = Store::open_in_memory().unwrap();
+        seed(&s);
+        for (before, after) in [("", "74s"), ("92s", ""), ("", "")] {
+            let err = s
+                .change_add_measure("42-do-the-thing", "build", before, after, "w")
+                .expect_err("half a measurement is refused");
+            assert!(format!("{err}").contains("before and an after"), "{err}");
+        }
+        assert!(s.change_add_measure("42-do-the-thing", "", "1", "2", "w").is_err(), "and it needs a metric");
+        assert!(s.change_get("42-do-the-thing").unwrap().unwrap().measures.is_empty());
+    }
+
+    /// An unknown ref reports 0 rows rather than inventing a change — the same contract `note`/`gate`
+    /// have, so the CLI can turn it into one error message for all three.
+    #[test]
+    fn a_measurement_on_an_unknown_ref_writes_nothing() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.change_add_measure("nope", "build", "1s", "2s", "w").unwrap(), 0);
+    }
+
+    /// The measurements REACH the rendered markdown, which is what puts them in the PR body and the
+    /// changelog entry — a measurement nobody can find later is not evidence.
+    #[test]
+    fn measurements_render_into_the_markdown_and_a_change_without_any_is_unchanged() {
+        let s = Store::open_in_memory().unwrap();
+        seed(&s);
+        let before = render_change_markdown(&s.change_get("42-do-the-thing").unwrap().unwrap());
+        assert!(!before.contains("### Measured"), "a change with no measurement renders as it always did");
+
+        s.change_add_measure("42-do-the-thing", "build", "92s", "74s", "worker").unwrap();
+        let after = render_change_markdown(&s.change_get("42-do-the-thing").unwrap().unwrap());
+        assert!(after.contains("### Measured"), "{after}");
+        assert!(after.contains("`build` 92s → 74s"), "{after}");
+        assert!(after.contains("_(worker)_"), "the measurer is named: {after}");
+    }
+
 }
