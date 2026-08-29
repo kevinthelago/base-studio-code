@@ -322,6 +322,25 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(doc).toContain('__preview: "error"');               // error signal to the host
   });
 
+  it("omits __gen from every message when buildGen is absent — byte-for-byte unchanged (#126)", () => {
+    const withoutGen = buildComponentSrcDoc("X");
+    expect(withoutGen).not.toContain("__gen");
+    expect(withoutGen).toBe(buildComponentSrcDoc("X", { buildGen: undefined }));
+  });
+
+  it("echoes buildGen on every `__preview` message, so a host reusing one iframe across rebuilds can " +
+    "drop a message left over from a PREVIOUS build (#126) — srcdoc reassignment does not synchronously " +
+    "replace the iframe's document, so a stale document's error/ready/rendered report can still arrive " +
+    "after a newer build has started", () => {
+    const doc = buildComponentSrcDoc("/*BUNDLE*/", { buildGen: 3 });
+    expect(doc).toContain('__preview: "ready", __gen: 3');
+    // The error messages also carry #108's `describeError` unwrap — the two fixes compose, and the
+    // ordinal is stamped after it rather than replacing it.
+    expect(doc).toContain('__preview: "error", message: describeError(e.error) || String(e.message), __gen: 3');
+    expect(doc).toContain('__preview: "error", message: describeError(e.reason) || String(e.reason), __gen: 3');
+    expect(doc).toContain('__preview: "rendered", empty: empty, __gen: 3');
+  });
+
   it("locks the iframe with a CSP that blocks exfiltration + uncurated code (#3696)", () => {
     const doc = buildComponentSrcDoc("X");
     expect(doc).toContain('http-equiv="Content-Security-Policy"');

@@ -117,4 +117,35 @@ describe("ComponentPreviewFrame — a render that succeeds retires the recorded 
     window.dispatchEvent(new MessageEvent("message", { data: { __preview: "ready" }, source: window }));
     expect(vi.mocked(clearPreviewError)).not.toHaveBeenCalled();
   });
+
+  // #126: `srcdoc` reassignment does not synchronously replace the iframe's document — the outgoing one
+  // (a pending timer, a late async throw) keeps running until the new one loads, and the SAME reused
+  // `<iframe>`'s `contentWindow` cannot tell that leftover apart from the current build by source alone.
+  // Live symptom: a designer navigating rapidly between graph-hosted pages (fleetpage/mcppage) saw an
+  // unrelated earlier build's `SecurityError`/`STARTER_KIT is undefined` attributed to whichever page was
+  // current when the stale message finally arrived (designer request #126).
+  it("STALE-BUILD GUARD: a message tagged with an earlier generation is dropped even from this frame's own iframe window", async () => {
+    const { container, rerender } = render(<ComponentPreviewFrame comp={snippet("achievements")} {...frameProps} />);
+    await waitFor(() => expect(mountedPreviewFrames()[0]?.component).toBe("achievements")); // build #1 settles
+
+    rerender(<ComponentPreviewFrame comp={snippet("plan-body-deployment")} {...frameProps} />);
+    await waitFor(() => expect(mountedPreviewFrames()[0]?.component).toBe("plan-body-deployment")); // build #2
+
+    // A message from build #1's still-finishing document, arriving after build #2 has already started —
+    // it carries build #1's generation, and must not be attributed to the CURRENTLY selected component.
+    post(container, { __preview: "error", message: "stale — from the torn-down previous build", __gen: 1 });
+    expect(vi.mocked(recordPreviewError)).not.toHaveBeenCalled();
+
+    // The CURRENT build's own message (generation 2) is still honoured.
+    post(container, { __preview: "error", message: "the real error", __gen: 2 });
+    await waitFor(() =>
+      expect(vi.mocked(recordPreviewError)).toHaveBeenCalledWith("plan-body-deployment", "the real error"),
+    );
+  });
+
+  it("a message carrying no __gen at all (a caller that never set buildGen) is still honoured", async () => {
+    const { container } = render(<ComponentPreviewFrame comp={snippet("achievements")} {...frameProps} />);
+    post(container, { __preview: "ready" });
+    await waitFor(() => expect(vi.mocked(clearPreviewError)).toHaveBeenCalledWith("achievements"));
+  });
 });
