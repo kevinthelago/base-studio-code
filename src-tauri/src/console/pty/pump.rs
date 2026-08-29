@@ -470,7 +470,20 @@ pub(super) fn cage_death_notice(
     Some(format!("\r\n\x1b[1;33m{body}\x1b[0m\r\n"))
 }
 
-/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee
+/// One batch of PTY output as the frontend receives it.
+///
+/// `upto` is the RECORDING offset this batch reaches — the number that lets a reveal tell bytes it
+/// has already replayed from bytes still to arrive live, which closes the last seam in the handoff
+/// (see `scrollback::Cursor`). `None` when nothing is being recorded, and for a synthetic notice that
+/// is not in the recording at all, which the frontend must therefore always write.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PtyChunk {
+    pub data: String,
+    pub upto: Option<u64>,
+}
+
+/// Emitter thread: batch reader chunks and emit at most once per ~16ms frame to the frontend (and tee
 /// to the mobile tunnel when paired). Coalescing collapses per-read emits — the dominant UI-lag source
 /// when many sessions stream at once — into one event per frame per session. Emits `pty_exit_<pane>`
 /// when the reader's `tx` disconnects.
@@ -552,9 +565,10 @@ pub(super) fn spawn_emitter(
                 // or the state after (and the batch is already in its replay) — never half of each.
                 // That is the entire seam, closed in the one place that owns the bytes.
                 {
+                    let at = pending_at.take();
                     let guard = cursor.lock();
-                    let _ = app.emit(&evt, data);
-                    if let (Ok(mut c), Some(at)) = (guard, pending_at.take()) {
+                    let _ = app.emit(&evt, PtyChunk { data, upto: at });
+                    if let (Ok(mut c), Some(at)) = (guard, at) {
                         *c = Some(at);
                     }
                 }
@@ -597,7 +611,9 @@ pub(super) fn spawn_emitter(
         // terminal. It is for whoever is looking AT the pane when it happens; the payload below is
         // for everyone else.
         if let Some(notice) = cage_death_notice(sandbox_role.as_deref(), exit, &tail) {
-            let _ = app.emit(&evt, notice);
+            // `upto: None` — this text is generated HERE and is not in the recording, so a reveal can
+            // never have replayed it and the frontend must always write it.
+            let _ = app.emit(&evt, PtyChunk { data: notice, upto: None });
         }
         // The payload the frontend needs to say WHY. This used to be `()` — the emitter had the exit
         // status in hand, spent it on one log line, and handed the one consumer that could show a
