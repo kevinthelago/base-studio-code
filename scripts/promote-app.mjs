@@ -17,8 +17,11 @@
 //
 // Two things this deliberately does NOT do:
 //
-//   - **It never restarts the app.** It moves the ref and tells you. Choosing the moment is the entire
-//     point; an automatic restart would reintroduce the problem with extra steps.
+//   - **It never restarts the app BEHIND YOUR BACK.** A promote writes working-tree files that
+//     `tauri dev` and vite are watching, so if the app is running it WILL rebuild and relaunch — that
+//     is inherent, because new Rust means a new binary. What this buys is that it happens when YOU ran
+//     the command, not when someone else merged. The script says so up front and names the app if it
+//     can see it running, rather than claiming a restart will not happen.
 //   - **It never merges non-fast-forward.** The running app must be a PREFIX of develop's history, not
 //     a divergent branch. If it cannot fast-forward, something committed directly to `main` and that is
 //     a fault to look at, not to paper over with a merge commit.
@@ -47,6 +50,23 @@ const REPO_ROOT = mainWorktree(dirname(dirname(fileURLToPath(import.meta.url))))
 
 function git(args, opts = {}) {
   return execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", ...opts }).trim();
+}
+
+/** Is the app's dev server up? Its vite port listening is the cheap, dependency-free signal.
+ *
+ *  This exists so the closing message can tell the TRUTH. A promote writes files `tauri dev` and vite
+ *  watch, so a running app rebuilds and relaunches — saying otherwise (as the first version of this
+ *  script did) is worse than saying nothing, because the whole feature is about the user knowing when
+ *  their session is about to be disturbed. */
+function appIsRunning(port = 1420) {
+  try {
+    // `ss` is present on this platform; any failure falls through to "cannot tell", which prints the
+    // conservative message rather than a confident wrong one.
+    const out = execFileSync("ss", ["-ltn"], { encoding: "utf8" });
+    return new RegExp(`[.:]${port}\\b`).test(out);
+  } catch {
+    return false;
+  }
 }
 
 function parseArgs(argv) {
@@ -130,7 +150,11 @@ function main() {
   // this is the right place anyway — it is the moment the running copy changes.
   git(["-C", appTree, "merge", "--ff-only", "develop"]);
   console.log(`[promote-app] ${branch} → ${git(["rev-parse", "--short", branch])}`);
-  console.log(`[promote-app] The running app is UNCHANGED until you restart it. Restart when ready.`);
+  console.log(
+    appIsRunning()
+      ? `[promote-app] The app is RUNNING — it is rebuilding and will relaunch itself now.`
+      : `[promote-app] The app is not running; it picks this up on its next launch.`,
+  );
 }
 
 main();
