@@ -36,14 +36,17 @@ pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
 
 /// The flags that take NO value. Needed by `reject_unknown_flags` to walk the argv correctly: a
 /// value-taking flag consumes the next token, so `--summary "--x"` must not read as the flag `--x`.
-pub const BOOL_FLAGS: [&str; 12] = [
+pub const BOOL_FLAGS: [&str; 13] = [
     "--pretty", "--all", "--worthy-only", "--apply", "--fix", "--dry-run", "--no-src", "--run",
-    "--check", "--wasm", "--force", "--raw",
+    "--check", "--wasm", "--force", "--raw", "--seed",
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 50] = [
+pub const FLAGS: [&str; 51] = [
     "--pretty",
+    // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
+    // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
+    "--seed",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
     "--check",
@@ -805,6 +808,247 @@ fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, Str
     None
 }
 
+/// `tests set --id <id> --src <test-file> [--name <name>] [--seed]` (#140/#141) — pair ONE record's
+/// test without a whole-tree `harvest`. See the usage note on the `"tests"` match arm in [`run`] for
+/// why this exists alongside `harvest` rather than folding into it.
+fn tests_set(args: &[String]) -> Result<Value, String> {
+    let usage =
+        "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--seed] [--pretty]";
+    let id = flag_value(args, "--id").ok_or(usage)?;
+    let src_path = flag_value(args, "--src").ok_or(usage)?;
+    let path = std::path::Path::new(&src_path);
+    bsc_cli_util::require_harvestable_root(path)?;
+    let contents = std::fs::read_to_string(path).map_err(|e| format!("cannot read {src_path}: {e}"))?;
+    let name =
+        flag_value(args, "--name").unwrap_or_else(|| bsc_util::test_display_name(path, &contents));
+    let tests = serde_json::json!([{ "name": name, "src": contents }]);
+    let want_seed = args.iter().any(|a| a == "--seed");
+
+    // `--seed` (#141): a store-only write to a SEEDED record is TRANSIENT — reconcile_seed never
+    // touches an id the seed already carries, so nothing here re-derives it, but the seed is what
+    // ships and what a fresh clone reads. Before this, landing a moved/harvested test on both shapes
+    // meant `tests set` for the store and a hand-written `jq` patch for
+    // `src-tauri/data/knowledge/algorithms.json` — see `component-tests-live-in-the-seed` for the
+    // component-library twin of this rule.
+    //
+    // Loaded (and its id checked) BEFORE the store is touched: the id-not-in-the-seed case is the
+    // likely failure here (a typo, or a genuinely custom record that was never seeded), and it must
+    // not leave the store half-written while the seed half silently never happens.
+    let seed_doc = want_seed.then(|| load_seed_doc(&id)).transpose()?;
+
+    let mut g = crate::load();
+    let mut next = crate::implementations_of(&g)
+        .into_iter()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| {
+            format!(
+                "no implementation with id '{id}' — `tests set` pairs an EXISTING record, it does not \
+                 create one; check the id with `bsc graph impl get {id}`, or author the record first \
+                 with `impl set`"
+            )
+        })?;
+    // UPSERT by name, not replace: a record's `tests` array can carry several sibling tests
+    // (#147) — session-roles.ts carries two, one per exported symbol. `--src`/`--name` name
+    // exactly ONE of them; overwriting the whole array here silently dropped every other test
+    // the record was carrying, and #145's sync then faithfully propagated the loss to the seed
+    // — the second test stopped being emitted and stopped running, gate green throughout,
+    // because a test that no longer exists cannot fail.
+    // Carry the source file's REAL extension (#148). The emitter otherwise guesses, and a `.ts` file
+    // holding a generic like `<T,>` reads as JSX and is emitted `.tsx` — the flip that renamed
+    // `useNavHistory.test.tsx` to `.test.ts` during a harvest. `None` for a non-test extension leaves
+    // the facet absent rather than asserting a wrong one.
+    let mut entry = serde_json::json!({ "name": name, "src": contents });
+    if let Some(e) = bsc_util::test_source_ext(path) {
+        entry["ext"] = serde_json::json!(e);
+    }
+    match next.get_mut("tests").and_then(Value::as_array_mut) {
+        Some(arr) => match arr.iter_mut().find(|t| t.get("name").and_then(Value::as_str) == Some(name.as_str())) {
+            Some(existing) => *existing = entry,
+            None => arr.push(entry),
+        },
+        None => next["tests"] = serde_json::json!([entry]),
+    }
+    crate::set_impl(&mut g, next)?;
+    crate::save(&g)?;
+
+    if let Some((path, mut doc)) = seed_doc {
+        write_seed_tests(&path, &mut doc, &id, tests)?;
+    }
+    Ok(serde_json::json!({ "id": id, "name": name, "src": src_path, "seeded": want_seed }))
+}
+
+/// Resolve and parse the packaged seed, confirming `id` is in it — the read half of
+/// `tests set --seed` (#141), split from [`write_seed_tests`] so the id check runs BEFORE the store
+/// is touched. Reads `bsc_graph::seed_path()` fresh off disk, deliberately bypassing [`crate::seed`]'s
+/// cached [`std::sync::OnceLock`]: this must see the file exactly as it is right now, not a snapshot
+/// from whenever this process first happened to read it.
+///
+/// Refuses an id the seed does not carry rather than deferring to an insert later — mirroring
+/// `tests_set`'s own existing-record-only rule, and for the same reason: a record invented here would
+/// not be the one the frontend and every fresh clone actually ship.
+fn load_seed_doc(id: &str) -> Result<(std::path::PathBuf, Value), String> {
+    let path = crate::seed_path().ok_or(
+        "packaged seed `knowledge/algorithms.json` not found — set BSC_DATA_DIR to the directory \
+         holding the packaged `data/` tree, or run from a dev checkout",
+    )?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let doc: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+    let has_id = doc
+        .get("implementations")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{} has no `implementations` array", path.display()))?
+        .iter()
+        .any(|im| im.get("id").and_then(Value::as_str) == Some(id));
+    if !has_id {
+        return Err(format!(
+            "no implementation with id '{id}' in the packaged seed ({}) — `tests set --seed` pairs an \
+             EXISTING seed record, it does not create one",
+            path.display()
+        ));
+    }
+    Ok((path, doc))
+}
+
+/// Write `tests` onto `id`'s record in an already-loaded (and already id-checked) seed `doc`, and
+/// persist it back to `path` — `tests set --seed`'s write half, kept separate from
+/// [`load_seed_doc`] so the check-then-write split is explicit rather than implicit in call order.
+fn write_seed_tests(path: &std::path::Path, doc: &mut Value, id: &str, tests: Value) -> Result<(), String> {
+    let impls = doc
+        .get_mut("implementations")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| format!("{} has no `implementations` array", path.display()))?;
+    let rec = impls
+        .iter_mut()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id))
+        .ok_or_else(|| format!("id '{id}' vanished from {} between check and write", path.display()))?;
+    rec["tests"] = tests;
+    let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
+/// `tests harvest <dir> [--dry-run]` (#4126) — carry each impl's COLOCATED test file onto its node,
+/// the algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
+/// `bsc_util::test_path_for` so the two libraries cannot drift.
+///
+/// MIRROR, not source. The files stay authoritative, checked in, and RUNNING. The graph cannot
+/// execute a test today, so making it the source would stake the suite on an executor that does not
+/// exist — a node's `tests` entry is inert metadata until `verify` lands (#4124). This buys doctor
+/// honesty and a queryable graph at zero risk to coverage.
+///
+/// ONE ENTRY PER FILE, VERBATIM. A test file's meaning lives partly outside its `it()` blocks —
+/// imports, `beforeEach`, local helpers. Splitting per-`it` would silently drop that. A file that
+/// covers SEVERAL impls (this repo's `graphAlgos.test.ts` covers five) is carried onto each of them:
+/// the coverage is real for every one, and per-impl attribution is not recoverable from the file.
+///
+/// TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling file, so
+/// path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
+fn tests_harvest(dir: &str, dry: bool) -> Result<Value, String> {
+    let root = std::path::Path::new(dir);
+    if !root.is_dir() {
+        return Err(format!("no such directory: {dir}"));
+    }
+    // A harvest hands back file CONTENTS, so it honours the same boundary the file tools do (#3475) —
+    // `bsc-confine` is blind to what this binary reads.
+    bsc_cli_util::require_harvestable_root(root)?;
+
+    let mut g = crate::load();
+    let impls = crate::implementations_of(&g);
+
+    // ⚠️ A WRONG ROOT LOOKS EXACTLY LIKE AN UNTESTED LIBRARY. Every `src` is repo-relative and already
+    // begins `src/`, so the root to pass is the REPO root. Handed `src` instead, every join becomes
+    // `src/src/…`, nothing resolves, and the command still exits 0 reporting a plausible `paired: 31 ·
+    // noColocatedTest: 876` — which reads as "the algorithm tier has no tests" and was filed as
+    // exactly that before anyone checked the invocation. The signature is deterministic (the root's
+    // own name is the first segment of the sources), so detect it and refuse rather than return a
+    // number that means nothing.
+    let root_name =
+        root.canonicalize().ok().and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
+    let srcs: Vec<&str> = impls
+        .iter()
+        .filter_map(|im| im.get("src").and_then(Value::as_str))
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    if let Some(name) = root_name.filter(|n| root_doubles_source_prefix(n, &srcs)) {
+        return Err(format!(
+            "every source path already starts with '{name}/', so joining them to this root gives \
+             '{name}/{name}/…' and nothing resolves — pass the REPO root, not '{name}'"
+        ));
+    }
+
+    let (mut paired, mut no_src, mut no_test, mut retired_no_test) = (Vec::new(), 0usize, 0usize, 0usize);
+    for im in impls {
+        let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) else {
+            // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
+            no_src += 1;
+            continue;
+        };
+        // Whether the MODULE still exists separates "a live file nobody tested" from "a retired module
+        // whose test went with it". Both used to land in `noColocatedTest`, where the second is
+        // invisible — and the second is the one the migration can still act on.
+        let module_gone = !root.join(src).is_file();
+        let Some(path) = bsc_util::test_path_for(root, src) else {
+            if module_gone {
+                retired_no_test += 1;
+            } else {
+                no_test += 1;
+            }
+            continue;
+        };
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            if module_gone {
+                retired_no_test += 1;
+            } else {
+                no_test += 1;
+            }
+            continue;
+        };
+        let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        let name = bsc_util::test_display_name(&path, &contents);
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        if !dry {
+            let mut next = im.clone();
+            // #148: same facet `tests_set` carries — the emitter's content-guess is what silently
+            // moved a `.ts` test with a generic into `.tsx` (a different, ~35x slower vitest project).
+            let mut entry = serde_json::json!({ "name": name, "src": contents });
+            if let Some(ext) = bsc_util::test_source_ext(&path) {
+                entry["ext"] = serde_json::json!(ext);
+            }
+            next["tests"] = serde_json::json!([entry]);
+            crate::set_impl(&mut g, next)?;
+        }
+        paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
+    }
+    if !dry && !paired.is_empty() {
+        crate::save(&g)?;
+    }
+
+    // ONE TEST FILE, N IMPLS — reported, never silent. A module exporting several functions yields one
+    // impl each, and they all pair with that module's single test file. Carrying it onto each is right
+    // for the MIRROR (the coverage really is theirs, and per-impl attribution is not recoverable from
+    // the file) and is a trap for any EXECUTOR that materializes one file per record: the same
+    // assertions would run N times and be counted N times. Whoever consumes this has to know which
+    // pairings are shared, so say so instead of leaving it to be discovered.
+    let (distinct_tests, shared) = shared_test_pairings(&paired);
+    let shared_impls: usize =
+        shared.iter().map(|s| s.get("impls").and_then(Value::as_array).map_or(0, Vec::len)).sum();
+
+    Ok(serde_json::json!({
+        "dryRun": dry,
+        "paired": paired.len(),
+        "noSrc": no_src,
+        "noColocatedTest": no_test,
+        "retiredNoTest": retired_no_test,
+        "distinctTests": distinct_tests,
+        "sharedTestFiles": shared.len(),
+        "sharedTestImpls": shared_impls,
+        "shared": shared,
+        "changes": paired,
+    }))
+}
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // Before anything reads a flag: an unknown one is an ERROR, never a silent no-op (#4154).
     reject_unknown_flags(&args)?;
@@ -899,7 +1143,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     bsc_cli_util::require_harvestable_root(path)?;
                     let contents = std::fs::read_to_string(path).map_err(|err| format!("cannot read {p}: {err}"))?;
                     let name = bsc_util::test_display_name(path, &contents);
-                    e["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
+                    // #148: same facet `tests_set` carries — without it the emitter's content-guess can
+                    // misread a `.ts` generic as JSX and re-emit this test into the wrong vitest project.
+                    let mut entry = serde_json::json!({ "name": name, "src": contents });
+                    if let Some(ext) = bsc_util::test_source_ext(path) {
+                        entry["ext"] = serde_json::json!(ext);
+                    }
+                    e["tests"] = serde_json::json!([entry]);
                     e["src"] = Value::String(p.replace(crate::extract::BACKSLASH, "/"));
                 }
                 let mut g = crate::load();
@@ -1802,133 +2052,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "ambiguousIds": ambiguous,
             }))
         }
-        // `tests harvest <dir>` (#4126) — carry each impl's COLOCATED test file onto its node, the
-        // algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
-        // `bsc_util::test_path_for` so the two libraries cannot drift.
-        //
-        // MIRROR, not source. The files stay authoritative, checked in, and RUNNING. The graph cannot
-        // execute a test today, so making it the source would stake the suite on an executor that does
-        // not exist — a node's `tests` entry is inert metadata until `verify` lands (#4124). This buys
-        // doctor honesty and a queryable graph at zero risk to coverage.
-        //
-        // ONE ENTRY PER FILE, VERBATIM. A test file's meaning lives partly outside its `it()` blocks —
-        // imports, `beforeEach`, local helpers. Splitting per-`it` would silently drop that. A file that
-        // covers SEVERAL impls (this repo's `graphAlgos.test.ts` covers five) is carried onto each of
-        // them: the coverage is real for every one, and per-impl attribution is not recoverable from the
-        // file.
-        //
-        // TypeScript only. A Rust impl's tests are an inline `#[cfg(test)] mod tests`, not a sibling
-        // file, so path-pairing would report every Rust impl untested — see `bsc_util::test_path_for`.
-        "tests" => {
-            if positional.get(1).copied() != Some("harvest") {
-                return Err("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]".to_string());
-            }
-            let dir = positional
-                .get(2)
-                .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
-            let dry = args.iter().any(|a| a == "--dry-run");
-            let root = std::path::Path::new(dir);
-            if !root.is_dir() {
-                return Err(format!("no such directory: {dir}"));
-            }
-            // A harvest hands back file CONTENTS, so it honours the same boundary the file tools do
-            // (#3475) — `bsc-confine` is blind to what this binary reads.
-            bsc_cli_util::require_harvestable_root(root)?;
-
-            let mut g = crate::load();
-            let impls = crate::implementations_of(&g);
-
-            // ⚠️ A WRONG ROOT LOOKS EXACTLY LIKE AN UNTESTED LIBRARY. Every `src` is repo-relative and
-            // already begins `src/`, so the root to pass is the REPO root. Handed `src` instead, every
-            // join becomes `src/src/…`, nothing resolves, and the command still exits 0 reporting a
-            // plausible `paired: 31 · noColocatedTest: 876` — which reads as "the algorithm tier has no
-            // tests" and was filed as exactly that before anyone checked the invocation. The signature is
-            // deterministic (the root's own name is the first segment of the sources), so detect it and
-            // refuse rather than return a number that means nothing.
-            let root_name =
-                root.canonicalize().ok().and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()));
-            let srcs: Vec<&str> = impls
-                .iter()
-                .filter_map(|im| im.get("src").and_then(Value::as_str))
-                .filter(|s| !s.trim().is_empty())
-                .collect();
-            if let Some(name) = root_name.filter(|n| root_doubles_source_prefix(n, &srcs)) {
-                return Err(format!(
-                    "every source path already starts with '{name}/', so joining them to this root gives \
-                     '{name}/{name}/…' and nothing resolves — pass the REPO root, not '{name}'"
-                ));
-            }
-
-            let (mut paired, mut no_src, mut no_test, mut retired_no_test) =
-                (Vec::new(), 0usize, 0usize, 0usize);
-            for im in impls {
-                let Some(src) = im.get("src").and_then(Value::as_str).filter(|s| !s.trim().is_empty())
-                else {
-                    // No provenance ⇒ nothing to pair against. `relink` (#4119) is the fix, not a guess.
-                    no_src += 1;
-                    continue;
-                };
-                // Whether the MODULE still exists separates "a live file nobody tested" from "a retired
-                // module whose test went with it". Both used to land in `noColocatedTest`, where the
-                // second is invisible — and the second is the one the migration can still act on.
-                let module_gone = !root.join(src).is_file();
-                let Some(path) = bsc_util::test_path_for(root, src) else {
-                    if module_gone {
-                        retired_no_test += 1;
-                    } else {
-                        no_test += 1;
-                    }
-                    continue;
-                };
-                let Ok(contents) = std::fs::read_to_string(&path) else {
-                    if module_gone {
-                        retired_no_test += 1;
-                    } else {
-                        no_test += 1;
-                    }
-                    continue;
-                };
-                let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-                let name = bsc_util::test_display_name(&path, &contents);
-                let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-                if !dry {
-                    let mut next = im.clone();
-                    next["tests"] = serde_json::json!([{ "name": name, "src": contents }]);
-                    crate::set_impl(&mut g, next)?;
-                }
-                paired.push(serde_json::json!({ "id": id, "name": name, "test": rel }));
-            }
-            if !dry && !paired.is_empty() {
-                crate::save(&g)?;
-            }
-
-            // ONE TEST FILE, N IMPLS — reported, never silent. A module exporting several functions
-            // yields one impl each, and they all pair with that module's single test file. Carrying it
-            // onto each is right for the MIRROR (the coverage really is theirs, and per-impl attribution
-            // is not recoverable from the file) and is a trap for any EXECUTOR that materializes one file
-            // per record: the same assertions would run N times and be counted N times. Whoever consumes
-            // this has to know which pairings are shared, so say so instead of leaving it to be discovered.
-            let (distinct_tests, shared) = shared_test_pairings(&paired);
-            let shared_impls: usize = shared
-                .iter()
-                .map(|s| s.get("impls").and_then(Value::as_array).map_or(0, Vec::len))
-                .sum();
-
-            emit(&serde_json::json!({
-                "dryRun": dry,
-                "paired": paired.len(),
-                "noSrc": no_src,
-                "noColocatedTest": no_test,
-                "retiredNoTest": retired_no_test,
-                "distinctTests": distinct_tests,
-                "sharedTestFiles": shared.len(),
-                "sharedTestImpls": shared_impls,
-                "shared": shared,
-                "changes": paired,
-            }))
-        }
-        // `reseed [--id a,b] [--all] [--check] [--root <dir>]` — the SEED → RUNTIME STORE direction,
-        // the exact inverse of `promote --seed`. See the help text for why it exists.
+        // `tests harvest <dir>` (#4126) mirrors every impl's colocated test onto its node; `tests set`
+        // (#140) pairs ONE record's test without needing a whole repo tree to resolve against. See
+        // [`tests_harvest`] and [`tests_set`] for the reasoning behind each.
         "reseed" => {
             let check = args.iter().any(|a| a == "--check");
             let all = args.iter().any(|a| a == "--all");
@@ -2046,6 +2172,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "reseeded": wrote.len(), "records": wrote,
             }))
         }
+        "tests" => match positional.get(1).copied() {
+            Some("set") => emit(&tests_set(&args)?),
+            Some("harvest") => {
+                let dir = positional
+                    .get(2)
+                    .ok_or("usage: bsc graph tests harvest <dir> [--dry-run] [--pretty]")?;
+                let dry = args.iter().any(|a| a == "--dry-run");
+                emit(&tests_harvest(dir, dry)?)
+            }
+            _ => Err(
+                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed]"
+                    .to_string(),
+            ),
+        },
         // `promote [--id a,b] [--check] [--root <dir>]` — move records from the per-user RUNTIME store
         // into the committed, build-readable repo store, or (with `--check`) report the drift for the
         // gate. See `crate::repo_store` for why the two stores exist and why the repo one is read
@@ -2940,6 +3080,7 @@ fn help(prog: &str) -> String {
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126)
+  \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141)
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
@@ -3882,6 +4023,438 @@ mod tests {
         assert!(err.contains("--no-src"), "names the explicit opt-out: {err}");
     }
 
+    /// `tests set` pairs ONE record's test without a whole-tree `harvest` — the gap filed as request
+    /// #140 (`bsc graph tests harvest <scratch-dir> --dry-run` reported `paired: 0` for every record
+    /// because a scratch dir has nothing colocated to resolve against, even for the one id the caller
+    /// actually had a test file for). It refuses an unknown id rather than silently creating a record.
+    #[test]
+    fn tests_set_pairs_an_existing_record_and_refuses_an_unknown_id() {
+        let dir = crate::unique_temp("testsset");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "paired.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "paired".into(),
+                "--code".into(), "export function paired() {}".into(),
+                "--src".into(), "src/paired.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("paired.test.ts");
+        let contents = "import { paired } from './paired';\nit('works', () => paired());\n";
+        std::fs::write(&test_file, contents).unwrap();
+
+        // `--code-file`-style reads go through the FS-confinement gate (#3475); unconfine the thread so
+        // a `/tmp` fixture is readable, matching every other file-reading test in this module.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "paired.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let stored = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("paired.ts"))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(
+            stored,
+            Some(serde_json::json!([{ "name": "paired.test.ts", "src": contents, "ext": ".ts" }])),
+            "the test file's contents landed on the record verbatim, named by its basename \
+             (no `describe(` title to prefer), carrying the source file's real `.ts` extension (#148)",
+        );
+
+        // An id that does not exist is refused — `tests set` pairs an EXISTING record, it never
+        // creates one.
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "not-a-real-id.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(err.contains("not-a-real-id.ts") && err.contains("does not create one"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+
+    /// `tests set --seed` (#141) — the fix under test. Before this, `tests set` alone left a seeded
+    /// record's test STORE-ONLY (transient per `component-tests-live-in-the-seed`), and landing it on
+    /// the packaged copy too needed a hand-written `jq` patch to
+    /// `src-tauri/data/knowledge/algorithms.json`. This pins that `--seed` writes the SAME test onto
+    /// the packaged seed file directly, verified by reading that file back off disk (not through
+    /// `crate::seed()`, which caches its first read for the process and would not see this write).
+    #[test]
+    // #148: `tests set` on a `.ts` file whose body contains a TS generic must carry the REAL
+    // extension, so the emitter never falls back to `extFor`'s body-sniffing guess — which reads
+    // `<T>(a: readonly T[])` as a JSX open tag and would re-emit this as `.tsx` (wrong vitest project,
+    // still green, ~35x slower).
+    fn tests_set_carries_the_real_extension_past_a_ts_generic_the_emitter_would_misread_as_jsx() {
+        let dir = crate::unique_temp("testsset-ext");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "session-roles.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "sessionRoles".into(),
+                "--code".into(), "export function sessionRoles() {}".into(),
+                "--src".into(), "src/sessionRoles.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-ext-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("sr0.ts");
+        // The exact shape from the request: an ordinary TS generic that `extFor`'s
+        // `/<[A-Za-z][^>]*>/` regex matches just as readily as a real JSX element.
+        let contents =
+            "function scopeWriteGlobs<T>(a: readonly T[]): T[] { return a; }\nit('#1297', () => scopeWriteGlobs([]));\n";
+        std::fs::write(&test_file, contents).unwrap();
+
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--name".into(), "scopeWriteGlobs (#1297)".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let stored = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("session-roles.ts"))
+            .and_then(|i| i.get("tests").cloned());
+        // Asserted on the ENTRY, not the whole array: #147 made `tests set` UPSERT, so the record's
+        // other sibling test survives the write — which is the point of that fix. Comparing the array
+        // to a single element would re-assert the destructive behaviour #147 removed.
+        let entry = stored
+            .as_ref()
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().find(|t| t.get("name").and_then(Value::as_str) == Some("scopeWriteGlobs (#1297)")))
+            .cloned()
+            .expect("the named test is stored");
+        assert_eq!(
+            entry,
+            serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": contents, "ext": ".ts" }),
+            "the stored test states its own `.ts` extension rather than leaving the emitter to guess \
+             from a body whose TS generic reads as JSX",
+        );
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+    #[test]
+    fn tests_set_upserts_by_name_and_does_not_drop_sibling_tests() {
+        let dir = crate::unique_temp("testsset-siblings");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "session-roles.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "session-roles".into(),
+                "--code".into(), "export function sessionRoles() {}".into(),
+                "--src".into(), "src/shared/lib/session/sessionRoles.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-siblings-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let e0 = src_dir.join("e0.ts");
+        let e0_contents = "it('scopeWriteGlobs (#1297)', () => {});\n";
+        std::fs::write(&e0, e0_contents).unwrap();
+        let e1 = src_dir.join("e1.ts");
+        let e1_contents = "it('the persona floors are the role capability table', () => {});\n";
+        std::fs::write(&e1, e1_contents).unwrap();
+
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), e0.to_string_lossy().into_owned(),
+                    "--name".into(), "scopeWriteGlobs (#1297)".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), e1.to_string_lossy().into_owned(),
+                    "--name".into(), "the persona floors are the role capability table".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let tests = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("session-roles.ts"))
+            .and_then(|i| i.get("tests").cloned())
+            .and_then(|t| t.as_array().cloned())
+            .expect("session-roles.ts carries a tests array");
+        assert_eq!(tests.len(), 2, "both sibling tests must survive: {tests:?}");
+        assert_eq!(
+            tests,
+            vec![
+                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_contents, "ext": ".ts" }),
+                serde_json::json!({
+                    "name": "the persona floors are the role capability table",
+                    "src": e1_contents,
+                    "ext": ".ts",
+                }),
+            ],
+        );
+
+        // Re-setting an EXISTING name replaces only that entry, not the array.
+        let e0_updated = src_dir.join("e0-updated.ts");
+        let e0_updated_contents = "it('scopeWriteGlobs (#1297)', () => { /* updated */ });\n";
+        std::fs::write(&e0_updated, e0_updated_contents).unwrap();
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "session-roles.ts".into(),
+                    "--src".into(), e0_updated.to_string_lossy().into_owned(),
+                    "--name".into(), "scopeWriteGlobs (#1297)".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+
+        let tests = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("session-roles.ts"))
+            .and_then(|i| i.get("tests").cloned())
+            .and_then(|t| t.as_array().cloned())
+            .expect("session-roles.ts carries a tests array");
+        assert_eq!(tests.len(), 2, "re-setting an existing name must not grow the array: {tests:?}");
+        assert_eq!(
+            tests,
+            vec![
+                serde_json::json!({ "name": "scopeWriteGlobs (#1297)", "src": e0_updated_contents, "ext": ".ts" }),
+                serde_json::json!({
+                    "name": "the persona floors are the role capability table",
+                    "src": e1_contents,
+                    "ext": ".ts",
+                }),
+            ],
+        );
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+    #[test]
+    fn tests_set_seed_lands_the_test_on_the_packaged_seed_record_too() {
+        let dir = crate::unique_temp("testsset-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = dir.join("store.json");
+        let data_dir = dir.join("data");
+        let seed_path = data_dir.join("knowledge").join("algorithms.json");
+        std::fs::create_dir_all(seed_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &seed_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": 2,
+                "implementations": [
+                    { "id": "seeded.rs", "role": "algorithm", "tech": "rust", "name": "seeded",
+                      "code": "fn seeded() {}" },
+                ],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        // SAFETY: single-threaded test setup, before any other thread reads either var.
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        // The runtime store needs the SAME id before `tests set` can pair it — this mirrors a real
+        // seeded record, which `reconcile_seed` would already have copied into a fresh store.
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "rust".into(),
+                "--id".into(), "seeded.rs".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "seeded".into(),
+                "--code".into(), "fn seeded() {}".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let src_dir = crate::unique_temp("testsset-seed-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("seeded.test.rs");
+        let contents = "#[test]\nfn it_works() { seeded(); }\n";
+        std::fs::write(&test_file, contents).unwrap();
+
+        let out = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "seeded.rs".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--seed".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        assert!(out.is_ok(), "{out:?}");
+
+        // The RUNTIME store carries it too — `--seed` is additive, never a substitute for it.
+        let stored = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("seeded.rs"))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(stored, Some(serde_json::json!([{ "name": "seeded.test.rs", "src": contents }])));
+
+        // The PACKAGED SEED FILE itself now carries it, read straight off disk.
+        let seed_after: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let seed_tests = seed_after
+            .get("implementations")
+            .and_then(Value::as_array)
+            .and_then(|arr| arr.iter().find(|i| i.get("id").and_then(Value::as_str) == Some("seeded.rs")))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(
+            seed_tests,
+            Some(serde_json::json!([{ "name": "seeded.test.rs", "src": contents }])),
+            "the packaged seed's OWN copy must carry the test, not just the runtime store"
+        );
+
+        // An id that does not exist ANYWHERE is refused by the runtime-store lookup first, exactly
+        // as plain `tests set` already refuses one.
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "not-in-the-seed.rs".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--seed".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("no implementation with id 'not-in-the-seed.rs'"),
+            "the runtime-store lookup should fail first: {err}"
+        );
+
+        // A CUSTOM record — real in the runtime store, absent from the packaged seed — is exactly
+        // where `--seed` has nothing to write onto, and must say so rather than inventing a seed
+        // record or silently writing only the store half.
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "rust".into(),
+                "--id".into(), "custom.rs".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "custom".into(),
+                "--code".into(), "fn custom() {}".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "custom.rs".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--seed".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("no implementation with id 'custom.rs' in the packaged seed"),
+            "{err}"
+        );
+        // The id-in-seed check runs BEFORE the store is touched, so a `--seed` refusal must not leave
+        // the record half-updated (store written, seed not) — `custom.rs` keeps its original `tests`.
+        let stored_after_refusal = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("custom.rs"))
+            .and_then(|i| i.get("tests").cloned());
+        assert_eq!(
+            stored_after_refusal, None,
+            "a `--seed` refusal must not leave the store half-written"
+        );
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+
     #[test]
     fn provenance_is_declared_by_src_folder_or_an_explicit_opt_out() {
         let bare = serde_json::json!({ "id": "x.rs" });
@@ -4544,4 +5117,5 @@ mod reseed_tests {
         // The drift guard: a verb missing from VERBS drops out of the help-coverage test.
         assert!(VERBS.contains(&"reseed"));
     }
+
 }

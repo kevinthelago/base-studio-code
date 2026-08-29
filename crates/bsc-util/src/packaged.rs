@@ -108,6 +108,17 @@ pub fn candidates(rel: &str) -> Vec<PathBuf> {
     data_dirs().into_iter().map(|d| d.join(rel)).collect()
 }
 
+/// The on-disk path a packaged seed currently resolves to — the first [`candidates`] entry that
+/// exists, i.e. exactly the file [`read`] would return the contents of. `None` when no candidate
+/// exists (a shipped build whose resources are missing, or `BSC_DATA_DIR` pointed somewhere empty).
+///
+/// Distinct from [`read`]: a caller that wants to WRITE the seed back in place (curate its packaged
+/// copy, not just its runtime store — #141) needs the PATH, not the contents, and [`read`]'s own
+/// resolution loop is otherwise private to it.
+pub fn resolved_path(rel: &str) -> Option<PathBuf> {
+    candidates(rel).into_iter().find(|p| p.is_file())
+}
+
 /// Read a packaged seed, or report every path that was tried.
 ///
 /// CRLF is **not** normalized here — callers that hash or serve canonical bytes do their own
