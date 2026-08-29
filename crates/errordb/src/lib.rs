@@ -282,6 +282,80 @@ impl Store {
         )?;
         Ok(n)
     }
+
+    /// The recorded RUNS — what each wrapped command cost, newest first.
+    ///
+    /// The typed read `bsc mem build` is built on. It lives here rather than in that crate because this
+    /// crate owns the schema: a reader elsewhere would be raw SQL against another crate's table, free to
+    /// drift from it silently the next time a column moves.
+    ///
+    /// `ms` and `peak_rss_bytes` stay `Option` all the way out. A measurement that could not be taken
+    /// must read as ABSENT at every layer — the moment one of these becomes a `0` on the way to a
+    /// caller, it enters a median as a build that took no time and used no memory.
+    pub fn runs(&self, filter: &RunFilter) -> rusqlite::Result<Vec<RunRow>> {
+        let mut sql = String::from(
+            "SELECT ts, stage, source, cmd, ok, exit_code, ms, peak_rss_bytes FROM runs WHERE 1=1",
+        );
+        let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(stage) = &filter.stage {
+            sql.push_str(&format!(" AND stage = ?{}", args.len() + 1));
+            args.push(Box::new(stage.clone()));
+        }
+        if let Some(source) = &filter.source {
+            sql.push_str(&format!(" AND source = ?{}", args.len() + 1));
+            args.push(Box::new(source.clone()));
+        }
+        if let Some(since) = filter.since {
+            sql.push_str(&format!(" AND ts >= ?{}", args.len() + 1));
+            args.push(Box::new(since));
+        }
+        // Newest first, and `id` breaks a tie rather than leaving the order to the query planner — two
+        // runs can share a millisecond, and an unstable order makes "the latest run" a coin flip.
+        sql.push_str(" ORDER BY ts DESC, id DESC");
+        if let Some(limit) = filter.limit {
+            sql.push_str(&format!(" LIMIT {limit}"));
+        }
+        let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(refs.as_slice(), |r| {
+            Ok(RunRow {
+                ts: r.get(0)?,
+                stage: r.get(1)?,
+                source: r.get(2)?,
+                cmd: r.get(3)?,
+                ok: r.get::<_, i64>(4)? != 0,
+                exit_code: r.get(5)?,
+                ms: r.get(6)?,
+                peak_rss_bytes: r.get(7)?,
+            })
+        })?;
+        rows.collect()
+    }
+}
+
+/// One recorded run — the cost half of `bsc errors run`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunRow {
+    pub ts: i64,
+    pub stage: String,
+    pub source: String,
+    pub cmd: String,
+    pub ok: bool,
+    pub exit_code: i64,
+    /// Wall clock. `None` when it could not be taken — never `0`.
+    pub ms: Option<i64>,
+    /// Peak of the summed RSS of the child's process tree. `None` when unobserved — never `0`.
+    pub peak_rss_bytes: Option<i64>,
+}
+
+/// Which runs to read. Every field absent means every run.
+#[derive(Debug, Clone, Default)]
+pub struct RunFilter {
+    pub stage: Option<String>,
+    pub source: Option<String>,
+    pub since: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 /// The column list `row_to_fault` decodes, kept in one place so the SELECTs can't drift from the mapper.
@@ -472,6 +546,68 @@ mod tests {
         assert!(s.list(&Filter::default()).unwrap().is_empty());
         let n: i64 = s.conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
+    }
+}
+
+
+#[cfg(test)]
+mod run_reader_tests {
+    use super::*;
+
+    fn store(label: &str) -> (std::path::PathBuf, Store) {
+        let dir = std::env::temp_dir().join(format!("errordb-runrd-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("error.db");
+        let s = Store::open(&path).unwrap();
+        (dir, s)
+    }
+
+    fn insert(s: &Store, ts: i64, stage: &str, source: &str, ms: Option<i64>, peak: Option<i64>) {
+        s.conn
+            .execute(
+                "INSERT INTO runs (ts, stage, source, cmd, ok, exit_code, ms, peak_rss_bytes)
+                 VALUES (?1, ?2, ?3, 'c', 1, 0, ?4, ?5)",
+                params![ts, stage, source, ms, peak],
+            )
+            .unwrap();
+    }
+
+    /// Newest first, and filtered by the axes `bsc mem build` scopes on.
+    #[test]
+    fn runs_reads_newest_first_and_filters_by_stage_source_and_since() {
+        let (dir, s) = store("filter");
+        insert(&s, 100, "build", "npm", Some(10), Some(1));
+        insert(&s, 300, "build", "cargo", Some(30), Some(3));
+        insert(&s, 200, "launch", "npm", Some(20), Some(2));
+
+        let all = s.runs(&RunFilter::default()).unwrap();
+        assert_eq!(all.iter().map(|r| r.ts).collect::<Vec<_>>(), [300, 200, 100], "newest first");
+
+        let builds = s.runs(&RunFilter { stage: Some("build".into()), ..Default::default() }).unwrap();
+        assert_eq!(builds.len(), 2);
+
+        let npm = s.runs(&RunFilter { source: Some("npm".into()), ..Default::default() }).unwrap();
+        assert_eq!(npm.iter().map(|r| r.ts).collect::<Vec<_>>(), [200, 100]);
+
+        let recent = s.runs(&RunFilter { since: Some(200), ..Default::default() }).unwrap();
+        assert_eq!(recent.iter().map(|r| r.ts).collect::<Vec<_>>(), [300, 200]);
+
+        let one = s.runs(&RunFilter { limit: Some(1), ..Default::default() }).unwrap();
+        assert_eq!(one.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AN UNMEASURED RUN STAYS UNMEASURED all the way out. A NULL that surfaced as `Some(0)` would be a
+    /// build that took no time and used no memory, and it would drag every median it entered downward.
+    #[test]
+    fn an_absent_measurement_reads_as_none_not_as_zero() {
+        let (dir, s) = store("absent");
+        insert(&s, 1, "build", "x", None, None);
+        let got = s.runs(&RunFilter::default()).unwrap();
+        assert_eq!(got[0].ms, None);
+        assert_eq!(got[0].peak_rss_bytes, None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
