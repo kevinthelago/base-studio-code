@@ -113,6 +113,26 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     expect(director.startPrompt).toContain("bsc-answer");
     expect(director.startPrompt.length).toBeGreaterThan(200);
   });
+
+  it("owns logging/perf as part of its own glob, not a separate stream's job (#172)", () => {
+    // Director hit the persona-write role gate filing bsc request 172: the worker protocol was
+    // missing an explicit statement that instrumentation/perf watching belongs to whoever owns the
+    // glob, not a hand-off to the `logs` stream. Fixed at the packaged SOURCE — worker-protocol.md +
+    // worker.json's `responsibilities` — rather than the live store, so it reaches every install and
+    // survives `reconcilePersonas` rather than the CLI-set edit that got silently reverted first.
+    const worker = makeBuiltinPersonas().find((p) => p.id === "persona-worker")!;
+    const needle = "Logging and performance are part of what you own, not a separate stream's job.";
+    const anchor = "Build against the planned contracts, in parallel — do NOT wait on another stream.";
+    expect(worker.startPrompt).toContain(needle);
+    expect(worker.startPrompt).toContain(anchor);
+    // The section must land BEFORE the "build against contracts" anchor named in the request.
+    expect(worker.startPrompt.indexOf(needle)).toBeLessThan(worker.startPrompt.indexOf(anchor));
+    expect(worker.startPrompt).toContain("bsc logs");
+
+    expect(worker.responsibilities?.[1]).toBe(
+      "Instrument and watch your owned glob's logging and performance, not just its correctness",
+    );
+  });
 });
 
 describe("personaSlug", () => {

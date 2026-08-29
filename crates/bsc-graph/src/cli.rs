@@ -814,12 +814,12 @@ fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, Str
     None
 }
 
-/// `tests set --id <id> --src <test-file> [--name <name>] [--seed]` (#140/#141) — pair ONE record's
-/// test without a whole-tree `harvest`. See the usage note on the `"tests"` match arm in [`run`] for
-/// why this exists alongside `harvest` rather than folding into it.
+/// `tests set --id <id> --src <test-file> [--name <name>] [--seed] [--if-version <n>]` (#140/#141) —
+/// pair ONE record's test without a whole-tree `harvest`. See the usage note on the `"tests"` match
+/// arm in [`run`] for why this exists alongside `harvest` rather than folding into it.
 fn tests_set(args: &[String]) -> Result<Value, String> {
-    let usage =
-        "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--seed] [--pretty]";
+    let usage = "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--seed] \
+                 [--if-version <n>] [--pretty]";
     let id = flag_value(args, "--id").ok_or(usage)?;
     let src_path = flag_value(args, "--src").ok_or(usage)?;
     let path = std::path::Path::new(&src_path);
@@ -874,7 +874,18 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
         },
         None => next["tests"] = serde_json::json!([entry]),
     }
-    crate::set_impl(&mut g, next)?;
+    // Optimistic concurrency (#183), the same opt-in guard `impl set` carries: two sessions pairing a
+    // test onto the SAME record concurrently are exactly the shape request #183 was filed against — a
+    // concurrent `--code` write dropped an in-flight diff with no conflict signal at all. `read_rev`
+    // answers 0 for a record never stamped since #72, so `--if-version 0` is the honest guard for one
+    // of those too; no backfill needed.
+    let if_version = match flag_value(args, "--if-version") {
+        Some(raw) => Some(raw.parse::<i64>().map_err(|_| {
+            format!("--if-version '{raw}' is not an integer (read the current rev with `bsc graph impl history <id>`)")
+        })?),
+        None => None,
+    };
+    crate::set_impl_versioned(&mut g, next, "unknown", None, if_version)?;
     crate::save(&g)?;
 
     if let Some((path, mut doc)) = seed_doc {
@@ -2303,7 +2314,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&tests_harvest(dir, dry, ids.as_ref())?)
             }
             _ => Err(
-                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed]"
+                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed] [--if-version <n>]"
                     .to_string(),
             ),
         },
@@ -3288,7 +3299,7 @@ fn help(prog: &str) -> String {
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
-  \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141)
+  \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
@@ -4382,6 +4393,88 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.contains("not-a-real-id.ts") && err.contains("does not create one"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+
+    /// `tests set --if-version <n>` (#183) — the same opt-in optimistic-concurrency guard `impl set`
+    /// carries (`if_version_rejects_a_stale_write_and_allows_a_current_one` in `lib.rs`), now wired to
+    /// this write path too. Before this, `tests set` funneled through the UNVERSIONED `set_impl`, so a
+    /// concurrent test-pairing session had no way to refuse a stale overwrite — the exact loss request
+    /// #183 was filed against, just via `tests set` rather than `impl set`.
+    #[test]
+    fn tests_set_if_version_rejects_a_stale_write_and_allows_a_current_one() {
+        let dir = crate::unique_temp("testsset-ifversion");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "guarded.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "guarded".into(),
+                "--code".into(), "export function guarded() {}".into(),
+                "--src".into(), "src/guarded.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+        let rev_after_create = |id: &str| {
+            bsc_record::read_rev(
+                &crate::implementations().into_iter().find(|i| i.get("id").and_then(Value::as_str) == Some(id)).unwrap(),
+            )
+        };
+        assert_eq!(rev_after_create("guarded.ts"), 1, "the create above stamps rev 1");
+
+        let src_dir = crate::unique_temp("testsset-ifversion-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("guarded.test.ts");
+        std::fs::write(&test_file, "it('works', () => {});\n").unwrap();
+
+        // rev 0 is STALE — the record moved on to rev 1 at create. Rejected, nothing written.
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "guarded.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--if-version".into(), "0".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(err.contains("version conflict"), "{err}");
+        assert!(err.contains("current rev is 1"), "names the current rev: {err}");
+        assert!(
+            crate::implementations().into_iter().find(|i| i.get("id").and_then(Value::as_str) == Some("guarded.ts"))
+                .and_then(|i| i.get("tests").cloned())
+                .is_none(),
+            "a rejected write pairs nothing"
+        );
+
+        // The matching version lands.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "guarded.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--if-version".into(), "1".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+        assert_eq!(rev_after_create("guarded.ts"), 2, "the accepted write moves the record forward");
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);

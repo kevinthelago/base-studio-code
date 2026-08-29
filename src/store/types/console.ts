@@ -63,6 +63,19 @@ export interface EndedInfo {
   exit?: { reason?: StopReason; detail?: string; lastOutput?: string };
 }
 
+/** One ended pane's PR-probe backoff schedule (`@/shared/lib/fleet/prProbe`'s `ProbePlan`, applied).
+ *  PERSISTED alongside {@link EndedInfo} — see `panePrProbes` — so a restart resumes the backoff
+ *  instead of re-asking GitHub about every already-settled pane from scratch
+ *  (`an-unmerged-ended-pane-is-polled-against-github-forever` shipped the backoff; it lived only in a
+ *  `useRef` and reset on every restart, which is the bug `panePrProbes` fixes). */
+export interface PrProbeState {
+  /** How many ANSWERS (not requests) this pane has produced — `unknown` verdicts don't count. */
+  attempts: number;
+  /** Epoch ms to ask again, or `null` once settled (merged, or exhausted `NO_PR_ATTEMPTS`) — a
+   *  settled pane is never asked again. */
+  nextAt: number | null;
+}
+
 /** Console domain slice of {@link AppStore}: navigation + the tabs/panes/focus core app state. */
 /**
  * A stream the wake path may START rather than merely resume
@@ -204,6 +217,16 @@ export interface ConsoleState {
   markPaneEnded: (paneId: string, info: EndedInfo) => void;
   /** Clear a pane's ended state so the user can relaunch it (reopen). */
   reopenPane: (paneId: string) => void;
+  /** Each ended pane's PR-probe backoff — see {@link PrProbeState}. PERSISTED alongside
+   *  `endedPanes` so a restart resumes the schedule instead of restarting it from empty. Keyed by
+   *  pane id. */
+  panePrProbes: Record<string, PrProbeState>;
+  /** Record what `useWorkerAutoEnd`'s poll learned about one pane's PR — its own `planNextProbe`
+   *  plan, so the NEXT tick (this run or after a restart) knows whether and when to ask again. */
+  setPanePrProbe: (paneId: string, probe: PrProbeState) => void;
+  /** Drop a pane's probe schedule — called wherever its ended state is cleared, so a pane that ends
+   *  again later starts its backoff fresh rather than resuming a stale one. */
+  clearPanePrProbe: (paneId: string) => void;
   // ── Idle session reaping (#849) ──
   /** Panes whose PTY has been reaped for idleness; the view renders a dormant placeholder
    *  and resumes on focus. Transient (not persisted) — panes relaunch on next app start. */
