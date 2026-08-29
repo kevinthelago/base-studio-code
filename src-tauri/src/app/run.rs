@@ -303,6 +303,7 @@ pub fn run() {
             pty::pty_pane_runtime,
             pty::pty_broadcast,
             pty::pty_resize,
+            pty::pty_scrollback_tail,
             pty::pty_kill,
             pty::pty_launch_refusal,
             pty::pty_set_app_runner,

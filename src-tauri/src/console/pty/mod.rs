@@ -515,6 +515,19 @@ fn build_session_init_line(
 /// `namespace_argv` must refuse without one too (the agreement test pins both directions), and that
 /// trades real kernel confinement for the shell gates. That is a posture decision, not a bug fix,
 /// and is deliberately left to the maintainer rather than taken here.
+/// A pane's recorded scrollback tail, ready to write straight into a terminal.
+///
+/// `None` when the pane has no recording — a fresh pane, or a session that ran before recording
+/// existed. The caller must read that as "show an empty terminal", never as an error: a missing
+/// history is the normal state for most panes most of the time.
+///
+/// Always starts at a SAFE boundary. See [`scrollback::replay_start`] for why that outranks the byte
+/// budget, and the module doc for what happens when it does not.
+#[tauri::command]
+pub(crate) fn pty_scrollback_tail(pane_id: String, max_bytes: u64) -> Option<String> {
+    scrollback::read_tail(&scrollback::scrollback_dir(), &pane_id, max_bytes)
+}
+
 #[tauri::command]
 pub(crate) fn sandbox_available() -> bool {
     namespace_supported()
