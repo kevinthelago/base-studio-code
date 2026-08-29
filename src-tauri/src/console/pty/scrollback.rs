@@ -217,6 +217,57 @@ impl ScrollbackRecorder {
     }
 }
 
+/// Choose where to start replaying so the result is at most `max_bytes` AND begins at a boundary.
+///
+/// `marks` are recorded replay points in ascending order; `len` is the recording's length.
+///
+/// OFFSET 0 IS ALWAYS LEGAL, and that is not a special case bolted on — a stream begins in the ground
+/// state by definition, so the start of the file is the one boundary that needs no recording. It is
+/// also the answer whenever the recording is small enough to replay whole, which is the common case
+/// for a short-lived pane.
+///
+/// Otherwise this takes the SMALLEST mark that fits the budget, i.e. the most history the caller asked
+/// to afford. When even the last mark does not fit — only possible when `max_bytes` is smaller than the
+/// mark cadence — it returns that last mark anyway and OVERSHOOTS the budget. Overshooting is the right
+/// failure: the alternative is starting mid-sequence, which is the corruption this whole mechanism
+/// exists to prevent, and a caller's byte budget is a preference where a boundary is a correctness
+/// requirement.
+pub fn replay_start(marks: &[u64], len: u64, max_bytes: u64) -> u64 {
+    if len <= max_bytes {
+        return 0; // the whole recording fits; its start is inherently safe
+    }
+    // Marks at or past `len` are meaningless (a truncated or rewritten file) — ignore them rather
+    // than hand back an offset past the end.
+    let usable: Vec<u64> = marks.iter().copied().filter(|&m| m < len).collect();
+    match usable.iter().copied().find(|&m| len - m <= max_bytes) {
+        Some(m) => m,
+        // Nothing fits: prefer the newest boundary we have over the file start, so a caller with a
+        // tiny budget still gets a bounded (if over-budget) replay rather than the entire history.
+        None => usable.last().copied().unwrap_or(0),
+    }
+}
+
+/// Read a pane's recorded tail, starting at a safe boundary, at most `max_bytes` long.
+///
+/// Returns the bytes as a lossy string: they are handed straight to a terminal, which is the one
+/// consumer that wants them, and a partial UTF-8 character at either edge must not fail the read.
+pub fn read_tail(dir: &Path, pane_id: &str, max_bytes: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let stem = safe_stem(pane_id);
+    let mut f = File::open(dir.join(format!("{stem}.bin"))).ok()?;
+    let len = f.metadata().ok()?.len();
+    let marks: Vec<u64> = std::fs::read_to_string(dir.join(format!("{stem}.idx")))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect();
+    let start = replay_start(&marks, len, max_bytes);
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut out = Vec::with_capacity((len - start) as usize);
+    f.take(len - start).read_to_end(&mut out).ok()?;
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +375,60 @@ mod tests {
         assert_eq!(marks.len(), 1, "exactly one replay point, at the boundary");
         let bin = std::fs::metadata(dir.join(format!("{stem}.bin"))).unwrap().len();
         assert_eq!(marks[0], bin, "the offset addresses the FILE, not this recorder's own run");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_recording_that_fits_replays_from_the_start() {
+        // The start of a stream is a boundary by definition, so no mark is needed to use it.
+        assert_eq!(replay_start(&[], 500, 1000), 0);
+        assert_eq!(replay_start(&[100], 1000, 1000), 0, "exactly at budget still fits");
+    }
+
+    #[test]
+    fn a_long_recording_takes_the_most_history_that_fits() {
+        let marks = [100u64, 200, 300, 400];
+        // len 1000, budget 650 → the smallest mark m with 1000-m <= 650 is 400.
+        assert_eq!(replay_start(&marks, 1000, 650), 400);
+        // A bigger budget reaches further back.
+        assert_eq!(replay_start(&marks, 1000, 850), 200);
+    }
+
+    #[test]
+    fn it_overshoots_the_budget_rather_than_starting_mid_sequence() {
+        // THE PRIORITY, stated as a test: a byte budget is a preference, a boundary is correctness.
+        // With no mark close enough, take the newest boundary and exceed the budget knowingly.
+        assert_eq!(replay_start(&[100, 200], 1000, 10), 200);
+        // With no marks at all there is only one boundary to have — the start.
+        assert_eq!(replay_start(&[], 1_000_000, 10), 0);
+    }
+
+    #[test]
+    fn marks_past_the_end_are_ignored() {
+        // A truncated or rewritten recording must never yield an offset past its end.
+        assert_eq!(replay_start(&[100, 5000], 1000, 500), 100);
+        assert_eq!(replay_start(&[9999], 1000, 10), 0);
+    }
+
+    #[test]
+    fn read_tail_round_trips_through_a_real_recording() {
+        let dir = std::env::temp_dir().join(format!("sb-read-{}-{}", std::process::id(), now_nanos()));
+        let mut r = ScrollbackRecorder::open(&dir, "p1").expect("opens");
+        // Enough to force a mark, at a boundary, then a recognisable tail after it.
+        r.write(&vec![b'a'; MARK_EVERY_BYTES as usize]);
+        r.write(b"\x1b[32mTAIL\x1b[0m");
+        drop(r);
+
+        // A budget smaller than the tail-after-the-mark still starts at the mark, not mid-sequence.
+        let small = read_tail(&dir, "p1", 4).expect("reads");
+        assert!(small.starts_with("\x1b[32m"), "must begin at the boundary: {small:?}");
+        assert!(small.contains("TAIL"));
+        // A generous budget replays the whole thing.
+        let all = read_tail(&dir, "p1", 10 * MARK_EVERY_BYTES).expect("reads");
+        assert!(all.starts_with("aaa"), "the whole recording starts at its own beginning");
+        assert!(all.ends_with("TAIL\x1b[0m"));
+        // A pane that never recorded is absent, NOT an error — the caller shows a fresh terminal.
+        assert!(read_tail(&dir, "never-ran", 1024).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
