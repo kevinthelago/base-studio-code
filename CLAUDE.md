@@ -162,7 +162,7 @@ person expects to find the application, so the surprise belongs on the transient
 
 ```bash
 npm run dev:app                    # at the ROOT — the app, with HMR
-cd wt-integrate && git merge --no-ff <ref>     # integration, step 7 of the flow
+bsc plan integrate <ref> --dir wt-integrate    # integration, step 7 of the flow (lock-serialized, #185)
 npm run promote                    # gate develop, fast-forward main at the root
 npm run promote -- --dry-run       # what would move
 npm run promote -- --skip-gate     # you just gated develop yourself
@@ -1071,13 +1071,23 @@ criterion from `bsc plan get <ref>`, then
 ```bash
 npm run gate -- --full                               # the UNSCOPED gate — the scoped one is not enough to land on
 bsc plan status <ref> verified
-cd wt-integrate && git merge --no-ff <ref>           # into develop THERE — never at the root, which
+bsc plan integrate <ref> --dir wt-integrate          # into develop THERE — never at the root, which
                                                      # runs the app; NEVER pipe this into a chain
 bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
 
 cd wt-<short> && git checkout -B <next-ref> develop  # RECYCLE it — see below; keeps the warm target/
 git branch -d <ref>                                  # fails while the branch is checked out in a worktree
 ```
+**Use `bsc plan integrate`, not a bare `git merge`, for this step** (request #185): `wt-integrate` is
+ONE shared working tree, and two sessions running `git merge --no-ff` there at the same moment race
+each other's git state — one session's in-progress conflict resolution becomes visible, mid-resolution,
+to `git status` in the other. `bsc plan integrate <ref> --dir wt-integrate` wraps the same merge with a
+named lock (`~/.base-studio-code/locks/`) so a second caller waits its turn instead of touching a
+half-resolved merge. A clean merge releases the lock itself; a REAL conflict leaks it on purpose (a
+human resolves it across several separate commands, long after this call returns) — resolve by hand
+exactly as you would with a bare `git merge`, then free the tree for the next session with
+`bsc plan integrate --release --dir wt-integrate`.
+
 Verify the merge landed **before** deleting anything — a failed merge followed by a branch delete
 destroys the work, which is why these are separate commands and never `&&`-chained. With no next item
 queued, leave the worktree parked on `develop` (`git checkout -B parked-<short> develop`) rather than
