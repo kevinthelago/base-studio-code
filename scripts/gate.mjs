@@ -15,7 +15,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireGateSlot } from "./gateLock.mjs";
-import { planGate, parsePorcelain, gateCommands, isRecordStorePath } from "./gateScope.mjs";
+import { planGate, parsePorcelain, gateCommands, isRecordStorePath, needsGateSlot } from "./gateScope.mjs";
 import { decideGateTree, devPortFrom } from "./gate-tree-guard.mjs";
 import { classifyBuildFailure, failingPackage } from "./build-artifact-plan.mjs";
 
@@ -116,6 +116,9 @@ if (!plan.full) {
   if (plan.vitestUnscoped) {
     process.stdout.write(`  note: a record store changed, so vitest runs UNSCOPED — --changed cannot see\n`);
     process.stdout.write(`        from a JSON blob to the modules emit:records materializes from it.\n`);
+    // Say it here, BEFORE the wait. This plan calls itself scoped and is about to queue like a full one;
+    // without a line saying why, the pause reads as a hang in the one tier nobody expects to wait.
+    process.stdout.write(`        this makes it a HEAVY gate, so it takes a fleet slot like --full does.\n`);
   }
   if (plan.rustCrates.length >= graph.size - 2) {
     process.stdout.write(`  note: that is nearly the whole workspace — a shared crate changed, so this is\n`);
@@ -175,12 +178,16 @@ try {
   // a janitor must never redden a gate
 }
 
-// Serialize FULL gates across the fleet. One peaks at ~8 GB (jobs = 4) because nextest links ~41 test
-// binaries, and this box has ~16 GB free — so two fit and the 10+ sessions this repo is meant to run
-// do not (#ten-parallel-rust-sessions-will-oom-the-box). The SCOPED gate is deliberately not
-// serialized: it compiles one crate plus its dependents, so making agents queue for it would trade a
-// real cost against a risk they do not pose.
-const releaseSlot = plan.full
+// Serialize the EXPENSIVE gates across the fleet — see `needsGateSlot`, which owns the rule and is
+// unit-tested. A full gate peaks at ~8 GB (jobs = 4) because nextest links ~41 test binaries, and this
+// box has ~16 GB free, so two fit and the 10+ sessions this repo is meant to run do not
+// (#ten-parallel-rust-sessions-will-oom-the-box).
+//
+// A SCOPED GATE IS NOT AUTOMATICALLY A CHEAP ONE, which is what this used to assume. Keying the slot on
+// `plan.full` exempted every gate that ran vitest UNSCOPED — the whole 768-file suite — because such a
+// plan still calls itself scoped. Measured on the live box: 6 concurrent vitest runs and 28 workers,
+// 11.45 GB of an 18.19 GB peak, not one of them holding a slot.
+const releaseSlot = needsGateSlot(plan)
   ? await acquireGateSlot((m) => process.stdout.write(`gate: ${m}\n`))
   : () => {};
 

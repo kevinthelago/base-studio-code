@@ -230,6 +230,33 @@ export function withDependents(changed, graph) {
 }
 
 /**
+ * Does this plan need one of the cross-worktree gate slots?
+ *
+ * THE SLOT FOLLOWS THE COST, NOT THE TIER — and those two came apart. Slots were taken on `full` alone,
+ * on the reasoning recorded in `gate.mjs`: a scoped gate "compiles one crate plus its dependents", so
+ * queueing for it would trade a real cost against a risk it does not pose. That argument is about CARGO,
+ * and cargo is not what dominates a gate's memory.
+ *
+ * VITEST IS. MEASURED on the live box over 60s of ordinary fleet work: an 18.19 GB peak, of which vitest
+ * was 11.45 GB — 8.59 GB across 28 worker processes plus 2.86 GB across SIX concurrent runners — more
+ * than the entire Rust toolchain, the app and every agent session combined. None of those six held a
+ * slot, because none of them called itself `--full`.
+ *
+ * They were not small, either. A change to a record store sets `vitestUnscoped`, because `--changed`
+ * walks the module graph and cannot see from a JSON store to the modules `emit:records` materializes out
+ * of it — so the suite runs WHOLE. That is the right call and stays. The mistake was letting a plan
+ * describe itself as scoped while running the full 768-file suite, and inheriting the exemption meant for
+ * a cheap one. Most of this frontend IS records (~1,005 modules), so that is not a corner case; it is the
+ * common path.
+ *
+ * Pure and exported so the rule is pinned by a unit test rather than living inside the runner, where the
+ * next scope exemption could quietly reopen it.
+ */
+export function needsGateSlot(plan) {
+  return Boolean(plan?.full || (plan?.runVitest && plan?.vitestUnscoped));
+}
+
+/**
  * The gate plan for one change.
  *
  * Returns `{ full, reason, rustCrates, frontendFiles, runVitest, runTsc }`. `full` means run the

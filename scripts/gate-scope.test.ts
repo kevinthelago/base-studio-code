@@ -7,7 +7,7 @@
 // stylesheets orphaned with every gate green, and a vitest config change that dropped 8 test files while
 // reporting all-passing.
 import { describe, it, expect } from "vitest";
-import { planGate, withDependents, crateForPath, isFrontendPath, parsePorcelain, gateCommands, graphCommands, isGraphSourcePath, FORCE_FULL } from "./gateScope.mjs";
+import { planGate, withDependents, crateForPath, isFrontendPath, parsePorcelain, gateCommands, graphCommands, isGraphSourcePath, needsGateSlot, FORCE_FULL } from "./gateScope.mjs";
 
 // A miniature of the real workspace shape: one shared util everything sits on, one mid-tier crate, two
 // leaves. The real graph measures bsc-util at 35 of 40 dependents and bsc-ui at 1.
@@ -285,5 +285,59 @@ describe("graph step", () => {
     expect(isGraphSourcePath("graph/algorithms.json")).toBe(true);
     expect(isFrontendPath("graph/algorithms.json")).toBe(false);
     expect(isGraphSourcePath("src-tauri/data/components/app/x.json")).toBe(false);
+  });
+});
+
+// ── which gates queue for a fleet slot (#a-scoped-gate-runs-the-whole-vitest-suite-and-takes-no-slot) ──
+//
+// THE RULE IS ABOUT COST, AND IT USED TO BE ABOUT THE TIER. Slots were taken on `full` alone, which
+// exempted every plan that runs vitest UNSCOPED — the whole 768-file suite — because such a plan still
+// describes itself as scoped. MEASURED on the live box during ordinary fleet work: an 18.19 GB peak of
+// which vitest was 11.45 GB, across SIX concurrent runners and 28 workers, none of them holding a slot.
+//
+// Tested here rather than in the runner because the runner cannot be exercised without actually
+// building: the rule has to be a pure function precisely so the next scope exemption is forced to answer
+// this question too.
+describe("needsGateSlot", () => {
+  it("takes a slot for a full gate — unchanged", () => {
+    expect(needsGateSlot({ full: true, runVitest: true })).toBe(true);
+  });
+
+  it("takes a slot for a SCOPED gate that runs the whole vitest suite — the regression", () => {
+    // A record-store change sets `vitestUnscoped` because `--changed` cannot see from a JSON blob to the
+    // modules `emit:records` materializes out of it. Running unscoped there is correct; inheriting the
+    // cheap tier's exemption while doing it was not.
+    expect(needsGateSlot({ full: false, runVitest: true, vitestUnscoped: true })).toBe(true);
+  });
+
+  it("does NOT queue a genuinely scoped gate — the exemption still has to be worth having", () => {
+    // This is the case the exemption was written for: a narrow vitest run beside one crate's compile.
+    // If this ever returns true the fleet serializes on everything and the tiering is pointless.
+    expect(needsGateSlot({ full: false, runVitest: true, vitestUnscoped: false })).toBe(false);
+  });
+
+  it("does not queue a plan that runs no vitest at all, however it is flagged", () => {
+    // A Rust-only change carries `vitestUnscoped: undefined`; a no-op plan carries `runVitest: false`.
+    // Neither spawns a worker pool, so neither should wait behind one.
+    expect(needsGateSlot({ full: false, runVitest: false, vitestUnscoped: true })).toBe(false);
+    expect(needsGateSlot({ full: false, runVitest: false })).toBe(false);
+  });
+
+  it("answers false for a missing plan rather than throwing", () => {
+    // The runner calls this before anything else has validated the plan; a throw here would take out the
+    // gate itself, which is strictly worse than running one unserialized.
+    expect(needsGateSlot(undefined)).toBe(false);
+  });
+
+  it("agrees with a REAL plan built by planGate for a record-store change", () => {
+    // The unit assertions above use hand-made plans, which can drift from what planGate actually emits.
+    // This pins the join: touching a record store must produce a plan that needs a slot.
+    const plan = planGate({
+      files: ["src-tauri/data/components/app/features/designs/guidecard.json"],
+      graph, dirToCrate, exists: () => true,
+    });
+    expect(plan.full).toBe(false);
+    expect(plan.vitestUnscoped).toBe(true);
+    expect(needsGateSlot(plan), "a scoped plan running the whole suite must queue").toBe(true);
   });
 });

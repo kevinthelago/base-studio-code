@@ -1097,10 +1097,21 @@ Two things follow, and the second is the one that limits the fleet:
 - **A FULL gate is an 8 GB operation** because nextest links ~41 test binaries (9 concurrent `link.exe`
   at the old default; one app link alone peaks at 2.99 GB). So **two** full gates fit in what this
   machine has free, not ten. `npm run gate -- --full` therefore takes a cross-worktree slot from
-  `~/.base-studio-code/locks/`; the SCOPED gate is not serialized, since it compiles one crate plus its
-  dependents. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting gate says so — a
-  silent wait is indistinguishable from a hang — and a lock whose holder died or wedged is stolen, so
-  one crashed agent cannot block the fleet. This repo already has an OOM history (#795).
+  `~/.base-studio-code/locks/`. Raise the limit with `BSC_GATE_SLOTS` on a bigger machine. A waiting
+  gate says so — a silent wait is indistinguishable from a hang — and a lock whose holder died or
+  wedged is stolen, so one crashed agent cannot block the fleet. This repo already has an OOM history
+  (#795).
+- **THE SLOT FOLLOWS THE COST, NOT THE TIER**, and that distinction was learned the hard way. The rule
+  used to be "`--full` queues, scoped does not, since it compiles one crate plus its dependents" — a
+  statement about CARGO, applied to a gate whose memory is dominated by VITEST. MEASURED on this box
+  over 60s of ordinary fleet work: an 18.19 GB peak of which **vitest was 11.45 GB** (8.59 GB across 28
+  workers, 2.86 GB across **six** concurrent runners) — more than the whole Rust toolchain, the app and
+  every agent session combined, and not one of those six held a slot.
+  A scoped gate is **not automatically a cheap one**: touching a record store sets `vitestUnscoped`
+  (`--changed` cannot see from a JSON blob to the modules `emit:records` materializes out of it), so the
+  whole 768-file suite runs while the plan still calls itself scoped. Since most of this frontend IS
+  records, that is the common path rather than a corner. `needsGateSlot` now queues any plan that runs
+  vitest unscoped, and `gate-scope.test.ts` pins it.
 
 Ten sessions EDITING Rust is fine. Ten sessions GATING at once is not, and without the lock it is an
 out-of-memory failure rather than a slow one.
