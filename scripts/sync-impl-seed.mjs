@@ -19,6 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { serializeSeed } from "./lib/seedFormat.mjs";
 
 // #139: the Windows dev-box fallback path was dead since the linux-host migration — this repo's own
 // scripts run with $BSC_BIN set, so the fallback only ever fires from a bare shell, where the bundled
@@ -33,22 +34,6 @@ export function contentOf(rec) {
   const c = { ...rec };
   for (const k of BOOKKEEPING) delete c[k];
   return c;
-}
-
-/**
- * Re-serialize the seed EXACTLY as it is stored on disk: 1-space indent, non-ASCII escaped, and NO
- * trailing newline — i.e. Python's `json.dumps(d, indent=1, ensure_ascii=True)`, which is what writes
- * this file today.
- *
- * This is not cosmetic. `JSON.stringify(seed, null, 2)` + "\n" re-indents all 6.3 MB, so a two-record
- * sync produced a 22,500-line diff in which the actual change was invisible — unreviewable, and it
- * would have carried a whole-file reformat into every branch that ran this script once.
- */
-function serializeSeed(value) {
-  return JSON.stringify(value, null, 1).replace(
-    /[\u0080-\uffff]/g,
-    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
 }
 
 function isEqual(a, b) {
