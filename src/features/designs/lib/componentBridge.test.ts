@@ -12,7 +12,18 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { ComponentRecord, Kit } from "@/features/designs/lib/model";
-import { dropComponent, dropKit, loadComponents, loadKits, projectComponent, pushComponent, pushKit, recordPreviewError } from "./componentBridge";
+import {
+  APP_RECONCILE_WRITER,
+  dropComponent,
+  dropKit,
+  loadComponents,
+  loadKits,
+  projectComponent,
+  pushComponent,
+  pushKit,
+  recordPreviewError,
+  stampComponent,
+} from "./componentBridge";
 import { dropKitUsage, loadKitUsage, pushKitUsage } from "@/features/designs/lib/kitUsageBridge";
 
 beforeEach(() => {
@@ -190,6 +201,36 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set", "--replace"], kit);
     await dropKit("k1");
     expect(bscRun).toHaveBeenCalledWith(null, ["ui", "kit", "remove", "k1"]);
+  });
+
+  // Request #98 — a background write the APP ITSELF issues (a seed reconcile push, a provenance
+  // restamp) must be `bsc ui log`-distinguishable from a write some other session/fork made to the
+  // same record: `by: "unknown"` on both looked identical, so a designer had to reconstruct which was
+  // which from timing + content alone (dropdown rev 3, request #98's own repro).
+  it("tags a component push as the caller names it (`opts.by`), untagged by default", async () => {
+    const comp = { id: "c1" } as unknown as ComponentRecord;
+    await pushComponent(comp, { by: APP_RECONCILE_WRITER });
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--replace", "--by", APP_RECONCILE_WRITER], comp);
+
+    await pushComponent(comp);
+    expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "set", "--replace"], comp);
+  });
+
+  it("tags a kit push as the caller names it (`by`), untagged by default", async () => {
+    const kit = { id: "k1" } as unknown as Kit;
+    await pushKit(kit, APP_RECONCILE_WRITER);
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set", "--replace", "--by", APP_RECONCILE_WRITER], kit);
+
+    await pushKit(kit);
+    expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "kit", "set", "--replace"], kit);
+  });
+
+  it("stampComponent (the #4207 provenance repair — always app-driven) defaults its `by` to app-reconcile", async () => {
+    await stampComponent("fleetpage", "abc123");
+    expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "set", "--by", APP_RECONCILE_WRITER], { id: "fleetpage", builtin: true, seedHash: "abc123" });
+
+    await stampComponent("fleetpage", "abc123", "someone-else");
+    expect(bscWrite).toHaveBeenLastCalledWith(null, ["ui", "set", "--by", "someone-else"], { id: "fleetpage", builtin: true, seedHash: "abc123" });
   });
 
   it("records a preview runtime error via `bsc ui preview-error <id>` with the message on stdin (#3165)", async () => {

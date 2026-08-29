@@ -163,6 +163,14 @@ export async function loadKits(): Promise<Kit[] | null> {
   }
 }
 
+/** The `--by` tag stamped on a write the APP ITSELF issues in the background — a seed reconcile
+ *  (reseed/refresh/resuppress-dedup/reset-to-seed) or a provenance restamp — as opposed to a write a
+ *  live designer session or an out-of-band `bsc ui` caller makes. Request #98: without this every
+ *  background write read `by: "unknown"` in `bsc ui log`, indistinguishable from a genuinely external
+ *  writer touching the same record, so telling "the app resynced a builtin" apart from "something else
+ *  just wrote to this record" meant reading full history and reasoning about timing/content by hand. */
+export const APP_RECONCILE_WRITER = "app-reconcile";
+
 /** Write-through a component upsert (`bsc ui set`, JSON on stdin). Fire-and-forget; never throws
  *  (an old bundled `bsc` without the `ui` store verbs (#2469) degrades to cache-only).
  *
@@ -174,7 +182,7 @@ export async function loadKits(): Promise<Kit[] | null> {
  *  the reconcile would re-fire forever instead of converging. */
 export async function pushComponent(
   component: ComponentRecord,
-  opts?: { ifVersion?: number },
+  opts?: { ifVersion?: number; by?: string },
 ): Promise<void> {
   // A LITE RECORD IS NEVER A WRITE PAYLOAD (#a-lite-record-must-never-be-written-back).
   //
@@ -212,6 +220,7 @@ export async function pushComponent(
   // already existed in `bsc ui set`; nothing was sending it. Passed only where the caller can name the
   // rev it actually READ — an unguarded call still behaves exactly as before.
   if (typeof opts?.ifVersion === "number") args.push("--if-version", String(opts.ifVersion));
+  if (opts?.by) args.push("--by", opts.by);
   try {
     await bscWrite(null, args, component);
   } catch (e) {
@@ -226,8 +235,8 @@ export async function pushComponent(
  *  `--replace` would push the bridge PROJECTION back over the stored record and silently drop any field
  *  the projection does not carry. `pushComponent`'s `--replace` is correct for its case (the app holds
  *  the whole record, authored from the seed) and wrong for this one. Never throws. */
-export async function stampComponent(id: string, seedHash: string): Promise<void> {
-  try { await bscWrite(null, ["ui", "set"], { id, builtin: true, seedHash }); } catch { /* store unreachable — cache-only */ }
+export async function stampComponent(id: string, seedHash: string, by = APP_RECONCILE_WRITER): Promise<void> {
+  try { await bscWrite(null, ["ui", "set", "--by", by], { id, builtin: true, seedHash }); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a component removal (`bsc ui remove <id>`). Never throws. */
 export async function dropComponent(id: string): Promise<void> {
@@ -241,8 +250,10 @@ export async function dropComponent(id: string): Promise<void> {
  *  (#a-lite-record-must-never-be-written-back): `loadKits` only ever reads `--full`. There is no
  *  `--graph` projection for kits, so a kit record is never a bag of defaults the way a lite component is.
  *  If a lean kit read is ever added, this needs the same guard `pushComponent` has. */
-export async function pushKit(kit: Kit): Promise<void> {
-  try { await bscWrite(null, ["ui", "kit", "set", "--replace"], kit); } catch { /* store unreachable — cache-only */ }
+export async function pushKit(kit: Kit, by?: string): Promise<void> {
+  const args = ["ui", "kit", "set", "--replace"];
+  if (by) args.push("--by", by);
+  try { await bscWrite(null, args, kit); } catch { /* store unreachable — cache-only */ }
 }
 /** Write-through a kit removal (`bsc ui kit remove <id>`). Never throws. */
 export async function dropKit(id: string): Promise<void> {
