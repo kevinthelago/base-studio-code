@@ -88,6 +88,7 @@ const COMMANDS: &[Surface] = &[
     active("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
     active("teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
     active("network", "user network store: a DOMAIN owning a set of projects and one architect session", Some("networks/ — user; membership is the `network` column on the project row")),
+    active("secret", "credential store: which services we are paired with and whether those pairings still work (metadata + derived status; NO verb reads a secret back)", Some("secrets.db — user; the VALUE lives in the OS keychain, not here")),
     active("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)", Some("the Studio snapshot store — user")),
     deprecated("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)", Some("orgs/ — the same store `bsc teams` serves")),
     deprecated("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)", Some("the component library — the same store `bsc ui` serves")),
@@ -214,6 +215,10 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
+        // The CREDENTIAL store: what services we are paired with and whether those pairings still
+        // work. The secret VALUE is not in it — that stays in the OS keychain, and no verb here can
+        // read one back, so a live session can see WHICH credentials exist without extracting any.
+        "secret" => bsc_secret::cli::run(rest, "bsc secret"),
         // The RELATIONAL corpus store — product feature inventories. Distinct from `bsc data`, which
         // is per-project and whose rows come from connectors scanning a live system.
         "atlas" => atlasdb::cli::run(rest, "bsc atlas"),
