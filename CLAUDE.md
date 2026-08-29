@@ -91,7 +91,7 @@ PROFILE_SECONDS=600 npm run profile:glance   # a longer window
 
 ```bash
 npm run dev               # Vite dev server — frontend only (hot-reload)
-npm run dev:app           # the FULL app — run this from wt-app, NOT the repo root (see below)
+npm run dev:app           # the FULL app — at the ROOT, which checks out main (see below)
 npm run tauri -- dev      # the same launch, unrecorded
 npm run tauri -- build    # Production build (creates platform installer)
 cargo test                # Run Rust backend tests
@@ -99,45 +99,51 @@ npm run typecheck    # TypeScript type-check without emit
 npm run promote           # gate develop, then fast-forward the app's tree (never restarts it)
 ```
 
-### The app runs from its OWN worktree — never from the tree you merge into
+### The ROOT runs the app; integration happens in `wt-integrate`
 
-**`npm run dev:app` belongs in `wt-app`, not at the repo root.** `tauri dev` watches its checkout and
-relaunches on a source change, and the repo root is where every `git merge --no-ff` lands — so
-integrating work restarted the app under whoever was using it, and the person doing the integrating was
-the person being interrupted. MEASURED across one session's five merges: 4 of 5 wrote files under
-`src/`, `src-tauri/src/` or `crates/` (4, 2, 1, 0 and 7 watched files). Every one would have rebuilt and
-relaunched.
+**`npm run dev:app` runs at the repo root, and the root checks out `main`.** Every branch merges into
+`develop` in the **`wt-integrate`** worktree — never at the root.
 
-That is not fixable by narrowing a watcher — those are real source changes it is right to notice. Two
-narrower causes WERE fixed and are still in force: `.taurignore` stops a record write rebuilding
-(`data/components/`, `data/knowledge/`), and the vite watcher ignores `.claude/worktrees` as it does
-`wt-*`. What remained was integration itself.
+That inversion exists because `tauri dev` watches its own checkout and relaunches on a source change,
+and the root used to be where every `git merge --no-ff` landed. So integrating restarted the app under
+whoever was using it, and the person doing the integrating was the person being interrupted. MEASURED
+across one session's five merges: 4 of 5 wrote files under `src/`, `src-tauri/src/` or `crates/` — 4,
+2, 1, 0 and 7 watched files. Every one would have rebuilt and relaunched.
+
+No watcher change can fix that; those are real source edits it is right to notice. Two narrower causes
+WERE fixed and still hold: `.taurignore` stops a record write rebuilding (`data/components/`,
+`data/knowledge/`), and the vite watcher ignores `.claude/worktrees` as it does `wt-*`.
 
 ```
-main     ← the ref the app RUNS from; wt-app is checked out on it
-develop  ← where every branch integrates, in the main checkout
+repo root      → main      the app runs here (npm run dev:app). NEVER merge here.
+wt-integrate   → develop   every branch merges here
+wt-<short>     → <ref>      one per work item, as before, cut from the develop REF
 ```
+
+The app was briefly parked in a `wt-app` worktree instead. That was rejected: the root is where a
+person expects to find the application, so the surprise belongs on the transient activity
+(integrating) rather than the persistent one (running the thing you are building).
 
 ```bash
-git worktree add wt-app main     # ONE TIME (zero-install — vite pre-bundles from the shared node_modules)
-cd wt-app && npm run dev:app     # run the app from here, always
-
-npm run promote                  # full gate on develop, then fast-forward main. NEVER restarts the app.
-npm run promote -- --dry-run     # what would move
-npm run promote -- --skip-gate   # you just gated develop yourself
+npm run dev:app                    # at the ROOT — the app, with HMR
+cd wt-integrate && git merge --no-ff <ref>     # integration, step 7 of the flow
+npm run promote                    # gate develop, fast-forward main at the root
+npm run promote -- --dry-run       # what would move
+npm run promote -- --skip-gate     # you just gated develop yourself
 ```
 
 `npm run promote` is **explicit and never automatic** — choosing the moment the app changes is the
-entire point. Be clear about what it does and does not buy: a promote writes working-tree files that
-`tauri dev` and vite are watching, so **a running app will rebuild and relaunch itself**. That is
-inherent — new Rust means a new binary. What changes is that it happens when YOU ran the command
-rather than when somebody else merged, and the script says which case you are in rather than claiming
-no restart will happen. It refuses
-rather than works around: a dirty app tree (uncommitted work in the RUNNING copy is the only thing here
-that cannot be recovered), a detached HEAD, and an app branch AHEAD of develop — which means something
-committed straight to `main`, a fault to look at rather than paper over with a merge commit. The
-fast-forward happens INSIDE `wt-app`, because git refuses to move a branch checked out elsewhere and
-that is the right place anyway. Guards are pinned in `scripts/promote-plan.test.ts`.
+entire point. Be clear about what it does and does not buy: it fast-forwards `main` in the root, which
+writes files `tauri dev` and vite are watching, so **a running app will rebuild and relaunch itself**.
+That is inherent — new Rust means a new binary. What changes is that it happens when YOU ran the
+command rather than when somebody else merged, and the script says which case you are in.
+
+It refuses rather than works around: a dirty root, a detached HEAD, and `main` AHEAD of `develop`,
+which means something committed straight to `main` — a fault to look at, not to paper over with a
+merge commit. Guards are pinned in `scripts/promote-plan.test.ts`. Merging `develop` into `main` needs
+only the `develop` REF, so promote never has to know where `wt-integrate` is; it locates it only to
+run the gate there, because `gate-tree-guard` refuses a second cargo over the `target/` that
+`tauri dev` owns — and after the inversion that `target/` is the root's.
 
 Hot-swapping the app instead is **not** available and that is settled: the `bsc` sidecar swaps because
 it is a separate short-lived binary (`a-resolved-request-goes-live-without-a-restart`), while the app's
@@ -676,7 +682,8 @@ worker's plan row, its branch, and its working tree are all reachable from a sin
 refs carry their origin number (`4260-sandbox-by-default-…`), which is exactly the branch convention
 this repo already used; new items pick a descriptive slug.
 
-- Cut from `develop`. Never commit on `develop` or `main` directly.
+- Cut from the `develop` REF (it is checked out in `wt-integrate`, not at the root). Never commit on
+  `develop` or `main` directly, and never merge at the ROOT — that is the app's tree.
 - Keep branches short-lived and scoped to the minimum change that satisfies the item.
 - **Do not push.** The branch is local. Integration is a local merge into `develop` once verified.
 
@@ -997,7 +1004,8 @@ criterion from `bsc plan get <ref>`, then
 ```bash
 npm run gate -- --full                               # the UNSCOPED gate — the scoped one is not enough to land on
 bsc plan status <ref> verified
-git merge --no-ff <ref>                              # into local develop; NEVER pipe this into a chain
+cd wt-integrate && git merge --no-ff <ref>           # into develop THERE — never at the root, which
+                                                     # runs the app; NEVER pipe this into a chain
 bsc plan change status <ref> merged --command <merge-sha> --from <reviewer>
 
 cd wt-<short> && git checkout -B <next-ref> develop  # RECYCLE it — see below; keeps the warm target/
