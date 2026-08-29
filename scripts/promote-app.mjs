@@ -102,7 +102,9 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
 
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
-  const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
+  // TRACKED modifications only — see planPromote. `--untracked-files=no` is the whole fix for the
+  // class of noise that made this refuse over stray root dotfiles.
+  const dirty = git(["status", "--porcelain", "--untracked-files=no"]).split("\n").filter(Boolean);
   const behind = branch !== "HEAD" ? Number(git(["rev-list", "--count", `${branch}..develop`])) : 0;
   const ahead = branch !== "HEAD" ? Number(git(["rev-list", "--count", `develop..${branch}`])) : 0;
 
@@ -152,7 +154,10 @@ function main() {
     return;
   }
 
-  git(["merge", "--ff-only", "develop"]);
+  // BSC_PROMOTE is the ONE sanctioned hole in the ref guard (scripts/guard-policy.mjs): moving the
+  // app's ref is refused everywhere else, so this announces itself explicitly rather than being
+  // sniffed for.
+  git(["merge", "--ff-only", "develop"], { env: { ...process.env, BSC_PROMOTE: "1" } });
   console.log(`[promote-app] ${branch} → ${git(["rev-parse", "--short", branch])}`);
   console.log(
     appIsRunning()

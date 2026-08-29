@@ -21,6 +21,9 @@ pub mod cli;
 /// `provides` resolution chain, so a composing component can be verified and not just a leaf.
 pub(crate) mod closure;
 /// A record's PUBLIC SURFACE — what its module exports, grouped into the ITEMS those exports name.
+/// The cross-pillar reference METER (`store-the-three-cross-pillar-edges`) — the number
+/// `epic-one-record-core-across-the-graphs` rested its one-record-type decision on, kept checkable.
+pub mod crossgraph;
 pub mod exports;
 pub mod feature;
 pub mod folder;
@@ -42,6 +45,9 @@ pub mod similarity;
 pub mod syntax;
 pub mod usage;
 pub mod usage_scan;
+/// Real usage sources for the dead-root heuristic (#3888 / `bsc request` #95) — host-mount + `provides`
+/// reachability from the app's actual entry point, feeding `graph_health`'s `used` field.
+pub(crate) mod usage_sources;
 
 pub use feature::{feature_from_folder, CORE, SHELL};
 pub use folder::folder_from_src;

@@ -529,12 +529,19 @@ about a record nothing checks. A test that reaches other app modules is not pair
         summary: "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable + self-referential components (#2678)",
         usage: "\
 USAGE:
-  bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
-  bsc ui doctor --sound-kit id@version [--json]   # judge @bsc/sounds/… against a PINNED sound kit (#3412)
-  bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
-  bsc ui doctor --runtime [--kit K] [--json]      # ALSO report what the app OBSERVED while running
-  bsc ui doctor --imports [--kit K] [--json]      # ALSO walk each record's import CLOSURE for a symbol the target never exports (#149)
-  bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
+  bsc ui doctor [--kit K] [--json] [--pretty]              # the health report (read-only)
+  bsc ui doctor --category cat[,cat…] [--kit K] [--json]   # NARROW the report to one or more categories (#114)
+  bsc ui doctor --sound-kit id@version [--json]            # judge @bsc/sounds/… against a PINNED sound kit (#3412)
+  bsc ui doctor --motion [--kit K] [--json]                # ALSO run the four mechanical MOTION checks (#3163)
+  bsc ui doctor --runtime [--kit K] [--json]               # ALSO report what the app OBSERVED while running
+  bsc ui doctor --imports [--kit K] [--json]               # ALSO walk each record's import CLOSURE for a symbol the target never exports (#149)
+  bsc ui doctor --fix [--kit K] [--yes]                    # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
+
+--category (#114) narrows the report to the named categories after every lens has contributed — so it
+composes with --motion/--runtime/--imports rather than pre-empting them. Comma-separated for more than
+one (`--category dangling-branch,orphan`); an unknown category name simply matches nothing, same as an
+unknown --kit. Use it to check one category's status out of a 200+ finding report without a helper
+script or re-parsing --json by hand.
 
 --sound-kit (#3412) names the project's PINNED sound kit (its blueprint's `soundKit`, as `id@version` in the
 `bsc sound release` store), so a `@bsc/sounds/<cue>` reference is judged against the kit the project actually
@@ -730,6 +737,29 @@ can only ever make prunable what it actually measured.
 
 WHAT IT DOES NOT FIX: measured against the 156 dead roots, mounts clear 8 and `provides` clears 56 —
 92 survive both. The report says so rather than implying the category is cleared.",
+    },
+    CmdDoc {
+        name: "crossgraph",
+        summary: "the CROSS-PILLAR reference meter — every `@bsc/<segment>/<name>` a record actually imports, derived not stored",
+        usage: "\
+USAGE:
+  bsc ui crossgraph [--dir D] [--pretty]      # every cross-pillar reference, with per-direction counts
+
+How many nodes in one graph reference a node in ANOTHER — a component importing an algorithm, an
+algorithm importing a sound. Scans every component record's `srcText` and every algorithm record's
+`code` for the reserved `@bsc/<segment>/<name>` root (#3116, the third import-resolution class).
+
+DERIVED, NEVER STORED. The reference is already stated by the record's source, so a stored edge would
+be a second copy of it — and a copy that is not re-derived when the source changes is simply wrong,
+with nothing to say so. Recomputing cannot drift.
+
+WHY THE NUMBER MATTERS. `epic-one-record-core-across-the-graphs` rejected ONE record type across the
+pillars on the strength of this count being 3, against ~39,000 LOC of pillar-specific readers. This
+verb is what keeps that decision checkable — and it is the trigger to REOPEN it if the count climbs.
+
+It reads IMPORTS, not the token: the ~16 records that implement the URN grammar mention `@bsc/…` in
+prose and string literals without importing anything, and counting those would report 19 where there
+are 3.",
     },
     CmdDoc {
         name: "used-by",
@@ -1695,6 +1725,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             }
         }
         // `used-by` (#3584) — the graph-usage read (composes-inverse); a READ, never scope-gated.
+        Some("crossgraph") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "crossgraph"));
+                Ok(())
+            } else {
+                cmd_crossgraph(&args[1..])
+            }
+        }
         Some("used-by") => {
             if args.get(1).map(String::as_str) == Some("help") {
                 print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "used-by"));
@@ -3833,6 +3871,38 @@ fn warn_jsx_text_escapes(item: &serde_json::Value) {
 
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
 /// (`~/.base-studio-code/components/`) precedence as the shared store CLI, for the custom reads.
+/// `crossgraph [--dir D] [--pretty]` — the cross-pillar reference meter (see
+/// [`crate::crossgraph`] for why it derives rather than stores).
+fn cmd_crossgraph(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty) = (None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other => {
+                return Err(format!("unknown flag '{other}' — usage: bsc ui crossgraph [--dir D] [--pretty]"))
+            }
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let components: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|raw| serde_json::from_str(raw).ok())
+        .collect();
+    // The LIVE algorithms store, not the packaged seed: the meter must report what this machine
+    // actually holds, and a seed-only read would miss every curated record.
+    let implementations = bsc_graph::implementations();
+    let out = crate::crossgraph::report(&components, &implementations);
+    println!("{}", if pretty {
+        serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?
+    } else {
+        serde_json::to_string(&out).map_err(|e| e.to_string())?
+    });
+    Ok(())
+}
+
 /// PUBLIC so an in-process reader outside this crate can resolve the library the same way the CLI
 /// does — the fleet reads it to render a feature's required COMPONENTS beside its algorithms, and a
 /// second resolution path would be a second answer to "where is the store".
@@ -4714,12 +4784,23 @@ fn runtime_category(c: &str) -> &'static str {
     }
 }
 
+/// #114: split a `--category` argument into normalized names — comma-separated, trimmed, empty
+/// segments dropped so a stray trailing comma or extra space doesn't quietly produce an unmatchable
+/// empty-string category. Pure, so the parsing is unit-testable without a store or the printed report.
+fn parse_category_arg(raw: &str) -> Vec<String> {
+    raw.split(',').map(str::trim).filter(|c| !c.is_empty()).map(str::to_string).collect()
+}
+
 fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
     let (mut fix, mut yes, mut motion) = (false, false, false);
     let mut runtime = false;
     let mut imports = false;
     let mut sound_kit = None::<String>;
+    // #114: isolate one (or a few) categories out of a 200+ finding report without a helper script.
+    // Comma-separated, same convention as the `set --clear` list flag elsewhere in this CLI.
+    let mut category: Option<Vec<String>> = None;
+    let mut repo = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -4727,6 +4808,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             "--kit" => kit = it.next().cloned(),
             // #3412: resolve `@bsc/sounds/…` against the project's PINNED kit instead of the packaged default.
             "--sound-kit" => sound_kit = it.next().cloned(),
+            // #3888/`bsc request` #95: where the app's REAL entry point lives, for the host-mount +
+            // `provides` reachability walk (`usage_sources::reachable_ids`) that populates `used` for
+            // findings — else the cwd (a doctor run is normally from the repo whose kit it's reporting on).
+            "--repo" => repo = it.next().cloned(),
             "--json" => json = true,
             "--pretty" => pretty = true,
             "--fix" => fix = true,
@@ -4743,6 +4828,12 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             // `unresolvable-import`'s SAME resolution chain (sibling → component `provides` → impl
             // `provides`, barrels followed) and reports a name the target resolves to but never exports.
             "--imports" => imports = true,
+            // #114: filter the report to one or more categories (comma-separated), e.g.
+            // `--category dangling-branch` or `--category dangling-branch,orphan`.
+            "--category" => {
+                let raw = it.next().ok_or("--category needs a value")?;
+                category = Some(parse_category_arg(raw));
+            }
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -4753,18 +4844,34 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         bsc_cli_util::require_write_scope("ui")?;
     }
     let store = open_component_store(&dir)?;
-    let comps: Vec<serde_json::Value> = store
-        .list()
-        .iter()
-        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
-        .filter(|v| match &kit {
-            Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
-            None => true,
-        })
+    // UNFILTERED — a `--kit`-scoped report still needs the FULL store + impls to resolve a
+    // cross-kit `provides` import or an algorithm-impl hop correctly (#3888); only the FINDINGS below
+    // are kit-scoped, never the usage corpus.
+    let all_comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let repo_path = repo.map(std::path::PathBuf::from).or_else(|| std::env::current_dir().ok());
+    let usage = crate::usage_sources::reachable_ids(
+        &all_comps,
+        &bsc_graph::implementations(),
+        crate::graph_health::platform_modules(),
+        repo_path.as_deref(),
+    );
+    let kit_filter = |v: &&serde_json::Value| match &kit {
+        Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
+        None => true,
+    };
+    // The store's real, PERSISTED `used` — never touched by the enrichment below. `prune_plan_with`'s
+    // guard is judged against this, not `comps`, so `--fix --yes`'s deletion eligibility is completely
+    // unaffected by this run's ephemeral reachability walk (see `prune_plan_with`'s doc for why).
+    let comps_disk_truth: Vec<serde_json::Value> =
+        all_comps.iter().filter(kit_filter).cloned().collect();
+    let comps: Vec<serde_json::Value> = crate::usage_sources::enrich_used(&all_comps, &usage.reached)
+        .into_iter()
+        .filter(|v| kit_filter(&v))
         .collect();
 
     if fix {
-        return doctor_fix(&store, &comps, yes);
+        return doctor_fix(&store, &comps, &comps_disk_truth, yes);
     }
 
     // Resolve the pin BEFORE analyzing so a broken pin fails the whole report rather than silently
@@ -4849,6 +4956,11 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         }));
         findings.extend(crate::import_symbols::unresolved_import_symbol_findings(&records, &index));
     }
+    // #114: narrow to the requested categories AFTER every lens has contributed, so `--category` composes
+    // with `--motion`/`--runtime` instead of pre-empting them.
+    if let Some(wanted) = &category {
+        findings.retain(|f| wanted.iter().any(|c| c == f.category));
+    }
     // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
     // `analyze` uses). Render errors (severity 5) sort to the top.
     findings.sort_by(|a, b| {
@@ -4869,10 +4981,32 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
+    // The usage-source corpus, so it's INSPECTABLE rather than a black box (#3888) — a report from a
+    // tree with no `src/app/main.tsx` (a different kit's context) says so, rather than silently reading
+    // as "usage was checked and found none".
+    if usage.entry_files_read == 0 {
+        println!(
+            "  (usage sources: no app entry point found under {} — host-mount/`provides` reachability was not checked; pass --repo)",
+            repo_path.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "<cwd>".to_string())
+        );
+    } else {
+        println!(
+            "  (usage sources: {} entry file(s), {} real file(s) scanned, {} record(s)/impl(s) proven reachable)",
+            usage.entry_files_read,
+            usage.files_scanned,
+            usage.reached.len()
+        );
+    }
+
     // Human summary — one line per finding, most-severe first.
     if findings.is_empty() {
         let scope = kit.as_deref().map(|k| format!(" for kit '{k}'")).unwrap_or_default();
-        println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, cycles, unbuildable, or self-referential components.");
+        match &category {
+            // A category filter narrowing to zero is "clean for that category", not "clean overall" —
+            // say so explicitly rather than reusing the whole-report health claim.
+            Some(wanted) => println!("✓ no {} finding(s){scope}.", wanted.join(", ")),
+            None => println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, cycles, unbuildable, or self-referential components."),
+        }
         return Ok(());
     }
     println!("{} finding(s), most-severe first:", findings.len());
@@ -5946,12 +6080,23 @@ fn cmd_exports(args: &[String]) -> Result<(), String> {
 ///
 /// Cycles + same-`wraps` (differing-source) duplicates need the curator's SEMANTIC call, so they're only
 /// surfaced as a note — never auto-resolved here.
-fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply: bool) -> Result<(), String> {
+///
+/// `usage_reference` is what the prune guard's `usage_index_populated` check is judged against — pass
+/// `comps` itself when there's no separate enrichment (every direct caller before #3888) or the
+/// UN-enriched store read when `comps`' `used` has been widened by `usage_sources::enrich_used` for
+/// finding-suppression purposes (`cmd_doctor`): see [`crate::graph_health::prune_plan_with`] for why
+/// those two must never be the same list once one of them is ephemeral.
+fn doctor_fix(
+    store: &bsc_json_store::Store,
+    comps: &[serde_json::Value],
+    usage_reference: &[serde_json::Value],
+    apply: bool,
+) -> Result<(), String> {
     let plan = crate::graph_health::merge_plan(comps);
     // Dead roots to prune, minus anything a merge already removes (never double-handle an id).
     let merged_ids: std::collections::BTreeSet<String> =
         plan.groups.iter().flat_map(|g| g.removed.iter().map(|(id, _)| id.clone())).collect();
-    let prune_plan = crate::graph_health::prune_plan(comps);
+    let prune_plan = crate::graph_health::prune_plan_with(comps, usage_reference);
     let prunable: Vec<_> =
         prune_plan.prune.into_iter().filter(|p| !merged_ids.contains(&p.id)).collect();
     let skipped = prune_plan.skipped;
@@ -8565,7 +8710,7 @@ export const P = () => <X />;"
             vec![
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "promote", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
-                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
+                "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "crossgraph", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
@@ -9093,11 +9238,11 @@ export const P = () => <X />;"
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
 
         // Dry run touches nothing.
-        doctor_fix(&store, &comps, false).unwrap();
+        doctor_fix(&store, &comps, &comps, false).unwrap();
         assert!(store.get("btn2").unwrap().is_some(), "a dry run removes nothing");
 
         // Apply: the byte-identical dup is merged away; the canonical survives; the composer repoints.
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
         assert!(store.get("btn2").unwrap().is_none(), "the byte-identical dup is merged away");
         assert!(store.get("btn").unwrap().is_some(), "the most-used canonical survives");
         let page: serde_json::Value = serde_json::from_str(&store.get("page").unwrap().unwrap()).unwrap();
@@ -9117,7 +9262,7 @@ export const P = () => <X />;"
         store.set("btnbuiltin", &serde_json::json!({ "id": "btnbuiltin", "name": "BtnBuiltin", "kitId": "k", "role": "primitive", "used": 1, "builtin": true, "composes": [], "srcText": src, "source": src }).to_string()).unwrap();
 
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
 
         let tomb = stored(&store, "btnbuiltin");
         assert_eq!(tomb["suppressed"], serde_json::Value::Bool(true), "the merged-away builtin is tombstoned: {tomb}");
@@ -9149,7 +9294,7 @@ export const P = () => <X />;"
         set("claimer", serde_json::json!({ "id": "claimer", "name": "Claimer", "kitId": "k", "role": "composite", "used": 0, "usageAssessed": true, "provides": "@/features/x/Card", "composes": [], "srcText": "c", "source": module }));
 
         let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
 
         assert!(store.get("invoicespage").unwrap().is_some(), "a page is a root by definition — never pruned");
         assert!(store.get("algocells").unwrap().is_some(), "a packaged builtin seed is never pruned");
@@ -9170,8 +9315,80 @@ export const P = () => <X />;"
         // The orphan IS reported by the read-only analyzer …
         assert!(crate::graph_health::analyze(&comps).iter().any(|f| f.category == "orphan"));
         // … but `--fix --yes` leaves it alone: `used = 0` store-wide means UNKNOWN, not unused.
-        doctor_fix(&store, &comps, true).unwrap();
+        doctor_fix(&store, &comps, &comps, true).unwrap();
         assert!(store.get("ghost").unwrap().is_some(), "no usage signal ⇒ no automatic removal");
+    }
+
+    /// #114: `--category` splits on commas, trims whitespace, and drops empty segments — so a stray
+    /// trailing comma or extra space around a name doesn't quietly mint an unmatchable "" category.
+    #[test]
+    fn parse_category_arg_splits_trims_and_drops_empty_segments() {
+        assert_eq!(parse_category_arg("orphan"), vec!["orphan"]);
+        assert_eq!(parse_category_arg("dangling-branch,orphan"), vec!["dangling-branch", "orphan"]);
+        assert_eq!(parse_category_arg(" dangling-branch , orphan "), vec!["dangling-branch", "orphan"]);
+        assert_eq!(parse_category_arg("orphan,,orphan"), vec!["orphan", "orphan"]);
+        assert!(parse_category_arg("").is_empty());
+        assert!(parse_category_arg(" , ").is_empty());
+    }
+
+    /// `bsc ui doctor --category` with no value is a clear parse error, not a panic on `unwrap`.
+    #[test]
+    fn cmd_doctor_category_requires_a_value() {
+        let err = cmd_doctor(&["--category".into()]).unwrap_err();
+        assert!(err.contains("--category needs a value"), "{err}");
+    }
+
+    /// #114 end-to-end: filed by the react designer, who needed to isolate one category (e.g.
+    /// `dangling-branch`) out of a 200+ finding report without a helper script. Builds a store shaped to
+    /// trip TWO distinct categories — an orphan primitive and a dangling-branch root — and checks the
+    /// SAME retain the CLI applies (findings.retain(|f| wanted.contains(&f.category))) narrows the
+    /// combined report to just the requested one(s), composing with what every lens already contributed.
+    #[test]
+    fn doctor_category_filter_narrows_the_report_to_the_named_categories() {
+        let dir = tmp_store_dir("doctor-category-filter");
+        let store = bsc_json_store::Store::new(dir, "component");
+        // A single-export default module — `export const C=…` shared across records tripped a spurious
+        // `multi-export` finding on every one of them (the record id and the export name disagree), which
+        // drowned out the two categories this fixture is built to isolate.
+        let module = "export default () => null;";
+        // An isolated primitive nothing composes ⇒ "orphan".
+        store
+            .set(
+                "ghost",
+                &serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }).to_string(),
+            )
+            .unwrap();
+        // An unused root that still composes a dependency ⇒ the whole branch is "dangling-branch".
+        store
+            .set(
+                "root",
+                &serde_json::json!({ "id": "root", "name": "Root", "kitId": "k", "role": "composite", "used": 0, "composes": ["Leaf"], "srcText": "r", "source": module }).to_string(),
+            )
+            .unwrap();
+        store
+            .set(
+                "leaf",
+                &serde_json::json!({ "id": "leaf", "name": "Leaf", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "l", "source": module }).to_string(),
+            )
+            .unwrap();
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        let all = crate::graph_health::analyze(&comps);
+        // The fixture really does trip both categories, or the filter below would prove nothing.
+        assert!(all.iter().any(|f| f.category == "orphan"), "{all:?}");
+        assert!(all.iter().any(|f| f.category == "dangling-branch"), "{all:?}");
+
+        let wanted = parse_category_arg("orphan");
+        let mut narrowed = all.clone();
+        narrowed.retain(|f| wanted.iter().any(|c| c == f.category));
+        assert!(narrowed.iter().all(|f| f.category == "orphan"), "{narrowed:?}");
+        assert!(!narrowed.is_empty());
+
+        // A category present in no lens narrows to empty, same as an unknown `--kit`.
+        let wanted = parse_category_arg("no-such-category");
+        let mut none = all.clone();
+        none.retain(|f| wanted.iter().any(|c| c == f.category));
+        assert!(none.is_empty());
     }
 
     #[test]

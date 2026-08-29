@@ -90,12 +90,20 @@ describe("wakePane reaches a stream whose pane does not exist", () => {
     expect(useAppStore.getState().tabs[0].paneIds).toEqual([]);
   });
 
-  it("REFUSES when the project has no build tab at all — that is a relaunch, not a wake", () => {
+  it("mints a fresh build tab when the project has NO tab at all (#165)", () => {
+    // The regression this fixes: a stream already in the roster (it ran once) but its build tab was
+    // closed ENTIRELY — not just missing this one pane. The old refusal ("that is a relaunch, not a
+    // wake") sent a director straight past this lever to a whole-fleet `bsc fleet start --force`, just
+    // to reseat one pane and repair its `.claude/settings.json` (request #165).
     useAppStore.setState({
       tabs: [],
       fleetPaneStreams: { [PANE]: { id: STREAM, name: "API", repo: "own/api", owns: [], issues: [], dependsOn: [] } },
     } as never);
-    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(false);
+    expect(useAppStore.getState().wakePane(PANE, "go")).toBe(true);
+    const tab = useAppStore.getState().tabs[0];
+    expect(tab.kind).toBe("build");
+    expect(tab.projectKey).toBe(KEY);
+    expect(tab.paneIds).toContain(PANE);
   });
 
   it("SEATS a disabled pane and clears the flag — a wake revives, it does not refuse", () => {
@@ -187,6 +195,22 @@ describe("wakePane STARTS a stream the roster never saw", () => {
     armUnlaunched();
     expect(useAppStore.getState().wakePane(fleetPaneId(KEY, "not-a-stream"), "go")).toBe(false);
     expect(useAppStore.getState().tabs[0].paneIds).not.toContain(fleetPaneId(KEY, "not-a-stream"));
+  });
+
+  it("mints a build tab too, for a stream that never launched AND has no tab at all (#165)", () => {
+    // The exact dogfood shape request #165 was filed over: a stream plan.db has always named, whose
+    // worktree already exists on disk, that has NEVER seated a pane — and whose project has no open
+    // build tab either (closed, or the fleet's director never launched one). `bsc fleet start` refuses
+    // outright while any OTHER stream in the fleet is live, and `--force` would relaunch every one of
+    // them just to repair this one worktree's missing `.claude/settings.json`.
+    useAppStore.setState({
+      tabs: [], fleetPaneStreams: {}, disabledPanes: {}, dormantPanes: {}, endedPanes: {},
+      personas: [], blueprints: [], projectBlueprintId: {},
+    } as never);
+    expect(useAppStore.getState().wakePane(PANE, "start on #7", NEVER_LAUNCHED)).toBe(true);
+    const tab = useAppStore.getState().tabs[0];
+    expect(tab.paneIds).toEqual([PANE]);
+    expect(useAppStore.getState().paneCwds[PANE]).toBe(NEVER_LAUNCHED.cwd);
   });
 
   it("wires the woken pane EXACTLY as a launch would have wired it", () => {

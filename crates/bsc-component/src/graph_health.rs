@@ -47,7 +47,11 @@
 //! builds because its real code lives in the packaged react-ui artifact. So a node is buildable iff
 //! its `src` is in that artifact (with `source`), OR it carries its own non-empty `source`, OR its
 //! `srcText` is a real module (`looks_buildable_module`) — the exact `componentPreviewFiles` logic
-//! (#2824/#2828). Only a node that is NONE of those is flagged (mirrors `graphHealth.ts`).
+//! (#2824/#2828). A module's `@/…` imports resolve against the kit's own components, the packaged
+//! platform-module registry, AND any record's `provides` (component OR algorithm-graph, #125/#83 — the
+//! loader's first resolution path) — so a component composing a hook that has been lifted into the
+//! algorithms graph builds exactly as the app mounts it. Only a node that is NONE of those is flagged
+//! (mirrors `graphHealth.ts`).
 
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1587,6 +1591,14 @@ fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<S
                 // Erased before resolution (#4076) — the loader never asks for it.
                 || erased.contains(spec)
                 || platform_modules().contains(spec)
+                // bsc request #125: an ALGORITHMS-graph (or component-store) record `provides` this
+                // specifier — the loader's FIRST resolution path (#3660), already honoured by the write-time
+                // gate (`unresolved_specifiers`, below) via `is_provided_specifier`. This read-time check had
+                // drifted behind it (and behind the TS twin's `makeGraphProvidesResolver`, #83): a hook lifted
+                // into the algorithms graph (`useCiWatcher`, `useFleetGithub`, `useFleetLive`,
+                // `mcpCatalogView`, `useMcpInstallStatus`, …) resolves at runtime but was judged unbuildable
+                // here, condemning a component the app mounts fine as `no-implementation`.
+                || is_provided_specifier(spec)
                 || resolves_internal(spec, from_rel, kit_targets)
         })
 }
@@ -1621,6 +1633,8 @@ fn no_implementation_reasons(node: &Node, kit_targets: &BTreeSet<String>) -> Vec
                 // Erased by the loader before it resolves anything (#4076) — never a missing dependency.
                 && !erased.contains(spec)
                 && !platform_modules().contains(spec)
+                // bsc request #125 — see the matching arm in `is_preview_buildable`.
+                && !is_provided_specifier(spec)
                 && !resolves_internal(spec, &node.src, kit_targets)
         })
         .collect();
@@ -1814,6 +1828,42 @@ pub(crate) fn live_specifiers(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether the code-elision marker at this position reads as PROSE rather than a stand-in for omitted
+/// code (#125). `before` is every character preceding the marker. Beyond the original "directly after a
+/// word character" case (#3897), two more shapes are prose:
+///   * preceded (after skipping whitespace) by ordinary running-text punctuation (`/`, `;`, `,`, `.`,
+///     `:`, `)`, `]`, `%`) — an HTML-entity-heavy path example ending `&lt;project&gt;/…` reads as `/`
+///     immediately before the marker, not a word character (designer request #125, `WorkspaceCard`);
+///   * preceded by the `>` that CLOSES a sibling JSX element — `</Text>\n…` (a message continuing after
+///     an interpolated element, designer request #125, `ConnectGithubCard`) or a self-closing `<Icon />…`.
+///     An `>` that OPENS an element (`<Card>…`) is deliberately excluded: that shape is the ellipsis
+///     standing in as the element's ONLY content, which is the actual sketch case #3897 established —
+///     see `looks_buildable_module_mirrors_the_ts_twin`'s `<Card>…</Card>` fixture.
+fn ellipsis_reads_as_prose(before: &[char]) -> bool {
+    let mut j = before.len();
+    while j > 0 && before[j - 1].is_whitespace() {
+        j -= 1;
+    }
+    let Some(&c) = before.get(j.wrapping_sub(1)) else {
+        return false;
+    };
+    if c.is_alphanumeric() || matches!(c, '/' | ';' | ',' | '.' | ':' | ')' | ']' | '%') {
+        return true;
+    }
+    if c != '>' {
+        return false;
+    }
+    // Walk back to the tag's `<` — bounded, since a tag is short and this must never scan the whole file.
+    let start = j.saturating_sub(500);
+    let Some(rel) = before[start..j - 1].iter().rposition(|&ch| ch == '<') else {
+        return false;
+    };
+    let lt = start + rel;
+    let closing = before.get(lt + 1) == Some(&'/');
+    let self_closing = j >= 2 && before[j - 2] == '/';
+    closing || self_closing
+}
+
 /// Does `…` appear in real CODE — not inside a string/template literal or a comment? Only then is it an
 /// elision marker standing in for omitted code. The plain substring test this replaced (#3470) is a
 /// MEASURED false-positive generator, not a hypothetical one: `…` is ordinary UI copy
@@ -1848,11 +1898,8 @@ pub fn has_code_elision(src: &str) -> bool {
                 }
                 i += 1;
             }
-            // An ellipsis DIRECTLY after a word character is PROSE, not an elision marker (#3897) — JSX
-            // text like `>Loading projects…</Text>` is not quoted, so the string-skip above misses it, and
-            // ProjectsPage read as "a sketch, not compilable code" over three UI labels while the app
-            // mounted it fine. A real marker sits in code position (`{ … }`, or alone on a line).
-            '…' if b[..i].iter().rev().find(|c| !c.is_whitespace()).is_some_and(|c| c.is_alphanumeric()) => {
+            // An ellipsis in PROSE position, not code (#3897/#125) — see `ellipsis_reads_as_prose`.
+            '…' if ellipsis_reads_as_prose(&b[..i]) => {
                 i += 1;
             }
             '…' => return true,
@@ -2274,8 +2321,32 @@ pub fn prunable(components: &[Value]) -> Vec<Prunable> {
 /// A guarded candidate moves to `skipped` rather than vanishing: `doctor` still REPORTS the finding
 /// (the diagnosis is useful), only the automatic removal is withheld.
 pub fn prune_plan(components: &[Value]) -> PrunePlan {
+    prune_plan_with(components, components)
+}
+
+/// Same as [`prune_plan`], except the `usage_index_populated` GUARD is judged against
+/// `usage_reference` instead of `components` — so a caller can hand `analyze` a `components` list
+/// whose `used` has been ENRICHED with an ephemeral, per-run usage signal (#3888's host-mount +
+/// `provides` reachability, `usage_sources::enrich_used`) to suppress false-positive orphan/
+/// dangling-branch findings, WITHOUT that same enrichment also widening what `--fix --yes` is willing
+/// to auto-delete. That is the ordering hazard #3888 names explicitly: the moment `usage_known` flips
+/// true, EVERY other candidate loses the "unpopulated" guard — safe when it flips because something
+/// really did persist a `used` count, not safe when it flips because one run's necessarily-incomplete
+/// reachability walk happened to reach one thing. `usage_reference` stays the STORE's real, persisted
+/// `used` field (pass the un-enriched `components`) so this hazard can only ever be closed by
+/// something that actually writes usage to disk — never by this report's own ephemeral read.
+pub fn prune_plan_with(components: &[Value], usage_reference: &[Value]) -> PrunePlan {
     let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
     let by_id: BTreeMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    // THE USAGE FACTS COME FROM `usage_reference`, NOT `components`. This is the whole reason the
+    // `_with` variant exists (#3888): a caller may hand `components` a `used` field ENRICHED by one
+    // run's reachability walk to suppress false-positive findings, and that enrichment must never
+    // widen what `--fix --yes` will delete. Judging the usage guard against the un-enriched reference
+    // keeps the two decisions separate. `prune_plan` passes the same list for both, which is the
+    // honest default when there is no enrichment.
+    let reference_nodes: Vec<Node> = usage_reference.iter().filter_map(parse_node).collect();
+    let usage_by_id: BTreeMap<&str, &Node> =
+        reference_nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     let mut plan = PrunePlan::default();
     for f in analyze(components) {
@@ -2285,7 +2356,10 @@ pub fn prune_plan(components: &[Value]) -> PrunePlan {
         let Some(id) = f.node_ids.into_iter().next() else { continue };
         let name = f.node_names.into_iter().next().unwrap_or_default();
         let node = by_id.get(id.as_str());
-        let guard = if node.is_some_and(|n| !n.usage_assessed) {
+        // The usage guard reads the REFERENCE node (see above); every other guard below is a property
+        // of the record itself and reads the node as given.
+        let usage_node = usage_by_id.get(id.as_str()).copied().or(node.copied());
+        let guard = if usage_node.is_some_and(|n| !n.usage_assessed) {
             Some(
                 "this node's usage was never DETERMINED — `used = 0` with no `usageAssessed` means \
                  nothing looked, not that nothing uses it",
@@ -2833,7 +2907,17 @@ fn analyze_kit(
             .collect();
         let mut internal: Vec<String> = specs
             .iter()
-            .filter(|s| is_internal_specifier(s) && !platform_modules().contains(*s) && !resolves_internal(s, &n.src, &kit_targets))
+            .filter(|s| {
+                is_internal_specifier(s)
+                    && !platform_modules().contains(*s)
+                    // bsc request #125: a record (component OR algorithm-graph) `provides` this specifier —
+                    // the same gap fixed in `is_preview_buildable`/`no_implementation_reasons` above. Without
+                    // it a component that PASSES the (now-fixed) no-implementation check over a graph-provided
+                    // import still fell into this second, independent resolution check and was re-flagged
+                    // here as `unresolvable-import` instead — the same false report under a different label.
+                    && !is_provided_specifier(s)
+                    && !resolves_internal(s, &n.src, &kit_targets)
+            })
             .cloned()
             .collect();
         for v in [&mut stubbed, &mut library, &mut internal] {
@@ -4028,6 +4112,47 @@ mod provides_resolution_tests {
             !is_provided_specifier(PROVIDED_SPEC),
             "and with nothing published it reports nothing — a tool that never opens a store is unaffected",
         );
+    }
+
+    /// bsc request #125: `doctor`'s no-implementation check (`is_preview_buildable` /
+    /// `no_implementation_reasons`) had drifted behind the write-time gate above — it never consulted
+    /// `is_provided_specifier`, so a component composing a hook the ALGORITHMS graph provides (exactly the
+    /// shape `useCiWatcher`/`useFleetGithub`/`mcpCatalogView` take after being lifted out of `src/`) was
+    /// condemned `no-implementation` even though the runtime loader resolves it and the app mounts it fine.
+    /// Mirrors the TS twin's #83 fix (`componentBuildable`'s `graphResolver`/`makeGraphProvidesResolver`).
+    #[test]
+    fn a_provided_specifier_makes_the_composing_component_buildable_not_no_implementation() {
+        let kit_targets = BTreeSet::new();
+        let src = page_importing(PROVIDED_SPEC);
+
+        set_provided_specifiers(std::collections::HashSet::new());
+        assert!(
+            !is_preview_buildable(&src, "src/features/x/X.tsx", &kit_targets),
+            "control: unprovided, the import is genuinely unresolved"
+        );
+        let comps = [json!({
+            "id":"x", "name":"X", "kitId":"react-ui", "role":"composite", "used":2,
+            "src":"src/features/x/X.tsx", "srcText": src,
+        })];
+        let fs = analyze(&comps);
+        assert!(
+            fs.iter().any(|f| f.category == "no-implementation"),
+            "control: flagged before the specifier is published: {fs:?}"
+        );
+
+        set_provided_specifiers(std::collections::HashSet::from([PROVIDED_SPEC.to_string()]));
+        assert!(
+            is_preview_buildable(&src, "src/features/x/X.tsx", &kit_targets),
+            "a record-provided specifier makes the composing module buildable"
+        );
+        let fs = analyze(&comps);
+        assert!(
+            !fs.iter().any(|f| f.category == "no-implementation"),
+            "must not be flagged once the algorithms graph provides the import: {fs:?}"
+        );
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"), "resolvable: {fs:?}");
+
+        set_provided_specifiers(std::collections::HashSet::new());
     }
 }
 
@@ -5865,6 +5990,48 @@ export function X(){ return <i>{nope}</i>; }"
         );
     }
 
+    /// #3888's ordering hazard, pinned directly: `prune_plan_with` lets a CALLER enrich `used` for
+    /// finding-suppression (e.g. `usage_sources::enrich_used`'s host-mount/`provides` reachability)
+    /// without that same enrichment widening what `--fix --yes` is willing to delete. The guard must
+    /// stay keyed on `usage_reference` — the store's real, un-enriched `used` — not on `components`.
+    #[test]
+    fn prune_plan_with_judges_the_guard_against_usage_reference_not_the_enriched_components() {
+        let disk_truth = [
+            json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "used": 0,
+                    "composes": [], "srcText": "p" }),
+            json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "g" }),
+        ];
+        // The ephemeral enrichment: some run's reachability walk proved `page` used (host-mounted). It
+        // does NOT touch `ghost` — nothing reaches it.
+        let mut enriched = disk_truth.to_vec();
+        enriched[0]["used"] = json!(1);
+
+        // `page`'s finding is suppressed (in-degree 0 AND used == 0 no longer holds for it) …
+        assert_eq!(
+            analyze(&enriched).iter().filter(|f| matches!(f.category, "orphan" | "dangling-branch")).count(),
+            1,
+            "only ghost's finding should remain once page is enriched"
+        );
+        // … but the disk truth is STILL "usage index unpopulated" (nothing in `disk_truth` ever carries
+        // `used > 0`), so `ghost` — which the enrichment never touched — must stay held back, not
+        // become auto-prunable just because `page` looked used in THIS run.
+        let plan = prune_plan_with(&enriched, &disk_truth);
+        assert!(plan.prune.is_empty(), "the disk usage index is still unpopulated: {:?}", plan.prune);
+        let ghost = plan.skipped.iter().find(|s| s.id == "ghost").expect("ghost is reported, held back");
+        // The guard that catches it is now the PER-NODE `usageAssessed` one, not the store-wide
+        // `usage_index_populated` flag this test was written against — develop replaced the global
+        // flag with a per-node chain while this branch sat unmerged. The hazard being pinned is
+        // unchanged and still holds (ghost is skipped, nothing prunes); only which guard names it moved,
+        // and the per-node one is strictly the more precise answer.
+        assert!(ghost.guard.contains("usage was never DETERMINED"), "{}", ghost.guard);
+
+        // Sanity: `prune_plan` (the self-referencing default) still behaves exactly as before — passing
+        // the SAME enriched list as both components and reference flips usage_known, same as any other
+        // real `used > 0` would (this is not new behavior, just confirming the wrapper is unchanged).
+        assert!(usage_index_populated(&enriched));
+    }
+
     #[test]
     fn ranks_most_severe_first() {
         let comps = [
@@ -6253,6 +6420,35 @@ export function X(){ return <i>{nope}</i>; }"
         // …so the predicate itself no longer mis-flags a component whose only `…` is in its copy.
         assert!(looks_buildable_module(r#"export const A = () => <input placeholder="Select…" />;"#));
         assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"), "JSX text is code");
+    }
+
+    #[test]
+    fn an_ellipsis_after_a_closing_jsx_tag_or_html_entity_is_prose_not_a_code_elision() {
+        // Designer request #125: both fixtures are the ACTUAL srcText of live, working components —
+        // `bsc navigate` confirmed both render fine, yet `bsc ui doctor` flagged them `no-implementation`
+        // over a "code-elision marker" that a plain grep of the source shows is ordinary UI copy.
+
+        // `ConnectGithubCard` — the ellipsis is a THIRD sibling text node continuing a message after an
+        // interpolated `<Text>` element ("Waiting for authorization at {url}…"). The char immediately
+        // before it (skipping whitespace) is `>` from `</Text>`, a CLOSING tag — a message continuing
+        // after a sibling closed, not an element's sole content.
+        assert!(!has_code_elision(
+            "export function ConnectGithubCard(){ return <Box>Waiting for authorization at <Text>{url}</Text>\n…\n</Box>; }"
+        ), "a message continuing after a closed sibling element is prose");
+
+        // `WorkspaceCard` — a truncated path example inside `<code>`, HTML-entity-heavy
+        // (`&lt;base&gt;/projects/&lt;project&gt;/…`); the char immediately before the marker is `/`,
+        // ordinary running-text punctuation, not a word character and not a fresh element's sole content.
+        assert!(!has_code_elision(
+            "export function WorkspaceCard(){ return <code>&lt;base&gt;/projects/&lt;project&gt;/…</code>; }"
+        ), "a truncated path example is prose");
+
+        // A self-closing sibling before the ellipsis reads the same way as an explicit closing tag.
+        assert!(!has_code_elision("export function A(){ return <Box><Icon />…</Box>; }"), "after a self-closing sibling");
+
+        // …and the case #3897 established is UNCHANGED: an ellipsis as an element's ONLY content, right
+        // after its OPENING tag, is still a sketch — this must not regress into blanket JSX leniency.
+        assert!(has_code_elision("export function X() { return <Card>…</Card>; }"), "sole content of a freshly opened element is still an elision");
     }
 
     #[test]

@@ -246,10 +246,11 @@ which group's contract it resolved against. Compact JSON by default; --pretty in
     },
     CmdDoc {
         name: "tests",
-        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node, or pair ONE record (#3907/#166)",
+        summary: "the per-node TEST manifest — harvest each component's colocated test file onto its node, pair ONE record, or adopt one into its SEED (#3907/#166/#109)",
         usage: "USAGE:
   bsc ui tests harvest [<root>] [--kit K] [--pretty]
   bsc ui tests set --id <id> --src <test-file> [--name <name>] [--by <tag>] [--note <text>] [--dir D] [--pretty]
+  bsc ui tests adopt <id> --from <path> [<root>] [--pretty]
 
 `harvest` pairs each record with its COLOCATED test (`<src-without-ext>.test.tsx`, else `.test.ts`) under
 <root> (default `.`) and prints the records that HAVE one, with `tests` populated. READ-ONLY — pipe into
@@ -266,7 +267,14 @@ MIRROR, not source: the files stay authoritative; this copies them onto the node
 queryable and `bsc ui doctor`'s `no-tests` is honest. ONE ENTRY PER FILE, verbatim — a test's meaning
 lives partly outside its `it()` blocks (imports, beforeEach, mocks), so a per-test split would drop it.
 A record with no colocated test is OMITTED, never given an empty `tests`. `tests set` errors rather than
-creating a record: it PAIRS an existing one.",
+creating a record: it PAIRS an existing one.
+
+`tests adopt` writes a test straight into a record's SEED file (`src-tauri/data/components/app/**`,
+default <root> `.`) — the copy `emit-records` reads, which `set` (the runtime STORE) cannot reach (#109).
+Use it when a record's carried test has fallen behind the src/ file that still shadows it: reads <path>
+verbatim, replaces the record's whole `tests` array, and edits only that one field (no full
+re-serialize, so key order and formatting elsewhere are untouched). Reports `changed: false` when the
+content already matched. A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "harvest",

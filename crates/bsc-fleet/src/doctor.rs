@@ -88,9 +88,10 @@ pub fn findings_for(pane_id: &str, facts: Option<WorktreeFacts>) -> Vec<Finding>
     // ── no-gate ──────────────────────────────────────────────────────────────────────────────────
     // Sources: the pane's IDENTITY (a project pane must be gated) vs the FILESYSTEM (is the file
     // there). MEASURED: four network-monitor worktrees were in this state — complete in every other
-    // respect, `CLAUDE.local.md` present, only `.claude/` missing — and it is why waking them
-    // destroyed them. `pty_create` refuses rather than starting a director or worker permission-less,
-    // which is right; the wake had simply never asked before it killed.
+    // respect, `CLAUDE.local.md` present, only `.claude/` missing. `pty_create` refuses rather than
+    // starting a director or worker permission-less, which is right — and `bsc fleet wake` (#142) now
+    // provisions a conservative placeholder gate itself before asking to launch, closing the deadlock
+    // where the refusal fired before the one thing (a real launch) that would ever write the real one.
     if !f.gate_present {
         out.push(Finding {
             pane_id: pane_id.to_string(),
@@ -181,7 +182,7 @@ mod tests {
 
     #[test]
     fn a_worktree_with_no_gate_file_is_reported_with_what_it_costs() {
-        // The state four network-monitor worktrees were in, and the reason waking them destroyed them.
+        // The state four network-monitor worktrees were in.
         let f = findings_for("nm:omada-controller-adapter", facts(false, false));
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].category, "no-gate");
@@ -199,6 +200,10 @@ mod tests {
         // "relaunch the pane from its project", which read as the disruptive whole-fleet path.
         assert!(f[0].fix.contains("bsc fleet provision"));
         assert!(f[0].fix.contains("--stream"));
+        // The fix names the ACTUAL move now available (#142) — a wake self-heals this, rather than the
+        // stale "relaunch the pane from its project" advice, which named no single-stream command.
+        assert!(f[0].fix.contains("bsc fleet wake"), "names the self-healing move: {:?}", f[0]);
+        assert!(!f[0].fix.is_empty(), "a finding with no move is a complaint");
     }
 
     #[test]
