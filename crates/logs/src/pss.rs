@@ -125,16 +125,25 @@ pub fn categorize(argv: &[String], comm: &str) -> &'static str {
 }
 
 /// Node processes need their SCRIPT, not just "node" — vitest's runner and its forked workers are
-/// both plain `node`, distinguished only by which file they were told to run. Looks at the first
-/// non-flag argument after argv[0], matching vitest's actual module layout
+/// both plain `node`, distinguished only by which file they were told to run. Scans EVERY argv
+/// element after argv[0] (never just "the first non-flag one" — a worker's real invocation is
+/// `node --experimental-import-meta-resolve --require <path>/vitest/suppress-warnings.cjs
+/// --conditions node --conditions development <path>/vitest/dist/workers/forks.js`, and `--require`
+/// takes a value that is not itself flag-shaped, so a positional "first non-flag arg" scan lands on
+/// the `--require` value — a `vitest`-containing path that is NOT the worker script — and
+/// miscategorizes every worker as the runner). Matching vitest's actual module layout
 /// (`node_modules/vitest/dist/workers/{forks,vmForks,threads,vmThreads,runVmTests}.js` for a worker,
-/// anything else under `vitest/` — the CLI entry or an npx/`.bin` shim — for the runner).
+/// anything else mentioning `vitest` — the CLI entry, an npx/`.bin` shim, or a `--require` value on
+/// the RUNNER's own invocation — for the runner), checked in that order so a worker's OWN
+/// `--require` value never shadows its later, more specific workers-path argument.
 fn categorize_node(argv: &[String]) -> &'static str {
-    let script = argv.iter().skip(1).find(|a| !a.starts_with('-'));
-    match script {
-        Some(s) if s.contains("vitest/dist/workers/") => "vitest workers",
-        Some(s) if s.contains("vitest") => "vitest runner",
-        _ => "node (other)",
+    let rest = argv.get(1..).unwrap_or(&[]);
+    if rest.iter().any(|a| a.contains("vitest/dist/workers/")) {
+        "vitest workers"
+    } else if rest.iter().any(|a| a.contains("vitest")) {
+        "vitest runner"
+    } else {
+        "node (other)"
     }
 }
 
@@ -376,6 +385,39 @@ mod tests {
 
         let other: Vec<String> = vec!["node".into(), "/repo/node_modules/.bin/vite".into()];
         assert_eq!(categorize(&other, "node"), "node (other)");
+    }
+
+    #[test]
+    fn categorizes_a_worker_correctly_even_when_a_require_flag_value_comes_first() {
+        // The REAL argv a vitest "forks" worker launches with (captured live, request #182 follow-up):
+        // `--require <path>` takes a value that is NOT itself flag-shaped, so a categorizer that
+        // takes "the first non-flag argument after argv[0]" lands on the --require value (a path
+        // that also contains "vitest") instead of the actual worker script two args later, and
+        // miscategorizes every worker as "vitest runner". Zero "vitest workers" ever showing up in a
+        // real `--watch` sample was exactly this bug, not an absence of workers.
+        let worker: Vec<String> = vec![
+            "/usr/bin/node".into(),
+            "--experimental-import-meta-resolve".into(),
+            "--require".into(),
+            "/repo/node_modules/vitest/suppress-warnings.cjs".into(),
+            "--conditions".into(),
+            "node".into(),
+            "--conditions".into(),
+            "development".into(),
+            "/repo/node_modules/vitest/dist/workers/forks.js".into(),
+        ];
+        assert_eq!(categorize(&worker, "node"), "vitest workers");
+
+        // The runner's own invocation carries the same --require shape but never a workers/ path —
+        // must still resolve to "vitest runner", not fall through to "node (other)".
+        let runner: Vec<String> = vec![
+            "/usr/bin/node".into(),
+            "--require".into(),
+            "/repo/node_modules/vitest/suppress-warnings.cjs".into(),
+            "/repo/node_modules/.bin/vitest".into(),
+            "run".into(),
+        ];
+        assert_eq!(categorize(&runner, "node"), "vitest runner");
     }
 
     #[test]
