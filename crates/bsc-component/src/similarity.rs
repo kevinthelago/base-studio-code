@@ -263,6 +263,14 @@ fn source_shingles(src: &str) -> BTreeSet<String> {
 }
 
 fn parse(v: &Value) -> Option<Comp> {
+    // #97: a `{ id, suppressed: true }` tombstone (written by `suppress`/`merge`) is not a component —
+    // same treatment as `graph_health`'s `parse_node` and `render_error_findings` (#3725). Without this,
+    // a just-merged-away id keeps scoring against its survivor — its bare id doubles as its "name" below,
+    // which is exactly the near-name match `dupes` flagged before the merge — so the pair reappears in
+    // every report forever, indistinguishable from a real unresolved duplicate.
+    if v.get("suppressed").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
     let id = v.get("id").and_then(Value::as_str).filter(|s| !s.is_empty())?.to_string();
     let name = {
         let n = s(v, "name");
@@ -2288,6 +2296,70 @@ mod tests {
         let no_src_a = comp_with("a", "A", "k", fields! { "provides": "@/x/A" });
         let no_src_b = comp_with("b", "B", "k", fields! { "provides": "@/x/B" });
         assert!(provides_split_findings(&[no_src_a, no_src_b]).is_empty());
+    }
+
+    // ── suppression tombstones (#97) ─────────────────────────────────────────────────────────────────
+    // `bsc ui suppress`/`merge` retire a packaged builtin by writing `{ id, suppressed: true }` in place
+    // of the record (#3725) — the frontend seed-reconcile needs to see it occupying the id, so it is
+    // never a bare delete. `graph_health::parse_node` already treats that shape as "not a component";
+    // `similarity::parse` did not, so a tombstone kept scoring against the rest of the library forever.
+
+    #[test]
+    fn a_suppression_tombstone_is_invisible_to_near_duplicate_findings() {
+        // Several stale variants of the same id, all suppressed — before the fix these score as a
+        // mutually-near-duplicate CLUSTER purely off their id-derived names, with no real content at all.
+        let tombstone = |id: &str| json!({ "id": id, "suppressed": true, "supersededBy": "accentcolorcard" });
+        let survivor = comp_with("accentcolorcard", "AccentColorCard", "react-ui", fields! {
+            "props": [{ "name": "color", "type": "string" }],
+            "srcText": "export function AccentColorCard({color}) { return <div>{color}</div>; }",
+        });
+        let comps: Vec<Value> = vec![
+            tombstone("accentcolorcard-old"),
+            tombstone("accentcolorcard-legacy"),
+            tombstone("accentcolorcard-v1"),
+            tombstone("accentcolorcard-v2"),
+            tombstone("accentcolorcard-draft"),
+            survivor,
+        ];
+        let f = near_duplicate_findings(&comps, DEFAULT_THRESHOLD);
+        assert!(f.is_empty(), "tombstones must not cluster as near-duplicates: {f:?}");
+    }
+
+    #[test]
+    fn a_merged_away_id_does_not_reappear_against_its_own_survivor() {
+        // The exact request-#97 repro: `bsc ui merge settings-accentcolorcard accentcolorcard` retires the
+        // `from` side as a tombstone (`retire_component`) — `dupes` must go quiet, not keep proposing the
+        // merge it was just told to do.
+        let tombstone = json!({ "id": "settings-accentcolorcard", "suppressed": true, "supersededBy": "accentcolorcard" });
+        let survivor = comp_with("accentcolorcard", "AccentColorCard", "react-ui", fields! {
+            "provides": "@/components/settings/AccentColorCard",
+            "props": [{ "name": "color", "type": "string" }],
+            "srcText": "export function AccentColorCard({color}) { return <div>{color}</div>; }",
+        });
+        let f = near_duplicate_findings(&[tombstone, survivor], DEFAULT_THRESHOLD);
+        assert!(f.is_empty(), "a merged-away tombstone must not re-pair with its survivor: {f:?}");
+    }
+
+    #[test]
+    fn a_suppression_tombstone_is_invisible_to_provides_collision_findings() {
+        // A tombstone predating #97 could still carry a stale `provides` from before it was retired —
+        // it must not count toward a collision on that specifier.
+        let tombstone = json!({
+            "id": "old-box", "suppressed": true, "supersededBy": "box", "provides": "@/shared/ui/Box",
+        });
+        let live = comp_with("box", "Box", "k", fields! { "provides": "@/shared/ui/Box" });
+        assert!(
+            provides_collision_findings(&[tombstone, live]).is_empty(),
+            "a lone live provider plus a tombstone is not a collision",
+        );
+    }
+
+    #[test]
+    fn parse_returns_none_for_a_suppression_tombstone() {
+        assert!(parse(&json!({ "id": "cost", "suppressed": true })).is_none());
+        // `suppressed: false` (or absent) is an ordinary record and must still parse.
+        assert!(parse(&json!({ "id": "cost", "suppressed": false })).is_some());
+        assert!(parse(&json!({ "id": "cost" })).is_some());
     }
 
     #[test]
