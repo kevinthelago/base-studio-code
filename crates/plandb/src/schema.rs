@@ -222,6 +222,11 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // #146: an issue's own append-only observations, independent of whether it has a change record —
     // additive like the columns above, so an existing plan.db picks it up with no data loss.
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN notes TEXT NOT NULL DEFAULT '[]'", []);
+    // A change's recorded before/after MEASUREMENTS. Additive like everything above: every plan.db on
+    // disk already has a `changes` table, and `CREATE TABLE IF NOT EXISTS` cannot add a column to one
+    // that exists — so without this line the new column would appear only in stores created after it,
+    // and every existing project would fail the read with "no such column".
+    let _ = conn.execute("ALTER TABLE changes ADD COLUMN measures TEXT NOT NULL DEFAULT '[]'", []);
     Ok(())
 }
 
@@ -322,4 +327,35 @@ mod tests {
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM issues", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
     }
+
+    /// THE MIGRATION THAT MATTERS: every plan.db on disk already has a `changes` table, and
+    /// `CREATE TABLE IF NOT EXISTS` cannot add a column to one that exists. Without the `ALTER TABLE`,
+    /// `measures` would appear only in stores created after it and every existing project would fail
+    /// the read with "no such column: measures" — on the very first `bsc plan change get`.
+    #[test]
+    fn measures_is_added_to_a_changes_table_that_predates_it() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The pre-`measures` shape, as a store written before this change carries it.
+        conn.execute_batch(
+            "CREATE TABLE changes (
+                ref TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
+                issues TEXT NOT NULL DEFAULT '[]', base TEXT NOT NULL DEFAULT 'develop',
+                head_sha TEXT NOT NULL DEFAULT '', merge_sha TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft', gates TEXT NOT NULL DEFAULT '{}',
+                notes TEXT NOT NULL DEFAULT '[]', reviewer TEXT NOT NULL DEFAULT '',
+                reviewed_at INTEGER NOT NULL DEFAULT 0, gh_number INTEGER, gh_node_id TEXT,
+                synced_at INTEGER, created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO changes (ref, title) VALUES ('old-ref', 'written before measures existed');",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        // The column exists AND the pre-existing row survived with the documented default.
+        let m: String =
+            conn.query_row("SELECT measures FROM changes WHERE ref='old-ref'", [], |r| r.get(0)).unwrap();
+        assert_eq!(m, "[]", "an existing change reads as having no measurements, not as broken");
+    }
+
 }

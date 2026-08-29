@@ -171,6 +171,14 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   CLAUDE.local.md) with a one-line fix-forward instruction via bsc-answer. You hold no git write:
   the revert is the integration lane's to perform and the fix is the owner's. You identify, you
   route, you follow up -- that is the whole of your part.
+- READ WHAT THE WORK COST, not only whether it passed. A worker records its before/after on the change
+  record the same way it records a gate, so `bsc plan change render <ref>` shows a **Measured** section
+  when there is one. Two things to actually do with it: a change claiming an optimization with NO
+  measurement is a claim, not a result -- ask for the number rather than taking it; and a measurement
+  showing a REGRESSION (the after worse than the before) is a finding even when every gate is green,
+  because nothing in the gate fails on cost. The surfaces are `bsc mem` (build time, build memory, app
+  heap) and `bsc perf` (render commits, phases, jank, spawns) if you want to check one yourself --
+  both are read-only, so they need no grant.
 - ROUTE NEW ISSUES (#376). When the issuer captures new work it lands in the coord log as an
   `issue` event. NOTHING SURFACES IT TO YOU -- pull it:
 

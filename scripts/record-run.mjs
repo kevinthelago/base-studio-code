@@ -54,6 +54,23 @@ export function helpAdvertisesRun(helpText) {
   return /^\s*run\s/m.test(String(helpText ?? ""));
 }
 
+/**
+ * Does this binary's `errors run` help advertise `--measure-only`?
+ *
+ * The SAME probe as {@link helpAdvertisesRun}, for the same reason and against the same failure. A
+ * binary can be new enough to have `run` and still predate this flag — the staged `bsc` in
+ * `~/.base-studio-code/bin` routinely does, because it is only refreshed when the app boots. Handing
+ * it `--measure-only` prints `bsc: unknown flag '--measure-only'`, exits 1, and THE WRAPPED COMMAND
+ * NEVER RUNS. That is not a missing measurement, it is a broken gate: every leg would fail with a flag
+ * error while the code under test was never compiled.
+ *
+ * So a binary that cannot measure is treated exactly like no binary at all — run the command plainly,
+ * record nothing. The measurement is the optional half; the build is not.
+ */
+export function helpAdvertisesMeasureOnly(helpText) {
+  return /--measure-only/.test(String(helpText ?? ""));
+}
+
 /** Run the command with no wrapper at all, and become its exit code. */
 const plain = (cmd) => {
   const r = spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit", shell: false });
@@ -76,6 +93,16 @@ const deps = {
       return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
     }
   },
+};
+
+const supportsMeasureOnly = (path) => {
+  try {
+    return helpAdvertisesMeasureOnly(
+      execFileSync(path, ["errors", "run", "help"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }),
+    );
+  } catch {
+    return false;
+  }
 };
 
 const supportsRun = (path) => {
@@ -102,6 +129,10 @@ function main(argv) {
   // indistinguishable from success. Delegating to one would record nothing forever while looking fine.
   const usable = pickUsable(candidatePaths(REPO, homedir(), join), deps);
   if (!usable || !supportsRun(usable.path)) plain(cmd);
+  // A binary too old for the flag we are about to pass is the same case as no binary — see
+  // `helpAdvertisesMeasureOnly`. Checked only when the flag is actually being used, so an ordinary
+  // wrapped build costs no extra probe.
+  if (ours.includes("--measure-only") && !supportsMeasureOnly(usable.path)) plain(cmd);
 
   const r = spawnSync(usable.path, ["errors", "run", ...ours, "--", ...cmd], { stdio: "inherit", shell: false });
   // `bsc errors run` exits with the CHILD's code, so this is already the wrapped command's own status.
