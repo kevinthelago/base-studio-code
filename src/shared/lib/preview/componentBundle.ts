@@ -56,8 +56,9 @@ export function resolveMemPath(importer: string, spec: string, files?: Record<st
 }
 
 /**
- * `import.meta.glob` for a preview build (#81, designer request) — the esbuild `define` target and
- * the banner that declares it. Both bundlers use these; neither restates them.
+ * `import.meta.glob` for a preview build (#81, designer request) — the esbuild `define` target; the
+ * banner that declares it lives after {@link DATA_JSON} below, since request #131's fix has it answer
+ * FROM that vendored set. Both bundlers use these; neither restates them.
  *
  * `import.meta.glob` is a VITE BUILD MACRO. It is valid production code that Vite expands at build
  * time, and it simply does not exist in an esbuild-wasm build — so at runtime `import.meta.glob` is
@@ -67,23 +68,11 @@ export function resolveMemPath(importer: string, spec: string, files?: Record<st
  * render-errors were this one call. The fully self-contained react-d3 kit, which imports no `@/`
  * modules, has zero.
  *
- * IT RETURNS AN EMPTY OBJECT, deliberately. A preview cannot know what the glob would have matched,
- * so the honest degradation is an empty set — a component renders with no built-in profiles rather
- * than not rendering at all. Stubbing the globbing modules in `platform-modules.json` was the
- * alternative and is worse: hand-authored preview data per module, silently drifting from the real
- * thing, and the code's own comments warn there are siblings (#1715 mirrors data/skills, data/roles).
- *
  * Why a define PLUS a banner rather than just a define: esbuild rejects a function literal as a
  * define value (`Invalid define value (must be an entity name or JS literal)`), so the value has to
  * be an identifier that something else declares.
  */
 export const PREVIEW_GLOB_SHIM = "__bscPreviewImportMetaGlob";
-
-/** Declares {@link PREVIEW_GLOB_SHIM} at the top of the bundle, where every module can see it. */
-export const PREVIEW_GLOB_BANNER = `var ${PREVIEW_GLOB_SHIM} = () => ({});`;
-
-/** The `define` map that routes `import.meta.glob(…)` to the shim. */
-export const PREVIEW_DEFINE: Record<string, string> = { "import.meta.glob": PREVIEW_GLOB_SHIM };
 
 /** The namespace a `?raw` / `?url` import is loaded in — see {@link rawImportSpec}. */
 export const PREVIEW_RAW_NAMESPACE = "bsc-raw";
@@ -229,6 +218,86 @@ export function dataJsonModule(spec: string): string {
     "); } });\n"
   );
 }
+
+/** The variable name {@link buildGlobShimBanner} embeds {@link DATA_JSON} under, inside the bundle. */
+const PREVIEW_GLOB_DATA = "__bscPreviewGlobData";
+
+/**
+ * The banner that declares {@link PREVIEW_GLOB_SHIM} (request #131).
+ *
+ * ## The gap
+ *
+ * Before this, `import.meta.glob` always degraded to `() => ({})` (#81) — honest for a pattern the
+ * preview genuinely cannot answer (an app-source glob, a relative asset glob), but WRONG for `@data/…`:
+ * that data is already vendored whole ({@link DATA_JSON}, built for the static `import x from
+ * "@data/…json"` form) and simply wasn't being offered to the GLOB form of the same import. Several
+ * `@data` seeds are loaded ONLY via `import.meta.glob` — `soundKits.ts` (`@data/sounds/*.json`), plus
+ * skills/roles/personas/team-orgs/achievements/planner-stages/blueprints — so each came back empty in a
+ * preview, and a constant DERIVED from one at module top level broke: `soundKits.ts`'s
+ * `STARTER_KIT = BUILTIN_KITS[0]` was `undefined` because the glob's `{}` made `BUILTIN_KITS` `[]`.
+ * `libraryModules.ts` reads `STARTER_KIT.id` EAGERLY (`makeLibraryResolvers(DEFAULT_SOUND_KIT)` runs at
+ * its own module top level), and the Design Studio's preview host (`componentPreview.ts` /
+ * `ComponentPreviewFrame`) reaches that module for EVERY preview — so the crash hit any component's
+ * build, not just one that touches sounds, matching the filed symptom (`app`, `detachedwindow`,
+ * `consolepage`, and the Studio's own `ComponentNode`/`ComponentPreviewFrame` chrome all hit it).
+ *
+ * ## The fix
+ *
+ * Answer a `@data/…` glob FOR REAL, matched against the same vendored {@link DATA_JSON} keys a static
+ * import already resolves against — honoring the two options every `@data/…` call site in this app
+ * actually passes: `eager` (a sync object vs. Vite's lazy `() => Promise<module>` thunks) and
+ * `import: "default"` (unwrap the `{ default }` module shape). The pattern grammar matches Vite's glob
+ * subset this app's call sites use: `*` (any run of non-`/` chars), `**` (any run of chars), and a
+ * `!`-prefixed pattern excludes (mirrors how `DATA_JSON` itself is built, a few lines above). A pattern
+ * reaching a directory `DATA_JSON` excludes for size (`@data/components/**`, `@data/knowledge/**` — see
+ * its own doc) still degrades to `{}`, unchanged from before — this only ever answers from what is
+ * already vendored, never invents data. A non-`@data` pattern matches nothing in
+ * {@link PREVIEW_GLOB_DATA} and also degrades to `{}`, same as before.
+ */
+function buildGlobShimBanner(): string {
+  const body = [
+    "function __bscGlobToRe(p) {",
+    "  var out = '^';",
+    "  for (var i = 0; i < p.length; i++) {",
+    "    var c = p[i];",
+    "    if (c === '*' && p[i + 1] === '*') { out += '.*'; i++; }",
+    "    else if (c === '*') out += '[^/]*';",
+    "    else if (c === '.') out += '\\\\.';",
+    "    else out += c;",
+    "  }",
+    "  return new RegExp(out + '$');",
+    "}",
+    `var ${PREVIEW_GLOB_SHIM} = function (pattern, opts) {`,
+    "  var pats = Array.isArray(pattern) ? pattern : [pattern];",
+    "  var pos = [];",
+    "  var neg = [];",
+    "  for (var i = 0; i < pats.length; i++) {",
+    "    var p = pats[i];",
+    "    if (p.charAt(0) === '!') neg.push(__bscGlobToRe(p.slice(1)));",
+    "    else pos.push(__bscGlobToRe(p));",
+    "  }",
+    "  var out = {};",
+    `  for (var key in ${PREVIEW_GLOB_DATA}) {`,
+    "    var hit = false;",
+    "    for (var j = 0; j < pos.length; j++) { if (pos[j].test(key)) { hit = true; break; } }",
+    "    if (!hit) continue;",
+    "    for (var k = 0; k < neg.length; k++) { if (neg[k].test(key)) { hit = false; break; } }",
+    "    if (!hit) continue;",
+    `    var value = ${PREVIEW_GLOB_DATA}[key];`,
+    "    var mod = (opts && opts.import === 'default') ? value : { default: value };",
+    "    out[key] = (opts && opts.eager) ? mod : (function (m) { return function () { return Promise.resolve(m); }; })(mod);",
+    "  }",
+    "  return out;",
+    "};",
+  ].join("\n");
+  return `var ${PREVIEW_GLOB_DATA} = ${JSON.stringify(DATA_JSON)};\n${body}`;
+}
+
+/** Declares {@link PREVIEW_GLOB_SHIM} at the top of the bundle, where every module can see it. */
+export const PREVIEW_GLOB_BANNER = buildGlobShimBanner();
+
+/** The `define` map that routes `import.meta.glob(…)` to the shim. */
+export const PREVIEW_DEFINE: Record<string, string> = { "import.meta.glob": PREVIEW_GLOB_SHIM };
 
 /** The esbuild loaders a preview module can be built with. */
 export type MemLoader = "jsx" | "tsx" | "ts";
@@ -510,6 +579,19 @@ export interface ComponentSrcDocOptions {
    *  posts `{__navigate: name}` on click; releasing Alt returns full interactivity. Only the EXPANDED
    *  preview passes it — empty/absent ⇒ no inspect layer (byte-for-byte unchanged srcdoc). */
   inspect?: string[];
+  /** This build's ordinal (designer request #126) — echoed on every `__preview` message the srcdoc
+   *  posts. `srcdoc` reassignment does not synchronously replace the iframe's document: the outgoing one
+   *  (including a pending timer, like the 400ms empty-render probe below, or a late async throw) keeps
+   *  running until the new one loads, and `contentWindow` identity belongs to the FRAME, not the
+   *  document, so it stays the same across the swap. A host reusing one iframe across rebuilds (the
+   *  Design Studio's `ComponentPreviewFrame` re-selects a component into the SAME `<iframe>`) cannot tell
+   *  a leftover message from the new build apart by source window alone — it measurably attributed a
+   *  stale `STARTER_KIT is undefined` and a stale `SecurityError` to whichever component was current when
+   *  they finally arrived. Stamping the build's own ordinal in and echoing it back lets the host drop
+   *  anything that doesn't match the build it is currently on. Absent ⇒ omitted from every posted message
+   *  (byte-for-byte unchanged srcdoc) — a caller that reuses no iframe (the runtime probe, which mounts a
+   *  fresh element per call) has no need of it. */
+  buildGen?: number;
 }
 
 /**
@@ -889,7 +971,10 @@ export function inspectEngineScript(components: string[]): string {
 }
 
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine, inspect = [] } = opts;
+  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine, inspect = [], buildGen } = opts;
+  // Spliced into every `__preview` message's object literal — absent `buildGen` omits it entirely, so a
+  // caller that never passes one gets a byte-for-byte unchanged srcdoc (see `buildGen` above).
+  const genField = buildGen != null ? `, __gen: ${JSON.stringify(buildGen)}` : "";
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -949,8 +1034,8 @@ ${previewCspMeta()}
     }
     return null;
   }
-  window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: describeError(e.error) || String(e.message) }, "*"));
-  window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: describeError(e.reason) || String(e.reason) }, "*"));
+  window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: describeError(e.error) || String(e.message)${genField} }, "*"));
+  window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: describeError(e.reason) || String(e.reason)${genField} }, "*"));
   // #3556: apply a THEME change live — set the data-theme base + swap the token overrides — WITHOUT a
   // rebuild, so the in-iframe pan/zoom engine (and any other runtime state) survives a theme switch.
   window.addEventListener("message", (e) => {
@@ -961,7 +1046,7 @@ ${previewCspMeta()}
 </script>
 <script type="module">
 ${bundleJs}
-parent.postMessage({ __preview: "ready" }, "*");
+parent.postMessage({ __preview: "ready"${genField} }, "*");
 // Empty-render probe (#2926): a beat after mount (past sync + effect renders), measure whether #root
 // produced anything visible — no element beyond the bootstrap wrapper AND no trimmed text — and report
 // it. Cheap + best-effort; the parent probe folds this into its ok verdict. Guarded so a throw here
@@ -970,7 +1055,7 @@ setTimeout(() => {
   try {
     var r = document.getElementById("root");
     var empty = !!r && r.querySelectorAll("*").length <= 1 && (r.textContent || "").trim().length === 0;
-    parent.postMessage({ __preview: "rendered", empty: empty }, "*");
+    parent.postMessage({ __preview: "rendered", empty: empty${genField} }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
 </script>${fitShim}${engineShim}${inspectShim}

@@ -569,6 +569,33 @@ describe("hasCodeElision — an ellipsis in COPY is not an elision marker (#3486
     // real elision behind any earlier piece of copy.
     expect(hasCodeElision(`const s = "Select${E}"; export function F() { ${E} }`)).toBe(true);
   });
+
+  it("ignores one after a closing JSX tag or HTML entity — designer request #125", () => {
+    // Both fixtures are the ACTUAL srcText of live, working components — `bsc navigate` confirmed both
+    // render fine, yet `bsc ui doctor` flagged them `no-implementation` over this "code-elision marker".
+
+    // ConnectGithubCard: a third sibling text node continuing a message after an interpolated <Text>
+    // element. The char immediately before the marker (skipping whitespace) is `>` from `</Text>`, a
+    // CLOSING tag — a message continuing after a sibling closed, not an element's sole content.
+    expect(
+      hasCodeElision(
+        `export function ConnectGithubCard(){ return <Box>Waiting for authorization at <Text>{url}</Text>\n${E}\n</Box>; }`
+      )
+    ).toBe(false);
+
+    // WorkspaceCard: a truncated path example inside <code>, HTML-entity-heavy. The char immediately
+    // before the marker is `/`, ordinary running-text punctuation, not a fresh element's sole content.
+    expect(
+      hasCodeElision(`export function WorkspaceCard(){ return <code>&lt;base&gt;/projects/&lt;project&gt;/${E}</code>; }`)
+    ).toBe(false);
+
+    // A self-closing sibling before the marker reads the same way as an explicit closing tag.
+    expect(hasCodeElision(`export function A(){ return <Box><Icon />${E}</Box>; }`)).toBe(false);
+
+    // …and the #3897 case is UNCHANGED: a marker as an element's ONLY content, right after its OPENING
+    // tag, is still a sketch — this must not regress into blanket JSX leniency.
+    expect(hasCodeElision(`export function X() { return <Card>${E}</Card>; }`)).toBe(true);
+  });
 });
 
 describe("the buildability predicates use the context-aware scanner (#3486)", () => {

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Refuse a move of the ref the app RUNS from, unless it came through `npm run promote`.
+# Installed by `npm run hooks:install`; policy lives in scripts/guard-policy.mjs.
+#
+# `reference-transaction` is the hook that can see a FAST-FORWARD. `pre-merge-commit` cannot: a
+# fast-forward creates no commit, so it never fires — and the 11:48 event that rebuilt the app under
+# the maintainer was exactly a fast-forward. Refusing in the `prepared` phase aborts the transaction.
+[ "$1" = "prepared" ] || exit 0
+repo_root="$(git rev-parse --path-format=absolute --git-common-dir)"; repo_root="${repo_root%/.git}"
+while read -r _old _new ref; do
+  [ -n "$ref" ] || continue
+  BSC_GUARD_REF="$ref" BSC_GUARD_CWD="$PWD" BSC_GUARD_ROOT="$repo_root" \
+    node "$repo_root/scripts/guard-ref.mjs" || exit 1
+done
+exit 0

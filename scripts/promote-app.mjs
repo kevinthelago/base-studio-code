@@ -154,7 +154,10 @@ function main() {
     return;
   }
 
-  git(["merge", "--ff-only", "develop"]);
+  // BSC_PROMOTE is the ONE sanctioned hole in the ref guard (scripts/guard-policy.mjs): moving the
+  // app's ref is refused everywhere else, so this announces itself explicitly rather than being
+  // sniffed for.
+  git(["merge", "--ff-only", "develop"], { env: { ...process.env, BSC_PROMOTE: "1" } });
   console.log(`[promote-app] ${branch} → ${git(["rev-parse", "--short", branch])}`);
   console.log(
     appIsRunning()
