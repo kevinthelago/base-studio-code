@@ -46,6 +46,8 @@ pub const FLAGS: [&str; 51] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
+    // `impl suppress` (#170) reuses the same flag name for the same reason: ALSO retire the id from
+    // the packaged seed, not only the runtime store.
     "--seed",
     // `promote` — the repo-store seam: `--check` is the gate (writes nothing, exits non-zero),
     // `--root` names the repo when the cwd is not it.
@@ -929,6 +931,37 @@ fn write_seed_tests(path: &std::path::Path, doc: &mut Value, id: &str, tests: Va
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
+/// Resolve and parse the packaged seed for `impl suppress --seed` (#170) — the read half, split from
+/// [`write_seed_doc`] the same way [`load_seed_doc`] is split from [`write_seed_tests`].
+///
+/// Unlike [`load_seed_doc`], an id ABSENT from the seed's `implementations` is not an error here:
+/// suppressing an id a second time (already retired from the seed) or one that only ever lived in the
+/// runtime store must stay a no-op on the seed half, exactly as [`crate::add_suppression`] is
+/// idempotent on the runtime half (#77) — a caller re-running the same suppress must not have it start
+/// failing the moment the first run finishes.
+fn load_seed_doc_for_suppress() -> Result<(std::path::PathBuf, Value), String> {
+    let path = crate::seed_path().ok_or(
+        "packaged seed `knowledge/algorithms.json` not found — set BSC_DATA_DIR to the directory \
+         holding the packaged `data/` tree, or run from a dev checkout",
+    )?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let doc: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", path.display()))?;
+    Ok((path, doc))
+}
+
+/// Persist an already-mutated packaged-seed `doc` back to `path` — `impl suppress --seed`'s write half.
+/// Same tmp-then-rename dance as [`write_seed_tests`], kept as its own small function rather than a
+/// shared extraction: the two callers mutate the doc differently (one field on one record vs. an
+/// implementations-array removal plus a `suppressed` tombstone), and the only thing genuinely shared is
+/// this four-line persist tail.
+fn write_seed_doc(path: &std::path::Path, doc: &Value) -> Result<(), String> {
+    let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
 /// `tests harvest <dir> [--dry-run]` (#4126) — carry each impl's COLOCATED test file onto its node,
 /// the algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
 /// `bsc_util::test_path_for` so the two libraries cannot drift.
@@ -1428,11 +1461,19 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&serde_json::json!({ "ok": true, "reverted": id, "to": want }))
             }
             Some("suppress") => {
-                let id = positional.get(2).ok_or("usage: bsc graph impl suppress <id> [--superseded-by <new-id>]")?;
+                let id = positional.get(2).ok_or(
+                    "usage: bsc graph impl suppress <id> [--superseded-by <new-id>] [--seed]",
+                )?;
                 let mut g = crate::load();
                 let live: Vec<Value> = crate::implementations_of(&g);
                 let known = |x: &str| live.iter().any(|im| im.get("id").and_then(Value::as_str) == Some(x));
-                if !known(id) && !crate::is_seeded(id) {
+                // An id already tombstoned is known too (#170 follow-up) — `--seed` PHYSICALLY strips a
+                // packaged id from the on-disk seed, so a SECOND, separate `bsc` process (a real re-run,
+                // not the same process re-checking a cached `seed()`) finds it neither live nor
+                // `is_seeded` any more and would wrongly refuse the very re-suppress the idempotence
+                // comment below promises. `is_suppressed` is the third, durable source of "this id is
+                // real" that survives the seed file being edited out from under it.
+                if !known(id) && !crate::is_seeded(id) && !crate::is_suppressed(&g, id) {
                     return Err(format!("unknown implementation '{id}'"));
                 }
                 let mut tomb = serde_json::json!({ "id": id });
@@ -1449,15 +1490,50 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     }
                     tomb["supersededBy"] = Value::String(new_id);
                 }
+                let superseded_by = tomb.get("supersededBy").and_then(Value::as_str).map(str::to_owned);
+                // `--seed` (#170, request from claude): a store-only tombstone is TRANSIENT the same way
+                // an un-seeded test pairing was (#141) — it stops the RUNTIME reconcile from re-adding
+                // the id, but `scripts/emit-records.mjs` builds `.bsc-records/` by reading
+                // `src-tauri/data/knowledge/algorithms.json` DIRECTLY and has never heard of the runtime
+                // store, so the retired module kept shipping. Read (never written) BEFORE the runtime
+                // store is touched, mirroring `tests set --seed`: an unreadable/corrupt packaged seed is
+                // the likely failure here and must not leave the runtime store half-suppressed.
+                let want_seed = args.iter().any(|a| a == "--seed");
+                let seed_doc = want_seed.then(load_seed_doc_for_suppress).transpose()?;
                 crate::remove_impl(&mut g, id);
                 // Idempotent (#77) — suppressing an already-suppressed id refreshes its pointer
                 // instead of appending a second tombstone for the same id.
-                crate::add_suppression(&mut g, id, tomb.get("supersededBy").and_then(Value::as_str));
+                crate::add_suppression(&mut g, id, superseded_by.as_deref());
                 crate::save(&g)?;
-                emit(&serde_json::json!({ "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy") }))
+                if let Some((path, mut doc)) = seed_doc {
+                    // Idempotent the same way the runtime half is: an id already absent from the seed
+                    // (suppressed a second time, or never seeded) is a no-op remove, and a tombstone
+                    // already there just refreshes its pointer rather than duplicating.
+                    crate::remove_impl(&mut doc, id);
+                    crate::add_suppression(&mut doc, id, superseded_by.as_deref());
+                    write_seed_doc(&path, &doc)?;
+                }
+                emit(&serde_json::json!({
+                    "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy"), "seeded": want_seed,
+                }))
             }
             Some("unsuppress") => {
                 let id = positional.get(2).ok_or("usage: bsc graph impl unsuppress <id>")?;
+                // `--seed` restoration is deliberately UNSUPPORTED: `suppress --seed` physically removes
+                // the record from the committed packaged seed, so there is no body left in this process
+                // to resurrect it from — unlike the runtime tombstone, which the embedded seed can still
+                // refill. Reversing a seeded suppression is a git operation on
+                // `knowledge/algorithms.json` (checkout/revert the commit that removed it), not a `bsc`
+                // one — refuse loudly rather than silently accepting a flag that does nothing.
+                if args.iter().any(|a| a == "--seed") {
+                    return Err(
+                        "impl unsuppress has no --seed counterpart — `suppress --seed` removes the \
+                         record from the packaged seed entirely, so nothing here can restore its body; \
+                         use git to revert the commit that removed it from \
+                         src-tauri/data/knowledge/algorithms.json, or re-author it with `impl set`"
+                            .to_string(),
+                    );
+                }
                 let mut g = crate::load();
                 let is_tomb = crate::is_suppressed(&g, id);
                 // REFUSES on a live impl: a real record goes through `remove`, never this. Otherwise
@@ -1620,7 +1696,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
                       | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
-                      | impl suppress <id> [--superseded-by <new-id>] | impl unsuppress <id> \
+                      | impl suppress <id> [--superseded-by <new-id>] [--seed] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>] \
                       | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply]"
                 .to_string()),
@@ -3088,9 +3164,9 @@ fn help(prog: &str) -> String {
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>|--viz-code-file <path>] [--code-file <path>] [--src <path>] [--folder <p>] [--provides <spec>] [--required-by p:f,q:g] [--module-state a,b] [--module-vis pub|private|pub(crate)] [--module-attrs-file <path>] [--reads e1,e2] [--writes e3] [--no-src] [--clear a,b] [--by <who>] [--note <why>]   # upsert a language-kit impl (#4154: a MERGE — unsupplied fields are PRESERVED, not deleted; --clear removes a field explicitly; --no-src declares an algorithm that genuinely has no file here, #4136) (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program, --src/--folder #4107 (a `--src` DERIVES the folder), --module-vis/--module-attrs-file record HOW a materialized module is DECLARED (visibility + attributes): a mod declaration carries meaning its body does not, and emitting an unconditional pub mod for a #[cfg]-gated or private module changes the program. --required-by is the USAGE mirror of a plan feature's `requires` — which features, in which projects, need this record; entries are `<projectKey>:<feature>` and an unqualified one is REFUSED, since a bare slug is ambiguous across projects. --module-state names the module's top-level MUTABLE bindings (sets only; --clear moduleState removes). PREFER --code-file/--viz-code-file (#76): source on the command line is corrupted SILENTLY by the shell — a backtick or a ${{…}} is substituted away and a literal backslash-n never becomes a newline — and large modules exceed the argv limit outright\n  \
          {prog} impl remove <id>                        # delete a USER-MADE implementation + scrub it from every composes (a PACKAGED one is refused - it re-seeds; use `suppress`)
   \
-         {prog} impl suppress <id> [--superseded-by <new-id>]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored)
+         {prog} impl suppress <id> [--superseded-by <new-id>] [--seed]   # RETIRE a packaged algorithm durably (#71): a `{{ id, suppressed: true }}` TOMBSTONE occupies the id so the seed reconcile stops re-adding it; --superseded-by records WHAT replaced it, on the tombstone because that is the one record the reconcile never overwrites (a self / missing / already-retired target is REFUSED, not stored). --seed (#170) ALSO removes the id from the PACKAGED seed (`src-tauri/data/knowledge/algorithms.json`) that `scripts/emit-records.mjs` and the build actually read — a store-only tombstone stops the runtime reconcile but is invisible to the build, so the retired module kept shipping
   \
-         {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`
+         {prog} impl unsuppress <id>                    # drop the tombstone so the packaged algorithm re-seeds on the next load (no data loss). REFUSES on a live impl - that goes through `remove`. Has no --seed counterpart: `suppress --seed` removes the record from the packaged seed entirely, so nothing is left in the process to restore — revert that with git
          {prog} impl history <id>                       # the write log (#72): rev, who, when, what CHANGED and what was DROPPED per write — the same shape as `bsc ui log`, from the same shared stamp
   \
          {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
@@ -4453,6 +4529,219 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&src_dir);
+    }
+
+    #[test]
+    fn impl_suppress_seed_removes_it_from_the_packaged_seed_too() {
+        // #170 (request from claude): a runtime-only tombstone is invisible to
+        // `scripts/emit-records.mjs`, which builds `.bsc-records/` straight off
+        // `src-tauri/data/knowledge/algorithms.json` and has never heard of the runtime store — so
+        // `bsc graph impl suppress pending-pty-data.ts && npm run emit:records` still emitted
+        // `.bsc-records/app/console/lib/pendingPtyData.ts`. This is the Rust half of that exact repro:
+        // `--seed` must remove the record from the packaged file emit-records actually reads, not only
+        // stamp a runtime tombstone.
+        let dir = crate::unique_temp("implsuppress-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = dir.join("store.json");
+        let data_dir = dir.join("data");
+        let seed_path = data_dir.join("knowledge").join("algorithms.json");
+        std::fs::create_dir_all(seed_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &seed_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": 2,
+                "implementations": [
+                    { "id": "pending-pty-data.ts", "role": "algorithm", "tech": "typescript",
+                      "name": "pendingPtyData", "provides": "@/app/console/lib/pendingPtyData",
+                      "code": "export const pendingPtyData = 1;", "composes": [] },
+                    { "id": "consumer.ts", "role": "algorithm", "tech": "typescript", "name": "consumer",
+                      "provides": "@/app/console/lib/consumer", "code": "export const consumer = 1;",
+                      "composes": ["pending-pty-data.ts"] },
+                ],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        // SAFETY: single-threaded test setup, before any other thread reads either var.
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        // `suppress` requires the id to be KNOWN — a real seeded id is checked via `is_seeded`, which
+        // reads the CACHED, process-wide `crate::seed()` (not `BSC_DATA_DIR`-aware once initialized).
+        // Landing it in the runtime store first sidesteps that cache, exactly as
+        // `tests_set_seed_lands_the_test_on_the_packaged_seed_record_too` does above.
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "pending-pty-data.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "pendingPtyData".into(),
+                "--code".into(), "export const pendingPtyData = 1;".into(),
+                "--provides".into(), "@/app/console/lib/pendingPtyData".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        let out = run(
+            vec!["impl".into(), "suppress".into(), "pending-pty-data.ts".into(), "--seed".into()],
+            "bsc graph",
+        );
+        assert!(out.is_ok(), "{out:?}");
+
+        // The PACKAGED SEED FILE — what `emit-records.mjs`'s `collectSeeds()` reads — no longer
+        // carries an `implementations` entry for it, so a re-emit cannot materialize the module.
+        let seed_after: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let ids: Vec<String> = seed_after
+            .get("implementations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        assert!(
+            !ids.contains(&"pending-pty-data.ts".to_string()),
+            "the packaged seed must no longer carry the suppressed id: {ids:?}"
+        );
+
+        // A tombstone is recorded on the seed too, mirroring the runtime shape.
+        let seed_tomb = seed_after
+            .get("suppressed")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|t| t.get("id").and_then(Value::as_str) == Some("pending-pty-data.ts"));
+        assert!(seed_tomb.is_some(), "the seed itself should record why the id is gone");
+
+        // The scrub reaches other seed records' `composes` too, exactly as the runtime store's does.
+        let consumer_composes = seed_after
+            .get("implementations")
+            .and_then(Value::as_array)
+            .and_then(|arr| {
+                arr.iter().find(|im| im.get("id").and_then(Value::as_str) == Some("consumer.ts"))
+            })
+            .and_then(|im| im.get("composes").cloned());
+        assert_eq!(consumer_composes, Some(serde_json::json!([])));
+
+        // The RUNTIME store still carries its own tombstone too — `--seed` is additive, never a
+        // substitute for it.
+        let g = crate::load();
+        assert!(crate::is_suppressed(&g, "pending-pty-data.ts"));
+
+        // Idempotent (#77), same as a store-only suppress: running it again must not error, and must
+        // not duplicate the seed tombstone.
+        let out2 = run(
+            vec!["impl".into(), "suppress".into(), "pending-pty-data.ts".into(), "--seed".into()],
+            "bsc graph",
+        );
+        assert!(out2.is_ok(), "{out2:?}");
+        let seed_after2: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        let tomb_count = seed_after2
+            .get("suppressed")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|t| t.get("id").and_then(Value::as_str) == Some("pending-pty-data.ts"))
+            .count();
+        assert_eq!(tomb_count, 1, "re-suppressing must not append a second tombstone");
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn impl_unsuppress_seed_is_refused() {
+        // Reversing `suppress --seed` needs the retired body back, and that body is gone from the
+        // packaged file — nothing in this process can resurrect it. `unsuppress --seed` must refuse
+        // loudly rather than silently accept a flag that does nothing.
+        let dir = crate::unique_temp("implunsuppress-seed");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("store.json");
+
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let err = run(
+            vec!["impl".into(), "unsuppress".into(), "whatever.ts".into(), "--seed".into()],
+            "bsc graph",
+        )
+        .unwrap_err();
+        assert!(err.contains("no --seed counterpart"), "{err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn impl_suppress_is_idempotent_for_a_custom_id_not_masked_by_the_cached_seed() {
+        // Found while verifying #170 end-to-end with the REAL binary across two separate process
+        // invocations. The in-process idempotency test above (`impl_suppress_seed_removes_it_from_the_
+        // packaged_seed_too`) suppresses the SAME id twice inside ONE test process, and `crate::seed()`
+        // caches the packaged JSON for the process's lifetime — so its second call still sees
+        // `is_seeded("pending-pty-data.ts") == true` even though the on-disk seed file was just
+        // stripped, and the "known" gate below never actually re-evaluates against the post-removal
+        // world. A real second `bsc` process does re-evaluate it, found it neither live nor seeded, and
+        // wrongly refused with "unknown implementation" — breaking the exact idempotence #77 promises.
+        //
+        // This reproduces the SAME "known" gate bug WITHOUT any process boundary, and shows it predates
+        // `--seed` entirely: a CUSTOM id (never in any seed) that is suppressed once is neither live
+        // (removed) nor seeded (never was) on a second call — the runtime tombstone (`is_suppressed`)
+        // was the only truthful "this id is real" signal missing from the gate.
+        let dir = crate::unique_temp("implsuppress-idempotent-custom");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("store.json");
+        // An empty seed — `is_seeded` is genuinely, not cache-masked, false for any id here.
+        let data_dir = dir.join("data");
+        let seed_path = data_dir.join("knowledge").join("algorithms.json");
+        std::fs::create_dir_all(seed_path.parent().unwrap()).unwrap();
+        std::fs::write(&seed_path, serde_json::to_string(&serde_json::json!({ "implementations": [] })).unwrap())
+            .unwrap();
+
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "custom-x.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "customX".into(),
+                "--code".into(), "export const customX = 1;".into(),
+                "--no-src".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        run(vec!["impl".into(), "suppress".into(), "custom-x.ts".into()], "bsc graph").unwrap();
+
+        // The second call is the regression: `custom-x.ts` is now neither live nor seeded, and before
+        // the fix that combination was refused as "unknown implementation" instead of being treated as
+        // the idempotent re-suppress #77 promises.
+        let out2 = run(vec!["impl".into(), "suppress".into(), "custom-x.ts".into()], "bsc graph");
+        assert!(out2.is_ok(), "{out2:?}");
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
