@@ -550,6 +550,22 @@ fn has_inline_rust_tests(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+/// The carried `ext` facet for a test read from `path` (#148): the file's REAL extension, in the
+/// `.ts`/`.tsx`/`.js`/`.jsx` form the emitter's `ext` field expects (`scripts/emit-records.mjs`
+/// `extFor`/its `/^\.[jt]sx?$/` validator).
+///
+/// A writer that reads a test's `src` from an actual file already knows this for free — the path it
+/// just read is right there — so it should never leave the emitter to GUESS from the body. The guess
+/// (`extFor`) treats any `<Tag>`-shaped substring as JSX, and an ordinary TypeScript generic like
+/// `<T>(a: readonly T[])` matches that just as well as a real element: the test is re-emitted as
+/// `.tsx` and vitest runs it in the `dom` project instead of `node` — still green, silently ~35x
+/// slower. `None` for a path with no extension or one the emitter does not model, so a caller falls
+/// back to the emitter's guess exactly as it did before this field existed.
+pub fn test_source_ext(path: &std::path::Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?;
+    matches!(ext, "ts" | "tsx" | "js" | "jsx").then(|| format!(".{ext}"))
+}
+
 /// A test file's display name: its FIRST top-level `describe("…")` title, else the file's basename.
 ///
 /// The title is what a reader recognises; the basename is the honest fallback for a file that opens
@@ -587,7 +603,7 @@ fn first_describe_title(src: &str) -> Option<String> {
 
 #[cfg(test)]
 mod test_pairing_tests {
-    use super::{test_display_name, test_path_for};
+    use super::{test_display_name, test_path_for, test_source_ext};
 
     #[test]
     fn pairs_a_module_with_its_colocated_test_and_prefers_tsx() {
@@ -656,6 +672,20 @@ use std::fmt;
         std::fs::write(dir.join("ui/Odd.ts"), "// #[cfg(test)] #[test]").unwrap();
         assert_eq!(test_path_for(&dir, "ui/Odd.ts"), None);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    // #148: `test_source_ext` states the file's own extension rather than the emitter's JSX-sniffing
+    // guess, and a `.ts` file containing a TS generic is exactly the case that guess gets wrong.
+    fn test_source_ext_states_the_real_extension_even_over_jsx_shaped_generics() {
+        assert_eq!(test_source_ext(std::path::Path::new("a/b.ts")), Some(".ts".to_string()));
+        assert_eq!(test_source_ext(std::path::Path::new("a/b.tsx")), Some(".tsx".to_string()));
+        assert_eq!(test_source_ext(std::path::Path::new("a/b.js")), Some(".js".to_string()));
+        assert_eq!(test_source_ext(std::path::Path::new("a/b.jsx")), Some(".jsx".to_string()));
+        // No extension, or one this crate does not model — a caller falls back to the emitter's guess.
+        assert_eq!(test_source_ext(std::path::Path::new("a/b")), None);
+        assert_eq!(test_source_ext(std::path::Path::new("a/b.rs")), None);
+        assert_eq!(test_source_ext(std::path::Path::new("a/b.md")), None);
     }
 }
 
