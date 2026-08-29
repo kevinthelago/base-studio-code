@@ -122,6 +122,7 @@ const COMMANDS: &[Surface] = &[
     // #command-surface-catalog-is-one-source: `serve` (#4152) dispatched but was likewise absent.
     internal("serve", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
     active("version", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
+    active("config", "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)", Some("~/.base-studio-code/config/ — the runtime config-seed mirror")),
 ];
 
 fn top_help() -> String {
@@ -266,6 +267,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "cve" => cve::cli::run(rest, "bsc cve"),
+        "config" => bsc_config::cli::run(rest, "bsc config"),
         // The catalog, as data (`command-surface-catalog-is-one-source`) — so a consumer generates
         // the surface set instead of keeping its own copy of it.
         "surface" => surface_cli(rest),
