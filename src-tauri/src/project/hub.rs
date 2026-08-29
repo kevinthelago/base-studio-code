@@ -493,9 +493,30 @@ pub(crate) fn materialize_hub(project_key: String) -> Result<String, String> {
     // draft (hub absent) or a publish-before-launch project (hub holds only `.published`) — fall through
     // and migrate the planner's files in either way.
     if hub.exists() && !planning.exists() {
+        // Trusted even on the fast path. A grandfathered or re-launched hub is exactly the case that
+        // produced #a-new-hub-is-untrusted-so-its-director-exits-on-the-trust-prompt: the directory
+        // exists, so nothing re-creates it, and nothing had ever trusted it.
+        crate::session::claude_config::trust_claude_dir(&hub.to_string_lossy());
         return Ok(hub.to_string_lossy().into_owned());
     }
     std::fs::create_dir_all(&hub).str_err()?;
+    // TRUST THE HUB THE MOMENT IT IS REAL, before any session is launched into it
+    // (#a-new-hub-is-untrusted-so-its-director-exits-on-the-trust-prompt).
+    //
+    // `pty_create` already trusts a session's cwd, and that was believed to cover this. It does not
+    // cover it reliably: the trust lands on `effective_cwd`, which `resolve_session_cwd` may resolve
+    // ELSEWHERE when the recorded cwd is missing at launch — and a hub being rewritten underneath a
+    // relaunching fleet is precisely when that happens. The directory then exists, untrusted, and the
+    // next session meets Claude Code's folder-trust prompt whose second option is `No, exit`.
+    //
+    // The symptom is silent and reads as the wrong thing entirely: the session appears to START and
+    // END rather than never to have run. The tell is that `~/.claude/projects/` holds no transcript
+    // directory for that cwd at all — Claude writes one per directory it actually runs in.
+    //
+    // Doing it HERE rather than at launch makes it a property of the hub existing rather than of a
+    // launch succeeding. Idempotent by construction (`mark_dir_trusted` no-ops on an already-trusted
+    // entry) and additive — it never clears a sibling project or downgrades a trust the user granted.
+    crate::session::claude_config::trust_claude_dir(&hub.to_string_lossy());
     if planning.is_dir() {
         move_dir_contents(&planning, &hub)?;
         let _ = std::fs::remove_dir(&planning); // retire the now-empty workspace (no-op if non-empty)
@@ -832,6 +853,52 @@ mod relocated_tests {
         assert!(!project_dir(&key).exists(), "hub should be deleted");
         assert!(!worktrees_dir(&key).exists(), "relocated worktrees should be deleted too");
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// #a-new-hub-is-untrusted-so-its-director-exits-on-the-trust-prompt — a hub is trusted the moment
+    /// it is real, so no session can ever meet Claude Code's folder-trust prompt inside it.
+    ///
+    /// The prompt's second option is `No, exit`, so an untrusted hub does not degrade — the session
+    /// LEAVES. From outside that reads as "the director's session keeps ending" rather than "the
+    /// director never started", which is why this went undiagnosed: the giveaway is that
+    /// `~/.claude/projects/` holds no transcript directory for the cwd at all.
+    #[test]
+    fn materialize_hub_trusts_the_hub_so_no_session_meets_the_trust_prompt() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("materialize-trust");
+        let key = "needs-trust";
+        write_file(&planning_workspace_dir(key).join("goal.md"), "# Goal");
+
+        let hub = materialize_hub(key.to_string()).expect("materializes");
+        let cfg: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).expect("config written"))
+                .expect("valid json");
+        assert_eq!(
+            cfg["projects"][&hub]["hasTrustDialogAccepted"],
+            serde_json::Value::Bool(true),
+            "the hub is trusted at materialization, not at launch: {cfg}",
+        );
+
+        // THE GRANDFATHERED CASE, which is the one that actually bit: the hub already exists and no
+        // planning workspace remains, so materialize takes its fast path and creates nothing. That path
+        // must trust too, or an existing untrusted hub stays untrusted forever — nothing re-creates it.
+        let mut cfg2: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.join(".claude.json")).unwrap(),
+        )
+        .unwrap();
+        cfg2["projects"] = serde_json::json!({});
+        std::fs::write(home.join(".claude.json"), cfg2.to_string()).unwrap();
+        assert!(!planning_workspace_dir(key).exists(), "the fast path needs the workspace gone");
+
+        materialize_hub(key.to_string()).expect("fast path");
+        let cfg3: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap()).unwrap();
+        assert_eq!(
+            cfg3["projects"][&hub]["hasTrustDialogAccepted"],
+            serde_json::Value::Bool(true),
+            "an ALREADY-EXISTING hub is trusted on the fast path too: {cfg3}",
+        );
         std::fs::remove_dir_all(&home).ok();
     }
 
