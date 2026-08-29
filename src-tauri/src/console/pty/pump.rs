@@ -268,7 +268,7 @@ fn session_present(app: &AppHandle, pane_id: &str) -> bool {
 pub(super) fn spawn_reader(
     pane_id: String,
     mut reader: Box<dyn Read + Send>,
-    tx: std::sync::mpsc::Sender<String>,
+    tx: std::sync::mpsc::Sender<(String, Option<u64>)>,
 ) {
     std::thread::spawn(move || {
         let mut buf = vec![0u8; 8192];
@@ -333,14 +333,24 @@ pub(super) fn spawn_reader(
                     leftover.extend_from_slice(&buf[..n]);
                     let (text, keep) = split_utf8_at_boundary(&leftover);
                     leftover = keep;
-                    if !text.is_empty() && tx.send(text).is_err() {
+                    // The RECORDING offset after this read, carried alongside the text so the emitter
+                    // can say exactly how far the frontend has been sent. `None` when nothing is being
+                    // recorded, which a reveal reads as "no history".
+                    //
+                    // Note this is the offset after the whole READ, while `text` may be one byte short
+                    // of it when a multi-byte character straddles the boundary. That is the safe
+                    // direction: the cursor can only ever lag the recording, never lead it, so a replay
+                    // bounded by it can never include a byte the frontend has not been sent.
+                    let at = record.as_ref().map(|r| r.len());
+                    if !text.is_empty() && tx.send((text, at)).is_err() {
                         break; // emitter gone
                     }
                 }
             }
         }
         if !leftover.is_empty() {
-            let _ = tx.send(String::from_utf8_lossy(&leftover).into_owned());
+            let at = record.as_ref().map(|r| r.len());
+            let _ = tx.send((String::from_utf8_lossy(&leftover).into_owned(), at));
         }
         // tx drops here → emitter sees Disconnected and finishes.
     });
@@ -467,7 +477,10 @@ pub(super) fn cage_death_notice(
 pub(super) fn spawn_emitter(
     pane_id: String,
     app: AppHandle,
-    rx: std::sync::mpsc::Receiver<String>,
+    rx: std::sync::mpsc::Receiver<(String, Option<u64>)>,
+    // How far the frontend has been sent, shared with any reveal in flight. See `scrollback::Cursor`:
+    // holding this across the emit is what makes the replay/live handoff seamless.
+    cursor: super::scrollback::Cursor,
     // The cage this pane was launched into, if any — `None` for an ordinary session. Carried so a
     // caged death can say so in the pane; see `cage_death_notice`.
     sandbox_role: Option<String>,
@@ -482,6 +495,9 @@ pub(super) fn spawn_emitter(
         // Looked up once; `broadcast_output` is a no-op while nobody is paired.
         let tunnel_state = app.try_state::<tunnel::TunnelState>();
         let mut pending = String::new();
+        // The recording offset the batch in `pending` reaches. Published to the cursor as the batch
+        // goes out, so the cursor always names a byte the frontend has actually received.
+        let mut pending_at: Option<u64> = None;
         let mut last_emit = Instant::now();
         let mut total: u64 = 0;
         // The last few KB the pane saw. A launcher failure prints its reason and dies, so the
@@ -497,10 +513,13 @@ pub(super) fn spawn_emitter(
         while !done {
             let mut flush_now = false;
             match rx.recv_timeout(FLUSH) {
-                Ok(chunk) => {
+                Ok((chunk, at)) => {
                     total += chunk.len() as u64;
                     win_bytes += chunk.len() as u64;
                     pending.push_str(&chunk);
+                    if at.is_some() {
+                        pending_at = at;
+                    }
                     if pending.len() >= MAX_PENDING || last_emit.elapsed() >= FLUSH {
                         flush_now = true;
                     }
@@ -528,7 +547,17 @@ pub(super) fn spawn_emitter(
                 // bytes here (before the move into `app.emit`), so the WebView/tunnel stream is
                 // byte-for-byte unchanged; a no-op (one atomic load) when no pane is tapped.
                 crate::observability::pty_faults::observe(&pane_id, &data);
-                let _ = app.emit(&evt, data);
+                // Publish the cursor and emit UNDER THE SAME LOCK. A reveal takes this lock, so it
+                // either sees the state before this batch (and the batch reaches it live afterwards)
+                // or the state after (and the batch is already in its replay) — never half of each.
+                // That is the entire seam, closed in the one place that owns the bytes.
+                {
+                    let guard = cursor.lock();
+                    let _ = app.emit(&evt, data);
+                    if let (Ok(mut c), Some(at)) = (guard, pending_at.take()) {
+                        *c = Some(at);
+                    }
+                }
                 win_emits += 1;
                 last_emit = Instant::now();
             }
@@ -543,6 +572,12 @@ pub(super) fn spawn_emitter(
                 win_bytes = 0;
                 win_emits = 0;
             }
+        }
+        // Drop this pane's scrollback cursor. Pane ids are not all long-lived — `debug-studio:req-163`
+        // and its kin are minted per request — so leaving them in the map would grow it for the life
+        // of the app, which is precisely the kind of leak this whole effort exists to remove.
+        if let Some(cs) = app.try_state::<super::scrollback::Cursors>() {
+            cs.remove(&pane_id);
         }
         // Drop the pane's fault tap if it had one (#2264) — no-op for the common untapped pane.
         crate::observability::pty_faults::on_pane_exit(&pane_id);

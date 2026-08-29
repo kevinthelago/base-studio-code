@@ -519,6 +519,34 @@ fn build_session_init_line(
 /// `namespace_argv` must refuse without one too (the agreement test pins both directions), and that
 /// trades real kernel confinement for the shell gates. That is a posture decision, not a bug fix,
 /// and is deliberately left to the maintainer rather than taken here.
+/// Hand a pane's history to the frontend and resume the live stream from exactly where it ends.
+///
+/// THIS IS THE SEAMLESS HANDOFF, and it is a Rust command rather than a frontend dance because only
+/// the side that owns the bytes can make it atomic. The emitter publishes its cursor while holding it
+/// across each emit; this takes the same lock, reads the recording up to precisely that offset, and
+/// releases. So a batch is either already in `text` or still to arrive live — never both, never
+/// neither. Ordering it from TypeScript could only ever choose which of those two to get wrong.
+///
+/// `None` when the pane has no cursor or no recording: a fresh pane, or one launched before recording
+/// existed. Read that as "show an empty terminal", never as an error.
+///
+/// REMAINING SEAM, stated so it is not mistaken for closed: Tauri does not guarantee delivery order
+/// between an event and a command reply, so an event emitted just before the lock could still reach
+/// the webview after this returns. Closing that needs the event payload to carry its offset too, at
+/// which point the frontend drops anything at or before `upto`. `upto` is returned for exactly that.
+#[tauri::command]
+pub(crate) fn pty_scrollback_reveal(
+    pane_id: String,
+    max_bytes: u64,
+    cursors: tauri::State<'_, scrollback::Cursors>,
+) -> Option<scrollback::Reveal> {
+    let cursor = cursors.get(&pane_id)?;
+    let guard = cursor.lock().ok()?;
+    let upto = (*guard)?;
+    let text = scrollback::read_upto(&scrollback::scrollback_dir(), &pane_id, upto, max_bytes)?;
+    Some(scrollback::Reveal { text, upto })
+}
+
 /// A pane's recorded scrollback tail, ready to write straight into a terminal.
 ///
 /// `None` when the pane has no recording — a fresh pane, or a session that ran before recording
@@ -1058,9 +1086,16 @@ fn pty_create_inner(
     //
     // The `leftover` buffer holds any trailing incomplete multi-byte sequence
     // (e.g. ✓, →, box-drawing) so we never split a character across reads.
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let (tx, rx) = std::sync::mpsc::channel::<(String, Option<u64>)>();
+    // Registered BEFORE the emitter starts, and replacing any cursor a previous session with this
+    // pane id left behind — a relaunched pane records afresh and must not inherit an offset that
+    // addressed the old stream.
+    let cursor = app
+        .try_state::<scrollback::Cursors>()
+        .map(|c| c.register(&pane_id))
+        .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(None)));
     spawn_reader(pane_id.clone(), reader, tx);
-    spawn_emitter(pane_id.clone(), app.clone(), rx, sandbox_role.clone());
+    spawn_emitter(pane_id.clone(), app.clone(), rx, cursor, sandbox_role.clone());
 
     log::info!(
         "pty[{}] created · {}x{} · provider={} · shell={} · cwd={} · init={}",
