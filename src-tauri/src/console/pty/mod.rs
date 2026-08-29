@@ -136,6 +136,32 @@ pub(crate) fn kill_project_sessions(state: &PtyState, key: &str) -> usize {
 /// Job Object's clean drop). Every step is best-effort: a failure logs and proceeds (single-process kill
 /// still works; we just lose tree-kill until the next launch). Returns the Job Object to hold for the
 /// session's lifetime — `None` if creation/assignment failed. Extracted from `pty_create` (#2086).
+/// The smallest grid a session may be BORN into. Below this a full-screen TUI has nowhere to draw,
+/// and — the part that costs a diagnosis — nothing it prints on the way up survives legibly, so the
+/// session's own last words come back as squeezed-together fragments.
+///
+/// 80x24 is not a taste: it is what xterm.js reports before it has measured anything, so a clamped
+/// session starts at exactly the size an unmeasured one already does. See `clamp_grid`.
+const MIN_GRID: (u16, u16) = (80, 24);
+
+/// Floor a requested grid, saying so when it fires.
+///
+/// PURE, so the rule is testable without a PTY. The log line is the point as much as the clamp is:
+/// a pane whose measurement arrives before its layout is a FRONTEND bug, and silently correcting it
+/// here would hide the only evidence that it happens.
+fn clamp_grid(pane_id: &str, cols: u16, rows: u16) -> (u16, u16) {
+    let (c, r) = (cols.max(MIN_GRID.0), rows.max(MIN_GRID.1));
+    if (c, r) != (cols, rows) {
+        log::warn!(
+            "pty[{pane_id}] requested a {cols}x{rows} grid — too small for a full-screen agent to \
+             draw in, and too narrow for its output to be readable afterwards. Starting at {c}x{r}; \
+             the pane's own refit will follow with the real size. The measurement ran before the \
+             pane's layout settled."
+        );
+    }
+    (c, r)
+}
+
 fn attach_job_and_track(
     child: &(dyn portable_pty::Child + Send + Sync),
     pane_id: &str,
@@ -661,6 +687,22 @@ fn pty_create_inner(
         return Ok(false);
     }
 
+    // A degenerate grid is a MEASUREMENT, not a request — refuse to hand it to the kernel.
+    //
+    // Observed on the live desktop: `console[…] fit-on-open · box=184x25px · grid=23x1`, so the pane
+    // was measured before its layout settled and the session was born into a 23-column, ONE-ROW
+    // terminal, then resized to 103x21 in the same second. Every agent here is a full-screen TUI: it
+    // reads the winsize at startup, lays its frame out for one row, and everything it printed on the
+    // way up is unreadable — which is exactly why this pane's dying words came back as
+    // `⏵⏵automodeon (shift+tabtocycle)·←foragents●high·` with the spaces squeezed out of them. The
+    // evidence a stopped session leaves is worth nothing if it was written 23 columns wide.
+    //
+    // Clamped rather than rejected, because the pane IS real and the frontend's own refit lands
+    // moments later with the true size — failing the launch would trade a cosmetic bug for a missing
+    // session. The floor is the classic 80x24 (what xterm.js itself defaults to before it has
+    // measured anything), so a clamped session is born at the size an unmeasured one already gets.
+    let (cols, rows) = clamp_grid(&pane_id, cols, rows);
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -884,6 +926,10 @@ fn pty_create_inner(
     // Box the shell into a Job Object (tree-kill), register its PID with the perf sampler, and author
     // the spawn in the crash-recovery ledger — all best-effort (see `attach_job_and_track`).
     let job = attach_job_and_track(child.as_ref(), &pane_id, app);
+    // Held for the `created` line below: the one identifier that joins this session to `journalctl`,
+    // `ps`, the pty ledger and `pty-job`'s SIGKILL line. It has to be read here, while the child is
+    // still owned locally — once the session is in the registry the log line is past it.
+    let session_pid = child.process_id();
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
@@ -1097,13 +1143,26 @@ fn pty_create_inner(
     spawn_reader(pane_id.clone(), reader, tx);
     spawn_emitter(pane_id.clone(), app.clone(), rx, cursor, sandbox_role.clone());
 
+    // `pid` and `launch` are both here because both were missing when they were needed.
+    //
+    // The pid is the join to everything OUTSIDE the app — `journalctl` on the scope unit, `ps`, the
+    // pty ledger, and `pty-job`'s own SIGKILL line, which prints the process GROUP (== this pid,
+    // since portable_pty `setsid`s the child). Without it, "the session died" and "this scope unit
+    // stopped" are two records with nothing to match on.
+    //
+    // `launch` is the command that actually ran. This line used to print `init_cmd`, which is EMPTY
+    // whenever the launch is a baked startup prompt — so a resumed worker logged `init=<none>` while
+    // really running `claude --continue $'…'`, and the log positively denied that anything was
+    // launched at all. It is the resolved `launch`, so it can never disagree with what was written
+    // into the shell.
     log::info!(
-        "pty[{}] created · {}x{} · provider={} · shell={} · cwd={} · init={}",
+        "pty[{}] created · {}x{} · pid={} · provider={} · shell={} · cwd={} · launch={}",
         pane_id, cols, rows,
+        session_pid.map(|p| p.to_string()).unwrap_or_else(|| "<unknown>".into()),
         provider_id.as_deref().unwrap_or("claude"),
         shell,
         if cwd_empty { "<none>" } else { cwd.as_str() },
-        init_cmd.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
+        launch.as_deref().filter(|s| !s.is_empty()).unwrap_or("<none>"),
     );
 
     // Tell the mobile tunnel this pane's grid size so it renders at the desktop width
@@ -1520,6 +1579,38 @@ mod tests {
     fn a_worker_with_no_cwd_is_left_empty_not_guessed() {
         let r = super::resolve_session_cwd("studio-code:design-studio", String::new(), false);
         assert!(r.empty, "an unrecoverable identity leaves the cwd empty");
+    }
+
+    // ── a session is never born into a one-row terminal ──────────────────────────────────────
+    //
+    // MEASURED on the live desktop: `console[network-monitor:domain-model-and-adapter-traits]
+    // fit-on-open · box=184x25px · grid=23x1`, immediately followed by a refit to 103x21. The pane
+    // was measured before its layout settled, so `pty_create` opened a 23-column, ONE-ROW pty and
+    // handed it to a full-screen agent. The cost is not cosmetic: that session's dying words came
+    // back as `⏵⏵automodeon (shift+tabtocycle)·←foragents●high·` — a TUI footer with the spaces
+    // wrapped out of it — so the one piece of evidence a stopped session leaves was unreadable.
+
+    /// A degenerate grid is floored, and a real one is untouched.
+    #[test]
+    fn a_pane_measured_before_its_layout_settled_does_not_get_a_one_row_pty() {
+        assert_eq!(super::clamp_grid("p", 23, 1), super::MIN_GRID, "the observed 23x1");
+        assert_eq!(super::clamp_grid("p", 32, 3), super::MIN_GRID, "and the other one from that run");
+        // Each axis floors on its own — a wide-but-flat pane keeps its width.
+        assert_eq!(super::clamp_grid("p", 217, 6), (217, 24));
+        assert_eq!(super::clamp_grid("p", 40, 60), (80, 60));
+    }
+
+    /// A settled pane is passed through EXACTLY. The clamp exists for a measurement that has not
+    /// happened yet, and a floor that rounded real sizes up would resize every small pane's agent.
+    #[test]
+    fn a_settled_grid_is_passed_through_unchanged() {
+        for g in [(80, 24), (103, 21), (158, 8), (217, 40)] {
+            // 158x8 and 217x40 are real studio-pane sizes from the same run: short, and legitimate.
+            let (c, r) = g;
+            let out = super::clamp_grid("p", c, r);
+            assert_eq!(out, (c.max(80), r.max(24)), "{g:?}");
+        }
+        assert_eq!(super::clamp_grid("p", 103, 21), (103, 24), "only the axis under the floor moves");
     }
 
     /// Which panes are REFUSED rather than merely warned about when no gate file is present.
