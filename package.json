@@ -12,6 +12,7 @@
     "app:dev": "node scripts/app-status.mjs && node scripts/record-run.mjs --stage launch --source app:dev --project studio-code -- npm run tauri -- dev --no-watch",
     "app:status": "node scripts/app-status.mjs",
     "build:plan": "node scripts/gc.mjs --quiet && node scripts/record-run.mjs --stage compile --source build:plan --project studio-code -- cargo build --bin bsc --bin bsc-agent --bin bsc-hook && node scripts/verify-build-artifacts.mjs --quiet && node scripts/publish-sidecars.mjs --quiet",
+    "rebuild": "node scripts/rebuild.mjs",
     "clean:incremental": "node scripts/prune-incremental.mjs",
     "clean:target": "node scripts/sweep-target.mjs",
     "gc": "node scripts/gc.mjs --force",
