@@ -19,7 +19,10 @@ mod http_it;
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
-pub use ollama::{detect_ollama_profile, list_models, OllamaProfile, OllamaProvider};
+pub use ollama::{
+    detect_ollama_profile, list_models, model_is_installed, model_not_installed_error, OllamaProfile,
+    OllamaProvider,
+};
 pub use openai::OpenAiProvider;
 pub use toolparse::{recover_text_calls, recover_tool_calls, strip_tool_syntax};
 pub use turn::{Msg, ToolCall, ToolDef, Turn, TurnResult};
@@ -65,13 +68,26 @@ pub trait LlmProvider {
 
 /// Format the non-2xx error string a provider returns, in the exact shape
 /// `bsc-agent`'s `is_transient_error` matches on: `"API error (<status>): <message>"`.
-/// The message is read from the response body's `error.message`, defaulting to
-/// `"Unknown error"`. Pure — extracted so the format can be unit-tested without I/O.
+///
+/// The message is read from the response body's `error.message` (the OpenAI/Anthropic/Gemini
+/// shape) — but Ollama's own endpoints (`/api/tags`, `/api/show`, `/api/chat`, and its
+/// OpenAI-compat `/v1/chat/completions` when it hasn't loaded a model) reply with `error` as a
+/// **plain string** instead: `{"error": "model \"qwen3-coder\" not found, try pulling it
+/// first"}`. Reading `["message"]` off a string `Value` yields `Null`, so that shape used to
+/// collapse to `"Unknown error"` on every Ollama failure — the exact "bare 404 with no hint"
+/// #176 was filed over. Falling back to the bare string surfaces Ollama's own (already quite
+/// specific) message instead.
+///
+/// Pure — extracted so the format can be unit-tested without I/O.
 ///
 /// **CRITICAL:** this format is string-matched (`"API error (429"`, `"API error (5"`),
 /// so the `"API error ({status}): {message}"` shape must not change.
 pub(crate) fn format_api_error(status: reqwest::StatusCode, json: &serde_json::Value) -> String {
-    let err = json["error"]["message"].as_str().unwrap_or("Unknown error").to_string();
+    let err = json["error"]["message"]
+        .as_str()
+        .or_else(|| json["error"].as_str())
+        .unwrap_or("Unknown error")
+        .to_string();
     format!("API error ({}): {}", status, err)
 }
 
@@ -481,6 +497,19 @@ mod tests {
         let e = format_api_error(status(500), &serde_json::json!({}));
         assert_eq!(e, "API error (500 Internal Server Error): Unknown error");
         assert!(is_transient_error(&e));
+    }
+
+    #[test]
+    fn format_api_error_reads_ollamas_plain_string_error_shape() {
+        // #176: Ollama's `error` field is a bare string, not `{message: ...}`. Before this, a
+        // model-not-found 404 collapsed to "Unknown error" with no hint the MODEL was the problem.
+        let body = serde_json::json!({ "error": "model \"qwen3-coder\" not found, try pulling it first" });
+        let e = format_api_error(status(404), &body);
+        assert_eq!(
+            e,
+            "API error (404 Not Found): model \"qwen3-coder\" not found, try pulling it first"
+        );
+        assert!(!is_transient_error(&e));
     }
 
     #[test]
