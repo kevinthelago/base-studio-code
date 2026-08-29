@@ -790,6 +790,42 @@ pub(crate) fn session_skill_group_for_pane(pane_id: &str) -> Option<String> {
 ///
 /// Returns the bash-style path of the rc file so the caller can `source` it into the interactive
 /// shell too (BASH_ENV only covers non-interactive subshells).
+/// The per-project store exports, as a bash fragment to run INSIDE the session's shell.
+///
+/// WHY, when `wire_bsc_env` already sets these on the spawned process: the PTY runs an INTERACTIVE
+/// bash, and an interactive bash sources `~/.bashrc` — which runs AFTER the process env is handed over
+/// and can re-export the very same names. This repo's own dev workflow tells a developer to
+/// `export BSC_PLAN_DB=.../studio-code.db`, so a machine that followed the docs pointed EVERY session
+/// at studio-code's plan store: `pain-point-finder`'s director read — and could write — another
+/// project's board, which is how this was found. `#request-128` fixed the INHERITANCE half (a miss now
+/// clears the var rather than letting it ride); this is the OVERRIDE half.
+///
+/// The caller emits it AFTER sourcing the bsc rc into the interactive shell, so the app's per-session
+/// answer is the last word. Order is the entire fix. The sandbox path already bakes its env into that
+/// line for the same reason (the host rc does not cross the WSL boundary).
+///
+/// A NON-PROJECT session UNSETS them rather than keeping whatever it inherited: a console opened in an
+/// unrelated repo must not silently read or write some project's store, and `bsc plan` failing loudly
+/// is the honest outcome.
+pub(super) fn store_exports_for_cwd(cwd: &str) -> String {
+    let vars = [
+        ("BSC_PLAN_DB", plan_db_for_cwd(cwd)),
+        ("BSC_ERROR_DB", error_db_for_cwd(cwd)),
+        ("BSC_USAGE_DB", usage_db_for_cwd(cwd)),
+        ("BSC_DATA_DB", data_db_for_cwd(cwd)),
+    ];
+    let mut out = String::new();
+    for (name, path) in vars {
+        match path {
+            // Single-quoted: the path is app-derived, never user text, and quoting keeps a space in a
+            // home directory from splitting the export into two words.
+            Some(p) => out.push_str(&format!("export {name}='{}'; ", to_bash_path(&p.to_string_lossy()))),
+            None => out.push_str(&format!("unset {name}; ")),
+        }
+    }
+    out
+}
+
 pub(super) fn wire_bsc_env(
     cmd: &mut CommandBuilder,
     pane_id: &str,
@@ -1743,5 +1779,46 @@ mod tests {
         let parked = std::path::Path::new("/bin/bsc.exe").with_extension("old-123");
         assert_eq!(parked.file_name().unwrap(), "bsc.old-123");
         assert_ne!(parked.file_name().unwrap(), "bsc.exe");
+    }
+
+    /// A session's own project stores must survive the user's rc.
+    ///
+    /// THE BUG: `wire_bsc_env` sets these on the spawned PROCESS, then an INTERACTIVE bash sources
+    /// `~/.bashrc` — which this repo's dev workflow tells a developer to fill with
+    /// `export BSC_PLAN_DB=.../studio-code.db`. That runs afterwards and wins, so `pain-point-finder`'s
+    /// director read, and could write, studio-code's board. The fix is only correct because the caller
+    /// emits this AFTER the rc source; `launch.rs` pins that ordering separately.
+    #[test]
+    fn store_exports_name_the_sessions_own_project() {
+        let hub = crate::projects_root().join("pain-point-finder");
+        let out = super::store_exports_for_cwd(&hub.to_string_lossy());
+        assert!(out.contains("export BSC_PLAN_DB='"), "must EXPORT, to outrank the rc: {out}");
+        assert!(out.contains("pain-point-finder"), "names its own project: {out}");
+        // Match the STORE, not the substring: the base dir is `.base-studio-code`, so a bare
+        // `contains("studio-code")` is true of every correct path on this machine.
+        assert!(!out.contains("plans/studio-code.db"), "never another project's plan store: {out}");
+        for v in ["BSC_ERROR_DB", "BSC_USAGE_DB", "BSC_DATA_DB"] {
+            assert!(out.contains(&format!("export {v}='")), "{v} shares the derivation: {out}");
+        }
+    }
+
+    /// A WORKER resolves from the worktrees root, not the hub — the strip #844 broke once.
+    #[test]
+    fn a_worker_worktree_gets_its_projects_stores_too() {
+        let wt = crate::worktrees_root().join("pain-point-finder").join("repo--stream");
+        let out = super::store_exports_for_cwd(&wt.to_string_lossy());
+        assert!(out.contains("export BSC_PLAN_DB='"), "a worker needs its plan store: {out}");
+        assert!(out.contains("pain-point-finder"), "its own project: {out}");
+    }
+
+    /// A NON-project session ends with the vars GONE, not inherited: "another project's store,
+    /// silently" becomes "`bsc plan` fails loudly", which is the honest outcome.
+    #[test]
+    fn a_non_project_session_unsets_the_stores_rather_than_inheriting_them() {
+        let out = super::store_exports_for_cwd("/tmp/some/unrelated/repo");
+        for v in ["BSC_PLAN_DB", "BSC_ERROR_DB", "BSC_USAGE_DB", "BSC_DATA_DB"] {
+            assert!(out.contains(&format!("unset {v};")), "{v} must be unset: {out}");
+        }
+        assert!(!out.contains("export "), "nothing exported for a non-project cwd: {out}");
     }
 }

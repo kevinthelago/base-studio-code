@@ -463,7 +463,11 @@ fn build_session_init_line(
     } else {
         match shell_kind {
             crate::platform::shell::ShellKind::Bash => {
-                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash, namespaced, sandbox_refused)
+                // Derived HERE rather than threaded from the caller: the rule is cwd-only, and keeping
+                // it beside its one consumer means a call site cannot forget the exports and silently
+                // hand the session whatever `~/.bashrc` last exported.
+                let store_exports = env::store_exports_for_cwd(cwd);
+                build_bash_init_line(cwd, cwd_missing, effective_cwd, launch, claude_fn, rc_bash, &store_exports, namespaced, sandbox_refused)
             }
             // PowerShell / cmd: bsc-* helpers, OSC7/state markers, and startup-prompt baking
             // are bash-only, so run a degraded init that cd's, clears, and prints a visible
@@ -1570,7 +1574,12 @@ mod tests {
         );
         assert_eq!(
             bash,
-            super::build_bash_init_line("/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc", false, None),
+            // The wrapper derives the store exports from the cwd, so the leaf call must be given the
+            // SAME derivation — hardcoding "" here would assert the wrapper does something it does not.
+            super::build_bash_init_line(
+                "/p", false, "/p", Some("claude"), "CLAUDE_FN;", "/rc",
+                &super::env::store_exports_for_cwd("/p"), false, None,
+            ),
             "Bash kind reproduces build_bash_init_line exactly",
         );
         // Sandbox ⇒ byte-for-byte the distro builder's output (env + cd baked in, shell kind ignored).
@@ -3580,7 +3589,7 @@ mod namespace_tests {
         let claude_fn = "claude() { __bsc_state run; command claude \"$@\"; }; ";
         let init = super::launch::build_bash_init_line(
             &wt_s, false, &wt_s, None, claude_fn,
-            "/home/nobody/.base-studio-code/bsc-env.sh", true, None);
+            "/home/nobody/.base-studio-code/bsc-env.sh", "", true, None);
 
         let pty = native_pty_system()
             .openpty(PtySize { rows: 30, cols: 165, pixel_width: 0, pixel_height: 0 })
@@ -3787,8 +3796,7 @@ mod namespace_tests {
         let claude_fn = "claude() { __bsc_state run; command claude \"$@\"; }; ";
         let init = super::launch::build_bash_init_line(
             &wt_s, false, &wt_s, None, claude_fn,
-            "/home/nobody/.base-studio-code/bsc-env.sh", true, None,
-        );
+            "/home/nobody/.base-studio-code/bsc-env.sh", "", true, None);
 
         let pty = native_pty_system()
             .openpty(PtySize { rows: 30, cols: 165, pixel_width: 0, pixel_height: 0 })
