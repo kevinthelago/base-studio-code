@@ -882,6 +882,117 @@ pub fn read_launch_argv(stores_root: &Path) -> std::io::Result<Vec<String>> {
     Ok(parts)
 }
 
+/// The two guest hooks a namespaced launch installs (`SANDBOXED_HOOKS` in
+/// `@/app/console/lib/sessionLaunch`), and the host shell function each stands in for outside a
+/// mount namespace — the same two functions `console/shell_rc.rs` installs via `BASH_ENV` on every
+/// unsandboxed session.
+const GUEST_TO_HOST_HOOKS: &[(&str, &str)] = &[("scope", "bsc-scope"), ("bash-deny", "bsc-deny")];
+
+/// The host shell function standing in for one `/bsc-hook <verb>` guest command, or `None` when
+/// `command` does not name a guest hook at all (every other hook a settings.json carries is already
+/// host-resolvable, and this must not touch those).
+fn host_hook_equivalent(command: &str) -> Option<&'static str> {
+    let verb = command.strip_prefix(HOOK_GUEST_PATH)?.strip_prefix(' ')?;
+    GUEST_TO_HOST_HOOKS.iter().find(|(guest, _)| *guest == verb).map(|(_, host)| *host)
+}
+
+fn rewrite_guest_commands(v: &mut serde_json::Value, changed: &mut bool) {
+    match v {
+        serde_json::Value::String(s) => {
+            if let Some(host) = host_hook_equivalent(s) {
+                *s = host.to_string();
+                *changed = true;
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                rewrite_guest_commands(item, changed);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for item in map.values_mut() {
+                rewrite_guest_commands(item, changed);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Rewrite a `.claude/settings.json` `hooks` block IN PLACE, replacing every `{HOOK_GUEST_PATH}
+/// <verb>` PreToolUse command with its host-resolvable shell-function equivalent. Returns whether
+/// anything changed.
+///
+/// This is the REPAIR half of `hook_floor_mismatch` (`session/settings.rs` in the desktop crate):
+/// that function detects a session whose hooks name a path that resolves only inside a mount
+/// namespace while the session is NOT running in one — the PreToolUse gate then fails to execute,
+/// **non-blocking**, so the session runs with no write-scope gate and no dangerous-command floor.
+/// The mapping here is total and derived, not guessed: `scope`/`bash-deny` are the only two guest
+/// verbs a namespaced launch ever installs, and `bsc-scope`/`bsc-deny` are their exact host
+/// counterparts — so there is no case where keeping the stale guest path is the right answer, and
+/// this never asks, it always fixes.
+///
+/// Pure string substitution over the JSON tree rather than a structural rebuild: a settings file
+/// nests commands at `hooks.<event>[].hooks[].command` alongside every OTHER hook (`bsc-audit`,
+/// `bsc-confine`, the turn-accounting pair, …) this function knows nothing about, and a rebuild
+/// would have to reconstruct all of it. Substitution is the identity-preserving edit a stale guest
+/// path actually needs.
+pub fn rewrite_guest_hooks(config: &mut serde_json::Value) -> bool {
+    let mut changed = false;
+    if let Some(hooks) = config.get_mut("hooks") {
+        rewrite_guest_commands(hooks, &mut changed);
+    }
+    changed
+}
+
+#[cfg(test)]
+mod hook_repair_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn rewrites_both_guest_commands_to_their_host_equivalents() {
+        let mut config = json!({
+            "hooks": {
+                "PreToolUse": [
+                    {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": "/bsc-hook scope"}]},
+                    {"matcher": "Bash", "hooks": [{"type": "command", "command": "/bsc-hook bash-deny"}]}
+                ]
+            }
+        });
+        assert!(rewrite_guest_hooks(&mut config));
+        let dumped = config.to_string();
+        assert!(dumped.contains("bsc-scope"), "{dumped}");
+        assert!(dumped.contains("bsc-deny"), "{dumped}");
+        assert!(!dumped.contains(HOOK_GUEST_PATH), "{dumped}");
+    }
+
+    #[test]
+    fn a_settings_file_with_no_guest_hooks_is_left_untouched() {
+        let mut config = json!({
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "bsc-deny"}]}]}
+        });
+        let before = config.clone();
+        assert!(!rewrite_guest_hooks(&mut config));
+        assert_eq!(config, before);
+    }
+
+    #[test]
+    fn a_config_with_no_hooks_key_at_all_is_a_no_op_not_a_panic() {
+        let mut config = json!({"permissions": {}});
+        assert!(!rewrite_guest_hooks(&mut config));
+    }
+
+    #[test]
+    fn does_not_mangle_a_command_that_merely_starts_with_the_guest_path() {
+        // A hypothetical `/bsc-hook-other` binary must not be treated as the guest hook — the guest
+        // path must be followed by a SPACE, not just a shared prefix.
+        let mut config = json!({
+            "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "/bsc-hook-other thing"}]}]}
+        });
+        assert!(!rewrite_guest_hooks(&mut config));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
