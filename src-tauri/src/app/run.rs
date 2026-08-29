@@ -188,12 +188,29 @@ pub fn run() {
             // registry (title + lifecycle state), so the DB is the source of truth for what projects
             // exist — recovering hubs that only lived on disk. Additive + idempotent; never deletes.
             crate::project::hub::backfill_projects_db_from_hubs();
-            // Seed the runtime config dir (#2027 P2): copy the embedded `data/` tree into
-            // ~/.base-studio-code/config/ on first run (only absent files — never clobbers a user
-            // edit), so prompts/taxonomies can be edited without a rebuild. Best-effort: on failure
-            // the embedded fallback stays in force, so a seed error is non-fatal.
-            if let Err(e) = crate::platform::config::ensure_seeded() {
-                log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
+            // Seed the runtime config dir (#2027 P2): mirror the embedded `data/` tree into
+            // ~/.base-studio-code/config/ so prompts/taxonomies can be edited without a rebuild.
+            // Hash-tracked (#4251), so a copy the user never touched is REFRESHED rather than left
+            // pinned to the release it shipped with, while a real edit is preserved. Best-effort: on
+            // failure the embedded fallback stays in force, so a seed error is non-fatal.
+            match crate::platform::config::ensure_seeded() {
+                // Silent in the steady state; a pass that changed or found something says what.
+                Ok(report) => {
+                    if let Some(summary) = report.summary() {
+                        log::info!("[startup] config seed: {summary}");
+                    }
+                    // Divergence is the one verdict a human may need to act on — the file is being
+                    // preserved, so a packaged improvement is NOT reaching this install.
+                    for rel in &report.diverged {
+                        log::info!("[startup] config diverged (packaged copy not applied): {rel}");
+                    }
+                    for rel in &report.orphaned {
+                        log::info!("[startup] config orphaned (edited, seed retired): {rel}");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
+                }
             }
             // Dev sidecar staging (#3457): in a dev build, copy `bsc`/`bsc-agent` out of the cargo
             // target dir into a stable dir so a live session's long-lived `bsc` (the MCP servers) locks
