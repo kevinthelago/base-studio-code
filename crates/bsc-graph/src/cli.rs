@@ -814,12 +814,12 @@ fn record_covering_path_in(impls: &[Value], target: &str) -> Option<(String, Str
     None
 }
 
-/// `tests set --id <id> --src <test-file> [--name <name>] [--seed]` (#140/#141) — pair ONE record's
-/// test without a whole-tree `harvest`. See the usage note on the `"tests"` match arm in [`run`] for
-/// why this exists alongside `harvest` rather than folding into it.
+/// `tests set --id <id> --src <test-file> [--name <name>] [--seed] [--if-version <n>]` (#140/#141) —
+/// pair ONE record's test without a whole-tree `harvest`. See the usage note on the `"tests"` match
+/// arm in [`run`] for why this exists alongside `harvest` rather than folding into it.
 fn tests_set(args: &[String]) -> Result<Value, String> {
-    let usage =
-        "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--seed] [--pretty]";
+    let usage = "usage: bsc graph tests set --id <id> --src <test-file> [--name <name>] [--seed] \
+                 [--if-version <n>] [--pretty]";
     let id = flag_value(args, "--id").ok_or(usage)?;
     let src_path = flag_value(args, "--src").ok_or(usage)?;
     let path = std::path::Path::new(&src_path);
@@ -874,7 +874,18 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
         },
         None => next["tests"] = serde_json::json!([entry]),
     }
-    crate::set_impl(&mut g, next)?;
+    // Optimistic concurrency (#183), the same opt-in guard `impl set` carries: two sessions pairing a
+    // test onto the SAME record concurrently are exactly the shape request #183 was filed against — a
+    // concurrent `--code` write dropped an in-flight diff with no conflict signal at all. `read_rev`
+    // answers 0 for a record never stamped since #72, so `--if-version 0` is the honest guard for one
+    // of those too; no backfill needed.
+    let if_version = match flag_value(args, "--if-version") {
+        Some(raw) => Some(raw.parse::<i64>().map_err(|_| {
+            format!("--if-version '{raw}' is not an integer (read the current rev with `bsc graph impl history <id>`)")
+        })?),
+        None => None,
+    };
+    crate::set_impl_versioned(&mut g, next, "unknown", None, if_version)?;
     crate::save(&g)?;
 
     if let Some((path, mut doc)) = seed_doc {
@@ -2303,7 +2314,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&tests_harvest(dir, dry, ids.as_ref())?)
             }
             _ => Err(
-                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed]"
+                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed] [--if-version <n>]"
                     .to_string(),
             ),
         },
@@ -3288,7 +3299,7 @@ fn help(prog: &str) -> String {
   \
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
-  \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141)
+  \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
@@ -3512,24 +3523,31 @@ mod tests {
     /// and promoted into the committed store. The compiler caught the consequence two steps later.
     #[test]
     fn a_code_file_that_is_empty_is_refused_rather_than_stored() {
-        let dir = std::env::temp_dir().join(format!("bsc-empty-code-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let empty = dir.join("empty.rs");
-        std::fs::write(&empty, "   
-	
+        // #184: the fixture lives under `std::env::temp_dir()`, outside this repo — a `--code-file`
+        // is a user path and must work from anywhere. `source_flag` checks it against
+        // `require_harvestable_root`, which reads the real `$BSC_REPO_ROOT` when no thread-local
+        // override is set, so this test spuriously failed confinement in a debug-studio pane (its
+        // shell genuinely carries that var). Force the unconfined case hermetically.
+        bsc_cli_util::with_repo_root(None, || {
+            let dir = std::env::temp_dir().join(format!("bsc-empty-code-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let empty = dir.join("empty.rs");
+            std::fs::write(&empty, "
+
 ").unwrap();
 
-        let args = vec!["--code-file".to_string(), empty.to_string_lossy().into_owned()];
-        let err = source_flag(&args, "--code").unwrap_err();
-        assert!(err.contains("is empty"), "{err}");
-        assert!(err.contains("--clear code"), "names the explicit way to clear: {err}");
+            let args = vec!["--code-file".to_string(), empty.to_string_lossy().into_owned()];
+            let err = source_flag(&args, "--code").unwrap_err();
+            assert!(err.contains("is empty"), "{err}");
+            assert!(err.contains("--clear code"), "names the explicit way to clear: {err}");
 
-        // A file with real content still reads through unchanged.
-        let full = dir.join("full.rs");
-        std::fs::write(&full, "pub fn f() {}").unwrap();
-        let args = vec!["--code-file".to_string(), full.to_string_lossy().into_owned()];
-        assert_eq!(source_flag(&args, "--code").unwrap().as_deref(), Some("pub fn f() {}"));
-        let _ = std::fs::remove_dir_all(&dir);
+            // A file with real content still reads through unchanged.
+            let full = dir.join("full.rs");
+            std::fs::write(&full, "pub fn f() {}").unwrap();
+            let args = vec!["--code-file".to_string(), full.to_string_lossy().into_owned()];
+            assert_eq!(source_flag(&args, "--code").unwrap().as_deref(), Some("pub fn f() {}"));
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     /// #155: a record that lives ONLY in the committed repo store must be readable.
@@ -4388,6 +4406,88 @@ mod tests {
         let _ = std::fs::remove_dir_all(&src_dir);
     }
 
+    /// `tests set --if-version <n>` (#183) — the same opt-in optimistic-concurrency guard `impl set`
+    /// carries (`if_version_rejects_a_stale_write_and_allows_a_current_one` in `lib.rs`), now wired to
+    /// this write path too. Before this, `tests set` funneled through the UNVERSIONED `set_impl`, so a
+    /// concurrent test-pairing session had no way to refuse a stale overwrite — the exact loss request
+    /// #183 was filed against, just via `tests set` rather than `impl set`.
+    #[test]
+    fn tests_set_if_version_rejects_a_stale_write_and_allows_a_current_one() {
+        let dir = crate::unique_temp("testsset-ifversion");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "guarded.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "guarded".into(),
+                "--code".into(), "export function guarded() {}".into(),
+                "--src".into(), "src/guarded.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+        let rev_after_create = |id: &str| {
+            bsc_record::read_rev(
+                &crate::implementations().into_iter().find(|i| i.get("id").and_then(Value::as_str) == Some(id)).unwrap(),
+            )
+        };
+        assert_eq!(rev_after_create("guarded.ts"), 1, "the create above stamps rev 1");
+
+        let src_dir = crate::unique_temp("testsset-ifversion-src");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("guarded.test.ts");
+        std::fs::write(&test_file, "it('works', () => {});\n").unwrap();
+
+        // rev 0 is STALE — the record moved on to rev 1 at create. Rejected, nothing written.
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "guarded.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--if-version".into(), "0".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap_err();
+        assert!(err.contains("version conflict"), "{err}");
+        assert!(err.contains("current rev is 1"), "names the current rev: {err}");
+        assert!(
+            crate::implementations().into_iter().find(|i| i.get("id").and_then(Value::as_str) == Some("guarded.ts"))
+                .and_then(|i| i.get("tests").cloned())
+                .is_none(),
+            "a rejected write pairs nothing"
+        );
+
+        // The matching version lands.
+        bsc_cli_util::with_repo_root(None, || {
+            run(
+                vec![
+                    "tests".into(), "set".into(),
+                    "--id".into(), "guarded.ts".into(),
+                    "--src".into(), test_file.to_string_lossy().into_owned(),
+                    "--if-version".into(), "1".into(),
+                ],
+                "bsc graph",
+            )
+        })
+        .unwrap();
+        assert_eq!(rev_after_create("guarded.ts"), 2, "the accepted write moves the record forward");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&src_dir);
+    }
+
     /// `tests set --seed` (#141) — the fix under test. Before this, `tests set` alone left a seeded
     /// record's test STORE-ONLY (transient per `component-tests-live-in-the-seed`), and landing it on
     /// the packaged copy too needed a hand-written `jq` patch to
@@ -5172,27 +5272,39 @@ mod source_flag_tests {
     /// THE WHOLE POINT. This body is the exact shape argv destroys: a backtick template literal with
     /// an interpolation the shell would command-substitute, and real newlines a double-quoted `\n`
     /// never becomes. It must arrive byte-identical.
+    ///
+    /// #184: the fixture lives under `std::env::temp_dir()`, outside this repo, on purpose — a
+    /// `--code-file` is a user-supplied path and has to work from anywhere. `source_flag` runs it
+    /// through `require_harvestable_root`, which reads the real `$BSC_REPO_ROOT` when no thread-local
+    /// override is set — so this test spuriously failed confinement inside a debug-studio pane, whose
+    /// shell genuinely carries that var. `with_repo_root(None, …)` forces the unconfined case
+    /// hermetically, the same seam `bsc-cli-util` documents for exactly this.
     #[test]
     fn code_file_reads_backticks_interpolation_and_newlines_verbatim() {
-        let body = "export function x() {\n  const n = 1;\n  return `a${n}b`;\n}\n";
-        let p = write_temp("verbatim", body);
-        let got = source_flag(&args(&["--code-file", p.to_str().unwrap()]), "--code").unwrap();
-        assert_eq!(got.as_deref(), Some(body), "read back byte-identical");
-        // And specifically that nothing collapsed: three real newlines, a live backtick, a live ${}.
-        let got = got.unwrap();
-        assert_eq!(got.matches('\n').count(), 4, "real newlines survived: {got:?}");
-        assert!(got.contains("`a${n}b`"), "the template literal survived intact: {got:?}");
-        let _ = std::fs::remove_file(&p);
+        bsc_cli_util::with_repo_root(None, || {
+            let body = "export function x() {\n  const n = 1;\n  return `a${n}b`;\n}\n";
+            let p = write_temp("verbatim", body);
+            let got = source_flag(&args(&["--code-file", p.to_str().unwrap()]), "--code").unwrap();
+            assert_eq!(got.as_deref(), Some(body), "read back byte-identical");
+            // And specifically that nothing collapsed: three real newlines, a live backtick, a live ${}.
+            let got = got.unwrap();
+            assert_eq!(got.matches('\n').count(), 4, "real newlines survived: {got:?}");
+            assert!(got.contains("`a${n}b`"), "the template literal survived intact: {got:?}");
+            let _ = std::fs::remove_file(&p);
+        });
     }
 
     /// The same door for the trace-program, which is the field MOST likely to carry a backtick.
+    /// See #184 on the sibling test above for why this is wrapped in `with_repo_root(None, …)`.
     #[test]
     fn viz_code_file_uses_the_same_door() {
-        let body = "({ run(a) { a.mark(`i${0}`); } })";
-        let p = write_temp("viz", body);
-        let got = source_flag(&args(&["--viz-code-file", p.to_str().unwrap()]), "--viz-code").unwrap();
-        assert_eq!(got.as_deref(), Some(body));
-        let _ = std::fs::remove_file(&p);
+        bsc_cli_util::with_repo_root(None, || {
+            let body = "({ run(a) { a.mark(`i${0}`); } })";
+            let p = write_temp("viz", body);
+            let got = source_flag(&args(&["--viz-code-file", p.to_str().unwrap()]), "--viz-code").unwrap();
+            assert_eq!(got.as_deref(), Some(body));
+            let _ = std::fs::remove_file(&p);
+        });
     }
 
     /// The inline form still works — this ADDS a door, it does not close the existing one.

@@ -93,6 +93,12 @@ export interface GraphRenderer {
   dispose(): void;
   readonly nodeCount: number;
   readonly edgeCount: number;
+  /**
+   * True from `webglcontextlost` until a successful `webglcontextrestored` rebuild. `draw()` is a no-op
+   * while this is true — the GL calls would be no-ops against a dead context anyway, but skipping them
+   * also skips the CPU work (label layout, LOD level arithmetic) that would otherwise run for nothing.
+   */
+  readonly contextLost: boolean;
 }
 
 const NODE_VS = `#version 300 es
@@ -305,6 +311,14 @@ export interface GraphRendererOpts {
    * and a graph drawn with every card three times too tall passes that check.
    */
   preserveDrawingBuffer?: boolean;
+  /**
+   * Fired the instant `webglcontextlost` is observed — before any rebuild is attempted. The renderer is
+   * blank from here until (if ever) `onContextRestored` fires; a caller uses this to swap in a fallback
+   * rather than leave a silently blank canvas on screen.
+   */
+  onContextLost?: () => void;
+  /** Fired after `webglcontextrestored` has rebuilt every GL object and re-uploaded the current state. */
+  onContextRestored?: () => void;
 }
 
 /**
@@ -339,45 +353,36 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   let textRgba: [number, number, number, number] = [0.93, 0.94, 0.96, 1];
   const edgeColor = opts.edgeColor ?? 0x66808080;
 
-  let nodeProg: WebGLProgram, edgeProg: WebGLProgram, labelProg: WebGLProgram;
-  try {
-    nodeProg = link(gl, NODE_VS, NODE_FS);
-    edgeProg = link(gl, EDGE_VS, EDGE_FS);
-    labelProg = link(gl, LABEL_VS, LABEL_FS);
-  } catch {
-    // A driver that cannot compile these is a driver we fall back from, not one we crash on.
-    return null;
-  }
+  // Every GL object below is invalidated the instant the context is lost, so each is a `let` assigned
+  // by `initGLResources()` — never inline — and reassigned wholesale on `webglcontextrestored`. See
+  // `restoreContext`.
+  // `!` (definite assignment): each is assigned inside `initGLResources()`, a separate function TS
+  // cannot trace into for control-flow analysis — the assertion says what the call below guarantees.
+  let nodeProg!: WebGLProgram, edgeProg!: WebGLProgram, labelProg!: WebGLProgram;
+  let nodeQuadBuf!: WebGLBuffer, edgeQuadBuf!: WebGLBuffer, unitQuadBuf!: WebGLBuffer;
+  let sizeBuf!: WebGLBuffer, colorBuf!: WebGLBuffer, stateBuf!: WebGLBuffer, pairBuf!: WebGLBuffer, edgeColorBuf!: WebGLBuffer;
+  let posTex!: WebGLTexture, atlasTex!: WebGLTexture;
+  let labelRectBuf!: WebGLBuffer, labelUvBuf!: WebGLBuffer;
+  let nodeVao!: WebGLVertexArrayObject, edgeVao!: WebGLVertexArrayObject, labelVao!: WebGLVertexArrayObject;
+  let uNode!: {
+    pos: WebGLUniformLocation | null; surface: WebGLUniformLocation | null; border: WebGLUniformLocation | null;
+    accent: WebGLUniformLocation | null; viewport: WebGLUniformLocation | null; translate: WebGLUniformLocation | null;
+    scale: WebGLUniformLocation | null;
+  };
+  let uLabel!: { atlas: WebGLUniformLocation | null; viewport: WebGLUniformLocation | null; color: WebGLUniformLocation | null };
+  let uEdge!: {
+    pos: WebGLUniformLocation | null; viewport: WebGLUniformLocation | null; translate: WebGLUniformLocation | null;
+    scale: WebGLUniformLocation | null; width: WebGLUniformLocation | null;
+  };
 
   // Unit quad, shared by both programs. Corner space is (-1..1) for nodes and (0..1, -0.5..0.5) for
   // edges, so each program reinterprets the same four vertices rather than owning a second buffer.
+  // Plain data, not GL objects — survives a context loss untouched, so these stay outside `initGLResources`.
   const nodeQuad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
   const edgeQuad = new Float32Array([0, -0.5, 1, -0.5, 0, 0.5, 1, 0.5]);
-  const nodeQuadBuf = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, nodeQuadBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, nodeQuad, gl.STATIC_DRAW);
-  const edgeQuadBuf = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, edgeQuadBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, edgeQuad, gl.STATIC_DRAW);
   // Labels need a 0..1 corner: `aRect.xy` is the quad's top-left and the corner scales `aRect.zw` off
   // it. The node quad is -1..1 (centred) and the edge quad is 0..1 by 0.5 (a ribbon), so neither fits.
   const unitQuad = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
-  const unitQuadBuf = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, unitQuad, gl.STATIC_DRAW);
-
-  const sizeBuf = gl.createBuffer()!;
-  const colorBuf = gl.createBuffer()!;
-  const stateBuf = gl.createBuffer()!;
-  const pairBuf = gl.createBuffer()!;
-  const edgeColorBuf = gl.createBuffer()!;
-  const posTex = gl.createTexture()!;
-  const atlasTex = gl.createTexture()!;
-  const labelRectBuf = gl.createBuffer()!;
-  const labelUvBuf = gl.createBuffer()!;
-  const nodeVao = gl.createVertexArray()!;
-  const edgeVao = gl.createVertexArray()!;
-  const labelVao = gl.createVertexArray()!;
 
   let nodeCount = 0;
   let edgeCount = 0;
@@ -410,61 +415,159 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   const labelUvs = new Float32Array(MAX_LABEL_GLYPHS * 4);
   let visible = new Uint32Array(4096);
 
-  const uNode = {
-    pos: gl.getUniformLocation(nodeProg, "uPos"),
-    surface: gl.getUniformLocation(nodeProg, "uSurface"),
-    border: gl.getUniformLocation(nodeProg, "uBorder"),
-    accent: gl.getUniformLocation(nodeProg, "uAccent"),
-    viewport: gl.getUniformLocation(nodeProg, "uViewport"),
-    translate: gl.getUniformLocation(nodeProg, "uTranslate"),
-    scale: gl.getUniformLocation(nodeProg, "uScale"),
+  /**
+   * Link the programs, create every buffer/texture/VAO, resolve uniform locations, and set the static
+   * GL state (blend, quads, texture params). Runs once at construction and again — verbatim — from
+   * `restoreContext` after `webglcontextrestored`, because a restored context starts with NONE of this:
+   * every object above is gone, and the spec gives you a blank context to rebuild into.
+   */
+  function initGLResources(): boolean {
+    try {
+      nodeProg = link(gl, NODE_VS, NODE_FS);
+      edgeProg = link(gl, EDGE_VS, EDGE_FS);
+      labelProg = link(gl, LABEL_VS, LABEL_FS);
+    } catch {
+      // A driver that cannot compile these is a driver we fall back from, not one we crash on. On a
+      // RESTORE this just leaves `contextLost` true instead of throwing out of an event handler.
+      return false;
+    }
+
+    nodeQuadBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, nodeQuadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, nodeQuad, gl.STATIC_DRAW);
+    edgeQuadBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, edgeQuadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, edgeQuad, gl.STATIC_DRAW);
+    unitQuadBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, unitQuad, gl.STATIC_DRAW);
+
+    sizeBuf = gl.createBuffer()!;
+    colorBuf = gl.createBuffer()!;
+    stateBuf = gl.createBuffer()!;
+    pairBuf = gl.createBuffer()!;
+    edgeColorBuf = gl.createBuffer()!;
+    posTex = gl.createTexture()!;
+    atlasTex = gl.createTexture()!;
+    labelRectBuf = gl.createBuffer()!;
+    labelUvBuf = gl.createBuffer()!;
+    nodeVao = gl.createVertexArray()!;
+    edgeVao = gl.createVertexArray()!;
+    labelVao = gl.createVertexArray()!;
+
+    uNode = {
+      pos: gl.getUniformLocation(nodeProg, "uPos"),
+      surface: gl.getUniformLocation(nodeProg, "uSurface"),
+      border: gl.getUniformLocation(nodeProg, "uBorder"),
+      accent: gl.getUniformLocation(nodeProg, "uAccent"),
+      viewport: gl.getUniformLocation(nodeProg, "uViewport"),
+      translate: gl.getUniformLocation(nodeProg, "uTranslate"),
+      scale: gl.getUniformLocation(nodeProg, "uScale"),
+    };
+    uLabel = {
+      atlas: gl.getUniformLocation(labelProg, "uAtlas"),
+      viewport: gl.getUniformLocation(labelProg, "uViewport"),
+      color: gl.getUniformLocation(labelProg, "uColor"),
+    };
+    uEdge = {
+      pos: gl.getUniformLocation(edgeProg, "uPos"),
+      viewport: gl.getUniformLocation(edgeProg, "uViewport"),
+      translate: gl.getUniformLocation(edgeProg, "uTranslate"),
+      scale: gl.getUniformLocation(edgeProg, "uScale"),
+      width: gl.getUniformLocation(edgeProg, "uWidthPx"),
+    };
+
+    gl.bindTexture(gl.TEXTURE_2D, posTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+    // LINEAR: the field is meant to be interpolated — nearest sampling would step the distance and put
+    // the antialiasing back where it started.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindVertexArray(labelVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, labelRectBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, labelRects.byteLength, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, labelUvBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, labelUvs.byteLength, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(2, 1);
+    gl.bindVertexArray(null);
+
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    // Premultiplied source: the shaders already multiply rgb by alpha, which is what keeps a soft SDF edge
+    // from fringing dark against a light background.
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    return true;
+  }
+
+  if (!initGLResources()) return null;
+
+  // A context is NOT owned by the page — the browser reclaims one when a canvas is hidden/occluded
+  // (WebKit is aggressive here), past the live-context cap, or on a driver reset. `webglcontextlost`
+  // MUST be `preventDefault()`-ed for the browser to attempt a restore at all; without that call it
+  // abandons the context permanently and `webglcontextrestored` never fires.
+  const onContextLost = (e: Event): void => {
+    e.preventDefault();
+    contextLost = true;
+    opts.onContextLost?.();
   };
-  const uLabel = {
-    atlas: gl.getUniformLocation(labelProg, "uAtlas"),
-    viewport: gl.getUniformLocation(labelProg, "uViewport"),
-    color: gl.getUniformLocation(labelProg, "uColor"),
+  const onContextRestored = (): void => {
+    // A failed rebuild leaves `contextLost` true and fires no callback — the caller's fallback (raised
+    // by `onContextLost`) stays up rather than reading a dead canvas as fine. Nothing else retries: the
+    // next `webglcontextlost`/`webglcontextrestored` pair is the browser's to offer, not ours to poll for.
+    if (restoreContext()) {
+      contextLost = false;
+      opts.onContextRestored?.();
+    }
   };
-  const uEdge = {
-    pos: gl.getUniformLocation(edgeProg, "uPos"),
-    viewport: gl.getUniformLocation(edgeProg, "uViewport"),
-    translate: gl.getUniformLocation(edgeProg, "uTranslate"),
-    scale: gl.getUniformLocation(edgeProg, "uScale"),
-    width: gl.getUniformLocation(edgeProg, "uWidthPx"),
-  };
+  canvas.addEventListener("webglcontextlost", onContextLost, false);
+  canvas.addEventListener("webglcontextrestored", onContextRestored, false);
 
-  gl.bindTexture(gl.TEXTURE_2D, posTex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
-  // LINEAR: the field is meant to be interpolated — nearest sampling would step the distance and put
-  // the antialiasing back where it started.
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-  gl.bindVertexArray(labelVao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadBuf);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, labelRectBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, labelRects.byteLength, gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
-  gl.bindBuffer(gl.ARRAY_BUFFER, labelUvBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, labelUvs.byteLength, gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(2, 1);
-  gl.bindVertexArray(null);
-
-  gl.disable(gl.DEPTH_TEST);
-  gl.enable(gl.BLEND);
-  // Premultiplied source: the shaders already multiply rgb by alpha, which is what keeps a soft SDF edge
-  // from fringing dark against a light background.
-  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  /**
+   * Rebuild every GL object from nothing and re-upload whatever was last on the GPU. A restored context
+   * starts EMPTY — re-drawing into it without this shows nothing, silently, until something remounts it.
+   */
+  function restoreContext(): boolean {
+    if (!initGLResources()) return false;
+    if (atlas) setAtlas(atlas);
+    if (lastNodeXy && lastNodeSize && lastNodeRgba) {
+      // `uploadNodes` (below) resets the state buffer to all-NORMAL, so capture the live selection/dim
+      // state first and restore it after — a restore must not silently clear the user's selection.
+      const savedState = stateBytes;
+      uploadNodes(lastNodeXy, lastNodeSize, lastNodeRgba, lastNodeUploadCount);
+      if (savedState.length === stateBytes.length) {
+        stateBytes.set(savedState);
+        gl.bindBuffer(gl.ARRAY_BUFFER, stateBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, stateBytes, gl.DYNAMIC_DRAW);
+      }
+    }
+    if (lastEdgePairs) setEdges(lastEdgePairs, lastEdgeCount);
+    return true;
+  }
 
   const unpackRgba = (packed: Uint32Array, n: number): Uint8Array =>
     new Uint8Array(packed.buffer, packed.byteOffset, n * 4);
+
+  // What is CURRENTLY on the GPU, in CPU-retrievable form — not just the level-0 `baseNodes`, since the
+  // draw may be showing an LOD level instead. A restored context starts EMPTY, so `restoreContext` needs
+  // exactly the arguments the last `uploadNodes`/`setEdges` call was given, to re-issue them verbatim.
+  let lastNodeXy: Float32Array | null = null;
+  let lastNodeSize: Float32Array | null = null;
+  let lastNodeRgba: Uint32Array | null = null;
+  let lastNodeUploadCount = 0;
+  let lastEdgePairs: Uint32Array | null = null;
+  let lastEdgeCount = 0;
+  let contextLost = false;
 
   function setNodes(xy: Float32Array, size: Float32Array, rgba: Uint32Array, count: number): void {
     baseNodes = { xy, size, rgba, n: Math.max(0, Math.min(count, xy.length >> 1, size.length, rgba.length)) };
@@ -473,6 +576,7 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
 
   /** The upload itself, without recording it as the base set — used when swapping to an LOD level. */
   function uploadNodes(xy: Float32Array, size: Float32Array, rgba: Uint32Array, count: number): void {
+    lastNodeXy = xy; lastNodeSize = size; lastNodeRgba = rgba; lastNodeUploadCount = count;
     nodeCount = Math.max(0, Math.min(count, xy.length >> 1, size.length >> 1, rgba.length));
     positions = xy;
     gridStale = true;
@@ -520,6 +624,7 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   function setEdges(pairs: Uint32Array, count: number): void {
+    lastEdgePairs = pairs; lastEdgeCount = count;
     edgeCount = Math.max(0, Math.min(count, pairs.length >> 1));
     gl.bindBuffer(gl.ARRAY_BUFFER, pairBuf);
     gl.bufferData(gl.ARRAY_BUFFER, pairs.subarray(0, edgeCount * 2), gl.STATIC_DRAW);
@@ -573,6 +678,9 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   function draw(): void {
+    // Every GL call below is a no-op against a dead context anyway, but skipping them also skips the
+    // CPU work (LOD level arithmetic, label layout) that would otherwise run for a frame nobody sees.
+    if (contextLost) return;
     // O(1): the level is arithmetic on the view scale. The swap below is skipped unless it changed.
     if (lod) applyLevel(levelFor(lod, view.scale));
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -767,6 +875,8 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
   }
 
   function dispose(): void {
+    canvas.removeEventListener("webglcontextlost", onContextLost, false);
+    canvas.removeEventListener("webglcontextrestored", onContextRestored, false);
     for (const b of [nodeQuadBuf, edgeQuadBuf, unitQuadBuf, sizeBuf, colorBuf, stateBuf, pairBuf, edgeColorBuf, labelRectBuf, labelUvBuf]) gl.deleteBuffer(b);
     gl.deleteTexture(posTex);
     gl.deleteTexture(atlasTex);
@@ -789,5 +899,6 @@ export function createGraphRenderer(canvas: HTMLCanvasElement, opts: GraphRender
     get nodeCount() { return nodeCount; },
     get edgeCount() { return edgeCount; },
     get lastGlyphCount() { return lastGlyphCount; },
+    get contextLost() { return contextLost; },
   };
 }
