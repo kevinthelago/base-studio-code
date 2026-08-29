@@ -23,6 +23,36 @@ export function isParked(branch) {
   return typeof branch === "string" && /^parked-.+/.test(branch);
 }
 
+/** How long a tree must sit untouched before it may be collected (12h).
+ *
+ *  The guard exists because MERGED IS NOT IDLE. A session merges its branch and keeps working in the
+ *  same tree — the tree this janitor's own fix was written in was on a merged branch at the time —
+ *  so without this, "collect merged trees" would delete a working tree out from under a live agent.
+ *  Build recency cannot stand in for it: a tree can be actively edited for an hour without a compile. */
+export const DEFAULT_MIN_IDLE_MS = 12 * 60 * 60 * 1000;
+
+/** A tree may be collected when its branch is parked OR already merged into the integration branch.
+ *
+ *  The original policy was `parked-*` only, and that is why the pool grew to 64 trees holding 631 GB:
+ *  CLAUDE.md's step 7 offers "recycle onto the next ref OR park", and in practice an agent merges and
+ *  simply stops — leaving the tree on its own WORK branch. Measured 2026-08-29: of 23 merged trees
+ *  only 3 were on a `parked-*` branch, so 20 of them (~380 GB) were invisible to this janitor
+ *  forever. A merged branch is not a claimed ref; its tree is worth exactly what a parked one is,
+ *  a warm `target/`, and should be capped the same way. */
+export function isCollectable(tree) {
+  // NEVER the main tree, and never an integration branch. This is explicit rather than incidental:
+  // the old `parked-*`-only rule excluded `develop` as a side effect of its naming test, and widening
+  // to "merged" silently removed that cover — `git merge-base --is-ancestor develop develop` is TRUE,
+  // so the main worktree became a deletion candidate. Caught by running the widened janitor with its
+  // idle guard disabled, which proposed removing the repository itself.
+  if (tree?.isMain) return false;
+  if (INTEGRATION_BRANCHES.has(tree?.branch)) return false;
+  return isParked(tree?.branch) || tree?.merged === true;
+}
+
+/** Branches that are never collectable however they compare to the integration branch. */
+export const INTEGRATION_BRANCHES = new Set(["develop", "main", "master"]);
+
 /**
  * Decide which parked worktrees to remove.
  *
@@ -36,19 +66,33 @@ export function isParked(branch) {
  * Recency is "last built", not last committed: the whole value of a parked tree is its warm
  * `target/`, so the tree most recently compiled in is the one most likely to be worth keeping.
  *
- * @param {Array<{name: string, branch: string|null, lastBuiltMs: number, blocked?: string|null}>} trees
- * @param {{keep?: number}} [opts] `keep` parked trees to spare, newest first (default 2)
+ * @param {Array<{name: string, branch: string|null, lastBuiltMs: number, lastActiveMs?: number,
+ *   merged?: boolean, blocked?: string|null}>} trees
+ * @param {{keep?: number, minIdleMs?: number, now?: number}} [opts] `keep` trees to spare, newest
+ *   first (default 2); `minIdleMs` the activity guard (default [`DEFAULT_MIN_IDLE_MS`])
  * @returns {{remove: string[], keep: string[], refused: Array<{name: string, why: string}>}}
  */
 export function planCap(trees, opts = {}) {
   const keep = opts.keep ?? 2;
+  const minIdleMs = opts.minIdleMs ?? DEFAULT_MIN_IDLE_MS;
+  const now = opts.now ?? Date.now();
   const kept = [];
   const refused = [];
   const candidates = [];
 
   for (const tree of trees) {
-    if (!isParked(tree.branch)) {
-      kept.push(tree.name); // main tree or a claimed ref — never a candidate
+    if (!isCollectable(tree)) {
+      kept.push(tree.name); // main tree, or a ref whose work has not landed — never a candidate
+      continue;
+    }
+    // MERGED IS NOT IDLE: a live session keeps working in a tree after merging its branch. Kept,
+    // not refused — there is no hazard here, the tree is simply still in use.
+    // MAX, not `??`: a caller that reports an explicit `lastActiveMs: 0` (no index yet) would defeat
+    // a nullish fallback, and a tree that has been COMPILING for an hour is in use whatever its index
+    // says. Either signal counting as activity is the safe direction.
+    const idleFor = now - Math.max(tree.lastActiveMs ?? 0, tree.lastBuiltMs ?? 0);
+    if (idleFor < minIdleMs) {
+      kept.push(tree.name);
       continue;
     }
     if (tree.blocked) {
