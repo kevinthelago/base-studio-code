@@ -108,3 +108,120 @@ describe("bscRecords re-emits a stale tree on a resolve miss", () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+// ── the mid-session half `resolveId` structurally cannot reach (#an-edited-record-never-reaches-the-
+//    running-dev-server) ──
+//
+// The re-emit above hangs off a resolve that misses BOTH trees — the moment a RETIREMENT becomes
+// visible, because nothing can answer the specifier. An EDIT is the opposite shape: the first probe HITS
+// and `resolveId` returns the stale file, so the staleness check below it is never reached; and an edit
+// does not re-resolve anything in the first place, so no reordering inside that hook would help. Nothing
+// else covered the gap either — `bsc ui set` writes the LIVE STORE, `emitRecords` reads the PACKAGED
+// SEED, and vite watches neither. A dev server therefore served a frozen copy of every record for its
+// whole life, which is how a payload-tolerant `pty_data` listener written at 09:56 was still the 09:05
+// version when the Rust half landed a minute later.
+describe("bscRecords re-emits on a seed EDIT, with no resolve involved", () => {
+  beforeEach(() => emitRecords.mockReset());
+
+  /** A throwaway repo root with the seed layout `newestInputMtime` reads. */
+  const repo = () => {
+    const root = mkdtempSync(join(tmpdir(), "bscrec-poll-"));
+    mkdirSync(join(root, "src-tauri", "data", "components"), { recursive: true });
+    writeFileSync(join(root, "src-tauri", "data", "components", "seed.json"), "{}");
+    return root;
+  };
+
+  /** A plugin on a FRESH copy of the module.
+   *
+   *  `emitted` and `emittedInputStamp` are module-level by design — one emit per PROCESS, across every
+   *  plugin instance, is the guard the suite above pins. That makes them shared test state: a `buildStart`
+   *  here is a no-op because an earlier suite already tripped the flag, so the stamp keeps a value from
+   *  another temp root and the first poll fires against it. Re-importing gives this suite its own copy of
+   *  that state without weakening the guard by exporting a reset. */
+  const freshPlugin = async (root: string) => {
+    vi.resetModules();
+    const { bscRecords: fresh } = await import("../vite/bscRecords");
+    return fresh({ repoRoot: root });
+  };
+  /** Call `configureServer` the way vite does, with the least server this plugin touches. `close()`
+   *  fires the httpServer close handler, which is both the teardown this suite needs and the assertion
+   *  that the plugin actually stops polling when the server goes away. */
+  const configure = (p: ReturnType<typeof bscRecords>) => {
+    const warn = vi.fn();
+    let onClose = () => {};
+    (p.configureServer as unknown as (this: unknown, s: unknown) => void).call({}, {
+      config: { logger: { warn } },
+      httpServer: { on: (ev: string, fn: () => void) => { if (ev === "close") onClose = fn; } },
+    });
+    return { warn, close: () => onClose() };
+  };
+
+  /** A seed mtime far enough ahead to beat the module-level stamp any earlier test left behind — the
+   *  emitter's "have the seeds moved" state is per PROCESS, not per test. */
+  const touchAhead = (seed: string, minutes: number) => {
+    const at = new Date(Date.now() + minutes * 60_000);
+    utimesSync(seed, at, at);
+  };
+
+  it("polls the seeds and re-emits when one is edited — the case a resolve never sees", async () => {
+    vi.useFakeTimers();
+    const root = repo();
+    const plugin = await freshPlugin(root);
+    const seed = join(root, "src-tauri", "data", "components", "seed.json");
+    // Ahead of the stamp any earlier test left on the shared module, so "nothing changed" below is a
+    // real observation rather than an accident of ordering.
+    touchAhead(seed, 10);
+    // `buildStart` owns the first emit and the stamp; the poll must stay out of its way until then.
+    (plugin.buildStart as unknown as (this: unknown) => void).call({});
+    const { close } = configure(plugin);
+    emitRecords.mockClear();
+
+    // 1 · Nothing changed: the poll costs a stat walk and emits nothing, however long it runs.
+    vi.advanceTimersByTime(60_000);
+    expect(emitRecords).not.toHaveBeenCalled();
+
+    // 2 · A seed is EDITED — no import moves, nothing re-resolves, and the tree must still refresh.
+    touchAhead(seed, 20);
+    vi.advanceTimersByTime(2_000);
+    expect(emitRecords).toHaveBeenCalledTimes(1);
+
+    // 3 · …and exactly once for that one edit. A poll that re-emitted every tick would rewrite the tree
+    //     every 2s, which is the churn this whole design exists to avoid.
+    vi.advanceTimersByTime(60_000);
+    expect(emitRecords).toHaveBeenCalledTimes(1);
+
+    // 4 · The server going away stops the poll. Without this the interval outlives the dev server.
+    close();
+    touchAhead(seed, 30);
+    vi.advanceTimersByTime(60_000);
+    expect(emitRecords).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a thrown emit warns and keeps the server alive", async () => {
+    vi.useFakeTimers();
+    const root = repo();
+    const plugin = await freshPlugin(root);
+    (plugin.buildStart as unknown as (this: unknown) => void).call({});
+    const { warn, close } = configure(plugin);
+    emitRecords.mockClear();
+    // `…Once`, so the throwing implementation is gone the moment the tick has consumed it. Leaving it
+    // installed makes the mock throw again out of vitest's own end-of-test cleanup, which surfaces as an
+    // unhandled error and reds the test whose assertions all passed.
+    emitRecords.mockImplementationOnce(() => {
+      throw new Error("seed written mid-walk");
+    });
+
+    touchAhead(join(root, "src-tauri", "data", "components", "seed.json"), 40);
+    // A throw inside the interval callback would otherwise take the dev server's process down.
+    expect(() => vi.advanceTimersByTime(2_000)).not.toThrow();
+    expect(emitRecords).toHaveBeenCalledTimes(1); // it really did reach the emitter, and survived
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("seed written mid-walk"));
+
+    close();
+    vi.useRealTimers();
+    rmSync(root, { recursive: true, force: true });
+  });
+});
