@@ -12,6 +12,7 @@ use tools::{bsc_cli_tool, default_tools};
 use llm::{LlmProvider, Msg};
 use permissions::Permissions;
 use std::io::Read;
+use std::io::IsTerminal;
 use std::path::Path;
 use std::sync::Arc;
 use telemetry::Telemetry;
@@ -226,6 +227,14 @@ fn render_clis_block(clis: &[&bsc_util::Sidecar], is_set: &impl Fn(&str) -> bool
     )
 }
 
+/// What a bare `bsc-agent` prints before it blocks reading its first task from a terminal.
+///
+/// Names the key that ENDS the input, because `read_to_string` waits for EOF rather than a newline —
+/// a user who types a task and presses Enter sees nothing happen and concludes it is broken.
+pub fn waiting_hint() -> &'static str {
+    "\u{25b8} bsc-agent ready \u{2014} type a task, then press Ctrl-D to send it."
+}
+
 #[tokio::main]
 async fn main() {
     let provider = std::env::var("BSC_AGENT_PROVIDER").unwrap_or_else(|_| "anthropic".into());
@@ -241,6 +250,14 @@ async fn main() {
         argv.remove(0);
     }
     let task = if argv.is_empty() {
+        // SAY SO BEFORE BLOCKING. `read_to_string` waits for EOF, and on a PTY that is silent — a
+        // pane showing a bare `bsc-agent` waiting for a task looks exactly like a crashed session.
+        // That is how a director came up as a blank screen: its kickoff pointer was lost, so it was
+        // launched with no task, and it sat here saying nothing. Only on a terminal — piped input
+        // (the fleet's normal path) must keep stdout/stderr clean.
+        if std::io::stdin().is_terminal() {
+            eprintln!("\x1b[2m{}\x1b[0m", waiting_hint());
+        }
         let mut s = String::new();
         let _ = std::io::stdin().read_to_string(&mut s);
         s.trim().to_string()
@@ -485,6 +502,38 @@ async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
 
 #[cfg(test)]
 mod tests {
+
+    /// A bare `bsc-agent` must SAY it is waiting before it blocks.
+    ///
+    /// `read_to_string` waits for EOF, and on a PTY that is silent — a pane showing a bare
+    /// `bsc-agent` waiting for a task is indistinguishable from a crashed session. That is exactly
+    /// how a director came up as a blank screen: its kickoff pointer was lost, so it launched with
+    /// no task and sat there saying nothing.
+    #[test]
+    fn a_bare_agent_announces_that_it_is_waiting_for_input() {
+        let hint = super::waiting_hint();
+        assert!(!hint.trim().is_empty(), "silence is what made this look like a crash");
+        // It must name the key that ENDS the input. `read_to_string` waits for EOF, not a newline,
+        // so a user who types a task and presses Enter sees nothing happen.
+        assert!(hint.contains("Ctrl-D"), "the hint must say how to send: {hint}");
+        assert!(hint.contains("bsc-agent"), "and which program is waiting: {hint}");
+    }
+
+    /// ...and only on a TERMINAL. The fleet pipes a kickoff in; a banner on that path would land in
+    /// the agent's own stdout/stderr stream and be read as output.
+    #[test]
+    fn the_waiting_hint_is_gated_on_stdin_being_a_terminal() {
+        let src = include_str!("main.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+        let at = body.find("waiting_hint()").and_then(|_| body.find("eprintln!(\"\\x1b[2m{}"));
+        assert!(at.is_some(), "the hint is printed somewhere");
+        let before = &body[..at.unwrap()];
+        assert!(
+            before.rfind("is_terminal()").is_some_and(|g| g > before.len().saturating_sub(400)),
+            "the print must sit behind an `is_terminal()` guard",
+        );
+    }
+
     use super::{available_clis, compose_skills_from, compose_system_inner, render_clis_block, skills_origin};
     use std::fs;
 
