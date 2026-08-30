@@ -30,6 +30,12 @@ use std::process::ExitCode;
 ///     bsc_cli_util::cli_main("bsc-plan", run)
 /// }
 /// ```
+/// `.claude/session.json` — what a session IS, resolved from where it stands (#a-session-outside-the-
+/// app-can-discover-itself-from-claude-session-json). Lives HERE rather than in `bsc-util` because
+/// that crate is deliberately std-only, and beside `resolve_store_path` because it answers the same
+/// family of question: how does a session that nobody configured find out what it is.
+pub mod session;
+
 pub fn cli_main(prog: &str, run: impl FnOnce() -> Result<(), String>) -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,

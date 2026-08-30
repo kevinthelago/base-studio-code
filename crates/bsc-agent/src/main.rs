@@ -259,8 +259,51 @@ pub fn waiting_hint() -> &'static str {
 
 #[tokio::main]
 async fn main() {
-    let provider = std::env::var("BSC_AGENT_PROVIDER").unwrap_or_else(|_| "anthropic".into());
-    let model = std::env::var("BSC_AGENT_MODEL").unwrap_or_default();
+    // WHAT THIS SESSION IS, resolved from `.claude/session.json` up the tree, with an explicit
+    // environment variable still winning (#a-session-outside-the-app-can-discover-itself-…).
+    //
+    // Inside the app every field arrives as an env var and this changes nothing. OUTSIDE it — a plain
+    // terminal at a project — none of them do, and before this the session silently assumed
+    // `anthropic`, advertised none of the `bsc` tools, and died on
+    // `401 x-api-key header is required` against a service the user was not running.
+    let cfg = bsc_cli_util::session::resolve(&std::env::current_dir().unwrap_or_default());
+    // DISCOVER THE `bsc` BINARY when the app did not hand one over.
+    //
+    // `available_clis` gates the whole `bsc` tool surface on `$BSC_BIN`, so an external terminal saw
+    // 10 tools instead of 32 — no `bsc-plan`, no `bsc-fleet`, no way to reach the project's own state.
+    // The binary is a staged sidecar and is on no PATH, but its location IS structural
+    // (`<base>/bin/bsc`), which is exactly the kind of fact discovery should supply.
+    //
+    // Set only when absent, so an app-launched session keeps the path the app chose — and only when
+    // the file actually EXISTS, because advertising 22 tools backed by nothing is worse than
+    // advertising none.
+    if std::env::var("BSC_BIN").map(|v| v.trim().is_empty()).unwrap_or(true) {
+        if let Some(base) = bsc_util::bsc_base_dir() {
+            let bin = base.join("bin").join(if cfg!(windows) { "bsc.exe" } else { "bsc" });
+            if bin.is_file() {
+                std::env::set_var("BSC_BIN", &bin);
+            }
+        }
+    }
+    // `--context` prints the whole resolution and exits: what resolved, from where, and what did not.
+    // The absent half is the useful half, and it is the answer to "why does my fresh machine behave
+    // differently" in one step rather than an afternoon.
+    if std::env::args().any(|a| a == "--context") {
+        print!("{}", bsc_cli_util::session::render_report(&cfg));
+        return;
+    }
+    // NO SILENT DEFAULT. A provider nobody chose is what produced the 401, and that error named
+    // neither the cause nor the fix. Refusing costs one line and answers both.
+    let Some(provider) = cfg.get("provider").map(str::to_string) else {
+        eprintln!("bsc-agent: no provider resolved for this session.");
+        eprintln!("  Set $BSC_AGENT_PROVIDER, or write one into `.claude/session.json`:");
+        eprintln!("    ~/.claude/session.json          a machine default");
+        eprintln!("    <project>/.claude/session.json  for one project");
+        eprintln!("    {{ \"provider\": \"ollama\", \"model\": \"<your model>\" }}");
+        eprintln!("  `bsc-agent --context` shows what resolved, from where, and what did not.");
+        std::process::exit(2);
+    };
+    let model = cfg.get("model").unwrap_or_default().to_string();
     let api_key = std::env::var("BSC_AGENT_API_KEY").unwrap_or_default();
 
     // Task: argv (joined) if given, else stdin. A leading `--continue`/`-c` flag
@@ -404,8 +447,10 @@ async fn main() {
     // a long agent prompt to its ~4096 default). Other providers ignore base_url + profile.
     // $BSC_AGENT_BASE_URL is the app-supplied local/ollama endpoint (default Ollama when unset/empty);
     // $BSC_AGENT_NUM_CTX is the user's per-agent (VRAM-bound) context-window cap.
-    let base_url = std::env::var("BSC_AGENT_BASE_URL").ok().filter(|s| !s.trim().is_empty());
-    let num_ctx_cap = std::env::var("BSC_AGENT_NUM_CTX").ok().and_then(|s| s.trim().parse::<u64>().ok());
+    // Both through the SAME resolution as provider/model, so a terminal session reaches the endpoint
+    // and the context cap the machine is configured for instead of guessing at defaults.
+    let base_url = cfg.get("baseUrl").map(str::to_string);
+    let num_ctx_cap = cfg.get("numCtx").and_then(|s| s.trim().parse::<u64>().ok());
     let ollama_profile = if matches!(kind, llm::ProviderKind::Ollama) {
         let base = base_url.as_deref().unwrap_or(llm::DEFAULT_LOCAL_BASE_URL);
         // #176: the app's own defaulting can hand us a model name this Ollama doesn't have — the

@@ -14,6 +14,9 @@ path = "src/main.rs"
 [dependencies]
 # Shared leaf utilities (#1646): base dir + epoch clock + civil-date formatting.
 bsc-util = { path = "../bsc-util" }
+# `.claude/session.json` resolution — how a session that nobody configured finds out what it is.
+# It lives beside `resolve_store_path` rather than in `bsc-util`, which is deliberately std-only.
+bsc-cli-util = { path = "../bsc-cli-util" }
 # #3279: the worker's own open issues (stream-scoped) folded into each turn's system prompt — the
 # on-plan context that replaced the #3278-removed todo injection.
 plandb = { path = "../plandb" }
