@@ -142,7 +142,14 @@ pub(super) fn build_bash_init_line(
         let notice = sandbox_refused
             .map(|why| {
                 format!(
-                    "; printf '[1;33m[bsc] NOT sandboxed: %s[0m\\n' \"{}\"",
+                    // `\\033`, never a RAW escape byte. This line is TYPED INTO AN INTERACTIVE
+                    // SHELL, where readline reads a bare ESC as a meta prefix and consumes it plus
+                    // the parameters that follow as a key sequence — so `ESC[1;33m` arrived as a
+                    // lone `m`, and the pane showed `m[bsc] NOT sandboxed: … m` with a stray `^A`.
+                    // The `cwd_missing` branch above always got this right; this was the one outlier
+                    // among eleven uses in this file. printf converts `\033` at execution time,
+                    // after readline is done with the line.
+                    "; printf '\\033[1;33m[bsc] NOT sandboxed: %s\\033[0m\\n' \"{}\"",
                     shell_safe(why)
                 )
             })
@@ -225,6 +232,32 @@ pub(super) fn build_bash_init_line(
 
 #[cfg(test)]
 mod tests {
+
+    /// No RAW escape byte may appear in a line this module TYPES INTO A SHELL.
+    ///
+    /// The init line is written into an interactive PTY, and readline reads a bare `ESC` as a meta
+    /// prefix: it swallows the escape and the parameters after it as a key sequence. One `printf`
+    /// here carried a literal `\x1b` and the pane rendered `m[bsc] NOT sandboxed: … m` plus a stray
+    /// `^A` — the colour codes eaten, the trailing `m` of each sequence left behind. Eleven other
+    /// uses in this file already wrote `\033`, which readline passes through untouched and `printf`
+    /// converts at execution time.
+    ///
+    /// Asserted over the SOURCE because the defect is invisible in a diff: a raw ESC renders as
+    /// nothing in most viewers, so it reads as a missing escape rather than a wrong one.
+    #[test]
+    fn no_raw_escape_byte_survives_in_a_line_typed_into_a_shell() {
+        let src = include_str!("launch.rs");
+        // Skip this test's own doc comment, which necessarily names the byte it forbids.
+        let body = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+        assert!(
+            !body.contains('\u{1b}'),
+            "a raw ESC byte is in a shell-typed line — use `\\033` so readline cannot eat it",
+        );
+        // ...and the portable form is genuinely what is used, so this cannot pass by the escapes
+        // simply having been deleted.
+        assert!(body.contains("\\033["), "the portable escape form is still in use");
+    }
+
     // The init line goes to a PTY in CANONICAL MODE, where Linux truncates past 4096 bytes.
     // Inlining the emitters alongside a ~3 KB agent kickoff produced a 4332-byte line: cut
     // mid-string, unterminated quote, shell parked at `>`, agent never launched. Measured from a
