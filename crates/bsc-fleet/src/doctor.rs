@@ -128,6 +128,38 @@ pub fn findings_for(pane_id: &str, facts: Option<WorktreeFacts>) -> Vec<Finding>
     out
 }
 
+/// Findings about the stream ID ITSELF — asked of every planned member, worktree or not.
+///
+/// SEPARATE FROM [`findings_for`] on purpose, and the separation is the whole fix. `findings_for`
+/// returns nothing when there is no worktree to inspect, which is correct — an absent worktree for an
+/// unlaunched stream is the expected state, and reporting it would bury the checks that matter. But an
+/// id that breaks the pane-id grammar is precisely the condition that PREVENTS a worktree from ever
+/// being created, so every worktree-shaped check is structurally blind to it. MEASURED: the
+/// twitter-clone-test fleet sat in exactly this state — one stream, permanently unwakeable — and
+/// `bsc fleet doctor` printed nothing at all.
+///
+/// Sources: the STREAM ID as plan.db stores it, vs the PANE-ID GRAMMAR `worker_pane` parses. The rule
+/// itself is `plandb::validate::stream_id_problem`, the same function that refuses the write — one
+/// source deliberately, because a doctor that re-derived the grammar could clear a row the writer
+/// rejects, or report one the writer allows, and either way the two would be lying about each other.
+///
+/// A blank stream id is not a finding: the director and triage panes are not streams.
+pub fn id_findings_for(pane_id: &str, stream_id: &str) -> Vec<Finding> {
+    if stream_id.trim().is_empty() {
+        return Vec::new();
+    }
+    match plandb::validate::stream_id_problem(stream_id) {
+        None => Vec::new(),
+        Some(why) => vec![Finding {
+            pane_id: pane_id.to_string(),
+            category: "bad-stream-id",
+            detail: format!("the stream id {stream_id:?} cannot be used as a pane-id tail — {why}"),
+            consequence: "this stream can never be launched OR woken: its pane id does not parse as a worker, so `bsc fleet wake` resolves no plan row and the launch is refused with \"<no cwd>\", naming neither the stream nor the id",
+            fix: "rewrite the row under a pane-safe id — `bsc plan fleet stream set <new-id>` with the same body, then `bsc plan fleet stream remove <old-id>`",
+        }],
+    }
+}
+
 /// Read a worktree's facts off disk. `None` when there is no path to inspect.
 pub fn read_facts(worktree: Option<&Path>) -> Option<WorktreeFacts> {
     let dir = worktree?;
@@ -223,6 +255,52 @@ mod tests {
         let f = findings_for("nm:api", facts(false, true));
         let cats: Vec<&str> = f.iter().map(|x| x.category).collect();
         assert_eq!(cats, vec!["no-gate", "caged-floor"]);
+    }
+
+    // ── bad-stream-id (#a-stream-id-that-breaks-the-pane-grammar-is-accepted-at-the-write) ────────
+
+    #[test]
+    fn a_stream_id_that_breaks_the_pane_grammar_is_reported_without_any_worktree() {
+        // THE POINT OF THE CHECK. twitter-clone-test had one stream, no worktree, and every
+        // worktree-shaped check therefore said nothing — `bsc fleet doctor` printed an empty page for
+        // a fleet whose only worker could never start.
+        assert!(
+            findings_for("twitter-clone-test:twitter-clone:api", None).is_empty(),
+            "the worktree checks are blind here, which is exactly why the id check must not be"
+        );
+        let f = id_findings_for("twitter-clone-test:twitter-clone:api", "twitter-clone:api");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].category, "bad-stream-id");
+        assert!(f[0].detail.contains("twitter-clone:api"), "{}", f[0].detail);
+        // The consequence names what a reader would otherwise spend a session rediscovering.
+        assert!(f[0].consequence.contains("<no cwd>"), "{}", f[0].consequence);
+        assert!(f[0].fix.contains("bsc plan fleet stream set"), "{}", f[0].fix);
+    }
+
+    #[test]
+    fn a_good_stream_id_and_a_stream_less_pane_report_nothing() {
+        assert!(id_findings_for("demo:api", "api").is_empty());
+        assert!(id_findings_for("demo:commons--own-web", "commons--own-web").is_empty());
+        // A director and a triage pane are not streams — membership leaves `stream` blank for both,
+        // and an empty id must not read as a broken one.
+        assert!(id_findings_for("demo:director", "").is_empty());
+        assert!(id_findings_for("demo:own/api:triage", "   ").is_empty());
+    }
+
+    #[test]
+    fn the_doctor_and_the_writer_share_one_grammar() {
+        // Not a restatement of the check: it pins that the doctor asks the SAME function the write
+        // path refuses with. Two copies of this rule could drift in either direction — clearing a row
+        // `bsc plan fleet stream set` rejects, or flagging one it accepts — and both are worse than
+        // no check, because each makes the other surface look wrong.
+        for id in ["twitter-clone:api", "api_v2", "API"] {
+            assert!(plandb::validate::stream_id_problem(id).is_some(), "{id}");
+            assert!(!id_findings_for("k:x", id).is_empty(), "{id}");
+        }
+        for id in ["api", "app-shell", "commons"] {
+            assert!(plandb::validate::stream_id_problem(id).is_none(), "{id}");
+            assert!(id_findings_for("k:x", id).is_empty(), "{id}");
+        }
     }
 
     #[test]

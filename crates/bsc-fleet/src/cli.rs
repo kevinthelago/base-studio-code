@@ -185,9 +185,14 @@ One finding per claim that does not hold, each naming the pane, what is wrong, W
 fix. Prints nothing when the fleet is clean — a doctor whose normal output is a wall of `ok` is one
 nobody reads, and then the one real line scrolls past.
 
-NEEDS NO APP, unlike `fleet list`. Every check is a filesystem fact about a worktree, so this answers
-when the app is DOWN — which is exactly when a director most needs it.
+NEEDS NO APP, unlike `fleet list`. Every check is a fact about a worktree on disk or about the stream
+id in plan.db, so this answers when the app is DOWN — which is exactly when a director most needs it.
 
+  bad-stream-id the stream id cannot be used as a pane-id tail (`<key>:<id>`) — a colon, or anything
+                outside [a-z0-9-]. The pane id then does not parse as a worker, so `bsc fleet wake`
+                resolves no plan row and the launch is refused with \"<no cwd>\", naming neither the
+                stream nor the id. The ONLY check here that needs no worktree, because a broken id is
+                what stops one being created — every other check is blind to it.
   no-gate       the worktree has no `.claude/settings.json`, so the pane has no role gate and no shell
                 allow-list. A launch is REFUSED rather than run permission-less (#1819) — `bsc fleet
                 wake` (#142) provisions a placeholder gate itself when one is missing, which is enough
@@ -998,8 +1003,13 @@ fn cmd_doctor(args: &Args) -> Result<(), String> {
     let findings: Vec<doctor::Finding> = members
         .iter()
         .flat_map(|m| {
+            // The id check runs FIRST and unconditionally. Every other check needs a worktree, and a
+            // broken id is what stops one from ever existing — so ordering it after them would put
+            // the cause below the symptoms, on the one fleet where there are no symptoms to print.
+            let mut fs = doctor::id_findings_for(&m.pane_id, &m.stream);
             let wt = doctor::find_worktree(&base, &key, &m.stream);
-            doctor::findings_for(&m.pane_id, doctor::read_facts(wt.as_deref()))
+            fs.extend(doctor::findings_for(&m.pane_id, doctor::read_facts(wt.as_deref())));
+            fs
         })
         .collect();
 
