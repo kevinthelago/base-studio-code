@@ -76,6 +76,12 @@ pub mod bash_gate;
 /// longer a Rust invalidation. See the module docs for the measurements that motivated it.
 pub mod packaged;
 
+/// A named, cross-process, cross-session file lock under `~/.base-studio-code/locks/` — the same
+/// directory `scripts/gateLock.mjs`'s full-gate slot lock already uses. Generalized here (request
+/// #185) so any `bsc` verb can take a lock on something outside its own process, such as
+/// `bsc plan integrate` serializing `git merge` calls against a shared working tree.
+pub mod filelock;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)

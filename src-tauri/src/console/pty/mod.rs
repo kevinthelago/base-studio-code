@@ -23,7 +23,7 @@ pub(crate) mod scrollback;
 // Session env wiring + the sidecar resolvers used at the same `crate::console::pty::*` paths as
 // before the split (`extensions/mcp.rs`, `app/run.rs`, `github/readiness.rs`).
 pub(crate) use env::{
-    bsc_bin_path, session_env, sidecar_status, stage_dev_sidecars, stale_sidecars,
+    bsc_bin_path, humanize_gap, session_env, sidecar_status, stage_dev_sidecars, stale_sidecars,
 };
 #[cfg(target_os = "linux")]
 use env::bsc_hook_bin_path;
@@ -1086,21 +1086,40 @@ fn pty_create_inner(
     // compare its hook list against the cage it actually got — see `hook_floor_mismatch` for why one
     // launch-time decision does not make these agree across launches.
     //
-    // Reported on TWO surfaces on purpose. `log::error!` because the original failure existed only as
-    // transient text in a transcript — grepping every app log for it returned nothing, so "the gates
-    // are not running" had no durable trace at all. The pane notice because the person who can act on
-    // it is looking at the pane, not at a log.
+    // A detected mismatch is also REPAIRED here, not just reported (bsc request #188): the two guest
+    // commands map onto their host-resolvable shell-function equivalents
+    // (`bsc_sandbox::rewrite_guest_hooks`) — there is no case where leaving the stale path in place is
+    // right, so this never asks. The file is rewritten the moment it's read, so THIS launch's `claude`
+    // (which reads `.claude/settings.json` after this point) sees a working floor, not just the next
+    // one. A repair that fails to write (e.g. a read-only settings.json) falls back to the original
+    // loud, un-repaired report so the gap stays visible rather than silently swallowed.
+    //
+    // Reported on TWO surfaces on purpose. `log::error!`/`log::info!` because the original failure
+    // existed only as transient text in a transcript — grepping every app log for it returned nothing,
+    // so "the gates are not running" had no durable trace at all. The pane notice because the person
+    // who can act on it is looking at the pane, not at a log.
     let hook_mismatch: Option<String> = (!cwd_empty)
         .then(|| {
-            let cfg = crate::platform::fsx::read_json_object_or_default(
-                &std::path::Path::new(&cwd).join(".claude").join("settings.json"),
-            );
-            crate::session::settings::hook_floor_mismatch(&cfg, ns_argv.is_some())
+            let settings_path = std::path::Path::new(&cwd).join(".claude").join("settings.json");
+            let mut cfg = crate::platform::fsx::read_json_object_or_default(&settings_path);
+            let msg = crate::session::settings::hook_floor_mismatch(&cfg, ns_argv.is_some())?;
+            let repaired = bsc_sandbox::rewrite_guest_hooks(&mut cfg)
+                && crate::platform::fsx::atomic_write_json(&settings_path, &cfg).is_ok();
+            Some(if repaired {
+                log::info!(
+                    "pty[{pane_id}] repaired the stale guest hook path in {} (was: {msg})",
+                    settings_path.display()
+                );
+                format!(
+                    "this session's PreToolUse hooks pointed at a sandbox-only path and would have \
+                     run ungated ({msg}) — repaired automatically before launch."
+                )
+            } else {
+                log::error!("pty[{pane_id}] UNGATED: {msg}");
+                msg
+            })
         })
         .flatten();
-    if let Some(msg) = &hook_mismatch {
-        log::error!("pty[{pane_id}] UNGATED: {msg}");
-    }
 
     let init_line = build_session_init_line(
         into_sandbox.is_some(),

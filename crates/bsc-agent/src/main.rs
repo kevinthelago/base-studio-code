@@ -369,6 +369,20 @@ async fn main() {
     let num_ctx_cap = std::env::var("BSC_AGENT_NUM_CTX").ok().and_then(|s| s.trim().parse::<u64>().ok());
     let ollama_profile = if matches!(kind, llm::ProviderKind::Ollama) {
         let base = base_url.as_deref().unwrap_or(llm::DEFAULT_LOCAL_BASE_URL);
+        // #176: the app's own defaulting can hand us a model name this Ollama doesn't have — the
+        // packaged `qwen3-coder` default, on a machine that never pulled it. Left unchecked, that
+        // reached the real `/api/chat` call and died on a bare 404 with no hint the MODEL NAME was
+        // the problem. Check against what's actually installed and fail with a clear, actionable
+        // message BEFORE spending a turn on it. Best-effort: `list_models` failing means the
+        // endpoint itself is unreachable, which is a connectivity problem, not a verdict that the
+        // model is absent — skip the check and let the (already reachable-endpoint-shaped) error
+        // from the real request explain that instead.
+        if let Ok(installed) = llm::list_models(base).await {
+            if !llm::model_is_installed(&model, &installed) {
+                eprintln!("bsc-agent: {}", llm::model_not_installed_error(&model, base, &installed));
+                std::process::exit(2);
+            }
+        }
         let profile = llm::detect_ollama_profile(base, &model).await;
         eprintln!(
             "\x1b[2m▸ ollama model '{model}': tools={}, {} stop token(s), model ctx={}\x1b[0m",

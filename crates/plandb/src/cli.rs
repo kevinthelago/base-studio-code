@@ -40,6 +40,7 @@ mod fleet;
 mod nouns;
 mod hub;
 mod changes;
+mod integrate;
 
 const TAGLINE: &str = "the project plan store — issues, features, fleet, stages (#plan-db)";
 
@@ -454,6 +455,23 @@ while the reasoning was live, and the GitHub identity once published. `--fields`
 so neither is hand-maintained separately from the work. GitHub is never written to.",
     },
     CmdDoc {
+        name: "integrate",
+        summary: "merge <ref> into the current tree, serialized against every other integrate call on it (#185)",
+        usage: "USAGE:
+  bsc plan integrate <ref> [--dir <path>]
+  bsc plan integrate --release [--dir <path>]
+
+Wraps `git merge --no-ff <ref>` in the given working tree (default: the current directory) with a
+named file lock (bsc_util::filelock, under ~/.base-studio-code/locks/), so a second `bsc plan
+integrate` call on the SAME tree — e.g. two sessions both merging into wt-integrate — waits its turn
+instead of racing the first one's git state.
+
+A clean merge releases the lock immediately. A REAL CONFLICT (MERGE_HEAD present) leaks the lock past
+this process exiting — a conflict is resolved by hand across several separate commands — and the error
+names the exact `--release` command to run once resolved, which frees the tree for the next caller.
+Does not touch plan.db; it lives under `bsc plan` because it is step 7 of the plan workflow.",
+    },
+    CmdDoc {
         name: "lesson",
         summary: "self-correction candidates (the review queue; #1362)",
         usage: "\
@@ -678,6 +696,12 @@ struct Args {
     /// `fleet get --kind cleanup` (#152) — filter the streams array to one lifecycle kind, so a
     /// director can find every temporary/cleanup stream without reading each one's free-text name.
     kind: Option<String>,
+    /// `integrate <ref> --dir <path>` (#185) — the working tree to merge into, when it is not the
+    /// current directory (e.g. a director resolving `wt-integrate` by an absolute path).
+    dir: Option<String>,
+    /// `integrate --release` (#185) — free a lock a prior conflicted `integrate` call LEAKED, once
+    /// the conflict is resolved by hand.
+    release: bool,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -687,6 +711,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
         since: None, pretty: false, force: false, clear: false, kind: None,
+        dir: None, release: false,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -718,6 +743,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).
             "--clear" => a.clear = true,
             "--kind" => a.kind = Some(it.next().ok_or("--kind needs a value")?),
+            "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
+            "--release" => a.release = true,
             "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
             "--limit" => {
                 let v = it.next().ok_or("--limit needs a number")?;
@@ -820,6 +847,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "skip" => nouns::cmd_skip(&args),
         "integration" => nouns::cmd_integration(&args),
         "change" => changes::cmd_change(&args),
+        "integrate" => integrate::cmd_integrate(&args),
         "lesson" => nouns::cmd_lesson(&args),
         "decision" => nouns::cmd_decision(&args),
         "brief" => nouns::cmd_brief(&args),
