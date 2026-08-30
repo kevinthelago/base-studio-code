@@ -11,7 +11,7 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireGateSlot } from "./gateLock.mjs";
@@ -98,6 +98,30 @@ function workspace() {
  * records nothing. A gate that could not run without a working `bsc` would be a worse trade than
  * missing measurements.
  */
+/** Where the machine-readable verdict lands, for anything that needs the RESULT rather than the log.
+ *
+ *  Under `target/` because it is per-worktree build output, never committed: two worktrees gate
+ *  independently and must not overwrite each other's answer.
+ *
+ *  IT EXISTS SO NOTHING HAS TO PARSE THE HUMAN OUTPUT. `run` streams each leg with `stdio: "inherit"`
+ *  precisely so cargo's live progress survives, which means the interesting result is interleaved with
+ *  megabytes of compiler chatter and is not recoverable afterwards. A reader that scraped `PASS`/`FAIL`
+ *  lines out of that would break the first time a leg's own output contained one.
+ *  (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it)
+ */
+const RESULT_PATH = join(REPO, "target", "gate-result.json");
+
+/** Write the verdict. Best-effort by design: a gate that FAILED because it could not write its own
+ *  report would be a worse trade than a missing report, and the exit code below is still the truth. */
+function writeResult(payload) {
+  try {
+    mkdirSync(dirname(RESULT_PATH), { recursive: true });
+    writeFileSync(RESULT_PATH, `${JSON.stringify(payload, null, 2)}\n`);
+  } catch {
+    /* the exit code is still correct; a reader that finds no artifact says so rather than inventing one */
+  }
+}
+
 function run(label, cmd, args, leg = {}) {
   process.stdout.write(`\n── ${label}\n   ${cmd} ${args.join(" ")}\n`);
   const t = Date.now();
@@ -110,7 +134,7 @@ function run(label, cmd, args, leg = {}) {
   const secs = ((Date.now() - t) / 1000).toFixed(1);
   const ok = r.status === 0;
   process.stdout.write(`   ${ok ? "PASS" : "FAIL"} (${secs}s)\n`);
-  return ok;
+  return { ok, seconds: Number(secs) };
 }
 
 const files = changedFiles();
@@ -219,12 +243,25 @@ const releaseSlot = needsGateSlot(plan)
 // verdict, and the whole point here is that the reader can trust what was covered.
 const results = [];
 for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
-  results.push([label, run(label, cmd, args, { key, stage })]);
+  const { ok, seconds } = run(label, cmd, args, { key, stage });
+  // `key` is the leg's STABLE id — the same one `record-run.mjs` measures under as `gate:<key>`, so a
+  // scoped and a full run of one leg share an identity instead of splitting into two that can never be
+  // compared. It is what a change record's gate evidence is filed under; `label` is prose and may be
+  // reworded ("lint" vs "lint (changed files)") without breaking a reader.
+  results.push({ key: key ?? label, label, ok, seconds });
 }
 
 releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet
 
-const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
+const failed = results.filter((r) => !r.ok).map((r) => r.label);
+writeResult({
+  version: 1,
+  mode: plan.full ? "full" : "scoped",
+  reason: plan.reason,
+  finishedAt: new Date().toISOString(),
+  passed: failed.length === 0,
+  legs: results,
+});
 process.stdout.write(`\n${failed.length ? `GATE FAILED: ${failed.join(", ")}` : "gate passed"}\n`);
 // A failing RUST step may be an artifact problem wearing a compiler error's clothes — an
 // `undefined hidden symbol` link failure passes `cargo check` and looks nothing like a stale

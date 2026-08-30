@@ -17,6 +17,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "deps",
     "market",
     "classify",
+    "known_red",
     "requirement",
     "decisions",
     "mcp",
@@ -107,6 +108,13 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             data        TEXT NOT NULL DEFAULT '{}'
          );
          CREATE TABLE IF NOT EXISTS classify (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         -- Gate legs declared ORTHOGONAL to any one branch (#the-gate-does-not-record-its-own-
+         -- evidence-so-a-session-transcribes-it). A singleton blob like classify, mapping each
+         -- gate leg key to the plan ref that owns its failure, plus an optional note.
+         CREATE TABLE IF NOT EXISTS known_red (
             id          INTEGER PRIMARY KEY,
             data        TEXT NOT NULL DEFAULT '{}'
          );

@@ -30,6 +30,9 @@ bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-secret = { path = "../bsc-secret" }
 bsc-mem = { path = "../bsc-mem" }
+# The WORK loop (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it) — the seam
+# between a branch's git state and its plan record.
+bsc-work = { path = "../bsc-work" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 bsc-mcp = { path = "../bsc-mcp" }
