@@ -37,6 +37,10 @@ import { createConsoleSlice } from "@/store/slices/console";
 
 // Re-export the public store API so existing `from "@/store"` imports keep resolving.
 export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "@/store/constants";
+// The harness a pane launches on, DERIVED rather than assumed
+// (`a-pane-harness-falls-back-to-its-stream`). Re-exported here because TerminalView — the one place
+// that resolves it at launch — already imports from this barrel and must not reach into a slice.
+export { paneHarness } from "@/store/slices/projects";
 export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "@/store/types";
 
 import { newTabId } from "@/store/helpers";
