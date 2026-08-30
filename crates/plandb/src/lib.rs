@@ -44,6 +44,7 @@ pub mod changes;
 mod confirmed;
 mod decisions;
 mod classify;
+pub mod known_red;
 mod requirement;
 mod deploy;
 mod discovery;

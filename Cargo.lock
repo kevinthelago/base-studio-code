@@ -746,6 +746,7 @@ dependencies = [
  "bsc-teams",
  "bsc-ui",
  "bsc-util",
+ "bsc-work",
  "channel",
  "compliance",
  "cve",
@@ -1208,6 +1209,16 @@ dependencies = [
 [[package]]
 name = "bsc-util"
 version = "0.1.0"
+
+[[package]]
+name = "bsc-work"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "plandb",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "bstr"
