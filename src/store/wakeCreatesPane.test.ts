@@ -284,6 +284,46 @@ describe("wakePane STARTS a stream the roster never saw", () => {
       expect(st.paneProviders[PANE]).toBe("bsc-agent");
     });
 
+    // THE GAP #173 LEFT, and what this file did not catch. Every assertion above checks
+    // `paneProviders`, which was always derived correctly — while `paneInitCmds`, the string that
+    // ACTUALLY LAUNCHES, was written as the literal "claude" one line above it in both paths. So the
+    // provider was decorative: measured on merged main, a `blueprint` stream set to qwen3.5:9b still
+    // came up as `pty[studio-code:blueprint] created · provider=claude`.
+    it("writes the HARNESS as the init cmd, not the literal claude — the provider alone launches nothing", () => {
+      resetFleetPanes();
+      armUnlaunched();
+      useAppStore.setState({ llmProvider: "anthropic", fleetHarness: "claude" } as never);
+      useAppStore.getState().wakePane(PANE, "go", LOCAL);
+      const st = useAppStore.getState();
+      expect(st.paneInitCmds[PANE]).toBe("bsc-agent");
+      // ...and it agrees with the provider. These two disagreeing IS the bug, so pin the pair.
+      expect(st.paneInitCmds[PANE]).toBe(st.paneProviders[PANE]);
+    });
+
+    it("fleetStartProject writes the harness as the init cmd too", () => {
+      const streamRow: AgentStream = (({ cwd: _cwd, ...row }) => row)(LOCAL);
+      resetFleetPanes();
+      useAppStore.setState({
+        tabs: [], personas: [], blueprints: [], projectBlueprintId: {}, bscBaseDir: "/base",
+        llmProvider: "anthropic", fleetHarness: "claude",
+      } as never);
+      useAppStore.getState().fleetStartProject("Demo", { recommended: 1, reasoning: "t", streams: [streamRow], director: { enabled: true } }, KEY,
+        { hubPath: "/hub", worktreePaths: { [STREAM]: LOCAL.cwd } });
+      const st = useAppStore.getState();
+      expect(st.paneInitCmds[PANE]).toBe("bsc-agent");
+      // The director has no stream wiring, so it keeps the fleet-wide harness — one local worker
+      // must not drag the rest of the fleet with it, on the init cmd any more than on the provider.
+      expect(st.paneInitCmds[`${KEY}:director`]).toBe("claude");
+    });
+
+    it("a Claude stream still gets the claude init cmd — the fix must not invert the default", () => {
+      resetFleetPanes();
+      armUnlaunched();
+      useAppStore.setState({ llmProvider: "anthropic", fleetHarness: "claude" } as never);
+      useAppStore.getState().wakePane(PANE, "go", { ...NEVER_LAUNCHED, model: "opus-4.5" });
+      expect(useAppStore.getState().paneInitCmds[PANE]).toBe("claude");
+    });
+
     it("a Claude-tier stream model stays on the fleet default — only a NON-tier model forces bsc-agent", () => {
       resetFleetPanes();
       armUnlaunched();
