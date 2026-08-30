@@ -471,7 +471,16 @@ async fn run_with_provider<P: LlmProvider + Send + Sync + 'static>(
     // The root session runs in a PTY, so it's INTERACTIVE: after the initial task settles it keeps
     // the session alive and reads further user turns from stdin (Claude-REPL parity), instead of the
     // process exiting after one response and ending the pane. (#1078 interactive mode)
-    run_agent(&*provider, api_key, model, system, task, &tools, perms, tele, prior, session_path, 20, true).await
+    // The step budget. 20 was a hardcoded positional literal here, with no way to change it and
+    // nothing naming it — which made "we hit the 20-step limit" a fact nobody could act on. It is a
+    // per-MODEL number: a 35B MoE finishes work a 9B abandons, and the right budget follows the
+    // model rather than the harness. Kept at 20 by default so nothing changes unasked.
+    let max_steps: usize = std::env::var("BSC_AGENT_MAX_STEPS")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(20);
+    run_agent(&*provider, api_key, model, system, task, &tools, perms, tele, prior, session_path, max_steps, true).await
 }
 
 #[cfg(test)]
