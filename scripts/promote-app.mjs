@@ -115,9 +115,9 @@ function main() {
     branch !== "HEAD" && ahead > 0
       ? Number(git(["rev-list", "--count", "--no-merges", `develop..${branch}`]))
       : 0;
-  const treesMatch = branch !== "HEAD" && ahead > 0 ? treeIdentical(branch, "develop") : false;
+  const aheadAddsNothing = branch !== "HEAD" && ahead > 0 ? addsNothingBeyondMergeBase(branch, "develop") : false;
 
-  const { action, reason } = planPromote({ treeExists: true, branch, dirty, ahead, behind, aheadContent, treesMatch });
+  const { action, reason } = planPromote({ treeExists: true, branch, dirty, ahead, behind, aheadContent, aheadAddsNothing });
   if (action === "fail") {
     const why = {
       "detached-head": "the repo root is in detached HEAD; check out the app branch (main) first.",
@@ -132,23 +132,24 @@ function main() {
     fail(why ?? reason);
   }
   if (action === "reconcile") {
-    // THE DOOM-LOOP REPAIR. `develop` is an ancestor of the app ref and the trees are identical, so
-    // this is a pure fast-forward of develop ONTO the app ref: no commit is written and no file
-    // changes. Afterwards the two refs are equal, so the very next promote is an ordinary
-    // fast-forward and the loop cannot restart from here.
+    // THE DOOM-LOOP REPAIR. The app ref's unique commits are all merges, and it adds nothing beyond
+    // where the two diverged — so merging it back into develop changes no file, and afterwards the
+    // app ref is an ANCESTOR of develop, which is exactly the property `--ff-only` promotion needs.
+    // The loop cannot restart from here.
     //
-    // ANNOUNCED, NEVER SILENT. It moves a ref the caller did not name, which is exactly the kind of
-    // helpfulness that has to be visible — and the count is the interesting part, because it says how
-    // long the loop had been running before anyone noticed.
+    // ANNOUNCED, NEVER SILENT. It moves a ref the caller did not name, which is the kind of
+    // helpfulness that has to be visible — and the count is the interesting part, because it says
+    // how long the loop had been running before anyone noticed.
     console.log(
-      `[promote-app] ${branch} is ${ahead} commit(s) ahead of develop, and EVERY one is a merge commit
-` +
-        `  with no content of its own — the trees are identical. That is the residue of promoting by
-` +
+      `[promote-app] ${branch} is ${ahead} commit(s) ahead of develop, and EVERY one is a merge\n` +
+        `  commit adding nothing beyond where the two diverged. That is the residue of promoting by\n` +
         `  hand with --no-ff, where each merge makes the next --ff-only impossible.`,
     );
     if (opts.dryRun) {
-      console.log(`[promote-app] --dry-run: would fast-forward develop to ${branch} (no commit, no content change).`);
+      console.log(
+        `[promote-app] --dry-run: would merge ${branch} back into develop (no content change), so that\n` +
+          `  fast-forward promotion works again.`,
+      );
       return;
     }
     const tree = integrationTree();
@@ -158,12 +159,20 @@ function main() {
       // this merge would run in the APP's tree, on the app's branch, which is the one place this
       // whole script exists to leave alone.
       fail(
-        "cannot reconcile: no worktree has `develop` checked out, so there is nowhere to fast-forward it.\n" +
+        "cannot reconcile: no worktree has `develop` checked out, so there is nowhere to merge into.\n" +
           "  Check out develop somewhere (the convention is wt-integrate) and re-run.",
       );
     }
-    execFileSync("git", ["merge", "--ff-only", branch], { cwd: tree, stdio: "inherit" });
-    console.log(`[promote-app] reconciled: develop fast-forwarded to ${branch}. Fast-forward promotion works again.`);
+    // Plain `merge`, not `--ff-only`: when develop has not moved this IS a fast-forward and git does
+    // it without writing anything, and when develop HAS moved it writes one merge commit that changes
+    // no file. Either way the app ref becomes an ancestor of develop, which is the property
+    // `--ff-only` promotion needs. Demanding a fast-forward here would refuse the second case, which
+    // is the common one.
+    execFileSync("git", ["merge", branch, "-m", `merge: ${branch} into develop — reconcile the promote bookkeeping`], {
+      cwd: tree,
+      stdio: "inherit",
+    });
+    console.log(`[promote-app] reconciled: ${branch} merged back into develop. Fast-forward promotion works again.`);
     // Fall through deliberately rather than returning: develop may ALSO have been ahead in the normal
     // direction, and re-asking git is how this stays correct instead of assuming which case it was.
     const nowBehind = Number(git(["rev-list", "--count", `${branch}..develop`]));
@@ -218,15 +227,21 @@ function main() {
   );
 }
 
-/** Do two refs point at byte-identical trees? `git diff --quiet` exits 0 when they do.
+/** Does `ref` add any content beyond where it diverged from `other`?
  *
- *  Asked of git rather than inferred from the commit graph: "every ahead commit is a merge" says the
- *  commits carry no content of their OWN, but a merge can still resolve to a different tree (a
- *  conflict resolved by hand, an --ours). The tree comparison is what actually rules that out, and
- *  reconciling on the weaker signal alone would discard a real resolution. */
-function treeIdentical(a, b) {
+ *  Asked of git rather than inferred from the commit graph: "every ahead commit is a merge" says those
+ *  commits carry no content of their OWN, but a merge can still resolve to a tree the merge base did
+ *  not have (a conflict resolved by hand, an `--ours`). Reconciling on the weaker signal alone would
+ *  merge over that resolution and lose it silently.
+ *
+ *  AGAINST THE MERGE BASE, not against `other`'s current tree. Comparing the two refs answers "are
+ *  these identical right now", which stops being true the moment `other` moves ahead — after any
+ *  integration, i.e. before every real promotion. This asks only what `ref` contributed, so it holds
+ *  however far develop has travelled since. */
+function addsNothingBeyondMergeBase(ref, other) {
   try {
-    execFileSync("git", ["diff", "--quiet", a, b], { cwd: REPO_ROOT, stdio: "ignore" });
+    const base = execFileSync("git", ["merge-base", ref, other], { cwd: REPO_ROOT, encoding: "utf8" }).trim();
+    execFileSync("git", ["diff", "--quiet", base, ref], { cwd: REPO_ROOT, stdio: "ignore" });
     return true;
   } catch {
     return false;

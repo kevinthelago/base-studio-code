@@ -10,12 +10,12 @@
 /**
  * Decide what a promote run should do.
  *
- * `aheadContent` and `treesMatch` are what separate a REAL divergence from BOOKKEEPING — see the
+ * `aheadContent` and `aheadAddsNothing` are what separate a REAL divergence from BOOKKEEPING — see the
  * `ahead > 0` arm. Both default to the pessimistic answer, so a caller that cannot supply them gets
  * exactly the old refusal rather than an accidental reconcile.
  *
  * @param {{treeExists: boolean, branch: string|null, dirty: string[], ahead: number, behind: number,
- *          aheadContent?: number, treesMatch?: boolean}} state
+ *          aheadContent?: number, aheadAddsNothing?: boolean}} state
  * @returns {{action: "fail"|"noop"|"promote"|"reconcile", reason: string}}
  */
 export function planPromote(state) {
@@ -28,7 +28,10 @@ export function planPromote(state) {
     // How many of the ahead commits carry CONTENT (i.e. are not merges). Defaulting to `ahead`
     // means "assume every one is real", which is the old behaviour exactly.
     aheadContent = ahead,
-    treesMatch = false,
+    // Does the app ref add any CONTENT beyond the merge base — i.e. `git diff <merge-base> <app ref>`
+    // is empty? See the `ahead > 0` arm for why this, and not a whole-tree comparison against
+    // develop's current state.
+    aheadAddsNothing = false,
   } = state ?? {};
 
   if (!treeExists) {
@@ -62,16 +65,26 @@ export function planPromote(state) {
   //
   // So split the case on evidence rather than weakening the guard:
   //
-  //   BOOKKEEPING — no ahead commit carries content AND the trees are identical. The app ref is then
-  //   develop's history plus merge commits that say nothing, so develop can FAST-FORWARD onto it: no
-  //   new commits, no content change, and afterwards the two refs are equal and `--ff-only` works
-  //   again. Provable from git, which is what makes it safe to automate rather than a judgement call.
+  //   BOOKKEEPING — no ahead commit carries content, AND the app ref adds nothing beyond the MERGE
+  //   BASE. Its unique commits are then merges that only re-state history develop already has, so
+  //   merging it back into develop changes no file, and afterwards the app ref is an ancestor of
+  //   develop and `--ff-only` works again. Provable from git, which is what makes it safe to automate
+  //   rather than a judgement call.
   //
-  //   REAL — anything else. A content commit on main, or trees that genuinely differ, is the fault
-  //   this refusal was written for, and it still refuses with the same reason. The guard is not
-  //   relaxed here; it is made precise, so from now on it only fires when it is telling the truth.
+  //   REAL — anything else. A content commit on the app ref, or a merge that resolved to a tree the
+  //   merge base did not have, is the fault this refusal was written for, and it still refuses with
+  //   the same reason. The guard is not relaxed here; it is made precise, so from now on it only
+  //   fires when it is telling the truth.
+  //
+  // THE COMPARISON IS AGAINST THE MERGE BASE, NOT AGAINST DEVELOP'S CURRENT TREE, and the first
+  // implementation got this wrong in a way a single snapshot could not reveal. Comparing the two
+  // ref trees answers "are these identical right now", which stops being true the instant develop
+  // moves ahead — that is, after any integration at all, which is every real promotion. It fired
+  // only in the one state where develop had not moved since the last promote, and refused in exactly
+  // the state the feature exists for. Asking what the app ref ADDED is stable under develop moving,
+  // because it asks about the app ref alone.
   if (ahead > 0) {
-    if (aheadContent === 0 && treesMatch) {
+    if (aheadContent === 0 && aheadAddsNothing) {
       return { action: "reconcile", reason: "app-tree-ahead-by-merges-only" };
     }
     return { action: "fail", reason: "app-tree-ahead" };
