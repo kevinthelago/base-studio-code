@@ -247,6 +247,17 @@ pub(crate) fn agent_state_dir(cwd: &str) -> Option<std::path::PathBuf> {
 /// Startup self-check (#1988): each bundled sidecar and where it resolved (`None` ⇒ missing). Logged
 /// loudly at boot (`app::run`) so a missing `bsc`/`bsc-agent` surfaces immediately, instead of only
 /// when a live session silently can't find `bsc` because `$BSC_BIN` was never set.
+/// One bundled sidecar's resolved path — the SAME resolution `$BSC_AGENT_BIN` gets.
+///
+/// Exposed for the cage (#a-caged-local-worker-has-no-runtime-and-no-provider-config): a sidecar is
+/// NOT on `PATH` — it is staged at `~/.base-studio-code/bin/` — so `bsc_sandbox`'s `real_bin_path`,
+/// which walks `PATH`, cannot find it and the `--ro-bind-try` skips it in silence. The launcher has
+/// to name the real path itself, and it must be the one the session's own `$BSC_AGENT_BIN` names or
+/// the cage would bind a different build from the one the shell helper execs.
+pub(crate) fn bundled_sidecar_path(stem: &str) -> Option<std::path::PathBuf> {
+    sidecar_bin_path(stem)
+}
+
 pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2] {
     [
         ("bsc", sidecar_bin_path("bsc")),

@@ -784,12 +784,7 @@ fn pty_create_inner(
         Some(root.to_string_lossy().into_owned())
     });
 
-    let harness_bins: &[&str] = match provider_id.as_deref() {
-        Some("claude") | None => &["node", "claude"],
-        // Any other provider names its own runtime; an unknown one gets no extra binaries rather
-        // than a guess, so the failure is "command not found" and not a silently widened cage.
-        Some(_) => &[],
-    };
+    let harness_bins: &[&str] = harness_bins_for(provider_id.as_deref());
     // The gate's CONFIG, read from the caller's env rather than from a new parameter.
     //
     // `buildAgentEnv` already computes both values for every gated pane — `BSC_SCOPE_GLOBS` (the
@@ -805,6 +800,34 @@ fn pty_create_inner(
     // against `BSC_REPO_ROOT=/repo` before matching. A host-shaped glob would fail to strip and
     // every write would read as out-of-scope — fails closed, but wedges the agent, so
     // `namespace_argv` refuses one rather than passing it through.
+    // SAY WHICH RUNTIME IS MISSING, before the cage is built. The bind is `--ro-bind-try`, which
+    // skips a missing source in silence — so a cage with no runtime came up looking healthy and the
+    // only symptom was the agent meeting `command not found` inside it, with nothing in any log
+    // naming a cause. Nine relaunches of twitter-clone-test:api looked exactly like this.
+    //
+    // It does NOT refuse the launch: `namespace_argv` returning None falls through to an UNCAGED
+    // shell, so refusing here would answer a missing binary by removing the isolation — the wrong
+    // direction entirely. Loud, and still caged.
+    {
+        let missing = missing_harness_bins(harness_bins);
+        if !missing.is_empty() {
+            log::error!(
+                "pty[{pane_id}] the cage has no runtime for provider {provider}: {names} not found \
+                 on PATH, so `--ro-bind-try` will skip {it} and the session will meet `command not \
+                 found`. Install it, or put it on the app's PATH.",
+                provider = provider_id.as_deref().unwrap_or("claude"),
+                names = missing.join(", "),
+                it = if missing.len() == 1 { "it" } else { "them" },
+            );
+        } else if harness_bins.is_empty() {
+            log::error!(
+                "pty[{pane_id}] provider {provider:?} names no runtime, so its cage will contain no \
+                 agent at all. Add an arm to `harness_bins_for`.",
+                provider = provider_id.as_deref().unwrap_or_default(),
+            );
+        }
+    }
+
     let gate_env = env.as_ref();
     let ns_argv: Option<Vec<String>> = namespace_argv(
         sandbox_role.as_deref(),
@@ -812,7 +835,12 @@ fn pty_create_inner(
         &cwd,
         sandbox_stores.as_deref(),
         &shell,
-        harness_bins,
+        HarnessSpec {
+            bins: harness_bins,
+            // The harness's own configuration, named variable by variable (`CAGED_AGENT_ENV`). Empty
+            // for a Claude pane, which authenticates from a bound credential file and needs none.
+            env: if provider_id.as_deref() == Some("bsc-agent") { caged_agent_env(gate_env) } else { Vec::new() },
+        },
         GateConfig {
             scope_globs: gate_env
                 .and_then(|e| e.get("BSC_SCOPE_GLOBS"))
@@ -2397,6 +2425,21 @@ fn project_stores_for(pane_id: &str, cwd: &str, root: &std::path::Path) {
     }
 }
 
+/// What the cage needs to know about the session's HARNESS: the runtime to bind, and the
+/// configuration that runtime reads from its environment.
+///
+/// One struct rather than two parameters because they are one decision — a runtime and the settings
+/// it cannot start without — and because splitting them is how `bsc-agent` came to have neither.
+#[derive(Default)]
+struct HarnessSpec<'a> {
+    /// Runtime binaries bound into the namespace ([`harness_bins_for`]). Empty means the cage will
+    /// contain no agent at all, which the launcher reports rather than discovers later.
+    bins: &'a [&'a str],
+    /// The named environment the runtime needs ([`CAGED_AGENT_ENV`]). Empty for a harness that reads
+    /// its configuration from a bound file instead.
+    env: Vec<(String, String)>,
+}
+
 /// The single credential a sandboxed harness needs, if it is there.
 ///
 /// Exactly one file — never the whole `~/.claude`, which holds every project's transcripts and the
@@ -2404,6 +2447,133 @@ fn project_stores_for(pane_id: &str, cwd: &str, root: &std::path::Path) {
 /// harness needs it to reach the model; what the cage adds is that it cannot MODIFY it, and that a
 /// `network: false` role cannot send it anywhere.
 #[cfg(target_os = "linux")]
+/// The runtime binaries a provider's harness needs bound into the cage.
+///
+/// `extra_bins` is the ONLY route by which a harness binary enters the namespace — `bins_for(role)`
+/// gives a worker `git` and `gh`, and nothing else brings one in. So a provider missing from this
+/// match gets a cage with no agent runtime at all, and the session dies on `command not found`.
+///
+/// THAT IS NOT HYPOTHETICAL. `bsc-agent` was missing from here for the whole life of the local-model
+/// harness: MEASURED on twitter-clone-test:api, the pane relaunched nine times, each scope living
+/// ~3.2 s at ~32 MB against a 15851 M limit — no OOM, no crash, just a cage with nothing to run.
+/// Replaying its own cage (`bsc sandbox replay`) and typing the launch line gives
+/// `bsc-agent: command not found`, exit 127, and `command -v` finds none of bsc, bsc-agent, claude
+/// or node. The old arm read `Some(_) => &[]` with the reasoning that "an unknown one gets no extra
+/// binaries rather than a guess" — sound for a third-party provider, and wrong for this repo's own
+/// second harness, which simply never got an arm.
+///
+/// The unknown arm KEEPS that reasoning and is now loud instead of silent: see
+/// [`missing_harness_bins`], which the launcher logs before building the cage.
+fn harness_bins_for(provider_id: Option<&str>) -> &'static [&'static str] {
+    match provider_id {
+        // Claude Code is a node program reached through a shim; both have to be bound.
+        Some("claude") | None => &["node", "claude"],
+        // The model-agnostic runtime (epic #1078) is a single static binary and needs nothing else —
+        // its provider, model and endpoint travel as ENVIRONMENT (`SessionPaths::agent_env`), which
+        // is the other half of this fix.
+        Some("bsc-agent") => &["bsc-agent"],
+        // An unrecognised provider still gets nothing rather than a guess: widening the cage for a
+        // runtime we cannot name is the worse failure. It is now REPORTED, which is what was missing.
+        Some(_) => &[],
+    }
+}
+
+/// The `bsc-agent` configuration that must cross into the cage, and the guest path its conversation
+/// is bound at.
+///
+/// EVERY VARIABLE IS NAMED, never forwarded wholesale. The namespace clears the environment on
+/// purpose — measured, an inherited one carried `GH_TOKEN` and `AWS_SECRET` into a session with no
+/// business holding either — so "pass the agent's vars through" would re-open exactly that. These are
+/// the ones a runtime configured entirely by environment cannot start without:
+///
+/// * `BSC_AGENT_PROVIDER` / `BSC_AGENT_MODEL` — without them it defaults to `provider=anthropic` with
+///   no key and dies on `401 x-api-key header is required`. Verified by running it with this env
+///   stripped.
+/// * `BSC_AGENT_BASE_URL` / `BSC_AGENT_NUM_CTX` — the local endpoint and the VRAM-bound context cap.
+///   The cage is `--share-net`, so a localhost Ollama is reachable; without the URL it guesses.
+/// * `BSC_AGENT_PERMS` — the least-privilege gate. Dropping it silently makes a caged worker MORE
+///   permissive than an uncaged one, which is the wrong direction to fail in.
+/// * `BSC_AGENT_MCP` — the resolved stdio servers.
+///
+/// DELIBERATELY ABSENT: `BSC_BIN` and `BSC_PLAN_DB`. A caged session reaches its stores through the
+/// read-only `/plan`, `/graph`, `/ui`, `/coord` projections and their outboxes, not by running `bsc`
+/// against a database — binding a writable store inside the namespace is the ambient authority the
+/// isolation exists to remove (`UNCAGED_ROLES` says so at length). A host-shaped `BSC_PLAN_DB` would
+/// also name a path that does not exist in the guest.
+///
+/// `BSC_AGENT_SESSION` is handled separately by the caller: it needs a bound directory, not just a
+/// value, so it is the one entry that implies a MOUNT.
+const CAGED_AGENT_ENV: &[&str] = &[
+    "BSC_AGENT_PROVIDER",
+    "BSC_AGENT_MODEL",
+    "BSC_AGENT_BASE_URL",
+    "BSC_AGENT_NUM_CTX",
+    "BSC_AGENT_PERMS",
+    "BSC_AGENT_MCP",
+];
+
+/// Where a caged `bsc-agent` keeps its conversation, inside the guest.
+///
+/// Under the private HOME rather than `/repo`: the worktree is the session's WORK, and a conversation
+/// file committed by accident is the failure `SandboxSpec::home` was split out to prevent. The
+/// directory is bound read-write and persists across launches, which is what makes `--continue` mean
+/// anything for a caged worker — without it the per-step save from
+/// `a-local-agent-turn-is-invisible-while-it-runs-and-lost-if-it-dies` writes to a tmpfs that dies
+/// with the session.
+const AGENT_SESSION_GUEST: &str = "/home/agent/.bsc-agent/conversation.json";
+
+/// Pick the caged harness environment out of the pane's env — the named set only.
+///
+/// Returns `(env pairs, whether a conversation dir is wanted)`. A variable the pane does not set is
+/// simply absent, so the runtime falls back to its own default exactly as it would uncaged.
+fn caged_agent_env(env: Option<&std::collections::HashMap<String, String>>) -> Vec<(String, String)> {
+    let Some(env) = env else { return Vec::new() };
+    CAGED_AGENT_ENV
+        .iter()
+        .filter_map(|k| env.get(*k).map(|v| ((*k).to_string(), v.clone())))
+        .filter(|(_, v)| !v.trim().is_empty())
+        .collect()
+}
+
+/// Which of `bins` cannot be resolved on the host — asked with the SAME resolver `for_role` binds
+/// with, so this cannot disagree with what the cage actually gets.
+///
+/// The bind is `--ro-bind-try`, which skips a missing source in SILENCE. That silence is why a cage
+/// with no runtime looked like a healthy launch for months: the namespace came up complete, and the
+/// only symptom was the agent meeting `command not found` inside it, far from any log that named a
+/// cause. Naming the missing binary at launch is the whole point.
+/// Which harness runtimes must be bound from a BUNDLED SIDECAR rather than found on `PATH`, as
+/// `(host path, guest path)` pairs.
+///
+/// `for_role` binds each name through `real_bin_path`, which walks `PATH`. That is right for
+/// `node`/`claude` and useless for `bsc-agent`: a sidecar is staged at `~/.base-studio-code/bin/` and
+/// deliberately NOT on any PATH, so the name resolved to nothing and `--ro-bind-try` skipped it
+/// without a word — the cage came up with no runtime at all.
+///
+/// Pure, with both lookups injected, because the production resolvers cannot answer inside a test:
+/// `sidecar_bin_path` resolves relative to the running app exe, and under a test binary there is no
+/// app. Asking the wrong question here is what made the first version of this fix's own end-to-end
+/// test pass VACUOUSLY while the bug was still live.
+fn sidecar_mounts(
+    bins: &[&str],
+    on_path: impl Fn(&str) -> bool,
+    sidecar: impl Fn(&str) -> Option<std::path::PathBuf>,
+) -> Vec<(std::path::PathBuf, std::path::PathBuf)> {
+    bins.iter()
+        .filter(|b| !on_path(b))
+        .filter_map(|b| {
+            sidecar(b).map(|host| (host, std::path::PathBuf::from(format!("/usr/bin/{b}"))))
+        })
+        .collect()
+}
+
+fn missing_harness_bins(bins: &[&str]) -> Vec<String> {
+    bins.iter()
+        .filter(|b| bsc_sandbox::profile::real_bin_path(b).is_none())
+        .map(|b| (*b).to_string())
+        .collect()
+}
+
 fn credential_for_harness() -> Option<std::path::PathBuf> {
     let p = crate::platform::paths::home_dir().join(".claude").join(".credentials.json");
     p.is_file().then_some(p)
@@ -3017,7 +3187,7 @@ fn namespace_argv(
     cwd: &str,
     stores_root: Option<&str>,
     shell: &str,
-    harness_bins: &[&str],
+    harness: HarnessSpec<'_>,
     gate: GateConfig<'_>,
 ) -> Option<Vec<String>> {
     use bsc_sandbox::profile::{for_role, Role, SessionPaths};
@@ -3074,6 +3244,15 @@ fn namespace_argv(
         return None;
     }
 
+    // Which harness this cage is FOR, read off the runtime it was told to bind rather than taking a
+    // second provider parameter that could disagree with it. The Claude-only state below hangs on
+    // this: a `bsc-agent` cage used to carry Claude's OAuth credential and transcript dir for a
+    // runtime that reads neither.
+    let claude_harness = harness.bins.contains(&"claude");
+    // Kept because `harness` is moved into `for_role` below, and the sidecar bind after it still
+    // needs to know which runtimes were asked for.
+    let harness_bins_for_cage: Vec<&str> = harness.bins.to_vec();
+
     let mut paths = SessionPaths {
         root: PathBuf::from(cwd),
         // A private HOME on tmpfs, so the harness's state and transcripts do not land in the git
@@ -3086,17 +3265,27 @@ fn namespace_argv(
         // "Select login method" menu — which, in a pane whose input is wired for an agent, reads
         // exactly like a frozen terminal. Observed. The spec has carried this since the harness
         // work; the launcher simply never filled it in.
-        credential_file: credential_for_harness(),
+        // ...and the ONE credential the harness needs, read-only — FOR A CLAUDE PANE ONLY.
+        //
+        // It used to be unconditional, so a `bsc-agent` cage carried Claude's OAuth credential, its
+        // `.claude.json` and its transcript directory for a runtime that reads none of them. A
+        // credential in a namespace with no use for it is pure exposure: the isolation's whole claim
+        // is that a session holds only what its job needs.
+        credential_file: claude_harness.then(credential_for_harness).flatten(),
         // ...and the harness's own onboarding/account state, as a writable per-session COPY. Without
         // it the private HOME above reads as a first run and Claude asks for a pasted OAuth code.
-        harness_state_file: stores_root
+        harness_state_file: claude_harness
+            .then_some(stores_root)
+            .flatten()
             .filter(|r| !r.is_empty())
             .and_then(|r| harness_state_for(pane_id, std::path::Path::new(r))),
         // ...and the one part of the private HOME that must OUTLIVE the session: the harness's
         // transcripts, so `claude --continue` has something to continue. Without it a caged session
         // reported `has_history=false` on every launch and started over — which is not a small
         // annoyance for a STUDIO, whose whole value is a conversation that accumulates.
-        history_dir: stores_root
+        history_dir: claude_harness
+            .then_some(stores_root)
+            .flatten()
             .filter(|r| !r.is_empty())
             .and_then(|r| history_dir_for(pane_id, std::path::Path::new(r))),
         // ...and the PreToolUse floor, which until now was declared and never bound.
@@ -3129,6 +3318,8 @@ fn namespace_argv(
         // cause would show up as the gate blocking writes it was configured to allow.
         scope_globs: guest_relative_globs(pane_id, gate.scope_globs),
         deny_bash: gate.deny_bash.to_string(),
+        // The harness's own configuration, named variable by variable — see `CAGED_AGENT_ENV`.
+        agent_env: harness.env,
         ..Default::default()
     };
     if let Some(root) = stores_root.filter(|r| !r.is_empty()) {
@@ -3153,6 +3344,37 @@ fn namespace_argv(
                 paths.outboxes.push((guest.to_string(), out));
             }
         }
+        // ...and the one directory a caged `bsc-agent` must keep ACROSS launches: its conversation.
+        //
+        // The private HOME is a tmpfs and dies with the session, so without this the per-step save
+        // writes into nothing and every launch starts over — the caged twin of the bug
+        // `a-local-agent-turn-is-invisible-while-it-runs-and-lost-if-it-dies` fixed for host
+        // sessions. It is the `history_dir` idea (Claude's transcripts) applied to the other
+        // harness, and it rides `outboxes` for the same reason those do: a read-write bind placed
+        // after everything else.
+        //
+        // Under the private home rather than `/repo`, because the worktree is the session's WORK and
+        // a conversation file committed by accident is exactly what splitting `home` out prevented.
+        if !paths.agent_env.is_empty() {
+            let dir = root.join("home").join("bsc-agent");
+            match std::fs::create_dir_all(&dir) {
+                Ok(()) => {
+                    let guest_dir = std::path::Path::new(AGENT_SESSION_GUEST)
+                        .parent()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    paths.outboxes.push((guest_dir, dir));
+                    paths
+                        .agent_env
+                        .push(("BSC_AGENT_SESSION".to_string(), AGENT_SESSION_GUEST.to_string()));
+                }
+                // Best-effort, and SAID: the session still launches, it just cannot resume. Silence
+                // here would reproduce the failure this whole item is about.
+                Err(e) => log::warn!(
+                    "pty[{pane_id}] no caged conversation dir ({e}) — this session will not resume"
+                ),
+            }
+        }
     }
 
     // The pane id is already unique per session, which is exactly what a systemd scope name needs:
@@ -3166,12 +3388,32 @@ fn namespace_argv(
     // 3 KB kickoff for `claude`, and the tty answered `bash: claude: command not found` — the agent
     // runtime was never bound. `bins_for(role)` gives git and gh; a runtime is the caller's to name,
     // which is the point of `extra_bins` (the alternative is Usr::All, i.e. every binary on the host).
-    match for_role(role, unit, &paths, harness_bins, session_limits(role), scope_mode(), vec![shell.to_string(), "-i".into()]) {
+    match for_role(role, unit, &paths, harness.bins, session_limits(role), scope_mode(), vec![shell.to_string(), "-i".into()]) {
         Ok(mut p) => {
             if let Some(c) = &p.caveat {
                 // A profile that knowingly grants more than the model wants must be visible at the
                 // point of launch, not only in a doc comment.
                 log::warn!("pty[{pane_id}] sandbox caveat: {c}");
+            }
+
+            // THE RUNTIME ITSELF, when it is a bundled SIDECAR rather than a program on PATH.
+            //
+            // `for_role` binds each name in `harness.bins` through `real_bin_path`, which walks
+            // `PATH` — right for `node`/`claude`, and useless for `bsc-agent`, which is staged at
+            // `~/.base-studio-code/bin/` and is deliberately NOT on any PATH. So the name resolved to
+            // nothing, `--ro-bind-try` skipped it without a word, and the cage came up with no
+            // runtime: `bsc-agent: command not found`, exit 127, nine times on twitter-clone-test:api.
+            //
+            // Bound at `/usr/bin/<stem>`, which IS on the cage's PATH, and taken from the same
+            // resolver that fills `$BSC_AGENT_BIN` — so the cage cannot end up running a different
+            // build from the one the session's own shell helper execs.
+            for (host, guest) in sidecar_mounts(
+                &harness_bins_for_cage,
+                |b| bsc_sandbox::profile::real_bin_path(b).is_some(),
+                env::bundled_sidecar_path,
+            ) {
+                log::info!("pty[{pane_id}] binding the bundled {} sidecar into the cage: {}", guest.display(), host.display());
+                p.spec.mounts.push(bsc_sandbox::Mount::ReadOnly { host, guest });
             }
 
             // The PROJECT's toolchain, on top of the role's fixed bin set — request #143
@@ -3246,7 +3488,7 @@ fn namespace_argv(
     _cwd: &str,
     _stores_root: Option<&str>,
     _shell: &str,
-    _harness_bins: &[&str],
+    _harness: HarnessSpec<'_>,
     _gate: (&str, &str),
 ) -> Option<Vec<String>> {
     if role.is_some_and(|r| !r.is_empty()) {
@@ -3266,14 +3508,14 @@ fn namespace_argv(
 
 #[cfg(test)]
 mod namespace_tests {
-    use super::{namespace_argv, namespace_supported, GateConfig};
+    use super::{namespace_argv, namespace_supported, GateConfig, HarnessSpec};
 
     #[test]
     fn the_probe_agrees_with_what_the_launcher_will_actually_do() {
         // The invariant that matters: `sandbox_available()` must not claim a capability
         // `namespace_argv` then refuses. If it did, the frontend would write a hook list pointing at
         // /bsc-hook for a session that launches unsandboxed — no write-scope, no command floor.
-        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash", &[], GateConfig::default()).is_some();
+        let rendered = namespace_argv(Some("worker"), "probe", "/tmp/wt", None, "bash", HarnessSpec::default(), GateConfig::default()).is_some();
         if namespace_supported() {
             assert!(rendered, "the probe says yes, so the launcher must render");
         } else {
@@ -3292,22 +3534,22 @@ mod namespace_tests {
 
     #[test]
     fn no_role_means_no_namespace_and_the_launch_path_is_untouched() {
-        assert!(namespace_argv(None, "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
-        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
+        assert!(namespace_argv(None, "p", "/tmp", None, "bash", HarnessSpec::default(), GateConfig::default()).is_none());
+        assert!(namespace_argv(Some(""), "p", "/tmp", None, "bash", HarnessSpec::default(), GateConfig::default()).is_none());
     }
 
     #[test]
     fn an_unknown_role_refuses_rather_than_launching_unsandboxed() {
         // The security-relevant one. A typo must NOT quietly yield a session with no isolation —
         // the caller asked for a cage and would believe it got one.
-        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
-        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash", &[], GateConfig::default()).is_none());
+        assert!(namespace_argv(Some("wroker"), "p", "/tmp", None, "bash", HarnessSpec::default(), GateConfig::default()).is_none());
+        assert!(namespace_argv(Some("root"), "p", "/tmp", None, "bash", HarnessSpec::default(), GateConfig::default()).is_none());
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn a_known_role_renders_a_scope_wrapping_a_namespace() {
-        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash", &[], GateConfig::default())
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/wt", None, "bash", HarnessSpec::default(), GateConfig::default())
             .expect("a known role with a cwd renders");
         assert_eq!(a[0], "systemd-run", "the scope carries the cgroup limits");
         assert!(a.iter().any(|x| x == "bwrap"), "and wraps a namespace");
@@ -3321,7 +3563,8 @@ mod namespace_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn an_empty_cwd_refuses_because_there_is_nothing_to_bind_at_repo() {
-        assert!(namespace_argv(Some("worker"), "p", "", None, "bash", &[], GateConfig::default()).is_none());
+        assert!(namespace_argv(Some("worker"), "p", "", None, "bash", HarnessSpec::default(), GateConfig::default()).is_none());
+
     }
 
     #[cfg(target_os = "linux")]
@@ -3329,11 +3572,11 @@ mod namespace_tests {
     fn the_scope_name_is_derived_from_the_pane_so_two_launches_do_not_collide() {
         // systemd refuses a --unit that is still loaded, so a FIXED name makes the second launch
         // of a pane silently fail to start.
-        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash", &[], GateConfig::default()).unwrap();
+        let a = namespace_argv(Some("worker"), "studio:worker-1", "/tmp/wt", None, "bash", HarnessSpec::default(), GateConfig::default()).unwrap();
         let unit = a.iter().find(|x| x.starts_with("--unit=")).expect("a unit is named");
         assert!(unit.contains("studio"), "the pane id is in the unit: {unit}");
         assert!(!unit.contains(':'), "and sanitized to be unit-safe: {unit}");
-        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash", &[], GateConfig::default()).unwrap();
+        let b = namespace_argv(Some("worker"), "studio:worker-2", "/tmp/wt", None, "bash", HarnessSpec::default(), GateConfig::default()).unwrap();
         assert_ne!(unit, b.iter().find(|x| x.starts_with("--unit=")).unwrap());
     }
 
@@ -3357,7 +3600,7 @@ mod namespace_tests {
         let _ = std::fs::create_dir_all(&root);
         std::os::unix::fs::symlink(&shared, root.join("graph")).expect("symlink the shared graph");
 
-        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default())
+        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", HarnessSpec::default(), GateConfig::default())
             .unwrap();
 
         // `Path::is_dir` follows the link, so discovery needs no special case and bwrap binds the
@@ -3382,7 +3625,7 @@ mod namespace_tests {
             "/tmp/wt",
             Some(root.to_str().unwrap()),
             "bash",
-            &[],
+            HarnessSpec::default(),
             GateConfig::default(),
         )
         .unwrap();
@@ -3408,7 +3651,7 @@ mod namespace_tests {
         let root = std::env::temp_dir().join(format!("bsc-ns-replay-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
 
-        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default())
+        let a = namespace_argv(Some("worker"), "p", "/tmp/wt", Some(root.to_str().unwrap()), "bash", HarnessSpec::default(), GateConfig::default())
             .unwrap();
 
         bsc_sandbox::write_launch_argv(&root, &a).expect("the launcher's own write path");
@@ -3478,7 +3721,7 @@ mod namespace_tests {
 
         let argv = namespace_argv(
             Some("worker"), "pp", wt.to_str().unwrap(),
-            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+            Some(stores.to_str().unwrap()), "/bin/sh", HarnessSpec::default(),
             GateConfig::default(),
         )
         .expect("renders");
@@ -3559,7 +3802,7 @@ mod namespace_tests {
 
         let argv = namespace_argv(
             Some("worker"), "cagedoc", wt.to_str().unwrap(),
-            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+            Some(stores.to_str().unwrap()), "/bin/sh", HarnessSpec::default(),
             GateConfig::default(),
         )
         .expect("renders");
@@ -3638,7 +3881,7 @@ mod namespace_tests {
 
         let argv = namespace_argv(
             Some("worker"), "cagedw", wt.to_str().unwrap(),
-            Some(stores.to_str().unwrap()), "/bin/sh", &[],
+            Some(stores.to_str().unwrap()), "/bin/sh", HarnessSpec::default(),
             GateConfig::default(),
         )
         .expect("renders");
@@ -3709,7 +3952,15 @@ mod namespace_tests {
         let Some(_) = super::credential_for_harness() else { return };
         let wt = std::env::temp_dir().join(format!("bsc-cred-{}", std::process::id()));
         std::fs::create_dir_all(&wt).unwrap();
-        let argv = namespace_argv(Some("worker"), "c", wt.to_str().unwrap(), None, "/bin/sh", &[], GateConfig::default())
+        // A CLAUDE harness explicitly: the credential is Claude's, and since
+        // #a-caged-local-worker-has-no-runtime-and-no-provider-config it is bound only for a pane
+        // that actually runs Claude. A `bsc-agent` cage used to carry it for a runtime that never
+        // reads it, which is exposure with no purpose.
+        let argv = namespace_argv(
+            Some("worker"), "c", wt.to_str().unwrap(), None, "/bin/sh",
+            HarnessSpec { bins: &["node", "claude"], ..Default::default() },
+            GateConfig::default(),
+        )
             .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
         let mut cmd = std::process::Command::new(&argv[0]);
@@ -3732,7 +3983,7 @@ mod namespace_tests {
         // Observed: a pane with no cwd fell back to $HOME and launched sandboxed, binding the
         // user's entire home read-write at /repo. A cage containing everything is not a cage.
         let home = crate::platform::paths::home_dir();
-        assert!(namespace_argv(Some("worker"), "h", home.to_str().unwrap(), None, "/bin/sh", &[], GateConfig::default()).is_none());
+        assert!(namespace_argv(Some("worker"), "h", home.to_str().unwrap(), None, "/bin/sh", HarnessSpec::default(), GateConfig::default()).is_none());
     }
 
     // The cage shipped complete and USELESS: a worker was launched with a 3 KB kickoff for
@@ -3748,7 +3999,7 @@ mod namespace_tests {
         let wt = std::env::temp_dir().join(format!("bsc-harness-{}", std::process::id()));
         std::fs::create_dir_all(&wt).unwrap();
         let wt_s = wt.to_str().unwrap().to_string();
-        let argv = namespace_argv(Some("worker"), "h", &wt_s, None, "/bin/sh", &["node", "claude"], GateConfig::default())
+        let argv = namespace_argv(Some("worker"), "h", &wt_s, None, "/bin/sh", HarnessSpec { bins: &["node", "claude"], ..Default::default() }, GateConfig::default())
             .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
         let mut cmd = std::process::Command::new(&argv[0]);
@@ -3789,7 +4040,7 @@ mod namespace_tests {
         std::fs::write(wt.join("main.rs"), "fn main() {}\n").unwrap();
         let wt_s = wt.to_str().unwrap().to_string();
 
-        let argv = namespace_argv(Some("worker"), "extcmd", &wt_s, None, "/bin/bash", &["node", "claude"], GateConfig::default())
+        let argv = namespace_argv(Some("worker"), "extcmd", &wt_s, None, "/bin/bash", HarnessSpec { bins: &["node", "claude"], ..Default::default() }, GateConfig::default())
             .expect("a worker renders");
 
         // The REAL init line, sandboxed. `rc_bash` is the host path the launcher passes today —
@@ -3996,7 +4247,7 @@ mod namespace_tests {
         let stores_s = stores.to_str().unwrap().to_string();
 
         let argv = super::namespace_argv(
-            Some("worker"), "storesext", &wt_s, Some(&stores_s), "/bin/bash", &["node", "claude"],
+            Some("worker"), "storesext", &wt_s, Some(&stores_s), "/bin/bash", HarnessSpec { bins: &["node", "claude"], ..Default::default() },
             GateConfig::default(),
         )
         .expect("a worker with stores renders");
@@ -4075,7 +4326,7 @@ mod namespace_tests {
         std::fs::create_dir_all(&theirs).unwrap();
         std::fs::write(theirs.join("secret.txt"), "SECRET").unwrap();
 
-        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh", &[], GateConfig::default())
+        let argv = namespace_argv(Some("worker"), "exec-test", mine.to_str().unwrap(), None, "sh", HarnessSpec::default(), GateConfig::default())
             .expect("renders");
         // Replace the trailing interactive shell with a one-shot probe.
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
@@ -4126,7 +4377,7 @@ mod dead_pane_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod hook_floor_tests {
-    use super::{bsc_hook_bin_path, namespace_argv, GateConfig};
+    use super::{bsc_hook_bin_path, namespace_argv, GateConfig, HarnessSpec};
 
     /// THE regression, as a BICONDITIONAL: the argv binds the gate exactly when the launcher
     /// resolved one, and declares its config exactly then too.
@@ -4142,7 +4393,7 @@ mod hook_floor_tests {
     fn the_gate_is_bound_exactly_when_the_launcher_resolved_one() {
         // `worker`, not `director` — the director joined `UNCAGED_ROLES` on 2026-08-25 and no longer
         // resolves to a namespace profile. Any still-caged role exercises this bind identically.
-        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/hub", None, "bash", &[], GateConfig::default())
+        let a = namespace_argv(Some("worker"), "pane-1", "/tmp/hub", None, "bash", HarnessSpec::default(), GateConfig::default())
             .expect("a known role with a cwd renders");
         let bound = a.windows(3).any(|w| w[0] == "--ro-bind" && w[2] == bsc_sandbox::HOOK_GUEST_PATH);
         let configured =
@@ -4196,7 +4447,7 @@ mod hook_floor_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod gate_config_tests {
-    use super::{guest_relative_globs, is_host_shaped_glob, namespace_argv, GateConfig};
+    use super::{guest_relative_globs, is_host_shaped_glob, namespace_argv, GateConfig, HarnessSpec};
 
     fn argv(role: &str, globs: &str, denies: &str) -> Vec<String> {
         namespace_argv(
@@ -4205,7 +4456,7 @@ mod gate_config_tests {
             "/tmp/wt",
             None,
             "bash",
-            &[],
+            HarnessSpec::default(),
             GateConfig { scope_globs: globs, deny_bash: denies },
         )
             .expect("a known role with a cwd renders")
@@ -4564,7 +4815,7 @@ mod store_root_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod limits_tests {
-    use super::{host_memory_kb, namespace_argv, session_limits, GateConfig};
+    use super::{host_memory_kb, namespace_argv, session_limits, GateConfig, HarnessSpec};
     use bsc_sandbox::profile::Role;
     use crate::testutil::prelude::ENV_LOCK;
 
@@ -4579,7 +4830,7 @@ mod limits_tests {
         std::env::remove_var("BSC_SANDBOX_MEMORY_MAX");
         std::env::set_var("BSC_SANDBOX_TASKS_MAX", "4096");
 
-        let a = namespace_argv(Some("worker"), "lim", "/tmp/wt", None, "bash", &[], GateConfig::default())
+        let a = namespace_argv(Some("worker"), "lim", "/tmp/wt", None, "bash", HarnessSpec::default(), GateConfig::default())
             .expect("renders");
 
         assert!(a.iter().any(|x| x == "TasksMax=4096"), "a fork-bomb ceiling: {a:?}");
@@ -4863,7 +5114,7 @@ mod reap_tests {
 
 #[cfg(all(test, target_os = "linux"))]
 mod designer_surface_tests {
-    use super::{namespace_argv, scaffold_store_root, GateConfig};
+    use super::{namespace_argv, scaffold_store_root, GateConfig, HarnessSpec};
 
     /// THE bind that never happened. An outbox is bound only if its host directory exists, and
     /// nothing created this one.
@@ -4883,7 +5134,7 @@ mod designer_surface_tests {
         assert!(root.join("ui").join("out").is_dir(), "and survives the projection");
 
         let argv = namespace_argv(
-            Some("worker"), "d", "/tmp/wt", Some(root.to_str().unwrap()), "bash", &[], GateConfig::default(),
+            Some("worker"), "d", "/tmp/wt", Some(root.to_str().unwrap()), "bash", HarnessSpec::default(), GateConfig::default(),
         )
         .expect("renders");
         let host = root.join("ui").join("out").to_string_lossy().to_string();
@@ -4939,7 +5190,7 @@ mod designer_surface_tests {
 
         let argv = namespace_argv(
             Some("worker"), "dsgn", wt.to_str().unwrap(),
-            Some(stores.to_str().unwrap()), "/bin/sh", &[], GateConfig::default(),
+            Some(stores.to_str().unwrap()), "/bin/sh", HarnessSpec::default(), GateConfig::default(),
         )
         .expect("renders");
         let sep = argv.iter().rposition(|x| x == "--").unwrap();
@@ -5177,5 +5428,120 @@ mod caged_git_tests {
         let a = for_role(Role::Worker, "u", &paths, &[], Limits::default(), Scope::User, vec!["bash".into()])
             .unwrap().spec.render().unwrap();
         assert!(!a.iter().any(|x| x.ends_with("/.git")), "nothing to bind: {a:?}");
+    }
+}
+
+/// The cage must contain a RUNTIME, and the harness's configuration must reach it
+/// (#a-caged-local-worker-has-no-runtime-and-no-provider-config).
+#[cfg(test)]
+mod caged_harness_tests {
+    use super::*;
+
+    // ── the cage must contain a runtime (#a-caged-local-worker-has-no-runtime-and-no-provider-config) ──
+
+    #[test]
+    fn every_provider_the_app_can_launch_names_a_runtime_for_its_cage() {
+        // THE GUARD. `extra_bins` is the only route a harness binary takes into the namespace, so a
+        // provider missing an arm gets a cage with no agent in it — which is exactly what happened to
+        // `bsc-agent` for the whole life of the local-model harness. MEASURED on twitter-clone-test:api:
+        // nine relaunches, ~3.2s and ~32 MB each, and `bsc-agent: command not found` inside its own
+        // replayed cage.
+        for provider in ["claude", "bsc-agent"] {
+            let bins = harness_bins_for(Some(provider));
+            assert!(!bins.is_empty(), "provider {provider} has no runtime for its cage");
+        }
+        // The default (no provider named) is Claude Code, and it needs node as well as the shim.
+        assert_eq!(harness_bins_for(None), &["node", "claude"]);
+        assert_eq!(harness_bins_for(Some("bsc-agent")), &["bsc-agent"]);
+        // An unrecognised provider still gets nothing rather than a guess — widening a cage for a
+        // runtime we cannot name is the worse failure. The launcher REPORTS it; see below.
+        assert!(harness_bins_for(Some("some-future-provider")).is_empty());
+    }
+
+    #[test]
+    fn a_missing_runtime_is_named_rather_than_skipped_in_silence() {
+        // `--ro-bind-try` skips a missing source without a word, which is why a runtime-less cage
+        // looked like a healthy launch. This is the probe the launcher logs from, and it asks the
+        // SAME resolver the bind uses so the two cannot disagree.
+        assert!(missing_harness_bins(&["sh"]).is_empty(), "sh resolves");
+        assert_eq!(missing_harness_bins(&["no-such-runtime-xyzzy"]), vec!["no-such-runtime-xyzzy"]);
+        // Only the missing ones are named, so the message stays about the actual gap.
+        let some = missing_harness_bins(&["sh", "no-such-runtime-xyzzy"]);
+        assert_eq!(some, vec!["no-such-runtime-xyzzy"]);
+    }
+
+    #[test]
+    fn only_the_named_agent_variables_cross_into_the_cage() {
+        // NEVER a pass-through: the cage clears the environment because an inherited one was measured
+        // carrying GH_TOKEN and AWS_SECRET into a session with no business holding either.
+        let mut env = std::collections::HashMap::new();
+        env.insert("BSC_AGENT_PROVIDER".to_string(), "ollama".to_string());
+        env.insert("BSC_AGENT_MODEL".to_string(), "qwen3.5:9b".to_string());
+        env.insert("BSC_AGENT_PERMS".to_string(), "{}".to_string());
+        env.insert("GH_TOKEN".to_string(), "ghp_secret".to_string());
+        env.insert("AWS_SECRET".to_string(), "shhh".to_string());
+        env.insert("BSC_PLAN_DB".to_string(), "/host/plans/x.db".to_string());
+
+        let picked = caged_agent_env(Some(&env));
+        let names: Vec<&str> = picked.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(names.contains(&"BSC_AGENT_PROVIDER") && names.contains(&"BSC_AGENT_MODEL"));
+        assert!(names.contains(&"BSC_AGENT_PERMS"), "the gate must not be dropped — that fails OPEN");
+        for leaked in ["GH_TOKEN", "AWS_SECRET"] {
+            assert!(!names.contains(&leaked), "{leaked} must not cross");
+        }
+        // A host-shaped store path names nothing in the guest, and a caged session reaches its plan
+        // through the read-only /plan projection instead.
+        assert!(!names.contains(&"BSC_PLAN_DB"));
+    }
+
+    #[test]
+    fn an_unset_or_blank_agent_variable_is_absent_rather_than_empty() {
+        // An empty value is not the same as an unset one: the runtime falls back to its own default
+        // for an ABSENT variable, and would take "" literally for a present one.
+        let mut env = std::collections::HashMap::new();
+        env.insert("BSC_AGENT_PROVIDER".to_string(), "ollama".to_string());
+        env.insert("BSC_AGENT_MODEL".to_string(), "   ".to_string());
+        let names: Vec<String> = caged_agent_env(Some(&env)).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(names, vec!["BSC_AGENT_PROVIDER"]);
+        assert!(caged_agent_env(None).is_empty());
+    }
+
+    #[test]
+    fn a_runtime_that_is_not_on_path_is_bound_from_its_bundled_sidecar() {
+        // THE SECOND HALF OF THE BUG. `bsc-agent` is staged at `~/.base-studio-code/bin/` and is
+        // deliberately not on any PATH, so binding it by NAME resolves to nothing and the
+        // `--ro-bind-try` skips it in silence — a cage that is complete and has no agent in it.
+        let staged = std::path::PathBuf::from("/staged/bin/bsc-agent");
+        let mounts = sidecar_mounts(
+            &["bsc-agent"],
+            |_| false,                                   // not on PATH — the real situation
+            |_| Some(staged.clone()),                    // but staged as a sidecar
+        );
+        assert_eq!(mounts, vec![(staged, std::path::PathBuf::from("/usr/bin/bsc-agent"))]);
+        // `/usr/bin` because that IS on the cage's PATH (`/usr/local/bin:/usr/bin:/bin`) — binding it
+        // anywhere else would resolve to nothing just as surely as not binding it.
+    }
+
+    #[test]
+    fn a_runtime_already_on_path_is_left_to_the_normal_bind() {
+        // `node`/`claude` resolve through `real_bin_path`, and `for_role` already binds them from
+        // where they actually are. Adding a second mount for the same guest path would be a silent
+        // override of that resolution.
+        assert!(sidecar_mounts(&["node"], |_| true, |_| Some("/staged/node".into())).is_empty());
+    }
+
+    #[test]
+    fn a_runtime_that_is_neither_on_path_nor_staged_adds_no_mount() {
+        // Nothing to bind, and nothing invented. The launcher has ALREADY said so loudly via
+        // `missing_harness_bins`; this stays quiet rather than doubling the message.
+        assert!(sidecar_mounts(&["bsc-agent"], |_| false, |_| None).is_empty());
+    }
+
+    #[test]
+    fn a_caged_agent_gets_a_conversation_path_under_its_private_home() {
+        // Not under /repo: the worktree is the session's WORK, and a conversation file committed by
+        // accident is what splitting the private HOME out of the worktree prevented.
+        assert!(AGENT_SESSION_GUEST.starts_with("/home/agent/"));
+        assert!(!AGENT_SESSION_GUEST.starts_with("/repo"));
     }
 }
