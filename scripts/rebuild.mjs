@@ -46,7 +46,15 @@ const ok = (msg) => console.log(`      ✓ ${msg}`);
  *  editor, a grep for the string, and this very script. Exported so the rule is testable without
  *  spawning anything. */
 export function killPatterns(repo) {
-  return [`${repo}/target/debug/base-studio-code`, `${repo}/node_modules/.bin/tauri`];
+  // VITE TOO. Without it a stale dev server survives the rebuild, keeps :1420, and the new launch's
+  // `beforeDevCommand` fails on the port — then tauri attaches to the OLD server and silently serves
+  // a stale frontend. Observed: a vite from 40 minutes earlier still holding the port after a
+  // "successful" rebuild.
+  return [
+    `${repo}/target/debug/base-studio-code`,
+    `${repo}/node_modules/.bin/tauri`,
+    `${repo}/node_modules/.bin/vite`,
+  ];
 }
 
 /** Should `cmd` be killed? A command line matches only by containing one of the absolute paths. */
