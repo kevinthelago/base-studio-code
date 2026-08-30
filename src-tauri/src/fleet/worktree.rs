@@ -95,10 +95,23 @@ pub(crate) fn ensure_worktree(project_key: String, repo: String, agent_id: Strin
         // both what makes a clone and who is allowed to. `bsc fleet clone` is that, and a director can
         // run it (#the-director-can-clone-its-projects-repos); before it existed the only door was a
         // click in the desktop UI, which a shell session cannot reach.
-        return Err(format!(
-            "ensure_worktree: repo not cloned: {}. Run `bsc fleet clone` to materialize this              project's linked repos (add `--source <local-checkout>` to clone from a copy already on              this machine instead of re-downloading it).",
-            clone.display()
-        ));
+        // NAME THE DOOR THIS PROJECT ACTUALLY HAS. `bsc fleet clone` is the right answer for a project
+        // that ships to GitHub and a dead end for one that does not — there is nothing to clone from,
+        // and sending a director at github.com for a repo that only ever existed locally is how
+        // twitter-clone-test spent a session on a 404 whose cause was three layers away. Same verb
+        // either way (it picks the path from `classify.usesGithub`), but the sentence has to say which
+        // act it is about to perform, or the reader cannot tell whether it applies to them.
+        let how = if crate::project::plan_db::uses_github(&project_key) {
+            "Run `bsc fleet clone` to materialize this project's linked repos (add `--source \
+             <local-checkout>` to clone from a copy already on this machine instead of re-downloading \
+             it)."
+        } else {
+            "This project does not ship to GitHub, so there is nothing to clone: run `bsc fleet \
+             clone` to INITIALIZE the repo locally (`git init` + a root commit) in the hub. If the \
+             plan links no repo at all, `bsc plan repo add <name>` links one first — a bare name, not \
+             `owner/repo`."
+        };
+        return Err(format!("ensure_worktree: repo not cloned: {}. {how}", clone.display()));
     }
     let slug  = worktree_slug(&agent_id);
     let wt    = worktrees_dir(&project_key).join(worktree_dir_name(&repo, &agent_id));
@@ -618,6 +631,65 @@ mod tests {
         let mut c = std::process::Command::new("git");
         c.args(["-C", &dir.to_string_lossy()]).args(args);
         assert!(no_window(&mut c).status().unwrap().success(), "git {args:?} failed");
+    }
+
+    // ── the missing-clone message (#a-local-project-cannot-materialize-the-repo-its-fleet-needs) ──
+
+    #[test]
+    fn a_missing_clone_names_the_door_this_project_actually_has() {
+        let _lock = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = crate::testutil::temp_home("wt-missing-clone");
+
+        // A project with no classification at all: discovery has not run, so the GitHub door is the
+        // right guess and the historical wording is what it gets.
+        let err = ensure_worktree("ghproj".into(), "o/api".into(), "api".into(), None).unwrap_err();
+        assert!(err.contains("repo not cloned"), "{err}");
+        assert!(err.contains("bsc fleet clone"), "{err}");
+        assert!(err.contains("--source"), "the offline shortcut is still named: {err}");
+
+        // A project that ships nowhere must NOT be sent at github.com. This is the sentence that was
+        // wrong for twitter-clone-test: it named a verb that could only fail, and a director spent a
+        // session on the resulting 404 rather than on the missing `git init`.
+        let plans = home.join(".base-studio-code").join("plans");
+        std::fs::create_dir_all(&plans).unwrap();
+        let store = plandb::Store::open(&plans.join("localproj.db")).unwrap();
+        store.classify_set(&serde_json::json!({ "usesGithub": false })).unwrap();
+        drop(store);
+
+        let err = ensure_worktree("localproj".into(), "api".into(), "api".into(), None).unwrap_err();
+        assert!(err.contains("repo not cloned"), "{err}");
+        assert!(err.contains("does not ship to GitHub"), "it says WHY the other door is wrong: {err}");
+        assert!(err.contains("INITIALIZE"), "and which act it is about to perform: {err}");
+        assert!(err.contains("bsc plan repo add"), "including the step before it: {err}");
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_unclassified_or_storeless_project_reads_as_a_github_one() {
+        let _lock = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = crate::testutil::temp_home("wt-uses-github");
+        // No plan store at all — the probe must not mint one just to answer.
+        assert!(crate::project::plan_db::uses_github("nostore"));
+        assert!(!home.join(".base-studio-code/plans/nostore.db").exists(), "answering must not create a store");
+
+        let plans = home.join(".base-studio-code").join("plans");
+        std::fs::create_dir_all(&plans).unwrap();
+        // A store with no classification blob.
+        plandb::Store::open(&plans.join("blank.db")).unwrap();
+        assert!(crate::project::plan_db::uses_github("blank"), "unclassified reads as GitHub");
+        // A classification that omits the key.
+        let s = plandb::Store::open(&plans.join("partial.db")).unwrap();
+        s.classify_set(&serde_json::json!({ "lifecycle": "greenfield" })).unwrap();
+        drop(s);
+        assert!(crate::project::plan_db::uses_github("partial"));
+        // ...and the one value that flips it.
+        let s = plandb::Store::open(&plans.join("local.db")).unwrap();
+        s.classify_set(&serde_json::json!({ "usesGithub": false })).unwrap();
+        drop(s);
+        assert!(!crate::project::plan_db::uses_github("local"));
+
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A repo with one commit, so branches and worktrees can be created.
