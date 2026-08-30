@@ -104,6 +104,22 @@ pub(crate) fn deploy_for(project_key: &str) -> Option<serde_json::Value> {
     open(project_key).ok().and_then(|s| s.deploy_get().ok().flatten())
 }
 
+/// Does this project ship to GitHub? (`classify.usesGithub`, decided at discovery.)
+///
+/// ABSENT reads as TRUE, matching `bsc fleet clone`'s own default: unclassified means discovery has
+/// not run, and the historical behaviour is the GitHub one. Like [`fleet_for`] this never creates a
+/// db — it is called from error paths that probe projects which may have no store at all.
+pub(crate) fn uses_github(project_key: &str) -> bool {
+    if !db_path(project_key).exists() {
+        return true;
+    }
+    open(project_key)
+        .ok()
+        .and_then(|s| s.classify_get().ok().flatten())
+        .and_then(|c| c.get("usesGithub").and_then(serde_json::Value::as_bool))
+        .unwrap_or(true)
+}
+
 /// Empty the project's plan store (issues + features) — backs "clear plan" (#plan-db). No-op when
 /// the db doesn't exist (don't create one just to clear it). Called from `clear_project_plan_files`
 /// so a reset isn't undone by the next poll re-reading the DB.

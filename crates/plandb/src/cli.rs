@@ -212,9 +212,19 @@ USAGE:
         summary: "repos linked to the project (durable in plan.db)",
         usage: "\
 USAGE:
-  bsc plan repo add <owner/repo>...   # link repo(s) to the project
-  bsc plan repo list                  # list the linked repos
-  bsc plan repo remove <owner/repo>   # unlink a repo",
+  bsc plan repo add <name>...   # link repo(s) to the project
+  bsc plan repo list            # list the linked repos
+  bsc plan repo remove <name>   # unlink a repo
+
+THE NAME'S SHAPE FOLLOWS THE PROJECT. `owner/repo` for a project that ships to GitHub — that is the
+identity publish and clone both address it by. A project classified `usesGithub: false` ships nowhere,
+so a bare local name (`api`, `web`) is the right link and always was: an owner names an account this
+project will never have, and `bsc fleet clone` materializes such a repo with `git init` rather than
+going to github.com for it.
+
+A repo must be linked before `bsc fleet clone` can materialize it, and it must be materialized before
+any worker can be given a worktree — an unlinked repo is the first of the three walls between a fresh
+plan and a running fleet.",
     },
     CmdDoc {
         name: "fleet",

@@ -71,13 +71,118 @@ pub fn clone_url(repo_full_name: &str, token: &str) -> String {
     }
 }
 
-/// What `ensure_clone` did, so a caller can report "already there" without inferring it from silence.
+/// What `ensure_clone` / [`ensure_local_repo`] did, so a caller can report "already there" without
+/// inferring it from silence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloneOutcome {
     /// The destination was already a git checkout — nothing ran.
     AlreadyPresent,
     /// `git clone` ran and succeeded.
     Cloned,
+    /// There was nothing to clone FROM, so the repo was created locally — `git init` plus a root
+    /// commit ([`ensure_local_repo`]). Distinct from `Cloned` because it is a different claim: this
+    /// repo has no upstream and never had one, and a caller that reported it as a clone would be
+    /// telling a director it could push.
+    Initialized,
+}
+
+/// The identity a root commit is authored under when git has none configured.
+///
+/// A `git commit` on a machine with no `user.email` fails outright ("Please tell me who you are"),
+/// which would turn a fresh checkout into a materialization that cannot happen. Applied ONLY when git
+/// resolves no identity of its own, and ONLY to this one commit: every later commit in the repo is
+/// the worker's, under whatever identity the user actually configured.
+const FALLBACK_COMMIT_IDENTITY: (&str, &str) = ("base-studio-code", "fleet@base-studio-code.local");
+
+/// Does git resolve a commit identity in `dir`? When it does not, a commit there fails.
+fn has_git_identity(dir: &std::path::Path) -> bool {
+    std::process::Command::new("git")
+        .current_dir(dir)
+        .args(["config", "--get", "user.email"])
+        .output()
+        .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// Create `repo_name` in its project hub as a LOCAL git repo — for a project that ships nowhere.
+///
+/// ## Why this exists at all
+/// `ensure_worktree` requires `<clone>/.git`, because every worker runs in a worktree cut from it. The
+/// only verb that could produce one was `bsc fleet clone`, which reads `owner/repo` from the plan and
+/// shells `git clone` at github.com (or at a `--source` checkout that must already exist). So a
+/// project classified `usesGithub: false` was structurally unable to start a single repo'd worker:
+/// there was nothing to clone, and no production path anywhere in the workspace ran `git init`.
+///
+/// MEASURED on twitter-clone-test (2026-08-30): the hub held `projects/<key>/<repo>/` with a README
+/// the architect had written, no `.git`, an EMPTY `repos` table, and a fleet whose one worker could
+/// never be given a worktree.
+///
+/// ## Why it commits rather than just initialising
+/// `git init` alone leaves an UNBORN HEAD. `ensure_integration_branch` creates `develop` at HEAD and
+/// `add_worktree_healing` cuts the worker's branch from it — neither can name a commit that does not
+/// exist, so a bare `git init` moves the failure one step later and makes it harder to read. The root
+/// commit is what makes the repo usable, so it is part of materializing it.
+///
+/// Content already in the directory is COMMITTED, not discarded: an architect writes a README there
+/// before any fleet exists, and a root commit that ignored it would leave that file untracked forever
+/// and absent from every worktree cut from the branch. The `.git/info/exclude` entries go in FIRST, so
+/// the app-managed files `ensure_clone` keeps out of `git status` never enter history here either.
+///
+/// IDEMPOTENT on the same test `ensure_clone` uses — a destination holding `.git` is returned
+/// untouched — so a caller can run it over every linked repo without first working out which are
+/// missing, and a second call after a worker has committed can never rewrite its history.
+pub fn ensure_local_repo(
+    project_key: &str,
+    repo_name: &str,
+    default_branch: &str,
+) -> Result<(PathBuf, CloneOutcome), String> {
+    let dest = repo_dir(project_key, repo_name)
+        .ok_or("no home dir ($HOME / $USERPROFILE unset), so the hub has no path")?;
+    if dest.join(".git").exists() {
+        return Ok((dest, CloneOutcome::AlreadyPresent));
+    }
+    std::fs::create_dir_all(&dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
+
+    let git = |args: &[&str]| -> Result<(), String> {
+        let out = std::process::Command::new("git")
+            .current_dir(&dest)
+            .args(args)
+            .output()
+            .map_err(|e| format!("cannot run git: {e}"))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        Err(format!(
+            "git {} failed in {}: {}",
+            args.first().copied().unwrap_or(""),
+            dest.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    };
+
+    let branch = if default_branch.trim().is_empty() { "main" } else { default_branch.trim() };
+    git(&["init", "-q", "-b", branch])?;
+
+    // BEFORE the root commit, so the app-managed files never enter history — the same three
+    // `ensure_clone` excludes from a cloned checkout.
+    for path in ["CLAUDE.local.md", ".claude/", "DECISIONS.md"] {
+        git_exclude(&dest, path);
+    }
+
+    git(&["add", "-A"])?;
+    let mut commit: Vec<&str> = Vec::new();
+    let (name, email) = FALLBACK_COMMIT_IDENTITY;
+    let name_cfg = format!("user.name={name}");
+    let email_cfg = format!("user.email={email}");
+    if !has_git_identity(&dest) {
+        commit.extend(["-c", &name_cfg, "-c", &email_cfg]);
+    }
+    // `--allow-empty` because an empty hub directory is the ordinary case: the fleet is usually
+    // materialized before anything has been written into the repo at all.
+    commit.extend(["commit", "-q", "--allow-empty", "-m", "chore: initialize the project repo"]);
+    git(&commit)?;
+
+    Ok((dest, CloneOutcome::Initialized))
 }
 
 /// Clone `repo_full_name` into its project hub, if it is not already there. Returns the clone path.
@@ -893,6 +998,118 @@ mod tests {
             let v: serde_json::Value = serde_json::from_str(&load_github_state().unwrap()).unwrap();
             assert_eq!(v["fetchedAt"], 99);
             assert_eq!(v["records"].as_array().unwrap().len(), 0);
+        });
+    }
+
+    // ── local repo materialization (#a-local-project-cannot-materialize-the-repo-its-fleet-needs) ──
+
+    /// Run a git command in `dir`, returning stdout trimmed. Panics on failure so a broken assumption
+    /// shows up as the assertion it is rather than as an empty string that quietly passes.
+    fn git_out(dir: &std::path::Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git").current_dir(dir).args(args).output().unwrap();
+        assert!(out.status.success(), "git {args:?} in {}: {}", dir.display(), String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn a_local_repo_is_initialized_with_a_real_root_commit_on_the_named_branch() {
+        with_home(|_home| {
+            let (dir, outcome) = ensure_local_repo("demo", "api", "main").unwrap();
+            assert_eq!(outcome, CloneOutcome::Initialized);
+            assert!(dir.join(".git").exists(), "a git repo, not just a directory");
+
+            // THE ROOT COMMIT IS THE POINT. `git init` alone leaves an UNBORN HEAD, and both
+            // `ensure_integration_branch` (which creates `develop` AT HEAD) and `add_worktree_healing`
+            // (which cuts the worker's branch from it) need a commit to name. Without this the failure
+            // simply moves one step later, into git plumbing, where it is harder to read.
+            let head = git_out(&dir, &["rev-parse", "--verify", "HEAD"]);
+            assert_eq!(head.len(), 40, "HEAD resolves to a real commit: {head:?}");
+            assert_eq!(git_out(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]), "main");
+
+            // `main` is the PRODUCTION rung on purpose — `develop` is cut from HEAD at the first
+            // worktree, and initialising straight onto the integration branch would leave the ladder
+            // with no rung above it.
+            let (dir2, _) = ensure_local_repo("demo", "web", "trunk").unwrap();
+            assert_eq!(git_out(&dir2, &["rev-parse", "--abbrev-ref", "HEAD"]), "trunk");
+        });
+    }
+
+    #[test]
+    fn an_initialized_repo_commits_what_was_already_there_but_not_the_app_managed_files() {
+        with_home(|_home| {
+            // An architect writes a README into the hub before any fleet exists. A root commit that
+            // ignored it would leave that file untracked forever and absent from every worktree cut
+            // from the branch — which is the state twitter-clone-test was actually in.
+            let dest = project_dir("demo").unwrap().join("api");
+            std::fs::create_dir_all(dest.join(".claude")).unwrap();
+            std::fs::write(dest.join("README.md"), "# api\n").unwrap();
+            std::fs::write(dest.join("CLAUDE.local.md"), "the plan\n").unwrap();
+            std::fs::write(dest.join(".claude/settings.json"), "{}\n").unwrap();
+            std::fs::write(dest.join("DECISIONS.md"), "why\n").unwrap();
+
+            let (dir, outcome) = ensure_local_repo("demo", "api", "main").unwrap();
+            assert_eq!(outcome, CloneOutcome::Initialized);
+
+            let tracked = git_out(&dir, &["ls-files"]);
+            assert!(tracked.contains("README.md"), "real content is committed: {tracked:?}");
+            // The excludes are written BEFORE the commit, so the app-managed files never enter
+            // history — the same three `ensure_clone` keeps out of a cloned checkout.
+            for f in ["CLAUDE.local.md", "DECISIONS.md", ".claude/settings.json"] {
+                assert!(!tracked.contains(f), "{f} must not be committed: {tracked:?}");
+            }
+            // ...and they are not merely uncommitted, they are invisible to `git status`, or every
+            // worker would open onto a dirty tree it did not create.
+            assert_eq!(git_out(&dir, &["status", "--porcelain"]), "", "a clean tree");
+        });
+    }
+
+    #[test]
+    fn materializing_a_local_repo_twice_never_touches_the_first_one() {
+        with_home(|_home| {
+            let (dir, first) = ensure_local_repo("demo", "api", "main").unwrap();
+            assert_eq!(first, CloneOutcome::Initialized);
+            let root = git_out(&dir, &["rev-parse", "HEAD"]);
+
+            // A worker commits into it, exactly as one would after the fleet starts.
+            std::fs::write(dir.join("app.ts"), "export const x = 1;\n").unwrap();
+            // `add` first: `commit -a` stages only TRACKED paths, and this file is new.
+            git_out(&dir, &["add", "app.ts"]);
+            let out = std::process::Command::new("git").current_dir(&dir)
+                .args(["-c", "user.name=w", "-c", "user.email=w@w", "commit", "-qm", "work"]).output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            let after_work = git_out(&dir, &["rev-parse", "HEAD"]);
+            assert_ne!(after_work, root, "the worker's commit landed");
+
+            // IDEMPOTENT on the same test `ensure_clone` uses — a destination holding `.git` is
+            // returned untouched. This is what makes it safe to run before every launch rather than
+            // working out first which repos are missing, and it is what stops a second call from
+            // rewriting a worker's history.
+            let (dir2, second) = ensure_local_repo("demo", "api", "main").unwrap();
+            assert_eq!(second, CloneOutcome::AlreadyPresent);
+            assert_eq!(dir2, dir);
+            assert_eq!(git_out(&dir, &["rev-parse", "HEAD"]), after_work, "history is untouched");
+        });
+    }
+
+    #[test]
+    fn a_local_repo_is_created_even_with_no_git_identity_configured() {
+        with_home(|home| {
+            // A fresh machine has no `user.email`, and a plain `git commit` there fails outright with
+            // "Please tell me who you are" — which would turn materialization into something that
+            // cannot happen at all on exactly the machines most likely to need it. with_home already
+            // points HOME at an empty dir, so there is no global config to find.
+            std::fs::write(home.join(".gitconfig"), "").unwrap();
+            let (dir, outcome) = ensure_local_repo("demo", "api", "main").unwrap();
+            assert_eq!(outcome, CloneOutcome::Initialized);
+            assert_eq!(git_out(&dir, &["rev-parse", "--verify", "HEAD"]).len(), 40);
+            // The fallback identity is applied to THIS commit only; it is not written into config,
+            // so a worker's later commits still carry whatever identity the user actually configures.
+            assert_eq!(git_out(&dir, &["log", "-1", "--format=%an"]), FALLBACK_COMMIT_IDENTITY.0);
+            // `git config --get` exits NON-ZERO when the key is unset, so this cannot go through the
+            // panicking helper — the non-zero exit IS the assertion.
+            let probed = std::process::Command::new("git").current_dir(&dir)
+                .args(["config", "--local", "--get", "user.email"]).output().unwrap();
+            assert!(!probed.status.success(), "the fallback identity must not be written into config");
         });
     }
 

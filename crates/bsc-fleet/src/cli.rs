@@ -215,12 +215,12 @@ Reports and exits 0 by default; `--strict` exits non-zero on any finding. Opt-in
 `bsc ui parity`'s is: a guard that lands red protects nothing.",
 }, CmdDoc {
     name: "clone",
-    summary: "clone the project's linked repos into its hub — the prerequisite for any worker",
+    summary: "materialize the project's linked repos into its hub — the prerequisite for any worker",
     usage: "\
 USAGE:
-  bsc fleet clone [--db <plan.db>] [--repo <owner/name>]… [--source <path-or-url>] [--token <t>] [--json]
+  bsc fleet clone [--db <plan.db>] [--repo <name>]… [--source <path-or-url>] [--token <t>] [--local] [--json]
 
-Materializes the repo CLONES a fleet needs. Every worker runs in a git worktree cut from its repo's
+Materializes the repos a fleet needs. Every worker runs in a git worktree cut from its repo's
 clone inside the project hub, so a hub with no clone cannot start a single worker — `bsc fleet start`
 and `bsc fleet wake` both fail with `ensure_worktree: repo not cloned`, and until now the only thing
 that could fix that was a click in the desktop UI. A director is a shell session, so the one act that
@@ -240,7 +240,21 @@ app closed — unlike `start` and `wake`, which place panes and therefore cannot
 machine: it is the difference between seconds and re-downloading hundreds of megabytes, and it is the
 only form that works with no network.
 
---token authorizes a private repo. It is redacted from any error, since git echoes the URL it was given.",
+--token authorizes a private repo. It is redacted from any error, since git echoes the URL it was given.
+
+A PROJECT THAT SHIPS NOWHERE IS INITIALIZED, NOT CLONED. When the plan classifies the project
+`usesGithub: false` there is nothing to clone FROM and never was, so this runs `git init` plus a root
+commit in the hub instead, and reports the outcome as `initialized` rather than `cloned` — a different
+claim, because that repo has no upstream and a director must not be told it can push. Content already
+sitting in the directory (a README the architect wrote) is committed rather than left untracked; the
+app-managed files are excluded first, exactly as they are from a clone. The root commit exists because
+`git init` alone leaves an UNBORN HEAD, and neither the integration branch nor any worker branch can be
+cut from a commit that does not exist.
+
+--local forces that path for a project whose classification is missing or wrong. It is an override, not
+a default: giving an upstream-less repo to a project that DOES ship to GitHub is the one mistake here
+that is hard to notice and hard to undo. --source still wins over both — a local project seeded from a
+checkout already on the machine is a clone, and the caller has said so.",
 }, CmdDoc {
     name: "wake",
     summary: "wake a parked/reaped worker — the director's lever over a stopped session",
@@ -331,6 +345,11 @@ struct Args {
     source: Option<String>,
     /// `clone`: restrict to these repos instead of every one the plan links.
     repos: Vec<String>,
+    /// `clone --local`: materialize the repo LOCALLY (`git init` + a root commit) instead of cloning
+    /// it from anywhere. Normally inferred from the plan's own `classify.usesGithub`, so this is the
+    /// override for a project whose classification is missing or wrong — never a thing to reach for
+    /// by default, since a project that DOES ship to GitHub must not get an upstream-less repo.
+    local: bool,
     /// `provision`: the stream id to re-provision, combined with the projectKey positional into a
     /// pane id — the same identity `wake` takes directly.
     stream: Option<String>,
@@ -338,7 +357,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), stream: None, positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -353,6 +372,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
             "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
             "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
+            "--local" => a.local = true,
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value")?;
                 a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
@@ -481,6 +501,24 @@ fn explain_clone_failure(prog: &str, repo: &str, had_token: bool, err: &str) -> 
 /// invisibly — and the director would be told its wake failed when a clone was in fact running. A verb
 /// with its own timeout is the honest shape for a long operation; `ensure_worktree` names this command
 /// in its error instead.
+/// Which door `clone` takes: `git init` in the hub, or a fetch from somewhere.
+///
+/// Pure and separate so the RULE is testable without a network, a hub, or a git binary — the
+/// integration test below covers the local path end to end, but the three-way precedence is the part
+/// that would rot silently, and it is the part a wrong answer is most expensive on.
+///
+/// Precedence, nearest first:
+///   1. `--source` — the caller has NAMED a thing to clone from, so it is a clone whatever the plan
+///      says. A local project seeded from a checkout already on this machine is the ordinary case.
+///   2. `--local` — the explicit override, for a plan whose classification is missing or wrong.
+///   3. `classify.usesGithub` — the plan's own answer, which is where this normally comes from.
+fn materialize_locally(uses_github: bool, local_flag: bool, has_source: bool) -> bool {
+    if has_source {
+        return false;
+    }
+    local_flag || !uses_github
+}
+
 fn cmd_clone(args: &Args, prog: &str) -> Result<(), String> {
     let db = plan_db_path(args.db.as_deref())
         .ok_or_else(|| format!("{prog} clone: no plan store — pass --db <plan.db> or set BSC_PLAN_DB"))?;
@@ -507,8 +545,9 @@ fn cmd_clone(args: &Args, prog: &str) -> Result<(), String> {
     };
     if repos.is_empty() {
         return Err(format!(
-            "{prog} clone: '{key}' links no repos, so there is nothing to clone. \
-             `bsc plan repo list` shows what the plan holds."
+            "{prog} clone: '{key}' links no repos, so there is nothing to materialize. \
+             `bsc plan repo list` shows what the plan holds; `bsc plan repo add <name>` links one — \
+             `owner/repo` for a project that ships to GitHub, a bare name for one that does not."
         ));
     }
 
@@ -528,18 +567,50 @@ fn cmd_clone(args: &Args, prog: &str) -> Result<(), String> {
         .or_else(|| env_token("GH_TOKEN"))
         .or_else(|| env_token("GITHUB_TOKEN"))
         .unwrap_or_default();
+    // WHICH KIND OF REPO THIS PROJECT HAS, asked of the plan rather than assumed.
+    //
+    // A project classified `usesGithub: false` ships nowhere, so there is nothing to clone FROM and
+    // never was — `bsc plan repo add` links a bare local name for it, not an `owner/repo`. Cloning
+    // such a repo could only ever fail at github.com with a 404 that names neither the cause nor a
+    // fix, which is exactly the wall twitter-clone-test hit: an empty `repos` table, a hub directory
+    // with no `.git`, and `ensure_worktree` sending the reader to this very command for a repo it
+    // could not possibly produce.
+    //
+    // `--source` still wins when given: a local project seeded from a checkout already on the machine
+    // is a clone, not an init, and the caller has said so explicitly.
+    let uses_github = store
+        .classify_get()
+        .ok()
+        .flatten()
+        .and_then(|c| c.get("usesGithub").and_then(serde_json::Value::as_bool))
+        // ABSENT means unclassified, and the historical behaviour is the clone. Defaulting the other
+        // way would silently give an upstream-less repo to every project that simply has not run
+        // discovery yet, and an init is the harder of the two to notice and undo.
+        .unwrap_or(true);
+    let materialize_locally = materialize_locally(uses_github, args.local, args.source.is_some());
+
     let mut rows = Vec::new();
     for repo in &repos {
-        // FAIL CLOSED on the first repo that cannot be cloned, naming it. A partial clone reported as
-        // success is the state where half the fleet starts and the other half fails one wake at a time.
-        let (path, outcome) = bsc_project::ensure_clone(&key, repo, &token, args.source.as_deref())
-            .map_err(|e| explain_clone_failure(prog, repo, !token.is_empty(), &e))?;
+        // FAIL CLOSED on the first repo that cannot be materialized, naming it. A partial run reported
+        // as success is the state where half the fleet starts and the other half fails one wake at a
+        // time.
+        let (path, outcome) = if materialize_locally {
+            // `main` rather than the plan's integration branch: this is the PRODUCTION rung, and
+            // `ensure_integration_branch` cuts `develop` from HEAD at the first worktree. Initialising
+            // straight onto the integration branch would leave the ladder with no rung above it.
+            bsc_project::ensure_local_repo(&key, repo, "main")
+                .map_err(|e| format!("{prog} clone: could not materialize '{repo}' locally: {e}"))?
+        } else {
+            bsc_project::ensure_clone(&key, repo, &token, args.source.as_deref())
+                .map_err(|e| explain_clone_failure(prog, repo, !token.is_empty(), &e))?
+        };
         rows.push(serde_json::json!({
             "repo": repo,
             "path": path.to_string_lossy(),
             "outcome": match outcome {
                 bsc_project::CloneOutcome::AlreadyPresent => "already-present",
                 bsc_project::CloneOutcome::Cloned => "cloned",
+                bsc_project::CloneOutcome::Initialized => "initialized",
             },
         }));
     }
@@ -1569,6 +1640,14 @@ mod tests {
         path
     }
 
+    /// Serialize the tests that repoint $HOME. It is process-global, so two of them running at once
+    /// would land one test's hub inside another's. (Under nextest each test is its own process and
+    /// this is inert; under `cargo test --lib` it is what stops the race.)
+    fn home_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn clone_args(db: &std::path::Path, extra: &[&str]) -> Args {
         let mut raw = vec!["clone".to_string(), "--db".to_string(), db.to_string_lossy().into_owned()];
         raw.extend(extra.iter().map(|s| s.to_string()));
@@ -1604,6 +1683,68 @@ mod tests {
         let err = cmd_clone(&clone_args(&path, &[]), "bsc fleet").unwrap_err();
         assert!(err.contains("links no repos"), "{err}");
         assert!(err.contains("bsc plan repo list"), "points at where repos come from: {err}");
+    }
+
+    // ── local materialization (#a-local-project-cannot-materialize-the-repo-its-fleet-needs) ─────
+
+    #[test]
+    fn the_door_clone_takes_follows_the_plan_unless_the_caller_has_named_one() {
+        // The plan's own answer is the normal source of this.
+        assert!(!materialize_locally(true, false, false), "a GitHub project is cloned");
+        assert!(materialize_locally(false, false, false), "a project that ships nowhere is initialized");
+
+        // `--local` overrides a classification that is missing or wrong...
+        assert!(materialize_locally(true, true, false));
+
+        // ...but `--source` beats BOTH, and that order is the one worth pinning. A local project
+        // seeded from a checkout already on this machine is a CLONE — the caller has named the thing
+        // to clone from, which is more specific than anything the plan or a bare flag can say.
+        assert!(!materialize_locally(false, false, true), "--source on a local project is still a clone");
+        assert!(!materialize_locally(false, true, true), "--source beats --local");
+    }
+
+    #[test]
+    fn a_project_that_ships_nowhere_is_initialized_locally_and_only_once() {
+        // THE WALL twitter-clone-test hit: `usesGithub: false`, so there is nothing to clone FROM and
+        // never was — yet `ensure_worktree` sent its director here, and this command could only reach
+        // github.com. Every worker in that fleet was unstartable for want of a `git init`.
+        let _g = home_guard();
+        let home = std::env::temp_dir().join(format!("bsc-fleet-local-{}-{}", std::process::id(), bsc_util::now_ms()));
+        std::fs::create_dir_all(&home).unwrap();
+        let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let prev = std::env::var_os(key);
+        std::env::set_var(key, &home);
+
+        let path = home.join("localproj.db");
+        let store = plandb::Store::open(&path).unwrap();
+        store.repo_add("api").unwrap(); // a BARE name — an owner names an account this project has not got
+        store.classify_set(&serde_json::json!({ "usesGithub": false })).unwrap();
+
+        cmd_clone(&clone_args(&path, &["--json"]), "bsc fleet").expect("materializes locally");
+        let repo = bsc_project::repo_dir("localproj", "api").unwrap();
+        assert!(repo.join(".git").exists(), "a real git repo at {}", repo.display());
+        // The root commit, without which neither the integration branch nor any worker branch can be
+        // cut — the whole reason this is more than `git init`.
+        let head = std::process::Command::new("git").current_dir(&repo)
+            .args(["rev-parse", "--verify", "HEAD"]).output().unwrap();
+        assert!(head.status.success(), "HEAD resolves: {}", String::from_utf8_lossy(&head.stderr));
+
+        // Idempotent: safe to run before every launch rather than working out which repos are missing.
+        cmd_clone(&clone_args(&path, &["--json"]), "bsc fleet").expect("second call is a no-op");
+
+        match prev { Some(v) => std::env::set_var(key, v), None => std::env::remove_var(key) }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_unclassified_project_is_still_cloned_rather_than_quietly_initialized() {
+        // ABSENT means discovery has not run, not "local". Defaulting the other way would hand an
+        // upstream-less repo to every project that simply has not been classified yet — the harder of
+        // the two mistakes to notice, and the harder to undo once workers have committed into it.
+        assert!(!materialize_locally(true, false, false));
+        let db = seed_repo_db("unclassified");
+        let store = plandb::Store::open(&db).unwrap();
+        assert!(store.classify_get().unwrap().is_none(), "nothing classified this project");
     }
 
     #[test]
