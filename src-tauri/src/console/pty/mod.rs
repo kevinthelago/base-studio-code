@@ -1633,6 +1633,13 @@ mod tests {
     }
 
     /// Which panes are REFUSED rather than merely warned about when no gate file is present.
+    ///
+    /// MIRRORED ON THE FRONTEND by `paneNeedsGate` (`@/app/console/lib/paneIdentity`), whose test
+    /// `src/app/console/paneNeedsGate.test.ts` asserts this exact table. The two must agree: this
+    /// side decides whether to REFUSE a launch, and that side decides whether to WRITE the gate
+    /// file the refusal is about. When they disagreed the result was a deadlock — a restored
+    /// director could never write the file that would let it launch, and the skip logged nothing
+    /// (`a-directors-pane-can-never-write-the-gate-that-lets-it-launch`, 30 hubs affected).
     #[test]
     fn every_fleet_identity_must_be_gated_and_a_manual_console_is_not() {
         for id in ["studio-code:director", "studio-code:design-studio", "studio-code:kevinthelago/base-studio-code:triage"] {
