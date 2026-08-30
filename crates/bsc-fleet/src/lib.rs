@@ -166,8 +166,15 @@ pub fn discovery_kickoff(project_key: &str) -> String {
          ## Your lane\n\
          \n\
          - You own integration, contracts and the board. Workers own their own streams.\n\
-         - You may START a worker that is parked (`bsc fleet wake <pane>`) and see the fleet\n\
-           (`bsc fleet list`).\n\
+         - A worker exists only once its STREAM does, and CREATING THE FLEET IS YOURS — nobody does\n\
+           it for you. `bsc plan fleet get` on a new project returns `(no fleet)`; that is the normal\n\
+           starting state, not a fault, and not something to wait out.\n\
+         - To add one: `bsc plan fleet stream set <id>` with the stream JSON on stdin — at minimum\n\
+           `{{\"id\":\"<id>\",\"repo\":\"<owner/repo>\",\"owns\":[\"<glob>\"],\"issues\":[],\"dependsOn\":[]}}`. Give it\n\
+           the globs it owns so two workers never edit the same file. Repeat per stream.\n\
+         - THEN start it: `bsc fleet wake <projectKey>:<stream-id>`. A wake REFUSES a stream plan.db\n\
+           does not name, so creating it first is the whole prerequisite. See the fleet with\n\
+           `bsc fleet list`.\n\
          - Record what you decide with `bsc plan decision`, citing the authority clause it rests on.\n\
          - A tooling gap a worker files (`bsc plan request`) is yours to judge and escalate.\n"
     )
@@ -268,6 +275,35 @@ pub struct WakeResult {
 
 #[cfg(test)]
 mod tests {
+
+    /// The director must be told how the fleet it wakes COMES TO EXIST.
+    ///
+    /// Observed on twitter-clone-test: the kickoff said "You may START a worker that is parked
+    /// (`bsc fleet wake <pane>`)" and never said a stream has to exist first, or how to make one.
+    /// `bsc plan fleet get` returned `(no fleet)`, `bsc fleet wake` refuses a stream plan.db does not
+    /// name, and the director — a 9B — spent its whole 60-step budget scouting and then wrote a README
+    /// listing options instead of creating a single stream. It had no instruction out of the wall.
+    #[test]
+    fn the_director_kickoff_states_the_stream_prerequisite() {
+        let k = super::discovery_kickoff("demo");
+        assert!(k.contains("bsc plan fleet stream set"), "it names the verb that CREATES a stream");
+        assert!(k.contains("CREATING THE FLEET IS YOURS"), "and that the job is the director's");
+        assert!(k.contains("(no fleet)"), "and that an empty fleet is the normal starting state");
+        // The ORDER is the part that was missing: create, then wake.
+        let create = k.find("bsc plan fleet stream set").expect("create verb present");
+        let wake = k.rfind("bsc fleet wake").expect("wake verb present");
+        assert!(create < wake, "the kickoff must teach create BEFORE wake");
+        // The example must RENDER as real JSON. It is inside a `format!` in a quoted string, so the
+        // braces need doubling and the quotes escaping — both of which were wrong on the first two
+        // attempts, and a half-escaped example is worse than none for a model that copies it.
+        assert!(
+            k.contains(r#"{"id":"<id>","repo":"<owner/repo>""#),
+            "the JSON example must render unescaped:\n{k}",
+        );
+        assert!(!k.contains("{{"), "no unresolved format braces reached the prompt");
+        assert!(!k.contains("\\\""), "no unresolved backslash-quotes reached the prompt");
+    }
+
     use super::*;
 
     /// The app deserializes `FleetRequest` from the envelope payload and the CLI deserializes
