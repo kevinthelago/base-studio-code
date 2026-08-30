@@ -102,11 +102,13 @@ pub(crate) fn cmd_repo(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
     let s = open_store(&args.db)?;
     match sub {
-        // `repo add <owner/repo>...` links repo(s) to the project.
+        // `repo add <name>...` links repo(s) to the project. The name is stored VERBATIM and is not
+        // required to be `owner/repo`: a project that ships nowhere links a bare local name, which
+        // `bsc fleet clone` materializes with `git init` instead of fetching from github.com.
         "add" => {
             let names: Vec<&String> = args.positional.iter().skip(2).collect();
             if names.is_empty() {
-                return Err("usage: bsc plan repo add <owner/repo>...".into());
+                return Err("usage: bsc plan repo add <name>...  (owner/repo for a GitHub project, a bare name for a local one)".into());
             }
             for n in &names {
                 s.repo_add(n).map_err(|e| e.to_string())?;

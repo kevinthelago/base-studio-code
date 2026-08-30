@@ -867,8 +867,9 @@ pub fn transformations_readiness(rows: &[Value]) -> String {
 /// Validate a whole FleetPlan blob against what `fleet_set` + the frontend `parseFleetFile` consume.
 /// Rejects: a non-object root; a MISSING `streams` key (`fleet set` replaces the whole fleet, so a
 /// meta-only blob would silently WIPE every stream — use `fleet meta set`); a stream without a
-/// non-empty `id` + `repo` (both `fleet_set` and `parseFleetFile` silently drop it — its worker
-/// never launches); and duplicate stream ids (the upsert makes the last one silently win).
+/// non-empty `id` or without a `repo` key (both `fleet_set` and `parseFleetFile` silently drop it —
+/// its worker never launches); a stream id that is not safe as a pane-id tail
+/// ([`stream_id_problem`]); and duplicate stream ids (the upsert makes the last one silently win).
 pub fn validate_fleet_plan(v: &Value) -> Result<(), String> {
     let noun = "fleet plan";
     let Some(obj) = v.as_object() else {
@@ -909,9 +910,87 @@ pub fn stream_kind(s: &Value) -> String {
     str_of(s, "kind").map(|k| k.to_lowercase()).unwrap_or_else(|| "feature".to_string())
 }
 
-/// The per-stream floor: an object with a non-empty `id` and `repo` (anything less is silently
-/// dropped by the store + the frontend parser, and that worker never launches), plus — if present —
-/// a `kind` drawn from [`STREAM_KINDS`].
+/// The characters a fleet stream id may contain: lowercase alphanumerics and `-`, nothing else.
+///
+/// MIRRORS `streamIdFromNode` in `@/features/planner/fleet/teamFleet`, which slugs a team position's
+/// nodeId to exactly this alphabet "so it is safe as a pane-id tail (`<key>:<id>`) and a git branch
+/// name". That constraint has always been real; it was simply never taught to the plan.db write path,
+/// so the one authoring surface an LLM actually reaches could write ids the launch path cannot use.
+///
+/// MEASURED before choosing the alphabet: of 149 stream rows across every plan store on this machine,
+/// exactly ONE fails it — `twitter-clone:api`, the row this rule exists for. So the rule describes
+/// what the fleet already is, and no existing project has to change to satisfy it.
+fn stream_id_char_ok(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'
+}
+
+/// Slug an id into the [`stream_id_char_ok`] alphabet — offered in a rejection as a concrete
+/// "e.g. …", never applied silently. Naming an id the author can paste is the difference between a
+/// rejection an LLM self-corrects from and one it retries verbatim.
+fn suggest_stream_id(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    let mut last_dash = false;
+    for c in id.chars() {
+        let c = c.to_ascii_lowercase();
+        if stream_id_char_ok(c) && c != '-' {
+            out.push(c);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let s = out.trim_matches('-').to_string();
+    if s.is_empty() { "stream".to_string() } else { s }
+}
+
+/// Why this stream id cannot be used as a fleet pane-id tail, or `None` when it is safe.
+///
+/// THE COLON IS ITS OWN ARM because it is the one that fails INVISIBLY. A fleet pane is `<key>:<id>`
+/// and a triage pane is `<key>:<repo>:triage`, so `worker_pane` (`src-tauri/src/fleet/wake.rs`)
+/// refuses a stream id containing a colon — that refusal is how it turns triage panes down. A worker
+/// whose id carries one therefore parses as triage-shaped, `resolve_stream` takes its SILENT `Ok(None)`
+/// arm (correctly: that arm is how an unknown stream still reaches the refusal downstream), no plan row
+/// reaches the frontend, the launch precheck falls back to a store cwd that is empty for a
+/// never-launched pane, and the director is told `refusing to auto-launch claude at <no cwd>` — three
+/// layers from the cause, naming neither the stream nor the id.
+///
+/// Public so `bsc fleet doctor` can ask the same question of rows that are ALREADY stored: this rule
+/// stops the next bad id being written, and the doctor is what finds the ones that already were.
+pub fn stream_id_problem(id: &str) -> Option<String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Some("the id is empty".to_string());
+    }
+    if id.contains(':') {
+        return Some(format!(
+            r#"the id contains ":", which the fleet pane-id grammar reserves — a worker pane is "<key>:<id>" and a triage pane is "<key>:<repo>:triage", so this stream's pane id reads as a TRIAGE pane. `bsc fleet wake` then resolves no plan row for it (silently, by design) and every wake is refused with "refusing to auto-launch claude at <no cwd>", naming neither this stream nor this id. The worker can never be launched. Use [a-z0-9-] only — e.g. "{}""#,
+            suggest_stream_id(id)
+        ));
+    }
+    let bad: Vec<String> = {
+        let mut seen = Vec::new();
+        for c in id.chars() {
+            if !stream_id_char_ok(c) && !seen.iter().any(|x: &String| x == &c.to_string()) {
+                seen.push(c.to_string());
+            }
+        }
+        seen
+    };
+    if !bad.is_empty() {
+        return Some(format!(
+            r#"the id contains {} — a stream id is used VERBATIM as a pane-id tail ("<key>:<id>") and as the worker's git branch name, so it must be [a-z0-9-] only. Use e.g. "{}""#,
+            bad.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>().join(", "),
+            suggest_stream_id(id)
+        ));
+    }
+    None
+}
+
+/// The per-stream floor: an object with a non-empty `id` that is safe as a pane-id tail
+/// ([`stream_id_problem`]) and a `repo` key that is PRESENT (anything less is silently dropped by the
+/// store + the frontend parser, and that worker never launches), plus — if present — a `kind` drawn
+/// from [`STREAM_KINDS`].
 fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
     if !s.is_object() {
         errs.push(format!("{at}: each stream must be a JSON object"));
@@ -921,11 +1000,35 @@ fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
         Some(id) => format!("{at} (\"{id}\")"),
         None => at.to_string(),
     };
-    if str_of(s, "id").is_none() {
-        errs.push(format!(r#"{at}: missing non-empty "id" — a stream without an id is silently dropped and its worker never launches"#));
+    match str_of(s, "id") {
+        None => errs.push(format!(r#"{at}: missing non-empty "id" — a stream without an id is silently dropped and its worker never launches"#)),
+        Some(id) => {
+            if let Some(why) = stream_id_problem(id) {
+                errs.push(format!("{at}: {why}"));
+            }
+        }
     }
-    if str_of(s, "repo").is_none() {
-        errs.push(format!(r#"{at}: missing non-empty "repo" ("owner/repo") — a stream without a repo is silently dropped by the fleet reader"#));
+    // `repo` must be PRESENT, but an EMPTY one is legitimate and must be accepted.
+    //
+    // A repo-less stream is a hub role-actor (#3103): `teamRoleStreams` emits exactly this shape
+    // (`repo: ""`, "hub-scoped: runs at the project hub, not a repo worktree") and `resolve_stream`
+    // handles it explicitly — "A REPO-LESS stream is not an error ... and runs at the hub". Those rows
+    // reach plan.db through the frontend, which never calls this validator, so requiring a non-empty
+    // repo here meant the CLI refused to write a shape the store legitimately holds and the runtime is
+    // built for. Worse, it pushed an LLM authoring a plan for a project that ships nowhere into
+    // INVENTING a repo value to get past the check — twitter-clone-test's stream carries the project
+    // key as its repo for precisely that reason, which then failed later as "repo not cloned".
+    //
+    // ABSENT still fails, and that is the distinction worth keeping: `"repo": ""` is a deliberate
+    // statement that this stream runs at the hub, while no `repo` key at all is a dropped field.
+    match s.get("repo") {
+        None | Some(Value::Null) => errs.push(format!(
+            r#"{at}: missing "repo" — a stream without one is silently dropped by the fleet reader. Set "repo": "owner/repo" for a worker with its own worktree, or "repo": "" for a hub role-actor that runs at the project hub"#
+        )),
+        Some(Value::String(_)) => {}
+        Some(other) => errs.push(format!(
+            r#"{at}: "repo" is {other}, not a string — use "owner/repo", or "" for a hub role-actor"#
+        )),
     }
     if let Some(k) = str_of(s, "kind") {
         if !STREAM_KINDS.contains(&k.to_lowercase().as_str()) {
@@ -937,7 +1040,8 @@ fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
     }
 }
 
-/// Validate one stream blob for `fleet stream set <id>`: the object floor (`id` + `repo`), plus its
+/// Validate one stream blob for `fleet stream set <id>`: the object floor (a pane-id-safe `id` + a
+/// present `repo`), plus its
 /// `"id"` must MATCH the `<id>` argument — the row is keyed by the argument but readers key off the
 /// blob's `id`, so a mismatch makes the stream unreachable under either name.
 pub fn validate_fleet_stream(arg_id: &str, v: &Value) -> Result<(), String> {
@@ -1695,13 +1799,100 @@ mod tests {
         let err = validate_fleet_plan(&json!({ "streams": [{ "repo": "o/r" }] })).unwrap_err();
         assert!(err.contains(r#"missing non-empty "id""#), "{err}");
         let err = validate_fleet_plan(&json!({ "streams": [{ "id": "a" }] })).unwrap_err();
-        assert!(err.contains(r#"missing non-empty "repo""#), "{err}");
+        assert!(err.contains(r#"missing "repo""#), "{err}");
+        // ...but an EMPTY repo is a hub role-actor (#3103), not a drop — see the repo arm's comment.
+        assert!(validate_fleet_plan(&json!({ "streams": [{ "id": "a", "repo": "" }] })).is_ok());
         // duplicate ids silently collapse
         let err = validate_fleet_plan(&json!({ "streams": [{ "id": "a", "repo": "o/r" }, { "id": "a", "repo": "o/r" }] })).unwrap_err();
         assert!(err.contains(r#"duplicate stream id "a""#), "{err}");
         // non-object root / non-array streams
         assert!(validate_fleet_plan(&json!([1])).is_err());
         assert!(validate_fleet_plan(&json!({ "streams": "x" })).is_err());
+    }
+
+    // ── the pane-id grammar (#a-stream-id-that-breaks-the-pane-grammar-is-accepted-at-the-write) ──
+
+    #[test]
+    fn a_colon_in_a_stream_id_is_refused_and_the_refusal_names_what_it_costs() {
+        // THE REGRESSION. twitter-clone-test's plan.db held exactly this row: the id carries the
+        // project name as a prefix, which is the shape a weaker local model produces. Accepted at the
+        // write, it made the worker permanently unwakeable — `worker_pane` read the pane id
+        // `twitter-clone-test:twitter-clone:api` as a TRIAGE pane, `resolve_stream` went silent, and
+        // the director was told "refusing to auto-launch claude at <no cwd>".
+        let err = validate_fleet_stream(
+            "twitter-clone:api",
+            &json!({ "id": "twitter-clone:api", "name": "API Worker", "repo": "twitter-clone-test" }),
+        )
+        .unwrap_err();
+        // The rule.
+        assert!(err.contains("pane-id grammar"), "{err}");
+        // The CONSEQUENCE, not just the rule — a rejection that only says "invalid" sends the author
+        // back to guessing, and the whole reason this row survived is that nothing named the cost.
+        assert!(err.contains("TRIAGE pane") && err.contains("<no cwd>"), "{err}");
+        assert!(err.contains("never be launched"), "{err}");
+        // A concrete id to paste. An LLM that is handed one self-corrects; one that is handed a rule
+        // retries the same value.
+        assert!(err.contains(r#""twitter-clone-api""#), "{err}");
+
+        // The whole-fleet writer refuses it too — both doors, or the rule is decorative.
+        let err = validate_fleet_plan(&json!({ "streams": [
+            { "id": "twitter-clone:api", "repo": "o/r" }
+        ]}))
+        .unwrap_err();
+        assert!(err.contains("pane-id grammar"), "{err}");
+    }
+
+    #[test]
+    fn a_stream_id_outside_the_pane_safe_alphabet_is_refused_with_the_offending_characters() {
+        // Not a colon, so not the invisible-failure arm — but still unusable verbatim as a pane-id
+        // tail and a git branch name, which is what the id actually becomes.
+        let err = validate_fleet_stream("api_v2", &json!({ "id": "api_v2", "repo": "o/r" })).unwrap_err();
+        assert!(err.contains(r#"contains "_""#), "the offending character is named: {err}");
+        assert!(err.contains("[a-z0-9-]") && err.contains("branch name"), "{err}");
+        assert!(err.contains(r#""api-v2""#), "a pasteable suggestion: {err}");
+
+        // Uppercase is rejected for the same reason: the id is used VERBATIM, never lower-cased on
+        // the way to a pane id, so `API` and `api` would be two different panes for one stream.
+        assert!(validate_fleet_stream("API", &json!({ "id": "API", "repo": "o/r" })).is_err());
+        // A space, the other shape a prose-writing model reaches for.
+        assert!(validate_fleet_stream("api worker", &json!({ "id": "api worker", "repo": "o/r" })).is_err());
+    }
+
+    #[test]
+    fn every_stream_id_the_fleet_actually_uses_still_passes() {
+        // MEASURED across all 149 stream rows on this machine, exactly one failed the new rule (the
+        // colon'd one above). These are the shapes that must keep working — an ordinary worker id, a
+        // multi-word slug, a digit, and BOTH commons/integration lane forms, whose per-repo suffix is
+        // a DOUBLE hyphen (`lane_id_pair`) and would break a naive "no repeated dash" rule.
+        for id in ["api", "app-shell", "bsc-cli-util", "stream2", "commons", "integration",
+                   "commons--own-web", "integration--kevinthelago-networkmonitor"] {
+            assert!(
+                stream_id_problem(id).is_none(),
+                "{id} is a real fleet stream id and must stay valid"
+            );
+            assert!(validate_fleet_stream(id, &json!({ "id": id, "repo": "o/r" })).is_ok(), "{id}");
+        }
+    }
+
+    #[test]
+    fn a_repo_less_hub_role_actor_is_a_legitimate_stream_not_a_dropped_field() {
+        // `teamRoleStreams` emits EXACTLY this shape for a team-derived role actor (#3103) — an empty
+        // repo meaning "runs at the project hub, not a repo worktree" — and `resolve_stream` handles
+        // it explicitly. Refusing it here meant the CLI could not write a row the store legitimately
+        // holds, which is what pushed an LLM into inventing a repo value to get past the check.
+        let actor = json!({ "id": "documentor", "name": "Documentor", "repo": "", "persona": "p-doc" });
+        assert!(validate_fleet_stream("documentor", &actor).is_ok());
+        assert!(validate_fleet_plan(&json!({ "streams": [actor] })).is_ok());
+
+        // ABSENT still fails, and that distinction is the point: `"repo": ""` is a deliberate
+        // statement, no `repo` key at all is a dropped field on a worker that then never launches.
+        let err = validate_fleet_stream("api", &json!({ "id": "api" })).unwrap_err();
+        assert!(err.contains(r#"missing "repo""#), "{err}");
+        // The message must teach BOTH shapes, since the author cannot see this comment.
+        assert!(err.contains(r#""repo": "owner/repo""#) && err.contains("hub role-actor"), "{err}");
+
+        // A non-string repo is still wrong — it is neither a path nor a deliberate hub actor.
+        assert!(validate_fleet_stream("api", &json!({ "id": "api", "repo": 7 })).is_err());
     }
 
     #[test]
@@ -1734,7 +1925,7 @@ mod tests {
         // blob id must match the argument (readers key off the blob's id)
         let err = validate_fleet_stream("a", &json!({ "id": "b", "repo": "o/r" })).unwrap_err();
         assert!(err.contains(r#"does not match the argument "a""#), "{err}");
-        assert!(validate_fleet_stream("a", &json!({ "id": "a" })).is_err(), "repo required");
+        assert!(validate_fleet_stream("a", &json!({ "id": "a" })).is_err(), "repo key required");
         // meta must not smuggle streams (they'd be silently ignored)
         assert!(validate_fleet_meta(&json!({ "recommended": 3 })).is_ok());
         let err = validate_fleet_meta(&json!({ "recommended": 3, "streams": [] })).unwrap_err();
