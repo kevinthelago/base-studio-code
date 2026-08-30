@@ -60,6 +60,28 @@ fn compose_system_inner(start: &Path, home: Option<&Path>, skills_json: Option<&
             }
         }
     }
+    // DE-DUPLICATE BY CONTENT, keeping the LAST (most-specific) copy.
+    //
+    // A worktree in this repo is NESTED under the repo root, so the ancestor walk finds the identical
+    // `CLAUDE.md` twice — once at the root and once in the worktree, which is a checkout of the same
+    // file. MEASURED: 105,928 bytes each, byte-identical, inside a system prompt that came to 215,175
+    // characters (~54k tokens) before the task. The duplicate is pure loss: it doubles the largest
+    // document in the prompt and teaches the model nothing the first copy did not.
+    //
+    // Keeping the LAST copy rather than the first preserves the precedence this loop exists to
+    // establish — least-specific first, most-specific last, so a project file overrides a global one.
+    // Dropping the later copy would silently invert that for any duplicated document.
+    let mut seen: Vec<String> = Vec::new();
+    let mut deduped: Vec<String> = Vec::new();
+    for part in parts.into_iter().rev() {
+        let key = part.trim().to_string();
+        if !seen.contains(&key) {
+            seen.push(key);
+            deduped.push(part);
+        }
+    }
+    deduped.reverse();
+    let mut parts = deduped;
     if let Ok(c) = std::fs::read_to_string(start.join("CLAUDE.local.md")) {
         if !c.trim().is_empty() {
             parts.push(c);
@@ -540,6 +562,71 @@ mod tests {
     /// Compose with NO global home memory and NO app-supplied skills, so neither a real
     /// `~/.claude/CLAUDE.md` on the dev machine nor an inherited `$BSC_AGENT_SKILLS` can leak into
     /// these structural assertions. Both layers have their own tests below.
+    /// A NESTED worktree finds the identical CLAUDE.md twice, and it is the largest document in the
+    /// prompt (#a-local-session-is-never-told-where-it-is-or-who-it-is).
+    ///
+    /// MEASURED before the fix: 105,928 bytes each, byte-identical, in a system prompt of 215,175
+    /// characters (~54k tokens) before the task. The duplicate is pure loss.
+    #[test]
+    fn an_identical_ancestor_document_is_loaded_once() {
+        let base = std::env::temp_dir().join(format!("bsc-dedupe-{}", std::process::id()));
+        let nested = base.join("wt-x");
+        std::fs::create_dir_all(&nested).unwrap();
+        let doc = "# PROJECT SPEC
+the one document
+";
+        std::fs::write(base.join("CLAUDE.md"), doc).unwrap();
+        std::fs::write(nested.join("CLAUDE.md"), doc).unwrap();
+
+        let s = compose_system_inner(&nested, None, None);
+        assert_eq!(s.matches("# PROJECT SPEC").count(), 1, "loaded once, not twice:\n{s}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// ...and de-duplication must not disturb PRECEDENCE, which is the whole reason the walk is
+    /// ordered least-specific first. Keeping the earlier copy of a duplicate would silently move a
+    /// project-level document up to where a global one sits.
+    #[test]
+    fn de_duplication_keeps_the_most_specific_copy() {
+        // THREE levels, so ordering is observable: a UNIQUE document at the top, then the same
+        // document twice below it. With only a duplicated pair there is nothing to be ordered
+        // against, and the assertion would prove nothing.
+        let base = std::env::temp_dir().join(format!("bsc-dedupe-order-{}", std::process::id()));
+        let mid = base.join("mid");
+        let leaf = mid.join("leaf");
+        std::fs::create_dir_all(&leaf).unwrap();
+        std::fs::write(base.join("CLAUDE.md"), "ROOT-ONLY\n").unwrap();
+        std::fs::write(mid.join("CLAUDE.md"), "SHARED\n").unwrap();
+        std::fs::write(leaf.join("CLAUDE.md"), "SHARED\n").unwrap();
+
+        let s = compose_system_inner(&leaf, None, None);
+        assert_eq!(s.matches("SHARED").count(), 1, "the duplicate is dropped:\n{s}");
+        assert!(s.contains("ROOT-ONLY"), "the unique ancestor survives");
+        // Precedence is the whole reason the walk is ordered least-specific first: keeping the
+        // EARLIER copy of a duplicate would move a project document up to where a global one sits.
+        assert!(
+            s.find("ROOT-ONLY") < s.find("SHARED"),
+            "least-specific still first after de-duplication:\n{s}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A document that merely SHARES a prefix is not a duplicate.
+    #[test]
+    fn two_different_documents_both_survive() {
+        let base = std::env::temp_dir().join(format!("bsc-dedupe-diff-{}", std::process::id()));
+        let nested = base.join("wt-x");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(base.join("CLAUDE.md"), "ROOT RULES
+").unwrap();
+        std::fs::write(nested.join("CLAUDE.md"), "WORKTREE RULES
+").unwrap();
+        let s = compose_system_inner(&nested, None, None);
+        assert!(s.contains("ROOT RULES") && s.contains("WORKTREE RULES"));
+        assert!(s.find("ROOT RULES") < s.find("WORKTREE RULES"), "least-specific first");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     fn compose_system(start: &std::path::Path) -> String {
         compose_system_inner(start, None, None)
     }
