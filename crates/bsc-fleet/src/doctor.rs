@@ -128,6 +128,21 @@ pub fn findings_for(pane_id: &str, facts: Option<WorktreeFacts>) -> Vec<Finding>
     out
 }
 
+/// The repair for a [`bad-stream-id`](id_findings_for) finding.
+///
+/// A const with a test behind it, not an inline string, because the FIRST version of this line named
+/// `bsc plan fleet stream remove` — which is not a verb. `fleet stream` dispatches only `set`;
+/// dropping a row is `fleet remove`, one level up. Following the printed advice produced
+/// `unknown fleet stream command 'remove'` and a page of help.
+///
+/// A fix line that does not run is worse than no fix line at all: this finding exists precisely
+/// because the reader has no other way to know what to do, and a wrong one spends their attention at
+/// the moment it claimed to save it. `the_fix_line_names_verbs_the_plan_cli_actually_dispatches` runs
+/// both halves against plandb's real dispatcher, so a renamed verb fails a test instead of quietly
+/// misdirecting the next reader.
+pub const BAD_STREAM_ID_FIX: &str =
+    "rewrite the row under a pane-safe id — `bsc plan fleet stream set <new-id>` with the same body, then `bsc plan fleet remove <old-id>`";
+
 /// Findings about the stream ID ITSELF — asked of every planned member, worktree or not.
 ///
 /// SEPARATE FROM [`findings_for`] on purpose, and the separation is the whole fix. `findings_for`
@@ -155,7 +170,7 @@ pub fn id_findings_for(pane_id: &str, stream_id: &str) -> Vec<Finding> {
             category: "bad-stream-id",
             detail: format!("the stream id {stream_id:?} cannot be used as a pane-id tail — {why}"),
             consequence: "this stream can never be launched OR woken: its pane id does not parse as a worker, so `bsc fleet wake` resolves no plan row and the launch is refused with \"<no cwd>\", naming neither the stream nor the id",
-            fix: "rewrite the row under a pane-safe id — `bsc plan fleet stream set <new-id>` with the same body, then `bsc plan fleet stream remove <old-id>`",
+            fix: BAD_STREAM_ID_FIX,
         }],
     }
 }
@@ -274,7 +289,54 @@ mod tests {
         assert!(f[0].detail.contains("twitter-clone:api"), "{}", f[0].detail);
         // The consequence names what a reader would otherwise spend a session rediscovering.
         assert!(f[0].consequence.contains("<no cwd>"), "{}", f[0].consequence);
-        assert!(f[0].fix.contains("bsc plan fleet stream set"), "{}", f[0].fix);
+        assert_eq!(f[0].fix, BAD_STREAM_ID_FIX);
+    }
+
+    #[test]
+    fn the_fix_line_names_verbs_the_plan_cli_actually_dispatches() {
+        // NOT a string comparison against a hand-copied list — that is exactly what was wrong the
+        // first time. Both halves are run against plandb's REAL dispatcher, so a renamed or removed
+        // verb fails here rather than misdirecting the reader of a finding.
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-fixline-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("demo.db");
+        let _ = std::fs::remove_file(&db);
+        plandb::Store::open(&db).unwrap();
+        let dbs = db.to_string_lossy().into_owned();
+
+        // Every backticked `bsc plan …` command in the fix line, as argv for plandb's dispatcher.
+        let mut ran = 0;
+        for cmd in BAD_STREAM_ID_FIX.split('`').skip(1).step_by(2) {
+            let words: Vec<&str> = cmd.split_whitespace().collect();
+            assert_eq!(&words[..2], &["bsc", "plan"], "the fix speaks bsc plan: {cmd}");
+            // Drop `bsc plan`, and the `<placeholder>` the reader fills in — the VERB is what is
+            // being checked, and a missing argument reports itself as usage, never as "unknown".
+            let argv: Vec<String> = words[2..]
+                .iter()
+                .filter(|w| !w.starts_with('<'))
+                .map(|w| w.to_string())
+                .collect();
+            let err = plandb::cli::run([vec!["--db".into(), dbs.clone()], argv].concat(), "bsc plan")
+                .err()
+                .unwrap_or_default();
+            assert!(
+                !err.contains("unknown"),
+                "the fix line names a verb that does not exist: `{cmd}` → {err}"
+            );
+            ran += 1;
+        }
+        assert_eq!(ran, 2, "both halves of the repair were checked");
+
+        // ...and the guard has teeth: the line this replaced is caught by the same check.
+        let err = plandb::cli::run(
+            vec!["--db".into(), dbs, "fleet".into(), "stream".into(), "remove".into()],
+            "bsc plan",
+        )
+        .err()
+        .unwrap_or_default();
+        assert!(err.contains("unknown"), "the original wrong verb must still read as unknown: {err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
