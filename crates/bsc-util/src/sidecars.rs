@@ -40,6 +40,28 @@ pub const SIDECARS: &[Sidecar] = &[
         blurb: "this project's plan store: issues, features, fleet streams, phases, prose sections",
         advertise: true,
     },
+    // THE DIRECTOR'S PRIMARY LEVER, and it was absent from this list until #a-director-cannot-call-
+    // the-one-lever-its-protocol-tells-it-to-use. `bsc-agent` registers one callable TOOL per
+    // advertised sidecar, so a local model that calls `bsc-fleet` by name reached `unknown tool` and
+    // had nothing to fall back on but the `bash` tool it demonstrably does not reach for — which is
+    // the entire reason the tool-per-CLI mechanism exists. MEASURED on the twitter-clone-test
+    // director: 7 of 18 tool calls in one turn were `bsc-fleet`, every one failed, and it spent its
+    // whole step budget retrying. The director protocol names `fleet list`/`wake`/`clone`/`doctor` as
+    // its moves, so a director without this tool is told to do things it cannot do.
+    Sidecar {
+        name: "fleet", context_env: Some("BSC_PLAN_DB"),
+        blurb: "this project's fleet: which panes are ALIVE (`list`), wake a parked worker, materialize the linked repos (`clone`), and the claims that do not hold (`doctor`)",
+        advertise: true,
+    },
+    // The tooling-gap queue every charter tells a session to file on — and reachable, until now, by no
+    // tool. A session that cannot file the gap it just hit routes around it silently, which is the one
+    // outcome `bsc request` exists to prevent. Global store (`~/.base-studio-code/requests.db`), so no
+    // context env: it resolves with nothing set.
+    Sidecar {
+        name: "request", context_env: None,
+        blurb: "file a missing-capability request against the `bsc` surface when you reach for a throwaway script — `request new \"<what you could not do>\" --cmd \"<the command that failed>\"`",
+        advertise: true,
+    },
     Sidecar {
         name: "errors", context_env: Some("BSC_ERROR_DB"),
         blurb: "this project's runtime-fault store: fingerprinted errors + alerts from the running app",
@@ -117,6 +139,33 @@ pub const SIDECARS: &[Sidecar] = &[
         blurb: "the project's file tree with metrics + single-path stat",
         advertise: true,
     },
+    // ── the rest of what the FLEET PROTOCOLS name (#a-director-cannot-call-the-one-lever-…) ────────
+    //
+    // Measured against `src-tauri/data/fleet/*protocol.md`: the architect, director and worker
+    // protocols between them name fourteen `bsc` nouns, and SIX of them were not advertised — so a
+    // local session was instructed, in its own charter, to run tools it had no way to call. `fleet`
+    // and `request` are above (they are the two a session reaches for first); these are the rest.
+    // `registry_advertises_every_noun_the_fleet_protocols_name` is what keeps the two in step.
+    Sidecar {
+        name: "graph", context_env: None,
+        blurb: "the algorithms knowledge library: read an implementation (`impl get <id>`) rather than quoting one into your context",
+        advertise: true,
+    },
+    Sidecar {
+        name: "mem", context_env: None,
+        blurb: "what a build COST and what the app is holding — build time, peak build memory, app heap; record a before/after with `bsc plan change perf`",
+        advertise: true,
+    },
+    Sidecar {
+        name: "perf", context_env: None,
+        blurb: "the frontend instrumentation (read-only): render commits, named phases, jank windows",
+        advertise: true,
+    },
+    Sidecar {
+        name: "publish", context_env: Some("BSC_PLAN_DB"),
+        blurb: "publish this project's plan to GitHub — repos, the project board, one issue per plan row (idempotent)",
+        advertise: true,
+    },
 ];
 
 // ── Bundled MCP-server subcommands (#1848 / #1877) ───────────────────────────────────
@@ -160,15 +209,81 @@ mod tests {
         }
     }
 
+    /// EVERY `bsc <noun>` the fleet protocols instruct a session to run must be advertised — because
+    /// "advertised" is exactly what makes it a callable TOOL in `bsc-agent`, and a local model that
+    /// calls an unadvertised noun by name gets `unknown tool` and retries rather than falling back to
+    /// the `bash` tool.
+    ///
+    /// This is the guard for a failure that already happened, twice over. `bsc fleet` — named 21
+    /// times across these files, and the director's primary lever — was never in this list, so the
+    /// twitter-clone-test director spent 7 of one turn's 18 tool calls bouncing off `unknown tool
+    /// 'bsc-fleet'`. When that was found, FIVE more protocol-named nouns turned out to be missing the
+    /// same way. A charter that instructs a session to use a tool it cannot call is worse than one
+    /// that stays silent: the session believes the capability exists and burns its budget looking for
+    /// it.
+    ///
+    /// Reads the protocol files rather than restating their contents, so adding an instruction to a
+    /// charter is what fails this test — not a second list somebody has to remember to update.
+    #[test]
+    fn registry_advertises_every_noun_the_fleet_protocols_name() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../src-tauri/data/fleet");
+        let mut named: Vec<String> = Vec::new();
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+        let mut files = 0;
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            files += 1;
+            // `bsc <noun>` — the noun is the next bare lowercase word. A trailing `help`/`<sub>` is
+            // not a noun, and neither is the literal `bsc noun` the prose uses as a placeholder.
+            for (i, _) in text.match_indices("bsc ") {
+                let rest = &text[i + 4..];
+                let noun: String =
+                    rest.chars().take_while(|c| c.is_ascii_lowercase() || *c == '-').collect();
+                if !noun.is_empty() && noun != "noun" {
+                    named.push(noun);
+                }
+            }
+        }
+        assert!(files >= 3, "expected the architect/director/worker protocols, found {files} .md files");
+        named.sort();
+        named.dedup();
+
+        let advertised: std::collections::HashSet<&str> =
+            SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
+        // Only nouns that are REAL subcommands are in scope: the prose also contains `bsc-ask`-style
+        // shell helpers and hyphenated emitters, which are not `bsc` subcommands at all. A noun this
+        // registry has never heard of is out of scope for THIS assertion; the one it must not do is
+        // list a noun and then not advertise it.
+        let known: std::collections::HashSet<&str> = SIDECARS.iter().map(|s| s.name).collect();
+        let missing: Vec<&String> =
+            named.iter().filter(|n| known.contains(n.as_str()) && !advertised.contains(n.as_str())).collect();
+        assert!(
+            missing.is_empty(),
+            "the fleet protocols instruct a session to run {missing:?}, but these are not advertised — \
+             so `bsc-agent` registers no tool for them and a local model calling them by name gets \
+             `unknown tool`. Either advertise them here or stop naming them in the charter."
+        );
+    }
+
     #[test]
     fn only_cwd_derived_project_stores_carry_a_context_env() {
         // The agent prompt's "needs a project context" caveat must fire ONLY for the cwd-derived
-        // project stores (plan/errors/data); the global/none subcommands must not be flagged.
+        // project stores; the global/none subcommands must not be flagged. `fleet` and `publish` read
+        // the SAME plan.db as `plan` — fleet resolves membership from it (`list`, `doctor`, `clone`)
+        // and publish publishes what is in it — so both carry the same env and the same caveat.
         for s in SIDECARS {
-            let scoped = matches!(s.name, "plan" | "errors" | "usage" | "data");
+            let scoped = matches!(s.name, "plan" | "fleet" | "publish" | "errors" | "usage" | "data");
             assert_eq!(s.context_env.is_some(), scoped, "{} context_env scoping wrong", s.name);
         }
         assert_eq!(SIDECARS.iter().find(|s| s.name == "plan").unwrap().context_env, Some("BSC_PLAN_DB"));
+        assert_eq!(SIDECARS.iter().find(|s| s.name == "fleet").unwrap().context_env, Some("BSC_PLAN_DB"));
+        assert_eq!(SIDECARS.iter().find(|s| s.name == "publish").unwrap().context_env, Some("BSC_PLAN_DB"));
         assert_eq!(SIDECARS.iter().find(|s| s.name == "errors").unwrap().context_env, Some("BSC_ERROR_DB"));
         assert_eq!(SIDECARS.iter().find(|s| s.name == "usage").unwrap().context_env, Some("BSC_USAGE_DB"));
         assert_eq!(SIDECARS.iter().find(|s| s.name == "data").unwrap().context_env, Some("BSC_DATA_DB"));
@@ -179,7 +294,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "errors", "usage", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "teams", "secret", "component", "ui", "project", "files"],
+            ["plan", "fleet", "request", "errors", "usage", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "teams", "secret", "component", "ui", "project", "files", "graph", "mem", "perf", "publish"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }

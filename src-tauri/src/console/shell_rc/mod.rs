@@ -55,7 +55,14 @@
 //                   bsc-brief is the PLANNER's runtime voice (planner→director/issuer); a coordination
 //                   write only — no code/git escalation of the plan-only role gate.
 //  * (defer)      — bsc-defer (#369/#2145): Stop-hook; keeps a worker going or defers to the director.
-//  * fleet.sh     — bsc-fleet (#734): the director's roster view (joins fleet.roster.tsv + coord.log).
+//  * fleet.sh     — bsc-fleet: a TOMBSTONE that redirects to `bsc fleet` (#a-director-cannot-call-the-
+//                   one-lever-its-protocol-tells-it-to-use). It was the director's roster view (#734),
+//                   joining fleet.roster.tsv + coord.log — a LAUNCH MANIFEST plus activity, never
+//                   process liveness, so a worker that exited an hour ago printed the same as a live
+//                   one. `bsc fleet list` (#4098) asks the running app and is the authority. The name
+//                   is KEPT rather than deleted because it is now also an agent TOOL name: registering
+//                   `bsc-fleet` as a tool while a same-named bash function answered a different and
+//                   worse question would put two answers under one name in a single session.
 //  * bsc.sh       — bsc (#1877): the ONE umbrella-binary dispatcher; execs $BSC_BIN (bsc plan|skill|…).
 //
 //  WHAT THE PreToolUse GATES ABOVE (confine/scope/deny/taint/supply) ARE, AND ARE NOT: they read a

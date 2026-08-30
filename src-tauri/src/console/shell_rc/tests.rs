@@ -276,51 +276,6 @@ fn bsc_issue_and_assign_emit_tab_aligned_coord_lines() {
     });
 }
 
-#[test]
-fn bsc_fleet_joins_roster_with_coord_state() {
-    // bsc-fleet (#734): the director's roster view. Joins fleet.roster.tsv with each
-    // session's latest own-state event in coord.log → PANE/stream/repo/branch/role/STATE.
-    use std::process::{Command, Stdio};
-    with_rc_subshell("fleet", frag("fleet.sh"), |RcSub { shell, dir, rc_bash }| {
-    let roster = dir.join("fleet.roster.tsv");
-    std::fs::write(&roster,
-        "t0p0\tdirector\t-\t-\tdirector\n\
-         t0p1\tplanner-ux\to/r\tplanner-ux\tworker\n\
-         t0p2\tpty-readiness\to/r\tpty-readiness\tworker\n\
-         t0p3\textensions\to/r\textensions\tworker\n").unwrap();
-    let log = dir.join("coord.log");
-    std::fs::write(&log,
-        "2026-01-01T00:00:00Z\tt0p1\tblocked\tcontract:Auth\tcp\n\
-         2026-01-01T00:01:00Z\tt0p2\task\tshould I merge?\tcp\n\
-         2026-01-01T00:02:00Z\tt0p3\twoke\n").unwrap();
-
-    let roster_bash = crate::to_bash_path(&roster.to_string_lossy());
-    let log_bash = crate::to_bash_path(&log.to_string_lossy());
-
-    let out = Command::new(&shell).arg("-c").arg("bsc-fleet")
-        .env("BASH_ENV", &rc_bash)
-        .env("BSC_FLEET_ROSTER", &roster_bash)
-        .env("BSC_COORD_LOG", &log_bash)
-        .stdin(Stdio::null()).output().unwrap();
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "bsc-fleet should run: {text}");
-    // a blocked worker shows blocked + what it's blocked on
-    let l1 = text.lines().find(|l| l.starts_with("t0p1")).unwrap_or("");
-    assert!(l1.contains("blocked") && l1.contains("contract:Auth"), "blocked: {l1:?}");
-    // an asking worker shows ask + the question
-    let l2 = text.lines().find(|l| l.starts_with("t0p2")).unwrap_or("");
-    assert!(l2.contains("ask") && l2.contains("should I merge?"), "ask: {l2:?}");
-    // a freshly-woken worker reads as active
-    assert!(text.lines().find(|l| l.starts_with("t0p3")).unwrap_or("").contains("active"), "woke→active: {text}");
-    // #4098 — a session with NO events reads `-`, not `idle`. `idle` claimed a liveness this helper
-    // never checked: the roster is a launch manifest and the state column is coord.log activity, so a
-    // pane whose process exited an hour ago printed exactly what a live-but-quiet one did.
-    let l0 = text.lines().find(|l| l.starts_with("t0p0")).unwrap_or("");
-    assert!(!l0.contains("idle"), "silence must not read as idle: {l0:?}");
-    assert!(l0.contains("-"), "silence reads as unknown: {l0:?}");
-    let _ = std::fs::remove_dir_all(&dir);
-    });
-}
 
 #[test]
 fn bsc_supply_fragment_calls_the_supply_hook() {
@@ -543,12 +498,40 @@ fn the_one_bsc_helper_covers_every_advertised_subcommand() {
     // The legacy per-CLI EXEC helpers (`bsc-plan()`/`bsc-data()`/…) are gone — every subcommand is
     // now reached through the single `bsc` function. `bsc-skill` is the ONE exception: its name is
     // kept as the no-arg telemetry hook (+ back-compat alias), so it's excluded here.
-    for s in bsc_util::SIDECARS.iter().filter(|s| s.name != "skill") {
+    // TWO documented exceptions, and neither is a per-CLI exec helper:
+    //   `bsc-skill` keeps its name as the no-arg telemetry hook (+ back-compat alias);
+    //   `bsc-fleet` is a TOMBSTONE that redirects to `bsc fleet` — kept, not deleted, because it is
+    //   now also an agent TOOL name, and a bash function answering a DIFFERENT question under that
+    //   name would put two answers under one name in one session. Its shape is pinned below.
+    for s in bsc_util::SIDECARS.iter().filter(|s| !matches!(s.name, "skill" | "fleet")) {
         assert!(
             !body.contains(&format!("bsc-{}() {{", s.name)),
             "legacy per-CLI helper bsc-{}() must be gone (#1877)", s.name,
         );
     }
+    // THE TOMBSTONE MUST NOT STILL ANSWER. The hazard was never the name — it was that `bsc-fleet`
+    // read a LAUNCH MANIFEST (fleet.roster.tsv) and reported coord.log activity as if it were
+    // liveness, so a worker whose process exited an hour ago printed the same as a live one. Assert
+    // the wrong answer is gone and the right command is named, or a future edit could quietly
+    // restore it under a name a director now also reaches as a tool.
+    // READ THE PACKAGED SEED, not `bsc_rc_body()`. `load_shell` resolves through the runtime config
+    // dir, which WINS over the embedded seed and is seeded once on first run — so on a machine whose
+    // `~/.base-studio-code/config/shell/fleet.sh` predates this change, a `bsc_rc_body()` assertion
+    // tests that developer's stale copy rather than what the repo ships. `config.rs` says so in as
+    // many words: a test validating PACKAGED content must read the seed directly. (Reconciling the
+    // on-disk copy is `bsc config reset shell/fleet.sh`, and `bsc config status` names the drift.)
+    let packaged = crate::platform::config::embedded_str("shell/fleet.sh");
+    assert!(packaged.contains("bsc-fleet()"), "the bsc-fleet tombstone stays, as a signpost");
+    // Assert the MACHINERY is gone, not that the words are: the tombstone's own message explains
+    // what it used to do, so a substring match on the filename would fail on the explanation itself.
+    assert!(
+        !packaged.contains("BSC_FLEET_ROSTER") && !packaged.contains("awk"),
+        "bsc-fleet must no longer read or join the roster — that is the answer that was wrong: {packaged}",
+    );
+    assert!(
+        packaged.contains("bsc fleet list"),
+        "the tombstone must name what replaced it, or it is just a failure: {packaged}",
+    );
     // bsc-skill keeps its name (the no-arg telemetry hook + back-compat alias), now over $BSC_BIN.
     assert!(body.contains("bsc-skill()"), "bsc-skill (telemetry hook) stays");
     assert!(!body.contains("BSC_SKILL_BIN"), "bsc-skill's CLI branch now execs $BSC_BIN skill, not $BSC_SKILL_BIN");
@@ -1094,46 +1077,3 @@ fn confine_allows_the_session_its_own_agent_state_and_nothing_elses() {
     });
 }
 
-/// #4098 — `bsc-fleet` never checked process liveness, yet printed `idle` for any pane the coord log
-/// had nothing for. Agents read that as "these sessions are running"; on studio-code it listed 14
-/// launched panes while 5 `claude.exe` existed system-wide. The roster is a LAUNCH MANIFEST, so the
-/// output was answering a different question than the one being asked of it.
-///
-/// Driven through real bash, because the whole thing is one awk pipeline and the property that matters
-/// is what a reader SEES.
-#[test]
-fn fleet_reports_silence_as_unknown_not_idle() {
-    use std::process::{Command, Stdio};
-    with_rc_subshell("fleet", frag("fleet.sh"), |RcSub { shell, dir, rc_bash }| {
-        let roster = dir.join("fleet.roster.tsv");
-        std::fs::write(
-            &roster,
-            "p:quiet\tquiet\trepo\tbr\tworker\np:asking\tasking\trepo\tbr\tworker\n",
-        )
-        .unwrap();
-        let log = dir.join("coord.log");
-        std::fs::write(&log, "2026-07-31T00:00:00Z\tp:asking\task\tthe director\n").unwrap();
-
-        let out = Command::new(&shell)
-            .arg("-c")
-            .arg("bsc-fleet")
-            .env("BASH_ENV", &rc_bash)
-            .env("BSC_FLEET_ROSTER", crate::to_bash_path(&roster.to_string_lossy()))
-            .env("BSC_COORD_LOG", crate::to_bash_path(&log.to_string_lossy()))
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        let text = String::from_utf8_lossy(&out.stdout);
-
-        // A silent pane must NOT read as a live-but-quiet session.
-        assert!(!text.contains("idle"), "silence must not print as `idle`:\n{text}");
-        assert!(text.contains("p:quiet"), "the pane is still listed:\n{text}");
-        // A pane the coord log DOES know about keeps its real state + target.
-        assert!(text.contains("ask"), "a real coord state still shows:\n{text}");
-        // And the reader is told what they are looking at.
-        assert!(text.contains("LAUNCH MANIFEST"), "the header must name the source:\n{text}");
-        assert!(text.contains("NOT process liveness"), "…and disclaim liveness:\n{text}");
-
-        let _ = std::fs::remove_dir_all(&dir);
-    });
-}
