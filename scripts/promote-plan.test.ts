@@ -44,6 +44,53 @@ describe("planPromote", () => {
 
   /// The running app must be a PREFIX of develop's history. If it is ahead, something committed
   /// straight to it — a fault to look at, never one to paper over with a merge commit.
+  // ── the doom loop (#promote-refuses-forever-because-hand-merges-made-fast-forward-impossible) ──
+
+  it("reconciles when every ahead commit is a merge and the trees are identical", () => {
+    // MEASURED: main was 17 ahead, all 17 merge commits, trees byte-identical. Nothing had been
+    // committed straight to main — the old refusal's accusation was simply false, and each hand-merge
+    // that caused it made the NEXT --ff-only impossible, so the loop fed itself seventeen times.
+    expect(planPromote(state({ ahead: 17, aheadContent: 0, treesMatch: true, behind: 0 }))).toEqual({
+      action: "reconcile",
+      reason: "app-tree-ahead-by-merges-only",
+    });
+  });
+
+  it("still REFUSES a real content commit on the app branch — the guard is made precise, not weaker", () => {
+    // The fault the refusal was written for. One content commit is enough, however many merges sit
+    // beside it, because that commit is history develop genuinely does not have.
+    expect(planPromote(state({ ahead: 17, aheadContent: 1, treesMatch: true }))).toEqual({
+      action: "fail",
+      reason: "app-tree-ahead",
+    });
+  });
+
+  it("refuses when the commits look like merges but the TREES differ", () => {
+    // A merge carries no content of its own, yet can still resolve to a different tree — a conflict
+    // resolved by hand, or an --ours. Reconciling on the commit shape alone would fast-forward
+    // develop over that resolution and lose it silently. Both signals, or refuse.
+    expect(planPromote(state({ ahead: 3, aheadContent: 0, treesMatch: false }))).toEqual({
+      action: "fail",
+      reason: "app-tree-ahead",
+    });
+  });
+
+  it("assumes every ahead commit is real when the caller cannot say", () => {
+    // The defaults are the PESSIMISTIC answer on purpose: an older caller, or one that could not ask
+    // git, gets exactly the historical refusal rather than an accidental reconcile.
+    expect(planPromote(state({ ahead: 2 }))).toEqual({ action: "fail", reason: "app-tree-ahead" });
+    expect(planPromote(state({ ahead: 2, treesMatch: true }))).toEqual({ action: "fail", reason: "app-tree-ahead" });
+  });
+
+  it("keeps a dirty tree ahead of a reconcilable divergence", () => {
+    // Precedence is unchanged: uncommitted work is the thing the user can still lose, so it is
+    // reported first even when the divergence beneath it would have been repairable.
+    expect(planPromote(state({ dirty: ["M x"], ahead: 5, aheadContent: 0, treesMatch: true }))).toEqual({
+      action: "fail",
+      reason: "dirty-app-tree",
+    });
+  });
+
   it("refuses when the app branch is AHEAD of develop, so no fast-forward exists", () => {
     expect(planPromote(state({ ahead: 2, behind: 0 }))).toEqual({
       action: "fail",
