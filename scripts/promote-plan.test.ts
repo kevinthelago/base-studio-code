@@ -50,7 +50,20 @@ describe("planPromote", () => {
     // MEASURED: main was 17 ahead, all 17 merge commits, trees byte-identical. Nothing had been
     // committed straight to main — the old refusal's accusation was simply false, and each hand-merge
     // that caused it made the NEXT --ff-only impossible, so the loop fed itself seventeen times.
-    expect(planPromote(state({ ahead: 17, aheadContent: 0, treesMatch: true, behind: 0 }))).toEqual({
+    expect(planPromote(state({ ahead: 17, aheadContent: 0, aheadAddsNothing: true, behind: 0 }))).toEqual({
+      action: "reconcile",
+      reason: "app-tree-ahead-by-merges-only",
+    });
+  });
+
+  it("still reconciles once DEVELOP has moved ahead — the case the first implementation got wrong", () => {
+    // THE REGRESSION, and the reason the criterion is idempotence rather than "it worked once". The
+    // first version asked whether the two ref trees were IDENTICAL, which is false the moment develop
+    // gains a commit — i.e. after any integration, which is every real promotion. It fired only in the
+    // one state where develop had not moved since the last promote, and refused in exactly the state
+    // the feature exists for. `aheadAddsNothing` asks what the APP REF contributed, so develop moving
+    // is irrelevant to it.
+    expect(planPromote(state({ ahead: 18, aheadContent: 0, aheadAddsNothing: true, behind: 2 }))).toEqual({
       action: "reconcile",
       reason: "app-tree-ahead-by-merges-only",
     });
@@ -59,17 +72,17 @@ describe("planPromote", () => {
   it("still REFUSES a real content commit on the app branch — the guard is made precise, not weaker", () => {
     // The fault the refusal was written for. One content commit is enough, however many merges sit
     // beside it, because that commit is history develop genuinely does not have.
-    expect(planPromote(state({ ahead: 17, aheadContent: 1, treesMatch: true }))).toEqual({
+    expect(planPromote(state({ ahead: 17, aheadContent: 1, aheadAddsNothing: true }))).toEqual({
       action: "fail",
       reason: "app-tree-ahead",
     });
   });
 
-  it("refuses when the commits look like merges but the TREES differ", () => {
-    // A merge carries no content of its own, yet can still resolve to a different tree — a conflict
-    // resolved by hand, or an --ours. Reconciling on the commit shape alone would fast-forward
-    // develop over that resolution and lose it silently. Both signals, or refuse.
-    expect(planPromote(state({ ahead: 3, aheadContent: 0, treesMatch: false }))).toEqual({
+  it("refuses when the commits look like merges but the app ref ADDED something", () => {
+    // A merge carries no content of its own, yet can still resolve to a tree the merge base did not
+    // have — a conflict resolved by hand, or an --ours. Merging back on the commit shape alone would
+    // go over that resolution and lose it silently. Both signals, or refuse.
+    expect(planPromote(state({ ahead: 3, aheadContent: 0, aheadAddsNothing: false }))).toEqual({
       action: "fail",
       reason: "app-tree-ahead",
     });
@@ -79,13 +92,13 @@ describe("planPromote", () => {
     // The defaults are the PESSIMISTIC answer on purpose: an older caller, or one that could not ask
     // git, gets exactly the historical refusal rather than an accidental reconcile.
     expect(planPromote(state({ ahead: 2 }))).toEqual({ action: "fail", reason: "app-tree-ahead" });
-    expect(planPromote(state({ ahead: 2, treesMatch: true }))).toEqual({ action: "fail", reason: "app-tree-ahead" });
+    expect(planPromote(state({ ahead: 2, aheadAddsNothing: true }))).toEqual({ action: "fail", reason: "app-tree-ahead" });
   });
 
   it("keeps a dirty tree ahead of a reconcilable divergence", () => {
     // Precedence is unchanged: uncommitted work is the thing the user can still lose, so it is
     // reported first even when the divergence beneath it would have been repairable.
-    expect(planPromote(state({ dirty: ["M x"], ahead: 5, aheadContent: 0, treesMatch: true }))).toEqual({
+    expect(planPromote(state({ dirty: ["M x"], ahead: 5, aheadContent: 0, aheadAddsNothing: true }))).toEqual({
       action: "fail",
       reason: "dirty-app-tree",
     });
