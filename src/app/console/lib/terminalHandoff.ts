@@ -81,6 +81,47 @@ export function dispositionWhileHidden(chunk: PtyChunk): HiddenDisposition {
   return chunk.upto === null ? "hold" : "drop";
 }
 
+/** Why a terminal is asking Rust for its recorded history.
+ *
+ *  The two reasons are NOT interchangeable, and conflating them is what would put a false warning in
+ *  front of every fresh pane (see {@link truncationNoticeFor}).
+ *
+ *  - `"remount"` — this terminal has been given NOTHING. Closing a pane unmounts the component, so
+ *    reopening it builds a fresh handoff and a fresh xterm with an empty buffer while the complete
+ *    recording sits on disk. It needs everything, and it has lost nothing.
+ *  - `"dropped"` — a HIDDEN pane let recorded bytes go rather than keeping a second copy in the
+ *    renderer's heap, and now needs them back. Something really is missing until the reveal lands. */
+export type ReplayReason = "remount" | "dropped";
+
+/** Does this terminal need Rust to replay its history, and why? `null` when the screen is current.
+ *
+ *  DRIVEN BY WHAT THE TERMINAL HAS BEEN GIVEN, never by a flag that a close destroys. `writtenUpto` is
+ *  `-1` on a fresh handoff and is only ever set from a batch or a reveal, so "below zero" is exactly
+ *  "this terminal has been shown nothing" — which is true on a reopen regardless of what came before.
+ *
+ *  The rule used to be `if (dropped)` alone. A reopened pane has `dropped === false`, because the ref
+ *  holding it died with the component — so it asked Rust for nothing and rendered an empty terminal
+ *  over a full recording. That is the bug this exists to remove. */
+export function replayReason(writtenUpto: number, dropped: boolean): ReplayReason | null {
+  if (writtenUpto < 0) return "remount";
+  return dropped ? "dropped" : null;
+}
+
+/** What to write when a reveal comes back empty — `null` meaning write nothing at all.
+ *
+ *  A `null` reveal means Rust has no cursor or no readable recording for this pane. What that MEANS
+ *  depends entirely on why it was asked:
+ *
+ *  - after `"dropped"` it is the real, unrecoverable case: bytes went and cannot come back, and a pane
+ *    that quietly resumes mid-stream is worse than one that admits the gap.
+ *  - after `"remount"` it means the pane simply has no history yet — a session that just started, or
+ *    one that ran before recording existed. Announcing dropped output there would be a plain lie, and
+ *    it would fire on EVERY fresh pane, which is most panes most of the time. */
+export function truncationNoticeFor(reason: ReplayReason, revealed: boolean): string | null {
+  if (revealed || reason === "remount") return null;
+  return TRUNCATION_NOTICE;
+}
+
 /** A full reset (RIS) plus a line saying output was lost. See {@link UnrecordedPtyText}. */
 export const TRUNCATION_NOTICE =
   "\x1bc\r\n\x1b[2m…earlier output was dropped: this session is not being recorded…\x1b[0m\r\n";
