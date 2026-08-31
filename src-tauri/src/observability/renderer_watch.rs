@@ -153,11 +153,24 @@ pub fn dead_detail() -> String {
 /// renderer — it is small and would understate the peak badly.
 const RENDERER_COMM_PREFIX: &str = "WebKitWebProc";
 
+
+
+/// Whether a `/proc/<pid>/comm` value names the renderer. Pure, so the truncation rule is testable
+/// against the real observed strings rather than against what the process is "called".
+pub fn is_renderer_comm(comm: &str) -> bool {
+    comm.starts_with(RENDERER_COMM_PREFIX)
+}
+
+/// The renderer's pid, current RSS and the kernel's own high-water mark, from one walk of `/proc`.
+///
+/// `VmHWM` comes along because it is free and strictly better than a sampled maximum: it is the peak
+/// the kernel observed, including anything that happened between two of our five-second sweeps.
 #[cfg(target_os = "linux")]
-pub fn renderer_peak_mb() -> Option<u64> {
+pub fn renderer_pid_rss_mb() -> Option<(i32, u64, u64)> {
     let entries = std::fs::read_dir("/proc").ok()?;
-    let mut peak = None;
+    let mut best: Option<(i32, u64, u64)> = None;
     for e in entries.flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()) else { continue };
         if std::fs::read_to_string(e.path().join("comm"))
             .map(|c| !is_renderer_comm(c.trim()))
             .unwrap_or(true)
@@ -165,30 +178,96 @@ pub fn renderer_peak_mb() -> Option<u64> {
             continue;
         }
         let Ok(status) = std::fs::read_to_string(e.path().join("status")) else { continue };
-        let hwm = status
-            .lines()
-            .find_map(|l| l.strip_prefix("VmHWM:"))
-            .and_then(|v| v.split_whitespace().next())
-            .and_then(|v| v.parse::<u64>().ok())
-            .map(|kb| kb / 1024);
-        // Several webkit processes can exist; the one that matters is the biggest.
-        if let Some(mb) = hwm {
-            peak = Some(peak.map_or(mb, |p: u64| p.max(mb)));
+        let field = |name: &str| {
+            status
+                .lines()
+                .find_map(|l| l.strip_prefix(name))
+                .and_then(|v| v.split_whitespace().next())
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|kb| kb / 1024)
+        };
+        // Several webkit processes can exist; the biggest is the one that matters.
+        if let (Some(rss), Some(hwm)) = (field("VmRSS:"), field("VmHWM:")) {
+            if best.is_none_or(|(_, b, _)| rss > b) {
+                best = Some((pid, rss, hwm));
+            }
         }
     }
-    peak
+    best
 }
 
-/// No `/proc` to read. Reports UNKNOWN, never a fabricated zero.
 #[cfg(not(target_os = "linux"))]
-pub fn renderer_peak_mb() -> Option<u64> {
+pub fn renderer_pid_rss_mb() -> Option<(i32, u64, u64)> {
     None
 }
 
-/// Whether a `/proc/<pid>/comm` value names the renderer. Pure, so the truncation rule is testable
-/// against the real observed strings rather than against what the process is "called".
-pub fn is_renderer_comm(comm: &str) -> bool {
-    comm.starts_with(RENDERER_COMM_PREFIX)
+/// The RSS past which the renderer is killed rather than allowed to take the machine.
+///
+/// A RUNAWAY SHOULD COST A RELOAD, NOT THE BOX. Measured four times in one day: the renderer reached
+/// 25-30 GB on a 31 GB machine, pinned the main thread, and the OOM killer then chose a victim — which
+/// was repeatedly a FLEET WORKER rather than the renderer itself. Killing it by hand returned the
+/// machine from 0.2 GB to 29 GB every time, with the backend intact and nothing lost but the window,
+/// which `renderer_watch` already reloads.
+///
+/// The default sits far above ordinary use — a healthy renderer measured a few hundred MB — so this
+/// cannot fire on normal work. `0` disables it.
+pub fn renderer_cap_mb() -> u64 {
+    std::env::var("BSC_RENDERER_MAX_MB")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(8_192)
+}
+
+/// Whether an observed RSS is over the cap. Pure, so the decision is testable without a renderer.
+///
+/// A cap of 0 means DISABLED, not "kill everything" — the opt-out has to be safe to type.
+pub fn over_cap(rss_mb: u64, cap_mb: u64) -> bool {
+    cap_mb > 0 && rss_mb > cap_mb
+}
+
+/// The busiest threads of a process, as `(name, cpu_ms)`, most CPU first.
+///
+/// WHY THREAD NAMES: this box has no gdb, eu-stack, pstack or perf, and WebKitGTK exposes no usable
+/// inspector, so neither a JS nor a native stack can be taken. JSC LABELS ITS THREADS, so the split
+/// between the main thread, the GC/marking threads and the compiler threads still says which subsystem
+/// is spinning — the narrowing a stack would have given, from information that is actually reachable.
+///
+/// Names are capped at fifteen characters by the kernel, exactly as `comm` is.
+#[cfg(target_os = "linux")]
+pub fn busiest_threads(pid: i32, top: usize) -> Vec<(String, u64)> {
+    let Ok(tasks) = std::fs::read_dir(format!("/proc/{pid}/task")) else { return Vec::new() };
+    let mut v: Vec<(String, u64)> = tasks
+        .flatten()
+        .filter_map(|t| {
+            let name = std::fs::read_to_string(t.path().join("comm")).ok()?.trim().to_string();
+            let stat = std::fs::read_to_string(t.path().join("stat")).ok()?;
+            let rest = stat.rfind(')').map(|i| &stat[i + 1..])?;
+            let f: Vec<&str> = rest.split_whitespace().collect();
+            let ms = f.get(11)?.parse::<u64>().ok()? + f.get(12)?.parse::<u64>().ok()?;
+            Some((name, ms * 10)) // ticks (100/s) -> ms
+        })
+        .collect();
+    v.sort_by_key(|(_, ms)| std::cmp::Reverse(*ms));
+    v.truncate(top);
+    v
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn busiest_threads(_pid: i32, _top: usize) -> Vec<(String, u64)> {
+    Vec::new()
+}
+
+/// Render the busy-thread list for a fault. Pure.
+pub fn threads_line(threads: &[(String, u64)]) -> String {
+    if threads.is_empty() {
+        return " Busiest threads: unknown.".to_string();
+    }
+    let body = threads
+        .iter()
+        .map(|(n, ms)| format!("{n} {:.1}s", *ms as f64 / 1000.0))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" Busiest threads at the cap: {body}.")
 }
 
 /// The last renderer peak OBSERVED while it was alive, in MB.
@@ -202,16 +281,64 @@ fn observed_peak() -> &'static std::sync::atomic::AtomicU64 {
     &P
 }
 
-/// Take a reading, if one can be had. Called from the sweep that already runs every few seconds, so
-/// the figure is at most one tick stale when the renderer dies.
+/// Sample the renderer and, if it is past the cap, KILL IT.
 ///
-/// MONOTONIC: it only ever moves up. `VmHWM` is itself a high-water mark, but the process it belongs
-/// to is replaced on every reload — and the question the fault answers is "how big did it get before
-/// it died", so a fresh small renderer must not erase the peak of the one that just died.
-pub fn sample_renderer_peak() {
-    let cur = observed_peak().load(std::sync::atomic::Ordering::Relaxed);
-    observed_peak().store(fold_peak(cur, renderer_peak_mb()), std::sync::atomic::Ordering::Relaxed);
+/// Called from the sweep that already runs. Returns true when it killed, so the caller can log once.
+/// The kill is SIGKILL: a renderer in a synchronous allocating loop cannot service a polite request,
+/// which is the whole reason it is being killed.
+#[cfg(target_os = "linux")]
+pub fn enforce_renderer_cap() -> bool {
+    let Some((pid, rss_mb, hwm_mb)) = renderer_pid_rss_mb() else { return false };
+    observed_peak().store(
+        fold_peak(observed_peak().load(std::sync::atomic::Ordering::Relaxed), Some(hwm_mb)),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let cap = renderer_cap_mb();
+    if !over_cap(rss_mb, cap) {
+        return false;
+    }
+    // Captured BEFORE the kill — afterwards the task list is gone, which is the mistake the peak
+    // sampler already made once.
+    let threads = busiest_threads(pid, 6);
+    log::error!(
+        "[renderer] {:.2} GB is past the {:.2} GB cap — killing it. A reload costs the window; \
+         letting it run costs the machine, and the OOM killer has repeatedly taken a fleet worker \
+         instead.{}",
+        rss_mb as f64 / 1024.0,
+        cap as f64 / 1024.0,
+        threads_line(&threads),
+    );
+    record_cap_kill(rss_mb, &threads);
+    // SIGKILL via the raw syscall — no crate, and nothing to unwind in a process being reclaimed.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    true
 }
+
+#[cfg(not(target_os = "linux"))]
+pub fn enforce_renderer_cap() -> bool {
+    false
+}
+
+/// File the cap kill, so it is evidence rather than a log line that scrolls away.
+fn record_cap_kill(rss_mb: u64, threads: &[(String, u64)]) {
+    let Some(store) = self_store() else { return };
+    let _ = store.record(&errordb::FaultInput {
+        stage: "launch".to_string(),
+        level: "fatal".to_string(),
+        title: format!("the renderer hit {:.2} GB and was killed", rss_mb as f64 / 1024.0),
+        stack: Some(format!(
+            "A runaway renderer was killed before it could take the machine. The window reloads; the \
+             backend and every session are untouched.{}{}",
+            peak_line(Some(rss_mb)),
+            threads_line(threads),
+        )),
+        source_hint: Some(RENDERER_SOURCE.to_string()),
+        context: None,
+        release: Some(env!("CARGO_PKG_VERSION").to_string()),
+        ts: now_ms(),
+    });
+}
+
 
 /// Fold one reading into the running peak. PURE, so the rule is testable without a renderer — a test
 /// binary has none, so a test that went through `sample_renderer_peak` would assert nothing at all.
@@ -356,6 +483,23 @@ mod tests {
 
     #[test]
     fn the_title_reports_the_observation_not_a_diagnosis() {
+        // THE CAP DECISION. A runaway must cost a reload, not the machine — but it must never fire on
+        // ordinary work: a healthy renderer measured a few hundred MB against an 8 GB default.
+        assert!(over_cap(9_000, 8_192), "past the cap");
+        assert!(!over_cap(8_192, 8_192), "exactly at it is not past it");
+        assert!(!over_cap(400, 8_192), "a normal renderer is nowhere near");
+        // 0 DISABLES. The opt-out has to be safe to type — reading it as "kill everything" would turn
+        // an attempt to switch the cap off into the most destructive setting available.
+        assert!(!over_cap(30_000, 0), "a cap of 0 is disabled, not a cap of zero");
+
+        // The busy-thread line: it exists because no stack can be taken here, so the thread NAMES are
+        // the only signal for which subsystem is spinning.
+        let t = threads_line(&[("WebKitWebProces".into(), 56_260), ("Heap Helper".into(), 12_000)]);
+        assert!(t.contains("WebKitWebProces 56.3s"), "{t}");
+        assert!(t.contains("Heap Helper 12.0s"), "{t}");
+        // Nothing readable stays UNKNOWN rather than becoming an empty claim.
+        assert!(threads_line(&[]).contains("unknown"));
+
         // THE 15-CHARACTER CAP. `TASK_COMM_LEN` is 16 including the NUL, so `/proc/<pid>/comm` holds
         // at most fifteen characters and the full 16-char name is never what is there. Comparing
         // against it meant the sampler matched NOTHING — the fault read `unknown` while the renderer
@@ -371,7 +515,6 @@ mod tests {
         // SAMPLED WHILE ALIVE, because the watchdog fires 30s after the renderer died and /proc has
         // nothing left to read. Never sampled must stay UNKNOWN — not "small".
         assert_eq!(last_observed_peak_mb(), None, "nothing sampled yet");
-        sample_renderer_peak(); // no renderer under a test binary, so this is a no-op
         assert_eq!(last_observed_peak_mb(), None, "a failed reading must not become a figure");
 
         // MONOTONIC, through the REAL fold. A fresh small renderer after a reload must not erase the
