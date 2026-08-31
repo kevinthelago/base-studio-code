@@ -141,13 +141,25 @@ pub fn dead_detail() -> String {
 /// Best-effort and Linux-only. An unreadable value is reported as UNKNOWN by the caller rather than as
 /// zero, because "the renderer died at 0 MB" is a false statement and this fault exists to stop
 /// exactly that kind of confident-but-wrong record.
+/// How the renderer appears in `/proc/<pid>/comm` — a PREFIX, because that file is capped.
+///
+/// `TASK_COMM_LEN` is 16 including the NUL, so comm holds at most FIFTEEN characters.
+/// `"WebKitWebProcess"` is sixteen, so an equality test against the full name can never match —
+/// measured 2026-08-31, which is why the fault read `unknown` on every occurrence even while the
+/// renderer was sitting right there at 28.5 GB. The sibling `WebKitNetworkPr` (exactly 15) is what
+/// made the truncation visible.
+///
+/// The prefix stops short of `WebKitNetworkPr`, so the network process is not mistaken for the
+/// renderer — it is small and would understate the peak badly.
+const RENDERER_COMM_PREFIX: &str = "WebKitWebProc";
+
 #[cfg(target_os = "linux")]
 pub fn renderer_peak_mb() -> Option<u64> {
     let entries = std::fs::read_dir("/proc").ok()?;
     let mut peak = None;
     for e in entries.flatten() {
         if std::fs::read_to_string(e.path().join("comm"))
-            .map(|c| c.trim() != "WebKitWebProcess")
+            .map(|c| !is_renderer_comm(c.trim()))
             .unwrap_or(true)
         {
             continue;
@@ -171,6 +183,12 @@ pub fn renderer_peak_mb() -> Option<u64> {
 #[cfg(not(target_os = "linux"))]
 pub fn renderer_peak_mb() -> Option<u64> {
     None
+}
+
+/// Whether a `/proc/<pid>/comm` value names the renderer. Pure, so the truncation rule is testable
+/// against the real observed strings rather than against what the process is "called".
+pub fn is_renderer_comm(comm: &str) -> bool {
+    comm.starts_with(RENDERER_COMM_PREFIX)
 }
 
 /// The last renderer peak OBSERVED while it was alive, in MB.
@@ -338,6 +356,18 @@ mod tests {
 
     #[test]
     fn the_title_reports_the_observation_not_a_diagnosis() {
+        // THE 15-CHARACTER CAP. `TASK_COMM_LEN` is 16 including the NUL, so `/proc/<pid>/comm` holds
+        // at most fifteen characters and the full 16-char name is never what is there. Comparing
+        // against it meant the sampler matched NOTHING — the fault read `unknown` while the renderer
+        // sat at 28.5 GB.
+        assert!(is_renderer_comm("WebKitWebProces"), "the TRUNCATED name is what /proc actually holds");
+        assert!(is_renderer_comm("WebKitWebProcess"), "and the full one, wherever it is not truncated");
+        // The sibling network process is exactly 15 chars and must NOT count — it is small, and
+        // mistaking it for the renderer would understate the peak by orders of magnitude.
+        assert!(!is_renderer_comm("WebKitNetworkPr"));
+        assert!(!is_renderer_comm("base-studio-cod"));
+        assert!(!is_renderer_comm(""));
+
         // SAMPLED WHILE ALIVE, because the watchdog fires 30s after the renderer died and /proc has
         // nothing left to read. Never sampled must stay UNKNOWN — not "small".
         assert_eq!(last_observed_peak_mb(), None, "nothing sampled yet");
