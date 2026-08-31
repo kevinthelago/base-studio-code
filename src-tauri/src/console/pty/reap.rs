@@ -392,6 +392,53 @@ pub fn policy() -> ReapPolicy {
 /// number decorative.
 pub const TICK_MS: u64 = 5_000;
 
+/// Publish the reaper's view where a SHELL can read it, next to the PTY ledger.
+///
+/// The activity registry lives in the app's memory, so the only ways to see it are a Tauri command
+/// (reachable from the UI) or a file. A UI-only view is useless in the exact case this whole module
+/// exists for — the renderer is gone and the operator wants to know why fifteen sessions are still
+/// alive. So the ticker writes a snapshot each sweep and `bsc session activity` reads it.
+///
+/// Best-effort and atomic-ish: a failed write must never end the sweep it is describing, and a
+/// half-written file must not be parsed, so it lands via a temp file and a rename.
+pub fn publish(path: &std::path::Path, now_ms_: u64, policy: &ReapPolicy) {
+    let focused = focused_pane(now_ms_);
+    let panes: Vec<serde_json::Value> = {
+        let mut v: Vec<_> = snapshot()
+            .into_iter()
+            .map(|(id, a)| {
+                let silent = now_ms_.saturating_sub(a.last_output_ms);
+                let is_focused = Some(id.as_str()) == focused.as_deref();
+                serde_json::json!({
+                    "paneId": id,
+                    "silentMs": silent,
+                    "status": format!("{:?}", a.status).to_lowercase(),
+                    "focused": is_focused,
+                    "reapable": should_reap(&a, now_ms_, is_focused, policy),
+                })
+            })
+            .collect();
+        v.sort_by(|a, b| a["paneId"].as_str().cmp(&b["paneId"].as_str()));
+        v
+    };
+    let doc = serde_json::json!({
+        "writtenAtMs": now_ms_,
+        "policy": {
+            "idleGraceMs": policy.idle_grace_ms,
+            "silenceCeilingMs": policy.silence_ceiling_ms,
+        },
+        // Absent rather than empty-string when no UI is reporting: "nothing is focused" and "a pane
+        // named empty is focused" must not look the same to a reader.
+        "focusedPaneId": focused,
+        "panes": panes,
+    });
+    let Ok(body) = serde_json::to_vec_pretty(&doc) else { return };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, &body).is_ok() {
+        let _ = std::fs::rename(&tmp, path);
+    }
+}
+
 /// The event the frontend listens for so it can SHOW what the backend decided.
 ///
 /// The direction is deliberate and is the point of this whole change: the backend decides and reports,
@@ -435,6 +482,38 @@ mod headless_tests {
             vec!["village-animal-hospital:director".to_string()],
             "the parked director goes; the one still talking to the model stays",
         );
+    }
+
+    /// The published file is the CONTRACT `bsc session activity` parses, so its shape is pinned here
+    /// rather than left to whatever `serde_json::json!` happened to produce.
+    #[test]
+    fn the_published_snapshot_carries_what_the_cli_reads() {
+        let dir = crate::testutil::unique_dir("bsc-reap-pub", "shape");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("pty-activity.json");
+
+        let pane = format!("pub-pane-{}", std::process::id());
+        note_output(&pane, b"\x1b]100;run\x07");
+        publish(&path, now_ms(), &ReapPolicy::default());
+
+        let body = std::fs::read_to_string(&path).expect("published");
+        let doc: serde_json::Value = serde_json::from_str(&body).expect("valid json");
+        assert!(doc["writtenAtMs"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(doc["policy"]["idleGraceMs"], 10_000);
+        assert_eq!(doc["policy"]["silenceCeilingMs"], 300_000);
+        // ABSENT, not empty-string: "nothing is focused" and "a pane named empty" must differ.
+        assert!(doc["focusedPaneId"].is_null());
+
+        let row = doc["panes"].as_array().expect("panes")
+            .iter().find(|p| p["paneId"] == pane.as_str()).expect("our pane");
+        assert_eq!(row["status"], "run", "lowercased for the CLI");
+        assert_eq!(row["reapable"], false, "fresh output ⇒ not reapable");
+        assert!(row["silentMs"].as_u64().is_some());
+
+        // No .tmp left behind — the rename must have completed.
+        assert!(!path.with_extension("json.tmp").exists());
+        forget(&pane);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// An expired focus report must not keep protecting a pane. Without the TTL, the single session

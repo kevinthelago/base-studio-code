@@ -1566,7 +1566,11 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(reap::TICK_MS));
             let now = reap::now_ms();
             let focused = reap::focused_pane(now);
-            let doomed = reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &reap::policy());
+            let policy = reap::policy();
+            // Publish EVERY tick, not only when something is reaped: the question an operator asks is
+            // "why is this still alive", and a file that only appears on a reap cannot answer it.
+            reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &policy);
+            let doomed = reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &policy);
             if doomed.is_empty() {
                 continue;
             }
