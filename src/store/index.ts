@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
-import { persist, createJSONStorage } from "zustand/middleware";
-import { persistStorage } from "@/shared/lib/core/storage";
+import { persist } from "zustand/middleware";
+import { persistStorage, throttledJSONStorage } from "@/shared/lib/core/storage";
 import { grandfatherTriaged, grandfatherLocalPublished } from "@/store/triagedMigration";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
@@ -73,7 +73,15 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: "app-state",
-      storage: createJSONStorage(() => persistStorage),
+      // THROTTLED SERIALIZATION, not `createJSONStorage`. That helper stringifies the whole ~129 KB
+      // partialized snapshot on EVERY store `set()` — including writes to fields that are not
+      // persisted at all — and a native stack caught the main thread inside
+      // `appendQuotedJSONString` while the renderer went 77 MB to 6.4 GB in nineteen seconds.
+      // `persistStorage`'s own throttle sits downstream of the stringify and saves only I/O.
+      //
+      // Typed on the PARTIALIZED shape, not `AppStore`: `partialize` is what persist actually stores,
+      // so anything else would be a claim about a value that never reaches the storage.
+      storage: throttledJSONStorage<ReturnType<typeof persistedState>>(persistStorage),
       version: 2,
       // #2548: one-time grandfather. The Glance triaged filter (#2541) is forward-looking, so on an
       // upgrade from persist v0 an existing user's already-worked projects (published + fleeted) carry
