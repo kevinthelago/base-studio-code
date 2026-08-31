@@ -36,6 +36,14 @@ use pump::{spawn_emitter, spawn_reader};
 // ── PTY state ────────────────────────────────────────────────────────────────
 
 struct PtySession {
+    /// The pane this session belongs to — carried ONLY so [`Drop`] can name it.
+    ///
+    /// A drop closes the PTY master, and the kernel then sends SIGHUP to the session's process group:
+    /// a shell prints `Hangup` and dies. Measured 2026-08-31, a worker died exactly that way ten
+    /// seconds after launch while every candidate path had been ruled out by measurement — the reaper
+    /// (no reap logged), systemd (no scope stop), a replacing `insert` (no second `created`), and the
+    /// sibling director (disjoint process groups). The one thing nothing recorded was WHO dropped it.
+    pane_id: String,
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
@@ -65,6 +73,27 @@ impl PtyState {
 /// the session reaps the shell and its whole descendant tree.
 mod job;
 use job::PtyJob;
+
+impl Drop for PtySession {
+    /// Say WHO tore this session down.
+    ///
+    /// Dropping closes the PTY master, so the kernel SIGHUPs the process group and the shell dies —
+    /// which reaches the user as `Hangup` followed by a signal death that the pump reports as "the app
+    /// did not close it". Every route out of the registry ends here (`remove`, a replacing `insert`,
+    /// `drain` at exit), so this is the ONLY place that sees them all, and it is where the caller can
+    /// be named.
+    ///
+    /// A backtrace is cheap here on purpose: a session teardown happens a handful of times a session,
+    /// not in a loop, and this is the only place the answer exists. `Backtrace::capture` is a no-op
+    /// unless `RUST_BACKTRACE` is set, so the cost is opt-in while the pane id is always recorded.
+    fn drop(&mut self) {
+        log::warn!(
+            "pty[{}] session DROPPED — the PTY master closes here, so its shell gets SIGHUP\n{}",
+            self.pane_id,
+            std::backtrace::Backtrace::capture()
+        );
+    }
+}
 
 /// Drain every active PTY session, killing each shell (which on Windows kills
 /// its whole tree via the per-session Job Object that drops with the session).
@@ -1241,7 +1270,10 @@ fn pty_create_inner(
 
     let active = {
         let mut map = state.0.lock().unwrap();
-        map.insert(pane_id, PtySession { writer, master: pair.master, child, _job: job });
+        map.insert(
+            pane_id.clone(),
+            PtySession { pane_id, writer, master: pair.master, child, _job: job },
+        );
         map.len()
     };
     // Concurrency is the dominant memory driver — each session is a claude (node)
@@ -4720,7 +4752,7 @@ mod reconnect_tests {
         let child = pair.slave.spawn_command(cmd).expect("spawn");
         drop(pair.slave);
         let writer = pair.master.take_writer().expect("writer");
-        PtySession { writer, master: pair.master, child, _job: None }
+        PtySession { pane_id: "test".into(), writer, master: pair.master, child, _job: None }
     }
 
     /// A child that exits immediately, waited to completion so its status is readable.
@@ -4815,7 +4847,7 @@ mod pane_liveness_tests {
         let child = pair.slave.spawn_command(cmd).expect("spawn");
         drop(pair.slave);
         let writer = pair.master.take_writer().expect("writer");
-        PtySession { writer, master: pair.master, child, _job: None }
+        PtySession { pane_id: "test".into(), writer, master: pair.master, child, _job: None }
     }
 
     /// A child that exits immediately, waited to completion so its status is readable — the exact
@@ -5416,6 +5448,62 @@ mod designer_surface_tests {
             "the absence has to be stated, not inferred: {}",
             tree["README"],
         );
+    }
+}
+
+/// The drop trace is the only thing that sees every teardown route.
+#[cfg(all(test, target_os = "linux"))]
+mod drop_trace_tests {
+    use super::*;
+
+    /// Dropping a session closes the PTY master, and the kernel then SIGHUPs its process group — the
+    /// `Hangup` a worker printed before dying. Every route out of the registry ends in this drop
+    /// (`remove`, a replacing `insert`, `drain` at exit), so the pane id has to be carried here: at
+    /// the drop site there is nothing else left to identify it by.
+    #[test]
+    fn a_session_carries_the_pane_it_belongs_to_so_its_drop_can_name_it() {
+        let pty = native_pty_system()
+            .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let child = pty.slave.spawn_command(CommandBuilder::new("true")).expect("spawn");
+        let s = PtySession {
+            pane_id: "twitter-clone-test:api".to_string(),
+            writer: pty.master.take_writer().expect("writer"),
+            master: pty.master,
+            child,
+            _job: None,
+        };
+        assert_eq!(s.pane_id, "twitter-clone-test:api");
+        // Dropping must not panic — a diagnostic that can take the app down is worse than none.
+        drop(s);
+    }
+
+    /// A REPLACING INSERT drops the previous session, and that is one of the routes with no log of
+    /// its own — which is exactly why the trace belongs on `Drop` rather than at each call site.
+    #[test]
+    fn replacing_a_session_in_the_registry_drops_the_old_one() {
+        let state = PtyState::new();
+        let mk = |id: &str| {
+            let pty = native_pty_system()
+                .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+                .expect("openpty");
+            let child = pty.slave.spawn_command(CommandBuilder::new("true")).expect("spawn");
+            PtySession {
+                pane_id: id.to_string(),
+                writer: pty.master.take_writer().expect("writer"),
+                master: pty.master,
+                child,
+                _job: None,
+            }
+        };
+        {
+            let mut map = state.0.lock().unwrap();
+            map.insert("p".to_string(), mk("first"));
+            // The second insert REPLACES, dropping the first — silently, before this trace existed.
+            let displaced = map.insert("p".to_string(), mk("second"));
+            assert!(displaced.is_some(), "an insert over a live pane displaces it");
+            assert_eq!(map.len(), 1);
+        }
     }
 }
 
