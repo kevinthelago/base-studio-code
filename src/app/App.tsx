@@ -40,6 +40,7 @@ import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
 import { useCoordSpeaker } from "@/app/a11y/useCoordSpeaker";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
+import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
@@ -100,6 +101,11 @@ export default function App() {
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
   useWorkerAutoEnd(paneIdFor); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
+  // Reap idle, unfocused sessions (#849). MOUNTED HERE, not in ConsoleWorkspace: its own header
+  // claimed that mount for a long time and nothing ever made it — the hook was defined, registered as
+  // a module, and never called. The Console is opt-in anyway, so a reaper living there would only run
+  // while somebody was watching the Console, which is not a reaper.
+  useIdleReaper();
   useNotificationSounds(); // opt-in Signal-kit cues on fleet coord events (default off) (#3082)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
   useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
