@@ -960,6 +960,12 @@ fn pty_create_inner(
     // `ps`, the pty ledger and `pty-job`'s SIGKILL line. It has to be read here, while the child is
     // still owned locally — once the session is in the registry the log line is past it.
     let session_pid = child.process_id();
+    // The reap sweep totals CPU across the session's whole PROCESS GROUP, because the agent is a
+    // descendant of this shell and the shell itself does nothing. `PtyJob` makes pgid == the shell's
+    // pid, so the pid IS the group — the same grouping `killpg` already reaps.
+    if let Some(pid) = session_pid {
+        reap::note_pgid(&pane_id, pid as i32);
+    }
 
     let mut writer = pair.master.take_writer()
         .map_err(|e| { log::error!("pty[{pane_id}] take_writer failed: {e}"); e.to_string() })?;
@@ -1567,10 +1573,14 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             let now = reap::now_ms();
             let focused = reap::focused_pane(now);
             let policy = reap::policy();
+            // One /proc walk per sweep, shared by the decision and the published snapshot so the two
+            // can never disagree about why a pane was or was not taken.
+            let cpu = reap::cpu_ms_by_pgid();
             // Publish EVERY tick, not only when something is reaped: the question an operator asks is
             // "why is this still alive", and a file that only appears on a reap cannot answer it.
-            reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &policy);
-            let doomed = reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &policy);
+            reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &cpu, &policy);
+            let doomed =
+                reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &cpu, &policy);
             if doomed.is_empty() {
                 continue;
             }
