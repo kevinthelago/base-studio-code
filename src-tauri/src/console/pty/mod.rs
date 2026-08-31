@@ -18,6 +18,8 @@ pub(crate) mod busy;
 mod env;
 mod launch;
 mod pump;
+/// Idle-session reaping — the POLICY, in the process that owns the sessions (not the renderer).
+pub(crate) mod reap;
 pub(crate) mod scrollback;
 
 // Session env wiring + the sidecar resolvers used at the same `crate::console::pty::*` paths as
@@ -1478,8 +1480,23 @@ pub(crate) fn pty_kill(
     state: State<'_, PtyState>,
     perf_state: State<'_, perf::PerfState>,
 ) -> Result<(), String> {
+    kill_pane(&pane_id, &state, &perf_state);
+    Ok(())
+}
+
+/// Kill one session and forget everything keyed on its name.
+///
+/// Split out of [`pty_kill`] so the BACKGROUND REAPER can call it too. A `tauri::command` can only be
+/// reached from the frontend, and the whole point of moving the reap policy here is that it must keep
+/// working when there is no frontend — the webview has been OOM-killed 5+ times in a day and the
+/// backend ran headless for fifteen minutes afterwards with every session alive.
+pub(crate) fn kill_pane(pane_id: &str, state: &PtyState, perf_state: &perf::PerfState) {
+    let pane_id = pane_id.to_string();
     // Remove from perf tracker before killing the process.
     perf_state.unregister(&pane_id);
+    // The reap clock for a dead pane is meaningless, and leaving it would let a later session that
+    // reuses the name inherit this one's silence.
+    reap::forget(&pane_id);
     // Drop the ledger entry (#1049) — a clean kill means there's nothing for the next boot to reap.
     crate::console::ledger::forget_pane(&pane_id);
     let session = state.0.lock().unwrap().remove(&pane_id);
@@ -1496,7 +1513,78 @@ pub(crate) fn pty_kill(
         }
         None => log::info!("pty[{pane_id}] kill (no-op; session absent)"),
     }
-    Ok(())
+}
+
+/// The frontend reporting which pane the user is looking at.
+///
+/// A REPORT, not a decision — the backend cannot know what a person is looking at, and this is the one
+/// piece of the reap input only the UI has. It carries an expiry (`FOCUS_REPORT_TTL_MS`) rather than
+/// latching, so a renderer that dies mid-session does not leave its last focused pane protected
+/// forever, which would be the exact opposite of what this is for.
+#[tauri::command]
+pub(crate) fn pty_report_focus(pane_id: Option<String>) {
+    reap::report_focus(pane_id);
+}
+
+/// The frontend reporting the user's configured reap thresholds (Settings).
+#[tauri::command]
+pub(crate) fn pty_set_reap_policy(idle_grace_ms: Option<u64>, silence_ceiling_ms: Option<u64>) {
+    reap::set_policy(idle_grace_ms, silence_ceiling_ms);
+    let p = reap::policy();
+    log::info!("[reaper] policy · exited grace {}ms · silence ceiling {}ms", p.idle_grace_ms, p.silence_ceiling_ms);
+}
+
+/// What the backend currently believes about every live session — for the UI, and for `bsc` when there
+/// is no UI left to ask.
+#[tauri::command]
+pub(crate) fn pty_activity() -> Vec<(String, u64, String)> {
+    let now = reap::now_ms();
+    let mut v: Vec<(String, u64, String)> = reap::snapshot()
+        .into_iter()
+        .map(|(id, a)| (id, now.saturating_sub(a.last_output_ms), format!("{:?}", a.status)))
+        .collect();
+    v.sort();
+    v
+}
+
+/// Start the idle sweep. One thread for the life of the app.
+///
+/// THIS IS THE WHOLE POINT: it runs in the process that owns the sessions, so it keeps bounding them
+/// when the webview is gone. Measured before this existed — the renderer was OOM-killed and the
+/// backend ran headless for fifteen minutes with 17 sessions alive, fifteen of them agents that had
+/// never used a second of CPU.
+pub(crate) fn spawn_reaper(app: AppHandle) {
+    std::thread::spawn(move || {
+        // Re-read each tick: the frontend can report new Settings values at any time.
+        log::info!(
+            "[reaper] idle sweep every {}ms · exited grace {}ms · silence ceiling {}ms",
+            reap::TICK_MS,
+            reap::policy().idle_grace_ms,
+            reap::policy().silence_ceiling_ms,
+        );
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(reap::TICK_MS));
+            let now = reap::now_ms();
+            let focused = reap::focused_pane(now);
+            let policy = reap::policy();
+            // Publish EVERY tick, not only when something is reaped: the question an operator asks is
+            // "why is this still alive", and a file that only appears on a reap cannot answer it.
+            reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &policy);
+            let doomed = reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &policy);
+            if doomed.is_empty() {
+                continue;
+            }
+            let state = app.state::<PtyState>();
+            let perf_state = app.state::<perf::PerfState>();
+            for pane_id in doomed {
+                log::info!("[reaper] reaping idle pane {pane_id}");
+                kill_pane(&pane_id, &state, &perf_state);
+                // Best-effort: the reap already happened, and a frontend that is not there to hear it
+                // is the normal case rather than an error.
+                let _ = tauri::Emitter::emit(&app, reap::REAPED_EVENT, &pane_id);
+            }
+        }
+    });
 }
 
 /// Mark (or un-mark) a pane as "running the app" for the best-effort runtime-fault PTY tap (#2264).
