@@ -1576,6 +1576,9 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             // One /proc walk per sweep, shared by the decision and the published snapshot so the two
             // can never disagree about why a pane was or was not taken.
             let cpu = reap::cpu_ms_by_pgid();
+            // Piggy-backed on the sweep that already runs: the renderer's peak has to be observed
+            // WHILE IT IS ALIVE, because the watchdog that reports it only fires 30s after it died.
+            crate::observability::renderer_watch::sample_renderer_peak();
             // Publish EVERY tick, not only when something is reaped: the question an operator asks is
             // "why is this still alive", and a file that only appears on a reap cannot answer it.
             reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &cpu, &policy);

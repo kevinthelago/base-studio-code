@@ -173,6 +173,50 @@ pub fn renderer_peak_mb() -> Option<u64> {
     None
 }
 
+/// The last renderer peak OBSERVED while it was alive, in MB.
+///
+/// Sampled rather than read at fault time. The watchdog only fires after 30s of silence, by which
+/// point the WebKitWebProcess is long gone from `/proc` — measured 2026-08-31, the field read
+/// `unknown (could not read it from /proc)` on every real occurrence, and would only ever have
+/// populated in the one case nobody needs: a renderer that froze WITHOUT dying.
+fn observed_peak() -> &'static std::sync::atomic::AtomicU64 {
+    static P: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    &P
+}
+
+/// Take a reading, if one can be had. Called from the sweep that already runs every few seconds, so
+/// the figure is at most one tick stale when the renderer dies.
+///
+/// MONOTONIC: it only ever moves up. `VmHWM` is itself a high-water mark, but the process it belongs
+/// to is replaced on every reload — and the question the fault answers is "how big did it get before
+/// it died", so a fresh small renderer must not erase the peak of the one that just died.
+pub fn sample_renderer_peak() {
+    let cur = observed_peak().load(std::sync::atomic::Ordering::Relaxed);
+    observed_peak().store(fold_peak(cur, renderer_peak_mb()), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Fold one reading into the running peak. PURE, so the rule is testable without a renderer — a test
+/// binary has none, so a test that went through `sample_renderer_peak` would assert nothing at all.
+///
+/// Two rules, and both matter:
+///   • A FAILED reading (`None`) leaves the peak alone. It is not evidence the renderer got smaller.
+///   • A SMALLER reading loses. The process is replaced on every reload, and the fault's question is
+///     how big it got BEFORE it died — a fresh renderer must not erase the peak of the dead one.
+pub fn fold_peak(current: u64, reading: Option<u64>) -> u64 {
+    match reading {
+        Some(mb) if mb > current => mb,
+        _ => current,
+    }
+}
+
+/// The peak to report: the largest reading ever observed. `None` when nothing was ever sampled.
+pub fn last_observed_peak_mb() -> Option<u64> {
+    match observed_peak().load(std::sync::atomic::Ordering::Relaxed) {
+        0 => None, // never sampled — UNKNOWN, which is not the same as "it was small"
+        mb => Some(mb),
+    }
+}
+
 /// The memory line appended to the fault detail.
 ///
 /// Split out and pure so the ABSENT case is pinned by a test: an unreadable peak has to read as
@@ -202,7 +246,8 @@ fn record(silent_ms: i64) {
         title: dead_title(silent_ms),
         // The peak is read HERE, at fault time, while the dying process may still be in /proc — a
         // moment later it is gone and the number is unrecoverable.
-        stack: Some(format!("{}{}", dead_detail(), peak_line(renderer_peak_mb()))),
+        // The LAST OBSERVED peak, not a fresh read: the process died ~30s ago and is not in /proc.
+        stack: Some(format!("{}{}", dead_detail(), peak_line(last_observed_peak_mb()))),
         source_hint: Some(RENDERER_SOURCE.to_string()),
         context: None,
         release: Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -293,6 +338,21 @@ mod tests {
 
     #[test]
     fn the_title_reports_the_observation_not_a_diagnosis() {
+        // SAMPLED WHILE ALIVE, because the watchdog fires 30s after the renderer died and /proc has
+        // nothing left to read. Never sampled must stay UNKNOWN — not "small".
+        assert_eq!(last_observed_peak_mb(), None, "nothing sampled yet");
+        sample_renderer_peak(); // no renderer under a test binary, so this is a no-op
+        assert_eq!(last_observed_peak_mb(), None, "a failed reading must not become a figure");
+
+        // MONOTONIC, through the REAL fold. A fresh small renderer after a reload must not erase the
+        // peak of the one that just died — the fault's question is how big it got BEFORE it died.
+        assert_eq!(fold_peak(0, Some(27_500)), 27_500, "the first reading takes");
+        assert_eq!(fold_peak(27_500, Some(300)), 27_500, "a smaller later reading does not win");
+        assert_eq!(fold_peak(27_500, Some(30_000)), 30_000, "a bigger one does");
+        // A FAILED reading is not evidence the renderer shrank.
+        assert_eq!(fold_peak(27_500, None), 27_500);
+        assert_eq!(fold_peak(0, None), 0, "and never invents a figure from nothing");
+
         // The peak has to reach the fault, or the fault reads the same at 400 MB as at 27 GB.
         let big = peak_line(Some(27_500));
         assert!(big.contains("26.86 GB"), "{big}");
