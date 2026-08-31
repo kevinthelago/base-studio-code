@@ -60,6 +60,10 @@ pub struct Activity {
     /// Epoch-ms of the last byte this session produced. The single clock both thresholds read.
     pub last_output_ms: u64,
     pub status: RunState,
+    /// The session's process GROUP, which equals its shell's pid (`PtyJob` sets it up that way, and it
+    /// is the same grouping `killpg` uses to reap the tree). `0` when unknown. Lets the sweep total
+    /// the whole session's CPU, not just the shell's.
+    pub pgid: i32,
 }
 
 /// The two thresholds, and the focus report they are checked against.
@@ -86,19 +90,78 @@ impl Default for ReapPolicy {
 /// pane a person is looking at. It is deliberately a report with an expiry (see [`focused_pane`]):
 /// when the renderer dies, no pane is focused, everything becomes reapable, and that is exactly the
 /// case this whole module exists for.
-pub fn should_reap(a: &Activity, now_ms: u64, focused: bool, policy: &ReapPolicy) -> bool {
+pub fn should_reap(
+    a: &Activity,
+    now_ms: u64,
+    focused: bool,
+    cpu_ms: Option<u64>,
+    policy: &ReapPolicy,
+) -> bool {
     if focused {
         return false; // the user is watching it
     }
     // Saturating: a clock that went backwards must read as "no silence yet", never as a huge one.
     let silent_ms = now_ms.saturating_sub(a.last_output_ms);
     match a.status {
-        // Still inside an agent. Only total silence past the ceiling reaps it, so a session waiting on
-        // a slow model — which keeps printing progress — is never taken.
+        // A session that has NEVER used a CPU tick did not go idle — it never started. That is the
+        // class worth reaping in seconds, and it is the only thing that separates the two.
+        //
+        // MEASURED 2026-08-31 at 153s of age: the one working agent had 0.27s of CPU and 22 MB RSS;
+        // the other fourteen had EXACTLY zero and 10 MB. Meanwhile both working sessions were silent
+        // and climbing (43s → 98s), so OUTPUT alone cannot tell them apart at a ten-second horizon —
+        // a short ceiling on silence would have reaped exactly the sessions worth keeping.
+        //
+        // This corrects the reasoning on the previous item, which rejected CPU because "a session
+        // blocked on a slow model burns no CPU". True instantaneously; false cumulatively.
+        RunState::Run if cpu_ms == Some(0) => silent_ms >= policy.idle_grace_ms,
+        // It has done work, or we could not tell. Only total silence past the ceiling reaps it.
+        //
+        // UNKNOWN COUNTS AS HAS-WORKED on purpose: losing a turn costs more than a session lingering,
+        // so the unreadable case takes the protective branch rather than the aggressive one.
         RunState::Run => silent_ms >= policy.silence_ceiling_ms,
-        // The agent has exited (or never started). The short grace applies.
+        // The agent has exited. Nothing is in flight, so the short grace applies whatever the CPU says.
         RunState::Idle | RunState::Unknown => silent_ms >= policy.idle_grace_ms,
     }
+}
+
+/// Total cumulative CPU (ms) per process GROUP, from one walk of `/proc`.
+///
+/// Grouped by pgid rather than pid because the agent is a DESCENDANT of the session's shell — the
+/// shell itself does nothing and would always read zero. `PtyJob` already makes pgid == the shell's
+/// pid for exactly this tree.
+#[cfg(target_os = "linux")]
+pub fn cpu_ms_by_pgid() -> HashMap<i32, u64> {
+    let ticks_per_sec = 100u64; // _SC_CLK_TCK is 100 on every Linux this ships to
+    let mut out: HashMap<i32, u64> = HashMap::new();
+    let Ok(entries) = std::fs::read_dir("/proc") else { return out };
+    for e in entries.flatten() {
+        if e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()).is_none() {
+            continue;
+        }
+        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else { continue };
+        // comm (field 2) can contain spaces and parentheses, so fields are counted from the LAST ')'.
+        let Some(rest) = stat.rfind(')').map(|i| &stat[i + 1..]) else { continue };
+        let f: Vec<&str> = rest.split_whitespace().collect();
+        // After comm: [0]=state [1]=ppid [2]=pgrp … [11]=utime [12]=stime
+        let (Some(pgrp), Some(utime), Some(stime)) = (f.get(2), f.get(11), f.get(12)) else {
+            continue;
+        };
+        let (Ok(pgrp), Ok(u), Ok(s)) = (
+            pgrp.parse::<i32>(),
+            utime.parse::<u64>(),
+            stime.parse::<u64>(),
+        ) else {
+            continue;
+        };
+        *out.entry(pgrp).or_insert(0) += (u + s) * 1000 / ticks_per_sec;
+    }
+    out
+}
+
+/// No `/proc`. Every lookup misses, so every session reads UNKNOWN and takes the protective ceiling.
+#[cfg(not(target_os = "linux"))]
+pub fn cpu_ms_by_pgid() -> HashMap<i32, u64> {
+    HashMap::new()
 }
 
 /// The OSC-100 state marker the session's shell emits: `ESC ] 100 ; <state> BEL`.
@@ -168,13 +231,23 @@ pub fn now_ms() -> u64 {
 pub fn note_output(pane_id: &str, chunk: &[u8]) {
     let state = scan_state_marker(chunk);
     let Ok(mut map) = registry().lock() else { return };
-    let e = map
-        .entry(pane_id.to_string())
-        .or_insert(Activity { last_output_ms: now_ms(), status: RunState::Unknown });
+    let e = map.entry(pane_id.to_string()).or_insert(Activity {
+        last_output_ms: now_ms(),
+        status: RunState::Unknown,
+        pgid: 0,
+    });
     e.last_output_ms = now_ms();
     if let Some(s) = state {
         e.status = s;
     }
+}
+
+/// Record the session's process group, so the sweep can total the CPU of its whole tree.
+pub fn note_pgid(pane_id: &str, pgid: i32) {
+    let Ok(mut map) = registry().lock() else { return };
+    map.entry(pane_id.to_string())
+        .or_insert(Activity { last_output_ms: now_ms(), status: RunState::Unknown, pgid: 0 })
+        .pgid = pgid;
 }
 
 /// Drop a session's activity when its PTY goes away, so a dead pane cannot be reaped twice or hold a
@@ -206,11 +279,17 @@ pub fn panes_to_reap(
     snapshot: &HashMap<String, Activity>,
     now_ms_: u64,
     focused: Option<&str>,
+    cpu: &HashMap<i32, u64>,
     policy: &ReapPolicy,
 ) -> Vec<String> {
     let mut out: Vec<String> = snapshot
         .iter()
-        .filter(|(id, a)| should_reap(a, now_ms_, Some(id.as_str()) == focused, policy))
+        .filter(|(id, a)| {
+            // A pgid of 0 means the session never reported one, which is UNKNOWN rather than zero
+            // CPU — the distinction that decides whether it takes the grace or the ceiling.
+            let cpu_ms = (a.pgid != 0).then(|| cpu.get(&a.pgid).copied().unwrap_or(0));
+            should_reap(a, now_ms_, Some(id.as_str()) == focused, cpu_ms, policy)
+        })
         .map(|(id, _)| id.clone())
         .collect();
     out.sort(); // deterministic, so logs and tests do not depend on hash order
@@ -229,8 +308,13 @@ mod tests {
     const NOW: u64 = 1_788_000_000_000;
 
     fn act(status: RunState, silent_ms: u64) -> Activity {
-        Activity { last_output_ms: NOW - silent_ms, status }
+        Activity { last_output_ms: NOW - silent_ms, status, pgid: 0 }
     }
+
+    /// CPU that says "this session has done work" — the measured 0.27s of the one live agent.
+    const WORKED: Option<u64> = Some(270);
+    /// Exactly zero: the measured value for all fourteen parked agents.
+    const NEVER_RAN: Option<u64> = Some(0);
 
     #[test]
     fn the_state_marker_is_read_from_the_raw_bytes() {
@@ -264,10 +348,10 @@ mod tests {
     fn a_parked_agent_is_reaped_once_it_has_been_silent_past_the_ceiling() {
         let p = ReapPolicy::default();
         // Fifteen of these were alive for 909s having produced nothing.
-        assert!(should_reap(&act(RunState::Run, 909_000), NOW, false, &p));
+        assert!(should_reap(&act(RunState::Run, 909_000), NOW, false, WORKED, &p));
         // ...but not before the ceiling. `run` still buys real protection.
-        assert!(!should_reap(&act(RunState::Run, 60_000), NOW, false, &p));
-        assert!(!should_reap(&act(RunState::Run, p.silence_ceiling_ms - 1), NOW, false, &p));
+        assert!(!should_reap(&act(RunState::Run, 60_000), NOW, false, WORKED, &p));
+        assert!(!should_reap(&act(RunState::Run, p.silence_ceiling_ms - 1), NOW, false, WORKED, &p));
     }
 
     /// THE CASE THE CEILING MUST NOT BREAK: a session queued behind others on a one-slot ollama. It is
@@ -277,26 +361,74 @@ mod tests {
     fn a_session_waiting_on_a_slow_model_is_not_reaped_while_it_reports_progress() {
         let p = ReapPolicy::default();
         // "thinking (step 1/20)…" two seconds ago, after ten minutes of a slow turn.
-        assert!(!should_reap(&act(RunState::Run, 2_000), NOW, false, &p));
+        assert!(!should_reap(&act(RunState::Run, 2_000), NOW, false, WORKED, &p));
         // Even a full minute between progress lines is well inside the ceiling.
-        assert!(!should_reap(&act(RunState::Run, 60_000), NOW, false, &p));
+        assert!(!should_reap(&act(RunState::Run, 60_000), NOW, false, WORKED, &p));
     }
 
     /// An exited agent leaves a bash prompt; there is nothing in flight, so the short grace applies.
     #[test]
     fn an_exited_agent_takes_the_short_grace_not_the_ceiling() {
         let p = ReapPolicy::default();
-        assert!(should_reap(&act(RunState::Idle, 10_000), NOW, false, &p));
-        assert!(!should_reap(&act(RunState::Idle, 9_999), NOW, false, &p));
+        assert!(should_reap(&act(RunState::Idle, 10_000), NOW, false, WORKED, &p));
+        assert!(!should_reap(&act(RunState::Idle, 9_999), NOW, false, WORKED, &p));
         // A session that never emitted a marker is treated as exited, not as protected.
-        assert!(should_reap(&act(RunState::Unknown, 10_000), NOW, false, &p));
+        assert!(should_reap(&act(RunState::Unknown, 10_000), NOW, false, WORKED, &p));
+    }
+
+    /// THE MAINTAINER'S ASK, and the measurement that shaped it. "Make it 10 seconds for reaping idle
+    /// sessions" — taken as a shorter silence ceiling, that would have reaped the two working sessions,
+    /// because BOTH were silent and climbing (43s → 98s) while doing real work.
+    #[test]
+    fn a_session_that_never_used_a_cpu_tick_goes_on_the_short_grace() {
+        let p = ReapPolicy::default();
+        // The fourteen parked agents: exactly zero CPU at 153s of age. Not idle — never started.
+        assert!(should_reap(&act(RunState::Run, 10_000), NOW, false, NEVER_RAN, &p));
+        // Still not instant: the short grace is a grace, so a just-launched session gets it.
+        assert!(!should_reap(&act(RunState::Run, 9_999), NOW, false, NEVER_RAN, &p));
+    }
+
+    /// The other half, and the reason the rule is CPU and not silence: a working session is silent too.
+    #[test]
+    fn a_session_that_has_done_work_keeps_the_full_ceiling_even_while_silent() {
+        let p = ReapPolicy::default();
+        // Measured: twitter-clone-test at 0.27s CPU, silent for 98s and climbing.
+        assert!(!should_reap(&act(RunState::Run, 98_000), NOW, false, WORKED, &p));
+        // A single tick of CPU is enough to mean "this started".
+        assert!(!should_reap(&act(RunState::Run, 98_000), NOW, false, Some(10), &p));
+        // It is not immortal — the ceiling still applies.
+        assert!(should_reap(&act(RunState::Run, p.silence_ceiling_ms), NOW, false, WORKED, &p));
+    }
+
+    /// UNKNOWN takes the protective branch. Losing a turn costs more than a session lingering, so the
+    /// unreadable case must not fall into the aggressive one.
+    #[test]
+    fn unknown_cpu_is_treated_as_having_worked_rather_than_as_zero() {
+        let p = ReapPolicy::default();
+        assert!(!should_reap(&act(RunState::Run, 10_000), NOW, false, None, &p));
+        assert!(should_reap(&act(RunState::Run, p.silence_ceiling_ms), NOW, false, None, &p));
+    }
+
+    /// A pgid of 0 means the session never reported one — UNKNOWN, not "zero CPU".
+    #[test]
+    fn a_pane_with_no_pgid_is_unknown_not_idle() {
+        let p = ReapPolicy::default();
+        let mut snap = HashMap::new();
+        snap.insert("no-pgid".to_string(), act(RunState::Run, 60_000)); // pgid 0
+        snap.insert(
+            "parked".to_string(),
+            Activity { last_output_ms: NOW - 60_000, status: RunState::Run, pgid: 4242 },
+        );
+        // pgid 4242 is absent from the CPU map ⇒ genuinely zero ⇒ reapable on the short grace.
+        let cpu: HashMap<i32, u64> = HashMap::new();
+        assert_eq!(panes_to_reap(&snap, NOW, None, &cpu, &p), vec!["parked".to_string()]);
     }
 
     #[test]
     fn the_focused_pane_is_never_reaped_at_any_silence() {
         let p = ReapPolicy::default();
         for st in [RunState::Run, RunState::Idle, RunState::Unknown] {
-            assert!(!should_reap(&act(st, 10 * 60 * 60_000), NOW, true, &p), "{st:?}");
+            assert!(!should_reap(&act(st, 10 * 60 * 60_000), NOW, true, WORKED, &p), "{st:?}");
         }
     }
 
@@ -304,8 +436,8 @@ mod tests {
     #[test]
     fn a_backwards_clock_reaps_nothing() {
         let p = ReapPolicy::default();
-        let future = Activity { last_output_ms: NOW + 60_000, status: RunState::Idle };
-        assert!(!should_reap(&future, NOW, false, &p));
+        let future = Activity { last_output_ms: NOW + 60_000, status: RunState::Idle, pgid: 0 };
+        assert!(!should_reap(&future, NOW, false, WORKED, &p));
     }
 
     #[test]
@@ -317,7 +449,7 @@ mod tests {
         snap.insert("mmm:working".into(), act(RunState::Run, 2_000));
         snap.insert("bbb:watched".into(), act(RunState::Idle, 30_000));
 
-        let got = panes_to_reap(&snap, NOW, Some("bbb:watched"), &p);
+        let got = panes_to_reap(&snap, NOW, Some("bbb:watched"), &HashMap::new(), &p);
         assert_eq!(got, vec!["aaa:exited".to_string(), "zzz:parked".to_string()]);
     }
 
@@ -401,7 +533,7 @@ pub const TICK_MS: u64 = 5_000;
 ///
 /// Best-effort and atomic-ish: a failed write must never end the sweep it is describing, and a
 /// half-written file must not be parsed, so it lands via a temp file and a rename.
-pub fn publish(path: &std::path::Path, now_ms_: u64, policy: &ReapPolicy) {
+pub fn publish(path: &std::path::Path, now_ms_: u64, cpu: &HashMap<i32, u64>, policy: &ReapPolicy) {
     let focused = focused_pane(now_ms_);
     let panes: Vec<serde_json::Value> = {
         let mut v: Vec<_> = snapshot()
@@ -409,12 +541,17 @@ pub fn publish(path: &std::path::Path, now_ms_: u64, policy: &ReapPolicy) {
             .map(|(id, a)| {
                 let silent = now_ms_.saturating_sub(a.last_output_ms);
                 let is_focused = Some(id.as_str()) == focused.as_deref();
+                let cpu_ms = (a.pgid != 0).then(|| cpu.get(&a.pgid).copied().unwrap_or(0));
                 serde_json::json!({
                     "paneId": id,
                     "silentMs": silent,
                     "status": format!("{:?}", a.status).to_lowercase(),
                     "focused": is_focused,
-                    "reapable": should_reap(&a, now_ms_, is_focused, policy),
+                    // Surfaced because it is what decides WHICH threshold applies — a reader seeing
+                    // `reapable: false` on a silent pane needs to know it is protected for having
+                    // done work, not by an arbitrary number.
+                    "cpuMs": cpu_ms,
+                    "reapable": should_reap(&a, now_ms_, is_focused, cpu_ms, policy),
                 })
             })
             .collect();
@@ -467,16 +604,16 @@ mod headless_tests {
         // fifteen measured `bsc-agent` processes were.
         snap.insert(
             "village-animal-hospital:director".to_string(),
-            Activity { last_output_ms: now - 909_000, status: RunState::Run },
+            Activity { last_output_ms: now - 909_000, status: RunState::Run, pgid: 7001 },
         );
         // A worker mid-turn on a slow local model: still printing progress.
         snap.insert(
             "twitter-clone-test:api".to_string(),
-            Activity { last_output_ms: now - 2_000, status: RunState::Run },
+            Activity { last_output_ms: now - 2_000, status: RunState::Run, pgid: 0 },
         );
 
         // No focus report at all — the renderer is gone.
-        let doomed = panes_to_reap(&snap, now, None, &policy);
+        let doomed = panes_to_reap(&snap, now, None, &HashMap::new(), &policy);
         assert_eq!(
             doomed,
             vec!["village-animal-hospital:director".to_string()],
@@ -494,7 +631,7 @@ mod headless_tests {
 
         let pane = format!("pub-pane-{}", std::process::id());
         note_output(&pane, b"\x1b]100;run\x07");
-        publish(&path, now_ms(), &ReapPolicy::default());
+        publish(&path, now_ms(), &HashMap::new(), &ReapPolicy::default());
 
         let body = std::fs::read_to_string(&path).expect("published");
         let doc: serde_json::Value = serde_json::from_str(&body).expect("valid json");
@@ -508,6 +645,9 @@ mod headless_tests {
             .iter().find(|p| p["paneId"] == pane.as_str()).expect("our pane");
         assert_eq!(row["status"], "run", "lowercased for the CLI");
         assert_eq!(row["reapable"], false, "fresh output ⇒ not reapable");
+        // No pgid was recorded for this pane, so CPU is UNKNOWN — and unknown must serialize as null
+        // rather than 0, or a reader cannot tell "never ran" from "could not tell".
+        assert!(row["cpuMs"].is_null(), "unknown CPU is null, never zero");
         assert!(row["silentMs"].as_u64().is_some());
 
         // No .tmp left behind — the rename must have completed.
@@ -525,13 +665,13 @@ mod headless_tests {
         let mut snap = HashMap::new();
         snap.insert(
             "watched".to_string(),
-            Activity { last_output_ms: now - 909_000, status: RunState::Run },
+            Activity { last_output_ms: now - 909_000, status: RunState::Run, pgid: 0 },
         );
 
         // While the UI lived, it was protected.
-        assert!(panes_to_reap(&snap, now, Some("watched"), &policy).is_empty());
+        assert!(panes_to_reap(&snap, now, Some("watched"), &HashMap::new(), &policy).is_empty());
         // With the UI gone there is no report, so it is reapable like anything else.
-        assert_eq!(panes_to_reap(&snap, now, None, &policy), vec!["watched".to_string()]);
+        assert_eq!(panes_to_reap(&snap, now, None, &HashMap::new(), &policy), vec!["watched".to_string()]);
     }
 }
 
