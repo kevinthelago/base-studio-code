@@ -1100,8 +1100,10 @@ fn pty_create_inner(
     let launch = match plan {
         LaunchPlan::Prompt { resume } => Some(harness.launch_command(
             startup_prompt.as_deref().unwrap_or(""),
-            // `resume` says WHETHER; `resume_id` says WHICH. Without an id the harness keeps its old
-            // behaviour rather than launching fresh — a worse resume beats no resume.
+            // BOTH, separately. Collapsing them into the id alone meant a harness with no session ids
+            // — bsc-agent, whose conversation is addressed by a path — was never told to resume at
+            // all, and `--continue` never reached the command line.
+            resume,
             if resume { resume_id.as_deref() } else { None },
         )),
         // An `initCmd` is a literal shell line the caller composed (`claude --continue || claude` for
@@ -5640,7 +5642,7 @@ mod caged_resume_tests {
         struct Mute;
         impl HarnessAdapter for Mute {
             fn detect_history(&self, _cwd: &str) -> bool { true }
-            fn launch_command(&self, _p: &str, _r: Option<&str>) -> String { String::new() }
+            fn launch_command(&self, _p: &str, _r: bool, _id: Option<&str>) -> String { String::new() }
             fn model_flag(&self, _m: &str) -> Option<String> { None }
             fn shell_fn(&self, _m: Option<&str>) -> String { String::new() }
             fn is_harness_launch(&self, _l: &str) -> bool { false }

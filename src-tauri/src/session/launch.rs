@@ -14,12 +14,16 @@ use crate::prelude::*;
 ///
 /// The id comes from Claude's own `lastSessionId` (see [`crate::session::claude_config::last_session_id`]),
 /// so it follows a `/clear` rather than resurrecting cleared context.
-pub(crate) fn claude_launch(prompt: &str, resume: Option<&str>) -> String {
-    let flag = match resume {
+pub(crate) fn claude_launch(prompt: &str, resume: bool, resume_id: Option<&str>) -> String {
+    let flag = match (resume, resume_id) {
         // The id is shell-quoted even though it is shape-checked upstream: quoting at the point of
         // interpolation is what makes the guarantee local to the line that needs it.
-        Some(id) => format!("--resume {} ", bash_ansi_c_quote(id)),
-        None => String::new(),
+        (_, Some(id)) => format!("--resume {} ", bash_ansi_c_quote(id)),
+        // RESUMING WITHOUT AN ID still resumes. `--resume` names one conversation; `--continue` takes
+        // the newest for this directory, which is a worse resume than naming it and a far better one
+        // than silently starting over — the outcome when this arm did not exist.
+        (true, None) => "--continue ".to_string(),
+        (false, None) => String::new(),
     };
     format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
 }
@@ -176,7 +180,7 @@ mod relocated_tests {
 
     #[test]
     fn claude_launch_bakes_prompt_fresh() {
-        assert_eq!(claude_launch("triage the issues", None), "claude $'triage the issues'");
+        assert_eq!(claude_launch("triage the issues", false, None), "claude $'triage the issues'");
     }
 
     /// A RESUME NAMES ITS SESSION. `--continue` resumes "the newest transcript in this directory" by
@@ -186,7 +190,7 @@ mod relocated_tests {
     #[test]
     fn claude_launch_resumes_by_session_id_rather_than_by_recency() {
         let id = "bf36a25c-b331-48b0-a78c-3bf4e6b51354";
-        let cmd = claude_launch("triage the issues", Some(id));
+        let cmd = claude_launch("triage the issues", true, Some(id));
         assert!(cmd.contains("--resume"), "{cmd}");
         assert!(cmd.contains(id), "the id travels: {cmd}");
         assert!(!cmd.contains("--continue"), "and recency is not consulted: {cmd}");
@@ -198,7 +202,7 @@ mod relocated_tests {
     /// line that needs the guarantee, rather than resting on a check somewhere upstream.
     #[test]
     fn a_session_id_is_quoted_into_the_command() {
-        let cmd = claude_launch("go", Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
+        let cmd = claude_launch("go", true, Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
         assert!(cmd.contains("$'bf36a25c-b331-48b0-a78c-3bf4e6b51354'"), "{cmd}");
     }
     #[test]

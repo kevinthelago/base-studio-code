@@ -37,9 +37,19 @@ pub trait HarnessAdapter {
     fn caged_history_path(&self, _stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
         None
     }
-    /// The shell command that launches the harness, baking the startup `prompt` and requesting
-    /// `resume` when supported.
-    fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String;
+    /// The shell command that launches the harness, baking the startup `prompt`.
+    ///
+    /// WHETHER and WHICH are SEPARATE arguments, and that separation is the whole point. They used to
+    /// be one `Option<&str>` — the session id, `None` meaning "do not resume" — which silently
+    /// destroyed the resume for any harness that HAS no session ids. `bsc-agent` addresses its
+    /// conversation by a PATH, so its id is always `None`, so it was never told to resume and
+    /// `--continue` never reached the command line, while the log announced "falling back to
+    /// --continue" in the same breath.
+    ///
+    /// `resume` says whether to continue at all; `resume_id` names which conversation when the
+    /// harness has such a name. A harness with an id should prefer it and fall back to its
+    /// no-id resume rather than launching fresh.
+    fn launch_command(&self, prompt: &str, resume: bool, resume_id: Option<&str>) -> String;
     /// Map a UI model id to this harness's model selector (None ⇒ the harness's own default).
     fn model_flag(&self, model: &str) -> Option<String>;
     /// The shell wrapper function the session installs so both the auto-launch and user-typed runs
@@ -71,8 +81,8 @@ impl HarnessAdapter for ClaudeCodeAdapter {
         Some(crate::session::launch::caged_claude_transcripts_dir(stores_root))
     }
 
-    fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String {
-        crate::claude_launch(prompt, resume)
+    fn launch_command(&self, prompt: &str, resume: bool, resume_id: Option<&str>) -> String {
+        crate::claude_launch(prompt, resume, resume_id)
     }
 
     fn model_flag(&self, model: &str) -> Option<String> {
@@ -131,14 +141,16 @@ impl HarnessAdapter for BscAgentAdapter {
         Some(crate::session::launch::caged_agent_conversation_path(stores_root))
     }
 
-    fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String {
+    fn launch_command(&self, prompt: &str, resume: bool, _resume_id: Option<&str>) -> String {
         // The `bsc-agent` shell name resolves to the sidecar via `$BSC_AGENT_BIN` (see shell_fn).
         // `--continue` resumes the prior conversation (path via $BSC_AGENT_SESSION); the flag must
         // precede the baked prompt. (#1144)
         //
-        // It takes no session ID and wants none: bsc-agent's conversation is addressed by a PATH, so
-        // there is nothing to name. Only the presence of a resume request matters here.
-        let flag = if resume.is_some() { "--continue " } else { "" };
+        // IT TAKES NO SESSION ID AND WANTS NONE: this conversation is addressed by a PATH, so there is
+        // nothing to name — which is exactly why the id must not be what decides. When WHETHER and
+        // WHICH were one `Option`, this harness's permanently-absent id read as "do not resume" and
+        // the flag never reached the command line.
+        let flag = if resume { "--continue " } else { "" };
         format!("bsc-agent {flag}{}", crate::bash_ansi_c_quote(prompt))
     }
 
@@ -254,17 +266,53 @@ mod tests {
         assert!(stdout.contains("STAGED --continue"), "the given path is execed with its args: {stdout:?}");
     }
 
+    /// THE BUG: a harness with NO session ids lost its resume entirely.
+    ///
+    /// `bsc-agent` addresses its conversation by a PATH, so its id is permanently `None`. When
+    /// WHETHER and WHICH were one `Option`, that read as "do not resume" and `--continue` never
+    /// reached the command line — while the launch log announced "falling back to --continue" in the
+    /// same breath. Measured: `launch=bsc-agent $'Build the REST API…'`, with `resumed=true` logged.
+    #[test]
+    fn bsc_agent_resumes_on_the_flag_even_though_it_has_no_session_id() {
+        let a = BscAgentAdapter;
+        let resumed = a.launch_command("go", true, None);
+        assert!(resumed.starts_with("bsc-agent --continue "), "{resumed}");
+        assert!(resumed.contains("go"), "the prompt is still baked in: {resumed}");
+
+        // An id it can never have must not change the answer either way.
+        assert_eq!(a.launch_command("go", true, Some("ignored")), resumed);
+        // …and without a resume request there is no flag at all.
+        assert!(!a.launch_command("go", false, None).contains("--continue"));
+    }
+
+    /// Claude prefers the ID, and falls back to `--continue` rather than starting fresh.
+    #[test]
+    fn claude_prefers_the_id_but_still_resumes_without_one() {
+        let c = ClaudeCodeAdapter;
+        let named = c.launch_command("go", true, Some("abc-123"));
+        assert!(named.contains("--resume "), "an id is used when known: {named}");
+        assert!(!named.contains("--continue"), "and not both: {named}");
+
+        // RESUMING WITHOUT AN ID still resumes. `--continue` takes the newest conversation for this
+        // directory — a worse resume than naming one, and far better than silently starting over.
+        let unnamed = c.launch_command("go", true, None);
+        assert!(unnamed.contains("--continue "), "{unnamed}");
+
+        assert!(!c.launch_command("go", false, None).contains("--continue"));
+        assert!(!c.launch_command("go", false, None).contains("--resume"));
+    }
+
     #[test]
     fn launch_command_matches_free_fn() {
         let a = ClaudeCodeAdapter;
-        assert_eq!(a.launch_command("hi", None), crate::claude_launch("hi", None));
+        assert_eq!(a.launch_command("hi", false, None), crate::claude_launch("hi", false, None));
         let id = "bf36a25c-b331-48b0-a78c-3bf4e6b51354";
-        assert_eq!(a.launch_command("hi", Some(id)), crate::claude_launch("hi", Some(id)));
+        assert_eq!(a.launch_command("hi", true, Some(id)), crate::claude_launch("hi", true, Some(id)));
         // sanity: a resume NAMES its session rather than guessing the newest one.
-        assert!(a.launch_command("hi", Some(id)).contains("--resume"));
-        assert!(a.launch_command("hi", Some(id)).contains(id));
-        assert!(!a.launch_command("hi", None).contains("--resume"));
-        assert!(!a.launch_command("hi", None).contains("--continue"));
+        assert!(a.launch_command("hi", true, Some(id)).contains("--resume"));
+        assert!(a.launch_command("hi", true, Some(id)).contains(id));
+        assert!(!a.launch_command("hi", false, None).contains("--resume"));
+        assert!(!a.launch_command("hi", false, None).contains("--continue"));
     }
 
     #[test]
@@ -297,12 +345,12 @@ mod tests {
     #[test]
     fn bsc_agent_launch_bakes_prompt_and_has_no_model_flag() {
         let a = BscAgentAdapter;
-        let cmd = a.launch_command("do the thing", None);
+        let cmd = a.launch_command("do the thing", false, None);
         assert!(cmd.starts_with("bsc-agent "));
         assert_eq!(cmd, format!("bsc-agent {}", crate::bash_ansi_c_quote("do the thing")));
         assert!(!cmd.contains("--continue"));
         // Resume prepends --continue before the baked prompt.
-        let resumed = a.launch_command("do the thing", Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
+        let resumed = a.launch_command("do the thing", true, Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
         assert_eq!(resumed, format!("bsc-agent --continue {}", crate::bash_ansi_c_quote("do the thing")));
         assert_eq!(a.model_flag("gpt-5"), None);
     }
