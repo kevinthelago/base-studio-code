@@ -809,12 +809,12 @@ fn pty_create_inner(
     // shell, so refusing here would answer a missing binary by removing the isolation — the wrong
     // direction entirely. Loud, and still caged.
     {
-        let missing = missing_harness_bins(harness_bins);
+        let missing = missing_harness_bins(harness_bins, env::bundled_sidecar_path);
         if !missing.is_empty() {
             log::error!(
-                "pty[{pane_id}] the cage has no runtime for provider {provider}: {names} not found \
-                 on PATH, so `--ro-bind-try` will skip {it} and the session will meet `command not \
-                 found`. Install it, or put it on the app's PATH.",
+                "pty[{pane_id}] the cage has no runtime for provider {provider}: {names} is on \
+                 neither the PATH nor the bundled-sidecar dir, so `--ro-bind-try` will skip {it} and \
+                 the session will meet `command not found`. Install it, or stage the sidecar.",
                 provider = provider_id.as_deref().unwrap_or("claude"),
                 names = missing.join(", "),
                 it = if missing.len() == 1 { "it" } else { "them" },
@@ -2567,9 +2567,24 @@ fn sidecar_mounts(
         .collect()
 }
 
-fn missing_harness_bins(bins: &[&str]) -> Vec<String> {
+/// BOTH LOOKUPS, and the second one was missing. `for_role` binds what is on PATH; `sidecar_mounts`
+/// binds what is a bundled sidecar — which is on NO path by design. Asking only `real_bin_path`
+/// therefore reported `bsc-agent` missing on every healthy caged launch, one line before the log said
+/// it had bound it:
+///
+/// ```text
+/// ERROR … the cage has no runtime for provider bsc-agent: bsc-agent not found on PATH …
+/// INFO  … binding the bundled /usr/bin/bsc-agent sidecar into the cage: /home/…/bin/bsc-agent
+/// ```
+///
+/// A warning that cries wolf on every launch is worse than the silence it replaced — and this one was
+/// added specifically so a runtime-less cage could never be silent again.
+fn missing_harness_bins(
+    bins: &[&str],
+    sidecar: impl Fn(&str) -> Option<std::path::PathBuf>,
+) -> Vec<String> {
     bins.iter()
-        .filter(|b| bsc_sandbox::profile::real_bin_path(b).is_none())
+        .filter(|b| bsc_sandbox::profile::real_bin_path(b).is_none() && sidecar(b).is_none())
         .map(|b| (*b).to_string())
         .collect()
 }
@@ -5471,13 +5486,50 @@ mod caged_harness_tests {
     #[test]
     fn a_missing_runtime_is_named_rather_than_skipped_in_silence() {
         // `--ro-bind-try` skips a missing source without a word, which is why a runtime-less cage
-        // looked like a healthy launch. This is the probe the launcher logs from, and it asks the
-        // SAME resolver the bind uses so the two cannot disagree.
-        assert!(missing_harness_bins(&["sh"]).is_empty(), "sh resolves");
-        assert_eq!(missing_harness_bins(&["no-such-runtime-xyzzy"]), vec!["no-such-runtime-xyzzy"]);
+        // looked like a healthy launch. This is the probe the launcher logs from.
+        let none: fn(&str) -> Option<std::path::PathBuf> = |_| None;
+        assert!(missing_harness_bins(&["sh"], none).is_empty(), "sh resolves on PATH");
+        assert_eq!(missing_harness_bins(&["no-such-runtime-xyzzy"], none), vec!["no-such-runtime-xyzzy"]);
         // Only the missing ones are named, so the message stays about the actual gap.
-        let some = missing_harness_bins(&["sh", "no-such-runtime-xyzzy"]);
-        assert_eq!(some, vec!["no-such-runtime-xyzzy"]);
+        assert_eq!(missing_harness_bins(&["sh", "no-such-runtime-xyzzy"], none), vec!["no-such-runtime-xyzzy"]);
+    }
+
+    #[test]
+    fn the_probe_asks_the_same_two_lookups_the_bind_does() {
+        // THE FALSE ALARM. The probe checked PATH only, while the bind ALSO resolves a bundled
+        // sidecar — which is on no PATH by design. So every healthy caged launch logged
+        // `the cage has no runtime for provider bsc-agent` one line before
+        // `binding the bundled /usr/bin/bsc-agent sidecar into the cage`. A warning that cries wolf on
+        // every launch is worse than the silence it replaced.
+        let staged: fn(&str) -> Option<std::path::PathBuf> =
+            |b| (b == "bsc-agent").then(|| std::path::PathBuf::from("/staged/bin/bsc-agent"));
+
+        // Not on PATH, but staged — the bind WILL resolve it, so the probe must not call it missing.
+        assert!(
+            missing_harness_bins(&["bsc-agent"], staged).is_empty(),
+            "a staged sidecar is not a missing runtime",
+        );
+        // Neither on PATH nor staged — still reported, which is the case the message exists for.
+        assert_eq!(
+            missing_harness_bins(&["no-such-runtime-xyzzy"], staged),
+            vec!["no-such-runtime-xyzzy"],
+        );
+
+        // THE INVARIANT, stated directly: whatever `sidecar_mounts` can bind, the probe must not
+        // report. One table drives both, so they cannot drift again.
+        for bins in [&["bsc-agent"][..], &["node"][..], &["bsc-agent", "no-such-runtime-xyzzy"][..]] {
+            let bound: Vec<String> = sidecar_mounts(
+                bins,
+                |b| bsc_sandbox::profile::real_bin_path(b).is_some(),
+                staged,
+            )
+            .into_iter()
+            .filter_map(|(_, g)| g.file_name().map(|f| f.to_string_lossy().into_owned()))
+            .collect();
+            for b in missing_harness_bins(bins, staged) {
+                assert!(!bound.contains(&b), "{b} is reported missing AND bound: {bins:?}");
+            }
+        }
     }
 
     #[test]
