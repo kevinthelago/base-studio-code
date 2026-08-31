@@ -5,12 +5,10 @@
 // thing that actually mattered. Every assertion here is written against a stream of text INTERLEAVED
 // WITH ESCAPE SEQUENCES, because that is what a PTY emits and what the old buffer silently broke.
 import { describe, it, expect } from "vitest";
-import {
-  isAlreadyReplayed,
+import { isAlreadyReplayed,
   dispositionWhileHidden,
   UnrecordedPtyText,
-  TRUNCATION_NOTICE,
-} from "@/app/console/lib/terminalHandoff";
+  TRUNCATION_NOTICE, replayReason, truncationNoticeFor } from "@/app/console/lib/terminalHandoff";
 
 /** A state-setting sequence, then text — the shape whose FIRST half is what must never be lost. */
 const DECAWM_OFF = "\x1b[?7l";
@@ -124,5 +122,41 @@ describe("UnrecordedPtyText — bounded WITHOUT dropping from the front", () => 
     const b = new UnrecordedPtyText(8);
     b.push("");
     expect(b.pending()).toBe(false);
+  });
+});
+
+describe("replayReason", () => {
+  it("asks for everything on a remount, which is what a reopened pane is", () => {
+    // Closing a pane unmounts the component, so the reopen builds a FRESH handoff: writtenUpto -1 and
+    // dropped false. Under the old `if (dropped)` rule that asked Rust for nothing and rendered an
+    // empty terminal over a complete recording — the reported bug.
+    expect(replayReason(-1, false)).toBe("remount");
+    expect(replayReason(-1, true)).toBe("remount");
+  });
+
+  it("still asks when a hidden pane dropped recorded bytes", () => {
+    expect(replayReason(4096, true)).toBe("dropped");
+  });
+
+  it("asks for nothing when the screen is already current", () => {
+    expect(replayReason(0, false)).toBeNull();   // offset 0 is real content, not "nothing yet"
+    expect(replayReason(4096, false)).toBeNull();
+  });
+});
+
+describe("truncationNoticeFor", () => {
+  it("stays SILENT on a fresh pane that simply has no history", () => {
+    // The notice claims output was dropped. On a remount with nothing recorded that is a lie, and it
+    // would fire on every fresh pane — which is most panes most of the time.
+    expect(truncationNoticeFor("remount", false)).toBeNull();
+    expect(truncationNoticeFor("remount", true)).toBeNull();
+  });
+
+  it("still admits the gap when bytes were dropped and cannot come back", () => {
+    expect(truncationNoticeFor("dropped", false)).toBe(TRUNCATION_NOTICE);
+  });
+
+  it("says nothing when the reveal answered", () => {
+    expect(truncationNoticeFor("dropped", true)).toBeNull();
   });
 });
