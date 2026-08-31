@@ -3413,6 +3413,16 @@ fn namespace_argv(
                 env::bundled_sidecar_path,
             ) {
                 log::info!("pty[{pane_id}] binding the bundled {} sidecar into the cage: {}", guest.display(), host.display());
+                // ...AND NAME IT, so the launch wrapper never has to fall back to a bare name.
+                //
+                // `shell_fn` emits `command "${BSC_AGENT_BIN:-bsc-agent}"`. The `command` is what makes
+                // that safe — without it the bare-name fallback resolved to the WRAPPER FUNCTION and
+                // recursed until bash died of SIGSEGV, which is what killed every caged worker
+                // (#the-bsc-agent-shell-wrapper-recurses-into-itself-and-segfaults-bash). Declaring the
+                // guest path removes the fallback entirely, so the fix does not rest on one keyword.
+                if guest.file_name().and_then(|f| f.to_str()) == Some("bsc-agent") {
+                    p.spec.env.push(("BSC_AGENT_BIN".to_string(), guest.to_string_lossy().into_owned()));
+                }
                 p.spec.mounts.push(bsc_sandbox::Mount::ReadOnly { host, guest });
             }
 

@@ -117,7 +117,23 @@ impl HarnessAdapter for BscAgentAdapter {
     fn shell_fn(&self, _model_flag: Option<&str>) -> String {
         // Emit the run-state marker (so the pane's run/idle indicator works) and resolve the
         // sidecar via $BSC_AGENT_BIN. No `--model` injection — model comes from env.
-        "bsc-agent() { __bsc_state run; \"${BSC_AGENT_BIN:-bsc-agent}\" \"$@\"; }; ".to_string()
+        // `command` IS LOAD-BEARING, and its absence cost every caged worker its life.
+        //
+        // Bash resolves a bare name to a FUNCTION before it looks at PATH. So when `$BSC_AGENT_BIN`
+        // is unset the `:-bsc-agent` fallback names this very function, which calls itself, which
+        // falls back again — for ever. Each level emits `__bsc_state run`, so the pane fills with
+        // OSC markers until bash exhausts its stack and dies of SIGSEGV. MEASURED on
+        // twitter-clone-test:api: ~3.3 s of CPU, ~34 MB, a 1.1 MB scrollback consisting of
+        // `]100;run` repeated, and the app reporting `Killed by signal 11` on every single launch.
+        //
+        // It is invisible whenever the variable IS set — an absolute path is not a function name —
+        // which is why every uncaged, app-launched session works and only the CAGE dies: the
+        // namespace clears the environment, so a caged worker is the one session that always takes
+        // the fallback.
+        //
+        // `command` bypasses function lookup entirely. The Claude adapter above has always used it;
+        // this one simply never did.
+        "bsc-agent() { __bsc_state run; command \"${BSC_AGENT_BIN:-bsc-agent}\" \"$@\"; }; ".to_string()
     }
 
     fn is_harness_launch(&self, launch: &str) -> bool {
@@ -132,6 +148,79 @@ impl HarnessAdapter for BscAgentAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// THE WRAPPER MUST NOT RE-ENTER ITSELF — run in a real bash, because a string assertion could
+    /// not have caught this (#the-bsc-agent-shell-wrapper-recurses-into-itself-and-segfaults-bash).
+    ///
+    /// The emitted function's fallback used to be its own NAME, and bash resolves a bare name to a
+    /// function before the PATH. With `$BSC_AGENT_BIN` unset it called itself for ever, emitting one
+    /// `__bsc_state run` marker per level until the stack was gone and bash died of SIGSEGV. On
+    /// twitter-clone-test:api that was ~3.3 s of CPU and a 1.1 MB scrollback of `]100;run`, on every
+    /// launch, reported as `Killed by signal 11`.
+    ///
+    /// The cage is where it bit: the namespace clears the environment, so a caged worker is the one
+    /// session that always takes the fallback.
+    #[cfg(unix)]
+    #[test]
+    fn the_agent_wrapper_does_not_recurse_when_no_binary_path_is_set() {
+        let dir = crate::testutil::unique_dir("bsc-wrapfn", "norecurse");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A stand-in on PATH, so the *intended* resolution has something real to reach.
+        let stub = dir.join("bsc-agent");
+        std::fs::write(&stub, "#!/bin/sh\necho REACHED-BINARY\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let script = format!(
+            // A small stack so a recursion dies in milliseconds rather than seconds, and a marker
+            // that is countable.
+            "ulimit -s 1024; __bsc_state() {{ printf 'M'; }}; {}bsc-agent go",
+            BscAgentAdapter.shell_fn(None),
+        );
+        let out = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .env("PATH", format!("{}:{}", dir.display(), std::env::var("PATH").unwrap_or_default()))
+            .env_remove("BSC_AGENT_BIN") // the cage's condition exactly
+            .output()
+            .expect("bash runs");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        // It TERMINATED, and normally — a recursion exits 139 (128 + SIGSEGV).
+        assert_eq!(out.status.code(), Some(0), "the wrapper must not blow the stack: {out:?}");
+        // It reached the real program rather than itself...
+        assert!(stdout.contains("REACHED-BINARY"), "the binary must be reached: {stdout:?}");
+        // ...and emitted the run marker EXACTLY ONCE. This is the assertion that fails on the bug:
+        // the old wrapper emitted one per recursion level, thousands of them.
+        assert_eq!(stdout.matches('M').count(), 1, "one run marker, not one per level: {stdout:?}");
+    }
+
+    /// ...and it still honours an explicit path, which is the ordinary app-launched case.
+    #[cfg(unix)]
+    #[test]
+    fn the_agent_wrapper_execs_the_path_it_is_given() {
+        let dir = crate::testutil::unique_dir("bsc-wrapfn", "givenpath");
+        std::fs::create_dir_all(&dir).unwrap();
+        let real = dir.join("staged-agent");
+        std::fs::write(&real, "#!/bin/sh\necho STAGED \"$@\"\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let script = format!(
+            "__bsc_state() {{ :; }}; {}bsc-agent --continue",
+            BscAgentAdapter.shell_fn(None),
+        );
+        let out = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .env("BSC_AGENT_BIN", &real)
+            .output()
+            .expect("bash runs");
+        let _ = std::fs::remove_dir_all(&dir);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("STAGED --continue"), "the given path is execed with its args: {stdout:?}");
+    }
 
     #[test]
     fn launch_command_matches_free_fn() {
