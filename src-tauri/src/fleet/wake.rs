@@ -78,6 +78,22 @@ pub fn apply(
         ));
     }
 
+    // REFRESH THE DIRECTOR'S PROTOCOL BEFORE IT COMES BACK UP.
+    //
+    // A WORKER's protocol is rewritten into its worktree on every wake (`ensure_worktree`), so a
+    // shipped change reaches it next time it launches. The director's had exactly one launch-time
+    // caller — a WHOLE-fleet `start` — and that refuses while any pane is live. So a running project
+    // kept whatever protocol it was created with, forever, and a protocol fix could not reach the
+    // sessions that most needed it.
+    //
+    // MEASURED when this was found: the twitter-clone-test hub's `CLAUDE.local.md` was two days stale
+    // and still carried the wake guidance that had just been corrected, while the worker's copy beside
+    // it was current to the minute.
+    //
+    // `upsert_section` replaces the section in place and is idempotent, so doing this on every wake
+    // costs a file write and cannot drift.
+    refresh_director_protocol(&req.pane_id);
+
     let rx = register(app, id);
 
     // The id rides in the payload so the frontend can correlate its ack — a director loop and a human
@@ -167,6 +183,32 @@ fn worker_pane(pane_id: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((key, stream_id))
+}
+
+/// Bring a DIRECTOR pane's protocol forward from the shipped copy before it relaunches. A worker
+/// pane is left alone — its worktree path already refreshes it, and rewriting the hub on a worker's
+/// wake would touch a document that is not that pane's.
+///
+/// Never fails a wake: a director that comes up with a stale protocol is far better than one that
+/// does not come up. It does say so, though — silence is how it got stale in the first place.
+///
+/// Split out of [`apply`] so the decision is testable. `apply` needs a live `AppHandle`, which a unit
+/// test has no way to build, so leaving this inline meant the only thing pinned would have been
+/// `ensure_director_protocol` itself — which was never the broken part.
+pub(crate) fn refresh_director_protocol(pane_id: &str) {
+    let Some(key) = director_project(pane_id) else { return };
+    if let Err(e) = crate::fleet::director::ensure_director_protocol(key.to_string()) {
+        log::warn!("fleet wake: could not refresh {key}'s director protocol ({e}) — waking anyway");
+    }
+}
+
+/// The project key of a DIRECTOR pane (`<key>:director`), else `None`.
+///
+/// The mirror of [`worker_pane`], and deliberately as strict: a `<key>:<stream>` worker and a
+/// `<key>:<repo>:triage` pane must not match, or a wake would rewrite a protocol that is not theirs.
+fn director_project(pane_id: &str) -> Option<&str> {
+    let (key, rest) = pane_id.split_once(':')?;
+    (!key.is_empty() && rest == "director").then_some(key)
 }
 
 /// The plan.db row for a worker pane, with the absolute cwd its session would run in.
@@ -311,6 +353,77 @@ mod tests {
     use super::*;
 
     // ── which pane ids carry a plan row (#the-director-cannot-start-a-stream-that-never-launched) ──
+
+    /// The mirror of `worker_pane`, and it has to be as strict: a wake that rewrote the wrong
+    /// project's protocol would be worse than the staleness it fixes.
+    #[test]
+    fn only_a_director_pane_refreshes_a_director_protocol() {
+        assert_eq!(director_project("demo:director"), Some("demo"));
+        assert_eq!(director_project("twitter-clone-test:director"), Some("twitter-clone-test"));
+        // A worker, a triage pane, a bare name and a keyless id are all NOT directors.
+        for pane in ["demo:api", "demo:own/api:triage", "scratch", ":director", "demo:directorx"] {
+            assert_eq!(director_project(pane), None, "{pane} must not match");
+        }
+        // The two halves partition: nothing is both.
+        for pane in ["demo:director", "demo:api", "demo:own/api:triage", "scratch"] {
+            assert!(
+                !(director_project(pane).is_some() && worker_pane(pane).is_some()),
+                "{pane} matched both"
+            );
+        }
+    }
+
+    /// A protocol change must reach a project that already exists — the defect was that it never did.
+    ///
+    /// `ensure_director_protocol` had exactly one launch-time caller, a WHOLE-fleet `start`, and that
+    /// refuses while any pane is live. MEASURED when this was found: the twitter-clone-test hub's
+    /// `CLAUDE.local.md` was two days stale and still carried wake guidance that had just been
+    /// corrected, while the worker's copy beside it was current to the minute.
+    #[test]
+    fn refreshing_a_stale_hub_protocol_brings_it_forward_and_settles() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("director-protocol-refresh");
+        let key = "refresh-demo";
+        let hub = crate::platform::paths::project_dir(key);
+        std::fs::create_dir_all(&hub).unwrap();
+        let local = hub.join("CLAUDE.local.md");
+        // A hub carrying an OLD protocol section, exactly as a project created days ago would.
+        std::fs::write(&local, "# Project\n\n## Director protocol\n\nSTALE WORDING\n").unwrap();
+
+        // Driven through the function the WAKE calls, keyed on the pane id — not through
+        // `ensure_director_protocol` directly, which was never the part that was broken.
+        refresh_director_protocol(&format!("{key}:director"));
+        let after = std::fs::read_to_string(&local).unwrap();
+        assert!(!after.contains("STALE WORDING"), "the stale section must be replaced:\n{after}");
+        assert!(
+            after.contains("DO NOT RE-SEND A TASK THE WORKER ALREADY HAS"),
+            "…by what actually ships today:\n{after}"
+        );
+
+        // CONVERGENT, which is the property that matters when this runs on EVERY wake: it must not
+        // grow the file without bound. It is NOT byte-idempotent on the first repeat — `upsert_section`
+        // replaces `cur[start..end]`, which includes the blank line before the next managed section,
+        // with a body it `trim_start_matches('\n')`, so exactly ONE newline is dropped the second time
+        // and never again. Measured here rather than assumed: run two and three must agree.
+        refresh_director_protocol(&format!("{key}:director"));
+        let twice = std::fs::read_to_string(&local).unwrap();
+        refresh_director_protocol(&format!("{key}:director"));
+        let thrice = std::fs::read_to_string(&local).unwrap();
+        assert_eq!(twice, thrice, "it must settle — a wake that grew this file every time would be a leak");
+        assert!(
+            after.len().abs_diff(twice.len()) <= 1,
+            "and it settles by at most a newline, not by rewriting the document: {} vs {}",
+            after.len(),
+            twice.len()
+        );
+        assert!(twice.contains("DO NOT RE-SEND A TASK THE WORKER ALREADY HAS"), "still current after settling");
+
+        // A WORKER's wake must not touch the hub — its own worktree copy is what refreshes.
+        std::fs::write(&local, "UNTOUCHED").unwrap();
+        refresh_director_protocol(&format!("{key}:api"));
+        assert_eq!(std::fs::read_to_string(&local).unwrap(), "UNTOUCHED", "a worker wake rewrote the hub");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     #[test]
     fn a_worker_pane_splits_into_its_project_and_stream() {
