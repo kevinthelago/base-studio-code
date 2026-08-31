@@ -727,6 +727,7 @@ dependencies = [
  "bsc-files",
  "bsc-fleet",
  "bsc-graph",
+ "bsc-llm",
  "bsc-loop",
  "bsc-mcp",
  "bsc-mem",

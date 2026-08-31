@@ -35,6 +35,8 @@ bsc-mem = { path = "../bsc-mem" }
 bsc-work = { path = "../bsc-work" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
+# `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for.
+llm = { path = "../llm", package = "bsc-llm" }
 bsc-mcp = { path = "../bsc-mcp" }
 bsc-sound = { path = "../bsc-sound" }
 bsc-teams = { path = "../bsc-teams" }
