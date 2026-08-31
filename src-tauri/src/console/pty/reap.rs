@@ -60,10 +60,12 @@ pub struct Activity {
     /// Epoch-ms of the last byte this session produced. The single clock both thresholds read.
     pub last_output_ms: u64,
     pub status: RunState,
-    /// The session's process GROUP, which equals its shell's pid (`PtyJob` sets it up that way, and it
-    /// is the same grouping `killpg` uses to reap the tree). `0` when unknown. Lets the sweep total
-    /// the whole session's CPU, not just the shell's.
-    pub pgid: i32,
+    /// The session's shell pid — the ROOT of its process tree. `0` when unknown.
+    ///
+    /// Named a root rather than a process group on purpose: this was a pgid, and `bsc-agent` setsids
+    /// into its own group, so grouping by it summed the shell alone and a working session read as
+    /// having used no CPU at all.
+    pub root_pid: i32,
 }
 
 /// The two thresholds, and the focus report they are checked against.
@@ -124,45 +126,80 @@ pub fn should_reap(
     }
 }
 
-/// Total cumulative CPU (ms) per process GROUP, from one walk of `/proc`.
+/// One snapshot of `/proc`: each pid's parent and its cumulative CPU.
 ///
-/// Grouped by pgid rather than pid because the agent is a DESCENDANT of the session's shell — the
-/// shell itself does nothing and would always read zero. `PtyJob` already makes pgid == the shell's
-/// pid for exactly this tree.
-#[cfg(target_os = "linux")]
-pub fn cpu_ms_by_pgid() -> HashMap<i32, u64> {
-    let ticks_per_sec = 100u64; // _SC_CLK_TCK is 100 on every Linux this ships to
-    let mut out: HashMap<i32, u64> = HashMap::new();
-    let Ok(entries) = std::fs::read_dir("/proc") else { return out };
-    for e in entries.flatten() {
-        if e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()).is_none() {
-            continue;
-        }
-        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else { continue };
-        // comm (field 2) can contain spaces and parentheses, so fields are counted from the LAST ')'.
-        let Some(rest) = stat.rfind(')').map(|i| &stat[i + 1..]) else { continue };
-        let f: Vec<&str> = rest.split_whitespace().collect();
-        // After comm: [0]=state [1]=ppid [2]=pgrp … [11]=utime [12]=stime
-        let (Some(pgrp), Some(utime), Some(stime)) = (f.get(2), f.get(11), f.get(12)) else {
-            continue;
-        };
-        let (Ok(pgrp), Ok(u), Ok(s)) = (
-            pgrp.parse::<i32>(),
-            utime.parse::<u64>(),
-            stime.parse::<u64>(),
-        ) else {
-            continue;
-        };
-        *out.entry(pgrp).or_insert(0) += (u + s) * 1000 / ticks_per_sec;
-    }
-    out
+/// Taken in a single walk so the tree and the numbers describe the same instant.
+#[derive(Default)]
+pub struct ProcSnapshot {
+    /// pid -> ppid
+    pub parent: HashMap<i32, i32>,
+    /// pid -> utime+stime in ms
+    pub cpu_ms: HashMap<i32, u64>,
 }
 
-/// No `/proc`. Every lookup misses, so every session reads UNKNOWN and takes the protective ceiling.
-#[cfg(not(target_os = "linux"))]
-pub fn cpu_ms_by_pgid() -> HashMap<i32, u64> {
-    HashMap::new()
+/// Read every process's parent and CPU from `/proc`.
+#[cfg(target_os = "linux")]
+pub fn proc_snapshot() -> ProcSnapshot {
+    let mut snap = ProcSnapshot::default();
+    let Ok(entries) = std::fs::read_dir("/proc") else { return snap };
+    for e in entries.flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()) else { continue };
+        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else { continue };
+        // comm (field 2) can contain spaces and parentheses, so count fields from the LAST ')'.
+        let Some(rest) = stat.rfind(')').map(|i| &stat[i + 1..]) else { continue };
+        let f: Vec<&str> = rest.split_whitespace().collect();
+        // After comm: [0]=state [1]=ppid … [11]=utime [12]=stime
+        let (Some(ppid), Some(u), Some(st)) = (f.first(), f.get(11), f.get(12)) else { continue };
+        let (Ok(ppid), Ok(u), Ok(st)) =
+            (ppid.parse::<i32>(), u.parse::<u64>(), st.parse::<u64>())
+        else {
+            continue;
+        };
+        snap.parent.insert(pid, ppid);
+        snap.cpu_ms.insert(pid, (u + st) * 10); // ticks (100/s) -> ms
+    }
+    snap
 }
+
+#[cfg(not(target_os = "linux"))]
+pub fn proc_snapshot() -> ProcSnapshot {
+    ProcSnapshot::default()
+}
+
+/// Cumulative CPU of `root` and every descendant.
+///
+/// THE TREE, NOT THE PROCESS GROUP. This summed by pgid and was wrong: `bsc-agent` is a CHILD of the
+/// session's shell but `setsid`s into its OWN process group, so its pgrp is its own pid. Bucketing by
+/// the shell's pid therefore summed the SHELL ALONE — measured live, a director that had burned 1.85s
+/// reported `cpuMs=10`, which `should_reap` reads as "never started" and reaps on the ten-second grace
+/// instead of the five-minute ceiling. Whether a session survived came down to whether its shell
+/// happened to accumulate one 10ms tick at startup.
+///
+/// Walking children covers the caged and uncaged cases identically, so this stays one rule rather than
+/// a special case: the agent's ppid is the shell either way.
+///
+/// Depth-bounded and visited-guarded: `/proc` is read live, so a pid can be reused between the parent
+/// map being built and this walk, and a cycle must cost a bounded loop rather than the sweep thread.
+pub fn subtree_cpu_ms(root: i32, snap: &ProcSnapshot) -> u64 {
+    let mut children: HashMap<i32, Vec<i32>> = HashMap::new();
+    for (pid, ppid) in &snap.parent {
+        children.entry(*ppid).or_default().push(*pid);
+    }
+    let mut total = 0u64;
+    let mut seen: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut stack = vec![root];
+    while let Some(pid) = stack.pop() {
+        if !seen.insert(pid) {
+            continue; // already counted, or a cycle from a reused pid
+        }
+        total += snap.cpu_ms.get(&pid).copied().unwrap_or(0);
+        if let Some(kids) = children.get(&pid) {
+            stack.extend(kids.iter().copied());
+        }
+    }
+    total
+}
+
 
 /// The OSC-100 state marker the session's shell emits: `ESC ] 100 ; <state> BEL`.
 ///
@@ -234,7 +271,7 @@ pub fn note_output(pane_id: &str, chunk: &[u8]) {
     let e = map.entry(pane_id.to_string()).or_insert(Activity {
         last_output_ms: now_ms(),
         status: RunState::Unknown,
-        pgid: 0,
+        root_pid: 0,
     });
     e.last_output_ms = now_ms();
     if let Some(s) = state {
@@ -242,12 +279,12 @@ pub fn note_output(pane_id: &str, chunk: &[u8]) {
     }
 }
 
-/// Record the session's process group, so the sweep can total the CPU of its whole tree.
-pub fn note_pgid(pane_id: &str, pgid: i32) {
+/// Record the session's shell pid, so the sweep can total the CPU of its whole process TREE.
+pub fn note_root_pid(pane_id: &str, root_pid: i32) {
     let Ok(mut map) = registry().lock() else { return };
     map.entry(pane_id.to_string())
-        .or_insert(Activity { last_output_ms: now_ms(), status: RunState::Unknown, pgid: 0 })
-        .pgid = pgid;
+        .or_insert(Activity { last_output_ms: now_ms(), status: RunState::Unknown, root_pid: 0 })
+        .root_pid = root_pid;
 }
 
 /// Drop a session's activity when its PTY goes away, so a dead pane cannot be reaped twice or hold a
@@ -279,15 +316,15 @@ pub fn panes_to_reap(
     snapshot: &HashMap<String, Activity>,
     now_ms_: u64,
     focused: Option<&str>,
-    cpu: &HashMap<i32, u64>,
+    procs: &ProcSnapshot,
     policy: &ReapPolicy,
 ) -> Vec<String> {
     let mut out: Vec<String> = snapshot
         .iter()
         .filter(|(id, a)| {
-            // A pgid of 0 means the session never reported one, which is UNKNOWN rather than zero
+            // A root pid of 0 means the session never reported one, which is UNKNOWN rather than zero
             // CPU — the distinction that decides whether it takes the grace or the ceiling.
-            let cpu_ms = (a.pgid != 0).then(|| cpu.get(&a.pgid).copied().unwrap_or(0));
+            let cpu_ms = (a.root_pid != 0).then(|| subtree_cpu_ms(a.root_pid, procs));
             should_reap(a, now_ms_, Some(id.as_str()) == focused, cpu_ms, policy)
         })
         .map(|(id, _)| id.clone())
@@ -308,7 +345,7 @@ mod tests {
     const NOW: u64 = 1_788_000_000_000;
 
     fn act(status: RunState, silent_ms: u64) -> Activity {
-        Activity { last_output_ms: NOW - silent_ms, status, pgid: 0 }
+        Activity { last_output_ms: NOW - silent_ms, status, root_pid: 0 }
     }
 
     /// CPU that says "this session has done work" — the measured 0.27s of the one live agent.
@@ -409,19 +446,68 @@ mod tests {
         assert!(should_reap(&act(RunState::Run, p.silence_ceiling_ms), NOW, false, None, &p));
     }
 
-    /// A pgid of 0 means the session never reported one — UNKNOWN, not "zero CPU".
+    /// A root pid of 0 means the session never reported one — UNKNOWN, not "zero CPU".
     #[test]
-    fn a_pane_with_no_pgid_is_unknown_not_idle() {
+    fn a_pane_with_no_root_pid_is_unknown_not_idle() {
         let p = ReapPolicy::default();
         let mut snap = HashMap::new();
         snap.insert("no-pgid".to_string(), act(RunState::Run, 60_000)); // pgid 0
         snap.insert(
             "parked".to_string(),
-            Activity { last_output_ms: NOW - 60_000, status: RunState::Run, pgid: 4242 },
+            Activity { last_output_ms: NOW - 60_000, status: RunState::Run, root_pid: 4242 },
         );
         // pgid 4242 is absent from the CPU map ⇒ genuinely zero ⇒ reapable on the short grace.
-        let cpu: HashMap<i32, u64> = HashMap::new();
+        let cpu = ProcSnapshot::default();
         assert_eq!(panes_to_reap(&snap, NOW, None, &cpu, &p), vec!["parked".to_string()]);
+    }
+
+    /// THE TOPOLOGY THAT BROKE IT, measured live:
+    ///
+    ///     shell     pid 1238124
+    ///     bsc-agent pid 1238130  ppid 1238124  PGRP 1238130  cpu 1.85s
+    ///
+    /// The agent is a CHILD of the shell but setsids into its OWN process group. Summing by process
+    /// group therefore counted the shell alone — a session with 1.85s of work reported 10ms, which the
+    /// policy reads as "never started" and reaps on the ten-second grace.
+    #[test]
+    fn cpu_is_summed_over_the_tree_so_an_agent_that_left_the_group_still_counts() {
+        let mut snap = ProcSnapshot::default();
+        // shell (barely any CPU) -> bsc-agent (the real work) -> a tool it spawned
+        snap.parent.insert(1238124, 1);
+        snap.cpu_ms.insert(1238124, 10);
+        snap.parent.insert(1238130, 1238124);
+        snap.cpu_ms.insert(1238130, 1_850);
+        snap.parent.insert(1238999, 1238130);
+        snap.cpu_ms.insert(1238999, 40);
+        // An UNRELATED process must not be counted, or every session would look busy.
+        snap.parent.insert(9999, 1);
+        snap.cpu_ms.insert(9999, 100_000);
+
+        assert_eq!(subtree_cpu_ms(1238124, &snap), 1_900, "shell + agent + its child");
+        assert_eq!(subtree_cpu_ms(1238130, &snap), 1_890, "from the agent down");
+        assert_eq!(subtree_cpu_ms(424242, &snap), 0, "an unknown root sums nothing");
+
+        // And the consequence: this session keeps the CEILING rather than the never-started grace.
+        let p = ReapPolicy::default();
+        let a = Activity { last_output_ms: NOW - 30_000, status: RunState::Run, root_pid: 1238124 };
+        let mut panes = HashMap::new();
+        panes.insert("twitter-clone-test:api".to_string(), a);
+        assert!(
+            panes_to_reap(&panes, NOW, None, &snap, &p).is_empty(),
+            "a session with real work is not reaped after 30s of quiet",
+        );
+    }
+
+    /// `/proc` is read live, so a reused pid can make the parent map cyclic. That must cost a bounded
+    /// loop, not the sweep thread.
+    #[test]
+    fn a_cycle_in_the_parent_map_terminates() {
+        let mut snap = ProcSnapshot::default();
+        snap.parent.insert(10, 11);
+        snap.cpu_ms.insert(10, 5);
+        snap.parent.insert(11, 10);
+        snap.cpu_ms.insert(11, 7);
+        assert_eq!(subtree_cpu_ms(10, &snap), 12, "each pid counted exactly once");
     }
 
     #[test]
@@ -436,7 +522,7 @@ mod tests {
     #[test]
     fn a_backwards_clock_reaps_nothing() {
         let p = ReapPolicy::default();
-        let future = Activity { last_output_ms: NOW + 60_000, status: RunState::Idle, pgid: 0 };
+        let future = Activity { last_output_ms: NOW + 60_000, status: RunState::Idle, root_pid: 0 };
         assert!(!should_reap(&future, NOW, false, WORKED, &p));
     }
 
@@ -449,7 +535,7 @@ mod tests {
         snap.insert("mmm:working".into(), act(RunState::Run, 2_000));
         snap.insert("bbb:watched".into(), act(RunState::Idle, 30_000));
 
-        let got = panes_to_reap(&snap, NOW, Some("bbb:watched"), &HashMap::new(), &p);
+        let got = panes_to_reap(&snap, NOW, Some("bbb:watched"), &ProcSnapshot::default(), &p);
         assert_eq!(got, vec!["aaa:exited".to_string(), "zzz:parked".to_string()]);
     }
 
@@ -533,7 +619,7 @@ pub const TICK_MS: u64 = 5_000;
 ///
 /// Best-effort and atomic-ish: a failed write must never end the sweep it is describing, and a
 /// half-written file must not be parsed, so it lands via a temp file and a rename.
-pub fn publish(path: &std::path::Path, now_ms_: u64, cpu: &HashMap<i32, u64>, policy: &ReapPolicy) {
+pub fn publish(path: &std::path::Path, now_ms_: u64, procs: &ProcSnapshot, policy: &ReapPolicy) {
     let focused = focused_pane(now_ms_);
     let panes: Vec<serde_json::Value> = {
         let mut v: Vec<_> = snapshot()
@@ -541,7 +627,7 @@ pub fn publish(path: &std::path::Path, now_ms_: u64, cpu: &HashMap<i32, u64>, po
             .map(|(id, a)| {
                 let silent = now_ms_.saturating_sub(a.last_output_ms);
                 let is_focused = Some(id.as_str()) == focused.as_deref();
-                let cpu_ms = (a.pgid != 0).then(|| cpu.get(&a.pgid).copied().unwrap_or(0));
+                let cpu_ms = (a.root_pid != 0).then(|| subtree_cpu_ms(a.root_pid, procs));
                 serde_json::json!({
                     "paneId": id,
                     "silentMs": silent,
@@ -604,16 +690,16 @@ mod headless_tests {
         // fifteen measured `bsc-agent` processes were.
         snap.insert(
             "village-animal-hospital:director".to_string(),
-            Activity { last_output_ms: now - 909_000, status: RunState::Run, pgid: 7001 },
+            Activity { last_output_ms: now - 909_000, status: RunState::Run, root_pid: 7001 },
         );
         // A worker mid-turn on a slow local model: still printing progress.
         snap.insert(
             "twitter-clone-test:api".to_string(),
-            Activity { last_output_ms: now - 2_000, status: RunState::Run, pgid: 0 },
+            Activity { last_output_ms: now - 2_000, status: RunState::Run, root_pid: 0 },
         );
 
         // No focus report at all — the renderer is gone.
-        let doomed = panes_to_reap(&snap, now, None, &HashMap::new(), &policy);
+        let doomed = panes_to_reap(&snap, now, None, &ProcSnapshot::default(), &policy);
         assert_eq!(
             doomed,
             vec!["village-animal-hospital:director".to_string()],
@@ -631,7 +717,7 @@ mod headless_tests {
 
         let pane = format!("pub-pane-{}", std::process::id());
         note_output(&pane, b"\x1b]100;run\x07");
-        publish(&path, now_ms(), &HashMap::new(), &ReapPolicy::default());
+        publish(&path, now_ms(), &ProcSnapshot::default(), &ReapPolicy::default());
 
         let body = std::fs::read_to_string(&path).expect("published");
         let doc: serde_json::Value = serde_json::from_str(&body).expect("valid json");
@@ -665,13 +751,13 @@ mod headless_tests {
         let mut snap = HashMap::new();
         snap.insert(
             "watched".to_string(),
-            Activity { last_output_ms: now - 909_000, status: RunState::Run, pgid: 0 },
+            Activity { last_output_ms: now - 909_000, status: RunState::Run, root_pid: 0 },
         );
 
         // While the UI lived, it was protected.
-        assert!(panes_to_reap(&snap, now, Some("watched"), &HashMap::new(), &policy).is_empty());
+        assert!(panes_to_reap(&snap, now, Some("watched"), &ProcSnapshot::default(), &policy).is_empty());
         // With the UI gone there is no report, so it is reapable like anything else.
-        assert_eq!(panes_to_reap(&snap, now, None, &HashMap::new(), &policy), vec!["watched".to_string()]);
+        assert_eq!(panes_to_reap(&snap, now, None, &ProcSnapshot::default(), &policy), vec!["watched".to_string()]);
     }
 }
 
