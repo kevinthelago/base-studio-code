@@ -960,11 +960,12 @@ fn pty_create_inner(
     // `ps`, the pty ledger and `pty-job`'s SIGKILL line. It has to be read here, while the child is
     // still owned locally — once the session is in the registry the log line is past it.
     let session_pid = child.process_id();
-    // The reap sweep totals CPU across the session's whole PROCESS GROUP, because the agent is a
-    // descendant of this shell and the shell itself does nothing. `PtyJob` makes pgid == the shell's
-    // pid, so the pid IS the group — the same grouping `killpg` already reaps.
+    // The reap sweep totals CPU across the session's whole process TREE, rooted here. It summed by
+    // process GROUP and that was wrong: `bsc-agent` is a child of this shell but setsids into its own
+    // group, so grouping by this pid summed the shell alone and a session with 1.85s of real work
+    // reported 10ms — which the policy reads as "never started".
     if let Some(pid) = session_pid {
-        reap::note_pgid(&pane_id, pid as i32);
+        reap::note_root_pid(&pane_id, pid as i32);
     }
 
     let mut writer = pair.master.take_writer()
@@ -1575,7 +1576,9 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             let policy = reap::policy();
             // One /proc walk per sweep, shared by the decision and the published snapshot so the two
             // can never disagree about why a pane was or was not taken.
-            let cpu = reap::cpu_ms_by_pgid();
+            // ONE /proc walk per sweep: the parent map and the CPU numbers must describe the same
+            // instant, and both the decision and the published snapshot read from it.
+            let cpu = reap::proc_snapshot();
             // Piggy-backed on the sweep that already runs: the renderer's peak has to be observed
             // WHILE IT IS ALIVE, because the watchdog that reports it only fires 30s after it died.
             // Sample AND enforce: a renderer past the cap is killed here, so a runaway costs a window
