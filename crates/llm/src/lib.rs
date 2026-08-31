@@ -10,6 +10,10 @@ mod gemini;
 mod local;
 mod ollama;
 mod openai;
+/// What the local runtime is actually doing — the GRANT, not the request (`bsc llm status`).
+pub mod runtime;
+/// `bsc llm` — the CLI over [`runtime`], for a live session that needs to know why it is serializing.
+pub mod cli;
 mod toolparse;
 mod turn;
 

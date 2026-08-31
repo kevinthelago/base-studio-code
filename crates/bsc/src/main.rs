@@ -111,6 +111,7 @@ const COMMANDS: &[Surface] = &[
     active("mem", "the MEMORY + COST surface — app heap, build time and build memory (read-only)", Some("the project run store + the browser harness")),
     active("work", "the work loop: run the gate and RECORD what it actually did on the change record", Some("the per-project plan store — the change record's gate evidence + the known-red declarations")),
     active("debug", "inspect the RUNNING app's live DOM + preview state (read-only)", None),
+    active("llm", "the LOCAL model runtime: what slot count and context ollama actually GRANTED, vs what was asked", None),
     active("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)", Some("the conversation-loop store — user")),
     active("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)", Some("the improvement-request store — user")),
     active("runtime", "runtime attestations: which RECORD actually served each module while the app ran", Some("the runtime-attestation store")),
@@ -268,6 +269,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "loop" => bsc_loop::cli::run(rest, "bsc loop"),
         "request" => bsc_request::cli::run(rest, "bsc request"),
         "runtime" => bsc_runtime::cli::run(rest, "bsc runtime"),
+        "llm" => llm::cli::run(rest, "bsc llm"),
         "graph" => bsc_graph::cli::run(rest, "bsc graph"),
         "cad" => bsc_cad::cli::run(rest, "bsc cad"),
         #[cfg(feature = "data")]
