@@ -1578,7 +1578,10 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             let cpu = reap::cpu_ms_by_pgid();
             // Piggy-backed on the sweep that already runs: the renderer's peak has to be observed
             // WHILE IT IS ALIVE, because the watchdog that reports it only fires 30s after it died.
-            crate::observability::renderer_watch::sample_renderer_peak();
+            // Sample AND enforce: a renderer past the cap is killed here, so a runaway costs a window
+            // reload rather than the machine (and the OOM killer's victim has repeatedly been a fleet
+            // worker, not the renderer).
+            crate::observability::renderer_watch::enforce_renderer_cap();
             // Publish EVERY tick, not only when something is reaped: the question an operator asks is
             // "why is this still alive", and a file that only appears on a reap cannot answer it.
             reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &cpu, &policy);
