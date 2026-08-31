@@ -336,9 +336,14 @@ pub(super) fn classify_end(
         // scope stop, disjoint process groups from any sibling), leaving a memcg OOM as the one
         // remaining explanation — and memcg kills log to the KERNEL ring buffer, which is
         // unreadable without privileges. The session's own cgroup CAN be read, and its `oom_kill`
-        // counter settles it either way; `cgroup_line` states the absence too, because ruling the
-        // theory out is as useful as confirming it.
-        let cg = super::reap::cgroup_line(super::reap::last_cgroup_mem(pane_id));
+        // counter settles it either way, and stating the absence is as useful as confirming it.
+        //
+        // READ AT DEATH, NOT OFF THE SAMPLE. The first version reported the sweep's cached reading,
+        // taken up to `TICK_MS` earlier, of a counter that can only increment AT the death — so it
+        // could never see the event it announced as ruled out, and announced it anyway. `oom_verdict`
+        // compares that sample against LIVE readings of the two things that outlive the cgroup: the
+        // surviving ancestor's `memory.events` and `/proc/vmstat`.
+        let cg = super::reap::oom_verdict(&super::reap::observe_oom(pane_id));
         (EndReason::Signalled, match signal {
             Some(sig) => format!(
                 "Killed by signal {sig} ({name}) — the app did not close it, so something outside it did.{cg}"

@@ -786,31 +786,103 @@ mod cgroup_tests {
         assert_eq!(parse_memory_max("garbage"), None);
     }
 
-    /// The verdict has to be readable in one line, and has to state the ABSENCE too: a cgroup that
-    /// recorded no kill RULES THE THEORY OUT, which is as useful as confirming it.
+    fn win() -> OomWindow {
+        OomWindow { sample_age_ms: Some(4_000), ..Default::default() }
+    }
+    fn used(cur: u64, max: Option<u64>) -> Option<CgroupMem> {
+        Some(CgroupMem { current: cur, max, oom_kill: 0 })
+    }
+
+    /// Rung 1: its OWN cgroup, still readable, is the whole answer.
     #[test]
-    fn the_cgroup_line_says_which_way_it_went() {
-        let killed = CgroupMem { current: 8 << 30, max: Some(16 << 30), oom_kill: 1 };
-        let l = cgroup_line(Some(killed));
-        assert!(l.contains("OOM-KILLED IT"), "{l}");
+    fn its_own_cgroup_still_readable_settles_it() {
+        let w = OomWindow {
+            mem: used(8 << 30, Some(16 << 30)),
+            own_now: Some(1),
+            global_then: Some(3),
+            global_now: Some(4),
+            ..win()
+        };
+        let l = oom_verdict(&w);
+        assert!(l.contains("ITS OWN CGROUP OOM-KILLED IT"), "{l}");
         assert!(l.contains("oom_kill=1"), "{l}");
-        assert!(l.contains("8.00 GB"), "{l}");
-        assert!(l.contains("16.00 GB"), "the cap it was measured against: {l}");
-        assert!(l.contains("MemorySwapMax=0"), "names why it could not swap out of it");
+        assert!(l.contains("8.00 GB") && l.contains("16.00 GB"), "usage and cap: {l}");
+        assert!(l.contains("MemorySwapMax=0"), "names why it could not swap out of it: {l}");
+    }
 
-        let survived = CgroupMem { current: 1 << 30, max: Some(16 << 30), oom_kill: 0 };
-        let l = cgroup_line(Some(survived));
-        assert!(l.contains("NO oom_kill"), "{l}");
-        assert!(l.contains("ruled out"), "an absence is evidence: {l}");
+    /// Rung 2: THE ONE THE OLD CODE COULD NOT REACH. The child cgroup is gone, so its own counter is
+    /// unreadable — but the ancestor kept the count, and it rose while the session died.
+    #[test]
+    fn a_rise_in_the_surviving_ancestor_is_a_kill_in_this_sessions_subtree() {
+        let w = OomWindow {
+            mem: used(1 << 30, Some(16 << 30)),
+            own_now: None, // the cgroup is already gone — the normal case at a death
+            ancestor_then: Some(9),
+            ancestor_now: Some(10),
+            global_then: Some(9),
+            global_now: Some(10),
+            ..win()
+        };
+        let l = oom_verdict(&w);
+        assert!(l.contains("ITS OWN CGROUP SUBTREE"), "{l}");
+        assert!(l.contains("9 \u{2192} 10"), "it shows the counter moving: {l}");
+    }
 
-        // Never readable is its OWN answer, not silence and not a zero.
-        let l = cgroup_line(None);
-        assert!(l.contains("never readable"), "{l}");
-        assert!(l.contains("not what killed it"), "{l}");
+    /// Rung 3: the ONLY rung that may say "ruled out", and the old code said it without this evidence.
+    #[test]
+    fn a_rule_out_requires_the_global_counter_to_have_stood_still() {
+        let w = OomWindow {
+            mem: used(1 << 30, Some(16 << 30)),
+            own_now: None,
+            ancestor_then: Some(9),
+            ancestor_now: Some(9),
+            global_then: Some(9),
+            global_now: Some(9),
+            ..win()
+        };
+        let l = oom_verdict(&w);
+        assert!(l.contains("NO OOM KILL HAPPENED ANYWHERE"), "{l}");
+        assert!(l.contains("ruled out"), "{l}");
+        assert!(l.contains("4s before it died"), "the sample's age is stated, not implied: {l}");
+    }
 
+    /// Rung 4: something WAS OOM-killed, but not here. Measured on this box: all nine of the boot's
+    /// kills were in the app's own terminal scope, and none in a session scope.
+    #[test]
+    fn a_kill_elsewhere_on_the_box_is_not_attributed_to_this_session() {
+        let w = OomWindow {
+            mem: used(1 << 30, Some(16 << 30)),
+            ancestor_then: Some(0),
+            ancestor_now: Some(0),
+            global_then: Some(8),
+            global_now: Some(9),
+            ..win()
+        };
+        let l = oom_verdict(&w);
+        assert!(l.contains("NOT in this session's cgroup subtree"), "{l}");
+        assert!(!l.contains("ruled out"), "it must not claim a rule-out it cannot make: {l}");
+    }
+
+    /// Rung 5: nothing readable is its OWN answer — neither shown nor ruled out, never a zero.
+    #[test]
+    fn nothing_readable_refuses_to_rule_anything_out() {
+        let l = oom_verdict(&OomWindow::default());
+        assert!(l.contains("NEITHER shown nor ruled out"), "{l}");
+        assert!(l.contains("never readable"), "the absent sample is stated too: {l}");
         // An uncapped cgroup says so rather than printing a number it does not have.
-        let l = cgroup_line(Some(CgroupMem { current: 1 << 30, max: None, oom_kill: 0 }));
+        let l = oom_verdict(&OomWindow { mem: used(1 << 30, None), ..win() });
         assert!(l.contains("uncapped"), "{l}");
+    }
+
+    /// `/proc/vmstat` is the counter that survives everything, so its parse is pinned to the real shape.
+    #[test]
+    fn the_global_oom_counter_is_parsed_from_vmstat() {
+        let real = "nr_dirty 42\noom_kill 9\npgfault 1\n";
+        assert_eq!(parse_vmstat_oom_kill(real), Some(9));
+        // ABSENT IS NOT ZERO — an older kernel without the field must not read as "no kills".
+        assert_eq!(parse_vmstat_oom_kill("nr_dirty 42\n"), None);
+        // `oom_kill` is not a prefix match on some other key.
+        assert_eq!(parse_vmstat_oom_kill("oom_kill_something 4\n"), None);
     }
 
     /// The path comes from the process, not from a guess at systemd's layout.
@@ -1000,14 +1072,69 @@ pub fn read_cgroup_mem(dir: &std::path::Path) -> Option<CgroupMem> {
     })
 }
 
+/// A session's cgroup reading, plus the two counters that OUTLIVE it.
+///
+/// `mem` alone was the whole sample, and it could not answer the question it was built for. See
+/// [`oom_verdict`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CgroupSample {
+    pub mem: CgroupMem,
+    /// When this was taken, so a verdict can say how stale it is instead of implying it is current.
+    pub at_ms: u64,
+    /// The cgroup dir it was read from, kept so the ANCESTOR can be re-read after the child is gone.
+    pub dir: std::path::PathBuf,
+    /// The nearest existing ancestor's recursive `oom_kill` at sample time.
+    pub ancestor_oom: Option<u64>,
+    /// `/proc/vmstat`'s global `oom_kill` at sample time.
+    pub global_oom: Option<u64>,
+}
+
 /// The last cgroup reading taken while each session was ALIVE.
 ///
 /// Sampled rather than read at death, for the reason the renderer peak already taught: by the time a
 /// session's end is observed its cgroup may be gone, and a reading taken then is `None` exactly when
 /// it is most wanted.
-fn cgroup_cell() -> &'static Mutex<HashMap<String, CgroupMem>> {
-    static C: OnceLock<Mutex<HashMap<String, CgroupMem>>> = OnceLock::new();
+fn cgroup_cell() -> &'static Mutex<HashMap<String, CgroupSample>> {
+    static C: OnceLock<Mutex<HashMap<String, CgroupSample>>> = OnceLock::new();
     C.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// `/proc/vmstat`'s `oom_kill`: every OOM kill on the machine since boot, by ANY OOM killer.
+///
+/// The one counter that survives absolutely everything — no cgroup, no privileges, no kernel ring
+/// buffer. `dmesg` and `journalctl -k` both refuse without privileges, which is what made a memcg
+/// kill unobservable in the first place.
+pub fn parse_vmstat_oom_kill(body: &str) -> Option<u64> {
+    body.lines().find_map(|l| l.strip_prefix("oom_kill ")).and_then(|n| n.trim().parse().ok())
+}
+
+/// Read [`parse_vmstat_oom_kill`] from the live `/proc/vmstat`.
+pub fn vmstat_oom_kill() -> Option<u64> {
+    parse_vmstat_oom_kill(&std::fs::read_to_string("/proc/vmstat").ok()?)
+}
+
+/// The nearest EXISTING ancestor of `dir`, and its `oom_kill`.
+///
+/// THIS IS THE READING THAT SURVIVES THE DEATH, and it is why the sample was never needed for this
+/// half. memcg increments `oom_kill` on every ancestor AT THE TIME OF THE EVENT, so an ancestor
+/// still holds the count long after the child cgroup is destroyed — which is exactly the
+/// "cgroup already gone" case sampling was invented to work around.
+///
+/// VERIFIED on this box: all nine of the boot's OOM kills show as `memory.events.local = 9` on one
+/// `vte-spawn` scope and as `memory.events = 9` on every ancestor up to `user.slice`, while
+/// `/proc/vmstat` agrees at 9 — so no session scope had been OOM-killed at all.
+pub fn ancestor_oom_kill(dir: &std::path::Path) -> Option<(std::path::PathBuf, u64)> {
+    let mut cur = dir.parent()?;
+    loop {
+        let f = cur.join("memory.events");
+        if let Ok(body) = std::fs::read_to_string(&f) {
+            return Some((cur.to_path_buf(), parse_memory_events(&body)));
+        }
+        cur = cur.parent()?;
+        if !cur.starts_with("/sys/fs/cgroup") {
+            return None;
+        }
+    }
 }
 
 /// Sample every live session's cgroup. Called from the sweep that already runs.
@@ -1018,41 +1145,127 @@ pub fn sample_cgroups() {
         if a.root_pid == 0 {
             continue;
         }
-        if let Some(m) = cgroup_dir_of(a.root_pid).as_deref().and_then(read_cgroup_mem) {
-            cell.insert(pane_id, m);
-        }
+        let Some(dir) = cgroup_dir_of(a.root_pid) else { continue };
+        let Some(m) = read_cgroup_mem(&dir) else { continue };
+        // The two counters that OUTLIVE this cgroup, read at the same instant as the memory reading,
+        // so a verdict has a BEFORE to compare its live AFTER against.
+        cell.insert(
+            pane_id,
+            CgroupSample {
+                mem: m,
+                at_ms: now_ms(),
+                ancestor_oom: ancestor_oom_kill(&dir).map(|(_, n)| n),
+                global_oom: vmstat_oom_kill(),
+                dir,
+            },
+        );
     }
 }
 
 /// What this pane's cgroup last said, if it was ever readable.
-pub fn last_cgroup_mem(pane_id: &str) -> Option<CgroupMem> {
-    cgroup_cell().lock().ok()?.get(pane_id).copied()
+pub fn last_cgroup_mem(pane_id: &str) -> Option<CgroupSample> {
+    cgroup_cell().lock().ok()?.get(pane_id).cloned()
+}
+
+/// Everything known about whether an OOM killed this session, sampled-then-live.
+///
+/// Pure, so the ladder below is pinned without a live cgroup or a real death.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OomWindow {
+    /// The last reading taken while it was alive, and how stale that is.
+    pub mem: Option<CgroupMem>,
+    pub sample_age_ms: Option<u64>,
+    /// The session's OWN cgroup `oom_kill`, read live at death. `None` once the cgroup is gone.
+    pub own_now: Option<u64>,
+    /// The surviving ancestor's `oom_kill`, at sample time and now.
+    pub ancestor_then: Option<u64>,
+    pub ancestor_now: Option<u64>,
+    /// `/proc/vmstat`'s global `oom_kill`, at sample time and now.
+    pub global_then: Option<u64>,
+    pub global_now: Option<u64>,
+}
+
+/// Gather this pane's OOM evidence: the sample taken while it LIVED, plus LIVE reads of the two
+/// counters that outlive its cgroup.
+///
+/// The impure half; [`oom_verdict`] is the pure half that turns it into a sentence. `ancestor_oom_kill`
+/// walks up from the session's own dir, so it still answers after that dir is gone — which is the
+/// normal case at a death and the whole reason this is not just a re-read.
+pub fn observe_oom(pane_id: &str) -> OomWindow {
+    let s = last_cgroup_mem(pane_id);
+    OomWindow {
+        mem: s.as_ref().map(|s| s.mem),
+        sample_age_ms: s.as_ref().map(|s| now_ms().saturating_sub(s.at_ms)),
+        own_now: s.as_ref().and_then(|s| read_cgroup_mem(&s.dir)).map(|m| m.oom_kill),
+        ancestor_then: s.as_ref().and_then(|s| s.ancestor_oom),
+        ancestor_now: s.as_ref().and_then(|s| ancestor_oom_kill(&s.dir)).map(|(_, n)| n),
+        global_then: s.as_ref().and_then(|s| s.global_oom),
+        global_now: vmstat_oom_kill(),
+    }
 }
 
 /// The line appended to a signalled session's end message.
 ///
-/// Says NOTHING KNOWN rather than nothing at all when the cgroup was never readable: that absence is
-/// itself evidence, because it rules the cgroup-OOM explanation out instead of leaving it open.
-pub fn cgroup_line(m: Option<CgroupMem>) -> String {
-    let Some(m) = m else {
-        return " Its cgroup was never readable, so a memcg OOM is not what killed it.".to_string();
+/// ## Why this stopped being a one-line read of the sample
+///
+/// It used to say "Its cgroup recorded NO oom_kill …, so a memcg OOM is ruled out" straight off
+/// [`last_cgroup_mem`] — a sample taken by the sweep up to [`TICK_MS`] BEFORE the death, of a counter
+/// that can only increment AT the death. The instrument was structurally incapable of observing the
+/// event it declared ruled out, and it said "ruled out" anyway. That is the same failure as
+/// `the-peak-sampler-can-never-match-because-proc-comm-is-truncated-to-15-chars`: an instrument
+/// reporting absence from a place the evidence could never appear.
+///
+/// ## The ladder, strongest evidence first
+///
+/// Each rung says what was actually observed, and only the rungs that CAN support a rule-out make
+/// one. An unknown is never rendered as a zero.
+pub fn oom_verdict(w: &OomWindow) -> String {
+    let usage = match (w.mem, w.sample_age_ms) {
+        (Some(m), age) => {
+            let cap = match m.max {
+                Some(b) => format!("{:.2} GB", b as f64 / GIB),
+                None => "uncapped".to_string(),
+            };
+            let when = match age {
+                Some(ms) => format!("{:.0}s before it died", ms as f64 / 1000.0),
+                None => "at the last sample".to_string(),
+            };
+            format!(" It was using {:.2} GB against a cap of {cap} {when}.", m.current as f64 / GIB)
+        }
+        (None, _) => " Its cgroup was never readable while it ran.".to_string(),
     };
-    let cap = match m.max {
-        Some(b) => format!("{:.2} GB", b as f64 / GIB),
-        None => "uncapped".to_string(),
-    };
-    if m.oom_kill > 0 {
-        format!(
-            " ITS OWN CGROUP OOM-KILLED IT: memory.events oom_kill={}, using {:.2} GB against a cap of \
-             {cap}. The cage renders MemorySwapMax=0, so it cannot swap under pressure.",
-            m.oom_kill,
-            m.current as f64 / GIB,
-        )
-    } else {
-        format!(
-            " Its cgroup recorded NO oom_kill (using {:.2} GB against a cap of {cap}), so a memcg OOM \
-             is ruled out.",
-            m.current as f64 / GIB,
-        )
+
+    // 1 · Its OWN cgroup, read live and still there, is the whole answer.
+    if let Some(n) = w.own_now.filter(|n| *n > 0) {
+        return format!(
+            " ITS OWN CGROUP OOM-KILLED IT: memory.events oom_kill={n}.{usage} The cage renders \
+             MemorySwapMax=0, so it cannot swap under pressure."
+        );
     }
+    // 2 · The ancestor outlives the child, so a rise there during the window is a kill in THIS
+    //     session's own subtree — and nothing else runs in it.
+    if let (Some(then), Some(now)) = (w.ancestor_then, w.ancestor_now) {
+        if now > then {
+            return format!(
+                " AN OOM KILL LANDED IN ITS OWN CGROUP SUBTREE while it died: the surviving ancestor's \
+                 oom_kill went {then} → {now}.{usage}"
+            );
+        }
+    }
+    // 3 · No OOM kill anywhere on the machine ⇒ an EARNED rule-out, which the sample alone never was.
+    if let (Some(then), Some(now)) = (w.global_then, w.global_now) {
+        if now == then {
+            return format!(
+                " NO OOM KILL HAPPENED ANYWHERE ON THIS MACHINE while it died (/proc/vmstat oom_kill \
+                 stayed at {now}), so an OOM — cgroup or host — is ruled out.{usage}"
+            );
+        }
+        // 4 · Something was OOM-killed, but not in this session's subtree.
+        return format!(
+            " An OOM kill happened on this machine while it died (/proc/vmstat oom_kill {then} → \
+             {now}) but NOT in this session's cgroup subtree, so it killed something else.{usage}"
+        );
+    }
+    // 5 · Nothing that can settle it was readable. Say that, rather than implying an absence.
+    format!(" Nothing that outlives the cgroup was readable, so an OOM is NEITHER shown nor ruled out.{usage}")
 }
