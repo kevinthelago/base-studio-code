@@ -330,12 +330,21 @@ pub(super) fn classify_end(
         // something KILLED was reported as an agent that failed — and `removed` is already false
         // here, which means the app's own kill paths (`pty_kill`, project teardown, app exit) are
         // ruled out. That last clause is the whole diagnostic value: it says look outside the app.
+        //
+        // AND SAY WHAT THE CGROUP SAW. "Something outside it did" was true and unfalsifiable: every
+        // in-app cause was ruled out by measurement (no reaper line, no session drop, no systemd
+        // scope stop, disjoint process groups from any sibling), leaving a memcg OOM as the one
+        // remaining explanation — and memcg kills log to the KERNEL ring buffer, which is
+        // unreadable without privileges. The session's own cgroup CAN be read, and its `oom_kill`
+        // counter settles it either way; `cgroup_line` states the absence too, because ruling the
+        // theory out is as useful as confirming it.
+        let cg = super::reap::cgroup_line(super::reap::last_cgroup_mem(pane_id));
         (EndReason::Signalled, match signal {
             Some(sig) => format!(
-                "Killed by signal {sig} ({name}) — the app did not close it, so something outside it did."
+                "Killed by signal {sig} ({name}) — the app did not close it, so something outside it did.{cg}"
             ),
             None => format!(
-                "Killed by {name} — the app did not close it, so something outside it did."
+                "Killed by {name} — the app did not close it, so something outside it did.{cg}"
             ),
         })
     } else {
