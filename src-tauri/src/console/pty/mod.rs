@@ -995,8 +995,19 @@ fn pty_create_inner(
     // recorded `has_history=false · resumed=false` — with three prior transcripts sitting right there.
     // A worker that is relaunched loses everything it learned, which is most of what makes a relaunch
     // look like a session that was killed for no reason.
-    let has_history = match caged_history_dir(sandbox_stores.as_deref(), ns_argv.is_some()) {
-        Some(dir) => harness.detect_history_at(&dir),
+    //
+    // The SECOND time, for the other harness. The fix above resolved the caged path in this function,
+    // hardcoded to Claude's `<root>/home/projects/<slug(/repo)>` shape, and asked every harness about
+    // it. `bsc-agent` keeps ONE JSON file under `<root>/home/bsc-agent/`, so it was handed a directory
+    // it never writes to and fell through to the trait's `false` default. Measured on
+    // `twitter-clone-test:api`: `has_history=false` while its cage held an eleven-message conversation
+    // saved per step by `a-local-agent-turn-is-invisible-while-it-runs-and-lost-if-it-dies`. So the
+    // per-step persistence bought a caged worker nothing — it saved eleven messages, died, and started
+    // over. This asks the HARNESS where its own caged history lives (`caged_history_path`).
+    let has_history = match caged_stores_root(sandbox_stores.as_deref(), ns_argv.is_some()) {
+        Some(root) => harness
+            .caged_history_path(&root)
+            .is_some_and(|p| harness.detect_history_at(&p)),
         None => harness.detect_history(&cwd),
     };
     let plan = plan_launch(
@@ -2514,13 +2525,10 @@ const CAGED_AGENT_ENV: &[&str] = &[
 
 /// Where a caged `bsc-agent` keeps its conversation, inside the guest.
 ///
-/// Under the private HOME rather than `/repo`: the worktree is the session's WORK, and a conversation
-/// file committed by accident is the failure `SandboxSpec::home` was split out to prevent. The
-/// directory is bound read-write and persists across launches, which is what makes `--continue` mean
-/// anything for a caged worker — without it the per-step save from
-/// `a-local-agent-turn-is-invisible-while-it-runs-and-lost-if-it-dies` writes to a tmpfs that dies
-/// with the session.
-const AGENT_SESSION_GUEST: &str = "/home/agent/.bsc-agent/conversation.json";
+/// Re-exported rather than defined here: it now lives beside the HOST path it is the caged twin of
+/// (`session::launch`), because the launcher binding it and the resume probe reading it must derive
+/// from one definition. They did not, and a caged worker restarted from nothing every launch.
+use crate::session::launch::CAGED_AGENT_SESSION_GUEST as AGENT_SESSION_GUEST;
 
 /// Pick the caged harness environment out of the pane's env — the named set only.
 ///
@@ -2660,13 +2668,12 @@ fn git_common_dir_for(cwd: &str) -> Option<std::path::PathBuf> {
 /// prepared for a pane before we know the launch will be sandboxed, and answering "yes, look in the
 /// cage" for a session that then runs on the host would break resume in the opposite direction.
 #[cfg(target_os = "linux")]
-fn caged_history_dir(stores_root: Option<&str>, caged: bool) -> Option<std::path::PathBuf> {
+fn caged_stores_root(stores_root: Option<&str>, caged: bool) -> Option<std::path::PathBuf> {
     if !caged {
         return None;
     }
     let root = stores_root.filter(|r| !r.is_empty())?;
-    let slug = crate::session::launch::claude_project_dir_name(bsc_sandbox::REPO_GUEST_PATH);
-    Some(std::path::Path::new(root).join("home").join("projects").join(slug))
+    Some(std::path::Path::new(root).to_path_buf())
 }
 
 #[cfg(target_os = "linux")]
@@ -3371,7 +3378,9 @@ fn namespace_argv(
         // Under the private home rather than `/repo`, because the worktree is the session's WORK and
         // a conversation file committed by accident is exactly what splitting `home` out prevented.
         if !paths.agent_env.is_empty() {
-            let dir = root.join("home").join("bsc-agent");
+            // The SAME helper the resume probe resolves through (`caged_agent_conversation_path`),
+            // so the bind and the probe cannot describe different places.
+            let dir = crate::session::launch::caged_agent_conversation_dir(&root);
             match std::fs::create_dir_all(&dir) {
                 Ok(()) => {
                     let guest_dir = std::path::Path::new(AGENT_SESSION_GUEST)
@@ -5289,25 +5298,34 @@ mod designer_surface_tests {
     }
 }
 
-/// A caged session must resume from ITS OWN transcripts, not from a host path it never writes to.
+/// A caged session must resume from ITS OWN transcripts, not from a host path it never writes to —
+/// and EACH HARNESS keeps them somewhere different, which is the part the first fix missed.
 #[cfg(all(test, target_os = "linux"))]
 mod caged_resume_tests {
     use super::*;
+    use crate::session::harness::{BscAgentAdapter, ClaudeCodeAdapter, HarnessAdapter};
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = crate::testutil::unique_dir("bsc-caged-hist", tag);
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
 
     #[test]
     fn an_uncaged_launch_still_asks_the_host() {
         // `None` is what routes the caller back to `detect_history(&cwd)` — the host rule, unchanged.
-        assert_eq!(caged_history_dir(Some("/stores/pane"), false), None, "not caged ⇒ host lookup");
-        assert_eq!(caged_history_dir(None, true), None, "no stores root ⇒ nothing to look in");
-        assert_eq!(caged_history_dir(Some(""), true), None, "an empty root is not a root");
+        assert_eq!(caged_stores_root(Some("/stores/pane"), false), None, "not caged ⇒ host lookup");
+        assert_eq!(caged_stores_root(None, true), None, "no stores root ⇒ nothing to look in");
+        assert_eq!(caged_stores_root(Some(""), true), None, "an empty root is not a root");
     }
 
-    /// The directory the CAGED harness actually writes to: `<stores_root>/home/projects/<slug(/repo)>`.
-    /// The slug is fixed because the guest cwd is fixed — it is never derived from the host path, which
-    /// is exactly why the host lookup could not find it.
+    /// The directory the CAGED Claude harness actually writes to:
+    /// `<stores_root>/home/projects/<slug(/repo)>`. The slug is fixed because the guest cwd is fixed —
+    /// it is never derived from the host path, which is exactly why the host lookup could not find it.
     #[test]
-    fn a_caged_launch_points_at_the_bound_transcripts_dir() {
-        let dir = caged_history_dir(Some("/stores/pane"), true).expect("caged ⇒ a path");
+    fn a_caged_claude_launch_points_at_the_bound_transcripts_dir() {
+        let root = caged_stores_root(Some("/stores/pane"), true).expect("caged ⇒ a root");
+        let dir = ClaudeCodeAdapter.caged_history_path(&root).expect("claude knows its cage path");
         assert_eq!(dir, std::path::Path::new("/stores/pane/home/projects/-repo"));
         // …and it agrees with where `history_dir_for` BINDS, or the resume would read a different
         // directory from the one the harness writes into.
@@ -5318,27 +5336,113 @@ mod caged_resume_tests {
     /// The rule itself — a `.jsonl` present means there is something to continue.
     #[test]
     fn a_transcript_in_the_caged_dir_is_what_makes_it_resumable() {
-        let root = std::env::temp_dir().join(format!("bsc-caged-hist-{}", std::process::id()));
+        let root = tmp("claude");
         let dir = root.join("home").join("projects").join("-repo");
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let resolved = caged_history_dir(Some(&root.to_string_lossy()), true).expect("caged");
+        let stores = caged_stores_root(Some(&root.to_string_lossy()), true).expect("caged");
+        let resolved = ClaudeCodeAdapter.caged_history_path(&stores).expect("path");
         assert_eq!(resolved, dir);
 
         assert!(
-            !crate::session::launch::dir_holds_a_transcript(&resolved),
+            !ClaudeCodeAdapter.detect_history_at(&resolved),
             "an empty cage has nothing to continue — it must start fresh so the kickoff is delivered",
         );
         std::fs::write(dir.join("a-session.jsonl"), "{}\n").expect("write");
         assert!(
-            crate::session::launch::dir_holds_a_transcript(&resolved),
+            ClaudeCodeAdapter.detect_history_at(&resolved),
             "with a transcript present the caged launch must resume instead of starting over",
         );
         // A non-transcript file is not a conversation.
         let other = root.join("home").join("projects").join("-repo-2");
         std::fs::create_dir_all(&other).expect("mkdir2");
         std::fs::write(other.join("notes.txt"), "x").expect("write2");
-        assert!(!crate::session::launch::dir_holds_a_transcript(&other));
+        assert!(!ClaudeCodeAdapter.detect_history_at(&other));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// THE REGRESSION. `bsc-agent` keeps ONE JSON file, not a directory of transcripts, so it must be
+    /// pointed at its own path — asking it Claude's question is how a caged worker with an
+    /// eleven-message conversation reported `has_history=false` and restarted from nothing.
+    #[test]
+    fn a_caged_bsc_agent_launch_points_at_its_own_conversation_file() {
+        let root = caged_stores_root(Some("/stores/pane"), true).expect("caged ⇒ a root");
+        let path = BscAgentAdapter.caged_history_path(&root).expect("bsc-agent knows its cage path");
+        assert_eq!(path, std::path::Path::new("/stores/pane/home/bsc-agent/conversation.json"));
+
+        // The two harnesses must not resolve to the same place. A single hardcoded answer served both
+        // before, and it was Claude's — which is the whole bug.
+        let claude = ClaudeCodeAdapter.caged_history_path(&root).expect("claude path");
+        assert_ne!(path, claude, "one hardcoded caged path cannot serve both harnesses");
+    }
+
+    /// The measured failure, end to end: eleven messages on disk, `has_history` false.
+    #[test]
+    fn a_caged_bsc_agent_conversation_makes_the_launch_resume() {
+        let root = tmp("agent");
+        let stores = caged_stores_root(Some(&root.to_string_lossy()), true).expect("caged");
+        let path = BscAgentAdapter.caged_history_path(&stores).expect("path");
+
+        assert!(
+            !BscAgentAdapter.detect_history_at(&path),
+            "nothing written yet ⇒ start fresh, so the kickoff prompt is still delivered",
+        );
+
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "").expect("write empty");
+        assert!(
+            !BscAgentAdapter.detect_history_at(&path),
+            "an EMPTY file is not a conversation — resuming from it drops the kickoff for nothing",
+        );
+
+        std::fs::write(&path, br#"{"messages":[{"role":"user","content":"go"}]}"#).expect("write");
+        assert!(
+            BscAgentAdapter.detect_history_at(&path),
+            "a saved conversation must resume — the per-step save exists precisely so a worker that \
+             dies mid-task keeps what it learned",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// THE INVARIANT THAT WOULD HAVE CAUGHT THIS. The launcher BINDS a directory and the probe READS a
+    /// path; nothing made them agree, and they did not. Both now derive from one pair of helpers, and
+    /// this pins that they still describe the same place — including that the host file name is taken
+    /// from the guest path rather than repeated as a literal.
+    #[test]
+    fn the_probe_and_the_bind_agree_on_where_a_caged_conversation_lives() {
+        let root = std::path::Path::new("/stores/pane");
+        let bound = crate::session::launch::caged_agent_conversation_dir(root);
+        let probed = BscAgentAdapter.caged_history_path(root).expect("path");
+
+        assert_eq!(probed.parent(), Some(bound.as_path()), "the probe must read inside the bind");
+        assert_eq!(
+            probed.file_name(),
+            std::path::Path::new(AGENT_SESSION_GUEST).file_name(),
+            "the host file name must be the guest's, or the two drift apart silently",
+        );
+        // The guest path is what the runtime is actually told to write, so it anchors the whole chain.
+        assert!(AGENT_SESSION_GUEST.starts_with("/home/agent/"), "under the private HOME");
+        assert!(!AGENT_SESSION_GUEST.starts_with("/repo"), "never in the worktree");
+    }
+
+    /// A harness that has not declared a caged path cannot resume — it must say so rather than have
+    /// the launcher guess one for it. This is the default the `bsc-agent` adapter was silently taking.
+    #[test]
+    fn a_harness_that_declares_no_caged_path_reports_no_history() {
+        struct Mute;
+        impl HarnessAdapter for Mute {
+            fn detect_history(&self, _cwd: &str) -> bool { true }
+            fn launch_command(&self, _p: &str, _r: Option<&str>) -> String { String::new() }
+            fn model_flag(&self, _m: &str) -> Option<String> { None }
+            fn shell_fn(&self, _m: Option<&str>) -> String { String::new() }
+            fn is_harness_launch(&self, _l: &str) -> bool { false }
+            fn prepare_config(&self) {}
+            fn trust_dir(&self, _cwd: &str) {}
+        }
+        let root = std::path::Path::new("/stores/pane");
+        assert_eq!(Mute.caged_history_path(root), None);
+        // `detect_history` says true, and it is deliberately NOT consulted for a caged launch: it
+        // answers about the HOST, which is the wrong machine for a caged session.
+        assert!(!Mute.caged_history_path(root).is_some_and(|p| Mute.detect_history_at(&p)));
     }
 }
 

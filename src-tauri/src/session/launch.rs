@@ -98,6 +98,67 @@ pub(crate) fn bsc_agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {
             .join("conversation.json"),
     )
 }
+/// Where a caged `bsc-agent` keeps its conversation, inside the guest.
+///
+/// Under the private HOME rather than `/repo`: the worktree is the session's WORK, and a conversation
+/// file committed by accident is the failure `SandboxSpec::home` was split out to prevent. The
+/// directory is bound read-write and persists across launches, which is what makes `--continue` mean
+/// anything for a caged worker — without it the per-step save from
+/// `a-local-agent-turn-is-invisible-while-it-runs-and-lost-if-it-dies` writes to a tmpfs that dies
+/// with the session.
+///
+/// It lives HERE, beside the host path it is the caged twin of, because the launcher binds it and the
+/// resume probe reads it and those two agreeing is the whole correctness condition — see
+/// [`caged_agent_conversation_dir`].
+pub(crate) const CAGED_AGENT_SESSION_GUEST: &str = "/home/agent/.bsc-agent/conversation.json";
+
+/// The HOST directory backing [`CAGED_AGENT_SESSION_GUEST`] for a pane whose sandbox stores live at
+/// `stores_root`.
+///
+/// ONE definition, used by BOTH the bind and the probe. They were separate before, and they disagreed:
+/// the launcher bound `<root>/home/bsc-agent` while the probe asked the host's per-cwd
+/// `agent-sessions/<slug>/conversation.json`, so a caged worker reported `has_history=false` with
+/// eleven messages sitting in its cage and restarted from nothing on every launch.
+pub(crate) fn caged_agent_conversation_dir(stores_root: &std::path::Path) -> std::path::PathBuf {
+    stores_root.join("home").join("bsc-agent")
+}
+
+/// The HOST path of a caged `bsc-agent`'s conversation file — the file the guest sees at
+/// [`CAGED_AGENT_SESSION_GUEST`].
+///
+/// Derived from the guest path's own file name rather than repeating the literal, so the two cannot
+/// drift apart silently.
+pub(crate) fn caged_agent_conversation_path(stores_root: &std::path::Path) -> std::path::PathBuf {
+    let name = std::path::Path::new(CAGED_AGENT_SESSION_GUEST)
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_else(|| std::ffi::OsString::from("conversation.json"));
+    caged_agent_conversation_dir(stores_root).join(name)
+}
+
+/// The HOST directory holding a caged Claude session's transcripts, for a pane whose sandbox stores
+/// live at `stores_root`.
+///
+/// `history_dir_for` binds `<stores_root>/home/projects` over the guest's `.claude/projects`, and the
+/// caged harness keys the subdirectory by the GUEST cwd (always `/repo`) — never by the host cwd, which
+/// is why the host probe could never find it.
+pub(crate) fn caged_claude_transcripts_dir(stores_root: &std::path::Path) -> std::path::PathBuf {
+    stores_root
+        .join("home")
+        .join("projects")
+        .join(claude_project_dir_name(bsc_sandbox::REPO_GUEST_PATH))
+}
+
+/// Whether a `bsc-agent` conversation file holds something worth resuming — it exists and is
+/// non-empty.
+///
+/// The counterpart of [`dir_holds_a_transcript`] for the other harness: Claude's history is a
+/// DIRECTORY of `.jsonl` transcripts, `bsc-agent`'s is a single JSON FILE, so "is there anything to
+/// continue" is a different question and each harness answers it about its own path.
+pub(crate) fn file_holds_a_conversation(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false)
+}
+
 /// Whether `bsc-agent` has a resumable conversation for `cwd` — a non-empty session file exists.
 /// Fail-safe: any uncertainty returns `false`, launching a fresh session. (#1144)
 pub(crate) fn has_bsc_agent_history(cwd: &str) -> bool {

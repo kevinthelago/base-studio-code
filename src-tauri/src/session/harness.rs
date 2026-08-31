@@ -19,8 +19,23 @@ pub trait HarnessAdapter {
     ///
     /// Defaults to `false`: a harness whose caged transcripts are not durable cannot resume, and
     /// saying so is better than resuming from something that is not there.
-    fn detect_history_at(&self, _dir: &std::path::Path) -> bool {
+    fn detect_history_at(&self, _path: &std::path::Path) -> bool {
         false
+    }
+    /// WHERE this harness's caged conversation lives on the host, for a pane whose sandbox stores are
+    /// rooted at `stores_root`.
+    ///
+    /// This is on the TRAIT because the layout is harness-specific and the launcher is not. It used to
+    /// live in the launcher, hardcoded to Claude's shape (`<root>/home/projects/<slug(/repo)>`), and
+    /// every harness was asked that one question. `bsc-agent` keeps a single JSON file under
+    /// `<root>/home/bsc-agent/`, so the answer was a directory it never writes to — its
+    /// `detect_history_at` then took the `false` default and a caged worker restarted from nothing
+    /// with its conversation sitting right there.
+    ///
+    /// Defaults to `None`: a harness that has not said where its caged history lives cannot resume,
+    /// and saying so beats guessing a path and resuming from whatever happens to be at it.
+    fn caged_history_path(&self, _stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
+        None
     }
     /// The shell command that launches the harness, baking the startup `prompt` and requesting
     /// `resume` when supported.
@@ -50,6 +65,10 @@ impl HarnessAdapter for ClaudeCodeAdapter {
 
     fn detect_history_at(&self, dir: &std::path::Path) -> bool {
         crate::session::launch::dir_holds_a_transcript(dir)
+    }
+
+    fn caged_history_path(&self, stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
+        Some(crate::session::launch::caged_claude_transcripts_dir(stores_root))
     }
 
     fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String {
@@ -97,6 +116,19 @@ impl HarnessAdapter for BscAgentAdapter {
         // A resumable conversation exists when the per-cwd session file is present + non-empty
         // (the app keys + persists it; see `bsc_agent_session_path`). (#1144)
         crate::has_bsc_agent_history(cwd)
+    }
+
+    fn detect_history_at(&self, path: &std::path::Path) -> bool {
+        // A FILE, not a directory of transcripts: this harness keeps one JSON conversation, so the
+        // Claude rule (`dir_holds_a_transcript`) cannot answer it and the trait's `false` default was
+        // what this adapter silently inherited.
+        crate::session::launch::file_holds_a_conversation(path)
+    }
+
+    fn caged_history_path(&self, stores_root: &std::path::Path) -> Option<std::path::PathBuf> {
+        // The same helper the launcher binds through, so the probe cannot ask a path the cage does
+        // not actually back — which is exactly how this broke.
+        Some(crate::session::launch::caged_agent_conversation_path(stores_root))
     }
 
     fn launch_command(&self, prompt: &str, resume: Option<&str>) -> String {
