@@ -105,6 +105,36 @@ pub(super) fn last_words(tail: &str) -> Option<String> {
     let mut chars = tail.chars().peekable();
     while let Some(c) = chars.next() {
         if c != '\u{1b}' {
+            // A CARRIAGE RETURN RETURNS TO COLUMN 0, so whatever follows OVERWRITES this line — it is
+            // not appended to it. Dropping the `\r` as "just another control" concatenates the two,
+            // which manufactures corruption that is not in the stream:
+            //
+            //   recorded:  `comma\rand`      (a wrap inside an ~800-char init line at 80 columns)
+            //   rendered:  `commaand`        <- a doubled letter that never existed
+            //
+            // Measured 2026-08-31: every apparent doubling in a reported "corrupted shell init line"
+            // — `__bscc_state`, `commaand`, `PROMPT_CCOMMAND`, `;;` — was one dropped `\r`. Read
+            // literally that banner says `PROMPT_COMMAND` is never set and `__bsc_state` is undefined,
+            // which is a complete and plausible explanation for a bug this repo actually has. The
+            // recording holds the CORRECT text 33 times over. A diagnostic that invents a credible
+            // wrong cause is worse than one that says nothing, and this one is read at exactly the
+            // moment nobody can check it.
+            if c == '\r' {
+                // `\r\n` IS AN ORDINARY LINE ENDING, not a reset of the line it terminates. Treating
+                // every `\r` as a reset deletes the line that just finished — it turned
+                // `Welcome\r\nError…` into `Error…` with `Welcome` silently gone, which is the same
+                // class of lie as the doubling, in the other direction.
+                if chars.peek() == Some(&'\n') {
+                    continue; // let the `\n` be handled normally on the next turn
+                }
+                // A BARE `\r` returns to column 0: what follows takes this line's place.
+                if let Some(nl) = out.rfind('\n') {
+                    out.truncate(nl + 1);
+                } else {
+                    out.clear();
+                }
+                continue;
+            }
             // Keep newline and tab; drop every other C0/C7 control, which is what makes a banner
             // render the text rather than the terminal's intentions.
             if c == '\n' || c == '\t' || !c.is_control() {
@@ -930,6 +960,37 @@ mod end_tests {
 
     /// Only a FAULT quotes the output. A clean ending has nothing to explain, and quoting it is how
     /// the notice becomes noise the user learns to scroll past.
+    /// THE REPORTED "CORRUPTED SHELL INIT LINE", which was not corrupted at all.
+    ///
+    /// A carriage return returns to column 0, so what follows OVERWRITES the line. Dropping it as
+    /// "just another control" concatenated the two halves and invented a doubled letter.
+    #[test]
+    fn a_carriage_return_resets_the_line_instead_of_doubling_a_letter() {
+        // The exact shape captured from `scrollback/twitter-clone-test_api.bin`.
+        assert_eq!(last_words("comma\rand").as_deref(), Some("and"));
+        assert!(!last_words("comma\rand").unwrap().contains("commaand"), "the doubling is gone");
+
+        // The everyday case this also fixes: a progress line rewritten in place reads ONCE.
+        assert_eq!(last_words("50%\r100%").as_deref(), Some("100%"));
+
+        // A `\r` only resets the CURRENT line — earlier lines survive. (The banner joins lines with
+        // " / ", which is why that separator appears here rather than a newline.)
+        assert_eq!(last_words("keep me\nlost\rkept").as_deref(), Some("keep me / kept"));
+
+        // `\r\n` IS AN ORDINARY LINE ENDING. Resetting on it would delete the line that just
+        // finished — the same class of lie as the doubling, in the other direction.
+        assert_eq!(last_words("one\r\ntwo").as_deref(), Some("one / two"));
+    }
+
+    /// Newline and tab handling must not change — this fix is about `\r` and nothing else.
+    #[test]
+    fn newline_and_tab_handling_is_unchanged() {
+        assert_eq!(last_words("a\tb").as_deref(), Some("a b"));
+        assert_eq!(last_words("a\nb").as_deref(), Some("a / b"));
+        // Other C0 controls are still dropped rather than rendered.
+        assert_eq!(last_words("a\u{7}b").as_deref(), Some("ab"));
+    }
+
     #[test]
     fn only_a_fault_carries_the_last_words() {
         let tail = "Error: something broke";
