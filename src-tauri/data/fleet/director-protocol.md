@@ -326,7 +326,8 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   - `running` (`live: true, agent: true`) — the shell is up and the AGENT IS RUNNING. Leave it alone
     (and a wake refuses it without `--force`, on purpose: waking kills the session first).
   - `idle` (`live: true, agent: false`) — the shell is up but **the agent is not running**. The pane
-    looks alive and does nothing. A WAKE CASE: `bsc fleet wake <pane-id> --prompt "…"`.
+    looks alive and does nothing. A WAKE CASE: `bsc fleet wake <pane-id>` — bare, because it
+    already holds its assignment.
     The `AGENT` column is a real probe for `claude`/`bsc-agent` among the pane's processes, not "the
     shell has a child" — a sandboxed pane's own cage plumbing and the shell inside it are children, so
     the old signal called a bare prompt `running` and you could never see this state for one.
@@ -351,14 +352,25 @@ feature code. These are standing rules you MUST act on, not merely acknowledge:
   the state: `stopped 7/7` finished and needs nothing; `stopped 0/7` never started and is the one to
   wake first. A stream that owns no issues shows `-`. Blocked and failed issues cannot appear in a
   ratio, so the streams holding them are named under the table — those are yours to route, not to wake.
-- `bsc fleet wake <pane-id> --prompt "<what to do>"` brings a stopped worker back and hands it that task.
-  Use it when a stream still has open issues but its session is not `live` — that worker is not coming
-  back on its own. It is also how you START a stream that has never run: the pane does not have to
-  exist, only the plan row, so `bsc fleet start` is for bringing up a WHOLE fleet, never one stream.
+- `bsc fleet wake <pane-id>` — BARE, no `--prompt` — is how you bring a stopped worker back. Use it
+  when a stream still has open issues but its session is not `live`; that worker is not coming back on
+  its own. It is also how you START a stream that has never run: the pane does not have to exist, only
+  the plan row, so `bsc fleet start` is for bringing up a WHOLE fleet, never one stream.
+
+  DO NOT RE-SEND A TASK THE WORKER ALREADY HAS. A stopped worker still holds its assignment — its plan
+  issues, its inbox, its worktree and its own conversation — so repeating the original task tells it
+  nothing it does not already know. MEASURED on a real fleet: a director sent
+  `--prompt "Build the REST API: auth, posts, likes, feed"` on six consecutive wakes, and the worker
+  read the restatement as an instruction to START OVER, rebuilding the same files at the same byte
+  counts every launch. It reported 3/3 issues still open after four launches of real work.
 - Waking KILLS the session first, so it refuses a `busy` pane unless you pass `--force`. Do not reach
   for `--force` to hurry a worker along: check `bsc fleet list` and let real work finish.
-- The prompt is what the woken worker starts on, so write the task, not a greeting. Omit it and it gets
-  the standard "re-read your assignment and continue" wake.
+- PASS `--prompt` ONLY FOR THE TWO CASES THAT NEED IT, and it is what the woken worker starts on, so
+  write the task rather than a greeting:
+  - a `never-launched` stream, which has no assignment in its pane yet (see above), and
+  - genuinely NEW work the worker has not been given — which is a re-tasking, not a resume.
+  Everywhere else the bare wake is correct: it supplies the standard "re-read your assignment and
+  continue" prose, which is why `bsc fleet wake help` says you do not have to reproduce it.
 
 ## Subagents — what a fork is for
 
@@ -371,7 +383,7 @@ yours to run.
 - **NEVER fork to do a stream's work.** If a worker's issue needs doing, the worker does it. A fork has
   no worktree, no branch, no pane and no roster row, so nothing it produced could be reviewed, merged
   or attributed — and you are `code: none`, so it would be blocked partway and report a half-truth.
-  Wake the owner instead: `bsc fleet wake <pane-id> --prompt "<what to do>"`.
+  Wake the owner instead: `bsc fleet wake <pane-id>`.
 - **A dead stream is escalated, not absorbed.** If the owner is gone for good — session ended, worktree
   reclaimed, nobody to wake — relaunch the stream. That is the only path that yields a branch, a PR and
   an audit trail. If you cannot relaunch it, say so and hand it up. Do not quietly become the worker.

@@ -237,6 +237,39 @@ mod tests {
 
     /// The director's half: a fault is a READ it consults, never a push it waits for.
     ///
+    /// A stopped worker still HOLDS its assignment, so waking it must not re-send the task.
+    ///
+    /// MEASURED on the twitter-clone-test fleet: the protocol led with `--prompt` for the ordinary
+    /// `stopped` case, and the director sent
+    /// `wake twitter-clone-test:api --prompt "Build the REST API: auth, posts, likes, feed"` on six
+    /// consecutive wakes. The worker read each restatement as an instruction to start over, rebuilt
+    /// the same files at the same byte counts, and reported 3/3 issues still open after four launches
+    /// of real work. The CLI's own help had the right emphasis all along — "Without --prompt the app
+    /// supplies its standard change-request wake" — and the protocol inverted it.
+    #[test]
+    fn the_director_protocol_wakes_a_stopped_worker_without_re_sending_its_task() {
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(
+            p.contains("DO NOT RE-SEND A TASK THE WORKER ALREADY HAS"),
+            "the rule must be stated, not implied:\n{p}"
+        );
+        assert!(
+            p.contains("`bsc fleet wake <pane-id>` — BARE, no `--prompt`"),
+            "…and the bare form must be what the ordinary case is shown as"
+        );
+        // `--prompt` survives ONLY where a worker genuinely has nothing to re-read.
+        assert!(
+            p.contains("never-launched"),
+            "the exception that still needs a task must remain"
+        );
+        assert_eq!(
+            p.matches("fleet wake <pane-id> --prompt").count(),
+            1,
+            "exactly ONE --prompt wake example should remain (the never-launched stream); every other \
+             worked example teaching it is how the default flipped:\n{p}"
+        );
+    }
+
     /// The failure this guards against is a director that treats every red build as an interrupt.
     /// Workers break their own builds constantly on the way to finishing, so routing each one turns
     /// ordinary work into a queue of false alarms — and a director that learns to ignore that queue
