@@ -842,6 +842,9 @@ fn pty_create_inner(
             // The harness's own configuration, named variable by variable (`CAGED_AGENT_ENV`). Empty
             // for a Claude pane, which authenticates from a bound credential file and needs none.
             env: if provider_id.as_deref() == Some("bsc-agent") { caged_agent_env(gate_env) } else { Vec::new() },
+            // Durability follows from RUNNING the agent, not from having overridden one of its
+            // settings — which is the same condition, one line up, and the only one that is correct.
+            wants_conversation: provider_id.as_deref() == Some("bsc-agent"),
         },
         GateConfig {
             scope_globs: gate_env
@@ -2556,6 +2559,17 @@ struct HarnessSpec<'a> {
     /// The named environment the runtime needs ([`CAGED_AGENT_ENV`]). Empty for a harness that reads
     /// its configuration from a bound file instead.
     env: Vec<(String, String)>,
+    /// Whether this pane needs a DURABLE conversation directory bound into the cage.
+    ///
+    /// Separate from [`Self::env`] because the two answer different questions, and conflating them
+    /// silently cost every default-configured session its history: the bind used to be gated on
+    /// `env` being non-empty, and `env` holds only `BSC_AGENT_*` variables the user actually
+    /// OVERRODE. So a pane running bsc-agent on defaults got no conversation dir at all.
+    ///
+    /// MEASURED: `sandbox-stores/twitter-clone-test_director/` had no `home/` whatsoever, while the
+    /// worker beside it did — so the director's `$BSC_AGENT_SESSION` pointed at a tmpfs inside the
+    /// cage and died with the session, every launch.
+    wants_conversation: bool,
 }
 
 /// The single credential a sandboxed harness needs, if it is there.
@@ -3484,7 +3498,7 @@ fn namespace_argv(
         //
         // Under the private home rather than `/repo`, because the worktree is the session's WORK and
         // a conversation file committed by accident is exactly what splitting `home` out prevented.
-        if !paths.agent_env.is_empty() {
+        if harness.wants_conversation {
             // The SAME helper the resume probe resolves through (`caged_agent_conversation_path`),
             // so the bind and the probe cannot describe different places.
             let dir = crate::session::launch::caged_agent_conversation_dir(&root);
@@ -5741,6 +5755,66 @@ mod caged_harness_tests {
                 assert!(!bound.contains(&b), "{b} is reported missing AND bound: {bins:?}");
             }
         }
+    }
+
+    /// A pane running bsc-agent ON DEFAULTS must still get a durable conversation directory.
+    ///
+    /// The bind used to be gated on `agent_env` being non-empty, and that holds only the `BSC_AGENT_*`
+    /// variables the user actually OVERRODE — so a session with no overrides got no conversation dir,
+    /// its `$BSC_AGENT_SESSION` pointed at a tmpfs inside the cage, and it started fresh every launch.
+    /// MEASURED: `sandbox-stores/twitter-clone-test_director/` had no `home/` at all while the worker
+    /// beside it did.
+    #[test]
+    fn a_bsc_agent_pane_with_no_overrides_still_gets_a_conversation_dir() {
+        let base = crate::testutil::unique_dir("bsc-convdir", "defaults");
+        let wt = base.join("wt");
+        let stores = base.join("stores");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join("main.rs"), "fn main() {}\n").unwrap();
+        // The projections the launcher builds — `namespace_argv` renders nothing without them.
+        for name in ["plan", "graph", "ui", "coord"] {
+            std::fs::create_dir_all(stores.join(name)).unwrap();
+        }
+        for proj in ["coord", "ui"] {
+            std::fs::create_dir_all(stores.join(proj).join("out")).unwrap();
+        }
+        let wt_s = wt.to_str().unwrap().to_string();
+        let stores_s = stores.to_str().unwrap().to_string();
+
+        // env EMPTY — the whole point: no BSC_AGENT_* override anywhere.
+        let argv = super::namespace_argv(
+            Some("worker"),
+            "twitter-clone-test:api",
+            &wt_s,
+            Some(&stores_s),
+            "/bin/bash",
+            HarnessSpec { bins: &["bsc-agent"], env: Vec::new(), wants_conversation: true },
+            GateConfig::default(),
+        )
+        .expect("a bsc-agent pane renders");
+
+        assert!(
+            argv.join(" ").contains("/home/agent/.bsc-agent"),
+            "the conversation dir must be bound even with no agent env"
+        );
+        // …and it must be backed by a REAL host directory, or it is a tmpfs that dies with the session.
+        assert!(
+            stores.join("home").join("bsc-agent").is_dir(),
+            "the host side of the bind has to exist"
+        );
+
+        // A pane that is NOT running bsc-agent gets nothing — this must not become an always-on bind.
+        let claude = super::namespace_argv(
+            Some("worker"), "p", &wt_s, Some(&stores_s), "/bin/bash",
+            HarnessSpec { bins: &["node", "claude"], env: Vec::new(), wants_conversation: false },
+            GateConfig::default(),
+        )
+        .expect("renders");
+        assert!(
+            !claude.join(" ").contains("/home/agent/.bsc-agent"),
+            "a Claude pane needs no bsc-agent conversation dir"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
