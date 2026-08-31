@@ -60,6 +60,11 @@ pub struct Activity {
     /// Epoch-ms of the last byte this session produced. The single clock both thresholds read.
     pub last_output_ms: u64,
     pub status: RunState,
+    /// Epoch-ms when this session was first seen.
+    ///
+    /// The never-started rule needs it: "has not started YET" and "will never start" are
+    /// indistinguishable in a session's first minutes, and only AGE separates them.
+    pub created_ms: u64,
     /// The session's shell pid — the ROOT of its process tree. `0` when unknown.
     ///
     /// Named a root rather than a process group on purpose: this was a pgid, and `bsc-agent` setsids
@@ -86,6 +91,23 @@ impl Default for ReapPolicy {
     }
 }
 
+/// How old a session must be before ZERO CPU is allowed to mean "it never started".
+///
+/// A JUST-OPENED SESSION LOOKS EXACTLY LIKE A PARKED ONE. It has no CPU — it is blocked on a socket
+/// waiting for the model, not computing — and no output after its banner. Those are precisely the two
+/// signals the never-started rule reads, so without this it reaped every local session before its
+/// first token: "after i click to open it freezes for a second, the pane opens and then it's reaped
+/// before anything can happen."
+///
+/// Three minutes because that is what a COLD local model costs before its first response — the agent
+/// prints "the first local response can take a while (model load + context)" for exactly this reason.
+/// Below it a `run` session takes the ordinary silence ceiling, which is long enough to cover the same
+/// wait; above it, a session that has still never used one CPU tick genuinely never started.
+///
+/// This does not weaken the case the maintainer actually asked for. A session whose agent has EXITED
+/// is `Idle`, keeps the ten-second grace, and is unaffected — nothing is in flight there.
+pub const NEVER_STARTED_MIN_AGE_MS: u64 = 3 * 60_000;
+
 /// Whether this session should be reaped now.
 ///
 /// `focused` is reported BY the frontend rather than inferred here — the backend cannot know which
@@ -99,6 +121,9 @@ pub fn should_reap(
     cpu_ms: Option<u64>,
     policy: &ReapPolicy,
 ) -> bool {
+    // Saturating, like the silence below: a clock that moved backwards must read as YOUNG, which is
+    // the protective direction.
+    let age_ms = now_ms.saturating_sub(a.created_ms);
     if focused {
         return false; // the user is watching it
     }
@@ -115,7 +140,12 @@ pub fn should_reap(
         //
         // This corrects the reasoning on the previous item, which rejected CPU because "a session
         // blocked on a slow model burns no CPU". True instantaneously; false cumulatively.
-        RunState::Run if cpu_ms == Some(0) => silent_ms >= policy.idle_grace_ms,
+        // AGE-GATED. Without `age_ms`, a session opened seconds ago is indistinguishable from one
+        // that will never start — both have zero CPU and no output — and every local session was
+        // reaped before the model's first token.
+        RunState::Run if cpu_ms == Some(0) && age_ms >= NEVER_STARTED_MIN_AGE_MS => {
+            silent_ms >= policy.idle_grace_ms
+        }
         // It has done work, or we could not tell. Only total silence past the ceiling reaps it.
         //
         // UNKNOWN COUNTS AS HAS-WORKED on purpose: losing a turn costs more than a session lingering,
@@ -270,6 +300,7 @@ pub fn note_output(pane_id: &str, chunk: &[u8]) {
     let Ok(mut map) = registry().lock() else { return };
     let e = map.entry(pane_id.to_string()).or_insert(Activity {
         last_output_ms: now_ms(),
+        created_ms: now_ms(),
         status: RunState::Unknown,
         root_pid: 0,
     });
@@ -283,7 +314,12 @@ pub fn note_output(pane_id: &str, chunk: &[u8]) {
 pub fn note_root_pid(pane_id: &str, root_pid: i32) {
     let Ok(mut map) = registry().lock() else { return };
     map.entry(pane_id.to_string())
-        .or_insert(Activity { last_output_ms: now_ms(), status: RunState::Unknown, root_pid: 0 })
+        .or_insert(Activity {
+            last_output_ms: now_ms(),
+            created_ms: now_ms(),
+            status: RunState::Unknown,
+            root_pid: 0,
+        })
         .root_pid = root_pid;
 }
 
@@ -344,8 +380,25 @@ mod tests {
 
     const NOW: u64 = 1_788_000_000_000;
 
+    /// OLD by default: these tests are about the silence rules, so the age gate must not silently
+    /// change what they mean. `young()` is the opposite case, tested explicitly below.
     fn act(status: RunState, silent_ms: u64) -> Activity {
-        Activity { last_output_ms: NOW - silent_ms, status, root_pid: 0 }
+        Activity {
+            last_output_ms: NOW - silent_ms,
+            created_ms: NOW - (NEVER_STARTED_MIN_AGE_MS + 60_000),
+            status,
+            root_pid: 0,
+        }
+    }
+
+    /// A session opened `age_ms` ago that has printed nothing since its banner.
+    fn young(age_ms: u64) -> Activity {
+        Activity {
+            last_output_ms: NOW - age_ms,
+            created_ms: NOW - age_ms,
+            status: RunState::Run,
+            root_pid: 4242,
+        }
     }
 
     /// CPU that says "this session has done work" — the measured 0.27s of the one live agent.
@@ -413,6 +466,45 @@ mod tests {
         assert!(should_reap(&act(RunState::Unknown, 10_000), NOW, false, WORKED, &p));
     }
 
+    /// THE REGRESSION THIS FIXES: "after i click to open it freezes for a second, the pane opens and
+    /// then it's reaped before anything can happen."
+    ///
+    /// A just-opened session has ZERO CPU (blocked on a socket waiting for the model, not computing)
+    /// and NO OUTPUT after its banner — exactly the two signals the never-started rule reads. So it
+    /// reaped every local session before its first token.
+    #[test]
+    fn a_just_opened_session_is_not_reaped_while_it_waits_for_the_model() {
+        let p = ReapPolicy::default();
+        let cpu = ProcSnapshot::default(); // pid 4242 absent ⇒ genuinely zero CPU
+        for age in [1_000u64, 15_000, 60_000, NEVER_STARTED_MIN_AGE_MS - 1] {
+            let mut panes = HashMap::new();
+            panes.insert("twitter-clone-test:api".to_string(), young(age));
+            assert!(
+                panes_to_reap(&panes, NOW, None, &cpu, &p).is_empty(),
+                "a {age}ms-old session waiting on the model must survive",
+            );
+        }
+
+        // Past the age, a session that has STILL never used a CPU tick genuinely never started.
+        let mut panes = HashMap::new();
+        panes.insert("parked".to_string(), young(NEVER_STARTED_MIN_AGE_MS + 1_000));
+        assert_eq!(panes_to_reap(&panes, NOW, None, &cpu, &p), vec!["parked".to_string()]);
+    }
+
+    /// The exited-agent case is UNTOUCHED — that is where "reap in seconds" is both wanted and safe,
+    /// because nothing is in flight.
+    #[test]
+    fn an_exited_agent_still_takes_the_short_grace_however_young() {
+        let p = ReapPolicy::default();
+        let just_exited = Activity {
+            last_output_ms: NOW - 10_000,
+            created_ms: NOW - 12_000, // far younger than the never-started age gate
+            status: RunState::Idle,
+            root_pid: 4242,
+        };
+        assert!(should_reap(&just_exited, NOW, false, Some(0), &p));
+    }
+
     /// THE MAINTAINER'S ASK, and the measurement that shaped it. "Make it 10 seconds for reaping idle
     /// sessions" — taken as a shorter silence ceiling, that would have reaped the two working sessions,
     /// because BOTH were silent and climbing (43s → 98s) while doing real work.
@@ -454,7 +546,7 @@ mod tests {
         snap.insert("no-pgid".to_string(), act(RunState::Run, 60_000)); // pgid 0
         snap.insert(
             "parked".to_string(),
-            Activity { last_output_ms: NOW - 60_000, status: RunState::Run, root_pid: 4242 },
+            Activity { last_output_ms: NOW - 60_000, created_ms: NOW - 900_000, status: RunState::Run, root_pid: 4242 },
         );
         // pgid 4242 is absent from the CPU map ⇒ genuinely zero ⇒ reapable on the short grace.
         let cpu = ProcSnapshot::default();
@@ -489,7 +581,7 @@ mod tests {
 
         // And the consequence: this session keeps the CEILING rather than the never-started grace.
         let p = ReapPolicy::default();
-        let a = Activity { last_output_ms: NOW - 30_000, status: RunState::Run, root_pid: 1238124 };
+        let a = Activity { last_output_ms: NOW - 30_000, created_ms: NOW - 900_000, status: RunState::Run, root_pid: 1238124 };
         let mut panes = HashMap::new();
         panes.insert("twitter-clone-test:api".to_string(), a);
         assert!(
@@ -522,7 +614,7 @@ mod tests {
     #[test]
     fn a_backwards_clock_reaps_nothing() {
         let p = ReapPolicy::default();
-        let future = Activity { last_output_ms: NOW + 60_000, status: RunState::Idle, root_pid: 0 };
+        let future = Activity { last_output_ms: NOW + 60_000, created_ms: NOW, status: RunState::Idle, root_pid: 0 };
         assert!(!should_reap(&future, NOW, false, WORKED, &p));
     }
 
@@ -690,12 +782,12 @@ mod headless_tests {
         // fifteen measured `bsc-agent` processes were.
         snap.insert(
             "village-animal-hospital:director".to_string(),
-            Activity { last_output_ms: now - 909_000, status: RunState::Run, root_pid: 7001 },
+            Activity { last_output_ms: now - 909_000, created_ms: now - 900_000, status: RunState::Run, root_pid: 7001 },
         );
         // A worker mid-turn on a slow local model: still printing progress.
         snap.insert(
             "twitter-clone-test:api".to_string(),
-            Activity { last_output_ms: now - 2_000, status: RunState::Run, root_pid: 0 },
+            Activity { last_output_ms: now - 2_000, created_ms: now - 900_000, status: RunState::Run, root_pid: 0 },
         );
 
         // No focus report at all — the renderer is gone.
@@ -751,7 +843,7 @@ mod headless_tests {
         let mut snap = HashMap::new();
         snap.insert(
             "watched".to_string(),
-            Activity { last_output_ms: now - 909_000, status: RunState::Run, root_pid: 0 },
+            Activity { last_output_ms: now - 909_000, created_ms: now - 900_000, status: RunState::Run, root_pid: 0 },
         );
 
         // While the UI lived, it was protected.
