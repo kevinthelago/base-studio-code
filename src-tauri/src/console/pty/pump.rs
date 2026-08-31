@@ -457,6 +457,11 @@ pub(super) fn spawn_reader(
                     if let Some(r) = record.as_mut() {
                         r.write(&buf[..n]);
                     }
+                    // The reap clock, stamped HERE because this is where the bytes already are. It
+                    // also folds in the OSC-100 run/idle marker, which used to be parsed only by the
+                    // frontend's TerminalView — which is exactly why the backend could not own this
+                    // policy before, and why a dead webview left 17 sessions with nothing to reap them.
+                    super::reap::note_output(&pane_id, &buf[..n]);
                     leftover.extend_from_slice(&buf[..n]);
                     let (text, keep) = split_utf8_at_boundary(&leftover);
                     leftover = keep;

@@ -160,6 +160,11 @@ pub fn run() {
             let app_log = logs::app_log_file(app.handle())
                 .unwrap_or_else(|| bsc_base_dir().join("base-studio-code.log"));
             graph_log::install(scope_registry.clone(), app_log.clone());
+            // The idle sweep, in the process that OWNS the sessions. Started here rather than driven
+            // from the frontend so it survives the webview: measured 2026-08-31, the renderer was
+            // OOM-killed and the backend ran headless for fifteen minutes with 17 sessions alive and
+            // nothing able to reap them, because the only reaper was a React hook.
+            pty::spawn_reaper(app.handle().clone());
             // Force the main window's taskbar/title icon from the icon Tauri embedded from
             // `bundle.icon` (#2683). A bundled/installed build shows the app icon via the exe's Windows
             // resource, but under `tauri dev` the debug exe doesn't reliably apply it, so the taskbar
@@ -328,6 +333,9 @@ pub fn run() {
             pty::pty_kill,
             pty::pty_launch_refusal,
             pty::pty_set_app_runner,
+            pty::pty_report_focus,
+            pty::pty_activity,
+            pty::pty_set_reap_policy,
             bsc::bsc,
             app::dialog::pick_directory,
             app::dialog::pick_save_file,
