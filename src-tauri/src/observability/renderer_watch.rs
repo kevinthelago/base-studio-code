@@ -127,6 +127,67 @@ pub fn dead_detail() -> String {
         .to_string()
 }
 
+/// The renderer's peak RSS, in MB, read from the kernel rather than guessed.
+///
+/// WHY THE FAULT NEEDS IT: this fault used to record only that the webview was gone, which reads the
+/// same whether the renderer was killed at 400 MB or at 27 GB. Measured 2026-08-31, it was the latter
+/// — 27.50 GB RSS against a 128 GB VmPeak, reached in about two minutes — and the only reason anyone
+/// knows that is that a human happened to be sampling `/proc` at the moment it died. Recording it
+/// makes the NEXT occurrence evidence instead of another restart.
+///
+/// `VmHWM` is the high-water mark, not the current value: by the time the watchdog fires the process
+/// is usually gone or shrinking, so the instantaneous reading would understate it — often to zero.
+///
+/// Best-effort and Linux-only. An unreadable value is reported as UNKNOWN by the caller rather than as
+/// zero, because "the renderer died at 0 MB" is a false statement and this fault exists to stop
+/// exactly that kind of confident-but-wrong record.
+#[cfg(target_os = "linux")]
+pub fn renderer_peak_mb() -> Option<u64> {
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let mut peak = None;
+    for e in entries.flatten() {
+        if std::fs::read_to_string(e.path().join("comm"))
+            .map(|c| c.trim() != "WebKitWebProcess")
+            .unwrap_or(true)
+        {
+            continue;
+        }
+        let Ok(status) = std::fs::read_to_string(e.path().join("status")) else { continue };
+        let hwm = status
+            .lines()
+            .find_map(|l| l.strip_prefix("VmHWM:"))
+            .and_then(|v| v.split_whitespace().next())
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(|kb| kb / 1024);
+        // Several webkit processes can exist; the one that matters is the biggest.
+        if let Some(mb) = hwm {
+            peak = Some(peak.map_or(mb, |p: u64| p.max(mb)));
+        }
+    }
+    peak
+}
+
+/// No `/proc` to read. Reports UNKNOWN, never a fabricated zero.
+#[cfg(not(target_os = "linux"))]
+pub fn renderer_peak_mb() -> Option<u64> {
+    None
+}
+
+/// The memory line appended to the fault detail.
+///
+/// Split out and pure so the ABSENT case is pinned by a test: an unreadable peak has to read as
+/// unknown, since a fault claiming the renderer died at 0 MB would be worse than one that says nothing.
+pub fn peak_line(peak_mb: Option<u64>) -> String {
+    match peak_mb {
+        Some(mb) => format!(
+            " Renderer peak memory before it died: {:.2} GB ({mb} MB). A figure in the tens of GB \
+             means a runaway allocation — most likely a render loop — rather than an ordinary crash.",
+            mb as f64 / 1024.0
+        ),
+        None => " Renderer peak memory: unknown (could not read it from /proc).".to_string(),
+    }
+}
+
 fn self_store() -> Option<errordb::Store> {
     errordb::Store::open(&crate::error_db_path(bsc_util::SELF_PROJECT_KEY)).ok()
 }
@@ -139,7 +200,9 @@ fn record(silent_ms: i64) {
         stage: "launch".to_string(),
         level: "fatal".to_string(),
         title: dead_title(silent_ms),
-        stack: Some(dead_detail()),
+        // The peak is read HERE, at fault time, while the dying process may still be in /proc — a
+        // moment later it is gone and the number is unrecoverable.
+        stack: Some(format!("{}{}", dead_detail(), peak_line(renderer_peak_mb()))),
         source_hint: Some(RENDERER_SOURCE.to_string()),
         context: None,
         release: Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -230,6 +293,18 @@ mod tests {
 
     #[test]
     fn the_title_reports_the_observation_not_a_diagnosis() {
+        // The peak has to reach the fault, or the fault reads the same at 400 MB as at 27 GB.
+        let big = peak_line(Some(27_500));
+        assert!(big.contains("26.86 GB"), "{big}");
+        assert!(big.contains("27500 MB"), "the raw figure too, for a reader doing their own arithmetic");
+        assert!(big.contains("render loop"), "names the shape a huge number implies");
+
+        // ABSENT MUST NOT BECOME ZERO. "The renderer died at 0 MB" is a false statement, and this
+        // fault exists to stop exactly that kind of confident-but-wrong record.
+        let none = peak_line(None);
+        assert!(none.contains("unknown"), "{none}");
+        assert!(!none.contains("0.00 GB"), "an unreadable peak is not a measured zero: {none}");
+
         let t = dead_title(45_000);
         assert!(t.contains("45s"), "the title should say how long it was silent: {t}");
         // It must not claim a cause it cannot know — a kill, a crash and a freeze are the same here.
