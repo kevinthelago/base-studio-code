@@ -762,6 +762,70 @@ pub fn publish(path: &std::path::Path, now_ms_: u64, procs: &ProcSnapshot, polic
 pub const REAPED_EVENT: &str = "pty-reaped";
 
 #[cfg(test)]
+mod cgroup_tests {
+    use super::*;
+
+    /// `oom_kill` is a COUNTER, and unknown keys must not break the parse — a newer kernel adding a
+    /// field cannot be allowed to turn this into a silent zero.
+    #[test]
+    fn memory_events_yields_the_oom_kill_counter() {
+        let real = "low 0\nhigh 0\nmax 12\noom 3\noom_kill 2\noom_group_kill 0\n";
+        assert_eq!(parse_memory_events(real), 2);
+        assert_eq!(parse_memory_events("low 0\nhigh 0\n"), 0, "absent reads as none");
+        assert_eq!(parse_memory_events(""), 0);
+        // `oom` is NOT `oom_kill` — one counts pressure events, the other counts processes killed.
+        assert_eq!(parse_memory_events("oom 9\n"), 0);
+    }
+
+    /// The literal `max` means UNCAPPED. Reading it as 0 would make every session look over a cap of
+    /// nothing, which is the confident-but-wrong direction.
+    #[test]
+    fn memory_max_distinguishes_uncapped_from_a_number() {
+        assert_eq!(parse_memory_max("max\n"), None);
+        assert_eq!(parse_memory_max("16642998272\n"), Some(16_642_998_272));
+        assert_eq!(parse_memory_max("garbage"), None);
+    }
+
+    /// The verdict has to be readable in one line, and has to state the ABSENCE too: a cgroup that
+    /// recorded no kill RULES THE THEORY OUT, which is as useful as confirming it.
+    #[test]
+    fn the_cgroup_line_says_which_way_it_went() {
+        let killed = CgroupMem { current: 8 << 30, max: Some(16 << 30), oom_kill: 1 };
+        let l = cgroup_line(Some(killed));
+        assert!(l.contains("OOM-KILLED IT"), "{l}");
+        assert!(l.contains("oom_kill=1"), "{l}");
+        assert!(l.contains("8.00 GB"), "{l}");
+        assert!(l.contains("16.00 GB"), "the cap it was measured against: {l}");
+        assert!(l.contains("MemorySwapMax=0"), "names why it could not swap out of it");
+
+        let survived = CgroupMem { current: 1 << 30, max: Some(16 << 30), oom_kill: 0 };
+        let l = cgroup_line(Some(survived));
+        assert!(l.contains("NO oom_kill"), "{l}");
+        assert!(l.contains("ruled out"), "an absence is evidence: {l}");
+
+        // Never readable is its OWN answer, not silence and not a zero.
+        let l = cgroup_line(None);
+        assert!(l.contains("never readable"), "{l}");
+        assert!(l.contains("not what killed it"), "{l}");
+
+        // An uncapped cgroup says so rather than printing a number it does not have.
+        let l = cgroup_line(Some(CgroupMem { current: 1 << 30, max: None, oom_kill: 0 }));
+        assert!(l.contains("uncapped"), "{l}");
+    }
+
+    /// The path comes from the process, not from a guess at systemd's layout.
+    #[test]
+    fn the_cgroup_dir_is_read_from_the_process_itself() {
+        let me = std::process::id() as i32;
+        let d = cgroup_dir_of(me).expect("this process has a v2 cgroup");
+        assert!(d.starts_with("/sys/fs/cgroup"), "{d:?}");
+        // A leading slash in the cgroup path must EXTEND the base, not replace it.
+        assert!(d.to_string_lossy().len() > "/sys/fs/cgroup".len(), "{d:?}");
+        assert_eq!(cgroup_dir_of(-1), None, "a pid that cannot exist reads as unknown");
+    }
+}
+
+#[cfg(test)]
 mod headless_tests {
     use super::*;
 
@@ -869,5 +933,126 @@ mod policy_tests {
         assert_eq!(policy(), ReapPolicy::default());
         set_policy(None, None);
         assert_eq!(policy(), ReapPolicy::default());
+    }
+}
+
+/// Bytes in a GiB, for the memory lines below.
+const GIB: f64 = 1_073_741_824.0;
+
+// ── The session own cgroup (#a-signalled-session-cannot-say-whether-its-cgroup-oom-killed-it) ────
+
+/// What a session's cgroup says about its memory, at one instant.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CgroupMem {
+    /// `memory.current` in bytes.
+    pub current: u64,
+    /// `memory.max` in bytes; `None` for `max` (uncapped).
+    pub max: Option<u64>,
+    /// `memory.events`' `oom_kill` COUNTER — the number of processes this cgroup has OOM-killed.
+    ///
+    /// A counter, not a flag, so a rise between two samples is what proves a kill happened rather
+    /// than one having happened at some point in the past.
+    pub oom_kill: u64,
+}
+
+/// The cgroup v2 directory a pid belongs to.
+///
+/// Read from `/proc/<pid>/cgroup` rather than composed from the unit name, so it cannot drift from
+/// systemd's actual layout (`user.slice/user-N.slice/user@N.service/app.slice/…`) and needs no
+/// knowledge of which slice a scope lands in. The v2 line is `0::<path>`.
+pub fn cgroup_dir_of(pid: i32) -> Option<std::path::PathBuf> {
+    let raw = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok()?;
+    let rel = raw.lines().find_map(|l| l.strip_prefix("0::"))?.trim();
+    // A leading `/` would make `join` replace the base rather than extend it.
+    Some(std::path::Path::new("/sys/fs/cgroup").join(rel.trim_start_matches('/')))
+}
+
+/// Parse `memory.events`. Pure, so the format is pinned without a live cgroup.
+///
+/// The file is `key value` per line; unknown keys are ignored so a newer kernel adding one cannot
+/// break the parse.
+pub fn parse_memory_events(body: &str) -> u64 {
+    body.lines()
+        .find_map(|l| l.strip_prefix("oom_kill "))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Parse `memory.max`, where the literal `max` means UNCAPPED — not zero, which would read as a cap
+/// of nothing and make every session look over its limit.
+pub fn parse_memory_max(body: &str) -> Option<u64> {
+    match body.trim() {
+        "max" => None,
+        n => n.parse().ok(),
+    }
+}
+
+/// Read a cgroup's memory state. `None` when the cgroup is gone or unreadable — which is a real
+/// answer, and must not be confused with a reading of zero.
+pub fn read_cgroup_mem(dir: &std::path::Path) -> Option<CgroupMem> {
+    let current = std::fs::read_to_string(dir.join("memory.current")).ok()?.trim().parse().ok()?;
+    Some(CgroupMem {
+        current,
+        max: std::fs::read_to_string(dir.join("memory.max")).ok().and_then(|s| parse_memory_max(&s)),
+        oom_kill: std::fs::read_to_string(dir.join("memory.events"))
+            .map(|s| parse_memory_events(&s))
+            .unwrap_or(0),
+    })
+}
+
+/// The last cgroup reading taken while each session was ALIVE.
+///
+/// Sampled rather than read at death, for the reason the renderer peak already taught: by the time a
+/// session's end is observed its cgroup may be gone, and a reading taken then is `None` exactly when
+/// it is most wanted.
+fn cgroup_cell() -> &'static Mutex<HashMap<String, CgroupMem>> {
+    static C: OnceLock<Mutex<HashMap<String, CgroupMem>>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Sample every live session's cgroup. Called from the sweep that already runs.
+pub fn sample_cgroups() {
+    let panes = snapshot();
+    let Ok(mut cell) = cgroup_cell().lock() else { return };
+    for (pane_id, a) in panes {
+        if a.root_pid == 0 {
+            continue;
+        }
+        if let Some(m) = cgroup_dir_of(a.root_pid).as_deref().and_then(read_cgroup_mem) {
+            cell.insert(pane_id, m);
+        }
+    }
+}
+
+/// What this pane's cgroup last said, if it was ever readable.
+pub fn last_cgroup_mem(pane_id: &str) -> Option<CgroupMem> {
+    cgroup_cell().lock().ok()?.get(pane_id).copied()
+}
+
+/// The line appended to a signalled session's end message.
+///
+/// Says NOTHING KNOWN rather than nothing at all when the cgroup was never readable: that absence is
+/// itself evidence, because it rules the cgroup-OOM explanation out instead of leaving it open.
+pub fn cgroup_line(m: Option<CgroupMem>) -> String {
+    let Some(m) = m else {
+        return " Its cgroup was never readable, so a memcg OOM is not what killed it.".to_string();
+    };
+    let cap = match m.max {
+        Some(b) => format!("{:.2} GB", b as f64 / GIB),
+        None => "uncapped".to_string(),
+    };
+    if m.oom_kill > 0 {
+        format!(
+            " ITS OWN CGROUP OOM-KILLED IT: memory.events oom_kill={}, using {:.2} GB against a cap of \
+             {cap}. The cage renders MemorySwapMax=0, so it cannot swap under pressure.",
+            m.oom_kill,
+            m.current as f64 / GIB,
+        )
+    } else {
+        format!(
+            " Its cgroup recorded NO oom_kill (using {:.2} GB against a cap of {cap}), so a memcg OOM \
+             is ruled out.",
+            m.current as f64 / GIB,
+        )
     }
 }

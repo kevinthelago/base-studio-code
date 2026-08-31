@@ -1622,6 +1622,10 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             // reload rather than the machine (and the OOM killer's victim has repeatedly been a fleet
             // worker, not the renderer).
             crate::observability::renderer_watch::enforce_renderer_cap();
+            // Sample each session's own cgroup WHILE IT LIVES. Read at death it is already gone —
+            // the mistake the renderer peak made once — and a memcg OOM is the one remaining
+            // explanation for the signal-9 deaths that nothing can currently observe.
+            reap::sample_cgroups();
             // Publish EVERY tick, not only when something is reaped: the question an operator asks is
             // "why is this still alive", and a file that only appears on a reap cannot answer it.
             reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &cpu, &policy);
