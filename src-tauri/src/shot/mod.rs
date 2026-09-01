@@ -17,7 +17,7 @@
 //! hand the bytes back through a channel; the WAIT happens on the caller's thread. Blocking inside the
 //! closure would stall the message pump that has to deliver the very completion being waited on.
 
-use bsc_shot::{is_png, max_age_secs, resolve_out, shots_dir, sweep_captures, Rect, ShotRequest, ShotResult};
+use bsc_shot::{is_png, keep_count, prune_captures, resolve_out, shots_dir, Rect, ShotRequest, ShotResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -211,15 +211,16 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
     }
     std::fs::write(&out, &bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
 
-    // Retire aged captures, the way `take` already sweeps the request channel — the shots dir otherwise
-    // only ever grows (a `baseline --kit` run alone adds one PNG per component, every run). Best-effort
-    // and AFTER the write: a janitor that could fail the capture it rides along with would cost more
-    // than the disk it reclaims. `sweep_captures` reads one directory level, so `<shots>/baselines/` —
-    // the reference set `bsc shot diff` needs — is out of its reach structurally.
-    if let Some(max_age) = max_age_secs() {
-        let n = sweep_captures(&shots, std::time::SystemTime::now(), max_age);
+    // Hold the shots dir to a fixed WINDOW of the newest captures, the way `take` already sweeps the
+    // request channel — it otherwise only ever grows (a `baseline --kit` run alone adds one PNG per
+    // component, every run). Best-effort and AFTER the write, so the capture just taken is counted and
+    // is always the last thing that would go: a janitor that could fail the capture it rides along with
+    // would cost more than the disk it reclaims. `prune_captures` reads one directory level, so
+    // `<shots>/baselines/` — the reference set `bsc shot diff` needs — is out of its reach structurally.
+    if let Some(keep) = keep_count() {
+        let n = prune_captures(&shots, keep);
         if n > 0 {
-            log::debug!("swept {n} aged capture(s) from {}", shots.display());
+            log::debug!("pruned {n} capture(s) from {} (window {keep})", shots.display());
         }
     }
     // Report the dir THIS process resolved (#4163). The caller resolved `out` in its own env; when a

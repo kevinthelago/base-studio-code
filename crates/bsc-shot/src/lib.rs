@@ -113,64 +113,92 @@ pub fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> std:
     }
 }
 
-/// How long a capture survives in the shots dir before [`sweep_captures`] removes it.
+/// How many captures the shots dir keeps. Each new capture prunes back to this, newest first.
 ///
-/// Seven days, not the `gc` sweeps' three: a capture is small (~3 KB) but a `baseline --kit` run makes
-/// one per component, and a burst from `--frames` is a set someone is part-way through reading. The cost
-/// of keeping one too long is nothing; the cost of eating the frame someone was about to diff is a
-/// re-run of an unattended overnight loop.
-pub const DEFAULT_MAX_AGE_SECS: u64 = 7 * 24 * 60 * 60;
+/// A WINDOW rather than an age: it bounds the directory by the only thing anyone can predict from
+/// outside it. An age policy leaves the size depending on how busy you were — an idle week keeps
+/// nothing, a `baseline --kit` afternoon keeps hundreds — so "how much disk is this" has no answer
+/// until you look.
+///
+/// # The one interaction to know about: a burst larger than the window eats its own early frames
+///
+/// `bsc shot frame --frames N` writes N PNGs through N separate captures, so with `--frames 20` and a
+/// window of 10, frames 1–10 are pruned by the time frame 20 lands. That is inherent to counting rather
+/// than aging, and it is pinned by a test rather than left to be discovered. Raise `$BSC_SHOT_KEEP`
+/// above the burst before running one.
+pub const DEFAULT_KEEP: usize = 10;
 
-/// The retention window, honouring `$BSC_SHOT_MAX_AGE_SECS`. `0` (or an unparseable value) disables the
-/// sweep — an operator who sets it to nonsense gets their files KEPT, never deleted on a typo.
-pub fn max_age_secs() -> Option<std::time::Duration> {
-    let secs = match std::env::var("BSC_SHOT_MAX_AGE_SECS") {
-        Ok(v) if !v.trim().is_empty() => v.trim().parse::<u64>().ok()?,
-        _ => DEFAULT_MAX_AGE_SECS,
+/// The window, honouring `$BSC_SHOT_KEEP`. `0` (or an unparseable value) disables pruning — an operator
+/// who sets it to nonsense gets their files KEPT, never a directory emptied on a typo.
+pub fn keep_count() -> Option<usize> {
+    let keep = match std::env::var("BSC_SHOT_KEEP") {
+        Ok(v) if !v.trim().is_empty() => v.trim().parse::<usize>().ok()?,
+        _ => DEFAULT_KEEP,
     };
-    (secs > 0).then(|| std::time::Duration::from_secs(secs))
+    (keep > 0).then_some(keep)
 }
 
-/// Remove captures in `shots` last modified longer than `max_age` before `now`. Returns how many went.
+/// Keep the newest `keep` captures in `shots` and remove the rest. Returns how many went.
 ///
 /// # What it will not touch, and why that is structural rather than a list
 ///
-/// It reads ONE directory level and skips everything that is not a regular `.png` file. So
-/// `<shots>/baselines/` — the named reference renders `bsc shot diff` compares against — survives
-/// because it is a DIRECTORY, not because it is on a deny-list that a later subdir would have to
-/// remember to join. A baseline is the one thing under this dir that is not regenerable on demand: eat
-/// it and every subsequent diff reports a plausible number about nothing, which is the silent-wrong
-/// answer this repo keeps paying for. The same shape protects any future subdir for free.
+/// It reads ONE directory level and considers only regular `.png` files. So `<shots>/baselines/` — the
+/// named reference renders `bsc shot diff` compares against — survives because it is a DIRECTORY, not
+/// because it is on a deny-list that a later subdir would have to remember to join. A baseline is the
+/// one thing under this dir that is not regenerable on demand: eat it and every subsequent diff reports
+/// a plausible number about nothing, which is the silent-wrong answer this repo keeps paying for. The
+/// same shape protects any future subdir for free.
+///
+/// # Ordering is total, so the kept set is not luck
+///
+/// Newest first by mtime, ties broken by filename DESCENDING. Ties are not hypothetical: a `--frames`
+/// burst can land several PNGs inside one filesystem timestamp tick, and its names are zero-padded and
+/// ascending (`-01`, `-02`, …), so the larger name is the later frame. Without the tiebreak, which
+/// frames survived a burst would vary run to run.
 ///
 /// # Fail-safe
 ///
-/// A missing dir, an unreadable entry, a file that vanishes mid-sweep or one held open by another
-/// process is SKIPPED, never propagated: this runs beside a capture, and a janitor that could fail a
-/// capture would be worse than the disk it saves.
-pub fn sweep_captures(shots: &std::path::Path, now: std::time::SystemTime, max_age: std::time::Duration) -> usize {
+/// A missing dir, or an entry whose metadata cannot be read, is SKIPPED — an unreadable file is never
+/// deleted and never counts toward the window, because the safe reading of "I cannot tell how old this
+/// is" is to leave it alone. A file that vanishes mid-prune, or is held open elsewhere, is likewise not
+/// an error: this runs beside a capture, and a janitor that could fail the capture it rides along with
+/// would cost more than the disk it reclaims.
+/// One capture the prune is weighing: when it was written, what it is called, where it is.
+type Capture = (std::time::SystemTime, std::ffi::OsString, std::path::PathBuf);
+
+/// Order captures newest-first, ties inside one filesystem timestamp tick broken by filename DESCENDING.
+///
+/// Split out of [`prune_captures`] because it is the half that can be WRONG SILENTLY and cannot be
+/// probed through the directory: `read_dir` yields in filesystem order, so a test driving the whole
+/// prune cannot tell a real tiebreak from a stable sort that happened to see the files in a convenient
+/// order. Given a deliberately shuffled slice, this can.
+fn newest_first(captures: &mut [Capture]) {
+    captures.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+}
+
+pub fn prune_captures(shots: &std::path::Path, keep: usize) -> usize {
     let Ok(entries) = std::fs::read_dir(shots) else { return 0 };
-    let mut removed = 0;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        // `file_type` here does not follow symlinks, so a link into a tree of real work is skipped too.
-        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-            continue;
-        }
-        if path.extension().and_then(|e| e.to_str()).map(|e| !e.eq_ignore_ascii_case("png")).unwrap_or(true) {
-            continue;
-        }
-        let aged = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|m| now.duration_since(m).ok())
-            .map(|age| age > max_age)
-            .unwrap_or(false);
-        if aged && std::fs::remove_file(&path).is_ok() {
-            removed += 1;
-        }
+
+    let mut captures: Vec<Capture> = entries
+        .flatten()
+        .filter(|e| {
+            // `file_type` does not follow symlinks, so a link into a tree of real work is skipped too.
+            e.file_type().map(|t| t.is_file()).unwrap_or(false)
+                && e.path().extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("png"))
+        })
+        .filter_map(|e| {
+            let modified = e.metadata().and_then(|m| m.modified()).ok()?;
+            Some((modified, e.file_name(), e.path()))
+        })
+        .collect();
+
+    if captures.len() <= keep {
+        return 0;
     }
-    removed
+
+    newest_first(&mut captures);
+
+    captures[keep..].iter().filter(|(_, _, path)| std::fs::remove_file(path).is_ok()).count()
 }
 
 #[cfg(test)]
@@ -199,85 +227,137 @@ mod tests {
         assert_eq!(resolve_out(Some(abs), shots, "abc"), std::path::PathBuf::from(abs), "absolute ⇒ as-is");
     }
 
+    /// A helper writing a capture with a chosen mtime, so the window is tested against a KNOWN order
+    /// rather than whatever the filesystem clock did during the test.
+    #[cfg(test)]
+    fn write_capture(dir: &std::path::Path, name: &str, tick: u64) -> std::path::PathBuf {
+        let p = dir.join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, PNG_MAGIC).unwrap();
+        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000 + tick);
+        filetime::set_file_mtime(&p, filetime::FileTime::from_system_time(t)).unwrap();
+        p
+    }
+
     #[test]
-    fn the_sweep_takes_aged_captures_and_leaves_fresh_ones() {
+    fn the_window_keeps_the_newest_and_drops_the_rest() {
         let dir = tempfile::tempdir().unwrap();
-        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
-        let max_age = std::time::Duration::from_secs(100);
+        let files: Vec<_> = (0..15).map(|n| write_capture(dir.path(), &format!("shot-{n:02}.png"), n)).collect();
 
-        let write_at = |name: &str, secs_ago: u64| {
-            let p = dir.path().join(name);
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(&p, PNG_MAGIC).unwrap();
-            let t = now - std::time::Duration::from_secs(secs_ago);
-            filetime::set_file_mtime(&p, filetime::FileTime::from_system_time(t)).unwrap();
-            p
-        };
+        assert_eq!(prune_captures(dir.path(), 10), 5, "15 captures, window 10 ⇒ the oldest 5 go");
+        for (n, f) in files.iter().enumerate() {
+            assert_eq!(f.exists(), n >= 5, "shot-{n:02}.png: kept iff it is in the newest 10");
+        }
 
-        let aged = write_at("old.png", 500);
-        let fresh = write_at("new.png", 10);
-        // Exactly at the boundary is KEPT — the comparison is strictly greater-than, so a file is never
-        // removed on the same tick it becomes eligible.
-        let boundary = write_at("boundary.png", 100);
+        // Idempotent: at the window, a second prune is a no-op rather than eating another slice.
+        assert_eq!(prune_captures(dir.path(), 10), 0);
+    }
 
-        assert_eq!(sweep_captures(dir.path(), now, max_age), 1, "only the aged capture goes");
-        assert!(!aged.exists(), "the aged capture was removed");
-        assert!(fresh.exists() && boundary.exists(), "a fresh capture and the boundary case survive");
+    #[test]
+    fn a_directory_under_the_window_is_left_entirely_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let files: Vec<_> = (0..3).map(|n| write_capture(dir.path(), &format!("s-{n}.png"), n)).collect();
+        assert_eq!(prune_captures(dir.path(), 10), 0, "3 captures, window 10 ⇒ nothing to do");
+        assert!(files.iter().all(|f| f.exists()));
+    }
+
+    /// The ordering, driven directly — see [`newest_first`] for why this cannot go through the
+    /// directory. The input is deliberately SHUFFLED relative to both keys, so a sort missing either
+    /// half lands in the wrong order rather than being carried by luck.
+    #[test]
+    fn the_order_is_newest_first_then_filename_descending() {
+        let at = |t: u64| std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(t);
+        let cap = |t: u64, n: &str| (at(t), std::ffi::OsString::from(n), std::path::PathBuf::from(n));
+
+        // Three share tick 100; the fourth is older. Presented oldest-first and name-ascending — the
+        // exact reverse of the answer — so neither key can be satisfied by leaving the input alone.
+        let mut caps = vec![cap(50, "old.png"), cap(100, "burst-01.png"), cap(100, "burst-02.png"), cap(100, "burst-03.png")];
+        newest_first(&mut caps);
+
+        let order: Vec<_> = caps.iter().map(|(_, n, _)| n.to_str().unwrap()).collect();
+        assert_eq!(order, ["burst-03.png", "burst-02.png", "burst-01.png", "old.png"]);
+    }
+
+    /// A `--frames` burst can land several PNGs inside one filesystem timestamp tick, and its names are
+    /// zero-padded and ascending, so the later frames must be the ones that survive.
+    #[test]
+    fn captures_sharing_a_timestamp_keep_the_later_frames() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = ["burst-01.png", "burst-02.png", "burst-03.png", "burst-04.png"];
+        let files: Vec<_> = names.iter().map(|n| write_capture(dir.path(), n, 0)).collect();
+
+        assert_eq!(prune_captures(dir.path(), 2), 2);
+        assert!(!files[0].exists() && !files[1].exists(), "the earlier frames go");
+        assert!(files[2].exists() && files[3].exists(), "the later frames stay");
+    }
+
+    /// THE CONSEQUENCE OF COUNTING RATHER THAN AGING, pinned so it is documented behaviour and not a
+    /// surprise: a `--frames N` burst larger than the window prunes its OWN early frames as it runs,
+    /// because each frame is a separate capture. Raise `$BSC_SHOT_KEEP` above the burst first.
+    #[test]
+    fn a_burst_longer_than_the_window_loses_its_own_early_frames() {
+        let dir = tempfile::tempdir().unwrap();
+        let keep = 10;
+        let mut frames = Vec::new();
+        for n in 0..20u64 {
+            frames.push(write_capture(dir.path(), &format!("burst-{n:02}.png"), n));
+            prune_captures(dir.path(), keep); // what capture() does after each write
+        }
+        assert_eq!(frames.iter().filter(|f| f.exists()).count(), keep);
+        assert!(!frames[0].exists(), "frame 00 did not survive a 20-frame burst through a 10 window");
+        assert!(frames[19].exists(), "the most recent frame always survives");
     }
 
     /// The guard that matters most. `<shots>/baselines/` is the named reference set `bsc shot diff`
     /// compares against — the one thing here that is not regenerable on demand. It survives because the
-    /// sweep reads a single directory level, so no future subdir has to remember to join a deny-list.
+    /// prune reads a single directory level, so no future subdir has to remember to join a deny-list.
     #[test]
-    fn the_sweep_never_descends_into_baselines_however_aged() {
+    fn the_window_never_descends_into_baselines_however_full_the_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
-        let ancient = now - std::time::Duration::from_secs(999_999);
+        for n in 0..15 {
+            write_capture(dir.path(), &format!("shot-{n:02}.png"), n as u64);
+        }
+        // Baselines are the OLDEST things here — an age sweep or a flat walk would take them first.
+        let baseline = write_capture(dir.path(), "baselines/listitemcard.png", 0);
+        let other = write_capture(dir.path(), "baselines/api-builder.png", 0);
 
-        let baseline = dir.path().join("baselines").join("listitemcard.png");
-        std::fs::create_dir_all(baseline.parent().unwrap()).unwrap();
-        std::fs::write(&baseline, PNG_MAGIC).unwrap();
-        filetime::set_file_mtime(&baseline, filetime::FileTime::from_system_time(ancient)).unwrap();
-
-        // …and a non-PNG at the top level is left alone too: the sweep owns captures, not the directory.
+        // …and a non-PNG at the top level: the prune owns captures, not the directory.
         let notes = dir.path().join("notes.txt");
         std::fs::write(&notes, b"keep me").unwrap();
-        filetime::set_file_mtime(&notes, filetime::FileTime::from_system_time(ancient)).unwrap();
 
-        assert_eq!(sweep_captures(dir.path(), now, std::time::Duration::from_secs(1)), 0);
-        assert!(baseline.exists(), "a baseline is never swept, at any age");
-        assert!(notes.exists(), "a non-PNG is never swept");
+        assert_eq!(prune_captures(dir.path(), 10), 5, "only top-level captures are counted and pruned");
+        assert!(baseline.exists() && other.exists(), "a baseline is never pruned, however full the dir");
+        assert!(notes.exists(), "a non-PNG is never pruned");
     }
 
     #[test]
-    fn the_sweep_is_fail_safe_on_a_missing_dir() {
+    fn the_prune_is_fail_safe_on_a_missing_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let gone = dir.path().join("not-here");
-        assert_eq!(sweep_captures(&gone, std::time::SystemTime::now(), std::time::Duration::from_secs(1)), 0);
+        assert_eq!(prune_captures(&dir.path().join("not-here"), 1), 0);
     }
 
     #[test]
-    fn a_zero_or_junk_retention_disables_the_sweep_rather_than_deleting_everything() {
+    fn a_zero_or_junk_window_disables_pruning_rather_than_emptying_the_dir() {
         // Serialized against the other env-touching tests in this crate; nextest also gives each test
         // its own process, but `cargo test` threads them inside one binary.
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let restore = std::env::var("BSC_SHOT_MAX_AGE_SECS").ok();
+        let restore = std::env::var("BSC_SHOT_KEEP").ok();
 
-        std::env::set_var("BSC_SHOT_MAX_AGE_SECS", "0");
-        assert_eq!(max_age_secs(), None, "0 disables the sweep");
+        std::env::set_var("BSC_SHOT_KEEP", "0");
+        assert_eq!(keep_count(), None, "0 disables pruning — it does NOT mean keep nothing");
 
-        std::env::set_var("BSC_SHOT_MAX_AGE_SECS", "not-a-number");
-        assert_eq!(max_age_secs(), None, "a typo KEEPS files — it must never fall back to deleting");
+        std::env::set_var("BSC_SHOT_KEEP", "not-a-number");
+        assert_eq!(keep_count(), None, "a typo KEEPS files — it must never fall back to deleting");
 
-        std::env::set_var("BSC_SHOT_MAX_AGE_SECS", "3600");
-        assert_eq!(max_age_secs(), Some(std::time::Duration::from_secs(3600)));
+        std::env::set_var("BSC_SHOT_KEEP", "50");
+        assert_eq!(keep_count(), Some(50), "raised above a burst, as the docs tell you to");
 
-        std::env::remove_var("BSC_SHOT_MAX_AGE_SECS");
-        assert_eq!(max_age_secs(), Some(std::time::Duration::from_secs(DEFAULT_MAX_AGE_SECS)));
+        std::env::remove_var("BSC_SHOT_KEEP");
+        assert_eq!(keep_count(), Some(DEFAULT_KEEP));
 
         match restore {
-            Some(v) => std::env::set_var("BSC_SHOT_MAX_AGE_SECS", v),
-            None => std::env::remove_var("BSC_SHOT_MAX_AGE_SECS"),
+            Some(v) => std::env::set_var("BSC_SHOT_KEEP", v),
+            None => std::env::remove_var("BSC_SHOT_KEEP"),
         }
     }
 
