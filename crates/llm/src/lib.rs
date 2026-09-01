@@ -5,6 +5,7 @@
 //! shape, so llm_complete's consumers (`oneShotComplete`, `gradeLLM`) are unchanged
 //! across providers. This is the same provider abstraction `bsc-agent` will reuse.
 
+pub mod ratelimit;
 mod anthropic;
 mod gemini;
 mod local;
@@ -213,25 +214,49 @@ pub(crate) async fn post_json(
     headers: &[(&str, String)],
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let client = build_client()?;
+    post_json_metered(url, headers, body).await.1
+}
+
+/// [`post_json`] that also reports the provider's rate-limit position.
+///
+/// **The snapshot sits OUTSIDE the `Result` on purpose.** A non-2xx is where `Retry-After` lives, so
+/// a signature that could only report headroom on success would discard it at the one moment it is
+/// most actionable. `post_json` is the thin wrapper for callers with nothing to do with it.
+///
+/// The headers are cloned BEFORE `response.json()` consumes the response — the single line whose
+/// absence made every rate-limit header in this crate unreadable.
+pub(crate) async fn post_json_metered(
+    url: &str,
+    headers: &[(&str, String)],
+    body: &serde_json::Value,
+) -> (crate::ratelimit::RateLimits, Result<serde_json::Value, String>) {
+    let none = crate::ratelimit::RateLimits::default();
+    let client = match build_client() {
+        Ok(c) => c,
+        Err(e) => return (none, Err(e)),
+    };
     let mut builder = client.post(url);
     for (name, value) in headers {
         builder = builder.header(*name, value);
     }
-    let response = builder
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let response = match builder.json(body).send().await {
+        Ok(r) => r,
+        // A transport failure never reached a server, so there is no headroom to report — and an
+        // EMPTY snapshot is the honest answer, not a zeroed one.
+        Err(e) => return (none, Err(format!("Request failed: {}", e))),
+    };
     let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let limits = crate::ratelimit::from_header_map(response.headers());
+    crate::ratelimit::observe(url, status.as_u16(), &limits);
+
+    let json: serde_json::Value = match response.json().await {
+        Ok(j) => j,
+        Err(e) => return (limits, Err(format!("Failed to parse response: {}", e))),
+    };
     if !status.is_success() {
-        return Err(format_api_error(status, &json));
+        return (limits, Err(format_api_error(status, &json)));
     }
-    Ok(json)
+    (limits, Ok(json))
 }
 
 /// Issue a GET and return the parsed JSON body — same timeouts + error-string formats as [`post_json`]

@@ -45,6 +45,12 @@ impl Drop for MockServer {
 /// Spin up a [`MockServer`] on an ephemeral port. `status` is the HTTP status line tail
 /// (e.g. `"200 OK"`, `"429 Too Many Requests"`); `body` is the canned JSON response.
 fn mock(status: &'static str, body: &'static str) -> MockServer {
+    mock_with_headers(status, "", body)
+}
+
+/// [`mock`] plus `extra` raw header lines (each `"Name: value\r\n"`), so a test can serve the
+/// rate-limit headers a real provider sends. Those headers are the thing `post_json` used to discard.
+fn mock_with_headers(status: &'static str, extra: &'static str, body: &'static str) -> MockServer {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -88,7 +94,7 @@ fn mock(status: &'static str, body: &'static str) -> MockServer {
                     }
                     let _ = write!(
                         s,
-                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
                         body.len(),
                         body
                     );
@@ -283,4 +289,117 @@ async fn connection_failure_yields_request_failed_and_is_transient() {
     let err = provider.turn(&sample_turn(), "").await.unwrap_err();
     assert!(err.starts_with("Request failed:"), "expected transport-failure shape, got: {err}");
     assert!(is_transient_error(&err));
+}
+
+
+// ── The rate-limit headers survive the body read ─────────────────────────────────────────────
+
+/// Real Anthropic rate-limit headers, as raw response lines.
+const RL_HEADERS: &str = "anthropic-ratelimit-requests-limit: 1000\r\n\
+anthropic-ratelimit-requests-remaining: 942\r\n\
+anthropic-ratelimit-requests-reset: 2026-09-01T17:00:00Z\r\n\
+anthropic-ratelimit-tokens-limit: 80000\r\n\
+anthropic-ratelimit-tokens-remaining: 8000\r\n";
+
+/// Records every snapshot the crate reports, for the observer assertions below.
+///
+/// **The URL is kept because the observer is PROCESS-WIDE.** Under `cargo test` the whole crate's
+/// tests share one process and run in parallel, so this sink also catches its neighbours' responses
+/// — the first draft asserted on "the 429" and picked up `anthropic_error_statuses_match_contract`'s
+/// 429, which sends no `Retry-After`, and failed. It passed under `cargo nextest`, which gives each
+/// test its own process, so the gate would never have shown it. Filtering by URL makes the assertion
+/// independent of whoever else is running.
+#[derive(Default)]
+struct Sink(std::sync::Mutex<Vec<(String, u16, crate::ratelimit::RateLimits)>>);
+impl crate::ratelimit::RateLimitObserver for Sink {
+    fn observe(&self, url: &str, status: u16, limits: &crate::ratelimit::RateLimits) {
+        self.0.lock().unwrap().push((url.to_string(), status, limits.clone()));
+    }
+}
+
+/// THE TEST THAT WOULD HAVE CAUGHT IT.
+///
+/// `post_json` called `response.json()`, which CONSUMES the response — so every rate-limit header
+/// was unreachable by construction, and no unit test on a parser could ever have seen it. This drives
+/// a real socket and asserts the headers reach the caller with the body intact.
+#[tokio::test]
+async fn a_successful_response_reports_its_rate_limit_position() {
+    let srv = mock_with_headers("200 OK", RL_HEADERS, r#"{"content":[],"usage":{}}"#);
+    let (limits, result) =
+        super::post_json_metered(&format!("{}/v1/messages", srv.base), &[], &serde_json::json!({}))
+            .await;
+
+    assert!(result.is_ok(), "the body still parses: {result:?}");
+    assert_eq!(limits.requests_remaining, Some(942));
+    assert_eq!(limits.tokens_remaining, Some(8000));
+    assert_eq!(limits.requests_reset.as_deref(), Some("2026-09-01T17:00:00Z"));
+    // tokens 8000/80000 = 0.10 binds over requests 942/1000 = 0.942.
+    assert_eq!(limits.headroom_fraction(), Some(0.1));
+}
+
+/// The snapshot sits OUTSIDE the `Result`, so a 429 still reports — and this is the case where
+/// `Retry-After` lives, which is the whole reason the signature is shaped that way.
+#[tokio::test]
+async fn a_429_still_reports_its_position_and_retry_after() {
+    let srv = mock_with_headers(
+        "429 Too Many Requests",
+        "retry-after: 17\r\nanthropic-ratelimit-requests-remaining: 0\r\n",
+        ERROR_BODY,
+    );
+    let (limits, result) =
+        super::post_json_metered(&format!("{}/v1/messages", srv.base), &[], &serde_json::json!({}))
+            .await;
+
+    let err = result.unwrap_err();
+    assert!(is_transient_error(&err), "still classified transient: {err}");
+    assert_eq!(limits.retry_after_secs, Some(17), "the server's own instruction survives the error");
+    assert_eq!(limits.requests_remaining, Some(0));
+    assert!(!limits.is_empty());
+}
+
+/// A provider that sends no rate-limit headers must read as UNKNOWN, not as exhausted. Ollama and a
+/// local llama-server send none, and a zero here would make every local model look rate-limited.
+#[tokio::test]
+async fn a_provider_that_sends_no_headers_reads_as_unknown_not_exhausted() {
+    let srv = mock("200 OK", r#"{"choices":[]}"#);
+    let (limits, result) =
+        super::post_json_metered(&format!("{}/v1/chat", srv.base), &[], &serde_json::json!({})).await;
+    assert!(result.is_ok());
+    assert!(limits.is_empty(), "nothing reported");
+    assert_eq!(limits.requests_remaining, None, "absent — NOT Some(0)");
+}
+
+/// A transport failure never reached a server, so there is no position to report.
+#[tokio::test]
+async fn a_transport_failure_reports_an_empty_snapshot_not_a_zeroed_one() {
+    let (limits, result) =
+        super::post_json_metered("http://127.0.0.1:1/v1", &[], &serde_json::json!({})).await;
+    let err = result.unwrap_err();
+    assert!(err.starts_with("Request failed:"));
+    assert!(limits.is_empty(), "no server was reached, so nothing is known");
+    assert_eq!(limits.requests_remaining, None);
+}
+
+/// The observer sees EVERY response — which is what covers the error path while
+/// `LlmProvider::turn` still returns a plain `Result`.
+#[tokio::test]
+async fn the_observer_sees_both_the_success_and_the_error() {
+    let sink = std::sync::Arc::new(Sink::default());
+    let prev = crate::ratelimit::set_rate_limit_observer(Some(sink.clone()));
+
+    let ok = mock_with_headers("200 OK", RL_HEADERS, r#"{"content":[]}"#);
+    let _ = super::post_json_metered(&ok.base, &[], &serde_json::json!({})).await;
+    let bad = mock_with_headers("429 Too Many Requests", "retry-after: 9\r\n", ERROR_BODY);
+    let _ = super::post_json_metered(&bad.base, &[], &serde_json::json!({})).await;
+
+    crate::ratelimit::set_rate_limit_observer(prev);
+
+    let seen = sink.0.lock().unwrap();
+    let mine = |base: &str, want: u16| {
+        seen.iter().find(|(u, s, _)| u.starts_with(base) && *s == want)
+    };
+    let good = mine(&ok.base, 200).expect("the 200 from THIS test reached the sink");
+    assert_eq!(good.2.requests_remaining, Some(942));
+    let limited = mine(&bad.base, 429).expect("the 429 from THIS test reached the sink");
+    assert_eq!(limited.2.retry_after_secs, Some(9), "the error path reports the server's wait");
 }
