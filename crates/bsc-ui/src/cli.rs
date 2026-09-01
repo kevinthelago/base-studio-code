@@ -2614,10 +2614,10 @@ fn cmd_diff(args: &[String]) -> Result<(), String> {
         &file_src,
     );
 
-    let r_code = crate::record_source::code_only(&body);
-    let f_code = crate::record_source::code_only(&file_src);
-    let r_lines: Vec<&str> = r_code.split('\n').collect();
-    let f_lines: Vec<&str> = f_code.split('\n').collect();
+    // THE DIFF ITSELF lives in `crate::body_diff`, so the rule is testable: this verb prints with
+    // `println!`, which the in-process harness cannot capture, and a display bug only ever read by eye
+    // is exactly how the collapsed-newline one survived.
+    let d = crate::body_diff::body_diff(&body, &file_src);
 
     let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or("");
     let provides = rec.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim();
@@ -2625,15 +2625,10 @@ fn cmd_diff(args: &[String]) -> Result<(), String> {
         "{id}  ({})",
         if provides.is_empty() { "no provides".to_string() } else { format!("provides {provides}") }
     );
-    println!("record {} lines / file {} lines\n", r_lines.len(), f_lines.len());
+    println!("record {} lines / file {} lines\n", d.record_lines, d.file_lines);
 
     // A LINE-SET DIFF, NOT AN LCS — see the verb's help for why.
-    let set = |v: &[&str]| -> std::collections::BTreeSet<String> {
-        v.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
-    };
-    let (set_r, set_f) = (set(&r_lines), set(&f_lines));
-    let only_record: Vec<&String> = set_r.iter().filter(|l| !set_f.contains(*l)).collect();
-    let only_file: Vec<&String> = set_f.iter().filter(|l| !set_r.contains(*l)).collect();
+    let (only_record, only_file) = (&d.only_record, &d.only_file);
     let cap = if full { usize::MAX } else { 25 };
 
     println!("ONLY IN THE RECORD ({}):", only_record.len());
@@ -2657,8 +2652,17 @@ fn cmd_diff(args: &[String]) -> Result<(), String> {
     // Uses the SHARED `exported_names`. The script this replaces once had its own regex, and it
     // disagreed on `export type { A, B } from "…"` — reporting NetworkPage's record as declaring four
     // exports its file "lacked", when the file re-exports two of them on one line.
-    let (e_r, e_f) =
-        (crate::record_source::exported_names(&r_code), crate::record_source::exported_names(&f_code));
+    //
+    // FED THE NORMALIZED SOURCE, NOT THE COLLAPSED ONE. `exported_names` scans LINE BY LINE for a leading
+    // `export`, so a newline-free string yields at most the FIRST export: measured, `code_only` of three
+    // exports returns {"a"} where the truth is {"a","b","c"}. This half is the decisive one for a
+    // retirement, and it was reporting `(none)` for every multi-export module — not because nothing is
+    // dropped but because it could never see past the first. Every other caller (`refresh-seed`,
+    // `impl refresh`) already passes normalized source; this was the outlier.
+    let (e_r, e_f) = (
+        crate::record_source::exported_names(&body),
+        crate::record_source::exported_names(&file_src),
+    );
     let (Some(e_r), Some(e_f)) = (e_r, e_f) else {
         println!("\nEXPORTS: one side uses `export * from`, so the comparison is UNKNOWN, not clean.");
         return Ok(());

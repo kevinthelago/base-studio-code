@@ -35,6 +35,7 @@ pub mod claim_census;
 pub use bsc_record::record_source;
 pub mod retirable;
 pub mod backing_reconcile;
+pub mod body_diff;
 pub mod graph_closure;
 pub mod lift;
 pub mod promote;
