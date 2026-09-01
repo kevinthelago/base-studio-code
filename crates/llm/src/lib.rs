@@ -22,6 +22,7 @@ mod http_it;
 
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
+pub mod routing;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
 pub use ollama::{
     detect_ollama_profile, list_models, model_is_installed, model_not_installed_error, OllamaProfile,
