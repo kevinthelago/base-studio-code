@@ -15,12 +15,13 @@
 //! | `from` in string  | ignored            | **FALSE POSITIVE**                   | ignored                               |
 //!
 //! `import_specifiers` WAS a raw keyword-SUBSTRING scan, so prose and string literals read as imports and
-//! type-only imports the bundler erases were counted; slice 2 pointed emit here and DELETED it, so the
-//! third column above is history. `internal_imports` is tree-sitter and clean but walks
-//! only `import_statement`, so every re-export is invisible — the exact gap the TypeScript names as
-//! having shipped `projectspage` broken (#3874). Both were on LIVE paths: emit resolved a component's
-//! closure from the first (fixed — `emit-vendors-a-closure-from-a-substring-scan`), harvest still computes
-//! its buildability verdict from the second.
+//! type-only imports the bundler erases were counted. `internal_imports` WAS tree-sitter and clean but
+//! walked only `import_statement`, so every re-export was invisible — the exact gap the TypeScript names
+//! as having shipped `projectspage` broken (#3874).
+//!
+//! BOTH COLUMNS ARE NOW HISTORY. Slice 2 deleted `import_specifiers` and pointed emit's closure walk
+//! here; slice 3 made `internal_imports` a projection of [`scan_imports_all`]. Neither was fixed in
+//! place, because two implementations of one question is what let them disagree for as long as they did.
 //!
 //! # What "right" means here, precisely
 //!
@@ -54,8 +55,28 @@ use tree_sitter::{Language, Node, Parser};
 pub struct ImportRef {
     pub specifier: String,
     /// Imported names as written on the MODULE's side (`{ a as b }` → `a`). A namespace import is `*`,
-    /// a default import is `default`, and a bare side-effect import has none.
+    /// a default import is `default`, and a bare side-effect import has none. This is the field the
+    /// generated fixture binds, so it means exactly what the TypeScript's `parseImports` means.
     pub symbols: Vec<String>,
+    /// The names a consumer should match against a set of KNOWN COMPONENTS — [`symbols`], except that a
+    /// default import contributes the LOCAL binding (`import Button from "./Button"` → `Button`, not
+    /// `default`) and a namespace import contributes nothing.
+    ///
+    /// It exists because "which module does this require" and "which component does this reference" are
+    /// different questions off the same parse, and harvest asks the second to build its `composes` edges.
+    /// Without it a default-imported sibling would silently stop being an edge, since `default` matches no
+    /// component name — a regression invisible to the buildability count this slice is measured by.
+    /// Namespace imports contribute nothing because harvest has always treated `import * as N` as opaque:
+    /// `N.Thing` is a member expression, not a binding it can resolve.
+    pub locals: Vec<String>,
+    /// Syntactically type-only (`import type …`, or a clause whose every binding carries the inline
+    /// `type` modifier), and therefore ERASED before anything resolves.
+    ///
+    /// [`scan_imports`] never returns one. [`scan_imports_all`] returns it flagged, for the caller that
+    /// must still SEE it — harvest reports a type-only import of a sibling as a composition edge while
+    /// exempting it from blocking the closure, because the graph's edges describe the source and
+    /// buildability describes the bundle (#4076).
+    pub type_only: bool,
 }
 
 /// Every module specifier `source` will `require()` at runtime, in SOURCE order.
@@ -65,6 +86,16 @@ pub struct ImportRef {
 /// error-tolerant, so this is close to unreachable in practice: a syntactically broken file still
 /// yields a tree, and the imports it *can* see are still reported.)
 pub fn scan_imports(source: &str) -> Vec<ImportRef> {
+    scan_imports_all(source).into_iter().filter(|i| !i.type_only).collect()
+}
+
+/// Every module specifier `source` NAMES, including the syntactically type-only ones the bundler erases,
+/// each flagged by [`ImportRef::type_only`].
+///
+/// [`scan_imports`] is this filtered, and is what a caller asking "what does the compiled module
+/// require" wants. This form is for the caller that must also see what the SOURCE says — harvest, whose
+/// `composes` edges describe the source while its buildability verdict describes the bundle.
+pub fn scan_imports_all(source: &str) -> Vec<ImportRef> {
     let mut parser = Parser::new();
     let language: Language = tree_sitter_typescript::LANGUAGE_TSX.into();
     if parser.set_language(&language).is_err() {
@@ -113,28 +144,25 @@ fn walk(node: Node, src: &[u8], out: &mut Vec<ImportRef>) {
     }
 }
 
-/// `import … from "x"` / `import "x"`. `None` when the import is syntactically type-only.
+/// `import … from "x"` / `import "x"`. A syntactically type-only import is returned FLAGGED, not
+/// dropped — [`scan_imports`] filters it out, so its contract is unchanged.
 fn import_statement(node: Node, src: &[u8]) -> Option<ImportRef> {
     let specifier = source_text(node, src)?;
-    if is_type_only(node, src) {
-        return None;
-    }
-    let mut symbols = Vec::new();
+    let type_only = is_type_only(node, src);
+    let (mut symbols, mut locals) = (Vec::new(), Vec::new());
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "import_clause" {
-            clause_symbols(child, src, &mut symbols);
+            clause_symbols(child, src, &mut symbols, &mut locals);
         }
     }
-    Some(ImportRef { specifier, symbols })
+    Some(ImportRef { specifier, symbols, locals, type_only })
 }
 
 /// `export { X } from "y"` / `export * from "y"` / `export * as ns from "y"`. `None` when type-only.
 fn export_statement(node: Node, src: &[u8]) -> Option<ImportRef> {
     let specifier = source_text(node, src)?;
-    if is_type_only(node, src) {
-        return None;
-    }
+    let type_only = is_type_only(node, src);
     let mut symbols = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -146,7 +174,10 @@ fn export_statement(node: Node, src: &[u8]) -> Option<ImportRef> {
             _ => {}
         }
     }
-    Some(ImportRef { specifier, symbols })
+    // A re-export binds nothing locally, so the module-side names ARE the reference set: `export { Row }
+    // from "./Row"` references `Row` exactly as an import of it would.
+    let locals = symbols.iter().filter(|s| *s != "*").cloned().collect();
+    Some(ImportRef { specifier, symbols, locals, type_only })
 }
 
 /// `import("x")` with a literal specifier. A computed one (`import(name)`) is unknowable statically and
@@ -160,7 +191,12 @@ fn dynamic_import(node: Node, src: &[u8]) -> Option<ImportRef> {
     let mut cursor = args.walk();
     for child in args.children(&mut cursor) {
         if child.kind() == "string" {
-            return Some(ImportRef { specifier: unquote(child.utf8_text(src).ok()?), symbols: Vec::new() });
+            return Some(ImportRef {
+                specifier: unquote(child.utf8_text(src).ok()?),
+                symbols: Vec::new(),
+                locals: Vec::new(),
+                type_only: false,
+            });
         }
     }
     None
@@ -217,15 +253,28 @@ fn is_type_only(node: Node, src: &[u8]) -> bool {
     any
 }
 
-/// The names an `import_clause` binds: a default import contributes `default`, a namespace import `*`,
-/// and a named list contributes each binding's module-side name.
-fn clause_symbols(clause: Node, src: &[u8], out: &mut Vec<String>) {
+/// The names an `import_clause` binds, on both sides at once: `out` takes the MODULE-side name (a
+/// default import contributes `default`, a namespace import `*`, a named list each binding's exported
+/// name), and `locals` takes what a consumer should match against known component names (the default
+/// import's LOCAL identifier, nothing for a namespace, and the same exported names for a named list).
+///
+/// One walk for both, because they are the same parse answering two questions — see [`ImportRef::locals`].
+fn clause_symbols(clause: Node, src: &[u8], out: &mut Vec<String>, locals: &mut Vec<String>) {
     let mut cursor = clause.walk();
     for child in clause.children(&mut cursor) {
         match child.kind() {
-            "identifier" => out.push("default".to_string()),
+            "identifier" => {
+                out.push("default".to_string());
+                if let Ok(t) = child.utf8_text(src) {
+                    locals.push(t.trim().to_string());
+                }
+            }
             "namespace_import" => out.push("*".to_string()),
-            "named_imports" => named_symbols(child, src, out),
+            "named_imports" => {
+                let before = out.len();
+                named_symbols(child, src, out);
+                locals.extend(out[before..].iter().cloned());
+            }
             _ => {}
         }
     }
@@ -287,21 +336,43 @@ mod tests {
         ),
     ];
 
-    fn parsed(case: &serde_json::Value) -> Vec<ImportRef> {
+    /// The TypeScript's answer for one case, as `(specifier, symbols)` pairs.
+    ///
+    /// PROJECTED, because those are the only two things `parseImports` reports and therefore the only two
+    /// the generated fixture can bind. `locals` and `type_only` are this scanner's own additions — asked
+    /// of the same parse for consumers the TypeScript never had — and are pinned by their own tests
+    /// below. Comparing whole `ImportRef`s would require inventing fixture values for fields the
+    /// TypeScript has no opinion about, which is how a parity test starts asserting its own assumptions.
+    fn parsed(case: &serde_json::Value) -> Vec<(String, Vec<String>)> {
         case["imports"]
             .as_array()
             .expect("imports")
             .iter()
-            .map(|i| ImportRef {
-                specifier: i["specifier"].as_str().unwrap().to_string(),
-                symbols: i["symbols"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|s| s.as_str().unwrap().to_string())
-                    .collect(),
+            .map(|i| {
+                (
+                    i["specifier"].as_str().unwrap().to_string(),
+                    i["symbols"].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect(),
+                )
             })
             .collect()
+    }
+
+    /// The same projection, taken off this scanner.
+    fn scanned(source: &str) -> Vec<(String, Vec<String>)> {
+        scan_imports(source).into_iter().map(|i| (i.specifier, i.symbols)).collect()
+    }
+
+    /// An expected `ImportRef` for the shapes asserted directly below: `locals` mirrors the module-side
+    /// symbols minus a namespace `*`, which is exactly what a named import and a re-export produce. A
+    /// DEFAULT import is the one shape this cannot express — its local binding is not `default` — and it
+    /// has its own test rather than a special case here.
+    fn iref(specifier: &str, symbols: &[&str]) -> ImportRef {
+        ImportRef {
+            specifier: specifier.to_string(),
+            symbols: symbols.iter().map(|s| (*s).to_string()).collect(),
+            locals: symbols.iter().filter(|s| **s != "*").map(|s| (*s).to_string()).collect(),
+            type_only: false,
+        }
     }
 
     /// Reports EVERY mismatch at once rather than dying on the first — when a port is wrong it is
@@ -321,7 +392,7 @@ mod tests {
             }
             checked += 1;
             let want = parsed(case);
-            let got = scan_imports(case["source"].as_str().unwrap());
+            let got = scanned(case["source"].as_str().unwrap());
             if got != want {
                 mismatches.push(format!("  {label}\n    ts   {want:?}\n    rust {got:?}"));
             }
@@ -352,7 +423,7 @@ mod tests {
                 .find(|c| c["label"].as_str() == Some(label))
                 .unwrap_or_else(|| panic!("no fixture case labelled {label:?} — the exemption is stale"));
             let ts = parsed(case);
-            let rust = scan_imports(case["source"].as_str().unwrap());
+            let rust = scanned(case["source"].as_str().unwrap());
             assert_ne!(rust, ts, "{label}: expected to diverge ({why}) but the two now agree");
         }
     }
@@ -362,7 +433,7 @@ mod tests {
     #[test]
     fn the_divergences_give_the_right_answer_not_merely_a_different_one() {
         let dynamic = scan_imports("const m = await import(\"./lazy\");\n");
-        assert_eq!(dynamic, vec![ImportRef { specifier: "./lazy".into(), symbols: vec![] }]);
+        assert_eq!(dynamic, vec![iref("./lazy", &[])]);
 
         let ordered = scan_imports("import \"./a.css\";\nimport { B } from \"./b\";\n");
         assert_eq!(
@@ -380,12 +451,12 @@ mod tests {
         // harvest::internal_imports walks only `import_statement`, so both of these are invisible to it.
         assert_eq!(
             scan_imports("export { ProjectRow } from \"./published/ProjectRow\";\n"),
-            vec![ImportRef { specifier: "./published/ProjectRow".into(), symbols: vec!["ProjectRow".into()] }],
+            vec![iref("./published/ProjectRow", &["ProjectRow"])],
             "a re-export compiles to the same require an import does (#3874)"
         );
         assert_eq!(
             scan_imports("export * from \"./a\";\n"),
-            vec![ImportRef { specifier: "./a".into(), symbols: vec!["*".into()] }]
+            vec![iref("./a", &["*"])]
         );
 
         // All three of these were false positives in emit's old substring scan.
@@ -407,7 +478,7 @@ mod tests {
         assert!(scan_imports("import { type A, type B } from \"./ab\";\n").is_empty());
         assert_eq!(
             scan_imports("import { type A, b } from \"./ab\";\n"),
-            vec![ImportRef { specifier: "./ab".into(), symbols: vec!["A".into(), "b".into()] }],
+            vec![iref("./ab", &["A", "b"])],
             "one value binding keeps the whole import"
         );
         assert_eq!(
@@ -423,12 +494,59 @@ mod tests {
         );
     }
 
+    /// `locals` is what a consumer matches against KNOWN COMPONENT NAMES, and it differs from `symbols`
+    /// in exactly two shapes. Both matter to harvest's `composes` edges, and getting either wrong is
+    /// invisible to a buildability count — which is the number slice 3 is measured by.
+    #[test]
+    fn locals_report_the_binding_a_consumer_can_match_not_the_module_side_name() {
+        let one = |src: &str| scan_imports(src).into_iter().next().expect("one import");
+
+        // A DEFAULT import: the module-side name is `default`, which matches no component. The local
+        // binding is the name the JSX actually renders.
+        let d = one("import Button from \"./Button\";\n");
+        assert_eq!(d.symbols, vec!["default"], "module side is unchanged — the fixture binds this");
+        assert_eq!(d.locals, vec!["Button"], "consumer side is the local binding");
+
+        // A NAMESPACE import is opaque: `N.Thing` is a member expression, not a resolvable binding.
+        let n = one("import * as N from \"./mod\";\n");
+        assert_eq!(n.symbols, vec!["*"]);
+        assert!(n.locals.is_empty(), "a namespace binding names no component");
+
+        // Everywhere else the two agree, including through an alias, where BOTH are the exported name.
+        let a = one("import { Row as R } from \"./Row\";\n");
+        assert_eq!(a.symbols, vec!["Row"]);
+        assert_eq!(a.locals, vec!["Row"]);
+
+        // A re-export binds nothing locally, so its module-side names are the reference set.
+        let e = one("export { Row } from \"./Row\";\n");
+        assert_eq!(e.locals, vec!["Row"], "a re-export references Row as surely as an import of it does");
+    }
+
+    /// `scan_imports_all` is the superset, and `scan_imports` is it filtered — asserted together so the
+    /// filtered form's contract cannot drift from the flagged one.
+    #[test]
+    fn scan_imports_all_reports_the_erased_imports_flagged_and_scan_imports_drops_them() {
+        let src = "import type { T } from \"./t\";\nimport { type A, type B } from \"./ab\";\nimport { X } from \"./x\";\n";
+        let all = scan_imports_all(src);
+        assert_eq!(
+            all.iter().map(|i| (i.specifier.as_str(), i.type_only)).collect::<Vec<_>>(),
+            vec![("./t", true), ("./ab", true), ("./x", false)],
+            "both erased spellings are SEEN and flagged — harvest reports them as composition edges (#4076)"
+        );
+        assert_eq!(
+            scan_imports(src).into_iter().map(|i| i.specifier).collect::<Vec<_>>(),
+            vec!["./x"],
+            "the filtered form is unchanged: only what the compiled module requires"
+        );
+        assert!(scan_imports_all("export type { T } from \"./t\";\n")[0].type_only, "a type-only re-export too");
+    }
+
     /// A dynamic import nested inside a function body — the reason the walk cannot stop at the root's
     /// children, and a shape a lazy-loaded page actually has.
     #[test]
     fn a_nested_dynamic_import_is_found_and_a_computed_one_is_not_guessed() {
         let nested = scan_imports("export function load() {\n  return import(\"./page\");\n}\n");
-        assert_eq!(nested, vec![ImportRef { specifier: "./page".into(), symbols: vec![] }]);
+        assert_eq!(nested, vec![iref("./page", &[])]);
         assert!(
             scan_imports("const n = \"x\";\nconst m = await import(n);\n").is_empty(),
             "a computed specifier is unknowable statically and is reported as nothing, never guessed"
@@ -498,37 +616,54 @@ mod existing_scanners {
         assert_eq!(specs("const m = await import(\"./lazy\");\n"), vec!["./lazy"], "dynamic: still seen");
     }
 
-    /// `harvest::internal_imports` is tree-sitter and therefore immune to the prose and string cases, but
-    /// it iterates only the root's `import_statement` children.
+    /// The three forms harvest used to be blind to, now stated as the answers it gives.
+    ///
+    /// THIS IS THE SAME TEST, UPDATED — not a new one, and not the old one deleted. It was written as a
+    /// characterization test asserting that `internal_imports` returned NOTHING for a re-export, an
+    /// export-star and a dynamic import, because it walked only the root's `import_statement` children.
+    /// Slice 3 made it a projection of `scan_imports_all`, so the three cases keep their place here and
+    /// their expectations flip. Reading the diff of this function IS the behaviour change.
+    ///
+    /// Why it mattered: esbuild compiles a re-export to the same `require()` an import produces, so a
+    /// component whose closure needed a re-exported sibling was certified `buildable: true` and then
+    /// could not load (#3874).
     #[test]
-    fn harvest_scanner_cannot_see_a_re_export_or_a_dynamic_import() {
+    fn harvest_now_sees_a_re_export_and_a_dynamic_import() {
         let specs = |src: &str| -> Vec<String> { internal_imports(src).into_iter().map(|i| i.spec).collect() };
 
-        assert!(
-            specs("export { ProjectRow } from \"./published/ProjectRow\";\n").is_empty(),
-            "DEFECT: a re-export compiles to the same require an import does, so a component whose \
-             closure needs a re-exported sibling is certified buildable when it is not (#3874)"
+        assert_eq!(
+            specs("export { ProjectRow } from \"./published/ProjectRow\";\n"),
+            vec!["./published/ProjectRow"],
+            "was [] — a re-export compiles to the same require an import does (#3874)"
         );
-        assert!(specs("export * from \"./a\";\n").is_empty(), "DEFECT: export-star is invisible too");
-        assert!(
-            specs("export function load() {\n  return import(\"./page\");\n}\n").is_empty(),
-            "DEFECT: a dynamic import is invisible — the walk stops at the root's children"
+        assert_eq!(specs("export * from \"./a\";\n"), vec!["./a"], "was [] — export-star too");
+        assert_eq!(
+            specs("export function load() {\n  return import(\"./page\");\n}\n"),
+            vec!["./page"],
+            "was [] — a dynamic import is an ordinary expression, so the walk cannot stop at the root"
         );
 
-        // Immune to the two cases that fool the substring scan, and correct on type-only.
+        // What it already got right, and what the flip had to PRESERVE: immune to the two cases that
+        // fooled the substring scan, and a type-only import still SEEN and flagged rather than dropped —
+        // it is exempt from blocking the closure, not exempt from being a composition edge (#4076).
         assert_eq!(specs("// lifted from \"./ghost\"\nimport { X } from \"./x\";\n"), vec!["./x"]);
-        assert!(internal_imports("import type { T } from \"./t\";\n")[0].type_only, "type-only: flagged");
+        assert!(internal_imports("import type { T } from \"./t\";\n")[0].type_only, "type-only: still flagged");
     }
 
-    /// The roll-up: on the eleven cases first measured, how many of the remaining scanners disagree with
-    /// the canonical one. This is the number slices 2 and 3 move, and pinning it means a partial flip
-    /// cannot be mistaken for a whole one.
+    /// The roll-up, at zero: on the eleven cases first measured, nothing disagrees with the canonical
+    /// scanner any more. Pinning the number through each slice is what kept a partial flip from being
+    /// mistaken for a whole one.
     ///
-    /// SLICE 2 MOVED IT FROM SEVEN TO THREE. Emit had four disagreements, all false positives, and it no
-    /// longer has a scanner of its own to disagree with — `import_specifiers` is deleted, so its column
-    /// is not zero, it is absent. What is left is harvest's three, all misses, which is slice 3.
+    /// SEVEN → THREE → ZERO. Slice 2 removed emit's four false positives by deleting its scanner
+    /// outright; slice 3 removed harvest's three misses by making `internal_imports` a projection of this
+    /// one. Neither column went to zero by being fixed in place — both went ABSENT, which is the only
+    /// ending that stops them drifting apart again.
+    ///
+    /// It stays as a REGRESSION test rather than being deleted with the defect it measured: harvest still
+    /// has a public `internal_imports` with its own shape (a `type_only` flag, internal-specifiers only),
+    /// so it remains possible for someone to reintroduce a walk there, and this is what would notice.
     #[test]
-    fn one_remaining_scanner_disagrees_with_the_canonical_one_on_three_of_eleven_cases() {
+    fn no_scanner_disagrees_with_the_canonical_one_on_any_of_the_eleven_cases() {
         const CASES: &[&str] = &[
             "export { ProjectRow } from \"./published/ProjectRow\";\n",
             "export * from \"./a\";\n",
@@ -554,19 +689,10 @@ mod existing_scanners {
                 harvest_differs += 1;
             }
         }
-        assert_eq!(harvest_differs, 3, "harvest disagrees on three — all misses");
+        assert_eq!(harvest_differs, 0, "harvest agrees on every case — it is now a projection of this scanner");
         // Emit's four and harvest's three overlapped nowhere, which is why the count was SEVEN of eleven
         // rather than six — the first pass of this arithmetic said six and this assertion caught it.
-        // With emit on the canonical scanner, the four are gone and the three that remain are harvest's.
-        let mut disagreeing = 0;
-        for src in CASES {
-            let canonical: Vec<String> = scan_imports(src).into_iter().map(|i| i.specifier).collect();
-            let harvested: Vec<String> =
-                internal_imports(src).into_iter().filter(|i| !i.type_only).map(|i| i.spec).collect();
-            if harvested != canonical {
-                disagreeing += 1;
-            }
-        }
-        assert_eq!(disagreeing, 3, "three of the eleven cases still have a scanner disagreeing — all harvest\'s");
+        // Both columns are gone now, so the total is zero by the same arithmetic.
+        assert_eq!(CASES.len(), 11, "the case set is the one the seven-of-eleven figure was measured over");
     }
 }

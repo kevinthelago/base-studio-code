@@ -505,126 +505,35 @@ impl InternalImport {
 }
 
 /// The internal (`@/…` alias OR relative `./`/`../`) imports of a module, with the names each binds.
-/// Parsed rather than line-scanned: a multi-line `import {\n  Button,\n} from "@/…";` has no line that
-/// both starts with `import ` and carries the specifier, so the line scan this replaced missed it
-/// entirely and silently called such a closure buildable.
 ///
-/// Relative imports USED to be skipped entirely here on the assumption that "the closure is built from
-/// ONE file, so it never emits one" — false in practice: the closure only inlines SAME-FILE helpers, so a
-/// component that genuinely imports a sibling MODULE via a relative path (`import { space } from
-/// "./space"`) keeps that import verbatim, and it was silently exempted from the buildability check —
-/// certifying `buildable: true` for a candidate `doctor`'s stricter, sibling-aware check then correctly
-/// flags `no-implementation` on (#4). Scanning `./`/`../` here too closes that gap.
+/// A PROJECTION of [`crate::import_scan::scan_imports_all`], not a scanner of its own. It used to walk
+/// the root's `import_statement` children directly, which made every re-export invisible:
+///
+///     export { ProjectRow } from "./published/ProjectRow";   -> []
+///     export * from "./a";                                   -> []
+///     export function load() { return import("./page"); }    -> []
+///
+/// esbuild compiles a re-export to the same `require()` an import produces, so a component whose closure
+/// needed a re-exported sibling was certified `buildable: true` and then could not load — the gap the
+/// TypeScript names as having shipped `projectspage` broken (#3874). A dynamic import was invisible for a
+/// second reason: it is an ordinary expression and can sit anywhere, so a walk that stops at the root's
+/// children cannot see one.
+///
+/// This is the same class of bug harvest already fixed once. Relative imports used to be skipped entirely
+/// on the assumption that "the closure is built from ONE file, so it never emits one" — false in practice,
+/// and it silently exempted real sibling imports from the buildability check (#4). The re-export case is
+/// that bug again through a different hole, and pointing at the one canonical scanner is what closes the
+/// class rather than the instance.
+///
+/// Type-only imports are kept and FLAGGED rather than dropped. Erasure is a buildability judgement only:
+/// a type-only import of a harvested sibling is still a composition edge, because the graph's edges
+/// describe the source and buildability describes the bundle (#4076).
 pub(crate) fn internal_imports(src_text: &str) -> Vec<InternalImport> {
-    let mut out = Vec::new();
-    let mut parser = Parser::new();
-    let language: Language = tree_sitter_typescript::LANGUAGE_TSX.into();
-    if parser.set_language(&language).is_err() {
-        return out;
-    }
-    let Some(tree) = parser.parse(src_text, None) else { return out };
-    let src = src_text.as_bytes();
-    let root = tree.root_node();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        if child.kind() != "import_statement" {
-            continue;
-        }
-        let Some(raw) = field_text(child, "source", src) else { continue };
-        let spec = raw.trim_matches(|c| c == '"' || c == '\'').to_string();
-        if !bsc_component::graph_health::is_internal_specifier(&spec) {
-            continue;
-        }
-        let (mut names, mut opaque) = (Vec::new(), false);
-        collect_imported_names(child, src, &mut names, &mut opaque);
-        let type_only = is_type_only_import(child, src);
-        out.push(InternalImport { spec, names: if opaque { Vec::new() } else { names }, type_only });
-    }
-    out
-}
-
-/// Is this import statement SYNTACTICALLY type-only — `import type { X } from "…"`, or a named clause
-/// whose every binding carries the inline `type` modifier (#4076)?
-///
-/// Such an import is ERASED by the tsx loader before anything resolves, so the module it names need not
-/// exist in the closure for the closure to compile. Calling it a blocker was simply wrong: it made 45 of
-/// this repo's 289 unbuildable candidates fail for an import that never reaches the bundler.
-///
-/// SYNTACTIC on purpose, never inferred from the target. `import { X } from "./y"` where `X` happens to
-/// be a type is NOT erasable — esbuild has no type information and keeps the import, so the module must
-/// resolve. Only the two forms above are safe, and both are visible in the parse.
-fn is_type_only_import(node: Node, src: &[u8]) -> bool {
-    // `import type { … } from "…"` — the `type` keyword sits directly in the statement, before the clause.
-    let mut c = node.walk();
-    for ch in node.children(&mut c) {
-        if ch.kind() == "import_clause" {
-            // A clause with a default or namespace binding is never type-only.
-            let mut cc = ch.walk();
-            let mut named = None;
-            for g in ch.children(&mut cc) {
-                match g.kind() {
-                    "named_imports" => named = Some(g),
-                    "identifier" | "namespace_import" => return false,
-                    _ => {}
-                }
-            }
-            let Some(named) = named else { return false };
-            let mut any = false;
-            let mut nc = named.walk();
-            for spec_node in named.children(&mut nc) {
-                if spec_node.kind() != "import_specifier" {
-                    continue;
-                }
-                any = true;
-                // tree-sitter puts the inline modifier in the specifier's own text (`type Foo`).
-                let text = spec_node.utf8_text(src).unwrap_or_default();
-                if !text.trim_start().starts_with("type ") {
-                    return false;
-                }
-            }
-            return any;
-        }
-        // The statement-level `type` keyword of `import type { … }`.
-        if ch.utf8_text(src).map(str::trim) == Ok("type") {
-            return true;
-        }
-    }
-    false
-}
-
-/// The names an import statement pulls from its module. `opaque` is set by a namespace import
-/// (`* as X`), whose bindings can't be attributed to individual exports — the caller then treats the
-/// whole import as unattributable rather than guessing.
-fn collect_imported_names(node: Node, src: &[u8], out: &mut Vec<String>, opaque: &mut bool) {
-    match node.kind() {
-        "namespace_import" => {
-            *opaque = true;
-            return;
-        }
-        // `{ Button }` / `{ Button as Btn }` — the `name` field is the EXPORTED name either way.
-        "import_specifier" => {
-            if let Some(n) = field_text(node, "name", src) {
-                out.push(n);
-            }
-            return;
-        }
-        // A default import is a bare identifier directly under the clause (`import Button from "…"`).
-        "import_clause" => {
-            let mut c = node.walk();
-            for ch in node.children(&mut c) {
-                if ch.kind() == "identifier" {
-                    if let Ok(t) = ch.utf8_text(src) {
-                        out.push(t.to_string());
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_imported_names(child, src, out, opaque);
-    }
+    crate::import_scan::scan_imports_all(src_text)
+        .into_iter()
+        .filter(|i| bsc_component::graph_health::is_internal_specifier(&i.specifier))
+        .map(|i| InternalImport { spec: i.specifier, names: i.locals, type_only: i.type_only })
+        .collect()
 }
 
 /// One component located in one file, before cross-file `composes` resolution.
