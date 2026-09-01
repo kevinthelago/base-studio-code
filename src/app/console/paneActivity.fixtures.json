@@ -1,0 +1,227 @@
+{
+  "note": "GENERATED from the live TypeScript — see paneActivity.fixtures.gen.test.ts",
+  "graceMs": 2500,
+  "now": 1760000000000,
+  "gates": [
+    {
+      "label": "absent — no activity ever recorded",
+      "activity": null,
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": false
+    },
+    {
+      "label": "run, fresh",
+      "activity": {
+        "pane": "p",
+        "state": "run",
+        "at": 1760000000000
+      },
+      "graceMs": null,
+      "turnOpen": true,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "run, ancient",
+      "activity": {
+        "pane": "p",
+        "state": "run",
+        "at": 1759999400000
+      },
+      "graceMs": null,
+      "turnOpen": true,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "idle, just now",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1760000000000
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "idle, inside the grace",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1759999997501
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "idle, exactly at the grace",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1759999997500
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": false
+    },
+    {
+      "label": "idle, past the grace",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1759999997499
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": false
+    },
+    {
+      "label": "attn, fresh — held open despite the doc saying idle",
+      "activity": {
+        "pane": "p",
+        "state": "attn",
+        "at": 1760000000000
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": true,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "attn, past the grace",
+      "activity": {
+        "pane": "p",
+        "state": "attn",
+        "at": 1759999997499
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": true,
+      "turnOpenDebounced": false
+    },
+    {
+      "label": "idle, timestamped in the future",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1760000005000
+      },
+      "graceMs": null,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "idle, just now, with a zero grace",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1760000000000
+      },
+      "graceMs": 0,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": false
+    },
+    {
+      "label": "run, with a zero grace",
+      "activity": {
+        "pane": "p",
+        "state": "run",
+        "at": 1759999000001
+      },
+      "graceMs": 0,
+      "turnOpen": true,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    },
+    {
+      "label": "idle, with a huge grace",
+      "activity": {
+        "pane": "p",
+        "state": "idle",
+        "at": 1759999940000
+      },
+      "graceMs": 120000,
+      "turnOpen": false,
+      "needsAttention": false,
+      "turnOpenDebounced": true
+    }
+  ],
+  "lookups": [
+    {
+      "label": "absent list",
+      "rows": null,
+      "paneId": "p",
+      "found": null
+    },
+    {
+      "label": "empty list",
+      "rows": [],
+      "paneId": "p",
+      "found": null
+    },
+    {
+      "label": "first match wins",
+      "rows": [
+        {
+          "pane": "a",
+          "state": "idle",
+          "at": 1
+        },
+        {
+          "pane": "p",
+          "state": "run",
+          "at": 2
+        },
+        {
+          "pane": "p",
+          "state": "idle",
+          "at": 3
+        }
+      ],
+      "paneId": "p",
+      "found": {
+        "pane": "p",
+        "state": "run",
+        "at": 2
+      }
+    },
+    {
+      "label": "no match",
+      "rows": [
+        {
+          "pane": "a",
+          "state": "run",
+          "at": 1
+        }
+      ],
+      "paneId": "p",
+      "found": null
+    },
+    {
+      "label": "empty pane id matches an empty pane",
+      "rows": [
+        {
+          "pane": "",
+          "state": "attn",
+          "at": 7
+        }
+      ],
+      "paneId": "",
+      "found": {
+        "pane": "",
+        "state": "attn",
+        "at": 7
+      }
+    }
+  ]
+}
