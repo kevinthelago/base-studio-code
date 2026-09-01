@@ -71,7 +71,7 @@ afterEach(cleanup);
 const launch = () => {
   const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === "pty_create");
   return call?.[1] as
-    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean }
+    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean; paneInitCmd?: string; paneWasClaude?: boolean; autoResumeClaude?: boolean; providerIsClaude?: boolean }
     | undefined;
 };
 
@@ -117,6 +117,35 @@ describe("a studio woken to serve an ask", () => {
         p!.startupPromptFreshOnly,
         "the computed flag must not come back — the backend derives it now",
       ).toBeUndefined();
+    });
+  });
+
+  /// THE PAYLOAD, for the init command this time
+  /// (`the-launch-resolves-its-own-resume-command-instead-of-receiving-it`). The backend resolves
+  /// `initCmd` alongside the renderer and logs a disagreement; it can only do that if the RAW signals
+  /// reach it, and nothing else in the suite would notice if they stopped.
+  ///
+  /// This is the same gap that made the role-gate flip inert for months
+  /// (`the-role-gate-flip-never-reached-the-wire`): a backend argument that is accepted and never
+  /// sent takes the `None` branch on every real launch, and every test on that flip passed because
+  /// each one called the Tauri command directly with the argument the wire never carried.
+  it("sends the raw resume signals so the backend can resolve the init command itself", async () => {
+    render(<TerminalHost><StudioSessionMount studio={DEF.id} /></TerminalHost>);
+    await waitFor(() => {
+      const p = launch();
+      expect(p, "pty_create was never called").toBeTruthy();
+      // The pane's OWN command, before the resolver turned it into a resume form — the `explicit` the
+      // backend's rule reads. Sending the RESOLVED one instead would compare a value against itself.
+      expect(p!.paneInitCmd, "the raw pane command must be sent, not the resolved one").not.toBeUndefined();
+      expect(typeof p!.paneWasClaude).toBe("boolean");
+      expect(typeof p!.autoResumeClaude).toBe("boolean");
+      // Which branch `resolveEffectiveInitCmd` took. Without it the backend compares against the
+      // branch it does not model and warns on every non-Claude launch.
+      expect(p!.providerIsClaude, "a studio runs claude").toBe(true);
+      // `wasUncleanShutdown` is deliberately NOT here — the backend owns it (`app::recovery`), and
+      // the store field is a copy read back from it. Sending it would route a Rust fact through the
+      // renderer and back.
+      expect(p, "wasUncleanShutdown must not be sent").not.toHaveProperty("wasUncleanShutdown");
     });
   });
 
