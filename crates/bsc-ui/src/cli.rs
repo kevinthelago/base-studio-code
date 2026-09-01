@@ -4794,9 +4794,24 @@ mod tests {
         }
     }
 
+    /// The CLI path end-to-end (#2800), against its OWN store.
+    ///
+    /// IT USED TO READ THE DEVELOPER'S LIVE LIBRARY (#3910). With no `--dir` it resolved the default
+    /// `~/.base-studio-code/components/`, so the stamp it asserted was whichever kit that machine's `card`
+    /// happened to belong to — the test passed or failed on LOCAL STATE rather than on the code, and it
+    /// silently read the user's real library from a unit test. The stamp is not arbitrary: `cmd_emit`
+    /// takes `from_store` when the store is NON-EMPTY and `packaged` when it is not, so the two paths
+    /// stamp `bsc/studio` and `bsc/react-ui` respectively. Both are pinned below, which is what makes the
+    /// assertion about the rule instead of about the machine.
     #[test]
     fn emit_component_writes_a_stamped_alias_free_closure() {
-        // The CLI path end-to-end (#2800): emit `card` into a temp dir, from the EMBEDDED artifact.
+        let store = crate::test_store::SeededStore::new("emit-stamp");
+        // ONE record, so the store is non-empty and the MERGED view is what emits. `card` itself still
+        // comes from the packaged artifact underneath — this only selects the overlay path.
+        store.seed(
+            "unrelated-marker",
+            r#"{"id":"unrelated-marker","name":"Marker","kitId":"base-studio-code","role":"composite","srcText":"export const marker = 1;\n"}"#,
+        );
         let dir = std::env::temp_dir().join(format!("bsc-ui-emit-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let d = dir.to_string_lossy().into_owned();
@@ -4814,6 +4829,26 @@ mod tests {
         // matching assertion in emit.rs expects the same id, and #4176 fixed this one for having been
         // left behind.
         assert!(card.starts_with("// vendored from bsc/studio@"), "provenance stamp: {card}");
+
+        // ...AND THE OTHER PATH, which is what made the old assertion machine-dependent: with an EMPTY
+        // store there is no merged view, `packaged` emits, and the stamp is the packaged kit's own id.
+        // A fresh checkout hit exactly this and read it as a regression.
+        let empty = crate::test_store::SeededStore::new("emit-stamp-empty");
+        let dir2 = std::env::temp_dir().join(format!("bsc-ui-emit-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir2);
+        run(
+            vec!["emit".into(), "component".into(), "card".into(), dir2.to_string_lossy().into_owned()],
+            "bsc ui",
+        )
+        .unwrap();
+        let from_packaged =
+            std::fs::read_to_string(dir2.join("shared/ui/data/Card.tsx")).expect("Card.tsx emitted");
+        assert!(
+            from_packaged.starts_with("// vendored from bsc/react-ui@"),
+            "an EMPTY store emits from the packaged kit and stamps its id: {from_packaged}"
+        );
+        let _ = std::fs::remove_dir_all(&dir2);
+        drop(empty);
         // Command surface: bare emit prints help; bad shapes error crisply.
         assert!(run(vec!["emit".into()], "bsc ui").is_ok(), "bare emit prints help");
         assert!(run(vec!["emit".into(), "component".into(), "nope".into(), d], "bsc ui").is_err(), "unknown id");
