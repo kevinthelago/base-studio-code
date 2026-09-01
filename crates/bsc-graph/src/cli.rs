@@ -117,6 +117,7 @@ pub const FLAGS: [&str; 52] = [
     // (`code`, typically) and optionally spill it to the scratch dir instead of stdout.
     "--field",
     "--raw",
+
 ];
 
 /// Materialize ONE record into `out` and, when `run`, execute its paired tests there.
@@ -529,6 +530,43 @@ const MIN_SHINGLES: usize = 8;
 /// chasm rather than a tuned knob.
 const NEAR_DUPLICATE: f64 = 0.8;
 
+/// Contract overlap at or above which two functions AGREE ABOUT WHAT THEY TAKE — never sufficient on
+/// its own.
+///
+/// MEASURED over 716,507 arity-bucketed pairs in `crates/`: pairs that are structural clones have a
+/// median contract similarity of **1.00**, but non-clones reach **0.50 at the 99th percentile and 1.00
+/// at the maximum**. There is NO CHASM here, unlike the body signal — a contract is a far weaker claim
+/// for a function than a prop set is for a component, because `(v: Vec3) -> f32` describes `abs`,
+/// `normalize`, `max0` and every other routine in a maths module. So this threshold sits above the
+/// 99th percentile of non-clones and still admits thousands of pairs; what makes it usable is the two
+/// conditions below, not the number.
+const CONTRACT_MATCH: f64 = 0.6;
+
+/// Body overlap that must ALSO hold for a contract match to report. Well below [`NEAR_DUPLICATE`] —
+/// a pair above that is already found by signal 1 — so this is the band where the bodies are alike
+/// but not alike enough to speak for themselves.
+///
+/// THE BODY IS REQUIRED, NOT OPTIONAL, and that is a deliberate divergence from the component
+/// library's measure, which lets a strong contract flag on its own (`HIGH_CONTRACT_MATCH`). Component
+/// props are named at every call site so their names are meaning; a function signature is not, and the
+/// distribution above is what that difference looks like in numbers.
+const CORROBORATING_BODY: f64 = 0.30;
+
+/// Two functions in the SAME module sharing a contract is a MODULE CONVENTION, not duplication, and
+/// excluding it is what makes this signal usable at all.
+///
+/// MEASURED: with contract ≥ 0.6 and body in [0.30, 0.80) the sweep over `crates/` returns **161**
+/// pairs, and inspection shows almost all are neighbours in one file — `abs` beside `normalize`,
+/// `cross` beside `cmin`, `home_dir` beside `bsc_base_dir`. Requiring different modules cuts that to
+/// **28**, and those read as real: an `is_safe_*` validator family duplicated across two modules of
+/// one crate, `parse_args` in two crates, `build_messages`/`build_contents` per LLM provider,
+/// `normalize_response` in both `gemini.rs` and `openai.rs`.
+///
+/// This is the same lesson #78 recorded for the NAME signal — "every feature has a `store`, an
+/// `index`, a `graphPlatform`; that is a convention" — one level down: every maths module has a
+/// handful of `(Vec3) -> f32`.
+const CROSS_MODULE_ONLY: bool = true;
+
 /// Minimum share of a group's possible pairs that must be observed for it to report as one cluster —
 /// the anti-chaining guard, matching the component-side detector (#74). `A~B` and `B~C` with `A` and
 /// `C` unrelated is a chain, and collapsing it asserts a similarity no member exhibits.
@@ -582,6 +620,56 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
             (sh.len() >= MIN_SHINGLES).then_some((id, sh))
         })
         .collect();
+    // ── signal 4: the same CONTRACT, corroborated by the body, across MODULES ──
+    //
+    // The "same job, different implementation" case: two functions that agree about what they take and
+    // return, whose bodies are alike but not alike enough for signal 1 to speak. Arity-BUCKETED, and
+    // arity is the right key precisely because it is not a name — the component sweep's cheap first
+    // pass is a NAME gate, which for functions discards exactly what is being hunted.
+    let contracts: Vec<(String, String, crate::extract::Signature)> = impls
+        .iter()
+        .filter_map(|im| {
+            let (id, code, tech) = (text(im, "id"), text(im, "code"), text(im, "tech"));
+            let sig = crate::extract::signature_from_code(&code, &tech)?;
+            // A contract that names nothing cannot corroborate anything.
+            (!id.is_empty() && !sig.params.is_empty()).then(|| (id, same_module_path(&text(im, "src")), sig))
+        })
+        .collect();
+    let shingles_by_id: std::collections::BTreeMap<&str, &std::collections::HashSet<u64>> =
+        bodies.iter().map(|(id, sh)| (id.as_str(), sh)).collect();
+    let mut contract_pairs: Vec<(&str, &str)> = Vec::new();
+    {
+        let mut by_arity: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+        for (i, c) in contracts.iter().enumerate() {
+            by_arity.entry(c.2.arity()).or_default().push(i);
+        }
+        for idxs in by_arity.values() {
+            for (n, &i) in idxs.iter().enumerate() {
+                for &j in idxs.iter().skip(n + 1) {
+                    // A MODULE CONVENTION IS NOT DUPLICATION — see `CROSS_MODULE_ONLY`. Measured, this
+                    // one condition takes the finding from 161 pairs to 28.
+                    if CROSS_MODULE_ONLY && contracts[i].1 == contracts[j].1 && !contracts[i].1.is_empty() {
+                        continue;
+                    }
+                    if crate::extract::contract_similarity(&contracts[i].2, &contracts[j].2) < CONTRACT_MATCH {
+                        continue;
+                    }
+                    // THE BODY IS REQUIRED. A contract alone reaches 1.00 on unrelated pairs.
+                    let (Some(a), Some(b)) =
+                        (shingles_by_id.get(contracts[i].0.as_str()), shingles_by_id.get(contracts[j].0.as_str()))
+                    else {
+                        continue;
+                    };
+                    let inter = a.intersection(b).count();
+                    let union = a.len() + b.len() - inter;
+                    if union > 0 && (inter as f64) / (union as f64) >= CORROBORATING_BODY {
+                        contract_pairs.push((contracts[i].0.as_str(), contracts[j].0.as_str()));
+                    }
+                }
+            }
+        }
+    }
+
     let mut pairs: Vec<(&str, &str)> = Vec::new();
     for (a, (id_a, sh_a)) in bodies.iter().enumerate() {
         for (id_b, sh_b) in bodies.iter().skip(a + 1) {
@@ -634,50 +722,61 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
         }
     }
 
-    // Cluster the body pairs into connected components, with the same density guard the component
-    // detector uses — a sparse component is a chain, and collapsing it invents a group.
-    let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
-        std::collections::BTreeMap::new();
-    for (a, b) in &pairs {
-        adj.entry(a).or_default().insert(b);
-        adj.entry(b).or_default().insert(a);
-    }
-    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    for start in adj.keys().copied() {
-        if seen.contains(start) {
-            continue;
+    // Cluster pairs into connected components, with the same density guard the component detector
+    // uses — a sparse component is a chain, and collapsing it invents a group.
+    //
+    // SHARED BY BOTH PAIRWISE SIGNALS, and that sharing is the fix for a real defect rather than tidying:
+    // the contract signal first emitted one bucket PER PAIR, so four identical records produced six
+    // rows and broke this module's central promise that N duplicates report as ONE row naming every
+    // member. The chaining worry that motivated pairs is exactly what `CLUSTER_DENSITY` already
+    // answers, so there was never a second mechanism to invent.
+    let cluster = |pairs: &[(&str, &str)]| -> Vec<Vec<String>> {
+        let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+            std::collections::BTreeMap::new();
+        for (a, b) in pairs {
+            adj.entry(a).or_default().insert(b);
+            adj.entry(b).or_default().insert(a);
         }
-        let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
-        while let Some(n) = stack.pop() {
-            if !seen.insert(n) {
+        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let mut out: Vec<Vec<String>> = Vec::new();
+        for start in adj.keys().copied() {
+            if seen.contains(start) {
                 continue;
             }
-            group.push(n);
-            for m in adj.get(n).into_iter().flatten() {
-                if !seen.contains(m) {
-                    stack.push(m);
+            let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
+            while let Some(n) = stack.pop() {
+                if !seen.insert(n) {
+                    continue;
+                }
+                group.push(n);
+                for m in adj.get(n).into_iter().flatten() {
+                    if !seen.contains(m) {
+                        stack.push(m);
+                    }
                 }
             }
+            if group.len() < 2 {
+                continue;
+            }
+            let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
+            let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
+            let possible = group.len() * (group.len() - 1) / 2;
+            if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
+                continue; // a chain, not a group
+            }
+            group.sort_unstable();
+            out.push(group.into_iter().map(str::to_string).collect());
         }
-        if group.len() < 2 {
-            continue;
+        out
+    };
+    // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every cluster into
+    // one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each other) reported as a
+    // single group of four — a confident wrong grouping, which is what the density guard prevents.
+    // Connected components are disjoint, so the smallest member is a stable unique name.
+    for (signal, found) in [("same-body", cluster(&pairs)), ("same-contract", cluster(&contract_pairs))] {
+        for group in found {
+            buckets.entry((signal, group[0].clone())).or_default().extend(group);
         }
-        let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
-        let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
-        let possible = group.len() * (group.len() - 1) / 2;
-        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
-            continue; // a chain, not a group
-        }
-        // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every body
-        // cluster into one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each
-        // other) reported as a single group of four — a confident wrong grouping, which is exactly
-        // what the density guard above exists to prevent. Connected components are disjoint, so the
-        // smallest member is a stable unique name for the cluster.
-        group.sort_unstable();
-        buckets
-            .entry(("same-body", group[0].to_string()))
-            .or_default()
-            .extend(group.iter().map(|s| (*s).to_string()));
     }
 
     // Collapse to one entry per MEMBER SET, carrying every signal that grouped it.
@@ -696,6 +795,14 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
             // "the same shape" says they are the same CODE with different names, which is a stronger
             // claim and points at a straight rename-and-fold rather than a careful diff.
             "same-shape" => "the same SHAPE — identical code under identifier renaming".to_string(),
+            // NAMED as the weaker claim it is. "Same shape" says these ARE the same code; this says
+            // they agree about what they take and their bodies overlap enough to corroborate it —
+            // a refactor opportunity, not necessarily a copy.
+            "same-contract" => format!(
+                "the same CONTRACT across modules (≥{}% signature overlap, corroborated by ≥{}% body overlap)",
+                (CONTRACT_MATCH * 100.0) as u32,
+                (CORROBORATING_BODY * 100.0) as u32,
+            ),
             // The body itself is never echoed — that it is the same body IS the finding.
             _ => format!("a near-identical body (≥{}% shingle overlap)", (NEAR_DUPLICATE * 100.0) as u32),
         };
@@ -6205,6 +6312,83 @@ mod dedup_tests {
         assert_eq!(found.len(), 1, "the reported pair is caught: {found:#?}");
         assert_eq!(ids_of(&found[0]), vec!["algorithms-llm-energy.ts", "llm-energy.ts"]);
         assert!(found[0]["signals"][0].as_str().unwrap().contains("body"), "names the signal");
+    }
+
+    /// SIGNAL 4 (slice 4): the same CONTRACT across modules, corroborated by the body.
+    ///
+    /// The "same job, different implementation" case — two functions that agree about what they take
+    /// and return, whose bodies overlap enough to corroborate it but NOT enough for signal 1 to speak.
+    /// Neither existing signal sees it: the shingles are below NEAR_DUPLICATE and the shapes differ.
+    #[test]
+    fn the_same_contract_across_modules_is_a_signal_when_the_body_corroborates() {
+        // Same contract (xs/limit and their types), genuinely different implementations.
+        let a = "export function takeTop(xs: number[], limit: number): number[] {\n                     const sorted = xs.slice().sort((p, q) => q - p);\n                     const out: number[] = [];\n                     for (const v of sorted) { if (out.length < limit) { out.push(v); } }\n                     return out;\n}";
+        let b = "export function takeTop(xs: number[], limit: number): number[] {\n                     const sorted = xs.slice().sort((p, q) => q - p);\n                     const out: number[] = [];\n                     let i = 0;\n                     while (i < limit && i < sorted.length) { out.push(sorted[i]); i += 1; }\n                     return out;\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("take-top.ts", "takeTop", serde_json::json!({ "code": a, "src": "src/a/top.ts", "tech": "typescript" })),
+            im("top-n.ts", "topN", serde_json::json!({ "code": b, "src": "src/b/topn.ts", "tech": "typescript" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "the pair is surfaced: {found:#?}");
+        let signals = found[0]["signals"].as_array().unwrap();
+        assert!(
+            signals.iter().any(|s| s.as_str().unwrap_or("").contains("CONTRACT")),
+            "named as the contract signal: {signals:?}",
+        );
+    }
+
+    /// A CONTRACT COINCIDENCE IS NOT A DUPLICATE, and this is the measured failure mode. Over
+    /// `crates/`, non-clone pairs reach a contract similarity of 0.50 at the 99th percentile and 1.00
+    /// at the maximum — there is no chasm — so the body is a REQUIRED co-signal rather than an
+    /// optional one, which is where this diverges from the component library's measure.
+    #[test]
+    fn a_contract_match_with_an_unrelated_body_is_not_reported() {
+        // Byte-for-byte the same signature; nothing else in common.
+        let a = "export function alpha(xs: number[], limit: number): number[] {\n                     const seen = new Map<number, number>();\n                     for (const x of xs) { seen.set(x, (seen.get(x) ?? 0) + limit); }\n                     return [...seen.keys()];\n}";
+        let b = "export function beta(xs: number[], limit: number): number[] {\n                     const total = xs.reduce((p, q) => p * q, limit);\n                     const digits = String(total).split(\"\").map(Number);\n                     return digits.filter((d) => d % 2 === 0);\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("alpha.ts", "alpha", serde_json::json!({ "code": a, "src": "src/a/alpha.ts", "tech": "typescript" })),
+            im("beta.ts", "beta", serde_json::json!({ "code": b, "src": "src/b/beta.ts", "tech": "typescript" })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "a shared signature alone: {:#?}", dedup_findings(&g));
+    }
+
+    /// TWO FUNCTIONS IN ONE MODULE SHARING A CONTRACT IS A CONVENTION, not duplication — every maths
+    /// module has a handful of `(Vec3) -> f32`. MEASURED: without this condition the sweep over
+    /// `crates/` returns 161 pairs, almost all neighbours in one file (`abs` beside `normalize`,
+    /// `cross` beside `cmin`); with it, 28, and those read as real. It is the same lesson #78 recorded
+    /// for the NAME signal, one level down.
+    #[test]
+    fn a_shared_contract_inside_one_module_is_a_convention_not_a_duplicate() {
+        let a = "export function toRadians(deg: number, scale: number): number {\n                     const base = (deg * Math.PI) / 180;\n                     const adjusted = base * scale;\n                     return Number.isFinite(adjusted) ? adjusted : 0;\n}";
+        let b = "export function toDegrees(deg: number, scale: number): number {\n                     const base = (deg * 180) / Math.PI;\n                     const adjusted = base * scale;\n                     return Number.isFinite(adjusted) ? adjusted : 0;\n}";
+        let same = "src/shared/lib/core/math.ts";
+        let g = serde_json::json!({ "implementations": [
+            im("to-radians.ts", "toRadians", serde_json::json!({ "code": a, "src": same, "tech": "typescript" })),
+            im("to-degrees.ts", "toDegrees", serde_json::json!({ "code": b, "src": same, "tech": "typescript" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert!(
+            !found.iter().any(|f| f["signals"].as_array().unwrap().iter()
+                .any(|s| s.as_str().unwrap_or("").contains("CONTRACT"))),
+            "neighbours in one module must not group on contract: {found:#?}",
+        );
+    }
+
+    /// N duplicates are ONE row, and that holds for the contract signal too. It first emitted one
+    /// bucket PER PAIR, so four identical records produced SIX rows — breaking this module's central
+    /// promise. The chaining worry that motivated pairs is what `CLUSTER_DENSITY` already answers, so
+    /// both pairwise signals now share one clustering pass.
+    #[test]
+    fn the_contract_signal_reports_a_group_not_a_row_per_pair() {
+        let c = serde_json::json!({ "code": body("Wh"), "tech": "typescript" });
+        let g = serde_json::json!({ "implementations": [
+            im("a.ts", "a", c.clone()), im("b.ts", "b", c.clone()),
+            im("c.ts", "c", c.clone()), im("d.ts", "d", c.clone()),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "ONE row for four identical records, not six pairs: {found:#?}");
+        assert_eq!(ids_of(&found[0]).len(), 4);
     }
 
     /// THE TREE SWEEP (slice 3) reports duplicates the STORE cannot contain — a real path and a real

@@ -1452,6 +1452,81 @@ const LITERAL_KINDS: &[&str] = &[
 /// without a floor the largest "duplicate group" in any Rust crate is its boilerplate.
 pub const MIN_SHAPE_TOKENS: usize = 24;
 
+/// The signature of the FIRST function in `code` — the signature of a stored record, which has a body
+/// and no tree.
+///
+/// DERIVED, NOT STORED, for the same reason [`shape_fingerprint`] is: a signature is a pure function
+/// of the body, so a stored copy is a cache that goes stale the moment the body is edited, and stale
+/// derived data is the failure this repo keeps paying for. The 677 records already in the library have
+/// no `signature` field and never need a backfill — this reads it from what they do have.
+///
+/// FIRST function, not "the" function: a record's `code` is one harvested definition, so there is
+/// exactly one. A body holding several returns the outermost first by the pre-order walk, which is the
+/// one the record is named for.
+pub fn signature_from_code(code: &str, tech: &str) -> Option<Signature> {
+    let language: Language = match tech {
+        "rust" => tree_sitter_rust::LANGUAGE.into(),
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        _ => return None,
+    };
+    let mut parser = Parser::new();
+    parser.set_language(&language).ok()?;
+    let bytes = code.as_bytes();
+    let tree = parser.parse(bytes, None)?;
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if fn_def_name(node, bytes).is_some() {
+            return Some(signature_of(node, bytes));
+        }
+        let mut cursor = node.walk();
+        let kids: Vec<Node> = node.named_children(&mut cursor).collect();
+        for child in kids.into_iter().rev() {
+            stack.push(child);
+        }
+    }
+    None
+}
+
+/// How alike two CONTRACTS are — Jaccard over what each function names.
+///
+/// The feature set is the parameter NAMES, the KNOWN parameter types, and the KNOWN return type. Three
+/// choices in that sentence, each load-bearing:
+///
+/// * **names are in it.** A positional parameter's type is weak evidence — `(s: string) => string`
+///   describes hundreds of unrelated functions — while `limit` and `count` share a type and mean
+///   different things. Component props work as a contract measure because prop names are meaning;
+///   for functions the NAME is the discriminating half, so it has to be in the set.
+/// * **only KNOWN types.** An `Absent` or `Opaque` type contributes NOTHING, so two functions that both
+///   decline to say what they take gain no similarity from agreeing to be silent. This is
+///   [`TypeRef::matches`] expressed as a set: what is not known cannot corroborate.
+/// * **unordered.** Jaccard ignores position, so a duplicate whose parameters were reordered still
+///   scores — and reordering is exactly the kind of edit a copy accumulates.
+///
+/// Returns 0.0 when either side names nothing at all, rather than 1.0: two empty contracts are not a
+/// match, they are two absences, and the same reasoning as the type states applies one level up.
+pub fn contract_similarity(a: &Signature, b: &Signature) -> f64 {
+    fn features(s: &Signature) -> std::collections::BTreeSet<String> {
+        let mut out = std::collections::BTreeSet::new();
+        for p in &s.params {
+            out.insert(format!("p:{}", p.name));
+            if let TypeRef::Known(t) = &p.ty {
+                out.insert(format!("t:{t}"));
+            }
+        }
+        if let TypeRef::Known(t) = &s.returns {
+            out.insert(format!("r:{t}"));
+        }
+        out
+    }
+    let (fa, fb) = (features(a), features(b));
+    if fa.is_empty() || fb.is_empty() {
+        return 0.0;
+    }
+    let inter = fa.intersection(&fb).count();
+    let union = fa.len() + fb.len() - inter;
+    if union == 0 { 0.0 } else { inter as f64 / union as f64 }
+}
+
 /// The RENAME-INVARIANT shape of a function body — `None` when it is too trivial to be evidence.
 ///
 /// THE ONE SIGNAL THE EXISTING DETECTOR CANNOT HAVE. `dedup_findings` compares k-gram shingles over
