@@ -589,6 +589,13 @@ fn suggestion_for(signal_keys: &[&str], ids: &[String]) -> String {
 /// this epic exists to find, committed by the epic — which is why it is a free function now rather than
 /// a closure inside one caller.
 fn cluster_pairs(pairs: &[(&str, &str)]) -> Vec<Vec<String>> {
+    cluster_pairs_with_loose(pairs).0
+}
+
+/// [`cluster_pairs`] plus the members PEELED OFF a component that could not clear [`CLUSTER_DENSITY`]
+/// — so "this did not group" is a reportable fact rather than an absence.
+fn cluster_pairs_with_loose(pairs: &[(&str, &str)]) -> (Vec<Vec<String>>, Vec<String>) {
+    let mut loose: Vec<String> = Vec::new();
     let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
         std::collections::BTreeMap::new();
     for (a, b) in pairs {
@@ -616,16 +623,67 @@ fn cluster_pairs(pairs: &[(&str, &str)]) -> Vec<Vec<String>> {
         if group.len() < 2 {
             continue;
         }
-        let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
-        let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
-        let possible = group.len() * (group.len() - 1) / 2;
-        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
-            continue; // a chain, not a group
-        }
+        // PEEL TO THE DENSE CORE rather than discarding the component.
+        //
+        // The floor's job is real: without it one generic function chains eight unrelated ones into a
+        // mega-group, and a star topology is a hub artifact, not a family. But DISCARDING the whole
+        // component was the wrong remedy, and it made the headline non-monotonic — MEASURED
+        // 2026-09-01, converting ONE of nine `parse_args` did not take the group to eight, it deleted
+        // it, and the report fell from 88 groups/155 duplicated to 87/147 while the other eight were
+        // the same duplication they had been a minute earlier. Anyone working crate-by-crate reads a
+        // large win on their first commit and nothing at all on the next seven.
+        //
+        // So drop the LEAST-connected member until what remains clears the floor. A star peels to a
+        // single pair (the hub and one leaf), which is the honest reading of a star; a real family
+        // peels not at all. Whatever is peeled off is returned to the caller instead of vanishing.
         group.sort_unstable();
-        out.push(group.into_iter().map(str::to_string).collect());
+        let core = dense_core(&group, pairs);
+        if core.len() >= 2 {
+            out.push(core.iter().map(|s| (*s).to_string()).collect());
+        }
+        for m in group.iter().filter(|m| !core.contains(m)) {
+            loose.push((*m).to_string());
+        }
     }
-    out
+    loose.sort_unstable();
+    loose.dedup();
+    (out, loose)
+}
+
+/// The largest sub-group of `members` that clears [`CLUSTER_DENSITY`], found by repeatedly dropping the
+/// member with the fewest edges INSIDE the group. Ties break on the name so the result is deterministic.
+///
+/// Greedy, not optimal, and deliberately so: the exact densest-subgraph problem is not worth solving to
+/// rank a duplicate report, and the failure mode of greed here is reporting a slightly smaller family,
+/// which is the safe direction for a PROPOSE-ONLY tool.
+fn dense_core<'a>(members: &[&'a str], pairs: &[(&'a str, &'a str)]) -> Vec<&'a str> {
+    let mut live: Vec<&str> = members.to_vec();
+    while live.len() >= 2 {
+        let set: std::collections::BTreeSet<&str> = live.iter().copied().collect();
+        let observed = pairs.iter().filter(|(a, b)| set.contains(a) && set.contains(b)).count();
+        let possible = live.len() * (live.len() - 1) / 2;
+        let degree = |m: &str| {
+            pairs.iter().filter(|(a, b)| (*a == m && set.contains(b)) || (*b == m && set.contains(a))).count()
+        };
+        // DENSITY ALONE CANNOT REJECT A STAR, which is why the degree floor is here too. A star of n has
+        // n-1 edges, so a sub-star of k has density 2/k — at k=4 that is exactly 0.5 and clears the
+        // floor. Peeling a 9-point star therefore produced a spurious four-member "family" (hub + three
+        // leaves) where discarding the component had at least reported nothing. What actually separates
+        // a hub from a family is that a hub's LEAVES have exactly one edge: in a real family every
+        // member resembles at least two others. A pair is exempt — two things that resemble each other
+        // are a finding, not a star.
+        let every_member_has_two = live.len() == 2 || live.iter().all(|m| degree(m) >= 2);
+        if possible > 0 && (observed as f64) / (possible as f64) >= CLUSTER_DENSITY && every_member_has_two {
+            return live;
+        }
+        let weakest = live
+            .iter()
+            .copied()
+            .min_by_key(|m| (degree(m), *m))
+            .expect("live is non-empty");
+        live.retain(|m| *m != weakest);
+    }
+    Vec::new()
 }
 
 /// Duplicate-candidate GROUPS over the impl set — the algorithms-graph dedup pass (#78).
@@ -7007,6 +7065,54 @@ mod dedup_tests {
     /// the reconcile re-adds it and the fold undoes itself — measured on `llm-energy.ts`, where
     /// `impl get` returned null while the seed still listed it. It cannot do the seed side by analogy
     /// with `--seed` elsewhere, because the seed needs a TOMBSTONE rather than a removal, so it reports
+    /// THE HEADLINE MUST NOT FALL BY EIGHT WHEN YOU FIX ONE.
+    ///
+    /// `CLUSTER_DENSITY` used to DISCARD a component that could not clear it, which made the report
+    /// non-monotonic: nine `parse_args` cleared the floor, and converting exactly ONE of them did not
+    /// leave eight — it deleted the group, taking the other eight duplications out of the report with
+    /// it. Peeling to the dense core keeps them visible.
+    #[test]
+    fn removing_one_member_does_not_delete_the_rest_of_the_family() {
+        // A 9-clique minus a few edges: dense enough to report whole.
+        let names: Vec<String> = (0..9).map(|i| format!("p{i}.rs")).collect();
+        let mut pairs: Vec<(&str, &str)> = Vec::new();
+        for i in 0..9 {
+            for j in (i + 1)..9 {
+                if (i + j) % 5 != 0 {
+                    pairs.push((names[i].as_str(), names[j].as_str()));
+                }
+            }
+        }
+        let nine = super::cluster_pairs(&pairs);
+        assert_eq!(nine.len(), 1, "the family reports as one group: {nine:?}");
+        assert_eq!(nine[0].len(), 9);
+
+        // Now one member is fixed and drops out of the pair set entirely.
+        let eight: Vec<(&str, &str)> =
+            pairs.iter().copied().filter(|(a, b)| *a != "p0.rs" && *b != "p0.rs").collect();
+        let after = super::cluster_pairs(&eight);
+        let biggest = after.iter().map(Vec::len).max().unwrap_or(0);
+        assert!(
+            biggest >= 7,
+            "fixing ONE of nine must not delete the other eight — got {after:?}",
+        );
+    }
+
+    /// And the floor still does its job: a STAR is a hub artifact, not a family of nine.
+    #[test]
+    fn a_star_is_not_reported_as_one_family() {
+        let leaves: Vec<String> = (0..8).map(|i| format!("leaf{i}.rs")).collect();
+        let pairs: Vec<(&str, &str)> = leaves.iter().map(|l| ("hub.rs", l.as_str())).collect();
+        let groups = super::cluster_pairs(&pairs);
+        assert!(
+            groups.iter().all(|g| g.len() <= 2),
+            "one generic function must not chain eight unrelated ones into a mega-group: {groups:?}",
+        );
+        // And what did NOT group is reported rather than silently dropped.
+        let (_, loose) = super::cluster_pairs_with_loose(&pairs);
+        assert!(!loose.is_empty(), "the peeled members must be visible, not vanish");
+    }
+
     /// the outstanding step and names the exact command instead of performing a different one.
     #[test]
     fn merge_says_when_the_packaged_seed_still_carries_the_folded_id() {
