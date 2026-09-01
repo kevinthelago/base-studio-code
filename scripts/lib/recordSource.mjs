@@ -12,7 +12,7 @@ export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
 
 // ── relative specifiers ───────────────────────────────────────────────────────────────────────────
 // ONE definition of "a relative specifier a record carries", shared by the guard that rejects them
-// (`platformBoundary.test.ts`), the sweep that repairs them (`check-record-imports.mjs`), the
+// (`platformBoundary.test.ts`), the sweep that repairs them (`bsc ui imports`), the
 // retirement that must not create new ones (`retire-module.mjs`) and the refresh that absolutizes a
 // file into record form (`absolutizeImports`, below). Four readers, one regex — for the same reason
 // this module exists at all: a guard that reads imports differently from the fix is worse than either

@@ -354,6 +354,35 @@ the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than
 { dir, synced, upToDate, diverged, unknown }.",
     },
     CmdDoc {
+        name: "imports",
+        summary: "relative specifiers in the LIVE store — report, or --fix them to `@/…` (#record-imports)",
+        usage: "\
+USAGE:
+  bsc ui imports [--fix] [--json] [--repo <dir>] [--dir <store>]
+
+A record may not import RELATIVELY. `./helper` resolves against a file that may not exist — retire the
+neighbour and the record's import breaks, silently, because a record is compiled at RUNTIME and the
+loader just falls through to a fallback.
+
+WHY A VERB AND NOT A TEST. `recordImports.test.ts` guards the packaged SEED, which is in git and
+identical for everyone, so it holds on a fresh clone with no local store. The STORE is per-machine: a
+test reading it would be vacuous on a clean checkout and flaky everywhere else — and the store is what
+the running app renders from, so the surface that actually breaks is the one a test cannot cover.
+
+Reports by default and EXITS NON-ZERO when anything is relative, so it can gate. `--fix` rewrites each
+specifier to its `@/…` alias and DROPS asset imports — a stylesheet is dropped rather than rewritten
+because `@/…/charts.css` is no more resolvable than `./charts.css` was, and the app's CSS already loads
+globally through the bundled entry.
+
+IT DISARMS BEFORE IT REPAIRS. A record that diverges from the live file it names is not the whole module,
+so `--fix` drops its `provides` FIRST and rewrites second. The other order leaves a window in which a
+preview-shaped derivative is a working, LIVE override of the module it derives from — and the app is
+running while this writes.
+
+Then it RE-READS rather than trusting the writes: `set-src` runs its own JSX gate and can refuse, and a
+refusal nobody re-checked is how a repair gets reported as done while nothing changed.",
+    },
+    CmdDoc {
         name: "diff",
         summary: "what differs between a record and the file it claims — the adjudication view (#claim-census)",
         usage: "\
@@ -467,6 +496,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("changes") => cmd_changes(&args[1..]),
         Some("census") => cmd_census(&args[1..]),
         Some("diff") => cmd_diff(&args[1..]),
+        Some("imports") => cmd_imports(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -2456,6 +2486,288 @@ fn cmd_diff(args: &[String]) -> Result<(), String> {
     println!("\nEXPORTS the record would DROP: {}", join(&lost));
     println!("EXPORTS only the record has:   {}", join(&added));
     Ok(())
+}
+
+/// One relative specifier found in a record.
+struct RelFinding {
+    kind: &'static str,
+    id: String,
+    src: Option<String>,
+    provides: Option<String>,
+    spec: String,
+    alias: Option<String>,
+    divergent: bool,
+}
+
+/// `bsc ui imports [--fix]` — the LIVE STORE's half of "a record may not import relatively".
+///
+/// Ported from `scripts/check-record-imports.mjs`, deleted with this verb. Emits through
+/// `bsc_util::emit_line` rather than `println!` so a test can capture it — see `crate::test_store`.
+fn cmd_imports(args: &[String]) -> Result<(), String> {
+    let fix = args.iter().any(|a| a == "--fix");
+    let json_out = args.iter().any(|a| a == "--json");
+    let dir = flag_after(args, "--dir");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+
+    let store = bsc_component::cli::open_component_store(&dir)?;
+    let read_records = || -> Vec<(&'static str, serde_json::Value)> {
+        let mut out: Vec<(&'static str, serde_json::Value)> = store
+            .list()
+            .iter()
+            .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+            .filter(|c| c.get("srcText").and_then(serde_json::Value::as_str).is_some_and(|t| !t.is_empty()))
+            .map(|c| ("component", c))
+            .collect();
+        if dir.is_none() {
+            out.extend(
+                bsc_graph::implementations()
+                    .into_iter()
+                    .filter(|i| {
+                        i.get("tech").and_then(serde_json::Value::as_str) == Some("typescript")
+                            && i.get("code").and_then(serde_json::Value::as_str).is_some_and(|t| !t.is_empty())
+                    })
+                    .map(|i| ("impl", i)),
+            );
+        }
+        out
+    };
+    let text_of = |kind: &str, r: &serde_json::Value| -> String {
+        let key = if kind == "component" { "srcText" } else { "code" };
+        r.get(key).and_then(serde_json::Value::as_str).unwrap_or("").to_string()
+    };
+
+    // The repaired source for one record: asset imports DROPPED, everything else absolutized. Same call
+    // and same order `file_as_record_source` makes, so a repaired record and its file normalize alike.
+    let repaired = |text: &str, src: &str| -> String {
+        let dropped = crate::record_source::drop_asset_imports(text);
+        let mut out = dropped.clone();
+        for r in crate::record_source::relative_specifiers(&dropped).into_iter().rev() {
+            let alias = crate::record_source::alias_for(src, &r.spec);
+            out.replace_range(r.at..r.at + r.spec.len(), &alias);
+        }
+        out
+    };
+    // Does this record still say what the file it shadows says? `None` when there is no file to compare
+    // against — a genuinely retired module, where the record IS the module and cannot diverge from it.
+    let agrees = |r: &serde_json::Value, kind: &str| -> Option<bool> {
+        let src = r.get("src").and_then(serde_json::Value::as_str)?.trim();
+        if src.is_empty() {
+            return None;
+        }
+        let abs = repo.join(src);
+        if !abs.is_file() {
+            return None;
+        }
+        let raw = std::fs::read_to_string(&abs).ok()?;
+        let file = crate::record_source::absolutize_imports(
+            &crate::record_source::drop_asset_imports(&crate::record_source::norm(&raw)),
+            src,
+        );
+        let body = repaired(&crate::record_source::norm(&text_of(kind, r)), src);
+        Some(crate::record_source::code_only(&file) == crate::record_source::code_only(&body))
+    };
+
+    let records = read_records();
+    let mut findings: Vec<RelFinding> = Vec::new();
+    // Records whose `provides` must go: divergent from a LIVE file, so not the whole module.
+    let mut overreaching: Vec<(String, String, String)> = Vec::new();
+
+    for (kind, r) in &records {
+        let text = text_of(kind, r);
+        let specs = crate::record_source::relative_specifiers(&text);
+        if specs.is_empty() {
+            continue;
+        }
+        let id = r.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let src = r
+            .get("src")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let provides = r
+            .get("provides")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let Some(src) = src else {
+            // NO `src` — the alias cannot be derived, so say so rather than guess one.
+            for sp in specs {
+                findings.push(RelFinding {
+                    kind, id: id.clone(), src: None, provides: provides.clone(),
+                    spec: sp.spec, alias: None, divergent: false,
+                });
+            }
+            continue;
+        };
+        let ok = agrees(r, kind);
+        if provides.is_some() && ok == Some(false) {
+            overreaching.push((id.clone(), provides.clone().unwrap_or_default(), src.clone()));
+        }
+        for sp in specs {
+            findings.push(RelFinding {
+                kind, id: id.clone(), src: Some(src.clone()), provides: provides.clone(),
+                alias: Some(crate::record_source::alias_for(&src, &sp.spec)),
+                spec: sp.spec, divergent: ok == Some(false),
+            });
+        }
+    }
+
+    if json_out {
+        let rows: Vec<serde_json::Value> = findings
+            .iter()
+            .map(|f| {
+                serde_json::json!({ "kind": f.kind, "id": f.id, "src": f.src, "provides": f.provides,
+                                    "spec": f.spec, "alias": f.alias, "divergent": f.divergent })
+            })
+            .collect();
+        bsc_util::emit_line(
+            &serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?,
+        );
+    } else {
+        let mut by_id: Vec<(&String, Vec<&RelFinding>)> = Vec::new();
+        for f in &findings {
+            match by_id.iter_mut().find(|(k, _)| *k == &f.id) {
+                Some((_, v)) => v.push(f),
+                None => by_id.push((&f.id, vec![f])),
+            }
+        }
+        bsc_util::emit_line(&format!(
+            "store: {} module sources · {} relative specifier(s) across {} record(s)",
+            records.len(),
+            findings.len(),
+            by_id.len()
+        ));
+        for (id, fs) in &by_id {
+            let f0 = fs[0];
+            let flag = if f0.divergent {
+                if f0.provides.is_some() {
+                    "  ⚠ DIVERGENT OVERRIDE — `provides` will be dropped"
+                } else {
+                    "  (divergent, but claims nothing)"
+                }
+            } else {
+                ""
+            };
+            bsc_util::emit_line(&format!(
+                "\n  {} {id}   ({}{}){flag}",
+                f0.kind,
+                f0.src.clone().unwrap_or_else(|| "no src".to_string()),
+                f0.provides.clone().map(|p| format!(" · provides {p}")).unwrap_or_default(),
+            ));
+            for f in fs {
+                bsc_util::emit_line(&format!(
+                    "      {}  →  {}",
+                    f.spec,
+                    f.alias.clone().unwrap_or_else(|| "no `src` — cannot resolve".to_string())
+                ));
+            }
+        }
+        if !overreaching.is_empty() {
+            bsc_util::emit_line(&format!(
+                "\n{} record(s) disagree with the file they shadow AND claim its specifier. \
+                 Repairing their imports alone would ACTIVATE them:",
+                overreaching.len()
+            ));
+            for (id, p, _) in &overreaching {
+                bsc_util::emit_line(&format!("  {id} → {p}"));
+            }
+        }
+    }
+
+    if !fix {
+        if !findings.is_empty() && !json_out {
+            bsc_util::emit_line("\nre-run with --fix to rewrite them. Nothing was written.");
+        }
+        if !findings.is_empty() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    // DISARM FIRST — drop `provides` before making anything resolvable. The other order leaves a window
+    // in which a preview-shaped derivative is a LIVE override of the module it derives from, and the app
+    // is running while this writes.
+    let (mut written, mut dropped) = (0usize, 0usize);
+    let mut failed: Vec<String> = Vec::new();
+    for (id, was, src) in &overreaching {
+        let note = format!("not the whole module (differs from {src}) — provides dropped");
+        match bsc_component::cli::clear_provides(&store, id, Some("claude"), Some(&note)) {
+            Ok(true) => {
+                dropped += 1;
+                bsc_util::emit_line(&format!("  dropped provides  {id}  (was {was})"));
+            }
+            Ok(false) => {}
+            Err(e) => failed.push(format!("{id} (provides): {e}")),
+        }
+    }
+    for (kind, r) in &records {
+        let text = text_of(kind, r);
+        let Some(src) = r.get("src").and_then(serde_json::Value::as_str).map(str::trim).filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        if crate::record_source::relative_specifiers(&text).is_empty() {
+            continue;
+        }
+        let next = repaired(&text, src);
+        if next == text {
+            continue;
+        }
+        let id = r.get("id").and_then(serde_json::Value::as_str).unwrap_or("");
+        if *kind == "component" {
+            // Through `replace_src`, so the write carries the SAME JSX gate and the same #119 guards a
+            // hand-typed `bsc ui set-src` does — a repair must not be able to store what a person could
+            // not.
+            match bsc_component::cli::replace_src(&store, id, &next, Some("claude")) {
+                Ok(()) => {
+                    written += 1;
+                    bsc_util::emit_line(&format!("  rewrote {kind} {id}"));
+                }
+                Err(e) => failed.push(format!("{id}: {e}")),
+            }
+        } else {
+            // An IMPL lives in the graph store, which this verb does not write: `bsc graph impl set` is
+            // its door, and duplicating that write here would be a second path into a store with its own
+            // stamping and optimistic-concurrency rules.
+            failed.push(format!(
+                "{id}: an algorithm impl — repair it with `bsc graph impl set --id {id} --code-file <f>`"
+            ));
+        }
+    }
+    bsc_util::emit_line(&format!("\n{written} record(s) rewritten · {dropped} `provides` dropped."));
+    if !failed.is_empty() {
+        bsc_util::emit_line(&format!("\n{} FAILED:", failed.len()));
+        for f in &failed {
+            bsc_util::emit_line(&format!("  {f}"));
+        }
+        std::process::exit(1);
+    }
+
+    // RE-READ rather than trust the writes. `replace_src` runs its own JSX gate and can refuse, and a
+    // refusal nobody re-checked is exactly how a repair gets reported as done while nothing changed.
+    let remaining: Vec<String> = read_records()
+        .iter()
+        .flat_map(|(k, r)| {
+            let id = r.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+            crate::record_source::relative_specifiers(&text_of(k, r))
+                .into_iter()
+                .map(move |s| format!("{id} → {}", s.spec))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    if remaining.is_empty() {
+        bsc_util::emit_line("store is clean — 0 relative specifiers.");
+        return Ok(());
+    }
+    bsc_util::emit_line("still relative after the fix:");
+    for r in &remaining {
+        bsc_util::emit_line(&format!("  {r}"));
+    }
+    std::process::exit(1);
 }
 
 #[cfg(test)]
