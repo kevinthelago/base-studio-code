@@ -87,16 +87,21 @@ pub fn surface_dir() -> Option<std::path::PathBuf> {
 ///
 /// A `prog` with no spaces is used as-is (`bsc-files` → `bsc-files`), so a standalone bin is still
 /// addressable rather than silently keyless.
-pub fn surface_key(prog: &str) -> String {
+///
+/// `None` when the result would not be a bare filename. Every caller today passes a compile-time
+/// literal from `bsc`'s dispatch, so there is no path by which a separator reaches here — but this is
+/// `pub` and builds a filesystem path, and the ONE thing a `pub fn` in that shape must not do is let a
+/// future dynamic caller reach outside the surfaces directory. Returning `None` makes traversal
+/// unrepresentable rather than defended-against, which is the same call [`crate::is_bare_filename`]
+/// makes for the `--file` payload channel and for the same reason.
+pub fn surface_key(prog: &str) -> Option<String> {
     let mut parts = prog.split_whitespace().peekable();
     if parts.peek() == Some(&"bsc") {
         parts.next();
     }
     let key: Vec<&str> = parts.collect();
-    if key.is_empty() {
-        return prog.trim().to_string();
-    }
-    key.join("-")
+    let key = if key.is_empty() { prog.trim().to_string() } else { key.join("-") };
+    crate::is_bare_filename(&key).then_some(key)
 }
 
 /// Leak an owned string into the `&'static str` [`CmdDoc`] wants. See the module note on why.
@@ -193,7 +198,9 @@ pub fn resolve_surface<'a>(
     cmds: &'a [CmdDoc],
 ) -> (&'a str, &'a [CmdDoc]) {
     let Some(dir) = surface_dir() else { return (tagline, cmds) };
-    let path = dir.join(format!("{}.json", surface_key(prog)));
+    // A key that is not a bare filename has no record and cannot be given one — see `surface_key`.
+    let Some(key) = surface_key(prog) else { return (tagline, cmds) };
+    let path = dir.join(format!("{key}.json"));
     let Ok(raw) = std::fs::read_to_string(&path) else { return (tagline, cmds) };
     // The COMPILED catalog is the set of verbs that dispatch — plus `help`, which the shared help
     // dispatch answers before any command is looked up and which most catalogs therefore omit.

@@ -57,19 +57,43 @@ impl Drop for Scratch {
 /// one failure this module is built to avoid. So the mapping is pinned rather than left to inspection.
 #[test]
 fn the_record_key_is_the_prog_without_its_bsc_prefix() {
+    let key = |p: &str| surface_key(p).expect("a real prog must produce a key");
+
     // Backward compatibility with the five surfaces the spike shipped: their records are keyed on
     // `CliSpec::noun`, which is exactly the last token of `prog`. Changing this orphans them.
-    assert_eq!(surface_key("bsc persona"), "persona");
-    assert_eq!(surface_key("bsc files"), "files");
+    assert_eq!(key("bsc persona"), "persona");
+    assert_eq!(key("bsc files"), "files");
 
     // A NESTED surface keeps its whole path. `bsc logs scope` must not answer to `scope.json`: that
     // name is equally a future top-level `bsc scope`'s, and a record loaded by the WRONG CLI is worse
     // than one never found — it would replace a working catalog with an unrelated one.
-    assert_eq!(surface_key("bsc logs scope"), "logs-scope");
+    assert_eq!(key("bsc logs scope"), "logs-scope");
 
     // A standalone bin has no `bsc ` prefix to strip and stays addressable rather than keyless.
-    assert_eq!(surface_key("bsc-files"), "bsc-files");
-    assert_eq!(surface_key("bsc"), "bsc");
+    assert_eq!(key("bsc-files"), "bsc-files");
+    assert_eq!(key("bsc"), "bsc");
+}
+
+/// `surface_key` is `pub` and its result is joined onto the surfaces directory. Every caller today
+/// passes a compile-time literal, so no separator can reach it — but a `pub fn` in that shape must not
+/// be the thing that lets a future dynamic caller escape the directory. Traversal is made
+/// UNREPRESENTABLE (there is no key to join) rather than defended against downstream.
+#[test]
+fn a_key_that_is_not_a_bare_filename_has_no_record_at_all() {
+    for hostile in ["bsc ../../etc/passwd", "bsc a/b", "bsc a\\b", "bsc ..", "bsc .", "bsc C:evil", "   "] {
+        assert_eq!(surface_key(hostile), None, "`{hostile}` must not resolve to a record path");
+    }
+}
+
+/// ...and resolution treats an unusable key exactly as it treats a missing record: the compiled
+/// catalog, silently. NOT a warning — there is no record here to be wrong about, and a CLI that
+/// complained on every invocation about a name nobody wrote would be noise.
+#[test]
+fn an_unusable_key_falls_back_silently_like_a_missing_record() {
+    let _s = Scratch::new("hostile-key");
+    let (t, c) = resolve_surface("bsc ../../etc/passwd", TAGLINE, COMMANDS);
+    assert_eq!(t, TAGLINE);
+    assert_eq!(c.len(), COMMANDS.len());
 }
 
 // ── the round trip ──────────────────────────────────────────────────────────────────────────────────
