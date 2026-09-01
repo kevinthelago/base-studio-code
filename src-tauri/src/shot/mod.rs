@@ -121,11 +121,13 @@ fn rect_from_css([x, y, w, h]: [f64; 4], component: &str) -> Result<Rect, String
     })
 }
 
-/// How long to wait for `CapturePreview`'s completion handler. Shorter than the CLI's timeout so the
-/// caller gets our real error rather than a bare timeout.
-// Paired with its ONLY user, `capture_webview_png`, which is `#[cfg(windows)]`. Ungated it is dead
-// code on Linux and `-D warnings` rejects it — a Phase 1 artifact that disappears with that path.
-#[cfg(windows)]
+/// How long to wait for a capture's completion callback — `CapturePreview`'s on Windows, the WebKitGTK
+/// snapshot's on Linux. Shorter than the CLI's timeout so the caller gets our real error rather than a
+/// bare timeout.
+// It was `#[cfg(windows)]` while that was the only capturing platform, with a note that the gate was a
+// Phase 1 artifact which would disappear once another arrived. Linux is that platform; the gate is gone.
+// It stays out of the no-capture arm's reach, which never waits on anything.
+#[cfg(any(windows, target_os = "linux"))]
 const CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5_000);
 
 /// The capture's device-pixels-per-CSS-pixel ratio (#3467).
@@ -331,11 +333,96 @@ fn read_stream(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>,
     }
 }
 
-#[cfg(not(windows))]
+/// Snapshot the webview on Linux, where the app runs on WebKitGTK.
+///
+/// `webkit_web_view_get_snapshot` is the sibling the Windows arm's comment names: a RENDER of the
+/// webview's own content, not an OS window grab — so the sandboxed preview iframe is included, and an
+/// occluded or unfocused window still produces real pixels rather than black.
+///
+/// # Threading — the same contract as the Windows arm, for a different reason
+///
+/// `with_webview` runs the closure on the GTK main thread, which is what `snapshot()` requires: it
+/// asserts the calling thread owns the `MainContext` and panics otherwise. The completion callback then
+/// fires later, on that same main loop — so the closure must only START the snapshot and hand the bytes
+/// back through a channel. Waiting inside it would block the very loop that has to deliver the callback.
+/// The wait therefore happens on the CALLER's thread, which is an appchan watcher thread, never the main
+/// one.
+#[cfg(target_os = "linux")]
+fn capture_webview_png(app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
+    use tauri::Manager;
+    use webkit2gtk::gio::Cancellable;
+    use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
+
+    let window = app.get_webview_window("main").ok_or("no `main` webview window — cannot capture")?;
+
+    // The snapshot completes on the WEBVIEW thread; we wait here. See the threading note above.
+    let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<u8>, String>>();
+
+    window
+        .with_webview(move |webview| {
+            // `Visible` and not `FullDocument`: this must match what the Windows `CapturePreview`
+            // produces, and what the frontend's registered crop rects are expressed in — the VIEWPORT.
+            // `FullDocument` would render the whole scrollable page, silently making every named-target
+            // crop land on the wrong pixels.
+            //
+            // `NONE` and not `TRANSPARENT_BACKGROUND`, for the same reason: the composited output the
+            // user is actually looking at is opaque.
+            webview.inner().snapshot(
+                SnapshotRegion::Visible,
+                SnapshotOptions::NONE,
+                None::<&Cancellable>,
+                move |res| {
+                    let out = res
+                        .map_err(|e| format!("webkit_web_view_get_snapshot failed: {e}"))
+                        .and_then(|surface| {
+                            let mut png: Vec<u8> = Vec::new();
+                            surface
+                                .write_to_png(&mut png)
+                                .map_err(|e| format!("cannot encode the snapshot as PNG: {e}"))?;
+                            Ok(png)
+                        });
+                    let _ = tx.send(out);
+                },
+            );
+        })
+        .map_err(|e| format!("cannot reach the webview: {e}"))?;
+
+    let bytes = match rx.recv_timeout(CAPTURE_TIMEOUT) {
+        Ok(r) => r?,
+        Err(_) => {
+            return Err(format!(
+                "the webview did not complete a capture within {}ms",
+                CAPTURE_TIMEOUT.as_millis()
+            ))
+        }
+    };
+    if bytes.is_empty() {
+        // Distinct from a GError: an empty buffer means the encoder wrote nothing. It must not reach the
+        // caller as a "successful" zero-byte PNG — `is_png` would reject it, but this names the cause.
+        return Err("the webview returned an empty capture".into());
+    }
+    Ok(bytes)
+}
+
+/// The no-capture error, as a pure function so it is testable on every platform — including the ones
+/// where the arm below does not compile.
+///
+/// It NAMES the platform. The previous text was the constant `"bsc shot is Windows-only for now"`, which
+/// stayed literally true only while Windows was the only capturing platform and would have gone quietly
+/// wrong the moment a second one landed — as it now has.
+///
+/// Gated to exactly its users — the no-capture arm, plus every platform's test run — rather than carrying
+/// an `allow(dead_code)`, which would also mask a genuinely unused function later.
+#[cfg(any(test, not(any(windows, target_os = "linux"))))]
+fn unsupported_platform_error(os: &str) -> String {
+    format!("bsc shot has no capture for this platform yet ({os}) — no capture was taken")
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn capture_webview_png(_app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
     // Stated, not silent. A black PNG that reads as success is worse than no capture: the loop would
-    // reason confidently about nothing.
-    Err("bsc shot is Windows-only for now (#3261) — no capture was taken".into())
+    // reason confidently about nothing. macOS's `WKWebView.takeSnapshot` is the equivalent when needed.
+    Err(unsupported_platform_error(std::env::consts::OS))
 }
 
 // Clamping lives in `crop::crop_png` (where the image's real dimensions are known) and is tested there.
@@ -373,6 +460,15 @@ mod tests {
         // An ABSOLUTE --out stays honored — the designer's known-good workaround must keep working.
         let abs = if cfg!(windows) { "C:\\elsewhere\\x.png" } else { "/elsewhere/x.png" };
         assert_eq!(destination(&req(Some(abs)), shots, "abc"), PathBuf::from(abs));
+    }
+
+    /// The no-capture error names the platform instead of asserting a stale one.
+    #[test]
+    fn the_no_capture_error_names_the_platform_rather_than_hardcoding_windows() {
+        let msg = unsupported_platform_error("macos");
+        assert!(msg.contains("macos"), "names the platform it actually ran on: {msg}");
+        assert!(msg.contains("no capture was taken"), "and says nothing was captured: {msg}");
+        assert!(!msg.contains("Windows-only"), "the old text was true only while Windows was the only arm");
     }
 
     #[test]
