@@ -176,7 +176,7 @@ reflects it:
 
   **A test harvested onto a record whose module already RETIRED never reaches the packaged seed on its
   own.** `tests harvest` only writes the per-user RUNTIME store — the packaged seed the app ships
-  (`src-tauri/data/knowledge/algorithms.json`) is a SEPARATE file, and `promote-records.mjs` promotes a
+  (`src-tauri/data/knowledge/algorithms.json`) is a SEPARATE file, and `bsc ui promote-seed` promotes a
   record into it only while the record's FILE still exists. For an id that is already seeded (the module
   is gone, only the graph record remains), sync the tests across explicitly:
 

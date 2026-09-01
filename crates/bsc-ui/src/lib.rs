@@ -34,7 +34,9 @@ pub mod claim_census;
 /// call site in this crate is unchanged, which is what keeps the move reviewable as a move.
 pub use bsc_record::record_source;
 pub mod retirable;
+pub mod graph_closure;
 pub mod lift;
+pub mod promote;
 pub mod refresh_seed;
 pub mod retire;
 pub mod shadow;
