@@ -196,18 +196,42 @@ pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
     crate::git_ok(&clone_str, &["merge-base", "--is-ancestor", &sha, "HEAD"])
 }
 
+/// One worktree the boot GC reclaimed, and WHY.
+///
+/// The reason is the whole point: only [`ReclaimReason::MergedClean`] proves the work landed, and the
+/// orphan arm proves nothing. Carrying it means the renderer stops inferring a verdict from a
+/// directory absence — a weaker signal than the one the GC threw away.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReclaimedWorktree {
+    /// `<key>/<name>`, the identity the log and #3614 already used.
+    pub id: String,
+    /// The absolute worktree path — what a pane's `cwd` matches on, so the lookup needs no parsing.
+    pub path: String,
+    pub reason: bsc_fleet::worktree_reconcile::ReclaimReason,
+}
+
 /// Reclaim worktrees that are safe to drop, at boot, so they don't accumulate (#worktree-disk):
 ///   * **orphans** — the project hub `projects/<key>` is gone (a deleted/abandoned project whose
 ///     reclaim didn't fully run): remove the entire `worktrees/<key>/`.
 ///   * **merged + clean** — a live project's worktree whose branch is integrated and tree is clean
 ///     ({@link worktree_is_disposable}).
 ///
-/// Best-effort, pure over `base_dir` for testability; never removes a dirty worktree. Returns the
-/// number of worktree directories reclaimed.
-pub(crate) fn gc_worktrees_impl(base_dir: &Path, has_fleet: &dyn Fn(&str) -> bool) -> Vec<String> {
+/// Best-effort and pure over `base_dir` for testability.
+///
+/// **IT CAN REMOVE A DIRTY WORKTREE.** This doc used to claim it never does; that is true of
+/// [`worktree_is_disposable`] and false of the ORPHAN arm above it, which removes an abandoned
+/// project's worktrees whatever state they are in. The two arms prove different things, so the
+/// returned set says WHICH fired — see [`ReclaimedWorktree`]. That reason cannot be recovered later:
+/// `worktree_is_disposable` needs `clone/.git`, and on the orphan path the hub and clone are already
+/// gone.
+pub(crate) fn gc_worktrees_impl(
+    base_dir: &Path,
+    has_fleet: &dyn Fn(&str) -> bool,
+) -> Vec<ReclaimedWorktree> {
     let root = base_dir.join("worktrees");
     let Ok(rd) = std::fs::read_dir(&root) else { return Vec::new() };
-    let mut removed: Vec<String> = Vec::new();
+    let mut removed: Vec<ReclaimedWorktree> = Vec::new();
     for entry in rd.flatten() {
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
@@ -244,8 +268,18 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path, has_fleet: &dyn Fn(&str) -> boo
                 // relaunches workers into the deleted dirs, jamming the backend on every boot — is
                 // diagnosable and reconcilable rather than a silent "reclaimed N".
                 let id = format!("{key}/{name}");
-                log::info!("boot-gc: reclaimed worktree {id} ({})", if hub_gone { "orphan project" } else { "merged+clean" });
-                removed.push(id);
+                // The reason is CARRIED, not just logged. It is the only moment it exists: the clone
+                // this arm compared against is, on the orphan path, already deleted.
+                let reason = if hub_gone {
+                    bsc_fleet::worktree_reconcile::ReclaimReason::OrphanProject
+                } else {
+                    bsc_fleet::worktree_reconcile::ReclaimReason::MergedClean
+                };
+                log::info!(
+                    "boot-gc: reclaimed worktree {id} ({})",
+                    if hub_gone { "orphan project" } else { "merged+clean" }
+                );
+                removed.push(ReclaimedWorktree { id, path: wt.to_string_lossy().into_owned(), reason });
             }
         }
         // Drop the per-project root if the whole project is gone (and now emptied).
@@ -261,14 +295,63 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path, has_fleet: &dyn Fn(&str) -> boo
 
 /// Boot entry point: GC stale worktrees against the real base dir (#worktree-disk). Off the
 /// synchronous boot path.
-pub(crate) fn gc_worktrees_on_boot() -> Vec<String> {
+pub(crate) fn gc_worktrees_on_boot() -> Vec<ReclaimedWorktree> {
     // A project with a fleet in plan.db is resumable — its worktrees are spared (#3932). `fleet_for`
     // reads without creating a db, so probing a project that never had one is harmless.
-    gc_worktrees_impl(&crate::bsc_base_dir(), &|key| {
+    let base = crate::bsc_base_dir();
+    let removed = gc_worktrees_impl(&base, &|key| {
         crate::project::plan_db::fleet_for(key)
             .and_then(|f| f.get("streams").and_then(|s| s.as_array()).map(|a| !a.is_empty()))
             .unwrap_or(false)
-    })
+    });
+    // PERSISTED, because the reader is the NEXT boot. This GC runs behind a startup grace while the
+    // renderer reconciles at hydrate, so the worktree a pane finds missing was reclaimed on a previous
+    // run. Holding the reason in memory would answer nobody.
+    record_reclaims(&reclaim_ledger_path(&base), &removed);
+    removed
+}
+
+/// Where the reclaim ledger lives — beside the stores it describes.
+pub(crate) fn reclaim_ledger_path(base_dir: &Path) -> std::path::PathBuf {
+    base_dir.join("worktree-reclaims.json")
+}
+
+/// How many reclaims the ledger keeps.
+///
+/// It exists to answer "why is this pane's worktree gone" on the next boot, so it needs recent
+/// history and not all of it. Unbounded, a long-lived install would carry every reclaim it ever made
+/// for a question nobody asks twice.
+const RECLAIM_LEDGER_CAP: usize = 500;
+
+/// Append `removed` to the ledger, newest last, capped. Best-effort: a ledger that cannot be written
+/// costs a later reclaim its reason (it reads as `Unrecorded`, which is the honest fallback), and must
+/// never fail a boot.
+pub(crate) fn record_reclaims(path: &Path, removed: &[ReclaimedWorktree]) {
+    if removed.is_empty() {
+        return;
+    }
+    let mut all = read_reclaims(path);
+    // A path can be reclaimed again after being rebuilt, and the LATEST reason is the true one.
+    all.retain(|old: &ReclaimedWorktree| !removed.iter().any(|n| n.path == old.path));
+    all.extend(removed.iter().cloned());
+    if all.len() > RECLAIM_LEDGER_CAP {
+        all.drain(..all.len() - RECLAIM_LEDGER_CAP);
+    }
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(txt) = serde_json::to_string_pretty(&all) {
+        let _ = std::fs::write(path, txt);
+    }
+}
+
+/// The ledger, or empty. An absent or unreadable ledger is "nothing recorded", which is exactly what
+/// `ReclaimReason::Unrecorded` means — no special case needed downstream.
+pub(crate) fn read_reclaims(path: &Path) -> Vec<ReclaimedWorktree> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
 }
 
 // ── Tauri commands ──────────────────────────────────────────────────────────────
@@ -401,11 +484,11 @@ mod tests {
         assert!(removed.len() >= 2, "reclaimed at least the merged + orphan worktrees (got {removed:?})");
         // #3614: the reclaimed set is returned BY IDENTITY (`<key>/<name>`), not just a count — so a
         // caller/boot reconciliation can see exactly which fleet workers were dropped.
-        assert!(removed.iter().any(|r| r.as_str() == "gone/api--x"), "orphan identity in the reclaimed set: {removed:?}");
+        assert!(removed.iter().any(|r| r.id == "gone/api--x"), "orphan identity in the reclaimed set: {removed:?}");
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// THE TWO ARMS ARE NOT EQUIVALENT, and the difference is invisible downstream.
+    /// THE TWO ARMS ARE NOT EQUIVALENT, and the reclaimed set now SAYS WHICH FIRED.
     ///
     /// `disposable = hub_gone || worktree_is_disposable(clone, wt)`. The second arm proves clean +
     /// merged. The first proves NEITHER — and this is the case that shows it: an orphaned project's
@@ -414,10 +497,11 @@ mod tests {
     /// and merged and would have been reclaimed by either arm; it cannot separate them.)
     ///
     /// This matters beyond disk hygiene: the boot reconciliation
-    /// (`bsc_fleet::worktree_reconcile`) infers from a missing worktree that the work MERGED, and
-    /// renders a green resting card saying so. On this path that claim is false. The reason is known
-    /// here — it is in the log line below — and is currently dropped rather than carried. Tracked on
-    /// `a-reclaimed-worktree-reports-why-it-was-reclaimed`.
+    /// (`bsc_fleet::worktree_reconcile`) used to infer from a missing worktree that the work MERGED
+    /// and render a green resting card saying so — false on exactly this path. The reason is known
+    /// HERE and nowhere later (`worktree_is_disposable` needs `clone/.git`, which this test deletes),
+    /// so it is now carried out on the reclaimed record rather than dropped into a log line. The
+    /// assertion below flipped when `a-reclaimed-worktree-reports-why-it-was-reclaimed` landed.
     #[test]
     fn the_orphan_arm_reclaims_work_the_merged_clean_arm_would_refuse() {
         let base = unique_dir("bsc-teardown", "gc-orphan-arms");
@@ -451,10 +535,19 @@ mod tests {
         let removed = gc_worktrees_impl(&base, &|_| false);
 
         assert!(!wt.exists(), "the orphan arm reclaimed it regardless — committed and uncommitted work gone");
-        assert!(
-            removed.iter().any(|r| r == "gone/api--x"),
-            "and it is in the reclaimed set with no indication the work never landed: {removed:?}"
+        let rec = removed
+            .iter()
+            .find(|r| r.id == "gone/api--x")
+            .expect("the reclaimed set names it: {removed:?}");
+        // THE POINT OF THE WHOLE ITEM: the set records that this reclaim proves nothing, so the card
+        // downstream cannot claim the work merged.
+        assert_eq!(
+            rec.reason,
+            bsc_fleet::worktree_reconcile::ReclaimReason::OrphanProject,
+            "an orphan-arm reclaim must be recorded as such, not as merged+clean"
         );
+        assert!(!rec.reason.proves_merged(), "and it must not read as evidence the work landed");
+        assert_eq!(rec.path, wt.to_string_lossy(), "the path is what a pane's cwd matches on");
         let _ = fs::remove_dir_all(&base);
     }
 

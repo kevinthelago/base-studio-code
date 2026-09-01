@@ -20,7 +20,7 @@ import {
   reclaimedWorkerEnd,
   reconcileMissingWorktrees,
 } from "@/shared/lib/fleet/worktreeReconcile";
-import type { WorktreeCheck } from "@/shared/lib/fleet/worktreeReconcile";
+import type { WorktreeCheck, ReclaimReason } from "@/shared/lib/fleet/worktreeReconcile";
 import type { EndedInfo } from "@/store/types/console";
 
 const FIXTURE = join(process.cwd(), "src/shared/lib/fleet/worktreeReconcile.fixtures.json");
@@ -123,6 +123,9 @@ type ReconcileCase = {
   checks: WorktreeCheck[];
   present: string[];
   alreadyEnded: string[];
+  /** The GC ledger's reason per cwd. Absent means the GC recorded nothing for it, which is its own
+   *  verdict (`unrecorded`) and NOT the same as the orphan arm. */
+  reasons?: Record<string, ReclaimReason>;
 };
 
 const c = (paneId: string, cwd: string, streamId: string): WorktreeCheck => ({ paneId, cwd, streamId });
@@ -161,6 +164,25 @@ const RECONCILE: ReconcileCase[] = [
     checks: [c("p:api", "/wt/same", "api"), c("p:web", "/wt/same", "web")],
     present: [], alreadyEnded: [],
   },
+  // The three GC arms, so the fixture binds every verdict the reconciliation can reach — not just
+  // the one the old unconditional summary produced.
+  {
+    label: "gone because the project hub was ORPHANED — proves nothing about the work",
+    checks: [c("p:api", "/wt/orphan", "api")],
+    present: [], alreadyEnded: [],
+    reasons: { "/wt/orphan": "orphan-project" as const },
+  },
+  {
+    label: "gone because the GC proved it merged + clean",
+    checks: [c("p:api", "/wt/merged", "api")],
+    present: [], alreadyEnded: [],
+    reasons: { "/wt/merged": "merged-clean" as const },
+  },
+  {
+    label: "gone for NEITHER GC reason — removed by hand or before the ledger existed",
+    checks: [c("p:api", "/wt/mystery", "api")],
+    present: [], alreadyEnded: [],
+  },
 ];
 
 const NOW = 1_700_000_000_000;
@@ -189,15 +211,18 @@ describe("worktreeReconcile fixtures", () => {
         (paneId) => r.alreadyEnded.includes(paneId),
         (paneId, info) => void marked.push({ paneId, info }),
         () => NOW,
+        (cwd) => r.reasons?.[cwd] ?? "unrecorded",
       );
       reconcile.push({ ...r, ended, marked });
     }
 
     // The verdict on its own, so a Rust test can name it without a reconciliation around it.
-    const verdicts = ["api", "payments", ""].map((streamId) => ({
-      streamId,
-      info: reclaimedWorkerEnd(streamId, NOW),
-    }));
+    // Every stream id CROSSED with every reason — the verdict is now a function of both, and a
+    // fixture that only varied the stream would bind one third of it.
+    const REASONS: ReclaimReason[] = ["merged-clean", "orphan-project", "unrecorded"];
+    const verdicts = ["api", "payments", ""].flatMap((streamId) =>
+      REASONS.map((reason) => ({ streamId, reason, info: reclaimedWorkerEnd(streamId, NOW, reason) })),
+    );
 
     const doc = { now: NOW, select, reconcile, verdicts };
 
@@ -207,13 +232,23 @@ describe("worktreeReconcile fixtures", () => {
     expect(JSON.parse(readFileSync(FIXTURE, "utf8"))).toEqual(doc);
   });
 
-  it("the summary asserts merged work — the claim the Rust side pins as unproven", () => {
+  it("only a PROVED reclaim asserts merged work", () => {
     // The GC reclaims when `hub_gone || worktree_is_disposable(...)`. Only the second arm proves
-    // merged+clean. This wording is unconditional, so it is a false claim on the first arm.
-    const info = reclaimedWorkerEnd("api", NOW);
-    expect(info.state).toBe("done");
-    expect(info.summary).toContain("work merged");
-    expect(info.summary).not.toContain("orphan");
+    // merged + clean, so only that arm may say so. This replaced a test asserting the unconditional
+    // wording, which was a false claim on the first arm.
+    const merged = reclaimedWorkerEnd("api", NOW, "merged-clean");
+    expect(merged.state).toBe("done");
+    expect(merged.summary).toContain("work merged");
+
+    for (const reason of ["orphan-project", "unrecorded"] as const) {
+      const info = reclaimedWorkerEnd("api", NOW, reason);
+      expect(info.state, reason).not.toBe("done");
+      expect(info.summary, reason).not.toContain("work merged");
+    }
+    // ...and the two unproved arms are distinguishable from each other.
+    expect(reclaimedWorkerEnd("api", NOW, "orphan-project").summary).not.toBe(
+      reclaimedWorkerEnd("api", NOW, "unrecorded").summary,
+    );
   });
 
   it("every check carries a stream and a cwd", () => {
