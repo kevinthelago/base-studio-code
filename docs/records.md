@@ -150,8 +150,8 @@ And two whole categories of module must stay files:
 
 ```bash
 npm test -- src/app/runtime/recordImports.test.ts   # the SEED — in git, runs on a fresh clone
-node scripts/check-record-imports.mjs               # the STORE — per-machine; exit 1 on any finding
-node scripts/check-record-imports.mjs --fix         # ...and repair it
+bsc ui imports                                     # the STORE — per-machine; exit 1 on any finding
+bsc ui imports --fix                               # ...and repair it
 ```
 
 `makeRequire` routes a specifier to the registry under its **literal key**, so `./useDockBack` needs a
@@ -220,7 +220,7 @@ node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .t
 node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
 node scripts/retire-module.mjs <src-relative-path>
 node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
-node scripts/check-record-imports.mjs           # the RECORD half — `retire-module.mjs` runs this too
+bsc ui imports                                 # the RECORD half — `retire-module.mjs` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
 

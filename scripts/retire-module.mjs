@@ -46,7 +46,7 @@
 // neighbour was a file a bundler could resolve; retiring it armed the trap, and nothing in the gate
 // looked — tsc, lint, vitest, the kit test and `platformBoundary` were green across every tranche while
 // 35 store specifiers were already dead. The sweep below closes it, and
-// `src/app/runtime/recordImports.test.ts` + `scripts/check-record-imports.mjs` are the standing guards
+// `src/app/runtime/recordImports.test.ts` + `bsc ui imports` are the standing guards
 // (seed and store respectively) so a new one cannot appear unnoticed.
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -342,9 +342,9 @@ function sweepStore() {
   const bin = [process.env.BSC_BIN, join(REPO, "target/release/bsc.exe"), join(REPO, "target/release/bsc")].find(
     (p) => p && existsSync(p),
   );
-  if (!bin) return "no built `bsc` — run `node scripts/check-record-imports.mjs --fix` once one exists";
+  if (!bin) return "no built `bsc` — run `bsc ui imports --fix` once one exists";
   try {
-    const out = execFileSync(process.execPath, [join(REPO, "scripts/check-record-imports.mjs"), ...(DRY ? [] : ["--fix"])], {
+    const out = execFileSync(bin, ["ui", "imports", ...(DRY ? [] : ["--fix"])], {
       encoding: "utf8",
       env: { ...process.env, BSC_BIN: bin },
     });

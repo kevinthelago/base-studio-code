@@ -7297,7 +7297,7 @@ fn refuse_buildable_regression(old_record: &serde_json::Value, new_src: &str) ->
 /// SAME write-time JSX syntax gate as `set` (#2928) before writing. The write funnels through
 /// [`stamped_set`] so it bumps `rev`/`updatedAt`/`updatedBy` like every other `bsc ui` mutation (#3164).
 /// Errors when the component is absent. Pure of stdin/print so tests drive it directly.
-fn replace_src(
+pub fn replace_src(
     store: &bsc_json_store::Store,
     id: &str,
     src: &str,
@@ -7324,6 +7324,44 @@ fn replace_src(
     // which is how the #11/#21 stale errors survived). Best-effort; a no-op unless this id has an error.
     let _ = crate::preview_errors::clear(id);
     Ok(())
+}
+
+/// Drop `provides` from component `id` — the DISARM half of a records-carry-relative-imports repair.
+///
+/// A record that diverges from the live file it names is not the whole module, so its `provides` is a
+/// false claim; and because a record's `provides` BEATS the platform registry, leaving it in place while
+/// repairing its imports would turn a preview-shaped derivative into a working, LIVE override of the
+/// module it derives from. That is why the repair drops the claim FIRST and rewrites second — the other
+/// order leaves a window, and the app is running while this happens.
+///
+/// Goes through [`stamped_set`] like every other mutation, so the drop is stamped and appears in
+/// `bsc ui log` rather than being an untraceable edit.
+pub fn clear_provides(
+    store: &bsc_json_store::Store,
+    id: &str,
+    by: Option<&str>,
+    note: Option<&str>,
+) -> Result<bool, String> {
+    let mut record = load_component_object(store, id)?;
+    {
+        let obj = record.as_object_mut().expect("load_component_object guarantees an object");
+        if obj.remove("provides").is_none() {
+            return Ok(false); // nothing claimed — not an error, just nothing to disarm
+        }
+    }
+    let writer = crate::record::resolve_writer(by);
+    // Mirrors `stamped_set`, but carries the NOTE: why a claim was dropped is the part a reader needs
+    // months later, and `stamped_set` has no channel for it.
+    let prior = current_record(store, id)?;
+    crate::record::stamp_with_history(
+        &mut record,
+        &prior,
+        &writer,
+        &crate::record::now_iso(),
+        note,
+    );
+    store.set(id, &serde_json::to_string(&record).map_err(|e| format!("set: {e}"))?)?;
+    Ok(true)
 }
 
 /// Set `value` at `pointer` on component `id`'s record, then run the `set` syntax gate (#2928) — so a
