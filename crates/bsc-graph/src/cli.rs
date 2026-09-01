@@ -1039,7 +1039,14 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
     if let Some((path, mut doc)) = seed_doc {
         write_seed_tests(&path, &mut doc, &id, tests)?;
     }
-    Ok(serde_json::json!({ "id": id, "name": name, "src": src_path, "seeded": want_seed }))
+    // NAME THE FILE. A `--seed` write resolves its target through `seed_path()`, which is not the
+    // caller's cwd unless it happens to be — so "seeded: true" alone left a worktree agent believing it
+    // had written its own tree when it had written the repo root's. `bsc ui tests adopt` already reports
+    // its seed path and is the reason that verb behaved correctly from a worktree.
+    Ok(serde_json::json!({
+        "id": id, "name": name, "src": src_path, "seeded": want_seed,
+        "seedPath": seed_path_for_report(want_seed),
+    }))
 }
 
 /// Resolve and parse the packaged seed, confirming `id` is in it — the read half of
@@ -1051,6 +1058,34 @@ fn tests_set(args: &[String]) -> Result<Value, String> {
 /// Refuses an id the seed does not carry rather than deferring to an insert later — mirroring
 /// `tests_set`'s own existing-record-only rule, and for the same reason: a record invented here would
 /// not be the one the frontend and every fresh clone actually ship.
+/// Does the PACKAGED seed still carry `id`? The question `merge` has to answer about its own result.
+///
+/// A missing or unparseable seed answers `false`: this drives an advisory line, and inventing an
+/// outstanding step from a seed nobody can read would be worse than staying quiet.
+fn seed_still_carries(id: &str) -> bool {
+    crate::seed_path()
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|d| {
+            d.get("implementations")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().any(|im| im.get("id").and_then(Value::as_str) == Some(id)))
+        })
+        .unwrap_or(false)
+}
+
+/// The absolute seed file a `--seed` write went to, for the verb's own output — `Null` when the write
+/// did not touch the seed. Reported rather than assumed: see [`crate::seed_under_checkout`].
+fn seed_path_for_report(want_seed: bool) -> Value {
+    if !want_seed {
+        return Value::Null;
+    }
+    crate::seed_path()
+        .and_then(|p| std::fs::canonicalize(&p).ok().or(Some(p)))
+        .map(|p| Value::String(p.display().to_string()))
+        .unwrap_or(Value::Null)
+}
+
 fn load_seed_doc(id: &str) -> Result<(std::path::PathBuf, Value), String> {
     let path = crate::seed_path().ok_or(
         "packaged seed `knowledge/algorithms.json` not found — set BSC_DATA_DIR to the directory \
@@ -1800,6 +1835,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }
                 emit(&serde_json::json!({
                     "ok": true, "suppressed": id, "supersededBy": tomb.get("supersededBy"), "seeded": want_seed,
+                    "seedPath": seed_path_for_report(want_seed),
                 }))
             }
             Some("unsuppress") => {
@@ -3457,7 +3493,29 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 &bsc_record::resolve_writer(flag_value(&args, "--by").as_deref()),
             )?;
             crate::save(&g)?;
-            emit(&serde_json::json!({ "from": from, "into": into, "repointed": repointed, "removed": from }))
+            // A MERGE IS TWO COMMANDS WHEN `from` IS PACKAGED, and this used to report only the first.
+            //
+            // `merge` removes `from` from the RUNTIME store. If the packaged seed also carries that id
+            // the reconcile re-adds it, and the seed is the copy `emit-records` reads — so the fold
+            // undoes itself and the output said `"removed"` regardless. MEASURED 2026-09-01 folding
+            // `llm-energy.ts`: `impl get` returned null while the seed still listed it and `git status`
+            // was clean.
+            //
+            // It cannot simply do the seed side by analogy with `--seed` elsewhere: what the seed needs
+            // is not a removal but a TOMBSTONE, which is why `impl remove` refuses a packaged record and
+            // `suppress` exists. So report the outstanding work and name the exact command, rather than
+            // performing a different operation than the one asked for.
+            let seed_still_has = seed_still_carries(from);
+            let mut out = serde_json::json!({
+                "from": from, "into": into, "repointed": repointed, "removed": from,
+                "seedStillCarries": seed_still_has,
+            });
+            if seed_still_has {
+                out["nextStep"] = Value::String(format!(
+                    "the packaged seed still carries '{from}', so the reconcile will re-add it — finish                      the fold with: bsc graph impl suppress {from} --superseded-by {into} --seed"
+                ));
+            }
+            emit(&out)
         }
         "help" | "-h" | "--help" => {
             print!("{}", help(prog));
@@ -6943,6 +7001,41 @@ mod dedup_tests {
     /// THE SUGGESTION FOLLOWS THE EVIDENCE. "Fold with `bsc graph merge`" is right for one
     /// implementation written twice and WRONG for a shared pattern — folding a contract group deletes
     /// a real caller's function. Across the six substantive findings on this repo the old blanket
+    /// A MERGE IS TWO COMMANDS when `from` is packaged, and the output has to say so.
+    ///
+    /// `merge` removes `from` from the RUNTIME store only. When the packaged seed carries the same id
+    /// the reconcile re-adds it and the fold undoes itself — measured on `llm-energy.ts`, where
+    /// `impl get` returned null while the seed still listed it. It cannot do the seed side by analogy
+    /// with `--seed` elsewhere, because the seed needs a TOMBSTONE rather than a removal, so it reports
+    /// the outstanding step and names the exact command instead of performing a different one.
+    #[test]
+    fn merge_says_when_the_packaged_seed_still_carries_the_folded_id() {
+        let dir = std::env::temp_dir().join(format!("bsc-graph-mergeseed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = dir.join("knowledge");
+        std::fs::create_dir_all(&data).unwrap();
+        let store = dir.join("store.json");
+        let two = serde_json::json!({ "implementations": [
+            { "id": "a.ts", "tech": "typescript", "role": "algorithm", "name": "a", "code": "export const a = 1;" },
+            { "id": "b.ts", "tech": "typescript", "role": "algorithm", "name": "b", "code": "export const b = 1;" },
+        ]});
+        std::fs::write(&store, two.to_string()).unwrap();
+        std::fs::write(data.join("algorithms.json"), two.to_string()).unwrap();
+        let _guard = super::store_and_data_at(&store, &dir);
+
+        // The fold empties the runtime store of `a.ts` — and the seed still has it, which is the whole
+        // point: the reconcile would put it straight back.
+        super::run(vec!["merge".into(), "a.ts".into(), "b.ts".into()], "bsc graph").unwrap();
+        assert!(crate::load()["implementations"].as_array().unwrap()
+            .iter().all(|im| im["id"] != "a.ts"), "merge left it in the runtime store");
+        assert!(super::seed_still_carries("a.ts"), "the seed still holds it, and merge must report that");
+
+        // With nothing outstanding it stays quiet.
+        std::fs::write(data.join("algorithms.json"), serde_json::json!({ "implementations": [] }).to_string()).unwrap();
+        assert!(!super::seed_still_carries("a.ts"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// advice was correct for none of them.
     #[test]
     fn the_suggestion_never_proposes_a_merge_for_a_shared_contract() {

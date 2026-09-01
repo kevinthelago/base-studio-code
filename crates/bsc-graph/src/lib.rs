@@ -104,7 +104,64 @@ pub fn seed() -> Value {
 /// path, and landing a test onto the packaged copy is optional curation, not something every boot
 /// depends on, so an ordinary error is right here where [`seed`] would rather panic.
 pub fn seed_path() -> Option<PathBuf> {
+    seed_path_from(std::env::current_dir().ok().as_deref())
+}
+
+/// [`seed_path`] with the starting directory passed in, so the PRECEDENCE is testable without
+/// mutating the process's cwd. The order is the whole contract:
+///
+///   1. `$BSC_DATA_DIR` — the one form that says "this tree, deliberately";
+///   2. the checkout enclosing `start` (see [`seed_under_checkout`]);
+///   3. `bsc_util::packaged` — the shipped resource dir, then the checkout baked into the binary.
+///
+/// Step 2 is the fix, and it must sit BELOW the env override and ABOVE the packaged fallback. Testing
+/// `seed_under_checkout` alone does not pin that: the walk keeps passing while nothing calls it, which
+/// is exactly what happened on the first attempt here.
+pub fn seed_path_from(start: Option<&Path>) -> Option<PathBuf> {
+    if let Ok(d) = std::env::var("BSC_DATA_DIR") {
+        let d = d.trim();
+        if !d.is_empty() {
+            let p = Path::new(d).join("knowledge").join("algorithms.json");
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    if let Some(p) = start.and_then(seed_under_checkout) {
+        return Some(p);
+    }
     bsc_util::packaged::resolved_path("knowledge/algorithms.json")
+}
+
+/// The packaged seed belonging to the checkout that ENCLOSES `start`, found by walking up for
+/// `src-tauri/data/knowledge/algorithms.json`.
+///
+/// WHY THIS EXISTS. `bsc_util::packaged` resolves `$BSC_DATA_DIR`, then the shipped resource dir, then
+/// the dev checkout baked into the binary — and none of those is the caller's cwd. The binary on PATH
+/// is the staged `~/.base-studio-code/bin/bsc`, so every worktree agent writing `--seed` was aiming at
+/// ONE target: the repo root.
+///
+/// MEASURED 2026-09-01: eighteen `tests set --seed` calls run with the cwd inside `wt-171` all reported
+/// success; wt-171's seed was unchanged and the ROOT's `algorithms.json` had sixteen altered records.
+/// The root is checked out on the app branch and runs the app, so the write landed on a branch nobody
+/// chose, `npm run promote` then refused for "uncommitted changes" naming nothing about the cause, and
+/// the obvious way to clean it — `git checkout` in the root — would have destroyed the work while the
+/// session that made it never knew it was there. Two agents doing it at once interleave with no lock.
+///
+/// A WALK, not `git rev-parse`: the thing being looked for IS the data tree, so finding it directly
+/// needs no git, works in a worktree exactly as in the main checkout, and cannot disagree with itself
+/// about where the repo starts. Returns `None` outside a checkout, which is the shipped-build case and
+/// correctly falls through to the packaged resolution.
+pub fn seed_under_checkout(start: &Path) -> Option<PathBuf> {
+    let mut dir = Some(start);
+    while let Some(d) = dir {
+        let p = d.join("src-tauri").join("data").join("knowledge").join("algorithms.json");
+        if p.is_file() {
+            return Some(p);
+        }
+        dir = d.parent();
+    }
+    None
 }
 
 /// The writable store path — `BSC_GRAPH_STORE` if set, else `~/.base-studio-code/knowledge/algorithms.json`.
@@ -1223,6 +1280,54 @@ pub fn doctor_with_entities(g: &Value, entities: &[String]) -> Vec<Finding> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A `--seed` write must aim at the checkout the caller is STANDING IN.
+    ///
+    /// Eighteen real `tests set --seed` calls run from a worktree all landed in the repo ROOT, because
+    /// `bsc_util::packaged` resolves `$BSC_DATA_DIR` / the shipped dir / the checkout baked into the
+    /// binary, and the binary on PATH is the shared staged one. This is the walk that fixes it.
+    #[test]
+    fn a_seed_write_finds_the_checkout_it_is_standing_in() {
+        let root = std::env::temp_dir().join(format!("bsc-graph-seedwalk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let wt = root.join("wt-x");
+        let data = wt.join("src-tauri").join("data").join("knowledge");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("algorithms.json"), "{}").unwrap();
+        let deep = wt.join("crates").join("bsc-graph").join("src");
+        std::fs::create_dir_all(&deep).unwrap();
+
+        // From anywhere inside the worktree, including several levels down.
+        assert_eq!(super::seed_under_checkout(&deep), Some(data.join("algorithms.json")));
+        assert_eq!(super::seed_under_checkout(&wt), Some(data.join("algorithms.json")));
+        // OUTSIDE any checkout it finds nothing and the packaged resolution takes over — the shipped
+        // build case, which must not be broken by making the dev case work.
+        assert_eq!(super::seed_under_checkout(&root), None);
+
+        // AND THE WALK IS ACTUALLY WIRED IN. Testing `seed_under_checkout` alone passes while nothing
+        // calls it — verified by deleting the call and watching this file stay green, which is the
+        // caged-test failure this repo keeps paying for. So pin the PRECEDENCE through `seed_path_from`.
+        let other = root.join("elsewhere").join("knowledge");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("algorithms.json"), "{}").unwrap();
+        let _lock = crate::cli::test_support::store_lock();
+        // SAFETY: the lock above serialises every test that repoints this variable.
+        unsafe { std::env::remove_var("BSC_DATA_DIR") };
+        assert_eq!(
+            super::seed_path_from(Some(&deep)),
+            Some(data.join("algorithms.json")),
+            "the enclosing checkout must beat the packaged fallback",
+        );
+        unsafe { std::env::set_var("BSC_DATA_DIR", root.join("elsewhere")) };
+        assert_eq!(
+            super::seed_path_from(Some(&deep)),
+            Some(other.join("algorithms.json")),
+            "an explicit BSC_DATA_DIR must still beat the walk",
+        );
+        unsafe { std::env::remove_var("BSC_DATA_DIR") };
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// THE CACHE MUST FOLLOW ITS INPUT. `graph_json` memoized the first seed any caller asked for and
     /// then ignored where the next caller pointed — so `BSC_DATA_DIR`, which `bsc_util::packaged`
     /// treats as its highest-priority override, stopped working the moment anything in the process had
