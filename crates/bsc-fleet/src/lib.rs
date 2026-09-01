@@ -29,6 +29,7 @@ pub mod membership;
 /// The dependency gate (#the-director-can-see-which-streams-are-held) — which streams may start, which
 /// are waiting on an upstream, and which sit in a cycle. Shares one CONTRACT FIXTURE with the app's
 /// `streamGate.ts`, so the reporter and the launcher cannot answer differently.
+mod glob_parity;
 pub mod fault_triage;
 pub mod worker_auto_end;
 pub mod gate;
