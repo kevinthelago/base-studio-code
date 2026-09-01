@@ -1,0 +1,484 @@
+{
+  "now": 1700000000000,
+  "select": [
+    {
+      "label": "nothing at all",
+      "panes": [],
+      "extraCwds": {},
+      "checks": []
+    },
+    {
+      "label": "one ordinary worker",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/proj/repo--api"
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/proj/repo--api",
+          "streamId": "api"
+        }
+      ]
+    },
+    {
+      "label": "several workers — the output order follows the store's order, not a sort",
+      "panes": [
+        {
+          "paneId": "p:web",
+          "stream": "web",
+          "cwd": "/wt/b"
+        },
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/a"
+        },
+        {
+          "paneId": "p:db",
+          "stream": "db",
+          "cwd": "/wt/c"
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/b",
+          "streamId": "web"
+        },
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        },
+        {
+          "paneId": "p:db",
+          "cwd": "/wt/c",
+          "streamId": "db"
+        }
+      ]
+    },
+    {
+      "label": "an ALREADY-ENDED pane is not re-checked",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/a",
+          "ended": true
+        },
+        {
+          "paneId": "p:web",
+          "stream": "web",
+          "cwd": "/wt/b"
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/b",
+          "streamId": "web"
+        }
+      ]
+    },
+    {
+      "label": "a DISABLED pane is not checked",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/a"
+        },
+        {
+          "paneId": "p:web",
+          "stream": "web",
+          "cwd": "/wt/b",
+          "disabled": true
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        }
+      ]
+    },
+    {
+      "label": "a pane with NO cwd is not checked — there is nothing to probe",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/a"
+        },
+        {
+          "paneId": "p:web",
+          "stream": "web"
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        }
+      ]
+    },
+    {
+      "label": "an EMPTY-STRING cwd is not checked either — falsy, not merely absent",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": ""
+        }
+      ],
+      "extraCwds": {},
+      "checks": []
+    },
+    {
+      "label": "a pane with an undefined stream is not checked",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a"
+        },
+        {
+          "paneId": "p:web",
+          "stream": "web",
+          "cwd": "/wt/b"
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/b",
+          "streamId": "web"
+        }
+      ]
+    },
+    {
+      "label": "a cwd for a pane that is NOT a fleet worker is ignored — membership is the filter",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/a"
+        }
+      ],
+      "extraCwds": {
+        "p:director": "/hub",
+        "t0p0": "/somewhere"
+      },
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        }
+      ]
+    },
+    {
+      "label": "ended AND disabled at once",
+      "panes": [
+        {
+          "paneId": "p:api",
+          "stream": "api",
+          "cwd": "/wt/a",
+          "ended": true,
+          "disabled": true
+        }
+      ],
+      "extraCwds": {},
+      "checks": []
+    },
+    {
+      "label": "the stream id differs from the pane id — both are carried",
+      "panes": [
+        {
+          "paneId": "man:build:p2",
+          "stream": "payments",
+          "cwd": "/wt/proj/repo--payments"
+        }
+      ],
+      "extraCwds": {},
+      "checks": [
+        {
+          "paneId": "man:build:p2",
+          "cwd": "/wt/proj/repo--payments",
+          "streamId": "payments"
+        }
+      ]
+    }
+  ],
+  "reconcile": [
+    {
+      "label": "no checks",
+      "checks": [],
+      "present": [],
+      "alreadyEnded": [],
+      "ended": [],
+      "marked": []
+    },
+    {
+      "label": "worktree still there — the worker is left alone",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        }
+      ],
+      "present": [
+        "/wt/a"
+      ],
+      "alreadyEnded": [],
+      "ended": [],
+      "marked": []
+    },
+    {
+      "label": "worktree GONE — ended, and this is the claim under scrutiny",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [],
+      "ended": [
+        "p:api"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "done",
+            "streamId": "api",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "gone but ALREADY ended meanwhile — not re-marked",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [
+        "p:api"
+      ],
+      "ended": [],
+      "marked": []
+    },
+    {
+      "label": "some gone, some present — only the gone ones end",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        },
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/b",
+          "streamId": "web"
+        },
+        {
+          "paneId": "p:db",
+          "cwd": "/wt/c",
+          "streamId": "db"
+        }
+      ],
+      "present": [
+        "/wt/b"
+      ],
+      "alreadyEnded": [],
+      "ended": [
+        "p:api",
+        "p:db"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "done",
+            "streamId": "api",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        },
+        {
+          "paneId": "p:db",
+          "info": {
+            "state": "done",
+            "streamId": "db",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "every worktree gone",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        },
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/b",
+          "streamId": "web"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [],
+      "ended": [
+        "p:api",
+        "p:web"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "done",
+            "streamId": "api",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        },
+        {
+          "paneId": "p:web",
+          "info": {
+            "state": "done",
+            "streamId": "web",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "gone, and a DIFFERENT pane was already ended — the skip is per pane",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/a",
+          "streamId": "api"
+        },
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/b",
+          "streamId": "web"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [
+        "p:web"
+      ],
+      "ended": [
+        "p:api"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "done",
+            "streamId": "api",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "two panes share one cwd — both end",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/same",
+          "streamId": "api"
+        },
+        {
+          "paneId": "p:web",
+          "cwd": "/wt/same",
+          "streamId": "web"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [],
+      "ended": [
+        "p:api",
+        "p:web"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "done",
+            "streamId": "api",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        },
+        {
+          "paneId": "p:web",
+          "info": {
+            "state": "done",
+            "streamId": "web",
+            "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    }
+  ],
+  "verdicts": [
+    {
+      "streamId": "api",
+      "info": {
+        "state": "done",
+        "streamId": "api",
+        "summary": "worktree reclaimed — work merged; session closed",
+        "at": 1700000000000
+      }
+    },
+    {
+      "streamId": "payments",
+      "info": {
+        "state": "done",
+        "streamId": "payments",
+        "summary": "worktree reclaimed — work merged; session closed",
+        "at": 1700000000000
+      }
+    },
+    {
+      "streamId": "",
+      "info": {
+        "state": "done",
+        "streamId": "",
+        "summary": "worktree reclaimed — work merged; session closed",
+        "at": 1700000000000
+      }
+    }
+  ]
+}
