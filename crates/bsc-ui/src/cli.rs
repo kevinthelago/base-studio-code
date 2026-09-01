@@ -663,7 +663,7 @@ fn cmd_generate(args: &[String], prog: &str) -> Result<(), String> {
             emit(&serde_json::json!(rows))
         }
         None | Some("help") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "generate"));
+            print!("{}", bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "generate"));
             Ok(())
         }
         Some(other) => Err(format!("unknown generate command '{other}' — want: categorical | next | status")),
@@ -780,7 +780,7 @@ fn cmd_resolve(args: &[String]) -> Result<(), String> {
 /// storing is the curation gate's job). Pure JSON out, `--pretty` to indent.
 fn cmd_harvest(args: &[String]) -> Result<(), String> {
     if args.first().map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest"));
+        print!("{}", bsc_cli_util::surface::help_for("bsc ui", TAGLINE, COMMANDS, "harvest"));
         return Ok(());
     }
     let mut target: Option<&str> = None;
@@ -889,7 +889,7 @@ fn harvest_note(target: &str, functional: usize, candidates: usize, is_file: boo
 fn cmd_env(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("help") => {
-            print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "env"));
+            print!("{}", bsc_cli_util::surface::help_for("bsc ui", TAGLINE, COMMANDS, "env"));
             Ok(())
         }
         Some("--json") => {
@@ -941,7 +941,7 @@ fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
 fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
     match args.first().map(String::as_str) {
         None | Some("help") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "emit"));
+            print!("{}", bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "emit"));
             Ok(())
         }
         Some("component") => {
@@ -1526,7 +1526,7 @@ fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
         .map(String::as_str)
         .ok_or("usage: bsc ui component <name> list-tokens | set-token <key> <value>")?;
     if name == "help" || positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "component"));
+        print!("{}", bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "component"));
         return Ok(());
     }
     let d = crate::style_descriptor();
@@ -1804,7 +1804,7 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
     // `theme <verb> help` (and a stray `theme help`, though run()'s handle_help catches that form)
     // resolves to the theme doc — reachable from ANY scope, before the mutation gate below.
     if verb == "help" || positional.get(1).map(String::as_str) == Some("help") {
-        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "theme"));
+        print!("{}", bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "theme"));
         return Ok(());
     }
     let emit = |v: &serde_json::Value| -> Result<(), String> {
@@ -1969,7 +1969,7 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
 /// dir from `--dir`, else `$BSC_UI_KIT_STORE_DIR`, else `~/.base-studio-code/kits/`.
 fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
     if args.first().map(String::as_str) == Some("help") || args.iter().any(|a| a == "--help") {
-        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "release"));
+        print!("{}", bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "release"));
         return Ok(());
     }
     // Flag parsing: --flag <value> pairs + boolean flags; everything else is positional.

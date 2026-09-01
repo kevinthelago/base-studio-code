@@ -358,7 +358,7 @@ fn cmd_known_red(args: &Args, prog: &str) -> Result<(), String> {
             }
             Ok(())
         }
-        other => Err(format!("unknown known-red command '{other}'\n\n{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "known-red"))),
+        other => Err(format!("unknown known-red command '{other}'\n\n{}", bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "known-red"))),
     }
 }
 

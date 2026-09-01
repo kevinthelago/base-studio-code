@@ -634,7 +634,7 @@ of an absent artifact is an error, while `--json` emits `null`.",
 /// [`unknown_sub`]). `prog` is the display name (`"bsc plan"` from the umbrella, `"bsc-plan"` from
 /// the legacy shim). The top-level help/menu is handled by [`bsc_cli_util::handle_help`].
 fn cmd_help(prog: &str, name: &str) -> String {
-    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, name)
+    bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, name)
 }
 
 /// The shared unknown-subcommand error: `unknown <noun> command '<other>'` followed by the noun's

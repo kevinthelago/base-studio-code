@@ -40,6 +40,12 @@ use std::process::ExitCode;
 /// with each caller keeping its own flag set and its own refusal wording (`args::walk`). Seventeen
 /// hand-written copies, five of which had lost their `-h` arm.
 pub mod args;
+/// The command surface as DATA — a record may supply any `CmdDoc`-driven CLI's tagline and catalog,
+/// declining and falling back to the compiled one on anything malformed
+/// (`generalize-the-surface-record-beyond-json-store`).
+pub mod surface;
+#[cfg(test)]
+mod surface_tests;
 
 pub mod session;
 
@@ -775,6 +781,9 @@ pub fn help_for(prog: &str, tagline: &str, cmds: &[CmdDoc], name: &str) -> Strin
 pub fn handle_help(prog: &str, tagline: &str, cmds: &[CmdDoc], positional: &[String]) -> bool {
     let cmd = positional.first().map(String::as_str).unwrap_or("");
     if cmd.is_empty() || cmd == "help" {
+        // Resolved HERE and not at the top, so a real command never pays the record read. See the
+        // note in `surface` on why this is the seam every CmdDoc-driven CLI shares.
+        let (tagline, cmds) = surface::resolve_surface(prog, tagline, cmds);
         match positional.get(1) {
             Some(name) => print!("{}", help_for(prog, tagline, cmds, name)),
             None => print!("{}", help_overview(prog, tagline, cmds)),
@@ -782,6 +791,7 @@ pub fn handle_help(prog: &str, tagline: &str, cmds: &[CmdDoc], positional: &[Str
         return true;
     }
     if positional.get(1).map(String::as_str) == Some("help") {
+        let (tagline, cmds) = surface::resolve_surface(prog, tagline, cmds);
         print!("{}", help_for(prog, tagline, cmds, cmd));
         return true;
     }
@@ -792,6 +802,9 @@ pub fn handle_help(prog: &str, tagline: &str, cmds: &[CmdDoc], positional: &[Str
 /// [`help_overview`] — the exact text each `CmdDoc`-driven bin builds in its dispatch fallthrough
 /// (#1862), so the message stays uniform (and in sync with the command catalog) across the CLIs.
 pub fn unknown_command(prog: &str, tagline: &str, cmds: &[CmdDoc], cmd: &str) -> String {
+    // The error path shows the SAME catalog help does, record included — a user who just typed a verb
+    // that does not exist is the reader most likely to act on the list they are handed.
+    let (tagline, cmds) = surface::resolve_surface(prog, tagline, cmds);
     format!("unknown command '{cmd}'\n\n{}", help_overview(prog, tagline, cmds))
 }
 
