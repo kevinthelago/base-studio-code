@@ -349,9 +349,14 @@ function integrationTree() {
  *  satisfies that just as well.
  *
  *  DETACHED at `sha` on purpose: this tree holds no branch, so it can never be mistaken for somewhere
- *  work belongs, and checking out a sha cannot disturb a ref another session is using. It is created on
- *  first use and KEPT — its `target/` is the expensive part (~2 min cold, seconds warm), so throwing it
- *  away would make every promote pay for a cold build.
+ *  work belongs, and checking out a sha cannot disturb a ref another session is using.
+ *
+ *  IT IS CREATED ON FIRST USE AND KEPT, and the first use is EXPENSIVE. MEASURED end to end: 1179s
+ *  (19.7 min) for a promote whose gate tree had no `target/`, against roughly 4 min warm. That is a
+ *  cold build of the whole workspace plus the full gate, not the "couple of minutes" a `cargo build`
+ *  intuition suggests — nextest alone links ~41 test binaries. So NEVER `git worktree remove` this
+ *  directory to tidy up: the next promote then pays the 20 minutes again. `npm run worktrees:cap`
+ *  does not touch it (it caps `wt-*`), which is a second reason the name is dotted.
  *
  *  Refuses a dirty gate tree rather than gating over somebody's edits — if that fires, something is
  *  using this directory for work, which it is not for. */
@@ -361,7 +366,11 @@ function gateTree(sha) {
     .split(/\r?\n/)
     .some((l) => l === `worktree ${path}`);
   if (!exists) {
-    console.log(`[promote-app] creating the gate worktree ${GATE_TREE} (first use builds its target/, ~2 min)`);
+    console.log(
+      `[promote-app] creating the gate worktree ${GATE_TREE}. FIRST USE IS SLOW — it builds its own\n` +
+        `  target/ from cold, measured at 19.7 min end to end against ~4 min once warm. It is kept\n` +
+        `  between promotes for exactly that reason; do not delete it to tidy up.`,
+    );
     execFileSync("git", ["worktree", "add", "--detach", path, sha], { cwd: REPO_ROOT, stdio: "inherit" });
     return path;
   }
