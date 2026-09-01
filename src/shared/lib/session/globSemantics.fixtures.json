@@ -71,25 +71,25 @@
       "why": "? as a wildcard or a literal",
       "glob": "src/a?.ts",
       "path": "src/ab.ts",
-      "matches": false
+      "matches": true
     },
     {
       "why": "? against a literal question mark",
       "glob": "src/a?.ts",
       "path": "src/a?.ts",
-      "matches": false
+      "matches": true
     },
     {
       "why": "? as a leaked regex quantifier — 'a' absent",
       "glob": "src/a?.ts",
       "path": "src/.ts",
-      "matches": true
+      "matches": false
     },
     {
       "why": "? as a leaked regex quantifier — 'a' present",
       "glob": "src/a?.ts",
       "path": "src/a.ts",
-      "matches": true
+      "matches": false
     },
     {
       "why": "unescaped alternation leaks too?",
@@ -101,13 +101,13 @@
       "why": "bracket class or literal brackets",
       "glob": "src/[ab].ts",
       "path": "src/a.ts",
-      "matches": false
+      "matches": true
     },
     {
       "why": "bracket against literal brackets",
       "glob": "src/[ab].ts",
       "path": "src/[ab].ts",
-      "matches": true
+      "matches": false
     },
     {
       "why": "dot is not a wildcard",
