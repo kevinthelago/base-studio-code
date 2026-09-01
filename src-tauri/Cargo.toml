@@ -177,6 +177,18 @@ bsc-component = { path = "../crates/bsc-component" }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Linux capture (`bsc shot`): the app runs on WebKitGTK here, and `webkit_web_view_get_snapshot` is the
+# sibling of the Windows `CapturePreview` — a RENDER of the webview, not an OS window grab. Both crates
+# are already in the tree via tauri/wry; declaring them makes them reachable, and pins `cairo-rs` to the
+# version webkit2gtk hands back from the snapshot callback so the two `Surface` types are one type.
+#
+# `png` is cairo's own encoder (`Surface::write_to_png`, gated behind that feature). Encoding by hand
+# from the surface bytes instead would mean undoing cairo's PREMULTIPLIED alpha on ARGB32 — a real
+# correctness trap for no gain, since cairo ships the encoder for exactly this.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2.0"
+cairo-rs = { version = "0.18", features = ["png"] }
+
 # Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
 # any grandchildren) dies with the session on pty_kill / app exit. Without this,
 # `portable_pty::Child::kill()` only terminates the immediate shell and leaves
