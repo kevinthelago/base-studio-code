@@ -662,4 +662,30 @@ export const load = () => import(\"@/shared/lib/core/lazy\");\n" }
             assert!(f.content.starts_with("// vendored from bsc/react-ui@"), "stamped: {}", f.path);
         }
     }
+    /// THE WHOLE KIT, not one component — which is what the retired-module defect needed to be seen.
+    ///
+    /// `bsc-ui-emit-cannot-resolve-a-retired-module` reported three tests red because emit resolved each
+    /// `@/…` against `src/`, and retirement had removed those files, so an alias survived into the emitted
+    /// tree. It no longer reproduces — but `card`'s closure need not contain a retired module, so the
+    /// single-component test above could pass throughout, and nothing else was watching. Measured by hand
+    /// at the time this landed: 216 files, zero surviving aliases.
+    #[test]
+    fn the_whole_packaged_kit_plans_an_alias_free_closure() {
+        let plan = EmitKit::packaged().plan_kit();
+        assert!(plan.files.len() > 50, "the kit should plan a real tree, got {}", plan.files.len());
+        let leaky: Vec<(&str, Vec<String>)> = plan
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), unvendored_aliases(&f.content)))
+            .filter(|(_, a)| !a.is_empty())
+            .collect();
+        assert!(
+            leaky.is_empty(),
+            "{} of {} emitted files still import a first-party alias — the closure is incomplete, which \
+             is what a retired module in the walk used to cause: {:?}",
+            leaky.len(),
+            plan.files.len(),
+            leaky.iter().take(5).collect::<Vec<_>>()
+        );
+    }
 }

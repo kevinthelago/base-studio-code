@@ -16,6 +16,13 @@
 //   e2e/vite.config.ts     its OWN config, outside the root tsconfig. Retiring `Spacer` broke the whole
 //                          Playwright harness because this one was missed.
 //   reactUiKit.gen.test.ts the kit generator walks the import graph itself.
+//   crates/bsc-ui/src/emit.rs  the RUST closure walker (`bsc ui emit`). The SEVENTH, and the only one
+//                          outside the TS build: it vendors an alias-free tree by resolving each `@/…`
+//                          against the packaged kit artifact overlaid with the store, so a module that
+//                          exists only as a record still has to be reachable. When it was not, an alias
+//                          survived into the emitted file and the closure invariant broke — visible ONLY
+//                          to `cargo test -p bsc-ui`, which is why it went unnoticed
+//                          (`bsc-ui-emit-cannot-resolve-a-retired-module`).
 //
 // This test is deliberately TEXTUAL. Importing each config would run it, and the point is to notice a
 // config that has *stopped* mentioning the resolver, which a loaded config cannot report.
@@ -51,5 +58,15 @@ describe("record resolvers (#3604)", () => {
 
   it("the kit generator resolves records as well as files", () => {
     expect(read("src/features/designs/lib/reactUiKit.gen.test.ts")).toContain("bscRecords");
+  });
+
+  // The seventh resolver is RUST, so this side cannot assert the resolution itself — `cargo test -p
+  // bsc-ui` owns that. What it CAN do is keep the list complete: if the whole-kit closure guard is ever
+  // dropped, the emit walker goes back to being watched by a single-component test that a retired module
+  // in some OTHER closure would slip straight past.
+  it("the Rust emit walker still has its whole-kit closure guard", () => {
+    const emit = read("crates/bsc-ui/src/emit.rs");
+    expect(emit).toContain("fn the_whole_packaged_kit_plans_an_alias_free_closure");
+    expect(emit).toContain("unvendored_aliases");
   });
 });
