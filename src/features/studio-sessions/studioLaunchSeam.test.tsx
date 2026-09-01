@@ -71,7 +71,7 @@ afterEach(cleanup);
 const launch = () => {
   const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === "pty_create");
   return call?.[1] as
-    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean; paneInitCmd?: string; paneWasClaude?: boolean; autoResumeClaude?: boolean; providerIsClaude?: boolean }
+    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean; paneInitCmd?: string; paneWasClaude?: boolean; autoResumeClaude?: boolean; providerIsClaude?: boolean; roleCapability?: { role?: string; git?: string; github?: string } | null; streamId?: string; env?: Record<string, string> }
     | undefined;
 };
 
@@ -146,6 +146,29 @@ describe("a studio woken to serve an ask", () => {
       // the store field is a copy read back from it. Sending it would route a Rust fact through the
       // renderer and back.
       expect(p, "wasUncleanShutdown must not be sent").not.toHaveProperty("wasUncleanShutdown");
+    });
+  });
+
+  /// THE ACCESS ENV IS GATED BY THE BACKEND, so it has to be told the role
+  /// (`the-launch-derives-its-own-access-env-instead-of-receiving-it`).
+  ///
+  /// A studio is the case the credential gate exists for: `none` on every axis, so it cannot run git
+  /// or gh at all and a GitHub credential in its environment widens nothing and risks everything.
+  /// The renderer already withholds it; the backend's removal is the SECOND, independent refusal, and
+  /// it can only run if `roleCapability` arrives.
+  it("sends the role capability so the backend can gate the access env", async () => {
+    render(<TerminalHost><StudioSessionMount studio={DEF.id} /></TerminalHost>);
+    await waitFor(() => {
+      const p = launch();
+      expect(p, "pty_create was never called").toBeTruthy();
+      expect(p!.roleCapability, "the backend cannot gate a credential without the role").toBeTruthy();
+      expect(p!.roleCapability?.git).toBe("none");
+      expect(p!.roleCapability?.github).toBe("none");
+      // The renderer's own half of the AND: it never placed one to begin with.
+      expect(p!.env?.GH_TOKEN, "a studio is denied on both axes").toBeUndefined();
+      // The token is NOT sent as a separate argument. The backend reads it out of `env`, which is
+      // what makes its pass remove-only — it cannot place a credential the renderer withheld.
+      expect(p, "the token must not travel a second time").not.toHaveProperty("ghToken");
     });
   });
 

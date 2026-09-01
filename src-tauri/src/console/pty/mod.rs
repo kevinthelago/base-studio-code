@@ -668,6 +668,12 @@ pub(crate) async fn pty_create(
     pane_was_claude: Option<bool>,
     auto_resume_claude: Option<bool>,
     provider_is_claude: Option<bool>,
+    // THE ROLE, so the launch can gate its own ACCESS env rather than obey one it was handed
+    // (`the-launch-derives-its-own-access-env-instead-of-receiving-it`). `None` means the pane has no
+    // role, which is NOT a denial — see `session::access_env::reconcile_access_env`.
+    role_capability: Option<crate::session::role_gate::RoleCapability>,
+    // The fleet stream this pane owns, if any. A fact: only the renderer knows the assignment.
+    stream_id: Option<String>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     provider_id: Option<String>,
@@ -682,7 +688,7 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
@@ -794,6 +800,9 @@ fn pty_create_inner(
     pane_was_claude: Option<bool>,
     auto_resume_claude: Option<bool>,
     provider_is_claude: Option<bool>,
+    // See the command above: the role gates the access env, and the stream scopes `bsc plan`.
+    role_capability: Option<crate::session::role_gate::RoleCapability>,
+    stream_id: Option<String>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -960,6 +969,40 @@ fn pty_create_inner(
         }
     }
 
+    // THE ACCESS ENV, GATED HERE rather than obeyed as handed over. Three grants ride in this map and
+    // Rust is what consumes all three (`GH_TOKEN` via gh/git, `BSC_HARVEST_ROOTS` via `bsc ui`,
+    // `BSC_STREAM` via plandb) — the credential most of all. Done BEFORE `gate_env` so the caged path
+    // and the host path see the same reconciled map rather than diverging on which one was checked.
+    let env = {
+        let (reconciled, report) = crate::session::access_env::reconcile_access_env(
+            env.unwrap_or_default(),
+            role_capability.as_ref(),
+            stream_id.as_deref(),
+            // BACKEND-OWNED, both of them. `app_repo_root` is what the renderer's own
+            // `useAppRepoRoot` reads back from the `debug_repo_root` command and parks in the store,
+            // and the base dir is `platform::paths`. Asking the renderer for either would be routing
+            // a Rust fact through the frontend and back.
+            crate::session::debug::debug_repo_root().unwrap_or_default().as_str(),
+            &crate::platform::paths::bsc_base_dir().to_string_lossy(),
+        );
+        if report.credential_removed {
+            log::warn!(
+                "pty[{pane_id}] REMOVED GH_TOKEN — this role is denied on BOTH git and github, so a                  GitHub credential in its environment widens nothing and risks everything. The                  renderer placed it; the gate is an AND and this half refused."
+            );
+        }
+        if report.credential_unchecked {
+            log::warn!(
+                "pty[{pane_id}] carries GH_TOKEN and sent NO role capability, so the launch could not                  check it. Nothing was changed — the renderer's own refusal is the only one that ran.                  An ad-hoc console is the expected case; a ROLE pane here means the capability is not                  reaching the wire."
+            );
+        }
+        if !report.added.is_empty() {
+            log::warn!(
+                "pty[{pane_id}] access env was MISSING {:?}, which the role declares — added.",
+                report.added,
+            );
+        }
+        Some(reconciled)
+    };
     let gate_env = env.as_ref();
     let ns_argv: Option<Vec<String>> = namespace_argv(
         sandbox_role.as_deref(),
