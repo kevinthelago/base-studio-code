@@ -455,6 +455,7 @@ pub fn run() {
             fleet::inspect::read_worktree_commits,
             fleet::inspect::find_branch_pr,
             fleet::inspect::claude_transcript_path,
+            fleet::worker_end::worker_end_verdicts,
             // The observability READ commands (audit/skill/hook/mcp/coord tails, token usage, pane
             // activity, done panes) moved to the `bsc logs` CLI over the `bsc` bridge (#2144).
             tokens::read_pane_messages,
