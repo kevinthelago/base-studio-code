@@ -1225,6 +1225,16 @@ pub struct FnShape {
     /// is never collected, which is the triviality floor doing its work at the source.
     pub shape: String,
     pub arity: usize,
+    /// What it takes and returns — carried so the tree sweep can run the CONTRACT signal, not only
+    /// the shape one.
+    pub signature: Signature,
+    /// Token 5-grams of the body, the corroborating half of the contract signal.
+    ///
+    /// THE SHINGLES, NOT THE BODY, and that is what keeps the sweep affordable. A set is ~1 KB against
+    /// a body's several, so carrying it costs single-digit MB across the whole tree while carrying the
+    /// source would give back the 8.4x memory win that made a streaming scan worth building. Empty
+    /// when the body is below `MIN_SHINGLES` — too short to be evidence.
+    pub shingles: std::collections::HashSet<u64>,
 }
 
 /// Every non-trivial function under `dir`, projected to its shape — the whole-tree corpus.
@@ -1268,9 +1278,14 @@ fn scan_shapes_walk(dir: &Path, root: &Path, tech_filter: Option<&str>, out: &mu
         collect_defs(tree.root_node(), &src, tech, false, &rel, &mut defs);
         for d in defs {
             let Some(shape) = shape_fingerprint(&d.code, &d.tech) else { continue };
+            let sh = code_shingles(&d.code);
             out.push(FnShape {
                 line: d.line,
                 arity: d.sig.arity(),
+                // Below the floor is carried as EMPTY rather than dropped: the function still has a
+                // shape and belongs in that grouping; it just cannot corroborate a contract.
+                shingles: if sh.len() >= MIN_SHINGLES { sh } else { Default::default() },
+                signature: d.sig,
                 name: d.name,
                 tech: d.tech,
                 src: d.rel,
@@ -1588,6 +1603,63 @@ pub fn contract_similarity(a: &Signature, b: &Signature) -> f64 {
     let union = fa.len() + fb.len() - inter;
     if union == 0 { 0.0 } else { inter as f64 / union as f64 }
 }
+
+// MOVED HERE FROM `cli.rs` so the STORE detector and the TREE sweep share one definition. The tree
+// scan drops each body before opening the next file, so it must compute shingles during the walk —
+// and a second copy of this in `extract.rs` is precisely the duplication this epic exists to find.
+/// Token 5-grams of a body, hashed — the shape used to tell "the same implementation twice" from
+/// "two implementations that happen to share words".
+///
+/// Tokenizing first is what makes it robust to the only difference the real duplicates actually had:
+/// `llm-energy.ts` and `algorithms-llm-energy.ts` differ by 21 characters of formatting and wrapper,
+/// so their raw `code` is NOT equal — yet their shingle sets are IDENTICAL. A byte comparison misses
+/// the exact pair this was requested for.
+pub fn code_shingles(code: &str) -> std::collections::HashSet<u64> {
+    let mut tokens: Vec<&str> = Vec::new();
+    let bytes = code.as_bytes();
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
+            i += 1;
+        } else if word(b) {
+            let start = i;
+            while i < bytes.len() && word(bytes[i]) {
+                i += 1;
+            }
+            tokens.push(&code[start..i]);
+        } else {
+            // Every other byte is its own token, so punctuation-heavy code still shingles. Stepping by
+            // the CHAR width keeps a multi-byte character from being split into invalid slices.
+            let w = code[i..].chars().next().map_or(1, char::len_utf8);
+            tokens.push(&code[i..i + w]);
+            i += w;
+        }
+    }
+    const N: usize = 5;
+    tokens
+        .windows(N)
+        .map(|w| {
+            // FNV-1a over the window — a set of hashes is far cheaper to intersect than a set of
+            // string tuples, and a collision only ever costs a slightly higher score.
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for t in w {
+                for b in t.as_bytes() {
+                    h ^= u64::from(*b);
+                    h = h.wrapping_mul(0x1000_0000_01b3);
+                }
+                h ^= 0xff;
+                h = h.wrapping_mul(0x1000_0000_01b3);
+            }
+            h
+        })
+        .collect()
+}
+
+/// A body shorter than this carries no evidence. `export const x = 1;` repeated across records is a
+/// language, not a duplicate — and at four or five tokens any two such lines score 1.0.
+pub const MIN_SHINGLES: usize = 8;
 
 /// The RENAME-INVARIANT shape of a function body — `None` when it is too trivial to be evidence.
 ///
