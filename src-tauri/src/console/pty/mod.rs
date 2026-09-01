@@ -18,6 +18,7 @@ pub(crate) mod busy;
 mod env;
 mod launch;
 mod pump;
+pub mod stops;
 /// Idle-session reaping — the POLICY, in the process that owns the sessions (not the renderer).
 pub(crate) mod reap;
 pub(crate) mod scrollback;

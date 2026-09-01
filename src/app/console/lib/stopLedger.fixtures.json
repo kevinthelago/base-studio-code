@@ -1,0 +1,622 @@
+{
+  "note": "GENERATED from @/app/console/lib/paneStops — do not hand-edit; see the .gen.test.ts",
+  "noticeMs": 5000,
+  "maxStops": 12,
+  "reasons": [
+    {
+      "reason": "finished",
+      "fault": false,
+      "logWithOutput": "pane[p1] stopped · finished · detail for finished",
+      "logWithoutOutput": "pane[p1] stopped · finished · detail for finished"
+    },
+    {
+      "reason": "failed",
+      "fault": true,
+      "logWithOutput": "pane[p1] stopped · failed · detail for failed · last output: the last words",
+      "logWithoutOutput": "pane[p1] stopped · failed · detail for failed · last output: (printed nothing)"
+    },
+    {
+      "reason": "signalled",
+      "fault": true,
+      "logWithOutput": "pane[p1] stopped · signalled · detail for signalled · last output: the last words",
+      "logWithoutOutput": "pane[p1] stopped · signalled · detail for signalled · last output: (printed nothing)"
+    },
+    {
+      "reason": "launcher-failed",
+      "fault": true,
+      "logWithOutput": "pane[p1] stopped · launcher-failed · detail for launcher-failed · last output: the last words",
+      "logWithoutOutput": "pane[p1] stopped · launcher-failed · detail for launcher-failed · last output: (printed nothing)"
+    },
+    {
+      "reason": "app-closed",
+      "fault": false,
+      "logWithOutput": "pane[p1] stopped · app-closed · detail for app-closed",
+      "logWithoutOutput": "pane[p1] stopped · app-closed · detail for app-closed"
+    },
+    {
+      "reason": "unknown",
+      "fault": true,
+      "logWithOutput": "pane[p1] stopped · unknown · detail for unknown · last output: the last words",
+      "logWithoutOutput": "pane[p1] stopped · unknown · detail for unknown · last output: (printed nothing)"
+    },
+    {
+      "reason": "reaped",
+      "fault": false,
+      "logWithOutput": "pane[p1] stopped · reaped · detail for reaped",
+      "logWithoutOutput": "pane[p1] stopped · reaped · detail for reaped"
+    },
+    {
+      "reason": "auto-ended",
+      "fault": false,
+      "logWithOutput": "pane[p1] stopped · auto-ended · detail for auto-ended",
+      "logWithoutOutput": "pane[p1] stopped · auto-ended · detail for auto-ended"
+    },
+    {
+      "reason": "quarantined",
+      "fault": true,
+      "logWithOutput": "pane[p1] stopped · quarantined · detail for quarantined · last output: the last words",
+      "logWithoutOutput": "pane[p1] stopped · quarantined · detail for quarantined · last output: (printed nothing)"
+    },
+    {
+      "reason": "disabled",
+      "fault": false,
+      "logWithOutput": "pane[p1] stopped · disabled · detail for disabled",
+      "logWithoutOutput": "pane[p1] stopped · disabled · detail for disabled"
+    }
+  ],
+  "cases": [
+    {
+      "label": "an empty ledger",
+      "existing": [],
+      "incoming": {
+        "paneId": "p1",
+        "reason": "failed",
+        "detail": "detail for failed",
+        "at": 1000000
+      },
+      "now": 1000000,
+      "after": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ]
+    },
+    {
+      "label": "a second pane stops",
+      "existing": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "incoming": {
+        "paneId": "p2",
+        "reason": "signalled",
+        "detail": "detail for signalled",
+        "at": 1000000
+      },
+      "now": 1000000,
+      "after": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "p2",
+          "reason": "signalled",
+          "detail": "detail for signalled",
+          "at": 1000000
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "p2",
+          "reason": "signalled",
+          "detail": "detail for signalled",
+          "at": 1000000
+        }
+      ]
+    },
+    {
+      "label": "the SAME pane stops again — replaced, not stacked",
+      "existing": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "incoming": {
+        "paneId": "p1",
+        "reason": "signalled",
+        "detail": "detail for signalled",
+        "at": 1000100
+      },
+      "now": 1000100,
+      "after": [
+        {
+          "paneId": "p1",
+          "reason": "signalled",
+          "detail": "detail for signalled",
+          "at": 1000100
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "signalled",
+          "detail": "detail for signalled",
+          "at": 1000100
+        }
+      ]
+    },
+    {
+      "label": "the same pane stops nine times",
+      "existing": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000001
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000002
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000003
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000004
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000005
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000006
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000007
+        }
+      ],
+      "incoming": {
+        "paneId": "p1",
+        "reason": "signalled",
+        "detail": "detail for signalled",
+        "at": 1000008
+      },
+      "now": 1000008,
+      "after": [
+        {
+          "paneId": "p1",
+          "reason": "signalled",
+          "detail": "detail for signalled",
+          "at": 1000008
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "signalled",
+          "detail": "detail for signalled",
+          "at": 1000008
+        }
+      ]
+    },
+    {
+      "label": "an EXPIRED stop is dropped on the next record",
+      "existing": [
+        {
+          "paneId": "old",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 994999
+        }
+      ],
+      "incoming": {
+        "paneId": "p1",
+        "reason": "failed",
+        "detail": "detail for failed",
+        "at": 1000000
+      },
+      "now": 1000000,
+      "after": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ]
+    },
+    {
+      "label": "a stop exactly AT the window edge is expired",
+      "existing": [
+        {
+          "paneId": "old",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 995000
+        }
+      ],
+      "incoming": {
+        "paneId": "p1",
+        "reason": "failed",
+        "detail": "detail for failed",
+        "at": 1000000
+      },
+      "now": 1000000,
+      "after": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ]
+    },
+    {
+      "label": "a stop just INSIDE the window survives",
+      "existing": [
+        {
+          "paneId": "old",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 995001
+        }
+      ],
+      "incoming": {
+        "paneId": "p1",
+        "reason": "failed",
+        "detail": "detail for failed",
+        "at": 1000000
+      },
+      "now": 1000000,
+      "after": [
+        {
+          "paneId": "old",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 995001
+        },
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "active": [
+        {
+          "paneId": "p1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "old",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 995001
+        }
+      ]
+    },
+    {
+      "label": "the ledger is capped",
+      "existing": [
+        {
+          "paneId": "pane0",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane1",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane2",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane3",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane4",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane5",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane6",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane7",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane8",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane9",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane10",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane11",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane12",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane13",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane14",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane15",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "incoming": {
+        "paneId": "new",
+        "reason": "failed",
+        "detail": "detail for failed",
+        "at": 1000000
+      },
+      "now": 1000000,
+      "after": [
+        {
+          "paneId": "pane5",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane6",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane7",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane8",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane9",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane10",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane11",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane12",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane13",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane14",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane15",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "new",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ],
+      "active": [
+        {
+          "paneId": "pane5",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane6",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane7",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane8",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane9",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane10",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane11",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane12",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane13",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane14",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "pane15",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        },
+        {
+          "paneId": "new",
+          "reason": "failed",
+          "detail": "detail for failed",
+          "at": 1000000
+        }
+      ]
+    }
+  ]
+}
