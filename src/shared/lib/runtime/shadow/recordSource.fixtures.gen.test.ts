@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   norm, blankComments, stripComments, codeOnly, splitPreamble,
+  exportedNames, seedMatchesFile, importsSiblingsByRecordId, entriesImportingStatically,
 } from "../../../../../scripts/lib/recordSource.mjs";
 
 const FIXTURE = join(process.cwd(), "src/shared/lib/runtime/shadow/recordSource.fixtures.json");
@@ -82,6 +83,69 @@ const PAIRS: Array<[string, string, string]> = [
   ],
 ];
 
+/** Export-shaped subjects for `exportedNames`. Kept separate from SUBJECTS so the comment corpus above
+ *  — which the already-merged Rust tests read — is not disturbed by growing this one. */
+const EXPORTS: Array<[string, string]> = [
+  ["a function declaration", "export function f() {}\n"],
+  ["a const", "export const a = 1;\n"],
+  ["default plus async", "export default async function go() {}\n"],
+  ["a class, an interface, a type and an enum", "export class C {}\nexport interface I {}\nexport type T = 1;\nexport enum E { A }\n"],
+  ["a brace clause", "export { a, b };\n"],
+  // The `treeexplorerpage` case: the `type` keyword between `export` and the brace defeated the pattern,
+  // so a module re-exporting a type read as not exporting it and the retirement guard refused it for
+  // "dropping" a name its file exports on the next line.
+  ["a type re-export COUNTS", 'export type { TreeNodeData } from "./tree";\n'],
+  ["a renamed export takes the module-side name", "export { a as b };\n"],
+  ["an inline-type member inside a clause", "export { type A, b };\n"],
+  ["a multi-line clause", "export {\n  a,\n  b,\n};\n"],
+  // Unknowable — a partial set is worse than no answer.
+  ["a star re-export makes the set unknowable", 'export * from "./everything";\n'],
+  // Must NOT count.
+  ["a non-exported declaration", "function hidden() {}\nconst x = 1;\n"],
+  ["`export` inside a comment is not an export", "// export function ghost() {}\nexport const real = 1;\n"],
+  ["`export` inside a string is not an export", 'const s = "export const ghost = 1;";\nexport const real = 1;\n'],
+  ["nothing at all", "const a = 1;\n"],
+];
+
+/** `importsSiblingsByRecordId` subjects — the `@/components/<id>` form and its near misses. */
+const SIBLINGS: Array<[string, string]> = [
+  ["a sibling-by-id import", 'import { X } from "@/components/glance-session-log";\n'],
+  ["two of them, deduped", 'import { A } from "@/components/a";\nimport { B } from "@/components/a";\nimport { C } from "@/components/c";\n'],
+  ["single quotes", "import { X } from '@/components/x';\n"],
+  ["an ordinary alias is not one", 'import { Card } from "@/shared/ui/data/Card";\n'],
+  ["a relative import is not one", 'import { X } from "./x";\n'],
+  ["no imports at all", "export const a = 1;\n"],
+];
+
+/** `entriesImportingStatically` — a synthetic two-entry repo, so the decision is testable with no disk. */
+const ENTRY_CASES: Array<[string, string, Record<string, string>]> = [
+  [
+    "main.tsx imports it statically",
+    "app/console/ConsoleGraphHost",
+    { "app/main.tsx": 'import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost"\n', "app/App.tsx": "export const App = 1;\n" },
+  ],
+  [
+    "both entries import it",
+    "shared/ui/Card",
+    { "app/main.tsx": 'import { Card } from "@/shared/ui/Card"\n', "app/App.tsx": 'import { Card } from "@/shared/ui/Card"\n' },
+  ],
+  [
+    "neither does",
+    "features/sounds/index",
+    { "app/main.tsx": 'import { X } from "@/x"\n', "app/App.tsx": "export const App = 1;\n" },
+  ],
+  [
+    "a MENTION in a comment is not a static import",
+    "app/console/TerminalHost",
+    { "app/main.tsx": '// see "@/app/console/TerminalHost" for why\nexport const m = 1;\n', "app/App.tsx": "export const App = 1;\n" },
+  ],
+  [
+    "a missing entry file is skipped, not an error",
+    "shared/ui/Card",
+    { "app/main.tsx": 'import { Card } from "@/shared/ui/Card"\n' },
+  ],
+];
+
 describe("recordSource fixtures", () => {
   it("captures every primitive over every subject", () => {
     const cases = SUBJECTS.map(([label, source]) => ({
@@ -96,10 +160,38 @@ describe("recordSource fixtures", () => {
       const [preamble, body] = splitPreamble(recordSrc, fileSrc);
       return { label, recordSrc, fileSrc, preamble, body };
     });
+    const exports = EXPORTS.map(([label, source]) => {
+      const set = exportedNames(source);
+      // A Set does not survive JSON; null (a star re-export) must stay distinguishable from empty.
+      return { label, source, names: set === null ? null : [...set].sort() };
+    });
+    const siblings = SIBLINGS.map(([label, source]) => ({ label, source, ...importsSiblingsByRecordId(source) }));
+    const entries = ENTRY_CASES.map(([label, relSpecifier, files]) => ({
+      label,
+      relSpecifier,
+      files,
+      importedBy: entriesImportingStatically(
+        "/repo",
+        relSpecifier,
+        (p: string) => files[p.replace("/repo/src/", "")] ?? "",
+        (p: string) => p.replace("/repo/src/", "") in files,
+      ),
+    }));
+    const seedFile = PAIRS.map(([label, seedSrcText, fileSrc]) => ({
+      label,
+      seedSrcText,
+      fileSrc,
+      ...seedMatchesFile({ seedSrcText, fileSrc }),
+    }));
+
     const next = {
       note: "GENERATED from scripts/lib/recordSource.mjs — do not hand-edit; see the .gen.test.ts",
       cases,
       pairs,
+      exports,
+      siblings,
+      entries,
+      seedFile,
     };
 
     if (process.env.UPDATE_FIXTURES) {
@@ -121,5 +213,21 @@ describe("recordSource fixtures", () => {
     const split = PAIRS.map(([, r, f]) => splitPreamble(r, f));
     expect(split.filter(([p]) => p !== "").length, "never split").toBeGreaterThanOrEqual(2);
     expect(split.filter(([p]) => p === "").length, "always split").toBeGreaterThanOrEqual(2);
+
+    // Each decision function must answer BOTH ways somewhere in its corpus, or it proves only that it
+    // runs. A guard that always says "no export" and one that always says "yes" both pass a one-sided set.
+    const named = EXPORTS.map(([, s]) => exportedNames(s));
+    expect(named.filter((n) => n !== null && n.size > 0).length, "never found an export").toBeGreaterThanOrEqual(6);
+    expect(named.filter((n) => n !== null && n.size === 0).length, "never found an EMPTY module").toBeGreaterThanOrEqual(2);
+    expect(named.filter((n) => n === null).length, "the unknowable case is missing").toBeGreaterThanOrEqual(1);
+
+    const sib = SIBLINGS.map(([, s]) => importsSiblingsByRecordId(s));
+    expect(sib.filter((r) => r.any).length).toBeGreaterThanOrEqual(3);
+    expect(sib.filter((r) => !r.any).length).toBeGreaterThanOrEqual(3);
+
+    const ent = ENTRY_CASES.map(([, spec, files]) =>
+      entriesImportingStatically("/repo", spec, (p: string) => files[p.replace("/repo/src/", "")] ?? "", (p: string) => p.replace("/repo/src/", "") in files));
+    expect(ent.filter((e) => e.length > 0).length, "never found a static import").toBeGreaterThanOrEqual(2);
+    expect(ent.filter((e) => e.length === 0).length, "never refused one").toBeGreaterThanOrEqual(2);
   });
 });
