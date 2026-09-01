@@ -32,9 +32,6 @@
 //! it — coordinating roles need cross-stream reads. Gating on the stream alone would silently box them
 //! in, which is why the role test is separate from the stream test.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-launch-derives-its-own-access-env-instead-of-receiving-it`
-
 use super::role_gate::{RoleCapability, Tier};
 
 /// The symbolic root meaning "the base-studio-code source tree this app was built from".
@@ -99,6 +96,104 @@ pub fn access_env(
     }
 }
 
+
+/// What the launch changed about the env it was handed, and what it could not check.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccessEnvReconciliation {
+    /// Vars Rust DERIVED that the env omitted, and added. Never includes `GH_TOKEN`.
+    pub added: Vec<&'static str>,
+    /// The env carried a credential this session's capability forbids. Removed.
+    pub credential_removed: bool,
+    /// The env carried a credential and NO capability arrived, so the gate could not run. Nothing was
+    /// changed — the renderer's own refusal is the only one that applied to this launch.
+    pub credential_unchecked: bool,
+}
+
+/// Reconcile the access env the renderer built against the one this role is entitled to.
+///
+/// # The credential is REMOVE-ONLY, and that is what makes the gate fail closed
+///
+/// Rust never ADDS `GH_TOKEN`. It cannot, by construction: the token is not a parameter, it is read
+/// out of the env the renderer already built. So this pass can only ever take a credential away.
+///
+/// That composition is the fail-closed property the item asks for, and it is stronger than a
+/// re-derivation would be. A token survives only if BOTH sides allow it — the renderer's own
+/// `noGitOrGithub` check and this one — and neither can hand one to a session the other refused. A
+/// version that took the raw token as an argument and re-placed it would have been able to widen,
+/// which is the one thing a credential gate must not be able to do.
+///
+/// **The two asymmetries must survive exactly**, and both are in
+/// [`may_hold_git_credential`] rather than restated here:
+/// a `triage` pane is `git: none` but `github: write`, so it KEEPS its token; and an ungated pane has
+/// no capability to deny on, so it keeps its token too. Only a role denied on BOTH axes is refused.
+///
+/// # The blind spot is REPORTED rather than guessed at
+///
+/// `None` means "this pane has no role" — that is what the renderer sends for an ad-hoc console, and
+/// refusing those would break every one of them. It is indistinguishable on the wire from "a role
+/// exists and its capability did not arrive", which is exactly the state
+/// `the-role-gate-flip-never-reached-the-wire` describes. So a token present with no capability sets
+/// [`AccessEnvReconciliation::credential_unchecked`]: the launch changes nothing (the renderer's gate
+/// already ran) and says out loud that its own check did not.
+///
+/// # The other two union, per the item
+///
+/// `BSC_HARVEST_ROOTS` grants read-only SCAN access and is derived from the role's own declaration, so
+/// restoring one the renderer dropped restores the role's intent rather than widening past it — the
+/// same argument the profile-settings union rests on. `BSC_STREAM` CONFINES a worker to its stream, so
+/// adding it can only tighten; it is never removed, since removing it would hand a worker
+/// cross-stream writes.
+pub fn reconcile_access_env(
+    mut env: std::collections::HashMap<String, String>,
+    cap: Option<&RoleCapability>,
+    stream_id: Option<&str>,
+    app_repo_root: &str,
+    bsc_base_dir: &str,
+) -> (std::collections::HashMap<String, String>, AccessEnvReconciliation) {
+    let mut report = AccessEnvReconciliation::default();
+
+    // THE CREDENTIAL. Read from the env rather than taken as an argument — see the docs above.
+    let carries_token = env.get("GH_TOKEN").is_some_and(|t| !t.is_empty());
+    if carries_token {
+        if cap.is_none() {
+            report.credential_unchecked = true;
+        } else if !may_hold_git_credential(cap) {
+            env.remove("GH_TOKEN");
+            report.credential_removed = true;
+        }
+    }
+
+    let derived = access_env(cap, "", stream_id, app_repo_root, bsc_base_dir);
+
+    // HARVEST ROOTS: union, order-preserving, the env's own entries first.
+    if let Some(roots) = derived.harvest_roots {
+        let existing: Vec<String> = env
+            .get("BSC_HARVEST_ROOTS")
+            .map(|v| v.split('\n').filter(|s| !s.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default();
+        let mut merged = existing.clone();
+        for r in roots.split('\n').filter(|s| !s.is_empty()) {
+            if !merged.iter().any(|e| e == r) {
+                merged.push(r.to_string());
+            }
+        }
+        if merged.len() != existing.len() {
+            report.added.push("BSC_HARVEST_ROOTS");
+            env.insert("BSC_HARVEST_ROOTS".to_string(), merged.join("\n"));
+        }
+    }
+
+    // BSC_STREAM: added when derived and absent; never removed.
+    if let Some(stream) = derived.stream {
+        if !env.contains_key("BSC_STREAM") {
+            report.added.push("BSC_STREAM");
+            env.insert("BSC_STREAM".to_string(), stream);
+        }
+    }
+
+    (env, report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +215,152 @@ mod tests {
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one accessEnv.fixtures.json, got {found:?}");
         serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+
+    fn cap_of(role: &str, git: Tier, github: Tier) -> RoleCapability {
+        RoleCapability {
+            role: role.into(),
+            github,
+            git,
+            code: Tier::None,
+            net: Tier::None,
+            ui: Tier::None,
+            write_globs: vec![],
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: vec![],
+        }
+    }
+    fn env_with_token() -> std::collections::HashMap<String, String> {
+        std::collections::HashMap::from([("GH_TOKEN".to_string(), "ghp_secret".to_string())])
+    }
+
+    /// THE TWO ASYMMETRIES, which the item names as the easy things to lose. Both are cases where the
+    /// session KEEPS a credential a tidier single check would have taken away.
+    #[test]
+    fn triage_and_an_ungated_pane_both_keep_their_token() {
+        // `triage` is git:none but github:write — it exists to work the issue queue over `gh`.
+        let triage = cap_of("triage", Tier::None, Tier::Write);
+        let (env, r) = reconcile_access_env(env_with_token(), Some(&triage), None, "", "");
+        assert_eq!(env.get("GH_TOKEN").map(String::as_str), Some("ghp_secret"), "triage needs gh");
+        assert!(!r.credential_removed);
+
+        // An ungated pane has no capability to deny on. Refusing it would break every ad-hoc console.
+        let (env, r) = reconcile_access_env(env_with_token(), None, None, "", "");
+        assert_eq!(env.get("GH_TOKEN").map(String::as_str), Some("ghp_secret"));
+        assert!(!r.credential_removed);
+        assert!(r.credential_unchecked, "…and the launch says its own gate did not run");
+    }
+
+    /// The case the gate exists for: the app-owned studio sessions, denied on BOTH axes.
+    #[test]
+    fn a_role_denied_on_both_axes_has_its_credential_removed() {
+        let designer = cap_of("designer", Tier::None, Tier::None);
+        let (env, r) = reconcile_access_env(env_with_token(), Some(&designer), None, "", "");
+        assert!(!env.contains_key("GH_TOKEN"), "the most restricted sessions get no credential");
+        assert!(r.credential_removed && !r.credential_unchecked);
+    }
+
+    /// REMOVE-ONLY, and this is the property the whole gate rests on. Rust cannot place a credential
+    /// the renderer withheld — the token is read out of the env, never taken as an argument — so the
+    /// two refusals compose as an AND and neither side can widen past the other.
+    #[test]
+    fn the_launch_can_never_add_a_credential_the_renderer_withheld() {
+        // A role that MAY hold one, an env that carries none.
+        let worker = cap_of("worker", Tier::Write, Tier::Read);
+        let (env, r) = reconcile_access_env(
+            std::collections::HashMap::new(),
+            Some(&worker),
+            None,
+            "",
+            "",
+        );
+        assert!(!env.contains_key("GH_TOKEN"), "a credential can only ever be REMOVED here");
+        assert!(!r.credential_removed && !r.credential_unchecked);
+        assert!(!r.added.contains(&"GH_TOKEN"), "GH_TOKEN is never in `added`, by construction");
+    }
+
+    /// An EMPTY token is not a credential, so it is neither removed nor reported — otherwise every
+    /// launch of a both-denied role would log a removal that removed nothing.
+    #[test]
+    fn an_empty_token_is_not_treated_as_a_credential() {
+        let designer = cap_of("designer", Tier::None, Tier::None);
+        let env = std::collections::HashMap::from([("GH_TOKEN".to_string(), String::new())]);
+        let (_, r) = reconcile_access_env(env, Some(&designer), None, "", "");
+        assert!(!r.credential_removed && !r.credential_unchecked);
+    }
+
+    /// BSC_STREAM is added when the role owns one and the env omitted it — adding it CONFINES the
+    /// worker, so this direction can only tighten. It is gated on the WORKER role, not on owning a
+    /// stream, so a reviewer judging another stream's landing keeps cross-stream reads.
+    #[test]
+    fn the_stream_scope_is_added_for_a_worker_and_never_for_a_reviewer() {
+        let worker = cap_of("worker", Tier::Write, Tier::Read);
+        let (env, r) = reconcile_access_env(
+            std::collections::HashMap::new(),
+            Some(&worker),
+            Some("api"),
+            "",
+            "",
+        );
+        assert_eq!(env.get("BSC_STREAM").map(String::as_str), Some("api"));
+        assert!(r.added.contains(&"BSC_STREAM"));
+
+        let reviewer = cap_of("reviewer", Tier::Read, Tier::Read);
+        let (env, r) = reconcile_access_env(
+            std::collections::HashMap::new(),
+            Some(&reviewer),
+            Some("api"),
+            "",
+            "",
+        );
+        assert!(!env.contains_key("BSC_STREAM"), "a reviewer must not be boxed into one stream");
+        assert!(r.added.is_empty());
+    }
+
+    /// Harvest roots union, and an UNRESOLVABLE token contributes nothing rather than widening — the
+    /// shipped-binary case, where there is no source tree to scan.
+    #[test]
+    fn harvest_roots_union_and_an_unresolvable_root_adds_nothing() {
+        let mut designer = cap_of("designer", Tier::None, Tier::None);
+        designer.harvest_roots = vec![HARVEST_ROOT_APP_REPO.into(), HARVEST_ROOT_PROJECTS.into()];
+
+        let (env, r) = reconcile_access_env(
+            std::collections::HashMap::from([(
+                "BSC_HARVEST_ROOTS".to_string(),
+                "/already/here".to_string(),
+            )]),
+            Some(&designer),
+            None,
+            "/repo",
+            "/base",
+        );
+        assert_eq!(
+            env.get("BSC_HARVEST_ROOTS").map(String::as_str),
+            Some("/already/here\n/repo\n/base/projects"),
+            "the env's own entries keep their place and the role's are appended"
+        );
+        assert!(r.added.contains(&"BSC_HARVEST_ROOTS"));
+
+        // A shipped binary resolves neither root: nothing is added, nothing is claimed.
+        let (env, r) =
+            reconcile_access_env(std::collections::HashMap::new(), Some(&designer), None, "", "");
+        assert!(!env.contains_key("BSC_HARVEST_ROOTS"));
+        assert!(r.added.is_empty());
+    }
+
+    /// Agreement is silent, on every one of the three.
+    #[test]
+    fn a_launch_that_already_agrees_reports_nothing() {
+        let worker = cap_of("worker", Tier::Write, Tier::Read);
+        let env = std::collections::HashMap::from([
+            ("GH_TOKEN".to_string(), "ghp_secret".to_string()),
+            ("BSC_STREAM".to_string(), "api".to_string()),
+        ]);
+        let (out, r) = reconcile_access_env(env.clone(), Some(&worker), Some("api"), "", "");
+        assert_eq!(out, env, "nothing changed");
+        assert!(r.added.is_empty() && !r.credential_removed && !r.credential_unchecked);
     }
 
     /// Reports every mismatch at once — a wrong port is usually wrong in a pattern.
