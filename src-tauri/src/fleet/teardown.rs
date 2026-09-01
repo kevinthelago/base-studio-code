@@ -405,6 +405,59 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
+    /// THE TWO ARMS ARE NOT EQUIVALENT, and the difference is invisible downstream.
+    ///
+    /// `disposable = hub_gone || worktree_is_disposable(clone, wt)`. The second arm proves clean +
+    /// merged. The first proves NEITHER — and this is the case that shows it: an orphaned project's
+    /// worktree that is BOTH dirty AND ahead of its clone, which `worktree_is_disposable` explicitly
+    /// refuses, is reclaimed anyway. (The neighbouring test's orphan is freshly added, so it is clean
+    /// and merged and would have been reclaimed by either arm; it cannot separate them.)
+    ///
+    /// This matters beyond disk hygiene: the boot reconciliation
+    /// (`bsc_fleet::worktree_reconcile`) infers from a missing worktree that the work MERGED, and
+    /// renders a green resting card saying so. On this path that claim is false. The reason is known
+    /// here — it is in the log line below — and is currently dropped rather than carried. Tracked on
+    /// `a-reclaimed-worktree-reports-why-it-was-reclaimed`.
+    #[test]
+    fn the_orphan_arm_reclaims_work_the_merged_clean_arm_would_refuse() {
+        let base = unique_dir("bsc-teardown", "gc-orphan-arms");
+        let clone = base.join("projects").join("gone").join("api");
+        init_clone(&clone);
+        let wt = base.join("worktrees").join("gone").join("api--x");
+        fs::create_dir_all(wt.parent().unwrap()).unwrap();
+        let mut c = std::process::Command::new("git");
+        c.args(["-C", &clone.to_string_lossy(), "worktree", "add", "-b", "x", &wt.to_string_lossy()]);
+        assert!(no_window(&mut c).status().unwrap().success(), "worktree add");
+
+        // Ahead of the clone's HEAD (committed work that never landed) AND dirty (uncommitted work).
+        fs::write(wt.join("landed.txt"), "committed but unmerged").unwrap();
+        let git = |dir: &Path, args: &[&str]| {
+            let mut g = std::process::Command::new("git");
+            g.args(["-C", &dir.to_string_lossy()]).args(args);
+            assert!(no_window(&mut g).status().unwrap().success(), "git {args:?}");
+        };
+        git(&wt, &["add", "."]);
+        git(&wt, &["commit", "-q", "-m", "unmerged work"]);
+        fs::write(wt.join("scratch.txt"), "uncommitted work").unwrap();
+
+        // The merged+clean arm REFUSES this worktree, on both counts.
+        assert!(
+            !worktree_is_disposable(&clone, &wt),
+            "precondition: this worktree is dirty and unmerged, so the second arm must refuse it"
+        );
+
+        // Now orphan the project. Nothing about the worktree changed.
+        fs::remove_dir_all(base.join("projects").join("gone")).unwrap();
+        let removed = gc_worktrees_impl(&base, &|_| false);
+
+        assert!(!wt.exists(), "the orphan arm reclaimed it regardless — committed and uncommitted work gone");
+        assert!(
+            removed.iter().any(|r| r == "gone/api--x"),
+            "and it is in the reclaimed set with no indication the work never landed: {removed:?}"
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn gc_spares_a_worktree_whose_project_still_has_a_fleet() {
         // #3932: a rebuilt worktree is CLEAN (nothing has run in it) and MERGED (its branch landed
