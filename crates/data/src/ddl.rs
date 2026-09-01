@@ -19,15 +19,13 @@ pub const FIELD_LINEAGE_TABLE: &str = "_field_lineage";
 /// Entity/field keys originate from a Data Model authored by a user or agent, so they
 /// are untrusted. We allow only `[A-Za-z_][A-Za-z0-9_]*` and reject everything else —
 /// no escaping games, no injection surface.
+/// The predicate lives on the MODEL ([`crate::schema::is_safe_ident`]) rather than here, so the gate
+/// that admits a model and the layer that quotes it cannot drift into disagreeing about what "safe"
+/// means. Before `the-data-model-check-rejects-what-the-store-will-reject` they already did: this
+/// rule was enforced here and nowhere else, so a model passed `DataModel::check` and then failed at
+/// DDL time.
 pub fn quote_ident(name: &str) -> Result<String> {
-    let mut chars = name.chars();
-    let ok = match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
-            chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-        }
-        _ => false,
-    };
-    if ok {
+    if crate::schema::is_safe_ident(name) {
         Ok(format!("\"{name}\""))
     } else {
         Err(DataError::Schema(format!("unsafe identifier `{name}`")))
