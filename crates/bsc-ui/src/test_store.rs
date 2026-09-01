@@ -87,8 +87,12 @@ impl SeededStore {
         &self.root
     }
 
-    /// Read one record back, as JSON — how a test checks what a WRITE path actually wrote.
-    pub fn record(&self, id: &str) -> serde_json::Value {
+    /// Read one record's SEED back — the `.json` this test wrote into the store directory.
+    ///
+    /// THIS IS NOT WHAT A WRITE MOVES. The store is SQLite-backed and ingests these files only when it
+    /// opens, so a verb's write lands in the `.db` and leaves this file exactly as the test seeded it.
+    /// Asserting a write with this passes whether or not the write happened. Use [`Self::stored`].
+    pub fn seed_of(&self, id: &str) -> serde_json::Value {
         let body = std::fs::read_to_string(self.root.join("components").join(format!("{id}.json")))
             .unwrap_or_else(|e| panic!("{id}: {e}"));
         serde_json::from_str(&body).unwrap_or_else(|e| panic!("{id} is not valid JSON: {e}"))
@@ -98,6 +102,20 @@ impl SeededStore {
     ///
     /// Returns `(result, stdout)` so a test can assert on BOTH — a verb that prints the right report and
     /// exits wrong, or exits right and prints nothing, is broken either way.
+    /// Read one record back THROUGH THE STORE — what a write actually left behind.
+    ///
+    /// Neither [`Self::seed_of`] nor `run(&["get", id])` can answer this: the first reads a file the
+    /// write never touches, and `get` prints with `println!`, which [`Self::run`]'s capture does not see.
+    /// `None` when the store holds no such record.
+    pub fn stored(&self, id: &str) -> Option<serde_json::Value> {
+        let dir = Some(self.root.join("components").to_string_lossy().into_owned());
+        let store = bsc_component::cli::open_component_store(&dir).expect("open the seeded store");
+        store
+            .get(id)
+            .expect("read the seeded store")
+            .map(|b| serde_json::from_str(&b).expect("a stored record is valid JSON"))
+    }
+
     pub fn run(&self, args: &[&str]) -> (Result<(), String>, String) {
         let argv: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
         bsc_util::capture_output(|| crate::cli::run(argv, "bsc ui"))
@@ -154,13 +172,38 @@ mod tests {
         assert_eq!(ids, vec!["only"], "the real library leaked in: {ids:?}");
     }
 
-    /// A WRITE path's read-back, which is the half a report-only test never exercises.
+    /// Re-seeding is visible to `seed_of` — which is all this ever proved. It is kept, and renamed to
+    /// say so: it exercises no WRITE path, and reading a write back with `seed_of` would pass whether or
+    /// not the write happened. See the test below for the half that matters.
     #[test]
-    fn a_record_can_be_read_back_after_a_write() {
+    fn a_reseeded_record_is_read_back_from_the_seed_file() {
         let s = SeededStore::new("readback");
         s.seed("w", r#"{"id":"w","name":"W","kitId":"k","role":"composite","srcText":"export const a = 1;\n"}"#);
-        assert_eq!(s.record("w")["name"], "W");
+        assert_eq!(s.seed_of("w")["name"], "W");
         s.seed("w", r#"{"id":"w","name":"W2","kitId":"k","role":"composite","srcText":"export const a = 2;\n"}"#);
-        assert_eq!(s.record("w")["name"], "W2", "the read-back must see the new bytes, not a cache");
+        assert_eq!(s.seed_of("w")["name"], "W2", "the read-back must see the new bytes, not a cache");
+    }
+
+    /// A REAL WRITE's read-back, and the reason [`SeededStore::stored`] exists. The store is
+    /// SQLite-backed, so a verb's write never touches the seeded `.json` — `seed_of` is pinned here
+    /// AGREEING with the stale file while `stored` sees the write, which is the whole trap in one test.
+    #[test]
+    fn only_stored_sees_what_a_write_actually_left() {
+        let s = SeededStore::new("wrote");
+        s.seed("w", r#"{"id":"w","name":"W","kitId":"k","role":"composite","srcText":"export const a = 1;\n"}"#);
+        // Written through the STORE, not a verb: `set` reads stdin, which a captured in-process run
+        // cannot drive, and the point here is the read-back asymmetry rather than which verb wrote.
+        let dir = Some(s.root.join("components").to_string_lossy().into_owned());
+        let store = bsc_component::cli::open_component_store(&dir).expect("open");
+        store
+            .set("w", r#"{"id":"w","name":"W2","kitId":"k","role":"composite","srcText":"export const a = 1;\n"}"#)
+            .expect("write through the store");
+
+        assert_eq!(s.seed_of("w")["name"], "W", "the seed file is UNTOUCHED by a store write");
+        assert_eq!(
+            s.stored("w").expect("stored")["name"],
+            "W2",
+            "`stored` must see the write the seed file cannot"
+        );
     }
 }

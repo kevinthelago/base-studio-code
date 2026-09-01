@@ -2177,6 +2177,24 @@ pub fn apply_relink(store: &bsc_json_store::Store, writes: &[serde_json::Value])
     Ok(())
 }
 
+/// Apply a module LIFT's write — a MERGING, stamped write, so a lift bumps `rev`, records attribution
+/// and lands in `bsc ui log` like any other edit.
+///
+/// Exported for the same reason [`apply_relink`] is: `bsc ui lift` lives in `bsc-ui` (it needs the
+/// harvest, which sits a crate above this one), while the write must still go through the one stamped
+/// path every component write uses.
+pub fn apply_lift(
+    store: &bsc_json_store::Store,
+    writes: &[serde_json::Value],
+    by: Option<&str>,
+    note: &str,
+) -> Result<(), String> {
+    let writer = crate::record::resolve_writer(by);
+    set_stamped(store, writes, None, &writer, "component", Some(note),
+                WritePlan { replace: false, clear: &[] })?;
+    Ok(())
+}
+
 /// Apply a per-record `tests` write (#166) — a MERGING, stamped write of just `tests`, so `bsc ui tests
 /// set` can pair ONE record without a whole-tree `harvest` re-mirroring every other paired record (and
 /// dragging along whatever a stale re-read of an UNRELATED record happened to hold — the `terminalhost`
