@@ -28,3 +28,7 @@ tree-sitter-typescript = "0.23"
 # Content hashing for the kit store's id@version integrity (#2465). Same version the app crate
 # already locks, so this adds no new dependency to the workspace graph.
 sha2 = "0.11"
+# The import-rewrite cluster ported from `scripts/lib/recordSource.mjs` — three multiline patterns
+# whose JS semantics are a translation rather than a re-derivation. Already in the workspace lock via
+# `bsc-agent` and `llm`, so it costs no new compile.
+regex = "1"

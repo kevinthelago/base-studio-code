@@ -203,6 +203,37 @@ fn surface_cli(rest: Vec<String>) -> Result<(), String> {
             }
             Ok(())
         }
+        "crates" => {
+            let root_flag = rest.iter().position(|a| a == "--root").and_then(|i| rest.get(i + 1));
+            let root = roster_root(root_flag.map(String::as_str))?;
+            let rows = crate_roster(&root)?;
+            if rest.iter().any(|a| a == "--json") {
+                let json: Vec<serde_json::Value> = rows
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "crate": r.package,
+                            "path": r.path,
+                            "surface": !r.verbs.is_empty(),
+                            "verbs": r.verbs,
+                            "dependsOn": r.depends_on,
+                        })
+                    })
+                    .collect();
+                let out = serde_json::to_string_pretty(&json)
+                    .map_err(|e| format!("could not render the crate roster: {e}"))?;
+                bsc_cli_util::print_raw(&out);
+            } else {
+                let w = rows.iter().map(|r| r.package.len()).max().unwrap_or(0);
+                let mut s = String::new();
+                for r in &rows {
+                    let verbs = if r.verbs.is_empty() { "—".to_string() } else { r.verbs.join(" ") };
+                    s.push_str(&format!("{:<w$}  {:>2} dep  {verbs}\n", r.package, r.depends_on.len()));
+                }
+                bsc_cli_util::print_raw(s.trim_end());
+            }
+            Ok(())
+        }
         "help" | "-h" | "--help" => {
             bsc_cli_util::print_raw(surface_help().trim_end());
             Ok(())
@@ -211,12 +242,131 @@ fn surface_cli(rest: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// One workspace member, as the surface node set reads it (`epic-command-surfaces-are-nodes`).
+///
+/// The NODE is keyed on `package`. `verbs` is the join to the catalog and is empty for the crates
+/// that expose none — which is the point of the crate-keyed decision: `bsc-util` has no verb and is
+/// the crate whose change rebuilds most of the workspace, so it is exactly the one that needs an
+/// owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CrateRow {
+    /// The cargo package name — the node key. See [`Surface::krate`] for why this and not the
+    /// directory or the lib target.
+    pub package: String,
+    /// The workspace member path, as the root `Cargo.toml` lists it.
+    pub path: String,
+    /// The catalog verbs this crate serves, in catalog order. Empty for a crate with no surface.
+    pub verbs: Vec<&'static str>,
+    /// Its INTERNAL dependencies — other workspace packages only, external crates excluded.
+    pub depends_on: Vec<String>,
+}
+
+/// The repo root to read the workspace from: `--root`, else `$BSC_REPO_ROOT`, else the cwd.
+///
+/// A staged binary outside the repo has no workspace to read, and must SAY so rather than report an
+/// empty roster — an empty list that looks like an answer is the failure this repo keeps hitting.
+fn roster_root(explicit: Option<&str>) -> Result<std::path::PathBuf, String> {
+    let root = explicit
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var("BSC_REPO_ROOT").ok().filter(|v| !v.is_empty()).map(Into::into))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let manifest = root.join("Cargo.toml");
+    let txt = std::fs::read_to_string(&manifest)
+        .map_err(|e| format!("cannot read {}: {e}\n\npass --root <repo> or set $BSC_REPO_ROOT", manifest.display()))?;
+    if !txt.contains("[workspace]") {
+        return Err(format!("{} is not the workspace root (no [workspace])", manifest.display()));
+    }
+    Ok(root)
+}
+
+/// The workspace member paths, from the root `Cargo.toml`'s explicit `members` list.
+///
+/// FROM THE MEMBERS LIST, NEVER A DIRECTORY LISTING. `crates/graph-materialize` is a directory in
+/// `crates/` holding only a `build.rs` — the shared build script other crates pull in via
+/// `build = "../graph-materialize/build.rs"`. It is not a package, has no name to key a node on, and
+/// a listing would wrongly give it one.
+fn workspace_members(root: &std::path::Path) -> Result<Vec<String>, String> {
+    let txt = std::fs::read_to_string(root.join("Cargo.toml")).map_err(|e| e.to_string())?;
+    let start = txt.find("members").ok_or("the workspace has no `members` list")?;
+    let open = txt[start..].find('[').ok_or("malformed `members`")? + start;
+    let close = txt[open..].find(']').ok_or("unterminated `members`")? + open;
+    let mut out = Vec::new();
+    let mut rest = &txt[open..close];
+    while let Some(q) = rest.find('"') {
+        let after = &rest[q + 1..];
+        let Some(e) = after.find('"') else { break };
+        out.push(after[..e].to_string());
+        rest = &after[e + 1..];
+    }
+    if out.len() < 20 {
+        return Err(format!("the workspace member scan found only {} entries — the scan is broken", out.len()));
+    }
+    Ok(out)
+}
+
+/// `name = "..."` from a manifest's `[package]` section.
+fn package_name(manifest: &str) -> Option<String> {
+    let pkg = manifest.find("[package]")?;
+    let tail = &manifest[pkg..];
+    let end = tail[1..].find("\n[").map(|i| i + 1).unwrap_or(tail.len());
+    tail[..end].lines().find_map(|l| {
+        let t = l.trim();
+        t.strip_prefix("name")?.trim_start().strip_prefix('=')?.trim().strip_prefix('"')?.strip_suffix('"').map(str::to_string)
+    })
+}
+
+/// Every workspace member with its verbs and its internal dependencies.
+///
+/// Dependencies are read as PATH deps whose key is another workspace package; an external crate has
+/// no path and is skipped. Dev- and build-dependencies count, deliberately: cargo rebuilds a test
+/// target when they move, so they are part of "what does touching this crate reach".
+pub(crate) fn crate_roster(root: &std::path::Path) -> Result<Vec<CrateRow>, String> {
+    let members = workspace_members(root)?;
+    let mut manifests = Vec::new();
+    for m in &members {
+        let path = root.join(m).join("Cargo.toml");
+        let txt = std::fs::read_to_string(&path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let pkg = package_name(&txt)
+            .ok_or_else(|| format!("{} has no [package] name", path.display()))?;
+        manifests.push((m.clone(), pkg, txt));
+    }
+    let known: std::collections::HashSet<&str> = manifests.iter().map(|(_, p, _)| p.as_str()).collect();
+
+    let mut rows = Vec::new();
+    for (path, package, txt) in &manifests {
+        let mut depends_on: Vec<String> = Vec::new();
+        for line in txt.lines() {
+            let t = line.trim();
+            if !t.contains("path") || t.starts_with('#') {
+                continue;
+            }
+            let Some(eq) = t.find('=') else { continue };
+            let key = t[..eq].trim().trim_matches('"');
+            if key.is_empty() || !key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                continue;
+            }
+            if known.contains(key) && key != package && !depends_on.iter().any(|d| d == key) {
+                depends_on.push(key.to_string());
+            }
+        }
+        depends_on.sort();
+        let verbs: Vec<&'static str> =
+            COMMANDS.iter().filter(|c| c.krate == package).map(|c| c.name).collect();
+        rows.push(CrateRow { package: package.clone(), path: path.clone(), verbs, depends_on });
+    }
+    rows.sort_by(|a, b| a.package.cmp(&b.package));
+    Ok(rows)
+}
+
 fn surface_help() -> String {
     String::from(
         "bsc surface — every bsc command surface, as data\n\n\
          USAGE:\n  \
          bsc surface list           # name · status · the store it touches\n  \
-         bsc surface list --json    # the catalog as JSON — GENERATE from this, do not restate it\n\n\
+         bsc surface list --json    # the catalog as JSON — GENERATE from this, do not restate it\n  \
+         bsc surface crates         # every workspace member: its verbs + its internal deps\n  \
+         bsc surface crates --json [--root <repo>]   # the crate-keyed node set\n\n\
          One catalog drives `bsc help`, this command, and the drift test that pins both against the\n\
          dispatch match. `status` is active | deprecated | internal.\n\n\
          Roles are deliberately NOT here: the real role-to-surface data is `restricted_allow`, which\n\
@@ -508,6 +658,103 @@ mod tests {
         assert!(pending.is_empty(), "the scan could not resolve a crate for {pending:?} — read the arm, do not guess");
         assert!(out.len() > 40, "the dispatch scan found only {} arms — the scan is broken, not the code", out.len());
         out
+    }
+
+    fn repo_root() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    /// THE ROSTER IS EVERY WORKSPACE MEMBER, not every directory and not only the ones with verbs.
+    ///
+    /// A crate with no surface is PRESENT with an empty verb list — that is the whole point of the
+    /// crate-keyed decision (`epic-command-surfaces-are-nodes`, 2026-09-01): the node's job is
+    /// maintenance, and `bsc-util` has no verb while being the crate whose change reaches most of
+    /// the workspace.
+    #[test]
+    fn the_roster_is_every_workspace_member() {
+        let rows = crate_roster(&repo_root()).expect("the roster reads");
+        assert!(rows.len() >= 50, "only {} members — the scan is broken, not the workspace", rows.len());
+        assert!(rows.iter().all(|r| !r.package.is_empty()), "a member resolved to an empty package name");
+
+        let verbless = rows.iter().filter(|r| r.verbs.is_empty()).count();
+        assert!(verbless > 5, "only {verbless} verbless crates — they are being dropped, not listed");
+        assert!(
+            rows.iter().any(|r| r.package == "bsc-util" && r.verbs.is_empty()),
+            "bsc-util must be PRESENT with no verbs — it is the crate the decision exists for"
+        );
+
+        // `crates/graph-materialize` holds only a build.rs and is not a package. It is in the
+        // DIRECTORY listing and not in the members list, which is exactly why the roster reads the
+        // members list — a listing would mint a node with no package name to key on.
+        assert!(
+            !rows.iter().any(|r| r.package == "graph-materialize"),
+            "graph-materialize is a build script, not a crate — the roster read a directory listing"
+        );
+        // src-tauri is a member and its PACKAGE is `base-studio-code`, another place the directory
+        // name is not the key.
+        assert!(
+            rows.iter().any(|r| r.package == "base-studio-code" && r.path == "src-tauri"),
+            "the app crate must be in the roster under its package name"
+        );
+    }
+
+    /// THE TWO READS MUST NOT DISAGREE ABOUT WHAT EXISTS. The catalog knows what dispatches; the
+    /// roster knows what the workspace contains. A crate the catalog names and the roster cannot
+    /// find means one of them is stale, and the node set would file a verb under a crate with no
+    /// node.
+    #[test]
+    fn every_crate_the_catalog_names_is_in_the_roster() {
+        let rows = crate_roster(&repo_root()).expect("the roster reads");
+        let packages: std::collections::HashSet<&str> = rows.iter().map(|r| r.package.as_str()).collect();
+        for c in COMMANDS {
+            assert!(
+                packages.contains(c.krate),
+                "`bsc {}` names crate `{}`, which is not a workspace member — the catalog and the \
+                 roster disagree about what exists",
+                c.name, c.krate
+            );
+        }
+        // And the join is complete in the other direction: every catalog verb lands on exactly one row.
+        for c in COMMANDS {
+            let hits = rows.iter().filter(|r| r.verbs.contains(&c.name)).count();
+            assert_eq!(hits, 1, "`bsc {}` lands on {hits} roster rows, not 1", c.name);
+        }
+    }
+
+    /// THE DEPENDENCY EDGE IS THE HALF THAT MAKES THE NODE USEFUL — it is what says touching a
+    /// shared util reaches most of the workspace. An empty or trivial graph must not pass.
+    #[test]
+    fn the_dependency_graph_is_real() {
+        let rows = crate_roster(&repo_root()).expect("the roster reads");
+        let dependents = |pkg: &str| rows.iter().filter(|r| r.depends_on.iter().any(|d| d == pkg)).count();
+        assert!(dependents("bsc-util") > 20, "bsc-util has {} dependents — the dep scan is broken", dependents("bsc-util"));
+        assert!(dependents("bsc-cli-util") > 20, "bsc-cli-util has {} dependents", dependents("bsc-cli-util"));
+        // Only workspace packages are edges; an external crate has a version, not a path.
+        let packages: std::collections::HashSet<&str> = rows.iter().map(|r| r.package.as_str()).collect();
+        for r in &rows {
+            for d in &r.depends_on {
+                assert!(packages.contains(d.as_str()), "{} depends on `{d}`, which is not a member", r.package);
+                assert_ne!(d, &r.package, "{} depends on itself", r.package);
+            }
+        }
+    }
+
+    /// AN UNREADABLE ROOT IS AN ERROR, NEVER AN EMPTY LIST. A staged binary outside the repo has no
+    /// workspace to read, and an empty roster that looks like an answer is the failure shape this
+    /// repo keeps hitting.
+    #[test]
+    fn a_root_with_no_workspace_is_an_error_not_an_empty_roster() {
+        let tmp = std::env::temp_dir().join(format!("bsc-roster-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let err = roster_root(Some(&tmp.to_string_lossy())).expect_err("a dir with no Cargo.toml must fail");
+        assert!(err.contains("--root") || err.contains("BSC_REPO_ROOT"), "the error must say how to fix it: {err}");
+
+        // A Cargo.toml that is not the workspace root is also refused, rather than read as empty.
+        std::fs::write(tmp.join("Cargo.toml"), "[package]\nname = \"nope\"\n").unwrap();
+        let err = roster_root(Some(&tmp.to_string_lossy())).expect_err("a non-workspace manifest must fail");
+        assert!(err.contains("[workspace]"), "the error must name what is missing: {err}");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// THE CATALOG NAMES THE CRATE THAT ACTUALLY DISPATCHES.

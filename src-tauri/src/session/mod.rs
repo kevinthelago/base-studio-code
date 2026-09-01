@@ -14,6 +14,7 @@ pub mod write_scope;
 pub mod agent_perms;
 pub mod access_env;
 pub mod fresh_only;
+pub mod hook_chain;
 pub mod settings;
 pub mod sandbox;
 pub mod llm;
