@@ -166,6 +166,27 @@ pub(crate) fn ensure_session_settings(
         );
     }
     let denied_commands = recon.merged;
+    // THE OTHER HALF OF THE SAME GATE. Denies UNION (an extra deny only tightens); allows INTERSECT
+    // (an `Edit(<glob>)` allow AUTO-APPROVES writes, so unioning one the frontend did not send would
+    // GRANT what is not granted). Both are no-ops when the two agree, which parity says they do.
+    let (db_owned, dep_manifests) = crate::session::role_gate::write_locks();
+    let tools = crate::session::role_gate::reconcile_tool_rules(
+        role_capability.as_ref(),
+        &db_owned,
+        &dep_manifests,
+        allow_tool_rules,
+        deny_tool_rules,
+    );
+    if !tools.deny_missing.is_empty() || !tools.allow_dropped.is_empty() {
+        log::warn!(
+            "session settings[{cwd}]: tool rules disagreed with the derivation — added {:?} to deny, \
+             dropped {:?} from allow. Both directions TIGHTEN; a disagreement means one side is wrong.",
+            tools.deny_missing,
+            tools.allow_dropped,
+        );
+    }
+    let allow_tool_rules = tools.allow;
+    let deny_tool_rules = tools.deny;
     write_session_settings(&SessionSettingsSpec {
         cwd: &cwd,
         allowed_commands: &allowed_commands,
@@ -823,6 +844,53 @@ mod tests {
         // and a mismatch is a gate that silently never fires, which is the failure class above.
         assert!(uses_guest_hooks(&namespace_hooks()));
         assert_eq!(bsc_sandbox::HOOK_GUEST_PATH, "/bsc-hook");
+    }
+
+    /// The TOOL-rule half, driven through the real command.
+    ///
+    /// Denies union and allows intersect, and both tighten. A frontend that sent an allow the
+    /// derivation does not back must not get it — an `Edit(<glob>)` allow auto-approves writes to
+    /// that glob, so keeping it would GRANT what the role does not.
+    #[test]
+    fn the_launch_derives_the_tool_rules_and_tightens_both_ways() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("role-gate-tools");
+        let cwd = home.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let cap = crate::session::role_gate::RoleCapability {
+            role: "worker".into(),
+            github: crate::session::role_gate::Tier::Read,
+            git: crate::session::role_gate::Tier::Write,
+            code: crate::session::role_gate::Tier::Write,
+            net: crate::session::role_gate::Tier::None, // ⇒ WebFetch/WebSearch denied
+            ui: crate::session::role_gate::Tier::Read,
+            write_globs: vec!["src/**".into()],
+            allow: vec![],
+            surfaces: None,
+        };
+        super::ensure_session_settings(
+            cwd.to_string_lossy().to_string(),
+            vec![],
+            vec![],
+            None,
+            None,
+            // An allow the derivation backs, and one it does not.
+            Some(vec!["Edit(src/**)".to_string(), "Edit(/etc/**)".to_string()]),
+            Some(vec![]),
+            // ask_tool_rules · skills · replace_permissions · bash_posture · bypass · restricted_allow
+            None, None, None, None, None, None,
+            Some(cap),
+            Some(vec![]),
+        )
+        .expect("settings written");
+
+        let w = std::fs::read_to_string(cwd.join(".claude/settings.json")).expect("settings.json");
+        assert!(w.contains("Edit(src/**)"), "the backed allow survives:\n{w}");
+        assert!(!w.contains("Edit(/etc/**)"), "the unbacked allow must NOT be granted:\n{w}");
+        for derived in ["Task", "WebFetch", "WebSearch"] {
+            assert!(w.contains(derived), "`{derived}` must be derived even though the frontend omitted it:\n{w}");
+        }
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
