@@ -24,6 +24,7 @@ pub mod waiting;
 /// TypeScript reducer it is ported from; see the module docs.
 pub mod coord;
 pub mod deadlock;
+pub mod wakes;
 /// What awaits the DIRECTOR (issues to route, briefs to reconcile) — the sibling of [`waiting`],
 /// which is about a session blocked on a person. The header argues why they are two verbs.
 pub mod pending;
