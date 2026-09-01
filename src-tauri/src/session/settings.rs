@@ -134,16 +134,29 @@ pub(crate) fn ensure_session_settings(
     // (`epic-frontend-logic-over-backend-resources-belongs-in-rust`). Optional because a role-less
     // ad-hoc console has nothing to derive, and because an older frontend must keep working.
     role_capability: Option<crate::session::role_gate::RoleCapability>,
-    active_surfaces: Option<Vec<String>>,
+    // The `bsc` surface CATALOG, raw. It used to arrive already filtered as `activeSurfaces`, which
+    // was the frontend answering a question Rust has the ported rule for
+    // (`denies::deniable_surface_names`) — the same shape as the flow's push policy below. The
+    // filter is not cosmetic: a DEPRECATED alias serves the same store as its live surface, so
+    // leaving it out of the complement keeps a side door open into a store the declaration closed.
+    surface_catalog: Option<Vec<crate::session::denies::SurfaceRow>>,
     // THE PROFILE ITSELF, so Rust can derive the bridge it currently only obeys
     // (`the-launch-derives-the-profile-settings-instead-of-receiving-them`). Optional for the same
     // two reasons as `role_capability`: a pane with no profile assigned has nothing to derive, and an
     // older frontend must keep working.
     agent_profile: Option<crate::session::profile_settings::AgentProfile>,
-    // The commands this pane's FLOW grants back over the role gate's denial (#304) — `git push` /
-    // `gh pr create` for an auto-pr or push-confirm flow, empty otherwise. A fact: the flow is
-    // per-pane data the renderer holds. Absent reproduces the pre-flow behaviour.
-    flow_granted_commands: Option<Vec<String>>,
+    // The pane's FLOW push policy (`auto-pr` / `push-confirm` / `local` / …), and the user's OWN
+    // global denylist — the two inputs the deny composition cannot derive
+    // (`the-launch-composes-its-own-denies-instead-of-receiving-them`).
+    //
+    // The POLICY replaced an earlier `flowGrantedCommands` list: `denies::flow_granted_push_commands`
+    // is the ported rule, so receiving its output was receiving a computed answer, and the
+    // absent-flow default belongs in ONE place. It used to be `auto-pr`, which meant a fleet on
+    // untouched defaults pushed branches regardless of intent — a second copy is where that returns.
+    flow_push: Option<String>,
+    // The user's list is the one source that is not derived from anything, which is why it must
+    // arrive: the composition would otherwise silently drop it.
+    user_denied_commands: Option<Vec<String>>,
     // The persona's OWN hooks, resolved, so the launch can compose the rest of the chain around them
     // (`the-launch-composes-its-own-hook-chain-instead-of-receiving-it`). A fact: persona resolution
     // is the renderer's, the same way the surface catalog and the studio registry are.
@@ -167,20 +180,32 @@ pub(crate) fn ensure_session_settings(
     // security boundary was decided in a process that has been seen to die under memory pressure. The
     // reconciliation UNIONS rather than replaces — see `reconcile_role_denies` — so the cutover can
     // only strengthen the gate, never weaken it while both copies exist.
-    let recon = crate::session::role_gate::reconcile_role_denies(
-        role_capability.as_ref(),
-        &active_surfaces.unwrap_or_default(),
-        // The two commands the FLOW grants back over the role's denial (#304). Without these the
-        // union would re-deny `gh pr create` for every auto-pr worker — see `reconcile_role_denies`.
-        &flow_granted_commands.unwrap_or_default(),
+    // An EMPTY catalog denies nothing extra BY DESIGN — the poll may not have resolved, or may have
+    // failed, and "unavailable" is indistinguishable from "no surfaces exist" here. Complementing
+    // against an empty list is the safe direction: the alternative bricks every session the moment
+    // that read fails.
+    let surfaces = crate::session::denies::deniable_surface_names(
+        &surface_catalog.unwrap_or_default(),
+    );
+    let recon = crate::session::denies::reconcile_session_denies(
         denied_commands,
+        &user_denied_commands.unwrap_or_default(),
+        role_capability.as_ref(),
+        &surfaces,
+        flow_push.as_deref(),
+        // A profile deliberately supplies no command denies — the role gate claims that field and the
+        // two must not both claim it. Threaded through rather than dropped so the composition still
+        // reads as the three sources it is.
+        &[],
     );
     if !recon.missing.is_empty() {
         // The ONE direction that is a defect: Rust derived a deny the frontend omitted. Extra on the
         // frontend side is expected (the user's own denies ride in the same list) and says nothing.
         log::warn!(
-            "session settings[{cwd}]: the frontend's deny list was MISSING {} role deny(ies) Rust \
-             derived — added: {:?}. This is a gap in the gate, not a difference of opinion.",
+            "session settings[{cwd}]: the frontend's deny list was MISSING {} pattern(s) the launch \
+             composed — added: {:?}. Under the BYPASS posture the bsc-deny hook reading these is the \
+             ONLY enforcement, so a missing one is a command that runs on a session that auto-runs \
+             everything — not a difference of opinion.",
             recon.missing.len(),
             recon.missing,
         );
@@ -1010,7 +1035,9 @@ mod tests {
             Some(vec![]),
             // agent_profile — this test is about the ROLE half; no profile to derive.
             None,
-            // flow_granted_commands — no flow, so the role's denies stand unlifted.
+            // flow_push · user_denied_commands — no flow (so the role's denies stand unlifted) and
+            // no user denylist.
+            None,
             None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
@@ -1074,7 +1101,7 @@ mod tests {
             bare.to_string_lossy().to_string(),
             vec![], vec![],
             None, None, None, None, None, None, None, None, None, None,
-            None, None, None, None, None, None,
+            None, None, None, None, None, None, None,
         )
         .expect("settings written");
         let bare_cmds = commands_at(&bare);
@@ -1110,7 +1137,7 @@ mod tests {
             None, Some(vec![]), None, None, None, None, None, None, None, None,
             Some(cap),
             Some(vec![]),
-            None, None, None, None,
+            None, None, None, None, None,
         )
         .expect("settings written");
         let worker_cmds = commands_at(&worker_dir);
@@ -1171,7 +1198,9 @@ mod tests {
             Some(cap),
             Some(vec![]),
             None,
-            Some(vec!["git push".to_string(), "gh pr create".to_string()]),
+            // The flow POLICY now, not the derived list — see `denies::flow_granted_push_commands`.
+            Some("auto-pr".to_string()),
+            None,
             None,
             None,
         )
@@ -1246,7 +1275,9 @@ mod tests {
             Some(vec![]),
             // agent_profile — this test is about the ROLE half; no profile to derive.
             None,
-            // flow_granted_commands — no flow, so the role's denies stand unlifted.
+            // flow_push · user_denied_commands — no flow (so the role's denies stand unlifted) and
+            // no user denylist.
+            None,
             None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
@@ -1300,6 +1331,9 @@ mod tests {
             Some("allow".to_string()),
             None, None, None, None,
             Some(profile),
+            // flow_push · user_denied_commands · persona_hooks · namespace_hooks — this test is
+            // about the PROFILE half; none of them apply.
+            None,
             None,
             None,
             None,

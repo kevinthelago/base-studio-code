@@ -1,0 +1,503 @@
+{
+  "note": "GENERATED from the live TypeScript — see sessionRecovery.fixtures.gen.test.ts",
+  "openIds": [
+    {
+      "label": "no tabs",
+      "tabs": [],
+      "open": []
+    },
+    {
+      "label": "legacy positional 2×1",
+      "tabs": [
+        {
+          "layout": "2×1"
+        }
+      ],
+      "open": [
+        "t0p0",
+        "t0p1"
+      ]
+    },
+    {
+      "label": "manual tab with a stable id",
+      "tabs": [
+        {
+          "id": "tab_abc",
+          "layout": "2×2"
+        }
+      ],
+      "open": [
+        "man:tab_abc:p0",
+        "man:tab_abc:p1",
+        "man:tab_abc:p2",
+        "man:tab_abc:p3"
+      ]
+    },
+    {
+      "label": "minted fleet ids win over layout",
+      "tabs": [
+        {
+          "kind": "build",
+          "id": "tab_f",
+          "layout": "3×3",
+          "paneIds": [
+            "studio-code:director",
+            "studio-code:api"
+          ]
+        }
+      ],
+      "open": [
+        "studio-code:api",
+        "studio-code:director"
+      ]
+    },
+    {
+      "label": "sparse mints keep their cell count",
+      "tabs": [
+        {
+          "id": "tab_h",
+          "layout": "1×1",
+          "paneIds": [
+            null,
+            "studio-code:api"
+          ]
+        }
+      ],
+      "open": [
+        "man:tab_h:p0",
+        "studio-code:api"
+      ]
+    },
+    {
+      "label": "ascii x layout",
+      "tabs": [
+        {
+          "id": "tab_x",
+          "layout": "2x2"
+        }
+      ],
+      "open": [
+        "man:tab_x:p0",
+        "man:tab_x:p1",
+        "man:tab_x:p2",
+        "man:tab_x:p3"
+      ]
+    },
+    {
+      "label": "spaced layout",
+      "tabs": [
+        {
+          "id": "tab_s",
+          "layout": "2 × 1"
+        }
+      ],
+      "open": [
+        "man:tab_s:p0",
+        "man:tab_s:p1"
+      ]
+    },
+    {
+      "label": "zero-dimension layout is zero cells here",
+      "tabs": [
+        {
+          "id": "tab_z",
+          "layout": "2×0"
+        }
+      ],
+      "open": []
+    },
+    {
+      "label": "malformed layout falls back to one",
+      "tabs": [
+        {
+          "id": "tab_bad",
+          "layout": "nope"
+        }
+      ],
+      "open": [
+        "man:tab_bad:p0"
+      ]
+    },
+    {
+      "label": "two tabs, indices matter",
+      "tabs": [
+        {
+          "layout": "1×1"
+        },
+        {
+          "id": "tab_two",
+          "layout": "2×1"
+        }
+      ],
+      "open": [
+        "man:tab_two:p0",
+        "man:tab_two:p1",
+        "t0p0"
+      ]
+    }
+  ],
+  "reconcile": [
+    {
+      "label": "nothing discovered",
+      "tabsLabel": "legacy positional 2×1",
+      "discovered": [],
+      "recoverable": []
+    },
+    {
+      "label": "an open pane is not lost",
+      "tabsLabel": "legacy positional 2×1",
+      "discovered": [
+        {
+          "paneId": "t0p0",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        },
+        {
+          "paneId": "t0p1",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": []
+    },
+    {
+      "label": "a pane outside the grid IS lost",
+      "tabsLabel": "legacy positional 2×1",
+      "discovered": [
+        {
+          "paneId": "t0p5",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "t0p5",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "positional",
+          "reapOnly": false
+        }
+      ]
+    },
+    {
+      "label": "the planner is dropped entirely",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "planning_studio-code",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": []
+    },
+    {
+      "label": "a studio session is dropped entirely",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "design-studio:designer-react",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        },
+        {
+          "paneId": "teams-studio:architect",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": []
+    },
+    {
+      "label": "a debug request pane is not a studio session",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "debug-studio:req-4212",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "debug-studio:req-4212",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "worker",
+          "reapOnly": false
+        }
+      ]
+    },
+    {
+      "label": "a manual shell is reap-only",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "man:gone:p0",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "man:gone:p0",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "manual",
+          "reapOnly": true
+        }
+      ]
+    },
+    {
+      "label": "an orphaned worker is reap-only",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger"
+          ],
+          "status": "orphaned"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "orphaned",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "worker",
+          "reapOnly": true
+        }
+      ]
+    },
+    {
+      "label": "a stale worker is restorable",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "worker",
+          "reapOnly": false
+        }
+      ]
+    },
+    {
+      "label": "a minted open pane is not lost",
+      "tabsLabel": "minted fleet ids win over layout",
+      "discovered": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        },
+        {
+          "paneId": "alpha:web",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "alpha:web",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "worker",
+          "reapOnly": false
+        }
+      ]
+    },
+    {
+      "label": "every field survives the map",
+      "tabsLabel": "no tabs",
+      "discovered": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger",
+            "fleet"
+          ],
+          "status": "stale",
+          "livePid": 4242,
+          "projectKey": "studio-code",
+          "repo": "owner/name",
+          "cwd": "/tmp/x"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger",
+            "fleet"
+          ],
+          "livePid": 4242,
+          "status": "stale",
+          "projectKey": "studio-code",
+          "repo": "owner/name",
+          "cwd": "/tmp/x",
+          "kind": "worker",
+          "reapOnly": false
+        }
+      ]
+    },
+    {
+      "label": "zero-cell tab opens nothing, so its pane is lost",
+      "tabsLabel": "zero-dimension layout is zero cells here",
+      "discovered": [
+        {
+          "paneId": "man:tab_z:p0",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "man:tab_z:p0",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "manual",
+          "reapOnly": true
+        }
+      ]
+    },
+    {
+      "label": "ascii x tab opens its cells",
+      "tabsLabel": "ascii x layout",
+      "discovered": [
+        {
+          "paneId": "man:tab_x:p0",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        },
+        {
+          "paneId": "man:tab_x:p3",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": []
+    },
+    {
+      "label": "the hole's cell is open via the manual rule",
+      "tabsLabel": "sparse mints keep their cell count",
+      "discovered": [
+        {
+          "paneId": "man:tab_h:p0",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        },
+        {
+          "paneId": "studio-code:api",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        },
+        {
+          "paneId": "man:tab_h:p1",
+          "sources": [
+            "ledger"
+          ],
+          "status": "stale"
+        }
+      ],
+      "recoverable": [
+        {
+          "paneId": "man:tab_h:p1",
+          "sources": [
+            "ledger"
+          ],
+          "livePid": null,
+          "status": "stale",
+          "projectKey": null,
+          "repo": null,
+          "cwd": null,
+          "kind": "manual",
+          "reapOnly": true
+        }
+      ]
+    }
+  ]
+}

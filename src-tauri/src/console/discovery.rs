@@ -342,3 +342,284 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 }
+
+// ── Reconcile (#1266 S3) — ported from `src/app/console/lib/sessionRecovery.ts` ──────────────────
+//
+// The scan above finds sessions from durable sources; the reconcile decides which of them the store
+// has LOST. That decision used to live in the renderer, over a list this file produces — the inversion
+// `epic-frontend-logic-over-backend-resources-belongs-in-rust` exists to close. Proved against
+// `src/app/console/sessionRecovery.fixtures.json`, generated from the TypeScript it replaces.
+
+/// A tab, as the reconcile needs it: enough to resolve which pane ids it currently shows.
+// No non-test caller until the banner is flipped, which is deliberately its own item — a flip inside a
+// derivation slice hides which of the two changed the behaviour. The ref is a REAL open item, checked
+// with `bsc plan get`, because a dangling `wired by` is invisible to every gate.
+#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
+#[derive(Debug, Clone, Default)]
+pub struct ReconcileTab {
+    pub id: Option<String>,
+    pub kind: Option<String>,
+    pub pane_ids: Vec<Option<String>>,
+    pub layout: Option<String>,
+}
+
+/// A discovered session the store cannot account for, with what to do about it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
+pub struct RecoverableSession {
+    /// Every field of the discovered session, flattened — a recoverable session IS a discovered one
+    /// plus a verdict, and re-listing the fields here is how one silently goes missing.
+    #[serde(flatten)]
+    pub session: DiscoveredSession,
+    /// The parsed identity kind, or `unknown` when the id does not parse.
+    pub kind: String,
+    /// Killed, never restored: a manual scratch shell, or an `orphaned` shell of a deleted project.
+    pub reap_only: bool,
+}
+
+/// Number of grid cells a tab renders.
+///
+/// DELIBERATELY NOT [`bsc_util::pane_status::pane_count_for_layout`], which answers the same question
+/// differently and would silently change which panes count as open. Three differences, all pinned by
+/// the fixture: this prefers `pane_ids.len()` over the layout entirely; its grammar accepts an ASCII
+/// `x` and surrounding spaces; and `2×0` is ZERO cells here (the parse succeeds and multiplies) where
+/// the other reads the zero as falsy and answers two.
+#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
+fn reconcile_cell_count(tab: &ReconcileTab) -> i64 {
+    if !tab.pane_ids.is_empty() {
+        return tab.pane_ids.len() as i64;
+    }
+    let raw = tab.layout.as_deref().unwrap_or("");
+    let sep = raw.find(['×', 'x']);
+    let Some(sep) = sep else { return 1 };
+    let (a, b) = raw.split_at(sep);
+    let b = &b[raw[sep..].chars().next().map(char::len_utf8).unwrap_or(1)..];
+    let (a, b) = (a.trim(), b.trim());
+    // The TypeScript regex is `^(\d+)\s*[×x]\s*(\d+)$` — digits only, both sides, nothing else.
+    if a.is_empty() || b.is_empty() || !a.bytes().all(|c| c.is_ascii_digit()) || !b.bytes().all(|c| c.is_ascii_digit()) {
+        return 1;
+    }
+    match (a.parse::<i64>(), b.parse::<i64>()) {
+        (Ok(c), Ok(r)) => c * r,
+        _ => 1,
+    }
+}
+
+/// Every pane id currently open across all tabs — each cell's resolved identity id.
+#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
+pub fn open_pane_ids(tabs: &[ReconcileTab]) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for (tab_idx, tab) in tabs.iter().enumerate() {
+        let identity = bsc_util::pane_id::IdentityTab {
+            id: tab.id.clone(),
+            kind: tab.kind.clone(),
+            pane_ids: tab.pane_ids.clone(),
+        };
+        for p in 0..reconcile_cell_count(tab) {
+            out.insert(bsc_util::pane_id::pane_id_for(Some(&identity), tab_idx as i64, p));
+        }
+    }
+    out
+}
+
+/// Keep only the discovered sessions NOT represented by an open pane, each with its parsed kind and a
+/// reap-only flag.
+///
+/// FOUR EXCLUSIONS, each for its own reason and each separately pinned:
+///   * already OPEN — the store has it, so nothing was lost;
+///   * the PLANNER (`planning_<key>`) — re-entered from the Projects page, not the recovery banner;
+///   * an app-owned STUDIO session — its id shares the `<key>:<tail>` worker grammar, so without this
+///     it would be surfaced as a restorable worker; it is a singleton re-created with its workspace.
+///     Membership, never a prefix test: `debug-studio:debugger` is one and `debug-studio:req-4212` is
+///     not;
+///   * reap-only — a manual scratch shell or an `orphaned` shell of a deleted project is killed rather
+///     than restored. That is a FLAG, not an exclusion: it still reaches the user.
+#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
+pub fn reconcile_sessions(
+    discovered: &[DiscoveredSession],
+    tabs: &[ReconcileTab],
+    studio_pane_ids: &[String],
+) -> Vec<RecoverableSession> {
+    let open = open_pane_ids(tabs);
+    discovered
+        .iter()
+        .filter(|d| {
+            !open.contains(&d.pane_id)
+                && !bsc_util::pane_id::is_planning_pane_id(&d.pane_id)
+                && !crate::session::fresh_only::is_studio_session_pane_id(&d.pane_id, studio_pane_ids)
+        })
+        .map(|d| {
+            let kind = bsc_util::pane_id::parse_pane_identity(&d.pane_id)
+                .map(|p| p.kind.as_str().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let reap_only = kind == "manual" || d.status == "orphaned";
+            RecoverableSession { session: d.clone(), kind, reap_only }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod reconcile_tests {
+    use super::*;
+    use serde_json::Value;
+
+    /// The generated contract, resolved BY FILENAME under `src/` — the rule the pane-identity, tunnel
+    /// and role-gate fixtures already use. Exactly one match; zero or a collision fails hard.
+    fn fixture() -> Value {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let mut found: Vec<std::path::PathBuf> = Vec::new();
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some("sessionRecovery.fixtures.json") {
+                    out.push(p);
+                }
+            }
+        }
+        walk(&root, &mut found);
+        assert_eq!(found.len(), 1, "expected exactly one sessionRecovery.fixtures.json, got {found:?}");
+        serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+    fn tab_of(v: &Value) -> ReconcileTab {
+        ReconcileTab {
+            id: v.get("id").and_then(Value::as_str).map(str::to_string),
+            kind: v.get("kind").and_then(Value::as_str).map(str::to_string),
+            // A JSON `null` inside paneIds is a HOLE and must stay one — collapsing it makes the
+            // minted-wins rule all-or-nothing.
+            pane_ids: v
+                .get("paneIds")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
+            layout: v.get("layout").and_then(Value::as_str).map(str::to_string),
+        }
+    }
+
+    fn session_of(v: &Value) -> DiscoveredSession {
+        DiscoveredSession {
+            pane_id: v["paneId"].as_str().expect("paneId").to_string(),
+            sources: v["sources"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+            live_pid: v.get("livePid").and_then(Value::as_u64).map(|n| n as u32),
+            status: v["status"].as_str().unwrap_or_default().to_string(),
+            project_key: v.get("projectKey").and_then(Value::as_str).map(str::to_string),
+            repo: v.get("repo").and_then(Value::as_str).map(str::to_string),
+            cwd: v.get("cwd").and_then(Value::as_str).map(str::to_string),
+        }
+    }
+
+    /// The studio ids the fixture's cases rely on. Taken from the REAL registry rather than written
+    /// out, so a studio added on one side cannot leave this corpus describing a world that is gone.
+    fn studio_ids() -> Vec<String> {
+        crate::session::fresh_only::studio_pane_ids()
+    }
+
+    /// Reports every mismatch at once — a wrong port is wrong in a pattern.
+    #[test]
+    fn the_reconcile_matches_the_typescript_case_for_case() {
+        let doc = fixture();
+        let studios = studio_ids();
+        let mut bad: Vec<String> = Vec::new();
+
+        for c in doc["openIds"].as_array().expect("openIds") {
+            let tabs: Vec<ReconcileTab> = c["tabs"].as_array().unwrap().iter().map(tab_of).collect();
+            let got: Vec<String> = open_pane_ids(&tabs).into_iter().collect();
+            let want: Vec<String> = c["open"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect();
+            if got != want {
+                bad.push(format!("  open {:?}: ts {want:?}, rust {got:?}", c["label"]));
+            }
+        }
+
+        for c in doc["reconcile"].as_array().expect("reconcile") {
+            let label = c["label"].as_str().unwrap();
+            let tabs_label = c["tabsLabel"].as_str().unwrap();
+            let tabs: Vec<ReconcileTab> = doc["openIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["label"].as_str() == Some(tabs_label))
+                .unwrap_or_else(|| panic!("no tabs labelled {tabs_label:?}"))["tabs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(tab_of)
+                .collect();
+            let discovered: Vec<DiscoveredSession> = c["discovered"].as_array().unwrap().iter().map(session_of).collect();
+            let got = reconcile_sessions(&discovered, &tabs, &studios);
+            // WHOLE RECORDS, in order, compared through the SAME serialization the frontend receives —
+            // so a dropped or renamed field is a mismatch rather than an invisible loss.
+            let got_json = serde_json::to_value(&got).unwrap();
+            let want_json = c["recoverable"].clone();
+            if got_json != want_json {
+                bad.push(format!("  reconcile {label:?}\n    ts   {want_json}\n    rust {got_json}"));
+            }
+        }
+
+        assert!(bad.is_empty(), "the Rust reconcile disagrees with the live TypeScript:\n{}", bad.join("\n"));
+    }
+
+    /// `reconcile_cell_count` is NOT `pane_count_for_layout`, and the difference decides which panes
+    /// count as open. Asserted side by side so a future tidy cannot merge them.
+    #[test]
+    fn the_cell_count_deliberately_differs_from_the_status_rollups() {
+        let zero = ReconcileTab { layout: Some("2×0".into()), ..Default::default() };
+        assert_eq!(reconcile_cell_count(&zero), 0, "the regex matches and multiplies");
+        assert_eq!(bsc_util::pane_status::pane_count_for_layout("2×0"), 2, "…while the rollup reads the zero as falsy");
+
+        let ascii = ReconcileTab { layout: Some("2x2".into()), ..Default::default() };
+        assert_eq!(reconcile_cell_count(&ascii), 4, "an ASCII x is accepted here");
+        assert_eq!(bsc_util::pane_status::pane_count_for_layout("2x2"), 1, "…and not there");
+
+        let spaced = ReconcileTab { layout: Some("2 × 1".into()), ..Default::default() };
+        assert_eq!(reconcile_cell_count(&spaced), 2);
+
+        // Mints win over the layout entirely — a 3×3 tab with two minted ids has two cells.
+        let minted = ReconcileTab {
+            layout: Some("3×3".into()),
+            pane_ids: vec![Some("a".into()), Some("b".into())],
+            ..Default::default()
+        };
+        assert_eq!(reconcile_cell_count(&minted), 2);
+    }
+
+    /// A studio id is MEMBERSHIP, not a prefix — the distinction that keeps per-request debug panes
+    /// recoverable while the debugger singleton is not.
+    #[test]
+    fn a_debug_request_pane_is_recoverable_but_the_debugger_singleton_is_not() {
+        let studios = studio_ids();
+        let d = |id: &str| DiscoveredSession {
+            pane_id: id.into(),
+            sources: vec!["ledger".into()],
+            live_pid: None,
+            status: "stale".into(),
+            project_key: None,
+            repo: None,
+            cwd: None,
+        };
+        let out = reconcile_sessions(&[d("debug-studio:debugger"), d("debug-studio:req-4212")], &[], &studios);
+        assert_eq!(out.len(), 1, "only the singleton is dropped");
+        assert_eq!(out[0].session.pane_id, "debug-studio:req-4212");
+    }
+
+    /// Reap-only is a FLAG, not an exclusion: the session still reaches the user, marked kill-not-restore.
+    #[test]
+    fn reap_only_sessions_are_still_surfaced() {
+        let studios = studio_ids();
+        let mk = |id: &str, status: &str| DiscoveredSession {
+            pane_id: id.into(),
+            sources: vec!["ledger".into()],
+            live_pid: None,
+            status: status.into(),
+            project_key: None,
+            repo: None,
+            cwd: None,
+        };
+        let out = reconcile_sessions(&[mk("man:gone:p0", "stale"), mk("k:s", "orphaned"), mk("k:s2", "stale")], &[], &studios);
+        assert_eq!(out.len(), 3, "all three are surfaced");
+        assert_eq!(out.iter().filter(|r| r.reap_only).count(), 2);
+    }
+}
