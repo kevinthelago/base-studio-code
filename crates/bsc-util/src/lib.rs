@@ -87,6 +87,12 @@ pub mod filelock;
 /// ported from; see the module docs for the ambiguities it deliberately reproduces.
 pub mod pane_id;
 
+/// The canonical pane ACTIVITY vocabulary and its rollup (#435) — ported from
+/// `src/app/console/lib/paneStatus.ts` under `epic-frontend-logic-over-backend-resources-belongs-in-rust`.
+/// It sits beside [`pane_id`] because it is the reasoning ON TOP of that grammar, and because the
+/// tunnel's desktop→mobile status mapping needs it on this side of the wire.
+pub mod pane_status;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)

@@ -36,7 +36,16 @@ import {
   parsePaneIdentity,
   sandboxUserIdentity,
   paneCwdRecovery,
+  paneIdFor,
+  paneBelongsToTab,
 } from "@/app/console/lib/paneIdentity";
+import {
+  aggregateTabState,
+  clearTabStatuses,
+  paneCountForLayout,
+  type PaneStatus,
+  type StatusTab,
+} from "@/app/console/lib/paneStatus";
 
 const FIXTURE = join(process.cwd(), "src/app/console/paneIdentity.fixtures.json");
 
@@ -99,6 +108,115 @@ const SANDBOX: [string, string | undefined][] = [
   ["studio-code:director", undefined],
 ];
 
+/**
+ * The tab shapes `paneIdFor` dispatches on, in the order its own doc comment lists them: a minted
+ * `paneIds[idx]` wins, then a `kind`-bearing (fleet/triage) tab keeps the positional id, then a manual
+ * tab with a stable `id` mints a `man:` id, then an id-less legacy tab falls back to positional.
+ *
+ * Each shape appears with a pane index that IS minted and one that is not, because the minted-wins
+ * rule is per-INDEX: a fleet tab with two minted ids still falls through to positional for cell 2.
+ */
+const TABS: { label: string; tab: StatusTab }[] = [
+  { label: "legacy id-less", tab: { layout: "2×1" } },
+  { label: "manual with stable id", tab: { id: "tab_abc", layout: "2×2" } },
+  { label: "build kind, no mints", tab: { kind: "build", id: "tab_fleet", layout: "2×1" } },
+  {
+    label: "build kind with mints",
+    tab: { kind: "build", id: "tab_f2", layout: "2×2", paneIds: ["studio-code:director", "studio-code:api"] },
+  },
+  {
+    label: "triage kind, sparse mints",
+    // A HOLE in paneIds: index 0 is absent, so cell 0 falls through to positional while cell 1 is
+    // minted. A port that treats paneIds as all-or-nothing passes every dense case and fails here.
+    tab: { kind: "triage", id: "tab_t", layout: "2×1", paneIds: [undefined as unknown as string, "alpha:repo:triage"] },
+  },
+  {
+    // THE SEPARATING TAB. Every other minted tab here also carries a `kind`, and for those the rule
+    // after a hole is positional either way — so an all-or-nothing reading of `paneIds` is
+    // indistinguishable. Only a tab with mints and NO kind can tell them apart: the hole must fall
+    // through to the MANUAL rule (`man:tab_m2:p0`), not to positional. Added after a deliberate
+    // all-or-nothing mutation failed to bite, which is the corpus answering rather than the code.
+    label: "manual with sparse mints",
+    tab: { id: "tab_m2", layout: "2×1", paneIds: [undefined as unknown as string, "studio-code:api"] },
+  },
+  // SENTINEL: a malformed layout is not a case of any grid — `paneCountForLayout` falls back to 1.
+  { label: "malformed layout", tab: { id: "tab_bad", layout: "not-a-layout" } },
+  { label: "one-cell layout", tab: { id: "tab_one", layout: "1×1" } },
+];
+
+/** Layout strings, including the ones that are NOT grids. */
+const LAYOUTS = ["1×1", "2×1", "2×2", "3×2", "4×4", "not-a-layout", "", "2", "×", "0×3", "2×0"];
+
+/**
+ * Status maps to roll up. The vocabulary is three values, so the interesting cases are the
+ * PRECEDENCE ones (a run beside an idle) and the ones where a pane is excluded rather than counted.
+ */
+const ROLLUPS: { label: string; tabIdx: number; tab: StatusTab; statuses: Record<string, PaneStatus>; disabled: Record<string, boolean> }[] = [
+  { label: "empty map is idle", tabIdx: 0, tab: TABS[0].tab, statuses: {}, disabled: {} },
+  { label: "any run dominates", tabIdx: 0, tab: TABS[0].tab, statuses: { t0p0: "idle", t0p1: "run" }, disabled: {} },
+  { label: "on without run", tabIdx: 0, tab: TABS[0].tab, statuses: { t0p0: "on", t0p1: "idle" }, disabled: {} },
+  // A run in a DISABLED cell must not pull the tab into "run" — the exclusion is the rule.
+  { label: "disabled run is excluded", tabIdx: 0, tab: TABS[0].tab, statuses: { t0p0: "run", t0p1: "on" }, disabled: { t0p0: true } },
+  { label: "all disabled is idle", tabIdx: 0, tab: TABS[0].tab, statuses: { t0p0: "run", t0p1: "run" }, disabled: { t0p0: true, t0p1: true } },
+  // A status keyed by a pane OUTSIDE the current layout is ignored: shrinking the grid drops it.
+  { label: "out-of-grid status ignored", tabIdx: 0, tab: TABS[6].tab, statuses: { t0p0: "idle", t0p1: "run", t0p5: "run" }, disabled: {} },
+  { label: "manual tab rolls up by man: id", tabIdx: 3, tab: TABS[1].tab, statuses: { "man:tab_abc:p0": "on", "man:tab_abc:p3": "run" }, disabled: {} },
+  { label: "minted build ids roll up", tabIdx: 1, tab: TABS[3].tab, statuses: { "studio-code:director": "on", "studio-code:api": "run" }, disabled: {} },
+  { label: "minted id disabled", tabIdx: 1, tab: TABS[3].tab, statuses: { "studio-code:api": "run" }, disabled: { "studio-code:api": true } },
+  { label: "sparse mints: hole falls through to positional", tabIdx: 2, tab: TABS[4].tab, statuses: { t2p0: "run", "alpha:repo:triage": "idle" }, disabled: {} },
+];
+
+/**
+ * `clearTabStatuses` gets its OWN corpus, because reusing the rollup one proved nothing.
+ *
+ * MEASURED while writing this: every rollup case is keyed entirely by ids the tab owns, so the clear
+ * emptied the map every time — and a port that ignored membership and returned `{}` would have passed
+ * all ten. That is the separating input the method warns about: the interesting case is a map holding
+ * BOTH a pane this tab owns and a pane it does not, where the second must survive.
+ */
+const CLEARS: { label: string; tabIdx: number; tab: StatusTab; statuses: Record<string, PaneStatus> }[] = [
+  {
+    label: "drops own positional, keeps another tab's",
+    tabIdx: 0,
+    tab: TABS[0].tab,
+    statuses: { t0p0: "run", t0p1: "on", t1p0: "run", t2p3: "on" },
+  },
+  {
+    label: "drops own manual, keeps a different manual tab's",
+    tabIdx: 3,
+    tab: TABS[1].tab,
+    statuses: { "man:tab_abc:p0": "run", "man:tab_other:p0": "on", t3p0: "run" },
+  },
+  {
+    label: "drops minted ids it owns, keeps a minted id it does not",
+    tabIdx: 1,
+    tab: TABS[3].tab,
+    statuses: { "studio-code:director": "run", "studio-code:api": "on", "alpha:web": "run" },
+  },
+  {
+    label: "keeps everything when nothing belongs",
+    tabIdx: 5,
+    tab: TABS[1].tab,
+    statuses: { "man:tab_other:p1": "run", "alpha:web": "on" },
+  },
+  { label: "empty map stays empty", tabIdx: 0, tab: TABS[0].tab, statuses: {} },
+  {
+    label: "an unparseable id is never anyone's, so it survives",
+    tabIdx: 0,
+    tab: TABS[0].tab,
+    statuses: { t0p0: "run", scratch: "on", "": "idle" },
+  },
+];
+
+/** Membership, which is what a stale-status clear is built on. */
+const MEMBERSHIP: { paneId: string; tabIdx: number; tabLabel: string }[] = [];
+for (const { label } of TABS) {
+  for (const paneId of ["t0p0", "t2p1", "man:tab_abc:p2", "studio-code:api", "studio-code:director", "alpha:repo:triage", "planning_alpha", "", "scratch"]) {
+    MEMBERSHIP.push({ paneId, tabIdx: 0, tabLabel: label });
+    MEMBERSHIP.push({ paneId, tabIdx: 2, tabLabel: label });
+  }
+}
+
 function build() {
   return {
     note: "GENERATED from the live TypeScript — see paneIdentity.fixtures.gen.test.ts",
@@ -121,6 +239,38 @@ function build() {
       id,
       distro: distro ?? null,
       user: sandboxUserIdentity(id, distro),
+    })),
+    // ── the rollup half (`the-pane-status-rollup-is-derived-in-rust-at-parity`) ──
+    layouts: LAYOUTS.map((layout) => ({ layout, count: paneCountForLayout(layout) })),
+    idFor: TABS.flatMap(({ label, tab }) =>
+      [0, 1, 2, 3].flatMap((paneIdx) =>
+        [0, 2].map((tabIdx) => ({ tabLabel: label, tabIdx, paneIdx, id: paneIdFor(tab, tabIdx, paneIdx) })),
+      ),
+    ),
+    // `paneIdFor` takes an OPTIONAL tab and falls back to positional — its own separate case, since a
+    // corpus of real tabs never exercises the undefined arm.
+    idForNoTab: [0, 3].flatMap((tabIdx) => [0, 2].map((paneIdx) => ({ tabIdx, paneIdx, id: paneIdFor(undefined, tabIdx, paneIdx) }))),
+    membership: MEMBERSHIP.map(({ paneId, tabIdx, tabLabel }) => ({
+      paneId,
+      tabIdx,
+      tabLabel,
+      belongs: paneBelongsToTab(paneId, TABS.find((t) => t.label === tabLabel)!.tab, tabIdx),
+    })),
+    rollups: ROLLUPS.map(({ label, tabIdx, tab, statuses, disabled }) => ({
+      label,
+      tabIdx,
+      layout: tab.layout,
+      statuses,
+      disabled,
+      state: aggregateTabState(tab, tabIdx, statuses, disabled),
+    })),
+    clears: CLEARS.map(({ label, tabIdx, tab: clearTab, statuses }) => ({
+      label,
+      tabIdx,
+      statuses,
+      // WHOLE MAP recorded, not a count — a port that clears too much and one that clears too little
+      // both survive a length check (trap 5: a lossy artifact looks exactly like a passing test).
+      remaining: clearTabStatuses(statuses, clearTab, tabIdx),
     })),
   };
 }
@@ -152,5 +302,44 @@ describe("the pane-id grammar is captured for Rust to match", () => {
     const built = build();
     const odd = built.ids.filter((c) => c.parsed?.kind === "worker" && !c.needsGate);
     expect(odd.map((c) => c.id)).toContain("studio-code::");
+  });
+
+  /** All three rollup values must appear, or the port can hardcode one and pass. */
+  it("exercises every status the rollup can produce", () => {
+    const built = build();
+    expect([...new Set(built.rollups.map((r) => r.state))].sort()).toEqual(["idle", "on", "run"]);
+  });
+
+  /** The minted-wins rule is per-INDEX. Without a tab whose paneIds have a HOLE, a port that treats
+   *  them as all-or-nothing passes every case here. */
+  it("has a tab whose minted ids are sparse, so the fallback is per-cell", () => {
+    const built = build();
+    const sparse = built.idFor.filter((c) => c.tabLabel === "triage kind, sparse mints");
+    expect(sparse.some((c) => c.id.startsWith("t"))).toBe(true); // cell 0 fell through
+    expect(sparse.some((c) => c.id === "alpha:repo:triage")).toBe(true); // cell 1 was minted
+  });
+
+  /** A disabled RUN must be able to change the answer, or the exclusion rule is untested. */
+  it("has a rollup where disabling a pane changes the tab state", () => {
+    const built = build();
+    const c = built.rollups.find((r) => r.label === "disabled run is excluded");
+    expect(c?.state).toBe("on"); // "run" if the disabled cell were counted
+  });
+
+  /** `clearTabStatuses` must both KEEP and DROP, and do BOTH in a single case.
+   *
+   *  The last part is the one that matters: a case that only drops is satisfied by returning `{}`, and
+   *  a case that only keeps is satisfied by returning the input unchanged. Only a map where some
+   *  entries go and others stay can tell a membership test from either constant. */
+  it("has a clear that drops some entries and keeps others in the SAME map", () => {
+    const built = build();
+    const mixed = built.clears.filter(
+      (c) => Object.keys(c.remaining).length > 0 && Object.keys(c.remaining).length < Object.keys(c.statuses).length,
+    );
+    expect(mixed.map((c) => c.label)).toContain("drops own positional, keeps another tab's");
+    expect(mixed.length).toBeGreaterThanOrEqual(3);
+    // …and the two degenerate ends are present too, so neither is what the mixed cases rest on.
+    expect(built.clears.some((c) => Object.keys(c.remaining).length === Object.keys(c.statuses).length && Object.keys(c.statuses).length > 0)).toBe(true);
+    expect(built.clears.some((c) => Object.keys(c.remaining).length === 0 && Object.keys(c.statuses).length === 0)).toBe(true);
   });
 });

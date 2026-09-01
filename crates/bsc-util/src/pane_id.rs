@@ -310,6 +310,83 @@ pub fn pane_cwd_recovery(pane_id: &str) -> Option<CwdRecovery> {
     }
 }
 
+/// A tab, as the identity rules need it. Every field is optional because the rules DISPATCH on which
+/// are present — that is the whole logic, not an accident of modelling.
+///
+/// `pane_ids` is `Vec<Option<String>>` rather than `Vec<String>` on purpose: the TypeScript reads
+/// `tab.paneIds?.[idx]`, so a HOLE at one index falls through to the positional rule while a minted id
+/// at the next still wins. Collapsing it to a dense list makes the minted-wins rule all-or-nothing,
+/// which passes every dense case and silently changes the sparse one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct IdentityTab {
+    /// The tab's stable id, when it has one (`man:<id>:p<n>` is minted from it).
+    pub id: Option<String>,
+    /// Present for a fleet/triage tab. Its VALUE is never read — only whether it is there.
+    pub kind: Option<String>,
+    /// Minted identity ids by grid index, with holes preserved.
+    pub pane_ids: Vec<Option<String>>,
+}
+
+/// Resolve a pane's identity id from its tab + grid position.
+///
+/// The order is load-bearing and is the TypeScript's: a minted `pane_ids[idx]` wins; else a
+/// `kind`-bearing (fleet/triage) tab keeps the POSITIONAL id; else a manual tab with a stable `id`
+/// mints a `man:` id; else positional. `tab` is optional because the caller reads it out of app state
+/// that may not have one yet, and the absent case falls through to positional like an id-less tab.
+///
+/// Note the second rule: a fleet tab WITHOUT mints does not get a `man:` id even when it has an `id`.
+/// That looks like an oversight and is the shipping behaviour — Stage 1 fleet tabs are positional.
+pub fn pane_id_for(tab: Option<&IdentityTab>, tab_idx: i64, pane_idx: i64) -> String {
+    if let Some(t) = tab {
+        if let Some(Some(minted)) = t.pane_ids.get(pane_idx as usize) {
+            if !minted.is_empty() {
+                return minted.clone();
+            }
+        }
+        if t.kind.is_some() {
+            return positional_pane_id(tab_idx, pane_idx);
+        }
+        if let Some(id) = t.id.as_ref().filter(|i| !i.is_empty()) {
+            return manual_pane_id(id, pane_idx);
+        }
+    }
+    positional_pane_id(tab_idx, pane_idx)
+}
+
+/// Whether `pane_id` is one of the cells `tab` (at grid index `tab_idx`) owns — the inverse of
+/// [`pane_id_for`], and what a status rollup or a stale-status clear is built on.
+///
+/// A minted id matches when it is in `pane_ids`; a `man:<tabId>:…` id matches when the tab's stable
+/// `id` matches; a legacy positional `t<idx>p…` id matches when the tab index matches. Director,
+/// worker and triage ids only ever belong via `pane_ids` — parsing cannot place them, because their
+/// grammar carries a project key rather than a tab.
+pub fn pane_belongs_to_tab(pane_id: &str, tab: &IdentityTab, tab_idx: i64) -> bool {
+    if tab.pane_ids.iter().any(|p| p.as_deref() == Some(pane_id)) {
+        return true;
+    }
+    let Some(parsed) = parse_pane_identity(pane_id) else { return false };
+    match parsed.kind {
+        PaneKind::Manual => tab
+            .id
+            .as_ref()
+            .is_some_and(|id| !id.is_empty() && parsed.tab_id.as_deref() == Some(id.as_str())),
+        PaneKind::Positional => parsed.tab_idx == Some(tab_idx),
+        _ => false,
+    }
+}
+
+/// The tab that owns `pane_id`, with its index, or `None`.
+///
+/// Scans by IDENTITY rather than by parsing a positional key out of the id — the positional parse
+/// could only ever resolve legacy `t<idx>p…` ids, which silently dropped every manual and minted
+/// fleet/triage pane.
+pub fn find_pane_owner_tab<'a>(tabs: &'a [IdentityTab], pane_id: &str) -> Option<(&'a IdentityTab, i64)> {
+    tabs.iter()
+        .enumerate()
+        .find(|(i, t)| pane_belongs_to_tab(pane_id, t, *i as i64))
+        .map(|(i, t)| (t, i as i64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
