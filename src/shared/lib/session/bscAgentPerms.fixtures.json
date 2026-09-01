@@ -7,6 +7,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": null,
       "perms": {
         "deny_tools": [],
@@ -23,6 +24,7 @@
         "curl",
         "wget"
       ],
+      "activeSurfaces": [],
       "capability": null,
       "perms": {
         "deny_tools": [],
@@ -39,6 +41,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "planner",
         "writeGlobs": [
@@ -130,6 +133,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -204,6 +208,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "director",
         "writeGlobs": [
@@ -304,6 +309,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "triage",
         "writeGlobs": [],
@@ -360,6 +366,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "tester",
         "writeGlobs": [],
@@ -458,6 +465,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "reviewer",
         "writeGlobs": [],
@@ -556,6 +564,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "issuer",
         "writeGlobs": [],
@@ -621,6 +630,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "juror",
         "writeGlobs": [],
@@ -719,6 +729,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "documentor",
         "writeGlobs": [
@@ -808,6 +819,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "designer",
         "writeGlobs": [
@@ -883,6 +895,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "architect",
         "writeGlobs": [
@@ -954,6 +967,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "librarian",
         "writeGlobs": [
@@ -1032,6 +1046,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "sound-designer",
         "writeGlobs": [
@@ -1098,6 +1113,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "marketer",
         "writeGlobs": [
@@ -1196,6 +1212,7 @@
         "gh pr create"
       ],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -1272,6 +1289,7 @@
         "gh pr create"
       ],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "director",
         "writeGlobs": [
@@ -1373,6 +1391,7 @@
         "gh pr create"
       ],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "designer",
         "writeGlobs": [
@@ -1451,6 +1470,7 @@
         "curl",
         "npm publish"
       ],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -1530,6 +1550,7 @@
         "  curl  ",
         "npm publish"
       ],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -1610,6 +1631,7 @@
         "   ",
         "curl"
       ],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -1687,6 +1709,7 @@
       "extraDenyBash": [
         "gh pr merge"
       ],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -1766,6 +1789,7 @@
       "extraDenyBash": [
         "curl"
       ],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [],
@@ -1843,6 +1867,7 @@
       ],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "worker",
         "writeGlobs": [
@@ -1923,6 +1948,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "designer",
         "writeGlobs": [
@@ -1998,6 +2024,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "documentor",
         "writeGlobs": [
@@ -2087,6 +2114,7 @@
       "writeGlobs": [],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "triage",
         "writeGlobs": [],
@@ -2145,6 +2173,7 @@
       ],
       "granted": [],
       "extraDenyBash": [],
+      "activeSurfaces": [],
       "capability": {
         "role": "triage",
         "writeGlobs": [
@@ -2189,6 +2218,244 @@
           "emacs",
           "ed",
           "ex",
+          "bsc request",
+          "bsc persona set",
+          "bsc persona remove",
+          "bsc persona rename"
+        ],
+        "write_globs": []
+      }
+    },
+    {
+      "label": "designer + the surface catalog — undeclared surfaces are denied",
+      "role": "designer",
+      "writeGlobs": [],
+      "granted": [],
+      "extraDenyBash": [],
+      "activeSurfaces": [
+        "plan",
+        "skill",
+        "ui"
+      ],
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "perms": {
+        "deny_tools": [],
+        "deny_bash": [
+          "bsc plan",
+          "bsc skill",
+          "git",
+          "gh",
+          "tee",
+          "dd",
+          "truncate",
+          "install",
+          "cp",
+          "mv",
+          "ln",
+          "patch",
+          "sponge",
+          "sed -i",
+          "sed --in-place",
+          "perl -i",
+          "vi",
+          "vim",
+          "nano",
+          "emacs",
+          "ed",
+          "ex",
+          "bsc persona set",
+          "bsc persona remove",
+          "bsc persona rename",
+          "python",
+          "python3",
+          "node",
+          "jq",
+          "perl",
+          "ruby"
+        ],
+        "write_globs": [
+          "scratch/**"
+        ]
+      }
+    },
+    {
+      "label": "designer + an EMPTY catalog denies no surface",
+      "role": "designer",
+      "writeGlobs": [],
+      "granted": [],
+      "extraDenyBash": [],
+      "activeSurfaces": [],
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "perms": {
+        "deny_tools": [],
+        "deny_bash": [
+          "git",
+          "gh",
+          "tee",
+          "dd",
+          "truncate",
+          "install",
+          "cp",
+          "mv",
+          "ln",
+          "patch",
+          "sponge",
+          "sed -i",
+          "sed --in-place",
+          "perl -i",
+          "vi",
+          "vim",
+          "nano",
+          "emacs",
+          "ed",
+          "ex",
+          "bsc persona set",
+          "bsc persona remove",
+          "bsc persona rename",
+          "python",
+          "python3",
+          "node",
+          "jq",
+          "perl",
+          "ruby"
+        ],
+        "write_globs": [
+          "scratch/**"
+        ]
+      }
+    },
+    {
+      "label": "worker + the surface catalog",
+      "role": "worker",
+      "writeGlobs": [],
+      "granted": [],
+      "extraDenyBash": [],
+      "activeSurfaces": [
+        "plan",
+        "skill",
+        "ui"
+      ],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "perms": {
+        "deny_tools": [],
+        "deny_bash": [
+          "bsc skill",
+          "gh issue create",
+          "gh issue edit",
+          "gh issue close",
+          "gh issue reopen",
+          "gh issue comment",
+          "gh issue delete",
+          "gh issue lock",
+          "gh issue transfer",
+          "gh issue pin",
+          "gh pr create",
+          "gh pr merge",
+          "gh pr close",
+          "gh pr edit",
+          "gh pr comment",
+          "gh pr ready",
+          "gh pr review",
+          "gh label create",
+          "gh label edit",
+          "gh label delete",
+          "gh release create",
+          "gh release edit",
+          "gh release delete",
+          "gh repo create",
+          "gh repo edit",
+          "gh repo delete",
+          "gh api --method POST",
+          "gh api --method PATCH",
+          "gh api --method PUT",
+          "gh api --method DELETE",
+          "gh api -X POST",
+          "gh api -X PATCH",
+          "gh api -X PUT",
+          "gh api -X DELETE",
+          "bsc ui set",
+          "bsc ui remove",
+          "bsc ui kit set",
+          "bsc ui kit remove",
+          "bsc component set",
+          "bsc component remove",
+          "bsc component kit set",
+          "bsc component kit remove",
           "bsc request",
           "bsc persona set",
           "bsc persona remove",

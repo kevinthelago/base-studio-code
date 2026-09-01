@@ -27,7 +27,13 @@ const ROLES: SessionRole[] = [
 
 const PUSH_GRANT = ["git push", "gh pr create"];
 
-type Case = { label: string; role: string | null; globs?: string[]; granted?: string[]; extraDeny?: string[] };
+type Case = { label: string; role: string | null; globs?: string[]; granted?: string[]; extraDeny?: string[]; surfaces?: string[] };
+
+/** A stand-in `bsc surface list` catalog. Small and FIXED rather than the real one: the complement is
+ *  what a role did NOT declare, so a live catalog would silently rewrite every expectation here each
+ *  time a surface is added. `plan`/`skill` are surfaces no studio role declares; `ui` is one the
+ *  designer does, so the pair proves the complement rather than a blanket deny. */
+const CATALOG = ["plan", "skill", "ui"];
 
 const SUBJECTS: Case[] = [
   // A role-less ad-hoc console: only the user's denylist applies.
@@ -54,11 +60,19 @@ const SUBJECTS: Case[] = [
   { label: "documentor — the doc-globs carve-out", role: "documentor" },
   { label: "triage — code:none with NO carve-out gets no globs and loses the write tools", role: "triage" },
   { label: "triage handed globs it has no carve-out for", role: "triage", globs: ["src/**"] },
+
+  // The persona SURFACE COMPLEMENT (`a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`).
+  // It used to be absent here entirely, so a bsc-agent session was denied strictly less than the same
+  // role on Claude. An EMPTY catalog still denies nothing extra, which is the fail-open the launch
+  // relies on when the catalog poll has not resolved.
+  { label: "designer + the surface catalog — undeclared surfaces are denied", role: "designer", surfaces: CATALOG },
+  { label: "designer + an EMPTY catalog denies no surface", role: "designer", surfaces: [] },
+  { label: "worker + the surface catalog", role: "worker", surfaces: CATALOG },
 ];
 
 const render = (c: Case) => {
   const cap = c.role ? roleCapability(c.role as SessionRole, c.globs?.length ? { writeGlobs: c.globs } : {}) ?? null : null;
-  return { cap, perms: bscAgentPerms(cap, c.granted ?? [], c.extraDeny ?? []) };
+  return { cap, perms: bscAgentPerms(cap, c.granted ?? [], c.extraDeny ?? [], c.surfaces ?? []) };
 };
 
 describe("bscAgentPerms fixtures", () => {
@@ -71,6 +85,9 @@ describe("bscAgentPerms fixtures", () => {
         writeGlobs: c.globs ?? [],
         granted: c.granted ?? [],
         extraDenyBash: c.extraDeny ?? [],
+        // The catalog the complement was computed against — emitted so the Rust parity test drives
+        // the SAME input rather than assuming an empty one, which is the assumption that hid this bug.
+        activeSurfaces: c.surfaces ?? [],
         capability: cap,
         perms,
       };
