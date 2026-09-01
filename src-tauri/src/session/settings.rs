@@ -144,6 +144,14 @@ pub(crate) fn ensure_session_settings(
     // `gh pr create` for an auto-pr or push-confirm flow, empty otherwise. A fact: the flow is
     // per-pane data the renderer holds. Absent reproduces the pre-flow behaviour.
     flow_granted_commands: Option<Vec<String>>,
+    // The persona's OWN hooks, resolved, so the launch can compose the rest of the chain around them
+    // (`the-launch-composes-its-own-hook-chain-instead-of-receiving-it`). A fact: persona resolution
+    // is the renderer's, the same way the surface catalog and the studio registry are.
+    persona_hooks: Option<Vec<HookCfg>>,
+    // Whether `hooks` above is the SANDBOXED substitution rather than the ordinary chain. The
+    // caller owns that swap (the sandbox cluster has its own items), so the launch must be told
+    // rather than compose over it and silently undo it.
+    namespace_hooks: Option<bool>,
 ) -> Result<(), String> {
     // Bind the unwrapped Options to locals so the borrowed spec can reference them.
     let mcp_servers = mcp_servers.unwrap_or_default();
@@ -258,6 +266,44 @@ pub(crate) fn ensure_session_settings(
         deny_tool_rules,
         bash_posture,
     } = prof.merged;
+    // THE HOOK CHAIN, COMPOSED HERE. Rust supplies every one of these gates — `bsc-deny` reads the
+    // env this function just derived, `bsc-scope` and `bsc-confine` are its binaries — and could not
+    // decide which of them run. The failure mode is SILENCE: an unregistered hook does not error, it
+    // simply never fires, which is how the turn-accounting pair went missing twice.
+    //
+    // Skipped entirely under the namespace substitution: that swap belongs to the sandbox cluster and
+    // composing over it would silently undo it.
+    let hooks = if namespace_hooks.unwrap_or(false) {
+        hooks
+    } else {
+        let to_hook = |h: &HookCfg| crate::session::hook_chain::SessionHook {
+            event: h.event.clone(),
+            matcher: h.matcher.clone(),
+            command: h.command.clone(),
+        };
+        let chain = crate::session::hook_chain::reconcile_hook_chain(
+            hooks.iter().map(to_hook).collect(),
+            &persona_hooks.unwrap_or_default().iter().map(to_hook).collect::<Vec<_>>(),
+            // GATED is capability OR profile, not "has a role". A pane carrying only a profile is
+            // gated, and collapsing this to the capability alone would silently un-gate it.
+            role_capability.is_some() || agent_profile.is_some(),
+            role_capability.as_ref().is_some_and(|c| c.role == "worker"),
+            !skills.is_empty(),
+        );
+        if !chain.missing_from_derivation.is_empty() {
+            log::warn!(
+                "session settings[{cwd}]: the composed hook chain was MISSING {:?}, which the frontend \
+                 registered — appended. A hook that is not installed fires nothing and reports nothing \
+                 on its own, so this is a gate that stopped running, not a difference of opinion.",
+                chain.missing_from_derivation,
+            );
+        }
+        chain
+            .merged
+            .into_iter()
+            .map(|h| HookCfg { event: h.event, matcher: h.matcher, command: h.command })
+            .collect()
+    };
     write_session_settings(&SessionSettingsSpec {
         cwd: &cwd,
         allowed_commands: &allowed_commands,
@@ -966,6 +1012,9 @@ mod tests {
             None,
             // flow_granted_commands — no flow, so the role's denies stand unlifted.
             None,
+            // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
+            None,
+            None,
         )
         .expect("settings written");
 
@@ -985,6 +1034,96 @@ mod tests {
 
     /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
     ///
+    /// THE CALL SITE for the hook chain, on both ends the item names. `session::hook_chain`'s own
+    /// tests stay green if `ensure_session_settings` never calls it — they compose directly. This
+    /// drives the real command and reads the `settings.json` it wrote, which is the file the gates are
+    /// actually installed from.
+    ///
+    /// The failure this guards is SILENCE. An unregistered hook does not error; it never fires and the
+    /// thing it was gating proceeds. Nothing downstream would report a shorter chain.
+    #[test]
+    fn the_launch_composes_the_hook_chain_and_never_a_shorter_one() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("hook-chain-launch");
+
+        let commands_at = |dir: &std::path::Path| -> Vec<String> {
+            let v: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.join(".claude/settings.json")).expect("settings.json"),
+            )
+            .unwrap();
+            // Every `hooks.<event>[].hooks[].command`, flattened — the shape Claude Code reads.
+            let mut out = Vec::new();
+            if let Some(events) = v["hooks"].as_object() {
+                for (_, entries) in events {
+                    for e in entries.as_array().into_iter().flatten() {
+                        for h in e["hooks"].as_array().into_iter().flatten() {
+                            if let Some(c) = h["command"].as_str() {
+                                out.push(c.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            out
+        };
+
+        // END ONE: an UNGATED ad-hoc pane. No role, no profile — and it still gets the floor.
+        let bare = home.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        super::ensure_session_settings(
+            bare.to_string_lossy().to_string(),
+            vec![], vec![],
+            None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None,
+        )
+        .expect("settings written");
+        let bare_cmds = commands_at(&bare);
+        for floor in ["bsc-confine", "bsc-deny", "bsc-tokens"] {
+            assert!(
+                bare_cmds.iter().any(|c| c.contains(floor)),
+                "the floor is unconditional — an ungated pane still gets {floor}: {bare_cmds:?}"
+            );
+        }
+        // …and the GATED-only hooks are absent, so this is a floor rather than the whole chain.
+        assert!(!bare_cmds.iter().any(|c| c.contains("bsc-audit")), "{bare_cmds:?}");
+
+        // END TWO: a WORKER. Gated, so it adds the audit set, and `bsc-superseded` on top.
+        let worker_dir = home.join("worker");
+        std::fs::create_dir_all(&worker_dir).unwrap();
+        let cap = crate::session::role_gate::RoleCapability {
+            role: "worker".into(),
+            github: crate::session::role_gate::Tier::Read,
+            git: crate::session::role_gate::Tier::Write,
+            code: crate::session::role_gate::Tier::Write,
+            net: crate::session::role_gate::Tier::Read,
+            ui: crate::session::role_gate::Tier::Read,
+            write_globs: vec!["src/**".into()],
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: Vec::new(),
+        };
+        super::ensure_session_settings(
+            worker_dir.to_string_lossy().to_string(),
+            vec![], vec![],
+            // The renderer sends NO hooks at all — the #3455 shape, where a launch path passed an
+            // empty list and every gate silently vanished. The composition must not reproduce it.
+            None, Some(vec![]), None, None, None, None, None, None, None, None,
+            Some(cap),
+            Some(vec![]),
+            None, None, None, None,
+        )
+        .expect("settings written");
+        let worker_cmds = commands_at(&worker_dir);
+        for expected in ["bsc-audit", "bsc-scope", "bsc-superseded", "bsc-confine", "bsc-deny"] {
+            assert!(
+                worker_cmds.iter().any(|c| c.contains(expected)),
+                "a worker's chain must carry {expected} even though the frontend sent none: \
+                 {worker_cmds:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// THE REGRESSION SWITCHING THE WIRE ON WOULD HAVE CAUSED, driven through the real command.
     ///
     /// A worker is `github: read`, so the role gate denies `gh pr create`. An `auto-pr` flow is what
@@ -1033,6 +1172,8 @@ mod tests {
             Some(vec![]),
             None,
             Some(vec!["git push".to_string(), "gh pr create".to_string()]),
+            None,
+            None,
         )
         .expect("settings written");
 
@@ -1107,6 +1248,9 @@ mod tests {
             None,
             // flow_granted_commands — no flow, so the role's denies stand unlifted.
             None,
+            // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
+            None,
+            None,
         )
         .expect("settings written");
 
@@ -1156,6 +1300,8 @@ mod tests {
             Some("allow".to_string()),
             None, None, None, None,
             Some(profile),
+            None,
+            None,
             None,
         )
         .expect("settings written");

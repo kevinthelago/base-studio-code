@@ -40,9 +40,6 @@
 //! which has items in flight; the caller substitutes. Persona-supplied hooks are passed IN rather than
 //! resolved here, the same way the surface catalog and the studio registry already are.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-launch-composes-its-own-hook-chain-instead-of-receiving-it`
-
 /// One registered hook. `matcher` is a regex over tool names; empty means every tool.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SessionHook {
@@ -110,6 +107,58 @@ pub fn session_hooks(
     out.push(hook("PreToolUse", "Bash", "bsc-deny"));
     out.extend(turn_accounting_hooks());
     out
+}
+
+
+/// The chain to install, and what the derivation failed to account for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HookChainReconciliation {
+    /// What to write. Never shorter than what the renderer sent.
+    pub merged: Vec<SessionHook>,
+    /// Commands the renderer registered that this composition did NOT — appended to `merged`, and the
+    /// one direction that is a defect. Rust composing MORE is the direction this epic moves in and is
+    /// deliberately not reported.
+    pub missing_from_derivation: Vec<String>,
+}
+
+/// Reconcile the composed chain against the one the renderer sent.
+///
+/// # Union, and the asymmetry is sharper here than elsewhere
+///
+/// The other reconciliations in this cutover union because a list can legitimately carry more than one
+/// side derives. This one unions because of what a MISSING hook does: nothing. It does not error, it
+/// does not warn, it does not degrade — the gate it was installed to enforce simply stops running, and
+/// the tool call proceeds. `bsc-tokens` fell out of a launch path and the cost subsystem read `$0` for
+/// about three weeks (#3452); the planner launch passed no hooks at all and its cost was invisible
+/// (#3455). Neither produced a single error.
+///
+/// So the merged chain can never be SHORTER than what the renderer sent, whatever the derivation
+/// thinks. A hook Rust did not compose is appended and named, because "some hooks differed" is not
+/// something anyone can act on — the command is the actionable part.
+///
+/// # Order is part of the contract
+///
+/// The chain is written into `settings.json` in order, so a reordering is a real diff in a
+/// security-relevant file even when the SET is identical. The derived order is therefore the one that
+/// survives, and the frontend's extras are appended rather than merged positionally — an extra means
+/// the two sides disagree, and inventing a position for it would make the diff harder to read at
+/// exactly the moment someone is reading it.
+pub fn reconcile_hook_chain(
+    from_frontend: Vec<SessionHook>,
+    persona_hooks: &[SessionHook],
+    gated: bool,
+    is_worker: bool,
+    has_skills: bool,
+) -> HookChainReconciliation {
+    let mut merged = session_hooks(persona_hooks, gated, is_worker, has_skills);
+    let mut missing_from_derivation = Vec::new();
+    for h in from_frontend {
+        if !merged.contains(&h) {
+            missing_from_derivation.push(h.command.clone());
+            merged.push(h);
+        }
+    }
+    HookChainReconciliation { merged, missing_from_derivation }
 }
 
 #[cfg(test)]
