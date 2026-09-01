@@ -51,6 +51,15 @@ pub struct RoleCapability {
     /// Declared `bsc` surfaces. `None` is NOT the empty list — see [`capability_surfaces`].
     #[serde(default)]
     pub surfaces: Option<Vec<String>>,
+    /// SYMBOLIC read-only roots this role may SCAN outside its own repo (`app-repo`, `projects`).
+    ///
+    /// Symbolic because a role is machine-independent — the launch resolves each token to a real path
+    /// (`session::access_env`). Absent until now, which meant this struct silently DROPPED the field
+    /// when deserializing a capability the TypeScript produced: serde ignores unknown keys, so the
+    /// designer's two harvest roots read as none at all. The same shape as the `writeGlobs` casing bug
+    /// the role-gate parity caught on its first run.
+    #[serde(default)]
+    pub harvest_roots: Vec<String>,
 }
 
 /// `git` subcommands that WRITE. A `read` tier denies these; a `none` tier denies `git` outright.
@@ -535,7 +544,7 @@ mod tests {
         RoleCapability {
             role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
             net: Tier::Read, ui: Tier::Read, write_globs: vec!["src/**".into()],
-            allow: vec![], surfaces: None,
+            allow: vec![], surfaces: None, harvest_roots: Vec::new(),
         }
     }
 
@@ -581,7 +590,7 @@ mod tests {
         let cap = RoleCapability {
             role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
             net: Tier::Read, ui: Tier::Read, write_globs: vec!["src/**".into()],
-            allow: vec![], surfaces: None,
+            allow: vec![], surfaces: None, harvest_roots: Vec::new(),
         };
         let r = reconcile_tool_rules(
             Some(&cap), &[], &[],
@@ -598,6 +607,7 @@ mod tests {
         let cap = RoleCapability {
             role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
             net: Tier::None, ui: Tier::Read, write_globs: vec![], allow: vec![], surfaces: None,
+            harvest_roots: Vec::new(),
         };
         let r = reconcile_tool_rules(Some(&cap), &[], &[], vec![], vec!["SomeUserDeny".into()]);
         assert!(r.deny.contains(&"SomeUserDeny".to_string()), "the frontend's own deny survives");
@@ -614,7 +624,7 @@ mod tests {
         let cap = RoleCapability {
             role: "documentor".into(), github: Tier::Read, git: Tier::Read, code: Tier::None,
             net: Tier::Read, ui: Tier::Read, write_globs: vec!["docs/**".into()],
-            allow: vec![], surfaces: None,
+            allow: vec![], surfaces: None, harvest_roots: Vec::new(),
         };
         let rules = role_write_rules(&cap, &[], &[]);
         let mut deny = rules.deny.clone();
@@ -641,6 +651,7 @@ mod tests {
         let mut cap = RoleCapability {
             role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
             net: Tier::Read, ui: Tier::Read, write_globs: vec![], allow: vec![], surfaces: None,
+            harvest_roots: Vec::new(),
         };
         assert_eq!(capability_surfaces(&cap), None, "no allow, no surfaces ⇒ unconstrained");
         let catalog = surfaces_for("catalog");
@@ -662,6 +673,7 @@ mod tests {
             role: "designer".into(), github: Tier::None, git: Tier::None, code: Tier::None,
             net: Tier::None, ui: Tier::Write, write_globs: vec![], allow: vec!["bsc ui set".into()],
             surfaces: None,
+            harvest_roots: Vec::new(),
         };
         let denied = role_denied_commands(&cap, &[]);
         assert!(!denied.iter().any(|d| d.starts_with("bsc ") && d.split(' ').count() == 2 && d != "bsc request"),

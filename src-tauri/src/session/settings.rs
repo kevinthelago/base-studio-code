@@ -867,6 +867,7 @@ mod tests {
             write_globs: vec!["src/**".into()],
             allow: vec![],
             surfaces: None,
+            harvest_roots: Vec::new(),
         };
         super::ensure_session_settings(
             cwd.to_string_lossy().to_string(),
@@ -915,6 +916,7 @@ mod tests {
             write_globs: vec!["src/**".into()],
             allow: vec![],
             surfaces: None,
+            harvest_roots: Vec::new(),
         };
         // The frontend sends NOTHING but its own user deny — every role deny omitted.
         super::ensure_session_settings(
