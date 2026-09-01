@@ -41,7 +41,6 @@
     "dev-boot-check": "node scripts/dev-boot-check.mjs",
     "retirement-candidates": "node scripts/retirement-candidates.mjs",
     "bsc:doctor": "node scripts/bsc-doctor.mjs",
-    "census:claims": "node scripts/census-claims.mjs",
     "diagnose:build": "node scripts/diagnose-build-failure.mjs",
     "verify:artifacts": "node scripts/verify-build-artifacts.mjs"
   },

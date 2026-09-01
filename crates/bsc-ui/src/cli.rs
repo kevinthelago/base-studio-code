@@ -354,6 +354,36 @@ the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than
 { dir, synced, upToDate, diverged, unknown }.",
     },
     CmdDoc {
+        name: "census",
+        summary: "which records CLAIM a module they are not — the provides audit (#claim-census)",
+        usage: "\
+USAGE:
+  bsc ui census [--repo <dir>] [--dir <store>] [--json]
+
+A record carrying `provides` asserts it IS the module at that specifier. When the file it names still
+exists and their contents have moved apart, that claim is false — and the loader hands the RECORD's
+behaviour to every importer of the file's name, silently, because it still compiles.
+
+Reads BOTH stores: the component library here and the algorithm implementations, since a record can
+claim a module from either. `--repo` is the tree the `src` paths resolve against (default: the cwd).
+`--json` prints the population, the summary and every verdict. EXITS NON-ZERO when any record must lose
+its claim, so this can gate.
+
+WHY A COMMAND AND NOT A NUMBER IN AN ISSUE: the population moves every tranche. Filed against 978
+records carrying both `provides` and `src`, of which 244 files still existed and 122 disagreed; re-run
+later it was 936 / 12 / 0 — because 924 of those files had been RETIRED since, and once the file is gone
+the record IS the module and there is nothing left to disagree with.
+
+FIVE VERDICTS, and only the last keeps its claim:
+  preview-derivative   it defines SAMPLE/MOCK data its file does not, or stands a dropped import in
+                       locally — a record that was reshaped to mount standalone is not the module
+  per-component-lift   it drops exports, but SEVERAL records share this file, so exporting only its own
+                       is exactly what the per-component migration produced
+  unknown              a star re-export makes the export set unknowable; no honest verdict is available
+  drops-exports        it drops exports and is the only claimant
+  newer-truth          same exports, different body — the record legitimately is the module, moved ahead",
+    },
+    CmdDoc {
         name: "changes",
         summary: "the RUNNING app's pending kit-change confirmations, read-only (#2951)",
         usage: "\
@@ -412,6 +442,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("tests") => crate::tests_harvest::run(&args[1..], prog),
         Some("env") => cmd_env(&args[1..]),
         Some("changes") => cmd_changes(&args[1..]),
+        Some("census") => cmd_census(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -2132,6 +2163,156 @@ DRY RUN — pass --apply to write.
     Ok(())
 }
 
+/// `bsc ui census [--repo <dir>] [--dir <store>] [--json]` — WHICH RECORDS CLAIM A MODULE THEY ARE NOT.
+///
+/// A record carrying `provides` asserts it IS the module at that specifier. When the file it names still
+/// exists and its content has moved apart from the record's, that claim is false and the loader will hand
+/// the record's behaviour to every importer of the file's name.
+///
+/// WHY A COMMAND RATHER THAN A NUMBER IN AN ISSUE — the population moves every tranche. Filed against 978
+/// records with `provides` + `src`, of which 244 files still existed and 122 disagreed; re-run on
+/// 2026-08-24 it was 936 / 12 / 0, because 924 of those files have been RETIRED since and once the file is
+/// gone the record IS the module. A number in an issue is stale before it is read; this re-derives it.
+///
+/// Ported from `scripts/census-claims.mjs`, which is deleted with this verb. It read the stores by
+/// exec'ing `bsc` and parsing JSON; this reads them directly.
+fn cmd_census(args: &[String]) -> Result<(), String> {
+    let json_out = args.iter().any(|a| a == "--json");
+    let dir = flag_after(args, "--dir");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+
+    let store = bsc_component::cli::open_component_store(&dir)?;
+    // `Store::list()` yields the record BODIES, not their ids — a `get()` per id would look each one up
+    // by its own JSON and find nothing, which is exactly the empty component set this first got.
+    let mut records: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .collect();
+    // The algorithm impls are records too, and a record can claim a module from either store. Skipped
+    // when `--dir` names a throwaway component store, matching the script: the impls are not in it.
+    if dir.is_none() {
+        records.extend(bsc_graph::implementations());
+    }
+
+    let norm_src = |v: &serde_json::Value| -> String {
+        v.get("src").and_then(serde_json::Value::as_str).unwrap_or("").replace('\\', "/")
+    };
+    let suppressed =
+        |v: &serde_json::Value| v.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true);
+
+    // How many records claim each file — `classify` needs it to tell a per-component lift from a record
+    // that genuinely dropped exports.
+    let mut claimants: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for r in &records {
+        let src = norm_src(r);
+        if !src.is_empty() && !suppressed(r) {
+            *claimants.entry(src).or_insert(0) += 1;
+        }
+    }
+
+    let (mut with_both, mut file_retired, mut agrees, mut disagrees) = (0usize, 0usize, 0usize, 0usize);
+    let mut verdicts: Vec<(String, String, String, crate::claim_census::Verdict)> = Vec::new();
+    for r in &records {
+        if suppressed(r) {
+            continue;
+        }
+        let src = norm_src(r);
+        let provides =
+            r.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
+        if src.is_empty() || provides.is_empty() {
+            continue;
+        }
+        with_both += 1;
+        let abs = repo.join(&src);
+        if !abs.is_file() {
+            // THE FILE IS GONE, so the record IS the module and there is nothing to disagree with. This
+            // is the bucket that grew from 244 to 12 as the migration ran.
+            file_retired += 1;
+            continue;
+        }
+        let rel = src.strip_prefix("src/").unwrap_or(&src);
+        let Ok(file_src) = crate::record_source::file_as_record_source(&abs, rel) else { continue };
+        let body = r
+            .get("srcText")
+            .or_else(|| r.get("code"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if crate::record_source::seed_matches_file(body, &file_src) {
+            agrees += 1;
+            continue;
+        }
+        disagrees += 1;
+        let id = r.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let v = crate::claim_census::classify(
+            body,
+            &file_src,
+            crate::record_source::exported_names(&file_src).as_ref(),
+            crate::record_source::exported_names(body).as_ref(),
+            claimants.get(&src).copied().unwrap_or(1),
+        );
+        verdicts.push((id, provides, src, v));
+    }
+
+    let vs: Vec<crate::claim_census::Verdict> = verdicts.iter().map(|(_, _, _, v)| v.clone()).collect();
+    let (total, counts, should_drop) = crate::claim_census::summarize(&vs);
+
+    if json_out {
+        let rows: Vec<serde_json::Value> = verdicts
+            .iter()
+            .map(|(id, provides, src, v)| {
+                serde_json::json!({ "id": id, "provides": provides, "src": src,
+                                    "kind": v.kind, "why": v.why, "keepsProvides": v.keeps_provides })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "population": { "withProvidesAndSrc": with_both, "fileRetired": file_retired,
+                                "agrees": agrees, "disagrees": disagrees },
+                "summary": { "total": total, "counts": counts, "shouldDropProvides": should_drop },
+                "verdicts": rows,
+            }))
+            .map_err(|e| e.to_string())?
+        );
+    } else {
+        println!("{} records · {with_both} carry both provides and a src", records.len());
+        println!("  {file_retired} file retired — the record IS the module, nothing to disagree with");
+        println!("  {agrees} agree with their file");
+        println!("  {disagrees} DISAGREE while still claiming its specifier\n");
+        if verdicts.is_empty() {
+            println!("no record claims a module it is not — nothing to do");
+            return Ok(());
+        }
+        for (kind, n) in &counts {
+            println!("  {n:>4}  {kind}");
+        }
+        println!();
+        for (id, _, _, v) in &verdicts {
+            println!("  {:<20} {:<24} {}", v.kind, id, v.why);
+        }
+        if should_drop > 0 {
+            println!(
+                "\n{should_drop} must lose `provides` (docs/records.md: a record that is not the whole \
+                 module must not claim it). The record survives for provenance:"
+            );
+            println!("  echo '{{\"id\":\"<id>\"}}' | bsc ui set --clear provides");
+        }
+    }
+    // EXIT NON-ZERO when anything must lose its claim, so this can gate — the script's own contract.
+    if should_drop > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// The value after `flag` in `args`, if present.
+fn flag_after(args: &[String], flag: &str) -> Option<String> {
+    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3251,3 +3432,4 @@ mod tests {
         }
     }
 }
+

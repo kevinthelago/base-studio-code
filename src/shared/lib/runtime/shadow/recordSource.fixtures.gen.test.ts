@@ -231,6 +231,13 @@ const IMPORTS: Array<[string, string, string]> = [
   // rewritten alongside the prose that must not be.
   ["a source that is ONLY prose mentioning a specifier is untouched", '// see "./ghost" for why\nexport const a = 1;\n', "features/a/b.ts"],
   ["a specifier inside a STRING is not an import", 'const s = "./notanimport";\nexport const a = 1;\n', "features/a/b.ts"],
+  // THE OFFSET-COORDINATE CASE. `blankComments` preserves UTF-16 length, not BYTE length — an em-dash
+  // is one UTF-16 unit but three UTF-8 bytes, and blanking replaces it with a one-byte space. A port
+  // that splices on a raw byte offset therefore writes in the wrong place. Not hypothetical: this
+  // repo's comments are full of em-dashes, `src/features/sounds/index.ts` opens with one, and the census
+  // caught the corruption as that record disagreeing with its own file.
+  ["a NON-ASCII comment before an import — the offset-coordinate case", '// Public API barrel — cross-feature consumers import ONLY from here.\nimport { X } from "./x";\n', "features/sounds/index.ts"],
+  ["several non-ascii comments before several imports", '// one — dash\nimport { A } from "./a";\n// two — dash\nimport { B } from "../b";\n', "features/x/y.ts"],
   ["nothing relative at all", "export const a = 1;\n", "features/a/b.ts"],
 ];
 
