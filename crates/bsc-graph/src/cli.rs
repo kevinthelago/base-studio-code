@@ -2025,7 +2025,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                       | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
                       | impl suppress <id> [--superseded-by <new-id>] [--seed] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>] \
-                      | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply]"
+                      | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] \
+                        | impl refresh <id>=<src-relative-path>… [--apply]"
                 .to_string()),
         },
         // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
@@ -5063,6 +5064,23 @@ mod tests {
                 .is_err(),
             "at least one id is required"
         );
+    }
+
+    /// THE WRONG-GUESS ROSTER MUST BE THE WHOLE ROSTER. The usage line already says so in a comment —
+    /// "half of it used to be missing from this line" — and nothing enforced it, so `impl refresh`
+    /// landed in `IMPL_SUBVERBS` and in `graph help` while the message a mistaken caller actually sees
+    /// still named eight of nine. A roster that is only mostly complete is worse than none: it reads as
+    /// authoritative.
+    #[test]
+    fn the_impl_usage_error_names_every_subverb() {
+        let err = super::run(vec!["impl".into(), "no-such-subverb".into()], "bsc graph")
+            .expect_err("an unknown subverb must fail");
+        for sub in super::IMPL_SUBVERBS {
+            assert!(
+                err.contains(&format!("impl {sub}")),
+                "the usage error omits `impl {sub}`, so a caller who guessed wrong cannot find it:\n{err}"
+            );
+        }
     }
 
     /// The help text is the CLI's own account of its surface, so every exported const must appear in
