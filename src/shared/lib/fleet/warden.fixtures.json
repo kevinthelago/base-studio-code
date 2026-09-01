@@ -1,0 +1,1228 @@
+{
+  "summaries": [
+    {
+      "label": "nothing tripped",
+      "trips": [],
+      "summary": "on plan"
+    },
+    {
+      "label": "one out-of-glob",
+      "trips": [
+        {
+          "kind": "out-of-glob",
+          "detail": "src/web/app.tsx"
+        }
+      ],
+      "summary": "edited out-of-lane src/web/app.tsx"
+    },
+    {
+      "label": "one denied command",
+      "trips": [
+        {
+          "kind": "denied-command",
+          "detail": "gh pr merge 3"
+        }
+      ],
+      "summary": "ran denied `gh pr merge 3`"
+    },
+    {
+      "label": "two trips — the head is named and the rest counted",
+      "trips": [
+        {
+          "kind": "out-of-glob",
+          "detail": "a.ts"
+        },
+        {
+          "kind": "denied-command",
+          "detail": "gh repo delete x"
+        }
+      ],
+      "summary": "edited out-of-lane a.ts (+1 more)"
+    },
+    {
+      "label": "three trips — the +N is a COUNT, not a re-listing",
+      "trips": [
+        {
+          "kind": "denied-command",
+          "detail": "gh pr merge 1"
+        },
+        {
+          "kind": "out-of-glob",
+          "detail": "b.ts"
+        },
+        {
+          "kind": "out-of-glob",
+          "detail": "c.ts"
+        }
+      ],
+      "summary": "ran denied `gh pr merge 1` (+2 more)"
+    },
+    {
+      "label": "a detail containing a backtick",
+      "trips": [
+        {
+          "kind": "denied-command",
+          "detail": "echo `id`"
+        }
+      ],
+      "summary": "ran denied `echo `id``"
+    },
+    {
+      "label": "an empty detail",
+      "trips": [
+        {
+          "kind": "out-of-glob",
+          "detail": ""
+        }
+      ],
+      "summary": "edited out-of-lane "
+    }
+  ],
+  "plans": [
+    {
+      "label": "nothing running",
+      "sessions": [],
+      "quarantined": [],
+      "trips": []
+    },
+    {
+      "label": "one worker, on plan",
+      "sessions": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "ownedGlobs": [
+            "src/api/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/api/r.ts"
+            ],
+            "commands": [
+              "git status"
+            ]
+          },
+          "verdict": {
+            "onTask": true,
+            "trips": []
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": []
+    },
+    {
+      "label": "one worker out of lane",
+      "sessions": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "ownedGlobs": [
+            "src/api/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/web/app.tsx"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "src/web/app.tsx"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "trips": [
+            {
+              "kind": "out-of-glob",
+              "detail": "src/web/app.tsx"
+            }
+          ],
+          "summary": "edited out-of-lane src/web/app.tsx"
+        }
+      ]
+    },
+    {
+      "label": "a denied command trips",
+      "sessions": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "ownedGlobs": [
+            "src/api/**"
+          ],
+          "activity": {
+            "changedFiles": [],
+            "commands": [
+              "gh pr merge 12 --squash"
+            ]
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "denied-command",
+                "detail": "gh pr merge 12 --squash"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "trips": [
+            {
+              "kind": "denied-command",
+              "detail": "gh pr merge 12 --squash"
+            }
+          ],
+          "summary": "ran denied `gh pr merge 12 --squash`"
+        }
+      ]
+    },
+    {
+      "label": "ALREADY quarantined — a trip is one-shot, never a repeating alert",
+      "sessions": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "ownedGlobs": [
+            "src/api/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/web/app.tsx"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "src/web/app.tsx"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [
+        "p:api"
+      ],
+      "trips": []
+    },
+    {
+      "label": "two drifting, one clean — order follows the input",
+      "sessions": [
+        {
+          "paneId": "p:web",
+          "streamId": "web",
+          "ownedGlobs": [
+            "src/web/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/api/x.ts"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "src/api/x.ts"
+              }
+            ]
+          }
+        },
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "ownedGlobs": [
+            "src/api/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/api/ok.ts"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": true,
+            "trips": []
+          }
+        },
+        {
+          "paneId": "p:db",
+          "streamId": "db",
+          "ownedGlobs": [
+            "src/db/**"
+          ],
+          "activity": {
+            "changedFiles": [],
+            "commands": [
+              "gh repo delete acme/x --yes"
+            ]
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "denied-command",
+                "detail": "gh repo delete acme/x --yes"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": [
+        {
+          "paneId": "p:web",
+          "streamId": "web",
+          "trips": [
+            {
+              "kind": "out-of-glob",
+              "detail": "src/api/x.ts"
+            }
+          ],
+          "summary": "edited out-of-lane src/api/x.ts"
+        },
+        {
+          "paneId": "p:db",
+          "streamId": "db",
+          "trips": [
+            {
+              "kind": "denied-command",
+              "detail": "gh repo delete acme/x --yes"
+            }
+          ],
+          "summary": "ran denied `gh repo delete acme/x --yes`"
+        }
+      ]
+    },
+    {
+      "label": "one of two already quarantined — the skip is per pane",
+      "sessions": [
+        {
+          "paneId": "p:web",
+          "streamId": "web",
+          "ownedGlobs": [
+            "src/web/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/api/x.ts"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "src/api/x.ts"
+              }
+            ]
+          }
+        },
+        {
+          "paneId": "p:db",
+          "streamId": "db",
+          "ownedGlobs": [
+            "src/db/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "src/api/y.ts"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "src/api/y.ts"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [
+        "p:web"
+      ],
+      "trips": [
+        {
+          "paneId": "p:db",
+          "streamId": "db",
+          "trips": [
+            {
+              "kind": "out-of-glob",
+              "detail": "src/api/y.ts"
+            }
+          ],
+          "summary": "edited out-of-lane src/api/y.ts"
+        }
+      ]
+    },
+    {
+      "label": "a lane-less stream imposes no file constraint",
+      "sessions": [
+        {
+          "paneId": "p:free",
+          "streamId": "free",
+          "ownedGlobs": [],
+          "activity": {
+            "changedFiles": [
+              "anywhere/x.ts"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": true,
+            "trips": []
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": []
+    },
+    {
+      "label": "an app-authored file is NOT drift (#3980 — 18 of 22 quarantines were this one file)",
+      "sessions": [
+        {
+          "paneId": "p:auth",
+          "streamId": "auth",
+          "ownedGlobs": [
+            "src/auth/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "CLAUDE.local.md"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": true,
+            "trips": []
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": []
+    },
+    {
+      "label": "the app file rides along with a real stray — only the stray is reported",
+      "sessions": [
+        {
+          "paneId": "p:auth",
+          "streamId": "auth",
+          "ownedGlobs": [
+            "src/auth/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "CLAUDE.local.md",
+              "src/billing/charge.ts"
+            ],
+            "commands": []
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "src/billing/charge.ts"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": [
+        {
+          "paneId": "p:auth",
+          "streamId": "auth",
+          "trips": [
+            {
+              "kind": "out-of-glob",
+              "detail": "src/billing/charge.ts"
+            }
+          ],
+          "summary": "edited out-of-lane src/billing/charge.ts"
+        }
+      ]
+    },
+    {
+      "label": "multiple trips on ONE worker — the summary counts them",
+      "sessions": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "ownedGlobs": [
+            "src/api/**"
+          ],
+          "activity": {
+            "changedFiles": [
+              "a.ts",
+              "b.ts"
+            ],
+            "commands": [
+              "gh pr merge 3"
+            ]
+          },
+          "verdict": {
+            "onTask": false,
+            "trips": [
+              {
+                "kind": "out-of-glob",
+                "detail": "a.ts"
+              },
+              {
+                "kind": "out-of-glob",
+                "detail": "b.ts"
+              },
+              {
+                "kind": "denied-command",
+                "detail": "gh pr merge 3"
+              }
+            ]
+          }
+        }
+      ],
+      "quarantined": [],
+      "trips": [
+        {
+          "paneId": "p:api",
+          "streamId": "api",
+          "trips": [
+            {
+              "kind": "out-of-glob",
+              "detail": "a.ts"
+            },
+            {
+              "kind": "out-of-glob",
+              "detail": "b.ts"
+            },
+            {
+              "kind": "denied-command",
+              "detail": "gh pr merge 3"
+            }
+          ],
+          "summary": "edited out-of-lane a.ts (+2 more)"
+        }
+      ]
+    }
+  ],
+  "audits": [
+    {
+      "label": "no lines",
+      "lines": [],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": []
+    },
+    {
+      "label": "one bash row",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\tgit status"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "git status"
+      ]
+    },
+    {
+      "label": "a row for ANOTHER pane is not this pane's evidence",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:web\tBash\tgit push"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": []
+    },
+    {
+      "label": "a pane id that is a strict PREFIX of another is a different worker",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api-2\tBash\tgh repo delete acme/x",
+        "2026-09-01T12:00:00Z\tp:api\tBash\tgit status"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "git status"
+      ]
+    },
+    {
+      "label": "and the longer id does not collect the shorter one's rows either",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\tgit status",
+        "2026-09-01T12:00:00Z\tp:api-2\tBash\tgit log"
+      ],
+      "paneId": "p:api-2",
+      "since": 0,
+      "commands": [
+        "git log"
+      ]
+    },
+    {
+      "label": "a non-Bash tool is not a command",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tWrite\tsrc/x.ts",
+        "2026-09-01T12:00:00Z\tp:api\tRead\ta.ts"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": []
+    },
+    {
+      "label": "the tool match is case- and space-insensitive",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\t BASH \tgit log"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "git log"
+      ]
+    },
+    {
+      "label": "a blank target is dropped",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\t   "
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": []
+    },
+    {
+      "label": "a short row is dropped",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash",
+        "garbage"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": []
+    },
+    {
+      "label": "the target is trimmed",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\t   git fetch  "
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "git fetch"
+      ]
+    },
+    {
+      "label": "order is preserved",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\tone",
+        "2026-09-01T12:00:00Z\tp:api\tBash\ttwo",
+        "2026-09-01T12:00:00Z\tp:api\tBash\tthree"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "one",
+        "two",
+        "three"
+      ]
+    },
+    {
+      "label": "since=0 keeps everything, however old",
+      "lines": [
+        "2020-01-01T00:00:00Z\tp:api\tBash\tancient"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "ancient"
+      ]
+    },
+    {
+      "label": "a PRE-RELAUNCH denied command is dropped by the since floor",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\tgh repo delete acme/x",
+        "2026-09-01T13:00:00Z\tp:api\tBash\tgit status"
+      ],
+      "paneId": "p:api",
+      "since": 1788265800000,
+      "commands": [
+        "git status"
+      ]
+    },
+    {
+      "label": "every row predates the floor — a relaunched worker starts with NO command history",
+      "lines": [
+        "2026-09-01T12:00:00Z\tp:api\tBash\tgh repo delete acme/x",
+        "2026-09-01T12:00:00Z\tp:api\tBash\tgh pr merge 1"
+      ],
+      "paneId": "p:api",
+      "since": 1788265800000,
+      "commands": []
+    },
+    {
+      "label": "a row exactly AT the floor is kept — the comparison is strictly before",
+      "lines": [
+        "2026-09-01T12:30:00Z\tp:api\tBash\tgit status"
+      ],
+      "paneId": "p:api",
+      "since": 1788265800000,
+      "commands": [
+        "git status"
+      ]
+    },
+    {
+      "label": "FAIL-OPEN: an UNPARSEABLE timestamp is KEPT despite the floor",
+      "lines": [
+        "not-a-date\tp:api\tBash\tgh repo delete acme/x"
+      ],
+      "paneId": "p:api",
+      "since": 1788265800000,
+      "commands": [
+        "gh repo delete acme/x"
+      ]
+    },
+    {
+      "label": "an empty timestamp is also kept",
+      "lines": [
+        "\tp:api\tBash\tgh pr merge 1"
+      ],
+      "paneId": "p:api",
+      "since": 1788265800000,
+      "commands": [
+        "gh pr merge 1"
+      ]
+    },
+    {
+      "label": "a command containing a TAB is split — only the prefix survives",
+      "lines": [
+        "2026-09-01T13:00:00Z\tp:api\tBash\tgit commit -m a\tb"
+      ],
+      "paneId": "p:api",
+      "since": 0,
+      "commands": [
+        "git commit -m a"
+      ]
+    }
+  ],
+  "zips": [
+    {
+      "label": "empty",
+      "panes": [],
+      "changes": [],
+      "zipped": []
+    },
+    {
+      "label": "aligned, one pane",
+      "panes": [
+        "p:a"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "a.ts"
+          ],
+          "untracked": []
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "a.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "aligned, three panes",
+      "panes": [
+        "p:a",
+        "p:b",
+        "p:c"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "a.ts"
+          ],
+          "untracked": []
+        },
+        {
+          "tracked": [
+            "b.ts"
+          ],
+          "untracked": []
+        },
+        {
+          "tracked": [
+            "c.ts"
+          ],
+          "untracked": []
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "a.ts"
+          ]
+        },
+        {
+          "paneId": "p:b",
+          "files": [
+            "b.ts"
+          ]
+        },
+        {
+          "paneId": "p:c",
+          "files": [
+            "c.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "UNTRACKED is ignored — #3983, the regression that killed four workers with zero tracked changes",
+      "panes": [
+        "p:a"
+      ],
+      "changes": [
+        {
+          "tracked": [],
+          "untracked": [
+            ".agentscratch.txt"
+          ]
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": []
+        }
+      ]
+    },
+    {
+      "label": "tracked and untracked together — only tracked is evidence",
+      "panes": [
+        "p:a"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "real.ts"
+          ],
+          "untracked": [
+            "scratch.txt"
+          ]
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "real.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "SHORT batch — the missing pane degrades to no signal, never to a neighbour's files",
+      "panes": [
+        "p:a",
+        "p:b",
+        "p:c"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "a.ts"
+          ],
+          "untracked": []
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "a.ts"
+          ]
+        },
+        {
+          "paneId": "p:b",
+          "files": []
+        },
+        {
+          "paneId": "p:c",
+          "files": []
+        }
+      ]
+    },
+    {
+      "label": "a HOLE in the batch — undefined is no signal, not the next entry",
+      "panes": [
+        "p:a",
+        "p:b",
+        "p:c"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "a.ts"
+          ],
+          "untracked": []
+        },
+        null,
+        {
+          "tracked": [
+            "c.ts"
+          ],
+          "untracked": []
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "a.ts"
+          ]
+        },
+        {
+          "paneId": "p:b",
+          "files": []
+        },
+        {
+          "paneId": "p:c",
+          "files": [
+            "c.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "LONG batch — the extra entry is dropped, not attributed to anyone",
+      "panes": [
+        "p:a"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "a.ts"
+          ],
+          "untracked": []
+        },
+        {
+          "tracked": [
+            "b.ts"
+          ],
+          "untracked": []
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "a.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "every entry missing",
+      "panes": [
+        "p:a",
+        "p:b"
+      ],
+      "changes": [],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": []
+        },
+        {
+          "paneId": "p:b",
+          "files": []
+        }
+      ]
+    },
+    {
+      "label": "a duplicate pane id — the last write wins",
+      "panes": [
+        "p:a",
+        "p:a"
+      ],
+      "changes": [
+        {
+          "tracked": [
+            "first.ts"
+          ],
+          "untracked": []
+        },
+        {
+          "tracked": [
+            "second.ts"
+          ],
+          "untracked": []
+        }
+      ],
+      "zipped": [
+        {
+          "paneId": "p:a",
+          "files": [
+            "second.ts"
+          ]
+        }
+      ]
+    }
+  ],
+  "sweeps": [
+    {
+      "label": "nothing",
+      "panes": [],
+      "live": [],
+      "completed": [],
+      "targets": []
+    },
+    {
+      "label": "all live, none complete",
+      "panes": [
+        "p:a",
+        "p:b"
+      ],
+      "live": [
+        "p:a",
+        "p:b"
+      ],
+      "completed": [],
+      "targets": [
+        "p:a",
+        "p:b"
+      ]
+    },
+    {
+      "label": "a planned pane with no session is not swept (#3954)",
+      "panes": [
+        "p:a",
+        "p:b"
+      ],
+      "live": [
+        "p:a"
+      ],
+      "completed": [],
+      "targets": [
+        "p:a"
+      ]
+    },
+    {
+      "label": "a completed stream is not swept",
+      "panes": [
+        "p:a",
+        "p:b"
+      ],
+      "live": [
+        "p:a",
+        "p:b"
+      ],
+      "completed": [
+        "p:b"
+      ],
+      "targets": [
+        "p:a"
+      ]
+    },
+    {
+      "label": "live AND completed — completion wins",
+      "panes": [
+        "p:a"
+      ],
+      "live": [
+        "p:a"
+      ],
+      "completed": [
+        "p:a"
+      ],
+      "targets": []
+    },
+    {
+      "label": "live names a pane not in the roster — the roster bounds it",
+      "panes": [
+        "p:a"
+      ],
+      "live": [
+        "p:a",
+        "p:ghost"
+      ],
+      "completed": [],
+      "targets": [
+        "p:a"
+      ]
+    },
+    {
+      "label": "order follows the roster",
+      "panes": [
+        "p:c",
+        "p:a",
+        "p:b"
+      ],
+      "live": [
+        "p:a",
+        "p:b",
+        "p:c"
+      ],
+      "completed": [],
+      "targets": [
+        "p:c",
+        "p:a",
+        "p:b"
+      ]
+    }
+  ],
+  "lives": [
+    {
+      "label": "no tabs",
+      "tabs": [],
+      "ended": [],
+      "disabled": [],
+      "livePanes": []
+    },
+    {
+      "label": "one tab, two panes",
+      "tabs": [
+        {
+          "paneIds": [
+            "p:a",
+            "p:b"
+          ]
+        }
+      ],
+      "ended": [],
+      "disabled": [],
+      "livePanes": [
+        "p:a",
+        "p:b"
+      ]
+    },
+    {
+      "label": "a tab with NO paneIds at all",
+      "tabs": [
+        {}
+      ],
+      "ended": [],
+      "disabled": [],
+      "livePanes": []
+    },
+    {
+      "label": "an ended pane is not live",
+      "tabs": [
+        {
+          "paneIds": [
+            "p:a",
+            "p:b"
+          ]
+        }
+      ],
+      "ended": [
+        "p:a"
+      ],
+      "disabled": [],
+      "livePanes": [
+        "p:b"
+      ]
+    },
+    {
+      "label": "a disabled pane is not live",
+      "tabs": [
+        {
+          "paneIds": [
+            "p:a",
+            "p:b"
+          ]
+        }
+      ],
+      "ended": [],
+      "disabled": [
+        "p:b"
+      ],
+      "livePanes": [
+        "p:a"
+      ]
+    },
+    {
+      "label": "several tabs union together",
+      "tabs": [
+        {
+          "paneIds": [
+            "p:a"
+          ]
+        },
+        {
+          "paneIds": [
+            "p:b"
+          ]
+        }
+      ],
+      "ended": [],
+      "disabled": [],
+      "livePanes": [
+        "p:a",
+        "p:b"
+      ]
+    },
+    {
+      "label": "the same pane in two tabs is one entry",
+      "tabs": [
+        {
+          "paneIds": [
+            "p:a"
+          ]
+        },
+        {
+          "paneIds": [
+            "p:a"
+          ]
+        }
+      ],
+      "ended": [],
+      "disabled": [],
+      "livePanes": [
+        "p:a"
+      ]
+    },
+    {
+      "label": "an EMPTY pane id is skipped",
+      "tabs": [
+        {
+          "paneIds": [
+            "",
+            "p:a"
+          ]
+        }
+      ],
+      "ended": [],
+      "disabled": [],
+      "livePanes": [
+        "p:a"
+      ]
+    }
+  ]
+}
