@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   wakePromptFor, waitingWakePrompt, answerWakePrompt, assignWakePrompt, planWakes, coordinationSummary,
+  DEFAULT_WAKE_PROMPT,
 } from "@/shared/lib/fleet/coordinationWakes";
 import { defaultProducerOf } from "@/shared/lib/fleet/coordinationDeadlock";
 import type { CoordState, CoordRef, Waiter } from "@/shared/lib/fleet/coordination.types";
@@ -99,6 +100,10 @@ describe("wakePrompts fixtures", () => {
       waitingPrompts: WAITING_CASES.map((c) => ({ label: c.label, waiting: c.waiting, prompt: waitingWakePrompt(c.waiting as never) })),
       answerPrompts: ANSWER_CASES.map((c) => ({ label: c.label, answered: c.answered, prompt: answerWakePrompt(c.answered as never) })),
       assignPrompts: ASSIGN_CASES.map((c) => ({ label: c.label, assigned: c.assigned, prompt: assignWakePrompt(c.assigned as never) })),
+      // The STANDARD wake — the fallback for a session that is neither a parked waiter nor paused.
+      // Bound here so the Rust twin cannot drift into a different sentence for the same event; that
+      // drift is exactly what let a director re-send the original task six times over.
+      defaultWakePrompt: DEFAULT_WAKE_PROMPT,
       planned: (() => {
         const s = state([], { "session:b": { state: "satisfied", source: "landed" } });
         return planWakes([w("a", [sess("b")], "cp-1"), w("z", [sess("b")])], s);

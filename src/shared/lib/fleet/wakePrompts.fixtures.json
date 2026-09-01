@@ -290,6 +290,7 @@
       "prompt": "The director assigned you new work: t. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user.\n\nFirst re-read your checkpoint: cp-8, then begin the new work."
     }
   ],
+  "defaultWakePrompt": "You have been woken by the director because there is a change request for your stream. Re-read your assignment, check `bsc plan issue list` for what is open on it, and continue.",
   "planned": [
     {
       "session": "a",
