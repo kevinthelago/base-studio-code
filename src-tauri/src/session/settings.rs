@@ -135,6 +135,11 @@ pub(crate) fn ensure_session_settings(
     // ad-hoc console has nothing to derive, and because an older frontend must keep working.
     role_capability: Option<crate::session::role_gate::RoleCapability>,
     active_surfaces: Option<Vec<String>>,
+    // THE PROFILE ITSELF, so Rust can derive the bridge it currently only obeys
+    // (`the-launch-derives-the-profile-settings-instead-of-receiving-them`). Optional for the same
+    // two reasons as `role_capability`: a pane with no profile assigned has nothing to derive, and an
+    // older frontend must keep working.
+    agent_profile: Option<crate::session::profile_settings::AgentProfile>,
 ) -> Result<(), String> {
     // Bind the unwrapped Options to locals so the borrowed spec can reference them.
     let mcp_servers = mcp_servers.unwrap_or_default();
@@ -193,6 +198,59 @@ pub(crate) fn ensure_session_settings(
     }
     let allow_tool_rules = tools.allow;
     let deny_tool_rules = tools.deny;
+    // THE PROFILE, DERIVED RATHER THAN RECEIVED. `bash_posture` is the sharp one: `build_allow_rules`
+    // scales the ENTIRE auto-approve baseline by it, so until now the breadth of a session's shell
+    // surface was computed in a renderer and obeyed here without the backend being able to check it.
+    //
+    // A DUAL RUN, not a clean cut — the frontend still sends its own computation and this UNIONS with
+    // it, so the cutover can only restore what the profile grants, never drop what the frontend
+    // legitimately carries on top (the role gate, the restricted-role surface, the user's own lists).
+    // The TypeScript is deleted in its own slice, once the warning below has been empty in the field.
+    let prof = crate::session::profile_settings::reconcile_profile_settings(
+        agent_profile.as_ref(),
+        crate::session::profile_settings::ProfileSessionSettings {
+            allowed_commands,
+            denied_commands,
+            allow_tool_rules,
+            deny_tool_rules,
+            bash_posture,
+        },
+    );
+    if !prof.missing.is_empty() {
+        // The one direction that is a defect: Rust derived something the profile grants and the
+        // frontend did not send it. Named exactly, per field, because "some rules differed" is not
+        // something anyone can act on.
+        let detail = prof
+            .missing
+            .iter()
+            .map(|(field, values)| format!("{field}={values:?}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let id = agent_profile.as_ref().map(|p| p.id.as_str()).unwrap_or("<none>");
+        log::warn!(
+            "session settings[{cwd}]: the frontend OMITTED values profile `{id}` grants and Rust \
+             added — {detail}. The profile is the grant, so this is a renderer that lost it, not a \
+             difference of opinion."
+        );
+    }
+    if let Some(d) = &prof.posture {
+        // A scalar cannot be unioned, so this is the one place a silent weakening could happen.
+        // Logged in BOTH directions — which side won is exactly what a reader needs.
+        log::warn!(
+            "session settings[{cwd}]: bash_posture disagreed — the frontend sent `{}`, Rust derived \
+             `{}` from the profile; the NARROWER `{}` wins (see reconcile_profile_settings).",
+            d.from_frontend,
+            d.derived,
+            d.chosen,
+        );
+    }
+    let crate::session::profile_settings::ProfileSessionSettings {
+        allowed_commands,
+        denied_commands,
+        allow_tool_rules,
+        deny_tool_rules,
+        bash_posture,
+    } = prof.merged;
     write_session_settings(&SessionSettingsSpec {
         cwd: &cwd,
         allowed_commands: &allowed_commands,
@@ -897,6 +955,8 @@ mod tests {
             None, None, None, None, None, None,
             Some(cap),
             Some(vec![]),
+            // agent_profile — this test is about the ROLE half; no profile to derive.
+            None,
         )
         .expect("settings written");
 
@@ -946,6 +1006,8 @@ mod tests {
             None, None, None, None, None, None, None, None, None, None,
             Some(cap),
             Some(vec![]),
+            // agent_profile — this test is about the ROLE half; no profile to derive.
+            None,
         )
         .expect("settings written");
 
@@ -959,6 +1021,85 @@ mod tests {
                 "the launch must derive `{expected}` even though the frontend omitted it:\n{written}"
             );
         }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// THE CALL SITE, not the helper. `reconcile_profile_settings`'s own tests all stay green if this
+    /// wiring is reverted to ignore `agent_profile` — they call it directly. This one drives the real
+    /// command and reads the `settings.json` it wrote, so trusting the renderer again fails it.
+    ///
+    /// The frontend here sends a profile-shaped payload with EVERYTHING the profile grants left out,
+    /// and the posture set to the widest value — which is precisely what a renderer that lost the
+    /// profile produces, since `buildSessionSettings` defaults `bashPosture` to `"allow"` when `prof`
+    /// is null.
+    #[test]
+    fn the_launch_derives_profile_settings_the_frontend_omitted() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("profile-settings-launch");
+        let cwd = home.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let profile: crate::session::profile_settings::AgentProfile = serde_json::from_value(
+            serde_json::json!({
+                "id": "probe",
+                "commands": ["cargo test"],
+                "tools": { "read": "allow", "web": "deny", "bash": "ask" },
+                "paths": { "allow": ["src/**"], "deny": ["**/*.env"] },
+            }),
+        )
+        .unwrap();
+
+        super::ensure_session_settings(
+            cwd.to_string_lossy().to_string(),
+            vec![],
+            vec![],
+            None, None, None, None, None, None, None,
+            // The widest posture — what the renderer sends when it has no profile in hand.
+            Some("allow".to_string()),
+            None, None, None, None,
+            Some(profile),
+        )
+        .expect("settings written");
+
+        let written: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(cwd.join(".claude/settings.json")).expect("settings.json"),
+        )
+        .unwrap();
+        let list = |k: &str| -> Vec<String> {
+            written["permissions"][k]
+                .as_array()
+                .unwrap_or(&Vec::new())
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        };
+        let (allow, deny) = (list("allow"), list("deny"));
+
+        for expected in ["Read", "Edit(src/**)", "Bash(cargo test *)"] {
+            assert!(
+                allow.contains(&expected.to_string()),
+                "the launch must derive `{expected}` from the profile even though the frontend \
+                 omitted it: {allow:?}"
+            );
+        }
+        for expected in ["WebFetch", "WebSearch", "Edit(**/*.env)"] {
+            assert!(
+                deny.contains(&expected.to_string()),
+                "the launch must derive the deny `{expected}` from the profile: {deny:?}"
+            );
+        }
+        // THE SCALAR. `ask` grants the read-only baseline only; `allow` also emits a BARE `Bash`
+        // (allow-all) plus the build tier. The narrower posture winning is the whole reason this
+        // reconciliation is not a plain union, so assert the widening did NOT happen.
+        assert!(
+            !allow.contains(&"Bash".to_string()),
+            "the profile's `ask` posture must beat the frontend's `allow` — a bare Bash allow is the \
+             widening this tie-break exists to prevent: {allow:?}"
+        );
+        assert!(
+            allow.contains(&"Bash(ls *)".to_string()),
+            "`ask` still grants the read-only baseline, so this is a narrowing and not a blackout: \
+             {allow:?}"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
