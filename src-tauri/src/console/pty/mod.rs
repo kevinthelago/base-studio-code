@@ -1082,8 +1082,14 @@ fn pty_create_inner(
     // A CAGED session is deliberately excluded: its transcripts live in the cage's private HOME under
     // the guest cwd, so the host's `~/.claude.json` says nothing about it and `--continue` remains the
     // only honest answer there.
+    //
+    // ASKED OF THE HARNESS, not of Claude's config directly. This was a bare `last_session_id(&cwd)`,
+    // put to every pane whatever it was about to run — so a studio directory Claude had ever run in
+    // handed a Claude UUID to a `bsc-agent` launch, and the `LaunchPlan::Init` arm below rewrote its
+    // `--continue` into `--resume <uuid>`: a flag that harness does not take, naming a conversation
+    // it does not have.
     let resume_id: Option<String> = if resumed && ns_argv.is_none() {
-        crate::session::claude_config::last_session_id(&cwd)
+        harness.resume_id(&cwd)
     } else {
         None
     };

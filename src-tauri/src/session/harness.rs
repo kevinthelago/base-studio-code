@@ -50,6 +50,21 @@ pub trait HarnessAdapter {
     /// harness has such a name. A harness with an id should prefer it and fall back to its
     /// no-id resume rather than launching fresh.
     fn launch_command(&self, prompt: &str, resume: bool, resume_id: Option<&str>) -> String;
+    /// The id of the conversation this harness would resume in `cwd` — `None` when the harness does
+    /// not NAME its conversations.
+    ///
+    /// On the trait because the answer is harness-specific and the launcher is not. It used to be a
+    /// bare `claude_config::last_session_id(&cwd)` in `pty_create`, asked of every pane whatever it
+    /// was about to run. A studio directory that Claude has ever run in therefore yielded a Claude
+    /// UUID for a `bsc-agent` launch, and the `LaunchPlan::Init` arm rewrote `--continue` into
+    /// `--resume <that uuid>` — a flag `bsc-agent` does not take, naming a conversation it does not
+    /// have.
+    ///
+    /// Defaults to `None`: a harness that has not said its conversations have names does not get one
+    /// invented for it.
+    fn resume_id(&self, _cwd: &str) -> Option<String> {
+        None
+    }
     /// Map a UI model id to this harness's model selector (None ⇒ the harness's own default).
     fn model_flag(&self, model: &str) -> Option<String>;
     /// The shell wrapper function the session installs so both the auto-launch and user-typed runs
@@ -83,6 +98,12 @@ impl HarnessAdapter for ClaudeCodeAdapter {
 
     fn launch_command(&self, prompt: &str, resume: bool, resume_id: Option<&str>) -> String {
         crate::claude_launch(prompt, resume, resume_id)
+    }
+
+    fn resume_id(&self, cwd: &str) -> Option<String> {
+        // Claude's own `lastSessionId` for this cwd, so a resume follows a `/clear` rather than
+        // resurrecting cleared context.
+        crate::session::claude_config::last_session_id(cwd)
     }
 
     fn model_flag(&self, model: &str) -> Option<String> {
@@ -283,6 +304,44 @@ mod tests {
         assert_eq!(a.launch_command("go", true, Some("ignored")), resumed);
         // …and without a resume request there is no flag at all.
         assert!(!a.launch_command("go", false, None).contains("--continue"));
+    }
+
+    /// A HARNESS THAT DOES NOT NAME ITS CONVERSATIONS IS NOT HANDED A NAME.
+    ///
+    /// `resume_id` used to be a bare `claude_config::last_session_id(&cwd)` in `pty_create`, asked of
+    /// every pane whatever it was about to run — and `LaunchPlan::Init` rewrites `--continue` into
+    /// `--resume <id>` whenever that returns `Some`. A studio directory Claude has ever run in (every
+    /// one of them: `~/.base-studio-code/networks/<slug>` is where the architect lives) therefore
+    /// handed a Claude UUID to a `bsc-agent --continue`, producing a flag that harness does not take,
+    /// naming a conversation it does not have.
+    ///
+    /// Both adapters are asked about the SAME cwd with a real `~/.claude.json` in place, so the test
+    /// can only pass by the two answering differently — a shared `None` from an empty home would be
+    /// vacuous.
+    #[cfg(unix)]
+    #[test]
+    fn only_a_harness_that_names_its_conversations_yields_a_resume_id() {
+        let _guard = crate::testutil::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = crate::testutil::temp_home("harness-resume-id");
+        let cwd = home.join("networks").join("finance");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let cwd_s = cwd.to_string_lossy().into_owned();
+        let id = "bf36a25c-b331-48b0-a78c-3bf4e6b51354";
+        crate::testutil::write_file(
+            &home.join(".claude.json"),
+            &serde_json::json!({ "projects": { &cwd_s: { "lastSessionId": id } } }).to_string(),
+        );
+
+        assert_eq!(
+            ClaudeCodeAdapter.resume_id(&cwd_s).as_deref(),
+            Some(id),
+            "claude names its conversations, so it must still find its own id",
+        );
+        assert_eq!(
+            BscAgentAdapter.resume_id(&cwd_s),
+            None,
+            "bsc-agent addresses its conversation by PATH — a claude UUID is not its to take",
+        );
     }
 
     /// Claude prefers the ID, and falls back to `--continue` rather than starting fresh.
