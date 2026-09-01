@@ -1,0 +1,403 @@
+{
+  "note": "GENERATED from @/shared/lib/fleet/coordinationDeadlock — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "no waiters at all",
+      "waiters": [],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "one waiter, no deps",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": []
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a lone waiter waiting on a NON-waiter — not a deadlock",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "ghost"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a SELF-LOOP — a waits on a",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    },
+    {
+      "label": "a two-ring — a waits on b, b waits on a",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    },
+    {
+      "label": "a three-ring",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "c"
+          ]
+        },
+        {
+          "session": "c",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    },
+    {
+      "label": "a chain that does NOT close",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "c"
+          ]
+        },
+        {
+          "session": "c",
+          "deps": []
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "two INDEPENDENT rings",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        },
+        {
+          "session": "c",
+          "deps": [
+            "d"
+          ]
+        },
+        {
+          "session": "d",
+          "deps": [
+            "c"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "cycle": [
+            "c",
+            "d"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    },
+    {
+      "label": "a ring plus an innocent bystander",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        },
+        {
+          "session": "z",
+          "deps": [
+            "ghost"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    },
+    {
+      "label": "a waits on b, but b is NOT parked — no edge, no deadlock",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a ring whose edge is SATISFIED — no longer blocking",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [
+        "a"
+      ],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a ring where BOTH deps are satisfied",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [
+        "a",
+        "b"
+      ],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a self-loop whose dep is satisfied",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [
+        "a"
+      ],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a CONTRACT dep draws no edge under the default resolver",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "contract:b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "a contract dep whose name matches a parked session — still no edge",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "contract:b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "contract:a"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [],
+      "hasDeadlock": false
+    },
+    {
+      "label": "several deps, one closes a ring",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "ghost",
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "a"
+          ]
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    },
+    {
+      "label": "a longer ring with a spur",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            "b"
+          ]
+        },
+        {
+          "session": "b",
+          "deps": [
+            "c"
+          ]
+        },
+        {
+          "session": "c",
+          "deps": [
+            "a",
+            "d"
+          ]
+        },
+        {
+          "session": "d",
+          "deps": []
+        }
+      ],
+      "satisfied": [],
+      "deadlocks": [
+        {
+          "cycle": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      ],
+      "hasDeadlock": true
+    }
+  ]
+}
