@@ -36,9 +36,6 @@
 //! `a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`; fixing it here alone would put
 //! the two harnesses back out of step in the other direction.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-launch-renders-its-own-agent-perms-instead-of-receiving-them`
-
 use super::role_gate::{has_scoped_write_carve_out, role_denied_commands, RoleCapability, Tier};
 
 /// The document `bsc-agent` deserializes from `$BSC_AGENT_PERMS`.
@@ -108,9 +105,177 @@ pub fn bsc_agent_perms(
     }
 }
 
+
+/// What the launch did to the permission document it was handed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentPermsOutcome {
+    /// Not a `bsc-agent` launch, or a role-less console with no document — nothing to render.
+    NotApplicable,
+    /// Rendered here and installed. `differed` is true when it is not what the renderer sent.
+    Rendered { differed: bool },
+}
+
+/// Render `$BSC_AGENT_PERMS` for a `bsc-agent` launch, replacing what the renderer sent.
+///
+/// # Why this one REFUSES instead of falling back
+///
+/// On the `bsc-agent` path this document is the ENTIRE gate — no settings file, no PreToolUse hook
+/// chain, no second layer. And the consumer is forgiving in the dangerous direction:
+/// `Permissions::from_env` does `serde_json::from_str(&json).unwrap_or_default()`, and
+/// `Permissions::default()` is PERMISSIVE. So a document that is absent, empty or malformed is
+/// indistinguishable from a session that was meant to be unrestricted.
+///
+/// That inverts the usual advice. Everywhere else in this cutover a missing value is reported and
+/// unioned; here the only safe response to "cannot render" is to refuse the launch, because every
+/// other outcome produces a running session with no restrictions and nothing saying so.
+///
+/// # The one case that must refuse, and why the env is what tells us
+///
+/// A `None` capability is ambiguous exactly as it is for the credential: it means "role-less ad-hoc
+/// console" (legitimate, and permissive by design) or "a role exists and its capability did not
+/// arrive". The ENV disambiguates, because the renderer sets `BSC_AGENT_PERMS` only under `if
+/// (bscRole)` — so a document present with no capability means a ROLE pane whose capability was lost,
+/// and that launch is refused rather than run on a document the backend cannot vouch for.
+///
+/// # `extra_deny_bash` is EMPTY here, deliberately, and that reproduces a live gap
+///
+/// The renderer calls `bscAgentPerms(cap, granted)` with the third argument defaulted, so the user's
+/// global denylist has never reached a `bsc-agent` session — even though `bscAgentPerms`'s own doc
+/// says it must ride in here because there is no settings file for it to ride in on, and
+/// `Permissions::from_env` reads no `$BSC_DENY_BASH`. Passing it here would FIX that, and fixing it
+/// is a change to what a session may do: it belongs in its own slice with its own revert and its own
+/// field check, exactly as the item says of the surface-complement gap. Filed separately.
+pub fn reconcile_agent_perms(
+    env: &mut std::collections::HashMap<String, String>,
+    provider_is_bsc_agent: bool,
+    cap: Option<&RoleCapability>,
+    granted: &[String],
+) -> Result<AgentPermsOutcome, String> {
+    if !provider_is_bsc_agent {
+        return Ok(AgentPermsOutcome::NotApplicable);
+    }
+    let sent = env.get("BSC_AGENT_PERMS").cloned();
+    let Some(cap) = cap else {
+        return match sent {
+            Some(doc) if !doc.trim().is_empty() => Err(
+                "this bsc-agent pane carries a $BSC_AGENT_PERMS document but sent no role capability, \
+                 so the launch cannot render the gate it would be running under. Refusing rather than \
+                 launching: on this harness the document IS the gate, and an unvouched-for one is \
+                 indistinguishable from an unrestricted session."
+                    .to_string(),
+            ),
+            // A genuinely role-less ad-hoc console. Permissive by design, and nothing to render.
+            _ => Ok(AgentPermsOutcome::NotApplicable),
+        };
+    };
+    // EMPTY extra_deny_bash — see the docs above; this reproduces the renderer rather than fixing it.
+    let doc = serde_json::to_string(&bsc_agent_perms(Some(cap), granted, &[]))
+        .map_err(|e| format!("could not render $BSC_AGENT_PERMS: {e}"))?;
+    let differed = sent.as_deref().is_some_and(|s| s != doc);
+    env.insert("BSC_AGENT_PERMS".to_string(), doc);
+    Ok(AgentPermsOutcome::Rendered { differed })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    fn cap_for(role: &str, code: Tier, globs: Vec<String>) -> RoleCapability {
+        RoleCapability {
+            role: role.into(),
+            github: Tier::Read,
+            git: Tier::Read,
+            code,
+            net: Tier::None,
+            ui: Tier::None,
+            write_globs: globs,
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: vec![],
+        }
+    }
+
+    /// THE TWO ENDS OF THE CARVE-OUT BRANCH, which the item names as what to check. A `code: none`
+    /// role WITHOUT globs loses the write tools outright; one WITH them keeps the tools and is scoped.
+    /// Getting this backwards either strands a designer or hands a triage pane a file editor.
+    #[test]
+    fn the_carve_out_branch_denies_the_write_tools_or_scopes_them_but_never_neither() {
+        let triage = cap_for("triage", Tier::None, vec![]);
+        let p = bsc_agent_perms(Some(&triage), &[], &[]);
+        assert_eq!(p.deny_tools, vec!["write_file", "edit_file"], "no globs ⇒ deny the tools outright");
+        assert!(p.write_globs.is_empty());
+
+        let designer = cap_for("designer", Tier::None, vec!["scratch/**".into()]);
+        let p = bsc_agent_perms(Some(&designer), &[], &[]);
+        assert!(p.deny_tools.is_empty(), "a carve-out role KEEPS its write tools");
+        assert_eq!(p.write_globs, vec!["scratch/**"], "…scoped to its lane");
+        // The pair is the point: an EMPTY glob list means no restriction in the runtime, so a
+        // restricted role must get its denial from deny_tools. Neither-nor is the unsafe state.
+        assert!(
+            !(p.deny_tools.is_empty() && p.write_globs.is_empty()),
+            "tools allowed AND unscoped is an unrestricted writer"
+        );
+    }
+
+    /// A `bsc-agent` pane with a role: the launch renders the document and installs its own.
+    #[test]
+    fn the_launch_renders_the_document_and_installs_it() {
+        let designer = cap_for("designer", Tier::None, vec!["scratch/**".into()]);
+        let mut env = std::collections::HashMap::new();
+        let out = reconcile_agent_perms(&mut env, true, Some(&designer), &[]).unwrap();
+        assert_eq!(out, AgentPermsOutcome::Rendered { differed: false });
+        let doc: BscAgentPerms = serde_json::from_str(env.get("BSC_AGENT_PERMS").unwrap()).unwrap();
+        assert_eq!(doc.write_globs, vec!["scratch/**"]);
+    }
+
+    /// THE REFUSAL. A document with no capability means a ROLE pane whose capability was lost — the
+    /// renderer sets `BSC_AGENT_PERMS` only under `if (bscRole)`. Launching would run on a gate the
+    /// backend cannot vouch for, and dropping it would be permissive, so the launch is refused.
+    #[test]
+    fn a_document_with_no_capability_refuses_the_launch_rather_than_running_it() {
+        let mut env = std::collections::HashMap::from([(
+            "BSC_AGENT_PERMS".to_string(),
+            r#"{"deny_tools":[],"deny_bash":[],"write_globs":[]}"#.to_string(),
+        )]);
+        let err = reconcile_agent_perms(&mut env, true, None, &[]).unwrap_err();
+        assert!(err.contains("Refusing"), "the refusal must say what it is refusing and why: {err}");
+        // …and a genuinely role-less console with no document is NOT refused: it is the permissive
+        // ad-hoc case, and refusing it would break every bare bsc-agent shell.
+        let mut bare = std::collections::HashMap::new();
+        assert_eq!(
+            reconcile_agent_perms(&mut bare, true, None, &[]).unwrap(),
+            AgentPermsOutcome::NotApplicable
+        );
+        assert!(!bare.contains_key("BSC_AGENT_PERMS"));
+    }
+
+    /// A CLAUDE pane is untouched — its gate is `settings.json`, and writing a bsc-agent document into
+    /// its env would be inert at best and confusing to read at worst.
+    #[test]
+    fn a_claude_launch_is_left_alone() {
+        let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
+        let mut env = std::collections::HashMap::new();
+        assert_eq!(
+            reconcile_agent_perms(&mut env, false, Some(&worker), &[]).unwrap(),
+            AgentPermsOutcome::NotApplicable
+        );
+        assert!(env.is_empty());
+    }
+
+    /// The flow lifts EXACTLY the two commands it owns (#304) and nothing else — the same
+    /// reconciliation the Claude path makes, on the harness that has no second layer to catch a miss.
+    #[test]
+    fn the_flow_lifts_its_two_pushes_from_the_role_denies_and_no_more() {
+        let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
+        let granted = vec!["git push".to_string(), "gh pr create".to_string()];
+        let with = bsc_agent_perms(Some(&worker), &granted, &[]);
+        assert!(!with.deny_bash.iter().any(|d| d == "gh pr create"), "an auto-pr worker opens its PR");
+        let without = bsc_agent_perms(Some(&worker), &[], &[]);
+        assert!(without.deny_bash.iter().any(|d| d == "gh pr create"), "…and only because of the flow");
+        // Everything else the role denies is untouched by the grant.
+        assert!(with.deny_bash.iter().any(|d| d == "gh pr merge"));
+    }
 
     fn find_named(name: &str, from: &std::path::Path) -> std::path::PathBuf {
         fn walk(dir: &std::path::Path, name: &str, out: &mut Vec<std::path::PathBuf>) {

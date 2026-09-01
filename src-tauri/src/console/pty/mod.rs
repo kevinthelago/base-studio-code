@@ -674,6 +674,11 @@ pub(crate) async fn pty_create(
     role_capability: Option<crate::session::role_gate::RoleCapability>,
     // The fleet stream this pane owns, if any. A fact: only the renderer knows the assignment.
     stream_id: Option<String>,
+    // The pane's FLOW push policy (`auto-pr` / `push-confirm` / `local` / …), so the launch can
+    // reconcile role against flow itself (#304) when it renders the bsc-agent permission document.
+    // The policy rather than the derived command list: `denies::flow_granted_push_commands` is the
+    // ported rule, and sending its OUTPUT would be receiving a computed answer again.
+    flow_push: Option<String>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     provider_id: Option<String>,
@@ -688,7 +693,7 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, flow_push, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
@@ -744,6 +749,33 @@ fn launch_init_cmd(
                 restore_requested: s.restore_requested.unwrap_or(false),
             },
         ),
+    )
+}
+
+/// Render this launch's `$BSC_AGENT_PERMS`, from the raw command arguments.
+///
+/// A named function rather than an inline block for the same reason as its two siblings: the
+/// ARGUMENT HANDLING is what a payload change can silently break, and here that means two things.
+///
+/// * The harness test is `provider_id == "bsc-agent"` — an EXACT id, not a contains. Widening it
+///   would write a bsc-agent document into a Claude session's env, where it is inert; narrowing it
+///   (or comparing against `None`, which the renderer sends for the default harness) would skip the
+///   only gate a local session has.
+/// * `flow_push` is the POLICY, and an absent one defaults to `local` inside
+///   [`crate::session::denies::flow_granted_push_commands`] rather than here — one default, in the
+///   ported rule, because it used to be `auto-pr` and a second copy is where that would come back.
+fn launch_agent_perms(
+    env: &mut std::collections::HashMap<String, String>,
+    provider_id: Option<&str>,
+    cap: Option<&crate::session::role_gate::RoleCapability>,
+    flow_push: Option<&str>,
+) -> Result<crate::session::agent_perms::AgentPermsOutcome, String> {
+    let granted = crate::session::denies::flow_granted_push_commands(flow_push);
+    crate::session::agent_perms::reconcile_agent_perms(
+        env,
+        provider_id == Some("bsc-agent"),
+        cap,
+        &granted,
     )
 }
 
@@ -803,6 +835,7 @@ fn pty_create_inner(
     // See the command above: the role gates the access env, and the stream scopes `bsc plan`.
     role_capability: Option<crate::session::role_gate::RoleCapability>,
     stream_id: Option<String>,
+    flow_push: Option<String>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -1003,6 +1036,36 @@ fn pty_create_inner(
         }
         Some(reconciled)
     };
+    // THE bsc-agent PERMISSION DOCUMENT, RENDERED HERE. On that harness this doc is the entire gate —
+    // no settings file, no hook chain — and `Permissions::from_env` falls back to a PERMISSIVE default
+    // for anything it cannot parse. So this one refuses rather than degrades; see
+    // `session::agent_perms::reconcile_agent_perms`.
+    let mut env = env;
+    {
+        let map = env.get_or_insert_with(Default::default);
+        match launch_agent_perms(
+            map,
+            provider_id.as_deref(),
+            role_capability.as_ref(),
+            flow_push.as_deref(),
+        ) {
+            Ok(crate::session::agent_perms::AgentPermsOutcome::Rendered { differed: true }) => {
+                log::warn!(
+                    "pty[{pane_id}] rendered a $BSC_AGENT_PERMS that differs from the one the \
+                     renderer sent; the launch's own document is installed. On this harness the \
+                     document is the whole gate, so a difference means one of the two is wrong about \
+                     what this session may do."
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                // REFUSE. Every other outcome here is a running session with no restrictions and
+                // nothing saying so.
+                log::error!("pty[{pane_id}] refusing the launch: {e}");
+                return Err(e);
+            }
+        }
+    }
     let gate_env = env.as_ref();
     let ns_argv: Option<Vec<String>> = namespace_argv(
         sandbox_role.as_deref(),
@@ -1982,6 +2045,65 @@ mod tests {
         );
         assert_eq!(manual.derived, "claude", "every recovery signal set, and a manual console resumes none of them");
         assert!(manual.disagreement.is_none());
+    }
+
+    /// THE CALL SITE for the bsc-agent permission document. `session::agent_perms`'s own tests all
+    /// stay green if `pty_create` never calls it — measured, by gutting the block: they invoke the
+    /// rule directly. This drives the argument handling the launch performs.
+    #[test]
+    fn the_launch_renders_the_agent_perms_it_will_run_under() {
+        use crate::session::agent_perms::AgentPermsOutcome;
+        use crate::session::role_gate::{RoleCapability, Tier};
+        let worker = RoleCapability {
+            role: "worker".into(),
+            github: Tier::Read,
+            git: Tier::Write,
+            code: Tier::Write,
+            net: Tier::None,
+            ui: Tier::None,
+            write_globs: vec!["src/**".into()],
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: vec![],
+        };
+
+        // The harness test is an EXACT id. `None` is the DEFAULT harness (claude), so it must not
+        // render — and a Claude pane's env must come back untouched.
+        for not_agent in [None, Some("claude"), Some("aider")] {
+            let mut env = std::collections::HashMap::new();
+            assert_eq!(
+                super::launch_agent_perms(&mut env, not_agent, Some(&worker), None).unwrap(),
+                AgentPermsOutcome::NotApplicable,
+                "{not_agent:?} is not the bsc-agent harness"
+            );
+            assert!(env.is_empty());
+        }
+
+        // A bsc-agent pane renders, and the flow default is `local` — so with NO flow the role's
+        // `gh pr create` deny stands. Defaulting to `auto-pr` (which it once was) would lift it on
+        // every launch that never went near the strategy layer.
+        let mut env = std::collections::HashMap::new();
+        super::launch_agent_perms(&mut env, Some("bsc-agent"), Some(&worker), None).unwrap();
+        let doc = env.get("BSC_AGENT_PERMS").expect("the gate must be written");
+        assert!(
+            doc.contains("gh pr create"),
+            "an absent flow defaults to `local`, so the role's push denies stand: {doc}"
+        );
+
+        // …and an `auto-pr` flow lifts exactly that, through the same call.
+        let mut env = std::collections::HashMap::new();
+        super::launch_agent_perms(&mut env, Some("bsc-agent"), Some(&worker), Some("auto-pr")).unwrap();
+        let doc = env.get("BSC_AGENT_PERMS").unwrap();
+        assert!(!doc.contains("gh pr create"), "an auto-pr worker opens its own PR: {doc}");
+        assert!(doc.contains("gh pr merge"), "…and nothing else the role denies moves: {doc}");
+
+        // THE REFUSAL reaches the launch. A document with no capability is a role pane whose
+        // capability was lost, and running it would mean a gate the backend cannot vouch for.
+        let mut env = std::collections::HashMap::from([(
+            "BSC_AGENT_PERMS".to_string(),
+            r#"{"deny_tools":[]}"#.to_string(),
+        )]);
+        assert!(super::launch_agent_perms(&mut env, Some("bsc-agent"), None, None).is_err());
     }
 
     /// THE CALL SITE, not the rule. `session::fresh_only`'s own tests all stay green if `pty_create`
