@@ -292,66 +292,12 @@ pub fn role_denied_commands(cap: &RoleCapability, active_surfaces: &[String]) ->
     out
 }
 
-/// What Rust derived that the frontend did NOT send, and the list to actually write.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DenyReconciliation {
-    /// The denies to write: the frontend's list UNIONED with whatever Rust derived.
-    pub merged: Vec<String>,
-    /// Role denies Rust derived and the frontend omitted. Non-empty means the two disagree, and the
-    /// frontend's copy is the one that was wrong — a gap in the gate, not a difference of opinion.
-    pub missing: Vec<String>,
-}
-
-/// Reconcile the frontend's denies against the ones Rust derives, during the cutover.
-///
-/// ## Why a union rather than a replacement
-///
-/// Only ONE direction is a defect. The frontend's list legitimately contains more than the role
-/// denies — the user's and the project's own `deniedCommands` ride in it too — so "the frontend has
-/// something Rust did not derive" is expected and means nothing. "Rust derived something the frontend
-/// omitted" is a HOLE IN THE GATE, and that is what `missing` reports.
-///
-/// Taking Rust's list alone would be the wrong move while both copies exist: it could DROP a deny the
-/// frontend had, which weakens a security boundary to make a migration tidier. A union can only ever
-/// strengthen it, so the cutover cannot make a session more permissive than it is today.
-///
-/// The transition ends when `missing` has been empty in the field for long enough to believe it —
-/// then Rust's list stands alone and the TypeScript derivation is deleted.
-pub fn reconcile_role_denies(
-    cap: Option<&RoleCapability>,
-    active_surfaces: &[String],
-    flow_granted: &[String],
-    from_frontend: Vec<String>,
-) -> DenyReconciliation {
-    let Some(cap) = cap else {
-        // No capability passed — an ad-hoc console with no role. Nothing to derive, nothing to check.
-        return DenyReconciliation { merged: from_frontend, missing: Vec::new() };
-    };
-    // THE FLOW OUTRANKS THE ROLE ON EXACTLY TWO COMMANDS, and subtracting them here is not a
-    // refinement — it is what makes this reconciliation safe to switch on at all.
-    //
-    // A worker is `github: read`, so the role denies `gh pr create`; an `auto-pr` flow is what lets it
-    // open its own PR, and #304 makes the flow the AUTHORITY over `git push` / `gh pr create`
-    // specifically. The renderer already applies that (`sessionDeniedCommands` filters the role denies
-    // by `flowGrantedPushCommands`), so a union against the UNFILTERED derived set would silently add
-    // both back and stop every auto-pr worker pushing — the union's "can only tighten" property
-    // turning into a regression, because tightening past a deliberate grant is not safety.
-    //
-    // Passed in rather than derived: the flow is per-pane data the renderer holds, and porting it is
-    // its own item. `&[]` reproduces the pre-flow behaviour exactly.
-    let derived: Vec<String> = role_denied_commands(cap, active_surfaces)
-        .into_iter()
-        .filter(|d| !flow_granted.iter().any(|g| g == d))
-        .collect();
-    let missing: Vec<String> =
-        derived.iter().filter(|d| !from_frontend.iter().any(|f| f == *d)).cloned().collect();
-    let mut merged = from_frontend;
-    for d in missing.iter() {
-        merged.push(d.clone());
-    }
-    DenyReconciliation { merged, missing }
-}
-
+// THE COMMAND-DENY RECONCILIATION LIVED HERE and is now
+// `session::denies::reconcile_session_denies`, which composes the WHOLE list — the user's own denies,
+// the role's minus the flow grants, and the profile's — rather than only the role half
+// (`the-launch-composes-its-own-denies-instead-of-receiving-them`). Its union reasoning and the three
+// tests that pinned it moved with it, so nothing was lost; `DenyReconciliation` went with them,
+// because the TOOL-RULE half below has its own `ToolRuleReconciliation` and never shared the shape.
 /// `dbOwnedPlanFiles` + `depManifestFiles`, from the one file both languages read.
 ///
 /// `@data/permissions/write-locks.json` is loaded by the TypeScript via the `@data` glob and shipped
@@ -566,49 +512,6 @@ mod tests {
         assert_eq!(checked, fx.cases.len());
     }
 
-
-    fn worker() -> RoleCapability {
-        RoleCapability {
-            role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
-            net: Tier::Read, ui: Tier::Read, write_globs: vec!["src/**".into()],
-            allow: vec![], surfaces: None, harvest_roots: Vec::new(),
-        }
-    }
-
-    /// The cutover can only ever STRENGTHEN the gate. Taking Rust's list alone could drop a deny the
-    /// frontend had; a union cannot.
-    #[test]
-    fn reconciling_unions_rather_than_replaces() {
-        let cap = worker();
-        // The frontend's list legitimately carries the user's own denies too.
-        let from_frontend = vec!["curl".to_string(), "git push".to_string()];
-        let r = reconcile_role_denies(Some(&cap), &[], &[], from_frontend);
-        assert!(r.merged.iter().any(|d| d == "curl"), "a user deny Rust knows nothing about survives");
-        assert!(r.merged.iter().any(|d| d == "git push"), "and one they agree on is not duplicated away");
-        assert_eq!(r.merged.iter().filter(|d| *d == "git push").count(), 1, "no duplicate");
-        assert!(!r.missing.iter().any(|d| d == "curl"), "extra on the frontend side is NOT a defect");
-    }
-
-    /// The direction that matters: Rust derived a deny the frontend omitted — a hole in the gate.
-    #[test]
-    fn a_deny_the_frontend_omitted_is_reported_and_added() {
-        let cap = worker();
-        let r = reconcile_role_denies(Some(&cap), &[], &[], vec![]);
-        assert!(!r.missing.is_empty(), "an empty frontend list means it omitted every role deny");
-        assert!(r.missing.iter().any(|d| d == "bsc request"), "including the tooling-queue deny: {:?}", r.missing);
-        for d in &r.missing {
-            assert!(r.merged.contains(d), "everything missing is added to what gets written");
-        }
-    }
-
-    /// A role-less ad-hoc console derives nothing and must not be second-guessed.
-    #[test]
-    fn no_capability_means_nothing_to_reconcile() {
-        let given = vec!["curl".to_string()];
-        let r = reconcile_role_denies(None, &[], &[], given.clone());
-        assert_eq!(r.merged, given);
-        assert!(r.missing.is_empty());
-    }
 
     /// AN ALLOW RUST DID NOT DERIVE IS KEPT, because the frontend's list is not role-only.
     ///
