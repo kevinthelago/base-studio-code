@@ -37,6 +37,26 @@ describe("planPromote", () => {
     expect(planPromote(state({ branch: null }))).toEqual({ action: "fail", reason: "detached-head" });
   });
 
+  /// The one assumption the script is NAMED for, and the only one it never checked.
+  ///
+  /// MEASURED 2026-09-01: the repo root had been left on a work branch cut from develop, so `behind`
+  /// was 0 and promote reported "already matches develop — nothing to promote" and exited 0 while
+  /// `main` sat five commits back. A silent, GREEN failure is worse than any refusal this already has.
+  it("refuses when the root is on a branch that is not the app branch", () => {
+    expect(planPromote(state({ branch: "a-work-branch", behind: 0 }))).toEqual({
+      action: "fail",
+      reason: "wrong-app-branch",
+    });
+    // And it fires REGARDLESS of distance — the old bug's whole shape was `behind: 0` reading as
+    // "nothing to do" when the number was about the wrong ref.
+    expect(planPromote(state({ branch: "a-work-branch", behind: 9 })).reason).toBe("wrong-app-branch");
+  });
+
+  /// Opting out is explicit, so a caller that legitimately promotes another ref still can.
+  it("allows any branch when appBranch is null", () => {
+    expect(planPromote(state({ branch: "a-work-branch", behind: 3, appBranch: null })).action).toBe("promote");
+  });
+
   /// Someone edited the RUNNING copy. Promoting would either fail or carry those edits forward
   /// silently, and the uncommitted work is the only thing here that cannot be recovered.
   it("refuses to promote over uncommitted work in the app tree", () => {
