@@ -169,7 +169,23 @@ reflects it:
   Run it over EACH tree you curated from (`src`, `crates`, `src-tauri`), because the pairing is resolved
   relative to the scanned root. A TypeScript impl pairs with its sibling `<name>.test.ts`; a RUST impl
   pairs with its OWN file, since its tests are an inline `#[cfg(test)] mod tests` (#4146). An impl with
-  no test is left alone — never given an empty `tests`.
+  no test is left alone — never given an empty `tests`. `--id a,b` scopes a harvest to specific impls,
+  so re-pairing ONE record's test does not rewrite every sibling that shares its `src` (#123). An `--id`
+  the store does not hold is NAMED back to you in `unknownIds` rather than passing silently — a typo
+  would otherwise report `paired: 0`, which reads as "that record has no test".
+
+  **A test harvested onto a record whose module already RETIRED never reaches the packaged seed on its
+  own.** `tests harvest` only writes the per-user RUNTIME store — the packaged seed the app ships
+  (`src-tauri/data/knowledge/algorithms.json`) is a SEPARATE file, and `promote-records.mjs` promotes a
+  record into it only while the record's FILE still exists. For an id that is already seeded (the module
+  is gone, only the graph record remains), sync the tests across explicitly:
+
+  ```
+  bsc graph tests promote --id <id> --apply
+  ```
+
+  Without `--apply` it reports what it would do and writes nothing. It refuses an id the packaged seed
+  does not already carry — that would be a full record promotion, not a test sync (#123).
 - `bsc graph impl get <id>` — **read ONE implementation's whole record**: its code, kind, summary,
   `composes`, tests, domain. This is the read you reach for once `list` has told you the id — `list` is
   the index, `get` is the entry, and `dump` is neither (it is the whole graph, and almost never what you
