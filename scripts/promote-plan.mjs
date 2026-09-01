@@ -98,3 +98,55 @@ export function planPromote(state) {
 /** Precedence is deliberate and pinned by tests: a dirty tree is reported even when it is also ahead,
  *  because the uncommitted work is the thing at risk and the thing the user can still lose. */
 export const REFUSAL_ORDER = ["no-app-tree", "detached-head", "dirty-app-tree", "app-tree-ahead"];
+
+/**
+ * Can a FAILED gate still be promoted through, because every red leg is a DECLARED known-red?
+ *
+ * `bsc work gate` already models this: a declaration explains a failure, the exit code follows
+ * UNEXPLAINED reds, and the recorded result of a red leg stays `fail` regardless. `npm run promote`
+ * had no such vocabulary, so one stale data file left exactly two options — refuse the promote, or
+ * `--skip-gate`, which skips verifying develop ENTIRELY. MEASURED 2026-09-01: `graph-promote-check`
+ * was red all day with a rotating node while the other legs were green (4127 tests), so every promote
+ * that day was an unverified one. That is a real safety cost paid daily for one stale record.
+ *
+ * This closes the gap in the same shape and with the same refusals:
+ *
+ *  - **An absent verdict reads as ABSENT, never as a pass.** No artifact, unparseable, or no `legs`
+ *    array ⇒ `no-verdict`, and the promote refuses exactly as before.
+ *  - **A STALE artifact is worse than none**, because it looks authoritative. The verdict must be
+ *    from the run that just failed, so it must have finished at or after this run started.
+ *  - **A gate that failed with no red leg is never excused.** Something failed outside the legs —
+ *    `gate-tree-guard`, a crash, a lock — and a declaration about a leg cannot speak for it.
+ *  - A declaration NEVER launders the red. The caller announces each explained leg and its owning
+ *    item; this only decides whether the run may continue.
+ *
+ * @param {{finishedAt?: string, legs?: {key: string, ok: boolean}[]}|null} result
+ * @param {Record<string, {ref?: string}>} knownRed
+ * @param {number} startedAtMs when this promote started the gate
+ */
+export function classifyGateFailure(result, knownRed, startedAtMs) {
+  if (!result || !Array.isArray(result.legs)) {
+    return { proceed: false, reason: "no-verdict", explained: [], unexplained: [] };
+  }
+  const finished = Date.parse(result.finishedAt ?? "");
+  if (!Number.isFinite(finished) || finished < startedAtMs) {
+    return { proceed: false, reason: "stale-verdict", explained: [], unexplained: [] };
+  }
+  const red = result.legs.filter((l) => !l.ok);
+  if (red.length === 0) {
+    return { proceed: false, reason: "failed-outside-the-legs", explained: [], unexplained: [] };
+  }
+  const explained = [];
+  const unexplained = [];
+  for (const leg of red) {
+    const ref = knownRed?.[leg.key]?.ref;
+    if (ref) explained.push({ key: leg.key, ref });
+    else unexplained.push(leg.key);
+  }
+  return {
+    proceed: unexplained.length === 0,
+    reason: unexplained.length === 0 ? "all-red-legs-declared" : "unexplained-red",
+    explained,
+    unexplained,
+  };
+}

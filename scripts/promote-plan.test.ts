@@ -2,7 +2,7 @@
 // checkout moves, so a mistake here either disturbs the user mid-session — the exact thing this
 // feature exists to stop — or destroys uncommitted work in the app tree.
 import { describe, expect, it } from "vitest";
-import { planPromote } from "./promote-plan.mjs";
+import { classifyGateFailure, planPromote } from "./promote-plan.mjs";
 
 const state = (over: Record<string, unknown> = {}) => ({
   treeExists: true,
@@ -131,5 +131,81 @@ describe("planPromote", () => {
   it("never promotes on a malformed or empty state", () => {
     expect(planPromote(undefined as never).action).toBe("fail");
     expect(planPromote({} as never).action).toBe("fail");
+  });
+});
+
+/**
+ * A promote forced to choose between one stale data file and skipping ALL verification is the state
+ * this closes. MEASURED 2026-09-01: `graph-promote-check` was red all day on a rotating node while
+ * every other leg passed, so every promote that day went through `--skip-gate` — which does not skip
+ * that leg, it skips verifying develop entirely.
+ */
+describe("classifyGateFailure", () => {
+  const STARTED = Date.parse("2026-09-01T15:00:00Z");
+  const finishedAt = "2026-09-01T15:04:00Z";
+  const DECLARED = { "graph-promote-check": { ref: "develop-is-red-the-repo-graph-store-is-behind" } };
+
+  const legs = (...red: string[]) =>
+    ["typecheck", "lint", "vitest", "clippy", "nextest", "graph-promote-check"].map((key) => ({
+      key,
+      ok: !red.includes(key),
+    }));
+
+  it("proceeds when every red leg is declared, and names the owning item", () => {
+    const v = classifyGateFailure({ finishedAt, legs: legs("graph-promote-check") }, DECLARED, STARTED);
+    expect(v.proceed).toBe(true);
+    expect(v.reason).toBe("all-red-legs-declared");
+    expect(v.explained).toEqual([
+      { key: "graph-promote-check", ref: "develop-is-red-the-repo-graph-store-is-behind" },
+    ]);
+    expect(v.unexplained).toEqual([]);
+  });
+
+  it("refuses when ANY red leg is undeclared, even alongside a declared one", () => {
+    const v = classifyGateFailure({ finishedAt, legs: legs("graph-promote-check", "nextest") }, DECLARED, STARTED);
+    expect(v.proceed).toBe(false);
+    expect(v.reason).toBe("unexplained-red");
+    expect(v.unexplained).toEqual(["nextest"]);
+  });
+
+  it("refuses with nothing declared at all — the safe direction when the store cannot be read", () => {
+    const v = classifyGateFailure({ finishedAt, legs: legs("graph-promote-check") }, {}, STARTED);
+    expect(v.proceed).toBe(false);
+    expect(v.unexplained).toEqual(["graph-promote-check"]);
+  });
+
+  /** An absent verdict reads as ABSENT, never as a pass — the same rule `bsc work gate` states. */
+  it("refuses when there is no readable verdict", () => {
+    expect(classifyGateFailure(null, DECLARED, STARTED).reason).toBe("no-verdict");
+    expect(classifyGateFailure({ finishedAt }, DECLARED, STARTED).reason).toBe("no-verdict");
+  });
+
+  /** A stale artifact is worse than none, because it looks authoritative. */
+  it("refuses a verdict that predates this run", () => {
+    const v = classifyGateFailure(
+      { finishedAt: "2026-09-01T14:59:59Z", legs: legs("graph-promote-check") },
+      DECLARED,
+      STARTED,
+    );
+    expect(v.proceed).toBe(false);
+    expect(v.reason).toBe("stale-verdict");
+  });
+
+  it("refuses a verdict with no parseable finish time rather than assuming it is this one", () => {
+    expect(classifyGateFailure({ legs: legs("graph-promote-check") }, DECLARED, STARTED).reason).toBe("stale-verdict");
+  });
+
+  /** The gate failed around the legs — a lock, a crash, gate-tree-guard. No declaration covers that. */
+  it("never excuses a failure that no leg accounts for", () => {
+    const v = classifyGateFailure({ finishedAt, legs: legs() }, DECLARED, STARTED);
+    expect(v.proceed).toBe(false);
+    expect(v.reason).toBe("failed-outside-the-legs");
+  });
+
+  /** A declaration explains a failure; it never launders one. The leg is still reported red. */
+  it("reports the declared leg as red rather than dropping it from the account", () => {
+    const v = classifyGateFailure({ finishedAt, legs: legs("graph-promote-check") }, DECLARED, STARTED);
+    expect(v.explained).toHaveLength(1);
+    expect(v.explained[0].key).toBe("graph-promote-check");
   });
 });
