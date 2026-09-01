@@ -22,3 +22,7 @@ pub mod git_hooks;
 pub(crate) use api::*;
 pub mod repos;
 pub mod readiness;
+
+/// Which GitHub credential a request or a session may use (#158) — the repo-scoped token choice,
+/// ported from `repoCredentials.ts`. A security boundary that was decided in the renderer.
+pub mod repo_credentials;

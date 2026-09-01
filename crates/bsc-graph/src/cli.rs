@@ -1212,7 +1212,28 @@ fn load_seed_doc_for_suppress() -> Result<(std::path::PathBuf, Value), String> {
 /// implementations-array removal plus a `suppressed` tombstone), and the only thing genuinely shared is
 /// this four-line persist tail.
 fn write_seed_doc(path: &std::path::Path, doc: &Value) -> Result<(), String> {
-    let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
+    // STRIP RUNTIME BOOKKEEPING ON THE WAY IN. The packaged seed is a checked-in artifact; `history`,
+    // `rev`, `updatedAt` and `updatedBy` belong to the per-user runtime store and mean nothing here.
+    //
+    // MEASURED 2026-09-01: `impl suppress --seed` correctly scrubbed the folded id out of
+    // `fleet-cost.ts`'s `composes` — and, because it took the RUNTIME record wholesale to do it, carried
+    // four stamps in with it. `seed_fields_covers_every_field_the_packaged_seed_carries` then failed with
+    // "the packaged seed carries 4 field(s) SEED_FIELDS does not name", and its own message says the
+    // consequence: `promote --seed` REFUSES every record carrying one rather than dropping it. So the
+    // leak does not merely add noise, it jams the promote path.
+    //
+    // Filtering at the WRITE is the choke point every `--seed` verb already goes through, so no verb can
+    // forget it. `SEED_FIELDS` is the same list the guard derives its expectation from, which is what
+    // stops the two drifting apart.
+    let mut doc = doc.clone();
+    if let Some(impls) = doc.get_mut("implementations").and_then(Value::as_array_mut) {
+        for im in impls.iter_mut() {
+            if let Some(obj) = im.as_object_mut() {
+                obj.retain(|k, _| crate::repo_store::SEED_FIELDS.contains(&k.as_str()));
+            }
+        }
+    }
+    let body = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())? + "\n";
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, body).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
