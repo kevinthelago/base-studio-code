@@ -1,8 +1,12 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 // Unit tests for promote selection. These cover the guards that decide whether the RUNNING app's
 // checkout moves, so a mistake here either disturbs the user mid-session — the exact thing this
 // feature exists to stop — or destroys uncommitted work in the app tree.
 import { describe, expect, it } from "vitest";
-import { classifyGateFailure, planPromote } from "./promote-plan.mjs";
+import { classifyGateFailure, gateTreeMoved, planPromote, treeMovedMessage } from "./promote-plan.mjs";
 
 const state = (over: Record<string, unknown> = {}) => ({
   treeExists: true,
@@ -207,5 +211,92 @@ describe("classifyGateFailure", () => {
     const v = classifyGateFailure({ finishedAt, legs: legs("graph-promote-check") }, DECLARED, STARTED);
     expect(v.explained).toHaveLength(1);
     expect(v.explained[0].key).toBe("graph-promote-check");
+  });
+});
+
+/**
+ * MEASURED 2026-09-01 ~10:59: a promote gate compiled `wt-integrate` while another session merged into
+ * it and reported `nextest FAIL — this file contains an unclosed delimiter`, naming a real file and
+ * line. The file's brace balance is 0 at every commit that ever touched it; a re-gate minutes later
+ * passed 4127 tests. `bsc plan integrate`'s lock stops two merges racing and the gate slot bounds
+ * memory; neither is held against the other.
+ */
+describe("gateTreeMoved", () => {
+  it("trusts a verdict when HEAD did not move", () => {
+    expect(gateTreeMoved("abc123", "abc123")).toEqual({ moved: false, reason: "head-stable" });
+  });
+
+  it("distrusts a verdict when a merge landed mid-gate", () => {
+    const v = gateTreeMoved("abc123", "def456");
+    expect(v.moved).toBe(true);
+    expect(v.reason).toBe("head-moved");
+  });
+
+  /** A check that cannot see the tree must not certify it. The cost is a re-run; the alternative is
+   *  exactly the silent false confidence this exists to remove. */
+  it("treats an unreadable HEAD as moved rather than as stable", () => {
+    expect(gateTreeMoved(null, "def456").reason).toBe("head-unreadable");
+    expect(gateTreeMoved("abc123", null).reason).toBe("head-unreadable");
+    expect(gateTreeMoved(null, null).moved).toBe(true);
+  });
+
+  /** The direction the incident did NOT produce, and the more dangerous one: a PASS over a half-merged
+   *  tree promotes on a verification of a state that exists in no commit. `gateTreeMoved` is asked
+   *  before the verdict's colour is known, so both are covered by construction. */
+  it("is a statement about the tree, not about the verdict's colour", () => {
+    expect(gateTreeMoved("abc", "def").moved).toBe(true);
+    expect(gateTreeMoved("abc", "abc").moved).toBe(false);
+  });
+
+  it("names both shas and says nothing was moved, so the reader knows to re-run", () => {
+    const msg = treeMovedMessage(gateTreeMoved("abc123", "def456"), "/repo/wt-integrate");
+    expect(msg).toContain("UNTRUSTWORTHY");
+    expect(msg).toContain("abc123");
+    expect(msg).toContain("def456");
+    expect(msg).toContain("/repo/wt-integrate");
+    expect(msg).toContain("Nothing was moved");
+    expect(msg).toContain("re-run");
+  });
+
+  it("says which of the two cases it is, rather than one message for both", () => {
+    const unreadable = treeMovedMessage(gateTreeMoved(null, null), "/repo/wt-integrate");
+    expect(unreadable).toContain("could not read HEAD");
+    expect(unreadable).not.toContain("moved while it ran");
+  });
+
+  /**
+   * THE RACE ITSELF, reproduced against a real repository rather than asserted over two strings.
+   *
+   * A commit lands between the two `git rev-parse HEAD` reads — which is precisely what a concurrent
+   * `bsc plan integrate` does to the shared tree — and the check reports it. Run against a scratch repo
+   * on purpose: reproducing it in `wt-integrate` would mean moving develop's HEAD under every other
+   * session gating at that moment, which is the hazard this item is about.
+   */
+  it("reports a commit that lands between the two reads of a real repository", () => {
+    const dir = mkdtempSync(join(tmpdir(), "promote-race-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "t@example.test");
+      git("config", "user.name", "t");
+      writeFileSync(join(dir, "a.txt"), "one");
+      git("add", "-A");
+      git("commit", "-qm", "one");
+
+      const before = git("rev-parse", "HEAD");
+      expect(gateTreeMoved(before, git("rev-parse", "HEAD")).moved).toBe(false);
+
+      // …another session merges into the shared tree while the gate is running.
+      writeFileSync(join(dir, "a.txt"), "two");
+      git("commit", "-qam", "a merge landing mid-gate");
+
+      const after = git("rev-parse", "HEAD");
+      expect(after).not.toBe(before);
+      const v = gateTreeMoved(before, after);
+      expect(v.moved).toBe(true);
+      expect(treeMovedMessage(v, dir)).toContain(after);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
