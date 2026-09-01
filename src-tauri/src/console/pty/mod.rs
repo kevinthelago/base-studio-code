@@ -1565,15 +1565,21 @@ pub(crate) fn kill_pane(pane_id: &str, state: &PtyState, perf_state: &perf::Perf
     }
 }
 
-/// The frontend reporting which pane the user is looking at.
+/// The frontend reporting every pane a surface is currently SHOWING.
 ///
-/// A REPORT, not a decision — the backend cannot know what a person is looking at, and this is the one
-/// piece of the reap input only the UI has. It carries an expiry (`FOCUS_REPORT_TTL_MS`) rather than
-/// latching, so a renderer that dies mid-session does not leave its last focused pane protected
-/// forever, which would be the exact opposite of what this is for.
+/// A REPORT, not a decision — the backend cannot know what a person can see, and this is the one piece
+/// of the reap input only the UI has. It carries an expiry (`FOCUS_REPORT_TTL_MS`) rather than
+/// latching, so a renderer that dies mid-session does not leave what it was showing protected forever,
+/// which would be the exact opposite of what this is for.
+///
+/// A LIST, because this was `pty_report_focus(Option<String>)` and one pane id was the wrong shape of
+/// answer twice over: several surfaces show different sessions at once (a console cell beside an open
+/// Glance morph), and the id the frontend could produce came from the console grid's `focusedPaneIdx`,
+/// which no studio, graph session or network architect is ever equal to. So the app's own sessions
+/// were unprotected at all times, under a ten-second idle grace.
 #[tauri::command]
-pub(crate) fn pty_report_focus(pane_id: Option<String>) {
-    reap::report_focus(pane_id);
+pub(crate) fn pty_report_onscreen(pane_ids: Vec<String>) {
+    reap::report_on_screen(pane_ids);
 }
 
 /// The frontend reporting the user's configured reap thresholds (Settings).
@@ -1615,7 +1621,7 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(reap::TICK_MS));
             let now = reap::now_ms();
-            let focused = reap::focused_pane(now);
+            let on_screen = reap::on_screen_panes(now);
             let policy = reap::policy();
             // One /proc walk per sweep, shared by the decision and the published snapshot so the two
             // can never disagree about why a pane was or was not taken.
@@ -1636,7 +1642,7 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             // "why is this still alive", and a file that only appears on a reap cannot answer it.
             reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &cpu, &policy);
             let doomed =
-                reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &cpu, &policy);
+                reap::panes_to_reap(&reap::snapshot(), now, &on_screen, &cpu, &policy);
             if doomed.is_empty() {
                 continue;
             }
