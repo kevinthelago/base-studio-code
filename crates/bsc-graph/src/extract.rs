@@ -1487,6 +1487,68 @@ pub fn signature_from_code(code: &str, tech: &str) -> Option<Signature> {
     None
 }
 
+/// Parse a SIGNATURE the user typed, before the function it describes exists.
+///
+/// The prevention half's whole point: a worker about to write a helper asks "is there already
+/// something with this shape?" and cannot pass an id, because the thing has no id yet.
+///
+///     "(items: T[], key: (t: T) => string) => Map<string, T[]>"     typescript
+///     "(rows: &[u32], floor: u32) -> Vec<u32>"                      rust
+///
+/// SYNTHESIZES A STUB AND REUSES ONE PARSER rather than writing a second grammar for signatures.
+/// Wrapping the text in `function __q(…): R {}` and handing it to [`signature_from_code`] means the
+/// query and the corpus are read by the SAME code — so a query can never be parsed by rules the
+/// records were not, which is the way two parsers for one language always drift.
+///
+/// Undeclared type parameters are fine: tree-sitter is a parser, not a type checker, so `T[]` in a
+/// stub that never declares `T` yields exactly the `Known("T[]")` a real generic function does.
+///
+/// The return type is split at the TOP LEVEL, by walking the parameter list's parentheses to their
+/// match — `(t: T) => string` contains an arrow, so splitting on the first `=>` would cut a parameter
+/// in half and silently produce a different query from the one that was typed.
+pub fn parse_signature_query(text: &str, tech: &str) -> Option<Signature> {
+    let t = text.trim();
+    let bytes = t.as_bytes();
+    if bytes.first() != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut close = None;
+    for (i, b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let close = close?;
+    let params = &t[1..close];
+    // Whatever follows the parameter list, minus the arrow that introduces it. All three spellings are
+    // accepted because a person typing a query should not have to remember which language wants which.
+    let rest = t[close + 1..].trim();
+    let ret = rest
+        .strip_prefix("=>")
+        .or_else(|| rest.strip_prefix("->"))
+        .or_else(|| rest.strip_prefix(':'))
+        .unwrap_or(rest)
+        .trim();
+
+    let stub = match tech {
+        "rust" if ret.is_empty() => format!("fn __q({params}) {{}}"),
+        "rust" => format!("fn __q({params}) -> {ret} {{}}"),
+        "typescript" if ret.is_empty() => format!("function __q({params}) {{}}"),
+        "typescript" => format!("function __q({params}): {ret} {{}}"),
+        _ => return None,
+    };
+    signature_from_code(&stub, tech)
+}
+
 /// How alike two CONTRACTS are — Jaccard over what each function names.
 ///
 /// The feature set is the parameter NAMES, the KNOWN parameter types, and the KNOWN return type. Three
@@ -1961,6 +2023,80 @@ mod tests {
         let sig = sig_of("signatures.rs", "bump");
         assert_eq!(sig.arity(), 1, "`by` alone; `&mut self` is the receiver: {sig:?}");
         assert_eq!(sig.params[0], Param { name: "by".into(), ty: known("u32") });
+    }
+
+    // ── THE SIGNATURE QUERY (slice 5) ────────────────────────────────────────────────────────────
+    // Asked BEFORE the function exists, so it cannot be asked by id.
+
+    /// The query and the corpus are read by ONE parser. A typed signature yields exactly what the same
+    /// shape yields when harvested from a real function — which is the property that keeps a query from
+    /// being interpreted by rules the records were not.
+    #[test]
+    fn a_typed_signature_reads_the_same_as_a_real_function() {
+        let typed = parse_signature_query("(xs: T[], key: (t: T) => string) => Map<string, T[]>", "typescript")
+            .expect("a well-formed query");
+        let real = signature_from_code(
+            "export function groupBy<T>(xs: T[], key: (t: T) => string): Map<string, T[]> { return new Map(); }",
+            "typescript",
+        )
+        .expect("a real function");
+        assert_eq!(typed, real, "the query and the harvested signature must agree exactly");
+    }
+
+    /// THE ARROW INSIDE A PARAMETER is why the return type is split by walking parentheses rather than
+    /// by finding an arrow: `(t: T) => string` contains one, so splitting on the first `=>` cuts a
+    /// parameter in half and silently answers a different question from the one asked.
+    #[test]
+    fn a_parameter_containing_an_arrow_is_not_split_in_half() {
+        let sig = parse_signature_query("(xs: T[], key: (t: T) => string) => Map<string, T[]>", "typescript").unwrap();
+        assert_eq!(sig.arity(), 2, "two parameters, not three: {sig:?}");
+        assert_eq!(sig.params[1].ty, TypeRef::Known("(t: T) => string".into()));
+        assert_eq!(sig.returns, TypeRef::Known("Map<string, T[]>".into()));
+    }
+
+    /// Rust spells its arrow differently and its grammar hands the return type back without a colon.
+    /// Both spellings are accepted because a person typing a query should not have to remember which
+    /// language wants which.
+    #[test]
+    fn a_rust_signature_query_reads_its_own_arrow() {
+        let sig = parse_signature_query("(rows: &[u32], floor: u32) -> Vec<u32>", "rust").unwrap();
+        assert_eq!(sig.arity(), 2);
+        assert_eq!(sig.params[0].ty, TypeRef::Known("&[u32]".into()));
+        assert_eq!(sig.returns, TypeRef::Known("Vec<u32>".into()));
+    }
+
+    /// A query with NO return type is a query about the parameters — absent, not a failure, and not
+    /// invented as `void` or `()`.
+    #[test]
+    fn a_query_without_a_return_type_is_absent_not_invented() {
+        let sig = parse_signature_query("(xs: number[])", "typescript").unwrap();
+        assert_eq!(sig.arity(), 1);
+        assert_eq!(sig.returns, TypeRef::Absent);
+    }
+
+    /// Malformed input returns None rather than a plausible signature. A query the user did not type is
+    /// worse than an error: it answers confidently about the wrong shape.
+    #[test]
+    fn a_malformed_query_is_refused_rather_than_guessed() {
+        for bad in ["xs: T[]", "", "=> string", "(unclosed: T[]"] {
+            assert_eq!(parse_signature_query(bad, "typescript"), None, "{bad:?} must not parse");
+        }
+        assert_eq!(parse_signature_query("(xs: T[])", "python"), None, "an unknown tech has no grammar");
+    }
+
+    /// CONTRACT SIMILARITY IS NOT A NAME MATCH. Two functions agreeing only that they both decline to
+    /// say what they take must score ZERO — the set-level form of `TypeRef::matches`.
+    #[test]
+    fn two_silent_contracts_do_not_corroborate_each_other() {
+        let a = parse_signature_query("(x, y)", "typescript").unwrap();
+        let b = parse_signature_query("(p, q)", "typescript").unwrap();
+        assert_eq!(contract_similarity(&a, &b), 0.0, "no shared names, no known types");
+        // …while an identical contract is 1.0, so the measure is not simply always zero.
+        let c = parse_signature_query("(xs: T[], n: number) => T", "typescript").unwrap();
+        assert!((contract_similarity(&c, &c) - 1.0).abs() < f64::EPSILON);
+        // An EMPTY contract matches nothing, including another empty one.
+        let empty = Signature::default();
+        assert_eq!(contract_similarity(&empty, &empty), 0.0);
     }
 
     // ── THE TREE SCAN (slice 3) ─────────────────────────────────────────────────────────────────

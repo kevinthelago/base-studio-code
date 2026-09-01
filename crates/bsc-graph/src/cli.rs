@@ -42,7 +42,7 @@ pub const BOOL_FLAGS: [&str; 13] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 52] = [
+pub const FLAGS: [&str; 54] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
@@ -117,7 +117,10 @@ pub const FLAGS: [&str; 52] = [
     // (`code`, typically) and optionally spill it to the scratch dir instead of stdout.
     "--field",
     "--raw",
-
+    // `similar --sig "<signature>"` — the DISCOVER-BEFORE-AUTHORING query, which takes a signature
+    // rather than an id because the thing being looked for does not exist yet.
+    "--sig",
+    "--limit",
 ];
 
 /// Materialize ONE record into `out` and, when `run`, execute its paired tests there.
@@ -529,6 +532,19 @@ const MIN_SHINGLES: usize = 8;
 /// 0.0008 and a maximum of **0.037**. There is no distribution between those, so the threshold is a
 /// chasm rather than a tuned knob.
 const NEAR_DUPLICATE: f64 = 0.8;
+
+/// The floor below which `similar` reports NOTHING rather than a weak match.
+///
+/// MEASURED on the real library: a genuine twin scores **1.00** (`tree-view-motion.ts` against its six
+/// siblings), while a query for something that does NOT exist there - a `groupBy` shape - returns a
+/// tail at **0.14**, matching on one shared parameter name and nothing else. The gap is wide, so the
+/// exact value is not delicate; 0.34 is the component library's own `NAME_GATE`, reused so the two
+/// surfaces answer "similar" at the same bar.
+///
+/// A FLOOR MATTERS MORE HERE THAN IN A DEDUP REPORT. This verb exists to be asked BEFORE a function is
+/// written, and an answer padded to `--limit` with 0.14 noise reads as "yes, several of these already
+/// exist" - the opposite of the truth, delivered confidently.
+const MIN_SIMILAR: f64 = 0.34;
 
 /// Contract overlap at or above which two functions AGREE ABOUT WHAT THEY TAKE — never sufficient on
 /// its own.
@@ -2261,6 +2277,81 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "dupes": groups,
             }))
         }
+        // DISCOVER BEFORE AUTHORING (slice 5). Cleanup decays; this is what stops the library growing
+        // duplicates again — a worker about to write a helper asks whether one already exists.
+        //
+        // Takes a SIGNATURE, not only an id, because the thing being looked for has not been written
+        // yet and so has no id. That is the whole difference between this and `doctor --dedup`, which
+        // compares things that already exist.
+        "similar" => {
+            let tech = flag_value(&args, "--tech").unwrap_or_else(|| "typescript".into());
+            let limit: usize = flag_value(&args, "--limit")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8);
+            let query = match (flag_value(&args, "--sig"), positional.get(1)) {
+                (Some(sig), _) => crate::extract::parse_signature_query(&sig, &tech)
+                    .ok_or_else(|| format!(
+                        "could not read that signature. Expected `(name: Type, …) => Return`                          (or `-> Return` for rust), e.g. --sig \"(xs: T[], key: (t: T) => string) => Map<string, T[]>\". Got: {sig}"
+                    ))?,
+                // …and by ID too, mirroring `bsc ui similar`: once the thing exists, "what else looks
+                // like this" is the same question asked from the other side.
+                (None, Some(id)) => {
+                    let g = crate::load();
+                    let im = crate::implementations_of(&g)
+                        .into_iter()
+                        .find(|im| im.get("id").and_then(Value::as_str) == Some(&**id))
+                        .ok_or_else(|| format!("unknown implementation '{id}'"))?;
+                    let t = im.get("tech").and_then(Value::as_str).unwrap_or(&tech).to_string();
+                    crate::extract::signature_from_code(
+                        im.get("code").and_then(Value::as_str).unwrap_or_default(), &t,
+                    )
+                    .ok_or_else(|| format!(
+                        "'{id}' has no function definition to take a signature from - a data or config \
+                         module (an object of properties, a constants table) is a record without a \
+                         contract, and `similar` compares CONTRACTS. Query by --sig instead."
+                    ))?
+                }
+                (None, None) => return Err(
+                    "usage: bsc graph similar --sig \"(xs: T[]) => T\" [--tech t] [--limit n]  |  bsc graph similar <id>".into()
+                ),
+            };
+            let started = std::time::Instant::now();
+            let g = crate::load();
+            let mut scored: Vec<(f64, Value)> = crate::implementations_of(&g)
+                .into_iter()
+                .filter(|im| im.get("tech").and_then(Value::as_str) == Some(tech.as_str()))
+                .filter(|im| im.get("id").and_then(Value::as_str).is_some_and(|id| !crate::is_suppressed(&g, id)))
+                .filter_map(|im| {
+                    let id = im.get("id").and_then(Value::as_str)?.to_string();
+                    let sig = crate::extract::signature_from_code(
+                        im.get("code").and_then(Value::as_str).unwrap_or_default(), &tech,
+                    )?;
+                    let score = crate::extract::contract_similarity(&query, &sig);
+                    // BELOW THE FLOOR IS NOT A WEAK MATCH, IT IS NO MATCH. Padding an answer out to
+                    // `--limit` teaches the reader to ignore the tail, and for the PREVENTION use case
+                    // it is worse: a worker asking "does this already exist" and seeing five rows
+                    // concludes yes.
+                    (score >= MIN_SIMILAR).then(|| (score, serde_json::json!({
+                        "id": id,
+                        "name": im.get("name").and_then(Value::as_str).unwrap_or_default(),
+                        "score": (score * 100.0).round() / 100.0,
+                        "arity": sig.arity(),
+                        "src": im.get("src").and_then(Value::as_str).unwrap_or_default(),
+                        "signature": sig.to_json(),
+                    })))
+                })
+                .collect();
+            scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            scored.truncate(limit);
+            emit(&serde_json::json!({
+                "query": query.to_json(),
+                "tech": tech,
+                "elapsedMs": started.elapsed().as_millis() as u64,
+                // PROPOSE-ONLY, and said out loud: this answers "does something like this exist",
+                // never "do not write it". A close match may still be the wrong thing.
+                "matches": scored.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+            }))
+        }
         "curate" => {
             let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
@@ -3747,6 +3838,7 @@ fn help(prog: &str) -> String {
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
   \n         {prog} dupes <dir> [--tech typescript|rust] [--pretty]   # the WHOLE-TREE duplicate sweep (epic-a-graph-finds-its-own-duplicates): every non-trivial function under <dir>, grouped by its rename-invariant SHAPE — so a copy whose identifiers were all renamed is found, which `doctor --dedup` structurally cannot do over the store. The TREE, not the records: the algorithms store holds 32 Rust records against 7,514 Rust functions on disk, so a record-level sweep sees 0.4% of the Rust here. STREAMS rather than harvesting (measured: 115 MB peak vs 962 MB for a `harvest` of the same directory) and keeps NO index — a cache would need invalidation and re-deriving costs ~1.7s. Reports a path and a LINE per member, biggest groups first, and `duplicated` = how many functions could go. PROPOSE-ONLY; for per-table CRUD twins the action is a shared helper, not deletion\n  \
+  \n         {prog} similar --sig \"(xs: T[]) => T\" [--tech t] [--limit n] | similar <id>   # DISCOVER BEFORE AUTHORING: does the library already hold this shape? Takes a SIGNATURE, not only an id, because the thing you are about to write has not been written yet — which is the whole difference between this and `doctor --dedup`, which compares what already exists. Ranked by CONTRACT overlap, floored at 0.34 so \"nothing like this exists\" answers with NOTHING rather than a tail of noise (measured: a real twin scores 1.00, an absent shape returns 0.14 on one shared parameter name). PROPOSE-ONLY — a close match may still be the wrong thing\n  \
          {prog} test <id> --out <dir> [--run] | test --all --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
   \n  {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
