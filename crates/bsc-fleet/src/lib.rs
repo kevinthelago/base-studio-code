@@ -34,6 +34,7 @@ pub mod fault_triage;
 pub mod worker_auto_end;
 pub mod worker_end;
 pub mod worktree_reconcile;
+pub mod warden;
 pub mod gate;
 /// The claims a fleet makes about itself that do not hold (`bsc fleet doctor`) — the divergence
 /// detector for this domain, alongside `bsc graph doctor` and `bsc ui parity`. App-free.
