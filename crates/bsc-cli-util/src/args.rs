@@ -77,6 +77,25 @@ pub fn walk<A>(
     Ok((acc, positional))
 }
 
+/// [`walk`] over a BORROWED slice — the shape every per-SUBCOMMAND parser has.
+///
+/// The top-level parser owns its `Vec<String>` and fills an `Args` struct. A subcommand parser is
+/// handed `&[String]` and fills a tuple of locals, which is why the top-level extraction could not
+/// reach them: MEASURED 2026-09-01 there are 54 of these (bsc-component 34, bsc-ui 13, bsc-persona 4,
+/// bsc-ui/tests_harvest 3), and they have drifted in their REFUSAL rather than their help arm —
+/// `bsc persona set foo` refuses a bare word as a "flag" while `bsc ui list foo` accepts it silently.
+///
+/// The rule is [`walk`]'s, unchanged: only a `--`-prefixed unknown is refused, `-h`/`--help` routes to
+/// the help verb, everything else is a positional. A subcommand that genuinely takes no positionals
+/// checks that itself, where the fact lives — a walk cannot know it.
+pub fn walk_ref<A>(
+    raw: &[String],
+    acc: A,
+    flag: impl FnMut(&str, &mut A, &mut Values) -> Result<bool, String>,
+) -> Result<(A, Vec<String>), String> {
+    walk(raw.to_vec(), acc, flag)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +160,27 @@ mod tests {
         // existing behaviour, now stated in one place where it can be reconsidered as one decision.
         let (_, pos) = parse(&["-j"]).unwrap();
         assert_eq!(pos, vec!["-j"]);
+    }
+
+    /// The borrowed shape answers identically — one rule, whichever form a caller has.
+    #[test]
+    fn walk_ref_answers_exactly_as_walk_does() {
+        let raw: Vec<String> = ["list", "--db", "/tmp/x", "extra"].iter().map(|s| s.to_string()).collect();
+        let borrowed = walk_ref(&raw, A::default(), |f, a: &mut A, v| {
+            match f {
+                "--db" => a.db = Some(v.value("--db needs a path")?),
+                _ => return Ok(false),
+            }
+            Ok(true)
+        })
+        .unwrap();
+        assert_eq!(borrowed.0.db.as_deref(), Some("/tmp/x"));
+        assert_eq!(borrowed.1, vec!["list", "extra"]);
+        // A BARE word is a positional here, as it is at the top level. `bsc persona set foo` used to
+        // refuse it as a "flag", which is both inconsistent with its siblings and inaccurate about
+        // what it found.
+        let (_, pos) = walk_ref(&["foo".to_string()], A::default(), |_, _: &mut A, _| Ok(false)).unwrap();
+        assert_eq!(pos, vec!["foo"]);
     }
 
     #[test]
