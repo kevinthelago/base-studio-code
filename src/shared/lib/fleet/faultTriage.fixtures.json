@@ -1,0 +1,699 @@
+{
+  "note": "GENERATED from the live TypeScript — see faultTriage.fixtures.gen.test.ts",
+  "defaults": {
+    "threshold": 1,
+    "minLevel": "error",
+    "maxInFlight": 3,
+    "maxPerCycle": 2
+  },
+  "cases": [
+    {
+      "name": "nothing open",
+      "faults": [],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [],
+        "nextDispatched": []
+      },
+      "unresolvedCount": 0,
+      "worstFault": null
+    },
+    {
+      "name": "GATE off — surface only, dispatch nothing",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": false,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [],
+        "nextDispatched": []
+      },
+      "unresolvedCount": 1,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "fatal",
+        "title": "aa title",
+        "count": 9,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "GATE off still PRUNES a resolved fingerprint",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": 1000
+        }
+      ],
+      "dispatched": [
+        "aa"
+      ],
+      "cfg": {
+        "enabled": false,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [],
+        "nextDispatched": []
+      },
+      "unresolvedCount": 0,
+      "worstFault": null
+    },
+    {
+      "name": "DEDUP — an already-dispatched open fault is not dispatched again",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "error",
+          "title": "aa title",
+          "count": 3,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [
+        "aa"
+      ],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [],
+        "nextDispatched": [
+          "aa"
+        ]
+      },
+      "unresolvedCount": 1,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "error",
+        "title": "aa title",
+        "count": 3,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "a dispatched fingerprint that RESOLVED is pruned from in-flight",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "error",
+          "title": "aa title",
+          "count": 3,
+          "resolvedAt": 1000
+        },
+        {
+          "fingerprint": "bb",
+          "level": "error",
+          "title": "bb title",
+          "count": 3,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [
+        "aa"
+      ],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "bb",
+            "level": "error",
+            "title": "bb title",
+            "count": 3
+          }
+        ],
+        "nextDispatched": [
+          "bb"
+        ]
+      },
+      "unresolvedCount": 1,
+      "worstFault": {
+        "fingerprint": "bb",
+        "level": "error",
+        "title": "bb title",
+        "count": 3,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "RATE-LIMIT — maxPerCycle caps one cycle",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "fatal",
+          "title": "bb title",
+          "count": 8,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "cc",
+          "level": "fatal",
+          "title": "cc title",
+          "count": 7,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 10,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "aa",
+            "level": "fatal",
+            "title": "aa title",
+            "count": 9
+          },
+          {
+            "fingerprint": "bb",
+            "level": "fatal",
+            "title": "bb title",
+            "count": 8
+          }
+        ],
+        "nextDispatched": [
+          "aa",
+          "bb"
+        ]
+      },
+      "unresolvedCount": 3,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "fatal",
+        "title": "aa title",
+        "count": 9,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "a dispatched fingerprint that is no longer open is pruned, freeing its slot",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "fatal",
+          "title": "bb title",
+          "count": 8,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "cc",
+          "level": "fatal",
+          "title": "cc title",
+          "count": 7,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [
+        "zz-gone"
+      ],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 2,
+        "maxPerCycle": 5
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "aa",
+            "level": "fatal",
+            "title": "aa title",
+            "count": 9
+          },
+          {
+            "fingerprint": "bb",
+            "level": "fatal",
+            "title": "bb title",
+            "count": 8
+          }
+        ],
+        "nextDispatched": [
+          "aa",
+          "bb"
+        ]
+      },
+      "unresolvedCount": 3,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "fatal",
+        "title": "aa title",
+        "count": 9,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "RATE-LIMIT — one genuinely in-flight fault leaves exactly one slot",
+      "faults": [
+        {
+          "fingerprint": "held",
+          "level": "error",
+          "title": "held title",
+          "count": 1,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "fatal",
+          "title": "bb title",
+          "count": 8,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [
+        "held"
+      ],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 2,
+        "maxPerCycle": 5
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "aa",
+            "level": "fatal",
+            "title": "aa title",
+            "count": 9
+          }
+        ],
+        "nextDispatched": [
+          "held",
+          "aa"
+        ]
+      },
+      "unresolvedCount": 3,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "fatal",
+        "title": "aa title",
+        "count": 9,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "RATE-LIMIT — no slots at all dispatches nothing",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "in1",
+          "level": "error",
+          "title": "in1 title",
+          "count": 1,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "in2",
+          "level": "error",
+          "title": "in2 title",
+          "count": 1,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [
+        "in1",
+        "in2"
+      ],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 2,
+        "maxPerCycle": 5
+      },
+      "plan": {
+        "dispatch": [],
+        "nextDispatched": [
+          "in1",
+          "in2"
+        ]
+      },
+      "unresolvedCount": 3,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "fatal",
+        "title": "aa title",
+        "count": 9,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "minLevel excludes a warn",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "warn",
+          "title": "aa title",
+          "count": 99,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "error",
+          "title": "bb title",
+          "count": 1,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "bb",
+            "level": "error",
+            "title": "bb title",
+            "count": 1
+          }
+        ],
+        "nextDispatched": [
+          "bb"
+        ]
+      },
+      "unresolvedCount": 2,
+      "worstFault": {
+        "fingerprint": "bb",
+        "level": "error",
+        "title": "bb title",
+        "count": 1,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "threshold excludes a low-count fault",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "error",
+          "title": "aa title",
+          "count": 1,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "error",
+          "title": "bb title",
+          "count": 5,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 3,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "bb",
+            "level": "error",
+            "title": "bb title",
+            "count": 5
+          }
+        ],
+        "nextDispatched": [
+          "bb"
+        ]
+      },
+      "unresolvedCount": 2,
+      "worstFault": {
+        "fingerprint": "bb",
+        "level": "error",
+        "title": "bb title",
+        "count": 5,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "ORDER — level outranks count",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "error",
+          "title": "aa title",
+          "count": 100,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "fatal",
+          "title": "bb title",
+          "count": 1,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 1
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "bb",
+            "level": "fatal",
+            "title": "bb title",
+            "count": 1
+          }
+        ],
+        "nextDispatched": [
+          "bb"
+        ]
+      },
+      "unresolvedCount": 2,
+      "worstFault": {
+        "fingerprint": "bb",
+        "level": "fatal",
+        "title": "bb title",
+        "count": 1,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "ORDER — equal level falls back to count",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "error",
+          "title": "aa title",
+          "count": 2,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "bb",
+          "level": "error",
+          "title": "bb title",
+          "count": 7,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 1
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "bb",
+            "level": "error",
+            "title": "bb title",
+            "count": 7
+          }
+        ],
+        "nextDispatched": [
+          "bb"
+        ]
+      },
+      "unresolvedCount": 2,
+      "worstFault": {
+        "fingerprint": "bb",
+        "level": "error",
+        "title": "bb title",
+        "count": 7,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "ORDER — equal level and count falls back to fingerprint",
+      "faults": [
+        {
+          "fingerprint": "zz",
+          "level": "error",
+          "title": "zz title",
+          "count": 4,
+          "resolvedAt": null
+        },
+        {
+          "fingerprint": "aa",
+          "level": "error",
+          "title": "aa title",
+          "count": 4,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 1
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "aa",
+            "level": "error",
+            "title": "aa title",
+            "count": 4
+          }
+        ],
+        "nextDispatched": [
+          "aa"
+        ]
+      },
+      "unresolvedCount": 2,
+      "worstFault": {
+        "fingerprint": "aa",
+        "level": "error",
+        "title": "aa title",
+        "count": 4,
+        "resolvedAt": null
+      }
+    },
+    {
+      "name": "a resolved fault is never a candidate",
+      "faults": [
+        {
+          "fingerprint": "aa",
+          "level": "fatal",
+          "title": "aa title",
+          "count": 9,
+          "resolvedAt": 1234
+        },
+        {
+          "fingerprint": "bb",
+          "level": "error",
+          "title": "bb title",
+          "count": 2,
+          "resolvedAt": null
+        }
+      ],
+      "dispatched": [],
+      "cfg": {
+        "enabled": true,
+        "threshold": 1,
+        "minLevel": "error",
+        "maxInFlight": 3,
+        "maxPerCycle": 2
+      },
+      "plan": {
+        "dispatch": [
+          {
+            "fingerprint": "bb",
+            "level": "error",
+            "title": "bb title",
+            "count": 2
+          }
+        ],
+        "nextDispatched": [
+          "bb"
+        ]
+      },
+      "unresolvedCount": 1,
+      "worstFault": {
+        "fingerprint": "bb",
+        "level": "error",
+        "title": "bb title",
+        "count": 2,
+        "resolvedAt": null
+      }
+    }
+  ]
+}
