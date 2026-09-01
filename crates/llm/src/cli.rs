@@ -10,8 +10,9 @@
 //! though the request succeeded.
 
 use crate::runtime::{
-    findings_with_headroom, parse_llama_server_argv, parse_ollama_env, parse_ps, parse_tags,
-    parse_vram_sysfs, Requested, ResidentModel, Severity, SlotGrant, Vram, GIB,
+    aggregate, findings_with_headroom, parse_bench_sample, parse_llama_server_argv, parse_ollama_env,
+    parse_ps, parse_tags, parse_vram_sysfs, Bench, Requested, ResidentModel, Severity, SlotGrant, Vram,
+    GIB,
 };
 
 const USAGE: &str = "\
@@ -19,9 +20,24 @@ bsc llm — what the local model runtime is actually doing
 
 USAGE:
   bsc llm status [--host <url>] [--json]
+  bsc llm bench --model <m> (--prompt <text> | --prompt-file <path>)
+                [--repeat <n>] [--nonce] [--predict <n>] [--timeout <s>] [--host <url>] [--json]
 
   status    GPU/runner state: resident models, the slot + context grant, and any gap
             between what was REQUESTED and what is actually running.
+
+  bench     what a PROMPT costs: prefill, generation and model load, kept apart.
+
+            Model load is reported SEPARATELY and never folded into prefill — measured on this
+            box at 10250ms load against a 972ms prefill, so timing the round-trip instead gives
+            a prefill wrong by an order of magnitude.
+
+            --repeat with NO --nonce measures the prefix cache: run 1 cold, the rest warm
+            (measured 972ms -> 30ms, a 32x drop). --nonce gives every run a fresh prefix so all
+            of them are cold. The token count does NOT reveal the cache — a cached and a cold run
+            of the same prompt both report the same prompt_eval_count; only the duration moves.
+
+            --predict is how many tokens to generate (default 1, so the measurement is prefill).
 
 The grant is read from the running llama-server's own argv, not from the HTTP API:
 ollama sizes the runner to available VRAM and does NOT report having shrunk it.
@@ -142,6 +158,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let rest: Vec<String> = it.collect();
     match cmd.as_str() {
         "status" => status(&rest),
+        "bench" => bench(&rest),
         "" | "-h" | "--help" | "help" => {
             print!("{USAGE}");
             Ok(())
@@ -283,6 +300,113 @@ fn status(args: &[String]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// One POST against the provider's chat API.
+///
+/// Separate from [`get`] for its TIMEOUT: `status` is a liveness probe that must fail fast, while a
+/// bench legitimately blocks for minutes — a cold load alone measured 10.25 s here, and a long prompt
+/// on a big model is far more. A 5 s timeout would turn every real measurement into a connect error.
+fn post(host: &str, path: &str, body: &serde_json::Value, timeout_secs: u64) -> Result<String, String> {
+    let url = format!("{}{path}", host.trim_end_matches('/'));
+    reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?
+        .post(&url)
+        .json(body)
+        .send()
+        .map_err(|e| format!("{url}: {e} — is the provider running? `bsc llm status` reports what is"))?
+        .text()
+        .map_err(|e| format!("{url}: {e}"))
+}
+
+/// `bsc llm bench` — what a prompt actually costs the provider.
+fn bench(args: &[String]) -> Result<(), String> {
+    let flag = |name: &str| -> Option<String> {
+        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    };
+    let has = |name: &str| args.iter().any(|a| a == name);
+    let num = |name: &str, default: u64| -> Result<u64, String> {
+        match flag(name) {
+            Some(v) => v.parse().map_err(|_| format!("{name}: not a number: {v}")),
+            None => Ok(default),
+        }
+    };
+
+    let prompt = match (flag("--prompt"), flag("--prompt-file")) {
+        (Some(_), Some(_)) => return Err("pass --prompt or --prompt-file, not both".into()),
+        (Some(p), None) => p,
+        (None, Some(f)) => std::fs::read_to_string(&f).map_err(|e| format!("cannot read {f}: {e}"))?,
+        // The prompts worth benching are agent system prompts — this repo's own CLAUDE.md is ~94k
+        // chars — so the file form is the one that matters, and saying so beats a bare usage line.
+        (None, None) => return Err("bsc llm bench needs --prompt <text> or --prompt-file <path>".into()),
+    };
+    let model = flag("--model").ok_or("bsc llm bench needs --model <name> (`bsc llm status` lists what is resident)")?;
+    let repeat = num("--repeat", 1)?.max(1);
+    let predict = num("--predict", 1)?;
+    let timeout = num("--timeout", 600)?;
+    let nonce = has("--nonce");
+    let (json, pretty) = (has("--json"), has("--pretty"));
+    let host = flag("--host")
+        .or_else(|| std::env::var("OLLAMA_HOST").ok())
+        .map(|h| if h.starts_with("http") { h } else { format!("http://{h}") })
+        .unwrap_or_else(|| "http://127.0.0.1:11434".into());
+
+    let mut samples = Vec::with_capacity(repeat as usize);
+    for run in 0..repeat {
+        // A FRESH nonce per run. One nonce reused across repeats would leave run 1 cold and runs
+        // 2..n hitting run 1's own cache — measuring the cache while claiming to have defeated it.
+        let content = if nonce {
+            format!("bench-nonce-{}-{run}\n{prompt}", bsc_util::now_ms())
+        } else {
+            prompt.clone()
+        };
+        let body = serde_json::json!({
+            "model": model,
+            "stream": false,
+            "options": { "num_predict": predict },
+            "messages": [{ "role": "user", "content": content }],
+        });
+        samples.push(parse_bench_sample(&post(&host, "/api/chat", &body, timeout)?)?);
+    }
+
+    let b = aggregate(&samples, nonce).ok_or("no runs completed")?;
+    bsc_cli_util::emit(pretty, json, &b, || bench_report(&b, &model, nonce));
+    Ok(())
+}
+
+/// The lean report. Every run is listed, not just the aggregate: with `--nonce` off, the cold→warm
+/// drop between run 1 and run 2 IS the cache measurement, and a median alone describes neither state.
+fn bench_report(b: &Bench, model: &str, nonce: bool) -> String {
+    let mut out = vec![format!(
+        "{model} · {} prompt tokens · {} run(s){}",
+        b.prompt_tokens,
+        b.runs,
+        if nonce { " · nonce (each run cold)" } else { "" }
+    )];
+    for (i, s) in b.samples.iter().enumerate() {
+        let load = if s.load_ms >= 1.0 { format!(" · load {:.0}ms", s.load_ms) } else { String::new() };
+        out.push(format!("  run {}: prefill {:.0}ms · gen {} tok in {:.0}ms{load}", i + 1, s.prefill_ms, s.gen_tokens, s.gen_ms));
+    }
+    // Says WHY there is no rate rather than printing a dash: without a forced-cold run there is no
+    // sample that did the work, and the reader needs the remedy, not the absence.
+    let rate = |r: Option<f64>| {
+        r.map(|v| format!("{v:.0} tok/s")).unwrap_or_else(|| "rate needs --nonce (a cold prefill)".into())
+    };
+    out.push(format!(
+        "  prefill: median {:.0}ms (min {:.0} · max {:.0}) · {}",
+        b.prefill_ms.median,
+        b.prefill_ms.min,
+        b.prefill_ms.max,
+        rate(b.prefill_tokens_per_sec)
+    ));
+    // Suppressed below the rate floor: with the default --predict 1 the generation is sub-millisecond
+    // and every number on this line would be quantization noise.
+    if b.gen_ms.max >= 1.0 {
+        out.push(format!("  gen:     median {:.0}ms · {}", b.gen_ms.median, rate(b.gen_tokens_per_sec)));
+    }
+    out.join("\n")
 }
 
 #[cfg(test)]

@@ -338,9 +338,267 @@ pub fn findings_with_headroom(
     out
 }
 
+// ── `bsc llm bench` ────────────────────────────────────────────────────────────────────────────────
+
+/// One completion's measurements, in MILLISECONDS. Ollama reports nanoseconds; converting once here
+/// keeps every consumer from re-deriving it (and from getting the exponent wrong).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sample {
+    /// Tokens in the prompt. NOT a cache indicator — MEASURED on qwen3.5:9b, a cached run and a cold
+    /// run of the same prompt both reported 1210. Only the DURATION moved (972 ms → 30 ms).
+    pub prompt_tokens: u64,
+    /// Prefill: what evaluating the prompt cost. The number this command exists to report.
+    pub prefill_ms: f64,
+    pub gen_tokens: u64,
+    pub gen_ms: f64,
+    /// Loading the model into memory — kept SEPARATE and never folded into prefill. Measured at
+    /// 10250 ms on a first call against a 972 ms prefill, so anything timing the HTTP round-trip
+    /// instead reports a prefill an order of magnitude wrong.
+    pub load_ms: f64,
+}
+
+/// Parse one `/api/chat` (or `/api/generate`) response.
+///
+/// Absent counters read as ZERO rather than failing: a provider that answered without timings is a
+/// degraded measurement, not a broken command, and reporting 0 makes that visible where a silent
+/// `None` would not. A body that is not JSON at all IS an error — that is a wrong endpoint or an
+/// error page, and measuring it would be measuring nothing.
+pub fn parse_bench_sample(body: &str) -> Result<Sample, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("provider did not answer with JSON: {e}"))?;
+    if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+        return Err(format!("provider error: {err}"));
+    }
+    let ns = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0) as f64 / 1.0e6;
+    let n = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    Ok(Sample {
+        prompt_tokens: n("prompt_eval_count"),
+        prefill_ms: ns("prompt_eval_duration"),
+        gen_tokens: n("eval_count"),
+        gen_ms: ns("eval_duration"),
+        load_ms: ns("load_duration"),
+    })
+}
+
+/// Median, min and max over the runs.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct Stat {
+    pub median: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+impl Stat {
+    /// MEDIAN, not mean — the same choice `bsc mem` makes for build cost, and for the same reason:
+    /// these runs share a machine with a fleet of agents, and one descheduled run should not move the
+    /// number everybody reads.
+    fn of(mut xs: Vec<f64>) -> Option<Stat> {
+        if xs.is_empty() {
+            return None;
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mid = xs.len() / 2;
+        let median = if xs.len().is_multiple_of(2) { (xs[mid - 1] + xs[mid]) / 2.0 } else { xs[mid] };
+        Some(Stat { median, min: xs[0], max: xs[xs.len() - 1] })
+    }
+}
+
+/// The aggregate a bench reports.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bench {
+    pub runs: usize,
+    /// Prompt size, from the first run. Constant across runs of the same prompt — except under
+    /// `--nonce`, where each run carries a different prefix and so may differ by a token or two.
+    pub prompt_tokens: u64,
+    pub prefill_ms: Stat,
+    pub gen_ms: Stat,
+    pub load_ms: Stat,
+    /// Prefill throughput — `None` unless the runs were forced COLD, and `None` below a millisecond.
+    ///
+    /// Two live runs forced this, in two steps. Deriving it from the median gave **41638 tok/s** for a
+    /// model that had just managed 1169, because with warm repeats the median is a CACHED run that did
+    /// almost no work. Switching to the slowest run fixed that case and then failed the next one: on a
+    /// second invocation the model was ALREADY warm, so all three runs were cached (37/41/44 ms) and
+    /// the slowest was still a cache hit — reporting 27733 tok/s.
+    ///
+    /// There is no sample-picking rule that recovers a throughput from runs that never did the work.
+    /// The tool does know one thing for certain, though: whether IT forced a cold prefix. So a rate is
+    /// reported only when a nonce made every run cold, and otherwise withheld — the durations are still
+    /// reported, and they are the honest answer to "is this cached".
+    ///
+    /// `None` below 1 ms because that is timer quantization, not a speed: a 1-token generation
+    /// measured at 0.001 ms produced **1000000 tok/s**.
+    pub prefill_tokens_per_sec: Option<f64>,
+    pub gen_tokens_per_sec: Option<f64>,
+    /// Every run, in order. THE point when `--nonce` is off: the cold→warm drop is the cache, and an
+    /// aggregate alone would average it away into a number describing neither state.
+    pub samples: Vec<Sample>,
+}
+
+/// `cold` says every run was given a fresh prefix (the `--nonce` path), which is the ONLY condition
+/// under which a throughput can be derived — see [`Bench::prefill_tokens_per_sec`].
+pub fn aggregate(samples: &[Sample], cold: bool) -> Option<Bench> {
+    let first = samples.first()?;
+    let prefill_ms = Stat::of(samples.iter().map(|s| s.prefill_ms).collect())?;
+    let gen_ms = Stat::of(samples.iter().map(|s| s.gen_ms).collect())?;
+    let load_ms = Stat::of(samples.iter().map(|s| s.load_ms).collect())?;
+    // A duration under this is the timer's resolution rather than a measurement, and a rate derived
+    // from it is arithmetic on noise.
+    const RATE_FLOOR_MS: f64 = 1.0;
+    let rate = |tokens: u64, ms: f64| (ms >= RATE_FLOOR_MS).then(|| tokens as f64 / (ms / 1000.0));
+    let gen_tokens = Stat::of(samples.iter().map(|s| s.gen_tokens as f64).collect())?.median;
+    Some(Bench {
+        runs: samples.len(),
+        prompt_tokens: first.prompt_tokens,
+        // From `.max` — the SLOWEST run. See the field docs: the median is a cached run whenever
+        // repeats are warm, and a rate off a cached prefill describes work that did not happen.
+        // Only when the caller forced cold runs. Withheld otherwise, rather than reporting a number
+        // about work the provider did not do.
+        prefill_tokens_per_sec: cold.then(|| rate(first.prompt_tokens, prefill_ms.max)).flatten(),
+        // Generation is never served from the prefix cache, so its rate needs no such condition.
+        gen_tokens_per_sec: rate(gen_tokens as u64, gen_ms.max),
+        prefill_ms,
+        gen_ms,
+        load_ms,
+        samples: samples.to_vec(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── `bsc llm bench` ────────────────────────────────────────────────────────────────────────────
+
+    /// Captured verbatim from this box, 2026-09-01, qwen3.5:9b — the COLD run that also loaded the
+    /// model. Trimmed to the counters; the real body also carries `message`, `model` and `done_reason`.
+    const REAL_COLD: &str = r#"{"model":"qwen3.5:9b","done":true,"done_reason":"length",
+      "total_duration":11265000000,"load_duration":10250000000,
+      "prompt_eval_count":1210,"prompt_eval_duration":972000000,
+      "eval_count":1,"eval_duration":41000000}"#;
+
+    /// The SAME prompt again, moments later — the prefix cache hit.
+    const REAL_CACHED: &str = r#"{"model":"qwen3.5:9b","done":true,"done_reason":"length",
+      "total_duration":72000000,"load_duration":1000000,
+      "prompt_eval_count":1210,"prompt_eval_duration":30000000,
+      "eval_count":1,"eval_duration":39000000}"#;
+
+    /// THE MEASUREMENT THAT DECIDED THE DESIGN. A cached run and a cold run report the SAME
+    /// `prompt_eval_count`; only the duration moves. So cache state cannot be read off the token
+    /// count, which is the obvious-looking inference and is wrong.
+    #[test]
+    fn a_cached_prefill_is_visible_in_the_duration_and_not_in_the_token_count() {
+        let cold = parse_bench_sample(REAL_COLD).unwrap();
+        let warm = parse_bench_sample(REAL_CACHED).unwrap();
+
+        assert_eq!(cold.prompt_tokens, warm.prompt_tokens, "the token count says NOTHING about the cache");
+        assert_eq!(cold.prompt_tokens, 1210);
+        assert!((cold.prefill_ms - 972.0).abs() < 0.5, "ns → ms: {}", cold.prefill_ms);
+        assert!((warm.prefill_ms - 30.0).abs() < 0.5, "ns → ms: {}", warm.prefill_ms);
+        assert!(cold.prefill_ms > warm.prefill_ms * 10.0, "the cache is a 32x effect here, not a rounding one");
+    }
+
+    /// Model load is reported SEPARATELY. Folded into prefill it would have read 11222 ms instead of
+    /// 972 — an order of magnitude wrong, and exactly what timing the HTTP round-trip would give.
+    #[test]
+    fn model_load_is_never_folded_into_prefill() {
+        let cold = parse_bench_sample(REAL_COLD).unwrap();
+        assert!((cold.load_ms - 10250.0).abs() < 0.5, "{}", cold.load_ms);
+        assert!((cold.prefill_ms - 972.0).abs() < 0.5, "prefill excludes the load: {}", cold.prefill_ms);
+
+        let warm = parse_bench_sample(REAL_CACHED).unwrap();
+        assert!(warm.load_ms < 2.0, "an already-resident model costs nothing to load: {}", warm.load_ms);
+    }
+
+    #[test]
+    fn the_aggregate_reports_spread_and_keeps_every_run() {
+        let cold = parse_bench_sample(REAL_COLD).unwrap();
+        let warm = parse_bench_sample(REAL_CACHED).unwrap();
+        let b = aggregate(&[cold, warm, warm], true).unwrap();
+
+        assert_eq!(b.runs, 3);
+        assert_eq!(b.samples.len(), 3, "every run survives — the cold→warm drop IS the finding");
+        // median of [30, 30, 972] is 30, NOT the mean of 344: one cold run must not move it.
+        assert!((b.prefill_ms.median - 30.0).abs() < 0.5, "{:?}", b.prefill_ms);
+        assert!((b.prefill_ms.max - 972.0).abs() < 0.5, "the worst case is still reported");
+        assert!((b.prefill_ms.min - 30.0).abs() < 0.5);
+    }
+
+    /// A cached prefill can round to 0 ms, and `tokens / 0` is `inf` — which would print as a
+    /// throughput. Absent is the honest answer.
+    #[test]
+    fn a_zero_duration_reports_no_rate_rather_than_infinity() {
+        let instant = Sample { prompt_tokens: 1210, prefill_ms: 0.0, gen_tokens: 0, gen_ms: 0.0, load_ms: 0.0 };
+        let b = aggregate(&[instant], true).unwrap();
+        assert_eq!(b.prefill_tokens_per_sec, None, "no rate, rather than inf dressed as one");
+        assert_eq!(b.gen_tokens_per_sec, None);
+
+        let real = aggregate(&[parse_bench_sample(REAL_COLD).unwrap()], true).unwrap();
+        let tps = real.prefill_tokens_per_sec.expect("a real prefill has a rate");
+        assert!((tps - 1244.8).abs() < 1.0, "1210 tokens in 972 ms ≈ 1245 tok/s, got {tps}");
+
+        // A sub-millisecond generation is timer quantization. Measured live: 1 token at 0.001 ms
+        // reported 1000000 tok/s before the floor existed.
+        let blip = Sample { prompt_tokens: 10, prefill_ms: 5.0, gen_tokens: 1, gen_ms: 0.001, load_ms: 0.0 };
+        assert_eq!(aggregate(&[blip], true).unwrap().gen_tokens_per_sec, None, "no speed from a 1 microsecond sample");
+
+    }
+
+    /// THE LIVE-RUN CORRECTION. With warm repeats the median prefill is a CACHED run, which did
+    /// almost no work — a rate derived from it claimed 41638 tok/s for a model that had just managed
+    /// about 1169. The rate must come from the slowest run.
+    #[test]
+    fn the_prefill_rate_comes_from_the_slowest_run_not_the_cached_median() {
+        let cold = parse_bench_sample(REAL_COLD).unwrap();
+        let warm = parse_bench_sample(REAL_CACHED).unwrap();
+        let b = aggregate(&[cold, warm, warm], true).unwrap();
+
+        assert!((b.prefill_ms.median - 30.0).abs() < 0.5, "the median IS the cached run");
+        let tps = b.prefill_tokens_per_sec.expect("a rate");
+        assert!((tps - 1244.8).abs() < 1.0, "1210 tokens in the 972 ms COLD run ≈ 1245 tok/s, got {tps}");
+        assert!(tps < 5_000.0, "a rate off the cached median would have been ~40000 tok/s, got {tps}");
+    }
+
+    #[test]
+    fn a_provider_error_and_a_non_json_body_are_both_stated() {
+        let err = parse_bench_sample(r#"{"error":"model 'nope' not found"}"#).unwrap_err();
+        assert!(err.contains("not found"), "the provider's own words survive: {err}");
+
+        let html = parse_bench_sample("<html>502 Bad Gateway</html>").unwrap_err();
+        assert!(html.contains("did not answer with JSON"), "{html}");
+    }
+
+    /// A response with no counters at all is a DEGRADED measurement, not a crash — and zeros make
+    /// that visible where a silent `None` would not.
+    #[test]
+    fn a_response_without_timings_measures_zero_rather_than_failing() {
+        let s = parse_bench_sample(r#"{"model":"m","done":true}"#).unwrap();
+        assert_eq!(s.prompt_tokens, 0);
+        assert_eq!(s.prefill_ms, 0.0);
+        assert_eq!(aggregate(&[s], true).unwrap().prefill_tokens_per_sec, None);
+    }
+
+    /// THE SECOND LIVE CORRECTION. On a re-run the model was already warm, so ALL runs were cached
+    /// (37/41/44 ms) and even the slowest had done no work — the rate read 27733 tok/s. No choice of
+    /// sample recovers a throughput from runs that never prefilled, so it is withheld unless the
+    /// caller forced cold ones.
+    #[test]
+    fn no_prefill_rate_is_claimed_when_the_runs_were_not_forced_cold() {
+        let warm = parse_bench_sample(REAL_CACHED).unwrap();
+        let all_cached = aggregate(&[warm, warm, warm], false).unwrap();
+        assert_eq!(all_cached.prefill_tokens_per_sec, None, "no rate without a cold run to derive it from");
+        assert!((all_cached.prefill_ms.median - 30.0).abs() < 0.5, "the DURATIONS are still reported");
+
+        let forced = aggregate(&[parse_bench_sample(REAL_COLD).unwrap()], true).unwrap();
+        assert!(forced.prefill_tokens_per_sec.is_some(), "--nonce makes the rate meaningful");
+    }
+
+    #[test]
+    fn an_empty_run_set_has_no_aggregate() {
+        assert!(aggregate(&[], true).is_none());
+    }
 
     /// Captured verbatim from this box, 2026-08-31 — the runner that had silently come up at 4096.
     const REAL_ARGV: &[&str] = &[

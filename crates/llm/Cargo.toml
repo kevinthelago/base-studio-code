@@ -17,6 +17,10 @@ serde_json = "1"
 regex = "1"
 # Streaming the Ollama native /api/chat NDJSON response token-by-token to the PTY (#1832).
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# `bsc llm bench`: `now_ms()` for the per-run nonce, and the shared `emit` so --json/--pretty behave
+# the way every other bsc surface does rather than growing a third convention here.
+bsc-util = { path = "../bsc-util" }
+bsc-cli-util = { path = "../bsc-cli-util" }
 
 [dev-dependencies]
 # Async runtime for the live-socket mock-HTTP integration tests (offline; #1744).
