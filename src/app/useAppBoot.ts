@@ -5,7 +5,11 @@ import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
 import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { worktreeChecks, reconcileMissingWorktrees } from "@/shared/lib/fleet/worktreeReconcile";
+// `worktreeChecks` / `reconcileMissingWorktrees` are NOT imported here any more — the decision moved
+// to Rust (`reconcile_worktrees`). The TypeScript copy stays in place, still bound to the Rust by
+// `worktreeReconcile.fixtures.json`, and is deleted only once the divergence log has been empty in
+// the field. Per the epic method, a flip does not delete its predecessor.
+import type { EndedInfo } from "@/store/types/console";
 import { useAppStore } from "@/store";
 import { accentVars } from "@/features/settings";
 import { applyThemeToRoot } from "@/shared/ui/kit/theme";
@@ -132,17 +136,32 @@ export function useAppBoot() {
     if (!hasHydrated || worktreeReconciled.current) return;
     worktreeReconciled.current = true;
     const s = useAppStore.getState();
-    const checks = worktreeChecks(s.fleetPaneStreams, s.endedPanes, s.disabledPanes, s.paneCwds);
-    if (checks.length === 0) return;
-    void reconcileMissingWorktrees(
-      checks,
-      (cwd) => safeInvoke<boolean>("dir_exists", { path: cwd }, true),
-      (paneId) => !!useAppStore.getState().endedPanes[paneId],
-      (paneId, info) => {
-        log.info(`worktree-reconcile: ${paneId} worktree gone → marking ended (${info.summary})`);
-        useAppStore.getState().markPaneEnded(paneId, info);
+    // THE DECISION RUNS IN RUST (`a-reclaimed-worktree-reports-why-it-was-reclaimed`). It owns the
+    // worktrees, ran the GC that removed them, and is the only place that knows WHY — the reason is
+    // unrecoverable afterwards, because `worktree_is_disposable` compares against a clone the orphan
+    // path has already deleted. The renderer used to probe `dir_exists` per pane and infer "work
+    // merged" from the absence, which was false on that arm.
+    //
+    // Rust cannot mark the panes: `markPaneEnded` is zustand state it does not own. So it returns the
+    // marks and this applies them — derive there, render here.
+    const panes = Object.keys(s.fleetPaneStreams).map((paneId) => ({
+      paneId,
+      stream: s.fleetPaneStreams[paneId],
+      cwd: s.paneCwds[paneId],
+      ended: !!s.endedPanes[paneId],
+      disabled: !!s.disabledPanes[paneId],
+    }));
+    if (panes.length === 0) return;
+    void safeInvoke<{ paneId: string; info: EndedInfo }[]>("reconcile_worktrees", { panes }, []).then(
+      (marks) => {
+        for (const m of marks) {
+          // Re-checked HERE and not in Rust: the store may have marked this pane ended while the
+          // command was in flight, and the backend holds no view of that.
+          if (useAppStore.getState().endedPanes[m.paneId]) continue;
+          log.info(`worktree-reconcile: ${m.paneId} worktree gone → marking ended (${m.info.summary})`);
+          useAppStore.getState().markPaneEnded(m.paneId, m.info);
+        }
       },
-      () => Date.now(),
     );
   }, [hasHydrated]);
 

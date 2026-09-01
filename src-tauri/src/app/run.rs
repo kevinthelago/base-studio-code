@@ -412,6 +412,7 @@ pub fn run() {
             github::readiness::set_preferred_shell,
             project::plan_files::read_plan_stages,
             project::hub::delete_project_dir,
+            fleet::worktree_reconcile::reconcile_worktrees,
             project::integrations::glance_integration_band,
             project::hub::mark_published,
             project::hub::set_project_title,

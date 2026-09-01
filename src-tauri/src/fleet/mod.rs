@@ -8,6 +8,9 @@ pub(crate) mod director_new;
 pub(crate) mod start;
 pub mod worktree;
 pub mod teardown;
+/// The boot worktree reconciliation, wired to the Rust decision
+/// (`a-reclaimed-worktree-reports-why-it-was-reclaimed`).
+pub mod worktree_reconcile;
 pub mod disk;
 pub mod director;
 pub mod protocols;

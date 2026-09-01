@@ -264,9 +264,9 @@
         {
           "paneId": "p:api",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "api",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         }
@@ -319,18 +319,18 @@
         {
           "paneId": "p:api",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "api",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         },
         {
           "paneId": "p:db",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "db",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         }
@@ -360,18 +360,18 @@
         {
           "paneId": "p:api",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "api",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         },
         {
           "paneId": "p:web",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "web",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         }
@@ -402,9 +402,9 @@
         {
           "paneId": "p:api",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "api",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         }
@@ -434,18 +434,102 @@
         {
           "paneId": "p:api",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "api",
-            "summary": "worktree reclaimed — work merged; session closed",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         },
         {
           "paneId": "p:web",
           "info": {
-            "state": "done",
+            "state": "needs-attention",
             "streamId": "web",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "gone because the project hub was ORPHANED — proves nothing about the work",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/orphan",
+          "streamId": "api"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [],
+      "reasons": {
+        "/wt/orphan": "orphan-project"
+      },
+      "ended": [
+        "p:api"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "needs-attention",
+            "streamId": "api",
+            "summary": "worktree reclaimed — project hub was gone, so the work was never checked; it may not have landed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "gone because the GC proved it merged + clean",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/merged",
+          "streamId": "api"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [],
+      "reasons": {
+        "/wt/merged": "merged-clean"
+      },
+      "ended": [
+        "p:api"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "done",
+            "streamId": "api",
             "summary": "worktree reclaimed — work merged; session closed",
+            "at": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "label": "gone for NEITHER GC reason — removed by hand or before the ledger existed",
+      "checks": [
+        {
+          "paneId": "p:api",
+          "cwd": "/wt/mystery",
+          "streamId": "api"
+        }
+      ],
+      "present": [],
+      "alreadyEnded": [],
+      "ended": [
+        "p:api"
+      ],
+      "marked": [
+        {
+          "paneId": "p:api",
+          "info": {
+            "state": "needs-attention",
+            "streamId": "api",
+            "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
             "at": 1700000000000
           }
         }
@@ -455,6 +539,7 @@
   "verdicts": [
     {
       "streamId": "api",
+      "reason": "merged-clean",
       "info": {
         "state": "done",
         "streamId": "api",
@@ -463,7 +548,28 @@
       }
     },
     {
+      "streamId": "api",
+      "reason": "orphan-project",
+      "info": {
+        "state": "needs-attention",
+        "streamId": "api",
+        "summary": "worktree reclaimed — project hub was gone, so the work was never checked; it may not have landed",
+        "at": 1700000000000
+      }
+    },
+    {
+      "streamId": "api",
+      "reason": "unrecorded",
+      "info": {
+        "state": "needs-attention",
+        "streamId": "api",
+        "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
+        "at": 1700000000000
+      }
+    },
+    {
       "streamId": "payments",
+      "reason": "merged-clean",
       "info": {
         "state": "done",
         "streamId": "payments",
@@ -472,11 +578,52 @@
       }
     },
     {
+      "streamId": "payments",
+      "reason": "orphan-project",
+      "info": {
+        "state": "needs-attention",
+        "streamId": "payments",
+        "summary": "worktree reclaimed — project hub was gone, so the work was never checked; it may not have landed",
+        "at": 1700000000000
+      }
+    },
+    {
+      "streamId": "payments",
+      "reason": "unrecorded",
+      "info": {
+        "state": "needs-attention",
+        "streamId": "payments",
+        "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
+        "at": 1700000000000
+      }
+    },
+    {
       "streamId": "",
+      "reason": "merged-clean",
       "info": {
         "state": "done",
         "streamId": "",
         "summary": "worktree reclaimed — work merged; session closed",
+        "at": 1700000000000
+      }
+    },
+    {
+      "streamId": "",
+      "reason": "orphan-project",
+      "info": {
+        "state": "needs-attention",
+        "streamId": "",
+        "summary": "worktree reclaimed — project hub was gone, so the work was never checked; it may not have landed",
+        "at": 1700000000000
+      }
+    },
+    {
+      "streamId": "",
+      "reason": "unrecorded",
+      "info": {
+        "state": "needs-attention",
+        "streamId": "",
+        "summary": "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
         "at": 1700000000000
       }
     }

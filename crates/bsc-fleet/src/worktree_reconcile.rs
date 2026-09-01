@@ -37,9 +37,6 @@
 //!
 //! Pinned against `worktreeReconcile.fixtures.json`, generated from the live TypeScript.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `a-reclaimed-worktree-reports-why-it-was-reclaimed`
-
 /// One persisted pane, as the store holds it.
 ///
 /// Deliberately an ORDERED SLICE rather than a map: the live selector iterates the store's insertion
@@ -107,17 +104,56 @@ pub fn worktree_checks(panes: &[PaneRecord]) -> Vec<WorktreeCheck> {
         .collect()
 }
 
-/// The record written for a worker whose worktree vanished.
+/// WHY a worktree is gone — carried out of the GC at the moment it reclaimed, because it cannot be
+/// recovered afterwards.
 ///
-/// **The summary asserts merged work and cannot prove it** — see the module header. Kept verbatim
-/// here because this is a parity port; `a-reclaimed-worktree-reports-why-it-was-reclaimed` changes it.
-pub fn reclaimed_worker_end(stream_id: &str, at: i64) -> EndedInfo {
-    EndedInfo {
-        state: "done".into(),
-        stream_id: stream_id.into(),
-        summary: "worktree reclaimed — work merged; session closed".into(),
-        at,
+/// `worktree_is_disposable` answers by comparing the worktree's HEAD against its owning CLONE, and it
+/// opens by requiring `clone/.git` to exist. On the orphan path the hub and the clone are ALREADY
+/// DELETED, so no later probe can ask whether that work landed. The GC is the only moment the answer
+/// exists, which is why the reason travels rather than being re-derived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReclaimReason {
+    /// The GC proved the tree CLEAN and its HEAD an ancestor of the clone's. The work landed.
+    MergedClean,
+    /// The project hub was gone, so the GC removed the worktree whatever state it was in. This proves
+    /// NOTHING about the work — it is the arm that used to render as `done`.
+    OrphanProject,
+    /// The worktree is missing and the GC did not record reclaiming it: removed by hand, by
+    /// `worktrees:cap`, or reclaimed before this ledger existed. Also unproven, and DISTINCT from the
+    /// orphan arm — "we removed it and could not check" is not "we do not know who removed it".
+    Unrecorded,
+}
+
+impl ReclaimReason {
+    /// Whether this reason is evidence the work actually landed. Only one arm is.
+    pub fn proves_merged(self) -> bool {
+        matches!(self, ReclaimReason::MergedClean)
     }
+}
+
+/// The record written for a worker whose worktree vanished, given WHY it vanished.
+///
+/// Only [`ReclaimReason::MergedClean`] earns `done`. The other two report `needs-attention` and say
+/// what is actually known, because the alternative — the behaviour this replaces — was a green resting
+/// card asserting work landed that may never have been written.
+///
+/// This is deliberately the same epistemics as [`crate::worker_end::classify_worker_end`], which
+/// refuses `done` without plan.db evidence on the ground that absence of evidence is not evidence of
+/// completion. Two producers write `EndedInfo.state`; they now agree about what absence means.
+pub fn reclaimed_worker_end(stream_id: &str, at: i64, reason: ReclaimReason) -> EndedInfo {
+    let (state, summary) = match reason {
+        ReclaimReason::MergedClean => ("done", "worktree reclaimed — work merged; session closed"),
+        ReclaimReason::OrphanProject => (
+            "needs-attention",
+            "worktree reclaimed — project hub was gone, so the work was never checked; it may not have landed",
+        ),
+        ReclaimReason::Unrecorded => (
+            "needs-attention",
+            "worktree missing — not reclaimed by the boot GC, so whether the work landed is unrecorded",
+        ),
+    };
+    EndedInfo { state: state.into(), stream_id: stream_id.into(), summary: summary.into(), at }
 }
 
 /// Mark every candidate whose worktree is gone as ended, so it renders a resting card instead of
@@ -130,6 +166,7 @@ pub fn reconcile_missing_worktrees(
     checks: &[WorktreeCheck],
     exists: &dyn Fn(&str) -> bool,
     is_ended: &dyn Fn(&str) -> bool,
+    reason_of: &dyn Fn(&str) -> ReclaimReason,
     now: i64,
 ) -> Vec<EndedMark> {
     checks
@@ -138,7 +175,7 @@ pub fn reconcile_missing_worktrees(
         .filter(|c| !is_ended(&c.pane_id))
         .map(|c| EndedMark {
             pane_id: c.pane_id.clone(),
-            info: reclaimed_worker_end(&c.stream_id, now),
+            info: reclaimed_worker_end(&c.stream_id, now, reason_of(&c.cwd)),
         })
         .collect()
 }
@@ -223,10 +260,16 @@ mod tests {
             let already: Vec<String> =
                 serde_json::from_value(case["alreadyEnded"].clone()).unwrap();
 
+            // The reason map the GC ledger supplies, keyed by cwd. A case that names none falls
+            // through to `Unrecorded`, which is the honest reading of "the GC did not record this".
+            let reasons: std::collections::HashMap<String, ReclaimReason> =
+                serde_json::from_value(case.get("reasons").cloned().unwrap_or(serde_json::json!({})))
+                    .unwrap();
             let got = reconcile_missing_worktrees(
                 &checks,
                 &|cwd| present.iter().any(|p| p == cwd),
                 &|pane| already.iter().any(|p| p == pane),
+                &|cwd| reasons.get(cwd).copied().unwrap_or(ReclaimReason::Unrecorded),
                 now,
             );
 
@@ -274,36 +317,57 @@ mod tests {
         for v in doc["verdicts"].as_array().unwrap() {
             let stream = v["streamId"].as_str().unwrap();
             let want: EndedInfo = serde_json::from_value(v["info"].clone()).unwrap();
-            assert_eq!(reclaimed_worker_end(stream, now), want, "stream {stream:?}");
+            let reason: ReclaimReason = serde_json::from_value(v["reason"].clone()).unwrap();
+            assert_eq!(reclaimed_worker_end(stream, now, reason), want, "stream {stream:?}");
         }
     }
 
-    /// CHARACTERIZATION — this pins a DEFECT, it does not endorse it.
+    /// THE DEFECT IS FIXED, and this is what replaced the characterization that pinned it.
     ///
-    /// The GC reclaims when `hub_gone || worktree_is_disposable(clone, wt)`. Only the second arm
-    /// proves clean + merged; the first removes an abandoned project's worktrees whatever state they
-    /// are in, and `gc_worktrees_impl` logs the difference before discarding it. The verdict below
-    /// asserts merged work for BOTH. When `a-reclaimed-worktree-reports-why-it-was-reclaimed` lands,
-    /// this test SHOULD fail — that is the point of writing it down.
+    /// `the_verdict_claims_merged_work_it_cannot_prove` asserted the old behaviour — `done` +
+    /// "work merged" for BOTH GC arms — and was written to be deleted by this item rather than to
+    /// endorse what it described. Only the arm that actually proved clean + merged earns `done` now.
     #[test]
-    fn the_verdict_claims_merged_work_it_cannot_prove() {
-        let info = reclaimed_worker_end("api", 1);
-        assert_eq!(info.state, "done", "an unproven reclaim currently reads as done");
-        assert!(info.summary.contains("work merged"), "and asserts the work merged");
-        assert!(
-            !info.summary.contains("orphan") && !info.summary.contains("abandoned"),
-            "nothing in the summary admits the orphan arm exists"
-        );
+    fn only_a_proved_reclaim_reports_done() {
+        let merged = reclaimed_worker_end("api", 1, ReclaimReason::MergedClean);
+        assert_eq!(merged.state, "done");
+        assert!(merged.summary.contains("work merged"));
 
-        // And it is the same verdict `classify_worker_end` REFUSES to reach on stronger evidence:
-        // an empty owned-issue set is needs-attention, because absence is not confirmation.
+        // The orphan arm removes a worktree WHATEVER state it is in, so it proves nothing.
+        let orphan = reclaimed_worker_end("api", 1, ReclaimReason::OrphanProject);
+        assert_ne!(orphan.state, "done", "an unproved reclaim must not read as done");
+        assert!(!orphan.summary.contains("work merged"), "and must not claim it: {}", orphan.summary);
+        assert!(orphan.summary.contains("may not have landed"), "{}", orphan.summary);
+
+        // ...and "we never recorded reclaiming this" is DISTINCT from "we reclaimed it unchecked".
+        let unknown = reclaimed_worker_end("api", 1, ReclaimReason::Unrecorded);
+        assert_ne!(unknown.state, "done");
+        assert_ne!(
+            unknown.summary, orphan.summary,
+            "a worktree missing for neither GC reason must be distinguishable from the orphan arm"
+        );
+    }
+
+    /// The two `EndedInfo.state` producers now AGREE about what absence means. They used to disagree:
+    /// a directory absence yielded `done` where an empty owned-issue set yields `needs-attention`,
+    /// which is strictly stronger evidence. Pinned so the epistemics cannot silently diverge again.
+    #[test]
+    fn an_unproved_reclaim_agrees_with_the_plan_db_classifier() {
+        let from_dir = reclaimed_worker_end("api", 1, ReclaimReason::OrphanProject);
         let from_plan_db = crate::worker_end::classify_worker_end(&[], &Default::default());
         assert_eq!(from_plan_db.state, "needs-attention");
-        assert_ne!(
-            info.state, from_plan_db.state,
-            "two verdict producers write EndedInfo.state with opposite epistemics — a directory \
-             absence yields `done` where an empty plan.db set yields `needs-attention`"
+        assert_eq!(
+            from_dir.state, from_plan_db.state,
+            "absence of evidence must mean the same thing to both verdict producers",
         );
+    }
+
+    /// Only one reason is evidence of anything, and the predicate says so in one place.
+    #[test]
+    fn exactly_one_reason_proves_merged() {
+        assert!(ReclaimReason::MergedClean.proves_merged());
+        assert!(!ReclaimReason::OrphanProject.proves_merged());
+        assert!(!ReclaimReason::Unrecorded.proves_merged());
     }
 
     fn pane(id: &str, stream: Option<&str>, cwd: Option<&str>) -> PaneRecord {
@@ -344,11 +408,13 @@ mod tests {
             stream_id: "s".into(),
         }];
         assert!(
-            reconcile_missing_worktrees(&checks, &|_| true, &|_| false, 1).is_empty(),
+            reconcile_missing_worktrees(&checks, &|_| true, &|_| false, &|_| ReclaimReason::MergedClean, 1)
+                .is_empty(),
             "a worktree that exists must never be ended"
         );
         assert_eq!(
-            reconcile_missing_worktrees(&checks, &|_| false, &|_| false, 1).len(),
+            reconcile_missing_worktrees(&checks, &|_| false, &|_| false, &|_| ReclaimReason::MergedClean, 1)
+                .len(),
             1,
             "and a missing one must be — or the test above proves nothing"
         );
@@ -361,7 +427,8 @@ mod tests {
             WorktreeCheck { pane_id: "a".into(), cwd: "/x".into(), stream_id: "sa".into() },
             WorktreeCheck { pane_id: "b".into(), cwd: "/y".into(), stream_id: "sb".into() },
         ];
-        let got = reconcile_missing_worktrees(&checks, &|_| false, &|p| p == "a", 1);
+        let got =
+            reconcile_missing_worktrees(&checks, &|_| false, &|p| p == "a", &|_| ReclaimReason::MergedClean, 1);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].pane_id, "b");
         assert_eq!(got[0].info.stream_id, "sb", "the mark carries the pane's OWN stream");
