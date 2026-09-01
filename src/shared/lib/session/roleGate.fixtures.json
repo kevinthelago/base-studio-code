@@ -2057,6 +2057,7 @@
         ],
         "allow": [
           "bsc data connector",
+          "bsc project integrations",
           "bsc request new",
           "bsc request list",
           "bsc session ask",
@@ -2129,6 +2130,7 @@
         ],
         "allow": [
           "bsc data connector",
+          "bsc project integrations",
           "bsc request new",
           "bsc request list",
           "bsc session ask",
@@ -2200,6 +2202,7 @@
         ],
         "allow": [
           "bsc data connector",
+          "bsc project integrations",
           "bsc request new",
           "bsc request list",
           "bsc session ask",
@@ -2277,6 +2280,7 @@
         ],
         "allow": [
           "bsc data connector",
+          "bsc project integrations",
           "bsc request new",
           "bsc request list",
           "bsc session ask",
