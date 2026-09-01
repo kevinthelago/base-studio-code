@@ -63,6 +63,80 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
   } catch (err) {
     process.stdout.write(String(err.stdout ?? ""));
     process.stderr.write(String(err.stderr ?? ""));
+    process.stdout.write(attribute(drifted(String(err.stdout ?? "")), (id) => history(usable.path, id), Date.now()));
     process.exit(1);
+  }
+}
+
+/** The drifted ids out of `promote --check`'s JSON line, or `[]` when it did not emit one. */
+export function drifted(stdout) {
+  for (const line of stdout.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const d = JSON.parse(t);
+      if (Array.isArray(d.drifted)) return d.drifted;
+    } catch {
+      // A non-JSON line is the human message beside it, not a parse failure worth reporting.
+    }
+  }
+  return [];
+}
+
+/** `<n> seconds/minutes/hours/days ago`, or null for an unparseable/absent stamp. */
+export function ago(iso, nowMs) {
+  const t = Date.parse(iso ?? "");
+  if (!Number.isFinite(t)) return null;
+  const s = Math.max(0, Math.round((nowMs - t) / 1000));
+  if (s < 90) return `${s}s ago`;
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  if (s < 172800) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+
+/**
+ * Name WHO and WHEN for each drifted node.
+ *
+ * The bare failure says only "the repo store is out of date — run `bsc graph promote`", and following
+ * that advice blind is how someone else's HALF-WRITTEN record reaches the build's source of truth. This
+ * check compares a git-tracked file against a SHARED, MUTABLE runtime store that every concurrent
+ * session writes to, so a red is often not stale drift at all — it is another session authoring right
+ * now. MEASURED 2026-09-01: a full gate went red on `session-roles.ts` 31 seconds after another session
+ * wrote it, three revisions inside two seconds. The age is what separates the two cases, and it is the
+ * difference between "promote this" and "leave it alone, someone is mid-edit".
+ *
+ * `unknown` is printed as-is rather than hidden: an unattributed write is itself the finding, and that
+ * is what `fleet-director-bridge.ts` had — rev 0, no author, no timestamp, unowned for weeks.
+ */
+export function attribute(ids, historyFor, nowMs) {
+  if (ids.length === 0) return "";
+  const lines = ["", "who last authored each drifted node (from the RUNTIME store, which is shared):"];
+  let fresh = false;
+  for (const id of ids) {
+    const h = historyFor(id);
+    if (!h) {
+      lines.push(`  ${id} — no history available`);
+      continue;
+    }
+    const when = ago(h.updatedAt, nowMs);
+    if (when && nowMs - Date.parse(h.updatedAt) < 300_000) fresh = true;
+    lines.push(`  ${id} — rev ${h.rev ?? "?"} by ${h.updatedBy || "unknown"}${when ? `, ${when}` : ", never stamped"}`);
+  }
+  if (fresh) {
+    lines.push(
+      "",
+      "  One of these was authored in the last 5 minutes: ANOTHER SESSION IS PROBABLY MID-EDIT.",
+      "  Do NOT `bsc graph promote` it — that commits their in-flight record to the build's source of truth.",
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** One record's runtime provenance, or null when it cannot be read (never fatal — this is a diagnostic). */
+function history(bsc, id) {
+  try {
+    return JSON.parse(execFileSync(bsc, ["graph", "impl", "history", id], { encoding: "utf8", timeout: 10_000 }));
+  } catch {
+    return null;
   }
 }
