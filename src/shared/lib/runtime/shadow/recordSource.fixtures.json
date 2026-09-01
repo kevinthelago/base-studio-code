@@ -214,5 +214,235 @@
       "preamble": "// preamble",
       "body": "}\nexport const somethingLongEnough = 1;\n"
     }
+  ],
+  "exports": [
+    {
+      "label": "a function declaration",
+      "source": "export function f() {}\n",
+      "names": [
+        "f"
+      ]
+    },
+    {
+      "label": "a const",
+      "source": "export const a = 1;\n",
+      "names": [
+        "a"
+      ]
+    },
+    {
+      "label": "default plus async",
+      "source": "export default async function go() {}\n",
+      "names": [
+        "go"
+      ]
+    },
+    {
+      "label": "a class, an interface, a type and an enum",
+      "source": "export class C {}\nexport interface I {}\nexport type T = 1;\nexport enum E { A }\n",
+      "names": [
+        "C",
+        "E",
+        "I",
+        "T"
+      ]
+    },
+    {
+      "label": "a brace clause",
+      "source": "export { a, b };\n",
+      "names": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "a type re-export COUNTS",
+      "source": "export type { TreeNodeData } from \"./tree\";\n",
+      "names": [
+        "TreeNodeData"
+      ]
+    },
+    {
+      "label": "a renamed export takes the module-side name",
+      "source": "export { a as b };\n",
+      "names": [
+        "b"
+      ]
+    },
+    {
+      "label": "an inline-type member inside a clause",
+      "source": "export { type A, b };\n",
+      "names": [
+        "A",
+        "b"
+      ]
+    },
+    {
+      "label": "a multi-line clause",
+      "source": "export {\n  a,\n  b,\n};\n",
+      "names": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "a star re-export makes the set unknowable",
+      "source": "export * from \"./everything\";\n",
+      "names": null
+    },
+    {
+      "label": "a non-exported declaration",
+      "source": "function hidden() {}\nconst x = 1;\n",
+      "names": []
+    },
+    {
+      "label": "`export` inside a comment is not an export",
+      "source": "// export function ghost() {}\nexport const real = 1;\n",
+      "names": [
+        "real"
+      ]
+    },
+    {
+      "label": "`export` inside a string is not an export",
+      "source": "const s = \"export const ghost = 1;\";\nexport const real = 1;\n",
+      "names": [
+        "real"
+      ]
+    },
+    {
+      "label": "nothing at all",
+      "source": "const a = 1;\n",
+      "names": []
+    }
+  ],
+  "siblings": [
+    {
+      "label": "a sibling-by-id import",
+      "source": "import { X } from \"@/components/glance-session-log\";\n",
+      "any": true,
+      "specifiers": [
+        "@/components/glance-session-log"
+      ]
+    },
+    {
+      "label": "two of them, deduped",
+      "source": "import { A } from \"@/components/a\";\nimport { B } from \"@/components/a\";\nimport { C } from \"@/components/c\";\n",
+      "any": true,
+      "specifiers": [
+        "@/components/a",
+        "@/components/c"
+      ]
+    },
+    {
+      "label": "single quotes",
+      "source": "import { X } from '@/components/x';\n",
+      "any": true,
+      "specifiers": [
+        "@/components/x"
+      ]
+    },
+    {
+      "label": "an ordinary alias is not one",
+      "source": "import { Card } from \"@/shared/ui/data/Card\";\n",
+      "any": false,
+      "specifiers": []
+    },
+    {
+      "label": "a relative import is not one",
+      "source": "import { X } from \"./x\";\n",
+      "any": false,
+      "specifiers": []
+    },
+    {
+      "label": "no imports at all",
+      "source": "export const a = 1;\n",
+      "any": false,
+      "specifiers": []
+    }
+  ],
+  "entries": [
+    {
+      "label": "main.tsx imports it statically",
+      "relSpecifier": "app/console/ConsoleGraphHost",
+      "files": {
+        "app/main.tsx": "import { ConsoleGraphHost } from \"@/app/console/ConsoleGraphHost\"\n",
+        "app/App.tsx": "export const App = 1;\n"
+      },
+      "importedBy": [
+        "app/main.tsx"
+      ]
+    },
+    {
+      "label": "both entries import it",
+      "relSpecifier": "shared/ui/Card",
+      "files": {
+        "app/main.tsx": "import { Card } from \"@/shared/ui/Card\"\n",
+        "app/App.tsx": "import { Card } from \"@/shared/ui/Card\"\n"
+      },
+      "importedBy": [
+        "app/main.tsx",
+        "app/App.tsx"
+      ]
+    },
+    {
+      "label": "neither does",
+      "relSpecifier": "features/sounds/index",
+      "files": {
+        "app/main.tsx": "import { X } from \"@/x\"\n",
+        "app/App.tsx": "export const App = 1;\n"
+      },
+      "importedBy": []
+    },
+    {
+      "label": "a MENTION in a comment is not a static import",
+      "relSpecifier": "app/console/TerminalHost",
+      "files": {
+        "app/main.tsx": "// see \"@/app/console/TerminalHost\" for why\nexport const m = 1;\n",
+        "app/App.tsx": "export const App = 1;\n"
+      },
+      "importedBy": []
+    },
+    {
+      "label": "a missing entry file is skipped, not an error",
+      "relSpecifier": "shared/ui/Card",
+      "files": {
+        "app/main.tsx": "import { Card } from \"@/shared/ui/Card\"\n"
+      },
+      "importedBy": [
+        "app/main.tsx"
+      ]
+    }
+  ],
+  "seedFile": [
+    {
+      "label": "the file's first line anchors the split",
+      "seedSrcText": "// AS GRAPH SOURCE\n// why this record exists\nexport function f() {}\n",
+      "fileSrc": "export function f() {}\n",
+      "ok": true
+    },
+    {
+      "label": "a file OPENING with JSDoc — the case that held six records back",
+      "seedSrcText": "// AS GRAPH SOURCE\n/**\n * doc\n */\nexport function f() {}\n",
+      "fileSrc": "/**\n * doc\n */\nexport function f() {}\n",
+      "ok": true
+    },
+    {
+      "label": "no preamble at all",
+      "seedSrcText": "export function f() {}\n",
+      "fileSrc": "export function f() {}\n",
+      "ok": true
+    },
+    {
+      "label": "no shared line — falls through to the whole record as body",
+      "seedSrcText": "export const totallyDifferent = 1;\n",
+      "fileSrc": "export function f() {}\n",
+      "ok": false
+    },
+    {
+      "label": "a short shared line cannot anchor the heuristic",
+      "seedSrcText": "// preamble\n}\nexport const somethingLongEnough = 1;\n",
+      "fileSrc": "}\nexport const somethingLongEnough = 1;\n",
+      "ok": true
+    }
   ]
 }
