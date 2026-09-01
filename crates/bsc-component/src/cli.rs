@@ -430,6 +430,8 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
   bsc ui backing <path> [--json|--pretty]   # the record(s) whose `src` names this file
   bsc ui backing gate <path>...             # exit 1 if ANY path is record-backed (the landing gate)
   bsc ui backing audit [--json|--pretty]    # records whose `src` names a file that is NOT here (#4223)
+  bsc ui backing reconcile [--json] [--apply] [--annotate] [--retire]
+                                            # the SEED-side provenance reconcile (#records)
 
 The graph is the source of truth and a component's file is the EMITTED ARTIFACT, so a fix belongs in the
 record: edit it with `bsc ui set`, then `bsc ui emit component <id> <dir>` and the file follows. Editing
@@ -442,6 +444,23 @@ provenance, so it covers EVERY component, not only the pages in the migration ca
 `backing gate <path>...` is the landing check: run it over the files your change touches (e.g.
 `git diff --name-only`). It exits 1 and names the record + the two fix commands for every backed path, and
 exits 0 when none are backed. Rejecting rather than warning is deliberate — a warning here becomes noise.
+
+`backing reconcile` is the SEED half, and it is a DIFFERENT POPULATION from `audit`: `audit` reads the
+STORE (what the running app renders), this reads `data/components/app/**` (what ships to a fresh install),
+and the store carries harvested and de-seeded records the seed has never held — so a fix to one leaves the
+other wrong. It is the gate in front of the whole file-retirement track: deleting a migrated file whose
+record is the OLDER copy is a silent revert of real work, and when the two disagreed the FILE was the newer
+copy in NINE OF NINE cases measured (#4235).
+
+Six verdicts — `ok` · `null-src` (no `src` at all, the convention for a record with no file counterpart) ·
+`stale-pointer` (`src` names a file that is not here) · `moved` (`src` resolves, but the record's SYMBOL is
+not in it — re-point, do not refresh) · `drifted` (symbol present, bodies disagree) · `intentional`
+(drifted, with an evidenced `srcDivergence` saying why, so the reason lives where a future sweep reads it).
+
+It REPORTS on every run and writes only under a flag: `--apply` re-points what is UNAMBIGUOUS and never
+guesses, `--annotate` records why a difference is by construction, `--retire` moves `src` to `srcRetired`
+where the file is gone and nothing matches. So the same command answers \"what is wrong\" and \"fix what can
+be fixed mechanically\", and answers the first one again afterwards.
 
 SCOPE: components only. An algorithm record is a function LIFTED OUT of a file and several share one
 `src` (#4192), so a path-based gate cannot be honest about them yet.",
