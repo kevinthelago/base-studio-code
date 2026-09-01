@@ -32,6 +32,7 @@ pub mod claim_census;
 pub mod record_source;
 pub mod retirable;
 pub mod retire;
+pub mod shadow;
 #[cfg(test)]
 pub mod test_store;
 pub mod seed_patch;

@@ -383,6 +383,26 @@ rewritten like any other's, after which it resolves to the emitted record and th
 module that actually ships.",
     },
     CmdDoc {
+        name: "shadow",
+        summary: "reconcile the shadow catalogue with what is on disk — step 3 of a retirement (#records)",
+        usage: "\
+USAGE:
+  bsc ui shadow [--dry] [--repo <dir>]
+
+Reconciles `src/app/runtime/shadowPages.ts` with what is actually on disk. An entry naming a file that
+no longer exists becomes `file: null`, and the module's basename leaves the brace-expansion glob that
+pairs with it. `--dry` prints the plan and writes nothing.
+
+`file: null` is the DESIGNED end state, not a special case — it reads as \"no file baseline\", so only
+the binding half of the shadow report applies. Both halves must move TOGETHER: a declared path the glob
+does not match also loads as `null`, which would be indistinguishable from a deliberate deletion.
+
+A SWEEP, not a per-module step, because doing it by hand failed on two tranches running. It is written
+whenever the TEXT moved, never when a retirement was merely found — an earlier run can leave a
+one-alternative `{X}` behind, and gating the write on the count made the re-run a no-op that reported
+success while the glob stayed broken.",
+    },
+    CmdDoc {
         name: "retirable",
         summary: "which files a packaged seed can replace — the retirement census (#records)",
         usage: "\
@@ -561,6 +581,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("imports") => cmd_imports(&args[1..]),
         Some("retirable") => cmd_retirable(&args[1..]),
         Some("retire") => cmd_retire(&args[1..]),
+        Some("shadow") => cmd_shadow(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -2946,6 +2967,41 @@ fn relative_specifier_summary(dir: &Option<String>) -> Result<(usize, usize, usi
         }
     }
     Ok((records.len(), findings, ids.len()))
+}
+
+
+/// `bsc ui shadow [--dry]` — the shadow-catalogue sweep. Ported from
+/// `scripts/sync-shadow-catalogue.mjs`, which it replaces.
+fn cmd_shadow(args: &[String]) -> Result<(), String> {
+    let dry = args.iter().any(|a| a == "--dry");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let catalogue = repo.join("src/app/runtime/shadowPages.ts");
+    let original = std::fs::read_to_string(&catalogue)
+        .map_err(|e| format!("cannot read {}: {e}", catalogue.display()))?;
+
+    let (text, retired) = crate::shadow::sync(&original, |p| repo.join(p).is_file());
+
+    bsc_util::emit_line(&format!(
+        "{} graph-only: {}",
+        if dry { "would declare" } else { "declared" },
+        retired.len()
+    ));
+    for p in &retired {
+        bsc_util::emit_line(&format!("   {p}"));
+    }
+    // WRITTEN WHENEVER THE TEXT MOVED, not whenever a retirement was found — the brace tidy-ups can be
+    // the only change, and gating the write on the count made a re-run a no-op that reported success
+    // while the glob stayed broken.
+    if text == original {
+        bsc_util::emit_line("   (catalogue already in sync)");
+    } else if !dry {
+        std::fs::write(&catalogue, text)
+            .map_err(|e| format!("cannot write {}: {e}", catalogue.display()))?;
+        bsc_util::emit_line("   catalogue updated");
+    }
+    Ok(())
 }
 
 /// `bsc ui retire <src-relative-path> [--dry]` — the deleter. Ported from `scripts/retire-module.mjs`.
