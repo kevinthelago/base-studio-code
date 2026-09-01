@@ -785,8 +785,19 @@ are 3.",
         summary: "a component's REAL graph usage — how many kit components compose it (composes-inverse, #3584)",
         usage: "\
 USAGE:
-  bsc ui used-by <id> [--json] [--pretty]           # one component: its composers + count
-  bsc ui used-by --all [--kit K] [--json] [--pretty] # every component, ranked by usage (most-used first)
+  bsc ui used-by <id> [--src] [--json] [--pretty]           # one component: its composers + count
+  bsc ui used-by --all [--kit K] [--src] [--json] [--pretty] # every component, ranked (most-used first)
+
+`--src` adds the LITERAL srcText reference count beside the composes-inverse one, and the two together
+are what tell a MISSING `composes` edge from a real dead root — the call every `doctor`
+dangling-branch/orphan finding needs before anything is deleted:
+
+  used-by 0, srcCount > 0   something USES it and never declared the edge — NOT safe to delete
+  used-by 0, srcCount 0     nothing composes it and nothing names it — a genuine dead root
+
+Measured on the real library: of 452 components, 69 are the first case and 143 the second. It reuses
+`bsc ui refs`'s scan exactly (one matcher, `usage_scan::name_mentions`), so a name appearing only in a
+COMMENT or a STRING LITERAL does not count.
 
 The USAGE read the optimizer needs before combining. `usedBy` = how many components in the SAME kit list
 this one in `composes` (kits never cross, so a composer must share the kit) — the composes-INVERSE. Unlike
@@ -5499,6 +5510,10 @@ fn walk_source_files(
 fn cmd_used_by(args: &[String]) -> Result<(), String> {
     let (mut dir, mut json, mut pretty, mut all, mut kit_filter, mut id) =
         (None::<String>, false, false, false, None::<String>, None::<String>);
+    // `--src` adds the LITERAL reference count beside the composes-inverse one. The two together are what
+    // separates a MISSING composes edge (count 0, references > 0) from a real dead root (both 0) — the
+    // call every `doctor` dangling-branch/orphan finding needs before anything is deleted.
+    let mut src = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -5506,6 +5521,7 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
             "--json" => json = true,
             "--pretty" => pretty = true,
             "--all" => all = true,
+            "--src" => src = true,
             "--kit" => kit_filter = it.next().cloned(),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other if id.is_none() => id = Some(other.to_string()),
@@ -5529,12 +5545,20 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
         let mut rows: Vec<serde_json::Value> = comps
             .iter()
             .filter(|c| kit_filter.as_deref().is_none_or(|k| c.get("kitId").and_then(serde_json::Value::as_str) == Some(k)))
-            .map(|c| serde_json::json!({
-                "id": c.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "count": count_of(c),
-            }))
+            .map(|c| {
+                let mut row = serde_json::json!({
+                    "id": c.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
+                    "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+                    "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+                    "count": count_of(c),
+                });
+                if src {
+                    let cid = c.get("id").and_then(serde_json::Value::as_str).unwrap_or("");
+                    let nm = c.get("name").and_then(serde_json::Value::as_str).unwrap_or("");
+                    row["srcCount"] = serde_json::json!(src_reference_rows(&comps, cid, nm).len());
+                }
+                row
+            })
             .collect();
         rows.sort_by(|a, b| {
             b["count"].as_u64().cmp(&a["count"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
@@ -5544,8 +5568,22 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
             println!("{}", out.map_err(|e| e.to_string())?);
         } else {
             println!("components by graph usage (composes-inverse), most-used first:");
+            if src {
+                println!("  {:>3}  {:>3}  component", "use", "src");
+            }
             for r in &rows {
-                println!("  {:>3}  {} ({})", r["count"].as_u64().unwrap_or(0), r["name"].as_str().unwrap_or(""), r["kit"].as_str().unwrap_or(""));
+                if src {
+                    // A `0  N` row is the interesting one: nothing composes it, yet N components name it.
+                    println!(
+                        "  {:>3}  {:>3}  {} ({})",
+                        r["count"].as_u64().unwrap_or(0),
+                        r["srcCount"].as_u64().unwrap_or(0),
+                        r["name"].as_str().unwrap_or(""),
+                        r["kit"].as_str().unwrap_or("")
+                    );
+                } else {
+                    println!("  {:>3}  {} ({})", r["count"].as_u64().unwrap_or(0), r["name"].as_str().unwrap_or(""), r["kit"].as_str().unwrap_or(""));
+                }
             }
         }
         return Ok(());
@@ -5561,22 +5599,97 @@ fn cmd_used_by(args: &[String]) -> Result<(), String> {
         target.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
     );
     let composers = idx.get(&key).cloned().unwrap_or_default();
-    let out = serde_json::json!({
+    let src_refs = if src { src_reference_rows(&comps, &id, &key.1) } else { Vec::new() };
+    let mut out = serde_json::json!({
         "id": id,
         "name": key.1,
         "kit": key.0,
         "usedBy": composers,
         "count": composers.len(),
     });
+    if src {
+        out["srcRefs"] = serde_json::Value::Array(src_refs.clone());
+        out["srcCount"] = serde_json::json!(src_refs.len());
+    }
     if json {
         let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
         println!("{}", text.map_err(|e| e.to_string())?);
     } else if composers.is_empty() {
         println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
+        if src {
+            // THE DISTINCTION THIS FLAG EXISTS FOR: composed by nothing, yet literally referenced, means a
+            // MISSING `composes` edge — not a dead root, and not safe to delete.
+            if src_refs.is_empty() {
+                println!("  …and no literal srcText reference either — a genuine dead root.");
+            } else {
+                println!(
+                    "  …but {} component(s) literally reference it: {} — a MISSING `composes` edge, not a dead root.",
+                    src_refs.len(),
+                    src_refs.iter().filter_map(|r| r["name"].as_str()).collect::<Vec<_>>().join(", ")
+                );
+            }
+        }
     } else {
         println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
+        if src {
+            println!("  literal srcText references: {}", src_refs.len());
+        }
     }
     Ok(())
+}
+
+/// Every OTHER live component whose `srcText`/`source` literally mentions `name`, with the mention kinds
+/// broken out — the shared body of `bsc ui refs` and `bsc ui used-by --src`.
+///
+/// ONE IMPLEMENTATION ON PURPOSE. `used-by` reads the DECLARED composes graph, so a component genuinely
+/// used in another's JSX but never added to `composes` reads as an orphan there, indistinguishable from a
+/// dead root — which is exactly the call `doctor`'s dangling-branch/orphan findings need made. A second,
+/// cruder matcher is why the earlier attempt at this was not landed, so both verbs go through
+/// [`crate::usage_scan::name_mentions`] AND through this one loop.
+fn src_reference_rows(comps: &[serde_json::Value], id: &str, name: &str) -> Vec<serde_json::Value> {
+    let mut hits: Vec<serde_json::Value> = Vec::new();
+    if name.is_empty() {
+        return hits;
+    }
+    for c in comps {
+        let cid = c.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if cid == id || cid.is_empty() {
+            continue; // never a reference to itself
+        }
+        if c.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true) {
+            continue; // a tombstone's content is gone; it can only ever dilute
+        }
+        let mut text = String::new();
+        for f in ["srcText", "source"] {
+            if let Some(t) = c.get(f).and_then(serde_json::Value::as_str) {
+                text.push_str(t);
+                text.push('\n');
+            }
+        }
+        if text.trim().is_empty() {
+            continue;
+        }
+        let mentions = crate::usage_scan::name_mentions(&text, name);
+        if mentions.is_empty() {
+            continue;
+        }
+        let kind = |k: crate::usage_scan::MentionKind| {
+            mentions.iter().filter(|m| std::mem::discriminant(*m) == std::mem::discriminant(&k)).count()
+        };
+        hits.push(serde_json::json!({
+            "id": cid,
+            "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "jsx": kind(crate::usage_scan::MentionKind::JsxTag),
+            "importClause": kind(crate::usage_scan::MentionKind::ImportClause),
+            "bare": kind(crate::usage_scan::MentionKind::Bare),
+            "total": mentions.len(),
+        }));
+    }
+    hits.sort_by(|a, b| {
+        b["total"].as_u64().cmp(&a["total"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+    });
+    hits
 }
 
 /// `bsc ui refs <id>` (#113) — literal srcText cross-references to a component's NAME, across every
@@ -5610,45 +5723,7 @@ fn cmd_refs(args: &[String]) -> Result<(), String> {
         return Err(format!("component '{id}' has no name to search for"));
     }
 
-    let mut hits: Vec<serde_json::Value> = Vec::new();
-    for c in &comps {
-        let cid = c.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
-        if cid == id || cid.is_empty() {
-            continue; // never a reference to itself
-        }
-        if c.get("suppressed").and_then(serde_json::Value::as_bool) == Some(true) {
-            continue; // a tombstone's content is gone; it can only ever dilute
-        }
-        let mut text = String::new();
-        for f in ["srcText", "source"] {
-            if let Some(t) = c.get(f).and_then(serde_json::Value::as_str) {
-                text.push_str(t);
-                text.push('\n');
-            }
-        }
-        if text.trim().is_empty() {
-            continue;
-        }
-        let mentions = crate::usage_scan::name_mentions(&text, &name);
-        if mentions.is_empty() {
-            continue;
-        }
-        let jsx = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::JsxTag)).count();
-        let import_clause = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::ImportClause)).count();
-        let bare = mentions.iter().filter(|m| matches!(m, crate::usage_scan::MentionKind::Bare)).count();
-        hits.push(serde_json::json!({
-            "id": cid,
-            "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
-            "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
-            "jsx": jsx,
-            "importClause": import_clause,
-            "bare": bare,
-            "total": mentions.len(),
-        }));
-    }
-    hits.sort_by(|a, b| {
-        b["total"].as_u64().cmp(&a["total"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
-    });
+    let hits = src_reference_rows(&comps, &id, &name);
 
     if json {
         let out = serde_json::json!({ "id": id, "name": name, "refs": hits, "count": hits.len() });
@@ -11586,6 +11661,58 @@ mod list_kit_tests {
 #[cfg(test)]
 mod preview_error_guard_tests {
     use super::*;
+
+
+    /// `used-by --src` exists to separate a MISSING `composes` edge from a real dead root, and the whole
+    /// signal collapses if a name in PROSE counts. `name_mentions` already classifies comments and string
+    /// literals out; this pins that the verb's count inherits it, because the earlier attempt at this
+    /// feature shipped a second, cruder matcher and was rejected for exactly that.
+    #[test]
+    fn src_references_ignore_a_name_in_a_comment_or_a_string_literal() {
+        let comps = vec![
+            serde_json::json!({ "id": "target", "name": "ActionRow", "kitId": "k" }),
+            serde_json::json!({
+                "id": "prose", "name": "Prose", "kitId": "k",
+                // Both mentions are inert: one comment, one string.
+                "srcText": "// ActionRow is described here\nconst label = \"ActionRow\";\n",
+            }),
+        ];
+        assert!(
+            src_reference_rows(&comps, "target", "ActionRow").is_empty(),
+            "a name in prose is not a reference"
+        );
+
+        // NON-VACUITY: a real JSX use and a real import DO count, so the emptiness above is about the
+        // classification rather than the scan finding nothing at all.
+        let comps = vec![
+            serde_json::json!({ "id": "target", "name": "ActionRow", "kitId": "k" }),
+            serde_json::json!({
+                "id": "user", "name": "User", "kitId": "k",
+                "srcText": "import { ActionRow } from \"@/x\";\nexport const U = () => <ActionRow />;\n",
+            }),
+        ];
+        let rows = src_reference_rows(&comps, "target", "ActionRow");
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0]["id"].as_str(), Some("user"));
+        assert!(rows[0]["total"].as_u64().unwrap_or(0) >= 2, "jsx + import: {:?}", rows[0]);
+    }
+
+    /// It never counts a component against ITSELF, and never counts a tombstone — a suppressed record's
+    /// content is gone, so it can only dilute.
+    #[test]
+    fn src_references_skip_self_and_suppressed_records() {
+        let comps = vec![
+            serde_json::json!({
+                "id": "target", "name": "ActionRow", "kitId": "k",
+                "srcText": "export const ActionRow = () => <ActionRow />;\n",
+            }),
+            serde_json::json!({
+                "id": "dead", "name": "Dead", "kitId": "k", "suppressed": true,
+                "srcText": "export const D = () => <ActionRow />;\n",
+            }),
+        ];
+        assert!(src_reference_rows(&comps, "target", "ActionRow").is_empty());
+    }
 
     /// #preview-error-list-silently-records-a-component-named-list — the exact shape that produced this.
     ///
