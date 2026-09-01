@@ -444,5 +444,161 @@
       "fileSrc": "}\nexport const somethingLongEnough = 1;\n",
       "ok": true
     }
+  ],
+  "adoptions": [
+    {
+      "label": "an identical seed is KEPT",
+      "input": {
+        "seedSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "keep",
+      "reason": "the seed already matches the file, provides included",
+      "lost": []
+    },
+    {
+      "label": "a seed differing ONLY by a trailing newline is still KEPT",
+      "input": {
+        "seedSrcText": "export function f() {\\n  return 1;\\n}\\n\n\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "keep",
+      "reason": "the seed already matches the file, provides included",
+      "lost": []
+    },
+    {
+      "label": "a prose preamble does not make a matching seed stale",
+      "input": {
+        "seedSrcText": "// AS GRAPH SOURCE\n// why\nexport function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "keep",
+      "reason": "the seed already matches the file, provides included",
+      "lost": []
+    },
+    {
+      "label": "a preamble containing CODE makes it stale, not a match",
+      "input": {
+        "seedSrcText": "import { X } from \"@/x\";\nconst LocalPageFallback = () => null;\nexport function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/f → @/x/f",
+      "lost": []
+    },
+    {
+      "label": "a differing `provides` alone makes it stale",
+      "input": {
+        "seedSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/old",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/old → @/x/f",
+      "lost": []
+    },
+    {
+      "label": "adopting that would DROP an export is REFUSED, and the export is named",
+      "input": {
+        "seedSrcText": "export function f() {}\nexport const keepMe = 1;\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {}\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "refuse",
+      "reason": "adopting would drop export(s) keepMe",
+      "lost": [
+        "keepMe"
+      ]
+    },
+    {
+      "label": "an unknowable record export set declines to judge rather than reporting everything lost",
+      "input": {
+        "seedSrcText": "export function f() {}\nexport const other = 1;\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export * from \"./all\";\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/f → @/x/f",
+      "lost": []
+    },
+    {
+      "label": "a plain stale seed is ADOPTED",
+      "input": {
+        "seedSrcText": "export function f() { return 0; }\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/f → @/x/f",
+      "lost": []
+    }
+  ],
+  "specs": [
+    {
+      "label": "an exact match",
+      "spec": "@/shared/ui/Card",
+      "seedProvides": [
+        "@/shared/ui/Card",
+        "@/other"
+      ],
+      "ok": true,
+      "nearMiss": []
+    },
+    {
+      "label": "whitespace around a seed entry is trimmed",
+      "spec": "@/shared/ui/Card",
+      "seedProvides": [
+        "  @/shared/ui/Card  "
+      ],
+      "ok": true,
+      "nearMiss": []
+    },
+    {
+      "label": "a CASE-only difference is a near miss, not a match",
+      "spec": "@/shared/ui/pages/pageHeader",
+      "seedProvides": [
+        "@/shared/ui/pages/PageHeader"
+      ],
+      "ok": false,
+      "nearMiss": [
+        "@/shared/ui/pages/PageHeader"
+      ]
+    },
+    {
+      "label": "absent entirely",
+      "spec": "@/nowhere",
+      "seedProvides": [
+        "@/shared/ui/Card"
+      ],
+      "ok": false,
+      "nearMiss": []
+    },
+    {
+      "label": "nothing seeded at all",
+      "spec": "@/nowhere",
+      "seedProvides": [],
+      "ok": false,
+      "nearMiss": []
+    }
   ]
 }

@@ -477,6 +477,100 @@ pub fn entries_importing_statically(
         .collect()
 }
 
+/// What `seed_adoption` decided, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Adoption {
+    /// `keep` · `adopt` · `refuse`.
+    pub verdict: String,
+    pub reason: String,
+    /// Exports the seed has that the record does not — non-empty only on `refuse`.
+    pub lost: Vec<String>,
+}
+
+/// Should a packaged seed be overwritten from the file it mirrors?
+///
+/// THE FILE SIDE IS NORMALIZED HERE rather than trusted from the caller. `file_as_record_source` already
+/// returns a normed string so the live path was fine, but a raw read differs by a trailing newline — and
+/// that one byte alone reads as "the seed is stale" and adopts. Silently overwriting a correct seed over
+/// a trailing newline is the failure this rule is a hair away from being.
+///
+/// A MATCHING BODY IS NOT ENOUGH. [`split_preamble`] cuts at the first line the file also contains, so a
+/// preview stub's imports and its whole `LocalPageFallback` function land in the "preamble", and a
+/// body-only comparison calls that seed identical to the file while it ships a duplicate import block and
+/// an unused component. ELEVEN seeds were in exactly that state and the adoption declined every one as
+/// "already matches", leaving 21 typecheck errors that surfaced only in the emitted `.bsc-records/` tree.
+/// So the preamble must be PROSE — comment lines and blanks only — for a body match to count.
+///
+/// A `None` EXPORT SET MEANS "DO NOT JUDGE", never "exports nothing": [`exported_names`] answers `None`
+/// for a star re-export, and treating that as empty would make the lost-export check pass vacuously on
+/// exactly the modules whose exports are unknowable.
+pub fn seed_adoption(
+    seed_src_text: &str,
+    seed_provides: Option<&str>,
+    record_src_text: &str,
+    record_provides: Option<&str>,
+    file_src: &str,
+) -> Adoption {
+    let file = norm(file_src);
+    let (seed_pre, seed_body) = split_preamble(&norm(seed_src_text), &file);
+
+    let pre_is_prose = seed_pre.split('\n').all(|l| {
+        let t = l.trim();
+        t.is_empty() || t.starts_with("//") || t.starts_with('*') || t.starts_with("/*")
+    });
+    let stale = seed_body != file || !pre_is_prose || seed_provides != record_provides;
+    if !stale {
+        return Adoption {
+            verdict: "keep".to_string(),
+            reason: "the seed already matches the file, provides included".to_string(),
+            lost: Vec::new(),
+        };
+    }
+
+    let seed_exports = exported_names(seed_src_text);
+    let rec_exports = exported_names(record_src_text);
+    let lost: Vec<String> = match (seed_exports, rec_exports) {
+        (Some(seed), Some(rec)) => seed.into_iter().filter(|n| !rec.contains(n)).collect(),
+        _ => Vec::new(), // one side is unknowable — decline to judge
+    };
+    if !lost.is_empty() {
+        return Adoption {
+            reason: format!("adopting would drop export(s) {}", lost.join(", ")),
+            verdict: "refuse".to_string(),
+            lost,
+        };
+    }
+    Adoption {
+        verdict: "adopt".to_string(),
+        reason: format!(
+            "provides {} → {}",
+            seed_provides.unwrap_or("(none)"),
+            record_provides.unwrap_or("(none)")
+        ),
+        lost: Vec::new(),
+    }
+}
+
+/// Does a shipped seed answer `spec` — and if not, is there a case-only near miss?
+///
+/// THE MATCH IS EXACT, deliberately. The runtime loader compares specifiers by string and
+/// `.bsc-records/` emission is keyed off `provides`, so a case-insensitive check would wave through the
+/// one bug that works on Windows and breaks on a case-sensitive filesystem — exactly how `pageheader`
+/// survived tsc, `vite build` and the whole suite with a seed saying `@/shared/ui/pages/PageHeader`
+/// against a `pageHeader.tsx` file. "Missing" and "case mismatch" need different fixes, so they are
+/// reported differently rather than folded into one answer.
+pub fn seed_answers_specifier<'a>(
+    spec: &str,
+    seed_provides: impl IntoIterator<Item = &'a str>,
+) -> (bool, Vec<String>) {
+    let all: Vec<String> = seed_provides.into_iter().map(|s| s.trim().to_string()).collect();
+    if all.iter().any(|s| s == spec) {
+        return (true, Vec::new());
+    }
+    let lower = spec.to_lowercase();
+    (false, all.into_iter().filter(|s| s.to_lowercase() == lower).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -600,6 +694,82 @@ mod tests {
                 seed_matches_file(c["seedSrcText"].as_str().unwrap(), c["fileSrc"].as_str().unwrap());
             assert_eq!(got, c["ok"].as_bool().unwrap(), "{label}");
         }
+    }
+
+    #[test]
+    fn seed_adoption_matches_the_typescript_verdict_for_verdict() {
+        let fx = fixture();
+        let cases = fx["adoptions"].as_array().expect("adoptions[]");
+        assert!(cases.len() >= 6, "thin corpus: {}", cases.len());
+        for c in cases {
+            let label = c["label"].as_str().unwrap();
+            let i = &c["input"];
+            let opt = |k: &str| i[k].as_str();
+            let got = seed_adoption(
+                i["seedSrcText"].as_str().unwrap(),
+                opt("seedProvides"),
+                i["recordSrcText"].as_str().unwrap(),
+                opt("recordProvides"),
+                i["fileSrc"].as_str().unwrap(),
+            );
+            assert_eq!(got.verdict, c["verdict"].as_str().unwrap(), "verdict — {label}");
+            // The REASON is asserted too, not just the verdict: it is what the promoter prints, and a
+            // port that reaches the right answer by a different route says so here.
+            assert_eq!(got.reason, c["reason"].as_str().unwrap(), "reason — {label}");
+            let want: Vec<String> =
+                c["lost"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
+            assert_eq!(got.lost, want, "lost — {label}");
+        }
+    }
+
+    #[test]
+    fn seed_answers_specifier_matches_the_typescript() {
+        let fx = fixture();
+        for c in fx["specs"].as_array().expect("specs[]") {
+            let label = c["label"].as_str().unwrap();
+            let provides: Vec<&str> =
+                c["seedProvides"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+            let (ok, near) = seed_answers_specifier(c["spec"].as_str().unwrap(), provides);
+            assert_eq!(ok, c["ok"].as_bool().unwrap(), "ok — {label}");
+            let want: Vec<String> = c["nearMiss"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(near, want, "nearMiss — {label}");
+        }
+    }
+
+    /// All three verdicts must appear, and the near-miss case must survive a regeneration — otherwise
+    /// the corpus proves only that the functions return something.
+    #[test]
+    fn the_adoption_corpus_carries_every_verdict() {
+        let fx = fixture();
+        let verdicts: Vec<&str> = fx["adoptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["verdict"].as_str().unwrap())
+            .collect();
+        for v in ["keep", "adopt", "refuse"] {
+            assert!(verdicts.contains(&v), "no {v} case in the corpus");
+        }
+        // The refusal must NAME what would be lost — a refusal with an empty list is unactionable.
+        let refused = fx["adoptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["verdict"] == "refuse")
+            .expect("a refuse case");
+        assert!(!refused["lost"].as_array().unwrap().is_empty(), "a refusal must name the export");
+
+        let specs = fx["specs"].as_array().unwrap();
+        assert!(specs.iter().filter(|c| c["ok"].as_bool().unwrap()).count() >= 2);
+        assert!(
+            specs.iter().any(|c| !c["nearMiss"].as_array().unwrap().is_empty()),
+            "the case-mismatch near miss is what tells `missing` apart from `misspelled`"
+        );
     }
 
     /// Each decision function must answer BOTH ways somewhere in the corpus, mirrored from the generator

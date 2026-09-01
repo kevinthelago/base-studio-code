@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
   norm, blankComments, stripComments, codeOnly, splitPreamble,
   exportedNames, seedMatchesFile, importsSiblingsByRecordId, entriesImportingStatically,
+  seedAdoption, seedAnswersSpecifier,
 } from "../../../../../scripts/lib/recordSource.mjs";
 
 const FIXTURE = join(process.cwd(), "src/shared/lib/runtime/shadow/recordSource.fixtures.json");
@@ -146,6 +147,60 @@ const ENTRY_CASES: Array<[string, string, Record<string, string>]> = [
   ],
 ];
 
+/** `seedAdoption` — the promoter's three-way verdict. Each subject is a shape that cost something. */
+const ADOPTIONS: Array<[string, { seedSrcText: string; seedProvides: string | null; recordSrcText: string; recordProvides: string | null; fileSrc: string }]> = [
+  [
+    "an identical seed is KEPT",
+    { seedSrcText: "export function f() {\\n  return 1;\\n}\\n", seedProvides: "@/x/f", recordSrcText: "export function f() {\\n  return 1;\\n}\\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    // The byte that would otherwise silently overwrite a correct seed. `norm` inside the function is
+    // what makes this `keep` rather than `adopt`.
+    "a seed differing ONLY by a trailing newline is still KEPT",
+    { seedSrcText: `${"export function f() {\\n  return 1;\\n}\\n"}\n\n`, seedProvides: "@/x/f", recordSrcText: "export function f() {\\n  return 1;\\n}\\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    "a prose preamble does not make a matching seed stale",
+    { seedSrcText: `// AS GRAPH SOURCE\n// why\n${"export function f() {\\n  return 1;\\n}\\n"}`, seedProvides: "@/x/f", recordSrcText: "export function f() {\\n  return 1;\\n}\\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    // The eleven-seed case: the body matches, but a preview stub's imports and its whole fallback
+    // component sit in what `splitPreamble` calls the preamble. A body-only check called these identical
+    // while they shipped a duplicate import block — 21 typecheck errors, visible only in `.bsc-records/`.
+    "a preamble containing CODE makes it stale, not a match",
+    { seedSrcText: `import { X } from "@/x";\nconst LocalPageFallback = () => null;\n${"export function f() {\\n  return 1;\\n}\\n"}`, seedProvides: "@/x/f", recordSrcText: "export function f() {\\n  return 1;\\n}\\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    "a differing `provides` alone makes it stale",
+    { seedSrcText: "export function f() {\\n  return 1;\\n}\\n", seedProvides: "@/x/old", recordSrcText: "export function f() {\\n  return 1;\\n}\\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    "adopting that would DROP an export is REFUSED, and the export is named",
+    { seedSrcText: "export function f() {}\nexport const keepMe = 1;\n", seedProvides: "@/x/f", recordSrcText: "export function f() {}\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    // `exportedNames` answers null for `export *`, and null must mean DO NOT JUDGE. Treating it as the
+    // empty set would make the lost-export check pass vacuously on exactly the unknowable modules.
+    "an unknowable record export set declines to judge rather than reporting everything lost",
+    { seedSrcText: "export function f() {}\nexport const other = 1;\n", seedProvides: "@/x/f", recordSrcText: 'export * from "./all";\n', recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+  [
+    "a plain stale seed is ADOPTED",
+    { seedSrcText: "export function f() { return 0; }\n", seedProvides: "@/x/f", recordSrcText: "export function f() {\\n  return 1;\\n}\\n", recordProvides: "@/x/f", fileSrc: "export function f() {\\n  return 1;\\n}\\n" },
+  ],
+];
+
+/** `seedAnswersSpecifier` — exact match, with a case-only near miss reported separately. */
+const SPECS: Array<[string, string, string[]]> = [
+  ["an exact match", "@/shared/ui/Card", ["@/shared/ui/Card", "@/other"]],
+  ["whitespace around a seed entry is trimmed", "@/shared/ui/Card", ["  @/shared/ui/Card  "]],
+  // `pageheader`: the seed said `@/shared/ui/pages/PageHeader` against a `pageHeader.tsx` file. A
+  // case-insensitive check would wave it through — it works on Windows and breaks on a case-sensitive fs.
+  ["a CASE-only difference is a near miss, not a match", "@/shared/ui/pages/pageHeader", ["@/shared/ui/pages/PageHeader"]],
+  ["absent entirely", "@/nowhere", ["@/shared/ui/Card"]],
+  ["nothing seeded at all", "@/nowhere", []],
+];
+
 describe("recordSource fixtures", () => {
   it("captures every primitive over every subject", () => {
     const cases = SUBJECTS.map(([label, source]) => ({
@@ -184,6 +239,11 @@ describe("recordSource fixtures", () => {
       ...seedMatchesFile({ seedSrcText, fileSrc }),
     }));
 
+    const adoptions = ADOPTIONS.map(([label, input]) => ({ label, input, ...seedAdoption(input) }));
+    const specs = SPECS.map(([label, spec, seedProvides]) => ({
+      label, spec, seedProvides, ...seedAnswersSpecifier({ spec, seedProvides }),
+    }));
+
     const next = {
       note: "GENERATED from scripts/lib/recordSource.mjs — do not hand-edit; see the .gen.test.ts",
       cases,
@@ -192,6 +252,8 @@ describe("recordSource fixtures", () => {
       siblings,
       entries,
       seedFile,
+      adoptions,
+      specs,
     };
 
     if (process.env.UPDATE_FIXTURES) {
@@ -229,5 +291,14 @@ describe("recordSource fixtures", () => {
       entriesImportingStatically("/repo", spec, (p: string) => files[p.replace("/repo/src/", "")] ?? "", (p: string) => p.replace("/repo/src/", "") in files));
     expect(ent.filter((e) => e.length > 0).length, "never found a static import").toBeGreaterThanOrEqual(2);
     expect(ent.filter((e) => e.length === 0).length, "never refused one").toBeGreaterThanOrEqual(2);
+
+    // All THREE verdicts must appear, or the corpus proves only that the function returns something.
+    const verdicts = ADOPTIONS.map(([, i]) => seedAdoption(i).verdict);
+    for (const v of ["keep", "adopt", "refuse"]) {
+      expect(verdicts.filter((x) => x === v).length, `no ${v} case`).toBeGreaterThanOrEqual(1);
+    }
+    const answered = SPECS.map(([, spec, seedProvides]) => seedAnswersSpecifier({ spec, seedProvides }));
+    expect(answered.filter((a) => a.ok).length, "never matched").toBeGreaterThanOrEqual(2);
+    expect(answered.filter((a) => a.nearMiss.length > 0).length, "no near-miss case").toBeGreaterThanOrEqual(1);
   });
 });
