@@ -165,6 +165,10 @@ pub fn run() {
             // OOM-killed and the backend ran headless for fifteen minutes with 17 sessions alive and
             // nothing able to reap them, because the only reaper was a React hook.
             pty::spawn_reaper(app.handle().clone());
+            // The warden enforces on the backend's own schedule too, for the same reason: an
+            // always-on guard that stops when the webview dies is not always-on
+            // (`the-warden-quarantines-from-rust-instead-of-the-render-loop`).
+            fleet::warden::spawn_warden(app.handle().clone());
             // Force the main window's taskbar/title icon from the icon Tauri embedded from
             // `bundle.icon` (#2683). A bundled/installed build shows the app icon via the exe's Windows
             // resource, but under `tauri dev` the debug exe doesn't reliably apply it, so the taskbar
@@ -449,6 +453,8 @@ pub fn run() {
             tunnel::tunnel_emit_alert,
             fleet::inspect::read_worktree_changes,
             fleet::inspect::read_worktree_changes_batch,
+            fleet::warden::warden_report_fleet,
+            fleet::warden::warden_quarantined_panes,
             fleet::inspect::fleet_landed_streams,
             fleet::inspect::dir_exists,
             fleet::inspect::read_worktree_branch,

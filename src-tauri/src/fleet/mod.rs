@@ -12,3 +12,7 @@ pub mod disk;
 pub mod director;
 pub mod protocols;
 pub mod inspect;
+/// The warden's ENFORCEMENT loop, moved off the render loop
+/// (`the-warden-quarantines-from-rust-instead-of-the-render-loop`). The decision that hard-pauses a
+/// drifting worker now runs on the backend's own schedule, beside the sessions it pauses.
+pub mod warden;
