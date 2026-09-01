@@ -1,0 +1,673 @@
+{
+  "note": "GENERATED from src/shared/lib/security/profileEnforcement.ts — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "packaged: pf_auto",
+      "profile": {
+        "id": "pf_auto",
+        "name": "Autonomous (trusted)",
+        "color": "oklch(0.74 0.13 145)",
+        "category": "user",
+        "origin": "built-in",
+        "desc": "Runs unattended — auto-approves the full allowlist and most tools. The default for fleet workers; writes stay scoped to the worker's owned files by the role gate.",
+        "mode": "allow",
+        "commands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "paths": {
+          "allow": [
+            "**/*"
+          ],
+          "deny": [
+            "**/.env",
+            "**/secrets/**"
+          ]
+        },
+        "net": {
+          "allow": [
+            "*"
+          ]
+        },
+        "builtin": true
+      },
+      "settings": {
+        "allowedCommands": [
+          "cargo",
+          "npm",
+          "pnpm",
+          "pytest",
+          "make",
+          "node",
+          "docker",
+          "gh",
+          "aws"
+        ],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "Bash",
+          "WebFetch",
+          "WebSearch",
+          "Task",
+          "Edit(**/*)"
+        ],
+        "denyToolRules": [
+          "Edit(**/.env)",
+          "Edit(**/secrets/**)"
+        ],
+        "bashPosture": "allow"
+      }
+    },
+    {
+      "label": "packaged: pf_review",
+      "profile": {
+        "id": "pf_review",
+        "name": "Read-only review",
+        "color": "oklch(0.72 0.10 230)",
+        "category": "user",
+        "origin": "built-in",
+        "desc": "Inspect, search, and comment — never mutates the tree. The default for the director and the review / triage sessions.",
+        "mode": "deny",
+        "commands": [],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "paths": {
+          "allow": [],
+          "deny": [
+            "**/*"
+          ]
+        },
+        "net": {
+          "allow": [
+            "api.github.com"
+          ]
+        },
+        "builtin": true
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Task"
+        ],
+        "denyToolRules": [
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "Edit(**/*)"
+        ],
+        "bashPosture": "ask"
+      }
+    },
+    {
+      "label": "packaged: pf_sandbox",
+      "profile": {
+        "id": "pf_sandbox",
+        "name": "Sandboxed",
+        "color": "oklch(0.68 0.18 25)",
+        "category": "user",
+        "origin": "built-in",
+        "desc": "Default for any pane with no role. Nothing runs without you. Good for untrusted or first-touch repos.",
+        "mode": "deny",
+        "commands": [],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "ask",
+          "write": "ask",
+          "bash": "deny",
+          "web": "deny",
+          "task": "deny"
+        },
+        "paths": {
+          "allow": [],
+          "deny": [
+            "**/*"
+          ]
+        },
+        "net": {
+          "allow": []
+        },
+        "builtin": true
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Glob"
+        ],
+        "denyToolRules": [
+          "WebFetch",
+          "WebSearch",
+          "Task",
+          "Edit(**/*)"
+        ],
+        "bashPosture": "deny"
+      }
+    },
+    {
+      "label": "packaged: sys_planner",
+      "profile": {
+        "id": "sys_planner",
+        "name": "Project Planner",
+        "color": "oklch(0.7 0.12 290)",
+        "category": "application",
+        "desc": "Always-present terminal session that runs project planning — turns pitches into issues and maintains the plan.",
+        "surface": "Project planning",
+        "surfaceGlyph": "P",
+        "session": "sys/planner",
+        "owns": "the planning terminal",
+        "mode": "ask",
+        "commands": [
+          "gh"
+        ],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "ask",
+          "web": "ask",
+          "task": "allow"
+        },
+        "paths": {
+          "allow": [
+            ".studio/plan/**",
+            "docs/plan/**"
+          ],
+          "deny": [
+            "src/**"
+          ]
+        },
+        "net": {
+          "allow": [
+            "api.github.com"
+          ]
+        }
+      },
+      "settings": {
+        "allowedCommands": [
+          "gh"
+        ],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "Task",
+          "Edit(.studio/plan/**)",
+          "Edit(docs/plan/**)"
+        ],
+        "denyToolRules": [
+          "Edit(src/**)"
+        ],
+        "bashPosture": "ask"
+      }
+    },
+    {
+      "label": "packaged: sys_planning_autopilot",
+      "profile": {
+        "id": "sys_planning_autopilot",
+        "name": "Planning Autopilot",
+        "color": "oklch(0.72 0.13 30)",
+        "category": "application",
+        "desc": "Answers the project planner's questions on your behalf, from the pitch, to drive a plan to completion hands-free. Read-only: it sees the pitch + the planner's output and replies; it runs no shell, writes no files, and has no tools.",
+        "surface": "Project planning",
+        "surfaceGlyph": "◇",
+        "session": "sys/planning-autopilot",
+        "owns": "the planning autopilot (simulated user)",
+        "mode": "deny",
+        "commands": [],
+        "tools": {
+          "read": "allow",
+          "grep": "deny",
+          "glob": "deny",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "deny",
+          "web": "deny",
+          "task": "deny"
+        },
+        "paths": {
+          "allow": [],
+          "deny": [
+            "**/*"
+          ]
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read"
+        ],
+        "denyToolRules": [
+          "Grep",
+          "Glob",
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "WebFetch",
+          "WebSearch",
+          "Task",
+          "Edit(**/*)"
+        ],
+        "bashPosture": "deny"
+      }
+    },
+    {
+      "label": "every tool denied — bash must still not be blanket-denied",
+      "profile": {
+        "id": "edge-all-deny",
+        "name": "edge-all-deny",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "deny",
+        "commands": [],
+        "tools": {
+          "read": "deny",
+          "grep": "deny",
+          "glob": "deny",
+          "edit": "deny",
+          "write": "deny",
+          "bash": "deny",
+          "web": "deny",
+          "task": "deny"
+        },
+        "paths": {
+          "allow": [],
+          "deny": []
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [],
+        "denyToolRules": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "WebFetch",
+          "WebSearch",
+          "Task"
+        ],
+        "bashPosture": "deny"
+      }
+    },
+    {
+      "label": "every tool allowed",
+      "profile": {
+        "id": "edge-all-allow",
+        "name": "edge-all-allow",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "allow",
+        "commands": [],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "paths": {
+          "allow": [],
+          "deny": []
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "Bash",
+          "WebFetch",
+          "WebSearch",
+          "Task"
+        ],
+        "denyToolRules": [],
+        "bashPosture": "allow"
+      }
+    },
+    {
+      "label": "every tool asked — ask emits no rule at all",
+      "profile": {
+        "id": "edge-all-ask",
+        "name": "edge-all-ask",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "ask",
+        "commands": [],
+        "tools": {
+          "read": "ask",
+          "grep": "ask",
+          "glob": "ask",
+          "edit": "ask",
+          "write": "ask",
+          "bash": "ask",
+          "web": "ask",
+          "task": "ask"
+        },
+        "paths": {
+          "allow": [],
+          "deny": []
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [],
+        "denyToolRules": [],
+        "bashPosture": "ask"
+      }
+    },
+    {
+      "label": "path globs become Edit(glob) rules, allow and deny",
+      "profile": {
+        "id": "edge-paths",
+        "name": "edge-paths",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "ask",
+        "commands": [],
+        "tools": {
+          "read": "ask",
+          "grep": "ask",
+          "glob": "ask",
+          "edit": "ask",
+          "write": "ask",
+          "bash": "ask",
+          "web": "ask",
+          "task": "ask"
+        },
+        "paths": {
+          "allow": [
+            "src/**",
+            "docs/**"
+          ],
+          "deny": [
+            "src/secrets/**"
+          ]
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Edit(src/**)",
+          "Edit(docs/**)"
+        ],
+        "denyToolRules": [
+          "Edit(src/secrets/**)"
+        ],
+        "bashPosture": "ask"
+      }
+    },
+    {
+      "label": "commands are deduped and deniedCommands stays empty — the role gate supplies those",
+      "profile": {
+        "id": "edge-commands",
+        "name": "edge-commands",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "ask",
+        "commands": [
+          "git status",
+          "npm test",
+          "git status"
+        ],
+        "tools": {
+          "read": "ask",
+          "grep": "ask",
+          "glob": "ask",
+          "edit": "ask",
+          "write": "ask",
+          "bash": "ask",
+          "web": "ask",
+          "task": "ask"
+        },
+        "paths": {
+          "allow": [],
+          "deny": []
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [
+          "git status",
+          "npm test"
+        ],
+        "deniedCommands": [],
+        "allowToolRules": [],
+        "denyToolRules": [],
+        "bashPosture": "ask"
+      }
+    },
+    {
+      "label": "mode and net are advisory and produce no rule",
+      "profile": {
+        "id": "edge-advisory",
+        "name": "edge-advisory",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "deny",
+        "commands": [],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "allow",
+          "edit": "allow",
+          "write": "allow",
+          "bash": "allow",
+          "web": "allow",
+          "task": "allow"
+        },
+        "paths": {
+          "allow": [],
+          "deny": []
+        },
+        "net": {
+          "allow": [
+            "api.example.com"
+          ]
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Edit",
+          "NotebookEdit",
+          "Write",
+          "Bash",
+          "WebFetch",
+          "WebSearch",
+          "Task"
+        ],
+        "denyToolRules": [],
+        "bashPosture": "allow"
+      }
+    },
+    {
+      "label": "tool keys in a SHUFFLED order — output order follows the input",
+      "profile": {
+        "id": "edge-shuffled",
+        "name": "edge-shuffled",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "ask",
+        "commands": [],
+        "tools": {
+          "task": "allow",
+          "bash": "allow",
+          "read": "allow",
+          "web": "deny",
+          "glob": "deny",
+          "write": "allow",
+          "edit": "deny",
+          "grep": "allow"
+        },
+        "paths": {
+          "allow": [],
+          "deny": []
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Task",
+          "Bash",
+          "Read",
+          "Write",
+          "Grep"
+        ],
+        "denyToolRules": [
+          "WebFetch",
+          "WebSearch",
+          "Glob",
+          "Edit",
+          "NotebookEdit"
+        ],
+        "bashPosture": "allow"
+      }
+    },
+    {
+      "label": "a mixed profile — the shape a real custom profile has",
+      "profile": {
+        "id": "edge-mixed",
+        "name": "edge-mixed",
+        "color": "#000",
+        "category": "user",
+        "desc": "",
+        "mode": "ask",
+        "commands": [
+          "cargo test"
+        ],
+        "tools": {
+          "read": "allow",
+          "grep": "allow",
+          "glob": "ask",
+          "edit": "allow",
+          "write": "deny",
+          "bash": "deny",
+          "web": "deny",
+          "task": "ask"
+        },
+        "paths": {
+          "allow": [
+            "crates/**"
+          ],
+          "deny": [
+            "**/*.env"
+          ]
+        },
+        "net": {
+          "allow": []
+        }
+      },
+      "settings": {
+        "allowedCommands": [
+          "cargo test"
+        ],
+        "deniedCommands": [],
+        "allowToolRules": [
+          "Read",
+          "Grep",
+          "Edit",
+          "NotebookEdit",
+          "Edit(crates/**)"
+        ],
+        "denyToolRules": [
+          "Write",
+          "WebFetch",
+          "WebSearch",
+          "Edit(**/*.env)"
+        ],
+        "bashPosture": "deny"
+      }
+    }
+  ]
+}
