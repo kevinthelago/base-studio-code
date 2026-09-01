@@ -5008,9 +5008,6 @@ mod tests {
         );
     }
 
-    /// The help text is the CLI's own account of its surface, so every exported const must appear in
-    /// it — a flag or subverb added to the `match` without reaching help (or this list) fails here.
-
     /// THE WRONG-GUESS ROSTER MUST BE THE WHOLE ROSTER. The usage line already says so in a comment —
     /// "half of it used to be missing from this line" — and nothing enforced it, so `impl refresh`
     /// landed in `IMPL_SUBVERBS` and in `graph help` while the message a mistaken caller actually sees
@@ -5028,6 +5025,8 @@ mod tests {
         }
     }
 
+    /// The help text is the CLI's own account of its surface, so every exported const must appear in
+    /// it — a flag or subverb added to the `match` without reaching help (or this list) fails here.
     #[test]
     fn exported_surface_is_covered_by_the_help_text() {
         let help = help("bsc graph");
