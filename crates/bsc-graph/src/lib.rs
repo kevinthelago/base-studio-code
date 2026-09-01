@@ -1422,6 +1422,42 @@ mod tests {
 
     use super::*;
 
+    /// A graph whose SEED this test owns, in place of the shipped one.
+    ///
+    /// Two tests here used to reach into the live packaged seed for `llm-energy.ts` and
+    /// `algorithms-llm-energy.ts`. That made those shipped records load-bearing test fixtures without
+    /// saying so anywhere a curator would look: folding the duplicate that `bsc graph doctor --dedup`
+    /// itself proposes reddened this crate with "unknown implementation
+    /// 'algorithms-llm-energy.ts'", and `epic-a-graph-finds-its-own-duplicates` proposes exactly that
+    /// kind of fold — while the librarian, whose whole floor is `bsc graph`, cannot run `cargo nextest`
+    /// to find out.
+    ///
+    /// So a test that needs "some packaged record" MINTS one. Points `$BSC_DATA_DIR` at a scratch tree
+    /// holding a two-record seed; `graph_json` is keyed on the resolved path, so this reads fresh rather
+    /// than serving another test's cached copy. Returns the store lock — hold it for the test's life.
+    #[must_use = "hold the guard: it serialises $BSC_DATA_DIR against every other test"]
+    fn with_own_seed(tag: &str) -> (std::sync::MutexGuard<'static, ()>, Value) {
+        let guard = crate::cli::test_support::store_lock();
+        let root = std::env::temp_dir().join(format!("bsc-graph-ownseed-{}-{tag}", std::process::id()));
+        let dir = root.join("knowledge");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&dir).expect("scratch seed dir");
+        let doc = serde_json::json!({ "implementations": [
+            { "id": "old.ts", "tech": "typescript", "role": "algorithm", "name": "old",
+              "code": "export const old = 1;" },
+            { "id": "keep.ts", "tech": "typescript", "role": "algorithm", "name": "keep",
+              "code": "export const keep = 1;" },
+        ]});
+        std::fs::write(dir.join("algorithms.json"), doc.to_string()).expect("write scratch seed");
+        // SAFETY: the store lock above is what makes this single-threaded against every other test
+        // that repoints this variable.
+        unsafe { std::env::set_var("BSC_DATA_DIR", &root) };
+        let g = seed();
+        assert!(is_seeded("old.ts"), "the minted seed must actually be the one in play");
+        (guard, g)
+    }
+
+
     /// Request #71 — the whole point of the tombstone. `merge` folded a SEEDED impl away, reported
     /// `"removed"`, and the seed reconcile put it straight back on the next read; a session lost an
     /// afternoon to a phantom "concurrent re-harvester" that did not exist.
@@ -1431,24 +1467,23 @@ mod tests {
     /// the id, so the absent-id check finds it present.
     #[test]
     fn a_merged_away_seed_impl_stays_gone_across_a_reconcile() {
-        let mut g = seed();
-        assert!(is_seeded("llm-energy.ts"), "the fixture depends on this being packaged");
-        merge_impls(&mut g, "llm-energy.ts", "algorithms-llm-energy.ts").expect("merge succeeds");
+        let (_lock, mut g) = with_own_seed("reconcile");
+        merge_impls(&mut g, "old.ts", "keep.ts").expect("merge succeeds");
 
         // Gone from every READ …
         let live = implementations_of(&g);
-        assert!(!live.iter().any(|im| im["id"] == "llm-energy.ts"), "the fold removes it");
+        assert!(!live.iter().any(|im| im["id"] == "old.ts"), "the fold removes it");
         // … and STAYS gone when the reconcile runs, which is where it used to come back.
         reconcile_seed(&mut g);
         let after = implementations_of(&g);
-        assert!(!after.iter().any(|im| im["id"] == "llm-energy.ts"), "the reconcile must not resurrect it");
+        assert!(!after.iter().any(|im| im["id"] == "old.ts"), "the reconcile must not resurrect it");
 
         // The tombstone records WHAT replaced it — the audit trail a consolidation needs later.
         let tomb = suppressions_of(&g)
             .into_iter()
-            .find(|t| t["id"] == "llm-energy.ts")
+            .find(|t| t["id"] == "old.ts")
             .expect("the suppression is listed");
-        assert_eq!(tomb.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+        assert_eq!(tomb.get("supersededBy").and_then(Value::as_str), Some("keep.ts"));
     }
 
     /// REQUEST #77 — the reported shape, reproduced end to end.
@@ -1467,25 +1502,25 @@ mod tests {
     /// BEFORE THIS FIX the `set_impl` below returned `Ok` and the final assertion failed.
     #[test]
     fn a_retired_impl_cannot_be_re_authored_by_a_later_write() {
-        let mut g = seed();
-        merge_impls(&mut g, "llm-energy.ts", "algorithms-llm-energy.ts").expect("merge succeeds");
-        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "gone after the fold");
+        let (_lock, mut g) = with_own_seed("reauthor");
+        merge_impls(&mut g, "old.ts", "keep.ts").expect("merge succeeds");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "old.ts"), "gone after the fold");
 
         // The resurrection: a later pass re-authors the same id, exactly as a re-harvest would.
         let err = set_impl(
             &mut g,
             serde_json::json!({
-                "id": "llm-energy.ts", "tech": "typescript", "role": "algorithm",
-                "name": "llmEnergy", "code": "export const e = 1;",
+                "id": "old.ts", "tech": "typescript", "role": "algorithm",
+                "name": "old", "code": "export const e = 1;",
             }),
         )
         .expect_err("re-authoring a RETIRED id must be refused");
-        assert!(err.contains("llm-energy.ts"), "names the id: {err}");
-        assert!(err.contains("algorithms-llm-energy.ts"), "names what superseded it: {err}");
+        assert!(err.contains("old.ts"), "names the id: {err}");
+        assert!(err.contains("keep.ts"), "names what superseded it: {err}");
         assert!(err.contains("unsuppress"), "names the way back, or the refusal is a dead end: {err}");
 
         // The point of the whole thing: it is STILL gone, with no second merge needed.
-        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "stays retired");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "old.ts"), "stays retired");
     }
 
     /// The refusal must not be a one-way door. `unsuppress` is the deliberate way back, and after it
@@ -1668,7 +1703,9 @@ mod tests {
     fn a_legacy_inline_tombstone_is_swept_out_of_the_impl_array() {
         let mut g = seed();
         ensure_array(&mut g, "implementations").push(serde_json::json!({
-            "id": "llm-energy.ts", "suppressed": true, "supersededBy": "algorithms-llm-energy.ts",
+            // A synthetic id: this test injects its own tombstone and needs no SHIPPED record. Using a
+            // real one made a packaged record a load-bearing fixture for a property unrelated to it.
+            "id": "a-retired-thing.ts", "suppressed": true, "supersededBy": "its-survivor.ts",
         }));
 
         assert!(migrate_inline_tombstones(&mut g), "it reports having healed something");
@@ -1680,13 +1717,13 @@ mod tests {
             assert!(im.get("composes").is_some(), "every impl a reader sees has composes: {im}");
         }
         // …and the retirement is still recorded, with what replaced it.
-        assert!(is_suppressed(&g, "llm-energy.ts"));
-        let t = suppressions_of(&g).into_iter().find(|t| t["id"] == "llm-energy.ts").expect("listed");
-        assert_eq!(t.get("supersededBy").and_then(Value::as_str), Some("algorithms-llm-energy.ts"));
+        assert!(is_suppressed(&g, "a-retired-thing.ts"));
+        let t = suppressions_of(&g).into_iter().find(|t| t["id"] == "a-retired-thing.ts").expect("listed");
+        assert_eq!(t.get("supersededBy").and_then(Value::as_str), Some("its-survivor.ts"));
         // Idempotent: a second load neither duplicates nor re-adds.
         assert!(!migrate_inline_tombstones(&mut g), "nothing left to heal");
         reconcile_seed(&mut g);
-        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "llm-energy.ts"), "stays retired");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "a-retired-thing.ts"), "stays retired");
     }
 
     #[test]
