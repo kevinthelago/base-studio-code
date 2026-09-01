@@ -729,11 +729,13 @@ fn launch_init_cmd(
             pane_id,
             pane_init_cmd,
             startup_prompt,
-            s.continue_session.unwrap_or(false),
-            s.pane_was_claude.unwrap_or(false),
-            s.auto_resume_claude.unwrap_or(false),
-            s.was_unclean_shutdown,
-            s.restore_requested.unwrap_or(false),
+            crate::session::resume_cmd::ResumeSignals {
+                continue_session: s.continue_session.unwrap_or(false),
+                pane_was_claude: s.pane_was_claude.unwrap_or(false),
+                auto_resume_claude: s.auto_resume_claude.unwrap_or(false),
+                was_unclean_shutdown: s.was_unclean_shutdown,
+                restore_requested: s.restore_requested.unwrap_or(false),
+            },
         ),
     )
 }

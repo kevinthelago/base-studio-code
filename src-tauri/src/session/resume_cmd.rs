@@ -182,6 +182,20 @@ pub fn reconcile_init_cmd(
     InitCmdReconciliation { effective: from_frontend, derived, disagreement }
 }
 
+/// The five raw resume signals, GROUPED rather than passed as five positional bools.
+///
+/// Not a style preference. They are all `bool`, so a transposed pair COMPILES and then resumes the
+/// wrong thing — and the failure that produces is a session starting by itself, which reads as
+/// behaviour rather than as an error. Field names make a call site reviewable.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ResumeSignals {
+    pub continue_session: bool,
+    pub pane_was_claude: bool,
+    pub auto_resume_claude: bool,
+    pub was_unclean_shutdown: bool,
+    pub restore_requested: bool,
+}
+
 /// The signals as the launch receives them, with the MANUAL-console rule applied.
 ///
 /// A manual console is never auto-recovered (#1176), and in the TypeScript that is three separate
@@ -195,21 +209,17 @@ pub fn launch_inputs<'a>(
     pane_id: &str,
     explicit: Option<&'a str>,
     startup_prompt: Option<&'a str>,
-    continue_session: bool,
-    pane_was_claude: bool,
-    auto_resume_claude: bool,
-    was_unclean_shutdown: bool,
-    restore_requested: bool,
+    s: ResumeSignals,
 ) -> ResumeInputs<'a> {
     let manual = bsc_util::pane_id::is_manual_pane_id(pane_id);
     ResumeInputs {
         explicit,
         startup_prompt,
-        continue_session: !manual && continue_session,
-        pane_was_claude,
-        auto_resume_claude: !manual && auto_resume_claude,
-        was_unclean_shutdown,
-        restore_requested: !manual && restore_requested,
+        continue_session: !manual && s.continue_session,
+        pane_was_claude: s.pane_was_claude,
+        auto_resume_claude: !manual && s.auto_resume_claude,
+        was_unclean_shutdown: s.was_unclean_shutdown,
+        restore_requested: !manual && s.restore_requested,
     }
 }
 
@@ -305,7 +315,12 @@ mod tests {
     #[test]
     fn a_clean_quit_resumes_nothing_on_any_pane() {
         for pane in ["man:tab1:p0", "proj:stream", "design-studio:designer-react"] {
-            let i = launch_inputs(pane, None, None, false, true, false, false, false);
+            let i = launch_inputs(
+                pane,
+                None,
+                None,
+                ResumeSignals { pane_was_claude: true, ..ResumeSignals::default() },
+            );
             assert_eq!(
                 resolve_init_cmd(&i),
                 "",
@@ -320,13 +335,20 @@ mod tests {
     #[test]
     fn a_manual_console_is_never_auto_recovered_and_the_rule_lives_here() {
         // Every recovery signal set at once, on a manual pane.
-        let manual = launch_inputs("man:tab1:p0", Some("claude"), None, true, true, true, true, true);
+        let all = ResumeSignals {
+            continue_session: true,
+            pane_was_claude: true,
+            auto_resume_claude: true,
+            was_unclean_shutdown: true,
+            restore_requested: true,
+        };
+        let manual = launch_inputs("man:tab1:p0", Some("claude"), None, all);
         assert!(!manual.continue_session && !manual.auto_resume_claude && !manual.restore_requested);
         assert_eq!(resolve_init_cmd(&manual), "claude", "the placeholder stays a fresh launch");
 
         // The same signals on a fleet pane DO resume — otherwise this test would pass on a function
         // that simply ignored them all.
-        let fleet = launch_inputs("proj:stream", Some("claude"), None, true, true, true, true, true);
+        let fleet = launch_inputs("proj:stream", Some("claude"), None, all);
         assert!(fleet.continue_session && fleet.auto_resume_claude && fleet.restore_requested);
         assert_eq!(resolve_init_cmd(&fleet), continue_or_fresh("claude"));
 
