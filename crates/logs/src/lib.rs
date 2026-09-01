@@ -16,6 +16,7 @@
 //! (#1877) and by the legacy `bsc-logs` shim.
 
 pub mod divergence;
+pub mod headroom;
 pub mod instrument;
 pub mod cli;
 pub mod scope;
@@ -111,6 +112,8 @@ pub fn canonical_stream(name: &str) -> Option<&'static str> {
         // aliases are the words a reader reaches for when they do not recall the stream's name —
         // `bsc logs tail disagreement` should not be a dead end.
         "divergence" | "divergences" | "disagreement" | "disagreements" | "drift" => Some("divergence"),
+        // Provider rate-limit headroom — what budget a fleet has left.
+        "ratelimit" | "ratelimits" | "rate-limit" | "headroom" | "budget" => Some("ratelimit"),
         _ => None,
     }
 }

@@ -402,3 +402,154 @@ mod tests {
         observe("https://api.example/v1", 200, &RateLimits::default());
     }
 }
+
+// ── Persisting a snapshot: the observer the agent runtime installs ────────────────────────────
+
+/// The env var naming the headroom stream. Mirrors the `ratelimit` row in `bsc_util::LOG_STREAMS`.
+pub const RATELIMIT_ENV: &str = "BSC_RATELIMIT_LOG";
+
+/// One TSV cell for an optional number.
+///
+/// `∅` for absent, the digits for present — **including `0`**. That distinction is the entire point:
+/// a provider that sends no headers must never be readable as exhausted, and a cell that rendered
+/// both as blank would make the two indistinguishable the moment they hit disk.
+fn num_cell(v: Option<u64>) -> String {
+    v.map(|n| n.to_string()).unwrap_or_else(|| "∅".to_string())
+}
+
+/// Format one headroom line:
+/// `ts · pane · host · status · reqRemaining · reqLimit · tokRemaining · tokLimit · retryAfter`.
+///
+/// Pure, and the shape is a contract — `logs::headroom` parses it back.
+pub fn rate_limit_line(ts: &str, pane: &str, host: &str, status: u16, r: &RateLimits) -> String {
+    format!(
+        "{ts}\t{pane}\t{host}\t{status}\t{}\t{}\t{}\t{}\t{}\n",
+        num_cell(r.requests_remaining),
+        num_cell(r.requests_limit),
+        num_cell(r.tokens_remaining),
+        num_cell(r.tokens_limit),
+        num_cell(r.retry_after_secs),
+    )
+}
+
+/// The host a request went to, for grouping. Falls back to the whole URL rather than to a guess —
+/// an unparseable URL is rare and a wrong label is worse than an ugly one.
+fn host_of(url: &str) -> String {
+    url.split("://")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .filter(|h| !h.is_empty())
+        .unwrap_or(url)
+        .to_string()
+}
+
+/// An observer that appends every snapshot to a log file.
+///
+/// This is the piece that turns the capture into a RECORD. Without it the snapshots exist for the
+/// duration of one call and then vanish, which is where this sat after the capture landed: parsed,
+/// observable, and persisted nowhere.
+pub struct RateLimitLog {
+    path: std::path::PathBuf,
+    pane: String,
+}
+
+impl RateLimitLog {
+    pub fn new(path: impl Into<std::path::PathBuf>, pane: impl Into<String>) -> Self {
+        Self { path: path.into(), pane: pane.into() }
+    }
+}
+
+impl RateLimitObserver for RateLimitLog {
+    fn observe(&self, url: &str, status: u16, limits: &RateLimits) {
+        // A provider that reported nothing has nothing to record. Writing a row of `∅` per request
+        // would bury the providers that DO report under a local model's traffic, and it would inflate
+        // the request-rate reading with rows that carry no budget information.
+        if limits.is_empty() {
+            return;
+        }
+        let line = rate_limit_line(
+            &bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms()),
+            &self.pane,
+            &host_of(url),
+            status,
+            limits,
+        );
+        bsc_util::append_line(&self.path, &line);
+    }
+}
+
+/// Install the headroom log as the process-wide observer, if `$BSC_RATELIMIT_LOG` names one.
+///
+/// Called once at agent startup. A NO-OP when the env var is absent — a hand shell or a one-off CLI
+/// invocation records nothing, and the reader reports an absent stream as UNKNOWN rather than as zero
+/// headroom. Returns whether an observer was installed, so a caller can log which it got.
+pub fn install_rate_limit_log() -> bool {
+    let Some(p) = std::env::var_os(RATELIMIT_ENV).filter(|p| !p.is_empty()) else { return false };
+    let pane = std::env::var("BSC_AUDIT_PANE").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "?".into());
+    set_rate_limit_observer(Some(std::sync::Arc::new(RateLimitLog::new(
+        std::path::PathBuf::from(p),
+        pane,
+    ))));
+    true
+}
+
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+
+    fn snap(pairs: Vec<(&str, &str)>) -> RateLimits {
+        parse_rate_limits(pairs)
+    }
+
+    /// THE SAFETY PROPERTY, all the way to disk. `Some(0)` and `None` must not render alike.
+    #[test]
+    fn zero_remaining_and_not_reported_are_different_on_disk() {
+        let exhausted = snap(vec![
+            ("anthropic-ratelimit-requests-limit", "1000"),
+            ("anthropic-ratelimit-requests-remaining", "0"),
+        ]);
+        let line = rate_limit_line("T", "p", "api.anthropic.com", 429, &exhausted);
+        let f: Vec<&str> = line.trim_end().split('\t').collect();
+        assert_eq!(f[4], "0", "reported exhaustion is a zero");
+        assert_eq!(f[6], "∅", "an unreported token budget is the marker, not a zero");
+        assert_ne!(f[4], f[6], "the two must never render the same");
+    }
+
+    #[test]
+    fn a_line_has_nine_columns_whatever_is_absent() {
+        for r in [RateLimits::default(), snap(vec![("retry-after", "5")])] {
+            let line = rate_limit_line("T", "p", "h", 200, &r);
+            assert_eq!(line.trim_end().split('\t').count(), 9, "got {line:?}");
+        }
+    }
+
+    #[test]
+    fn the_host_is_extracted_for_grouping() {
+        assert_eq!(host_of("https://api.anthropic.com/v1/messages"), "api.anthropic.com");
+        assert_eq!(host_of("http://127.0.0.1:11434/api/chat"), "127.0.0.1:11434");
+        // Unparseable falls back to the whole string rather than to a guessed label.
+        assert_eq!(host_of("not-a-url"), "not-a-url");
+    }
+
+    /// A provider that reports nothing writes nothing — otherwise a local model's traffic buries
+    /// every provider that does report, and inflates the request-rate reading with empty rows.
+    #[test]
+    fn a_provider_that_reports_nothing_writes_nothing() {
+        let dir = std::env::temp_dir()
+            .join(format!("bsc-rl-{}-{:?}", bsc_util::now_ms(), std::thread::current().id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ratelimit.log");
+        let obs = RateLimitLog::new(&path, "p:api");
+
+        obs.observe("https://localhost/v1", 200, &RateLimits::default());
+        assert!(!path.exists(), "an empty snapshot is not a record");
+
+        obs.observe("https://api.anthropic.com/v1/messages", 200, &snap(vec![("anthropic-ratelimit-requests-remaining", "5")]));
+        assert!(path.exists(), "a reporting provider does write — or the assertion above proves nothing");
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(body.lines().count(), 1);
+        assert!(body.contains("api.anthropic.com") && body.contains("p:api"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

@@ -418,6 +418,14 @@ async fn main() {
     // no-op when those aren't set. Emits the contracts the app's readers already consume.
     let tele = telemetry::Telemetry::from_env();
 
+    // Provider headroom ($BSC_RATELIMIT_LOG): install the process-wide observer so every response's
+    // rate-limit position is RECORDED, not merely parsed. `crates/llm` reports each snapshot on the
+    // request path; nothing persisted them, so "how much budget does this fleet have left" had no
+    // answer and could only be found by hitting the limit. A no-op when the env var is unset (a hand
+    // shell, a one-off CLI run) — and `bsc mem headroom` reports an absent stream as UNKNOWN rather
+    // than as plenty, so recording nothing never reads as having room.
+    llm::ratelimit::install_rate_limit_log();
+
     // Resume: the app hands us the per-cwd conversation file via $BSC_AGENT_SESSION. We persist
     // the conversation there on exit (so a later launch can resume), and with `--continue` seed
     // the loop from it. Absent/empty path ⇒ no persistence and always a fresh conversation.

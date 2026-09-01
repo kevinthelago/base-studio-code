@@ -70,6 +70,7 @@ fn label_for(key: &str) -> &'static str {
         "tokens" => "Token & cost accounting",
         "ui" => "UI design activity",
         "divergence" => "Migration divergence",
+        "ratelimit" => "Provider rate-limit headroom",
         "app" => "Application log",
         "perf" => "Performance database",
         _ => "Log stream",
