@@ -37,6 +37,10 @@ pub mod descriptor;
 // `bsc data connector probe/try/map` verbs. Pure inference is unit-tested; the network stays behind
 // `build_fetch`. Compiled unconditionally (the verbs that drive it live in the gated `cli`).
 pub mod transport;
+/// Live-socket integration tests for the connector chain — the only place this crate opens a
+/// socket (`the-connector-chain-has-never-been-run-against-a-real-socket`).
+#[cfg(test)]
+mod connector_it;
 
 #[cfg(feature = "duckdb-store")]
 pub mod store;
