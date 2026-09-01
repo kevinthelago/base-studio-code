@@ -1,0 +1,257 @@
+{
+  "note": "GENERATED from the live TypeScript — see projectSync.fixtures.gen.test.ts",
+  "findByTitle": [
+    {
+      "label": "no boards",
+      "boards": [],
+      "title": "Studio Code",
+      "found": null
+    },
+    {
+      "label": "exact match",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "Studio Code"
+        }
+      ],
+      "title": "Studio Code",
+      "found": {
+        "id": "p1",
+        "number": 1,
+        "url": "https://x/p1",
+        "title": "Studio Code"
+      }
+    },
+    {
+      "label": "case-insensitive",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "STUDIO code"
+        }
+      ],
+      "title": "studio CODE",
+      "found": {
+        "id": "p1",
+        "number": 1,
+        "url": "https://x/p1",
+        "title": "STUDIO code"
+      }
+    },
+    {
+      "label": "surrounding whitespace on both sides",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "  Studio Code  "
+        }
+      ],
+      "title": "\tStudio Code\n",
+      "found": {
+        "id": "p1",
+        "number": 1,
+        "url": "https://x/p1",
+        "title": "  Studio Code  "
+      }
+    },
+    {
+      "label": "inner whitespace is not collapsed",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "Studio  Code"
+        }
+      ],
+      "title": "Studio Code",
+      "found": null
+    },
+    {
+      "label": "no match",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "Other"
+        }
+      ],
+      "title": "Studio Code",
+      "found": null
+    },
+    {
+      "label": "two matches — the first wins",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "Studio Code"
+        },
+        {
+          "id": "p2",
+          "number": 1,
+          "url": "https://x/p2",
+          "title": "studio code"
+        }
+      ],
+      "title": "Studio Code",
+      "found": {
+        "id": "p1",
+        "number": 1,
+        "url": "https://x/p1",
+        "title": "Studio Code"
+      }
+    },
+    {
+      "label": "blank title matches nothing",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": ""
+        },
+        {
+          "id": "p2",
+          "number": 1,
+          "url": "https://x/p2",
+          "title": "Studio Code"
+        }
+      ],
+      "title": "",
+      "found": null
+    },
+    {
+      "label": "whitespace-only title matches nothing",
+      "boards": [
+        {
+          "id": "p1",
+          "number": 1,
+          "url": "https://x/p1",
+          "title": "   "
+        }
+      ],
+      "title": "   ",
+      "found": null
+    }
+  ],
+  "ensure": [
+    {
+      "label": "already linked short-circuits before any query",
+      "activeProjectId": "existing-id",
+      "title": "Studio Code",
+      "ownerBoards": null,
+      "result": {
+        "action": "linked",
+        "id": "existing-id"
+      }
+    },
+    {
+      "label": "adopts a same-title board",
+      "activeProjectId": null,
+      "title": "Studio Code",
+      "ownerBoards": [
+        {
+          "id": "p9",
+          "number": 7,
+          "url": "https://x/p9",
+          "title": "Studio Code"
+        }
+      ],
+      "result": {
+        "action": "adopted",
+        "id": "p9",
+        "number": 7,
+        "url": "https://x/p9"
+      }
+    },
+    {
+      "label": "adopts case-insensitively",
+      "activeProjectId": null,
+      "title": "Studio Code",
+      "ownerBoards": [
+        {
+          "id": "p9",
+          "number": 7,
+          "url": "https://x/p9",
+          "title": "studio CODE"
+        }
+      ],
+      "result": {
+        "action": "adopted",
+        "id": "p9",
+        "number": 7,
+        "url": "https://x/p9"
+      }
+    },
+    {
+      "label": "creates when the owner has no boards",
+      "activeProjectId": null,
+      "title": "Studio Code",
+      "ownerBoards": [],
+      "result": {
+        "action": "created",
+        "id": "new1",
+        "number": 3,
+        "url": "https://x/new1"
+      }
+    },
+    {
+      "label": "creates when no title matches",
+      "activeProjectId": null,
+      "title": "Studio Code",
+      "ownerBoards": [
+        {
+          "id": "p9",
+          "number": 7,
+          "url": "https://x/p9",
+          "title": "Other"
+        }
+      ],
+      "result": {
+        "action": "created",
+        "id": "new2",
+        "number": 4,
+        "url": "https://x/new2"
+      }
+    },
+    {
+      "label": "an empty linked id is not linked",
+      "activeProjectId": "",
+      "title": "Studio Code",
+      "ownerBoards": [
+        {
+          "id": "p9",
+          "number": 7,
+          "url": "https://x/p9",
+          "title": "Studio Code"
+        }
+      ],
+      "result": {
+        "action": "adopted",
+        "id": "p9",
+        "number": 7,
+        "url": "https://x/p9"
+      }
+    }
+  ],
+  "throws": [
+    {
+      "label": "unresolvable owner",
+      "message": "could not resolve owner 'acme'"
+    },
+    {
+      "label": "creation returns nothing",
+      "message": "project not created"
+    }
+  ]
+}

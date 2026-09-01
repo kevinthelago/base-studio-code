@@ -31,6 +31,10 @@
 use plandb::PlanIssue;
 use render::{render_issue_body, with_provenance_label, BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR};
 
+/// Which ProjectV2 board a publish should land on (adopt-or-create) — the decision
+/// [`ensure_project_board`] does not currently make. See the module docs.
+pub mod board_choice;
+
 /// The GitHub calls publish needs. A trait so the orchestration can be tested against a fake: the
 /// rules above are all about WHICH calls happen in which order, which a network test could not pin
 /// and a unit test can.
