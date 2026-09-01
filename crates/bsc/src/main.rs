@@ -62,70 +62,87 @@ pub(crate) struct Surface {
     pub store: Option<&'static str>,
     /// How a consumer should present it.
     pub status: Status,
+    /// The cargo PACKAGE that serves this surface — the key the Glance surface node is built on
+    /// (`epic-command-surfaces-are-nodes`, keyed on the crate as of 2026-09-01).
+    ///
+    /// Three names are in play and only this one is right to key on. The DIRECTORY differs from the
+    /// package for `crates/data` (`bsc-data`) and `crates/llm` (`bsc-llm`), and the LIB TARGET the
+    /// dispatch actually writes differs again for `llm` — `"llm" => llm::cli::run`, the one crate in
+    /// the workspace where it does. Everything else in the repo refers to a crate by its package
+    /// name, so that is what a node is keyed on.
+    ///
+    /// `bsc` means this crate serves the verb itself, through a local fn or module — `surface`,
+    /// `mcp`, `hook`, `serve`, `version`. `version` formats its string with `bsc-cli-util`, but a
+    /// library it calls is not the crate that serves it.
+    ///
+    /// PINNED TO THE DISPATCH BY [`tests::the_catalog_names_the_crate_that_dispatches`], not
+    /// maintained independently of it — the same guarantee `name` has. The catalog is a const and
+    /// the dispatch is code, so the gate is the mechanism; there is no build step deriving this.
+    pub krate: &'static str,
 }
 
-const fn active(name: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
-    Surface { name, summary, store, status: Status::Active }
+const fn active(name: &'static str, krate: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
+    Surface { name, krate, summary, store, status: Status::Active }
 }
-const fn deprecated(name: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
-    Surface { name, summary, store, status: Status::Deprecated }
+const fn deprecated(name: &'static str, krate: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
+    Surface { name, krate, summary, store, status: Status::Deprecated }
 }
-const fn internal(name: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
-    Surface { name, summary, store, status: Status::Internal }
+const fn internal(name: &'static str, krate: &'static str, summary: &'static str, store: Option<&'static str>) -> Surface {
+    Surface { name, krate, summary, store, status: Status::Internal }
 }
 
 const COMMANDS: &[Surface] = &[
-    active("plan", "per-project plan store: issues, features, fleet, sections", Some("plan.db — per-project, $BSC_PLAN_DB")),
-    active("publish", "push a plan's GitHub structure — repos, board, one issue per plan row", Some("plan.db + GitHub")),
-    active("errors", "per-project runtime-fault store: fingerprinted errors + alerts", Some("error.db — per-project hub")),
-    active("usage", "per-project usage-events store: record + query what users do (epic #3809)", Some("usage.db — per-project hub")),
-    active("project", "cross-project hub: list local projects + the .published marker", Some("the project hub list + the .published marker")),
-    active("skill", "global skills + task-groups store", Some("skills.db — global")),
-    active("compliance", "compliance standards corpus", Some("the packaged compliance corpus")),
-    active("atlas", "product feature inventories: domains · products · capabilities (relational)", Some("atlas.db — global")),
-    active("blueprint", "user blueprint store", Some("blueprints/ — user")),
-    active("persona", "user persona store: agent identities (prompt + skills + model over a role)", Some("personas/ — user")),
-    active("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
-    active("teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
-    active("network", "user network store: a DOMAIN owning a set of projects and one architect session", Some("networks/ — user; membership is the `network` column on the project row")),
-    active("secret", "credential store: which services we are paired with and whether those pairings still work (metadata + derived status; NO verb reads a secret back)", Some("secrets.db — user; the VALUE lives in the OS keychain, not here")),
-    active("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)", Some("the Studio snapshot store — user")),
-    deprecated("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)", Some("orgs/ — the same store `bsc teams` serves")),
-    deprecated("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)", Some("the component library — the same store `bsc ui` serves")),
-    active("ui", "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)", Some("the component library + themes + released kits")),
-    active("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control", Some("the unified log / perf / cost engine")),
+    active("plan", "plandb", "per-project plan store: issues, features, fleet, sections", Some("plan.db — per-project, $BSC_PLAN_DB")),
+    active("publish", "bsc-publish", "push a plan's GitHub structure — repos, board, one issue per plan row", Some("plan.db + GitHub")),
+    active("errors", "errordb", "per-project runtime-fault store: fingerprinted errors + alerts", Some("error.db — per-project hub")),
+    active("usage", "usagedb", "per-project usage-events store: record + query what users do (epic #3809)", Some("usage.db — per-project hub")),
+    active("project", "bsc-project", "cross-project hub: list local projects + the .published marker", Some("the project hub list + the .published marker")),
+    active("skill", "skilldb", "global skills + task-groups store", Some("skills.db — global")),
+    active("compliance", "compliance", "compliance standards corpus", Some("the packaged compliance corpus")),
+    active("atlas", "atlasdb", "product feature inventories: domains · products · capabilities (relational)", Some("atlas.db — global")),
+    active("blueprint", "bsc-blueprint", "user blueprint store", Some("blueprints/ — user")),
+    active("persona", "bsc-persona", "user persona store: agent identities (prompt + skills + model over a role)", Some("personas/ — user")),
+    active("sound", "bsc-sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
+    active("teams", "bsc-teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
+    active("network", "bsc-network", "user network store: a DOMAIN owning a set of projects and one architect session", Some("networks/ — user; membership is the `network` column on the project row")),
+    active("secret", "bsc-secret", "credential store: which services we are paired with and whether those pairings still work (metadata + derived status; NO verb reads a secret back)", Some("secrets.db — user; the VALUE lives in the OS keychain, not here")),
+    active("studio", "bsc-studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)", Some("the Studio snapshot store — user")),
+    deprecated("org", "bsc-teams", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)", Some("orgs/ — the same store `bsc teams` serves")),
+    deprecated("component", "bsc-component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)", Some("the component library — the same store `bsc ui` serves")),
+    active("ui", "bsc-ui", "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)", Some("the component library + themes + released kits")),
+    active("logs", "logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control", Some("the unified log / perf / cost engine")),
     // #82: this line USED to advertise `read/write/edit/list/info` — four of which have never
     // existed. A designer followed it, ran `bsc files list`, got `unknown command 'list'`, and filed
     // a request for the directory listing that `tree` had been providing all along. An overview that
     // names verbs the CLI lacks is worse than no overview: it is a map to a door that is not there.
-    active("files", "read-only file toolkit: tree (folder structure) · stat · read · refs", None),
-    active("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)", None),
-    active("navigate", "steer the RUNNING app to a view — so a capture can target something", None),
-    active("fleet", "which fleet panes are ACTUALLY alive — real liveness + pid from the running app", None),
-    active("sandbox", "a caged session's rendered launch argv: inspect or replay it outside the app (#135)", Some("the pane's sandbox-stores dir — per-session, cleared with the pane")),
-    active("session", "the app-owned SYSTEM SESSIONS: start · stop · list (designer, librarian, …)", None),
-    active("metrics", "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project", Some("the unified log / perf / cost engine")),
+    active("files", "bsc-files", "read-only file toolkit: tree (folder structure) · stat · read · refs", None),
+    active("shot", "bsc-shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)", None),
+    active("navigate", "bsc-navigate", "steer the RUNNING app to a view — so a capture can target something", None),
+    active("fleet", "bsc-fleet", "which fleet panes are ACTUALLY alive — real liveness + pid from the running app", None),
+    active("sandbox", "bsc-sandbox", "a caged session's rendered launch argv: inspect or replay it outside the app (#135)", Some("the pane's sandbox-stores dir — per-session, cleared with the pane")),
+    active("session", "bsc-session", "the app-owned SYSTEM SESSIONS: start · stop · list (designer, librarian, …)", None),
+    active("metrics", "logs", "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project", Some("the unified log / perf / cost engine")),
     // #command-surface-catalog-is-one-source: `perf` DISPATCHED but was absent from this catalog, so
     // `bsc help` never mentioned it. Same shape as `bsc plan brief` being undiscoverable.
-    active("perf", "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)", Some("the frontend instrumentation store")),
-    active("mem", "the MEMORY + COST surface — app heap, build time and build memory (read-only)", Some("the project run store + the browser harness")),
-    active("work", "the work loop: run the gate and RECORD what it actually did on the change record", Some("the per-project plan store — the change record's gate evidence + the known-red declarations")),
-    active("debug", "inspect the RUNNING app's live DOM + preview state (read-only)", None),
-    active("llm", "the LOCAL model runtime: what slot count and context ollama actually GRANTED, vs what was asked", None),
-    active("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)", Some("the conversation-loop store — user")),
-    active("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)", Some("the improvement-request store — user")),
-    active("runtime", "runtime attestations: which RECORD actually served each module while the app ran", Some("the runtime-attestation store")),
-    active("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)", Some("knowledge/algorithms.json — packaged seed + writable store, $BSC_GRAPH_STORE")),
-    active("cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL", None),
-    active("data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
-    active("cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
-    active("surface", "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks", Some("the command-surface catalog, compiled into this binary")),
-    active("mcp", "MCP: the server store (`server`) + the bundled stdio servers (research/compliance/cve)", None),
-    internal("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)", None),
+    active("perf", "logs", "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)", Some("the frontend instrumentation store")),
+    active("mem", "bsc-mem", "the MEMORY + COST surface — app heap, build time and build memory (read-only)", Some("the project run store + the browser harness")),
+    active("work", "bsc-work", "the work loop: run the gate and RECORD what it actually did on the change record", Some("the per-project plan store — the change record's gate evidence + the known-red declarations")),
+    active("debug", "bsc-debug", "inspect the RUNNING app's live DOM + preview state (read-only)", None),
+    active("llm", "bsc-llm", "the LOCAL model runtime: what slot count and context ollama actually GRANTED, vs what was asked", None),
+    active("loop", "bsc-loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)", Some("the conversation-loop store — user")),
+    active("request", "bsc-request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)", Some("the improvement-request store — user")),
+    active("runtime", "bsc-runtime", "runtime attestations: which RECORD actually served each module while the app ran", Some("the runtime-attestation store")),
+    active("graph", "bsc-graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)", Some("knowledge/algorithms.json — packaged seed + writable store, $BSC_GRAPH_STORE")),
+    active("cad", "bsc-cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL", None),
+    active("data", "bsc-data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
+    active("cve", "cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
+    active("surface", "bsc", "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks", Some("the command-surface catalog, compiled into this binary")),
+    active("mcp", "bsc", "MCP: the server store (`server`) + the bundled stdio servers (research/compliance/cve)", None),
+    internal("hook", "bsc", "internal PreToolUse deny hooks (run by Claude Code, not by hand)", None),
     // #command-surface-catalog-is-one-source: `serve` (#4152) dispatched but was likewise absent.
-    internal("serve", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
-    active("version", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
-    active("config", "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)", Some("~/.base-studio-code/config/ — the runtime config-seed mirror")),
+    internal("serve", "bsc", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
+    active("version", "bsc", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
+    active("config", "bsc-config", "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)", Some("~/.base-studio-code/config/ — the runtime config-seed mirror")),
 ];
 
 fn top_help() -> String {
@@ -164,6 +181,7 @@ fn surface_cli(rest: Vec<String>) -> Result<(), String> {
                     .map(|c| {
                         serde_json::json!({
                             "name": c.name,
+                            "crate": c.krate,
                             "summary": c.summary,
                             "store": c.store,
                             "status": c.status.as_str(),
@@ -384,6 +402,141 @@ mod tests {
         // guard into a no-op the first time the function is renamed.
         assert!(names.len() > 10, "the dispatch scan found only {names:?} — the scan is broken, not the code");
         names
+    }
+
+    /// Every crate in the workspace, as `lib target name -> package name`.
+    ///
+    /// THREE NAMES ARE IN PLAY and mixing them up is the whole difficulty. The DIRECTORY differs
+    /// from the package for `crates/data` (`bsc-data`) and `crates/llm` (`bsc-llm`). The LIB TARGET
+    /// — what the dispatch actually writes — differs again for `llm`, the only crate in the
+    /// workspace where it does. Keying on either of the other two gets `llm` wrong and looks right
+    /// everywhere else, which is exactly the shape that ships.
+    fn lib_target_to_package() -> std::collections::HashMap<String, String> {
+        let crates_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut out = std::collections::HashMap::new();
+        for e in std::fs::read_dir(&crates_dir).expect("crates/ is readable").flatten() {
+            let toml = e.path().join("Cargo.toml");
+            let Ok(txt) = std::fs::read_to_string(&toml) else { continue };
+            let pkg = txt
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("name = \"").and_then(|r| r.strip_suffix('"')))
+                .map(str::to_string);
+            let Some(pkg) = pkg else { continue };
+            // `[lib] name = "..."` when present, else the package name with hyphens swapped.
+            let lib = txt
+                .split("[lib]")
+                .nth(1)
+                .and_then(|tail| {
+                    tail.split("\n[").next().unwrap_or(tail).lines().find_map(|l| {
+                        l.trim().strip_prefix("name = \"").and_then(|r| r.strip_suffix('"'))
+                    })
+                })
+                .map(str::to_string)
+                .unwrap_or_else(|| pkg.replace('-', "_"));
+            out.insert(lib, pkg);
+        }
+        assert!(out.len() > 40, "the crate scan found only {} packages — the scan is broken", out.len());
+        out
+    }
+
+    /// Every dispatch arm as `(verb, package that serves it)`, read from this file's own source.
+    ///
+    /// Three arm shapes, all of which occur: `crate::cli::run(...)`; a multi-line BLOCK, used by the
+    /// deprecated aliases, where the crate appears on a later line; and a local fn or module, which
+    /// is this crate serving the verb itself. The path is not always `cli::run` — `"perf" =>
+    /// logs::instrument::run` — so the rule is the FIRST path segment, not the `cli` convention.
+    ///
+    /// AN ARM IT CANNOT READ IS A FAILURE, never a silent omission. The first version of this scan
+    /// resolved 43 of 44 and dropped `version`, whose block calls `bsc_cli_util::version_line`
+    /// rather than any `cli::run`; a count mismatch was the only signal that anything was wrong.
+    fn dispatched_crates() -> Vec<(String, String)> {
+        const SRC: &str = include_str!("main.rs");
+        const NOT_A_SURFACE: &[&str] = &["", "help", "-h", "--help", "--version", "-V"];
+        let lib2pkg = lib_target_to_package();
+        let start = SRC.find("pub(crate) fn dispatch").expect("dispatch is still named `dispatch`");
+        let end = start + SRC[start..].find("fn run_mcp").expect("run_mcp still follows dispatch");
+
+        let mut out: Vec<(String, String)> = Vec::new();
+        let mut pending: Vec<String> = Vec::new();
+        for line in SRC[start..end].lines() {
+            let t = line.trim_start();
+            if t.starts_with('"') {
+                let Some(arrow) = t.find("=>") else { continue };
+                let (head, body) = (&t[..arrow], t[arrow + 2..].trim());
+                let mut names = Vec::new();
+                let mut rest = head;
+                while let Some(open) = rest.find('"') {
+                    let after = &rest[open + 1..];
+                    let Some(close) = after.find('"') else { break };
+                    let n = &after[..close];
+                    if !NOT_A_SURFACE.contains(&n) {
+                        names.push(n.to_string());
+                    }
+                    rest = &after[close + 1..];
+                }
+                if body == "{" || body.is_empty() {
+                    pending = names; // a block arm: the crate is on a later line
+                    continue;
+                }
+                let seg: String = body.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                // A bare fn call (`surface_cli(rest)`) or a local module (`serve::run()`) is not a
+                // crate — this crate is serving the verb itself.
+                let pkg = lib2pkg.get(&seg).cloned().unwrap_or_else(|| "bsc".to_string());
+                for n in names {
+                    out.push((n, pkg.clone()));
+                }
+                pending.clear();
+            } else if !pending.is_empty() {
+                // In a BLOCK the crate is the one whose `cli::run` is called. None means this crate
+                // does the work — `version` formats a string with `bsc-cli-util`, but a library it
+                // calls is not the crate that serves the verb.
+                if let Some(idx) = t.find("::cli::run(") {
+                    let seg: String =
+                        t[..idx].chars().rev().take_while(|c| c.is_alphanumeric() || *c == '_')
+                            .collect::<Vec<_>>().into_iter().rev().collect();
+                    let pkg = lib2pkg.get(&seg).cloned().unwrap_or_else(|| "bsc".to_string());
+                    for n in pending.drain(..) {
+                        out.push((n, pkg.clone()));
+                    }
+                } else if t.starts_with('}') {
+                    for n in pending.drain(..) {
+                        out.push((n, "bsc".to_string()));
+                    }
+                }
+            }
+        }
+        assert!(pending.is_empty(), "the scan could not resolve a crate for {pending:?} — read the arm, do not guess");
+        assert!(out.len() > 40, "the dispatch scan found only {} arms — the scan is broken, not the code", out.len());
+        out
+    }
+
+    /// THE CATALOG NAMES THE CRATE THAT ACTUALLY DISPATCHES.
+    ///
+    /// The crate is what the Glance surface node is keyed on, so a wrong one puts a verb under the
+    /// wrong node — and unlike a missing row, nothing else would ever notice. `krate` is a const
+    /// beside a `match`, exactly as `name` is; this test is the mechanism that keeps them equal, and
+    /// there is no build step deriving it.
+    #[test]
+    fn the_catalog_names_the_crate_that_dispatches() {
+        let dispatched = dispatched_crates();
+        for (verb, pkg) in &dispatched {
+            let Some(row) = COMMANDS.iter().find(|c| c.name == verb) else { continue };
+            assert_eq!(
+                &row.krate, pkg,
+                "`bsc {verb}` dispatches to `{pkg}` but its catalog row says `{}` — the surface node \
+                 would be filed under the wrong crate",
+                row.krate
+            );
+        }
+        // Every row must have been checked: a row whose verb the scan never saw is the silent case.
+        for c in COMMANDS {
+            assert!(
+                dispatched.iter().any(|(v, _)| v == c.name),
+                "the catalog row `{}` names crate `{}` but the dispatch scan never saw that verb",
+                c.name, c.krate
+            );
+        }
+        assert!(!COMMANDS.iter().any(|c| c.krate.is_empty()), "a row left its crate blank");
     }
 
     /// THE CATALOG AND DISPATCH MAY NOT DISAGREE (`command-surface-catalog-is-one-source`).
