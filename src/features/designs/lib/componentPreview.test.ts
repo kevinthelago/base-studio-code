@@ -710,6 +710,59 @@ describe("componentPreviewFiles — a specifier an ALGORITHMS record provides (#
   });
 });
 
+// SIBLING-BY-ID (#3606, request-112): the RUNTIME loader (`resolveGraphSource`, graphResolver.ts) lets a
+// graph component import a sibling by `@/components/<id>`, independent of `src` — how a migrated page
+// composes its panels (`GlanceChatDock` importing `@/components/glance-session-log`). The Rust doctor
+// already modeled this as resolvable (`kit_targets`'s synthetic `components/{id}.tsx`, #3897) so it never
+// flagged these components — but the PREVIEW never implemented the same form, so `bsc navigate` on a page
+// composing them threw "module not found" while `bsc ui doctor` reported the kit clean. That divergence is
+// exactly what request-112 (the react designer) hit building `glancepage`.
+describe("componentPreviewFiles / componentBuildable — sibling-by-id vendoring (#3606)", () => {
+  const sessionLog: ComponentRecord = {
+    ...base, id: "glance-session-log", name: "GlanceSessionLog", kitId: "base-studio-code", role: "composite",
+    provides: "@/features/glance/GlanceSessionLog", src: "src/features/glance/GlanceSessionLog.tsx",
+    source: undefined, srcText: "export function GlanceSessionLog() { return null; }",
+  };
+  const chatDock: ComponentRecord = {
+    ...base, id: "glance-chat-dock", name: "GlanceChatDock", kitId: "base-studio-code", role: "composite",
+    src: "src/features/glance/GlanceChatDock.tsx", source: undefined,
+    // The real bug: importing the sibling BY ID (`@/components/<id>`) rather than by its `provides` spec.
+    srcText: 'import { GlanceSessionLog } from "@/components/glance-session-log";\nexport function GlanceChatDock() { return <GlanceSessionLog/>; }',
+  };
+
+  it("vendors a `@/components/<id>` sibling import into the build, at the synthetic `components/<id>.tsx` mem path", () => {
+    const build = componentPreviewFiles(chatDock, ARTIFACT, [sessionLog]);
+    expect(build).not.toBeNull();
+    expect(build!.files["src/features/glance/GlanceChatDock.tsx"]).toContain("export function GlanceChatDock");
+    expect(build!.files["components/glance-session-log.tsx"]).toContain("export function GlanceSessionLog");
+  });
+
+  it("vendors the TRANSITIVE closure through a sibling-by-id import", () => {
+    const streamMorph: ComponentRecord = {
+      ...base, id: "glance-stream-morph", name: "GlanceStreamMorph", kitId: "base-studio-code", role: "composite",
+      src: "src/features/glance/GlanceStreamMorph.tsx", source: undefined,
+      srcText: 'import { GlanceChatDock } from "@/components/glance-chat-dock";\nexport function GlanceStreamMorph() { return <GlanceChatDock/>; }',
+    };
+    const build = componentPreviewFiles(streamMorph, ARTIFACT, [chatDock, sessionLog]);
+    expect(build).not.toBeNull();
+    expect(build!.files["components/glance-chat-dock.tsx"]).toContain("export function GlanceChatDock");
+    expect(build!.files["components/glance-session-log.tsx"]).toContain("export function GlanceSessionLog"); // pulled in transitively
+  });
+
+  it("componentBuildable agrees (#4130 lockstep) — a sibling-by-id import is buildable, not a false no-implementation", () => {
+    expect(componentBuildable(chatDock, ARTIFACT, [sessionLog])).toBe(true);
+  });
+
+  it("still returns null / unbuildable for a `@/components/<id>` naming NO sibling in this kit", () => {
+    const dangling: ComponentRecord = {
+      ...base, id: "x", name: "X", kitId: "base-studio-code", src: "src/features/glance/X.tsx", source: undefined,
+      srcText: 'import { Nope } from "@/components/glance-nope";\nexport function X() { return null; }',
+    };
+    expect(componentPreviewFiles(dangling, ARTIFACT, [sessionLog])).toBeNull();
+    expect(componentBuildable(dangling, ARTIFACT, [sessionLog])).toBe(false);
+  });
+});
+
 describe("makeGraphProvidesResolver — the producer #83 specified and never had", () => {
   const IMPLS = [
     { provides: "@/app/lazyWorkspaces", code: "export const WorkspaceFallback = () => null;" },
