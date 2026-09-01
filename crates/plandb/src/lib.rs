@@ -43,6 +43,11 @@ mod blueprint;
 pub mod changes;
 mod confirmed;
 mod decisions;
+// The classify PREDICATES in here have no caller yet: the flip is a separate item
+// (`the-classification-answers-its-own-questions-on-the-bsc-surface`) so the derivation and the
+// behaviour change stay independently revertible. REMOVING THIS ATTRIBUTE IS PART OF THAT ITEM — it
+// is the marker that the derivation is still orphaned, and leaving it would hide the next orphan.
+#[allow(dead_code)]
 mod classify;
 pub mod known_red;
 mod requirement;
