@@ -1056,6 +1056,42 @@ bsc plan change gate <ref> typecheck pass
 bsc plan change gate <ref> test not-run              # a skipped gate is recorded as skipped, never omitted
 ```
 
+#### An invariant you can name is a GATE YOU OWE
+
+**If you fixed something by hand and can state the rule it broke, write the gate before you close the
+item.** A fix repairs one instance; the gate is what stops the next one. Taking that opportunity is the
+default here, not an optional extra — say so on the change record when you decline it, and why.
+
+This is not a style preference. **This repo's signature failure is a gate that PASSES while covering
+less than the reader assumes**, and every instance was an invariant somebody knew and nobody encoded: a
+live Worker deleted with `tsc`+`lint`+`vitest` all green (only `vite build` saw it), one retired file
+orphaning ten stylesheets, twelve pages rendering records that had silently diverged from their files, a
+`vitest.config.ts` change that dropped 8 test files and reported all-passing, and the `shared/` boundary
+lint that quietly stopped covering most of the frontend as records replaced files (#181).
+
+**The bar is that the guard must FAIL against the old code.** Revert the fix, watch it go red, restore.
+A guard that has only ever been observed passing is not evidence — it is a claim. Caged, sidecar and
+trait-default tests are the usual way this goes wrong: they pass in milliseconds while the bug is live.
+Checksum the restore rather than trusting the copy.
+
+**Where a gate can actually live**, cheapest first:
+
+| the invariant is about | put it |
+|---|---|
+| one function's behaviour | a `#[test]` / `it()` beside it |
+| a rule over the whole tree | a `scripts/<name>.mjs` + its `.test.ts`, wired as a gate leg |
+| a record, not a file | vitest reading the store — `platformBoundary.test.ts` is the precedent |
+| a shape the type system can hold | a type, which needs no gate at all |
+
+**A red that is noisy, racy or hard to action is a reason to IMPROVE THE REPORT, never to stop asking the
+question.** Demoting a gate deletes the only signal that the thing it watches has broken. Make it name
+what it found and who owns it — `graph-promote-check` compares a git-tracked file against a runtime
+store every concurrent session writes to, so its red is often live authoring rather than stale drift; it
+now prints each drifted node's author and age, and warns off a promote when the edit is minutes old.
+That turned an unowned standing red into a line you can act on in seconds. **Whether a gate should stop
+failing the build is a MAINTAINER decision, not a branch's** — record the case on the item and leave the
+leg alone.
+
 **5 · Commit** on the branch — **never push**. End the message with the agreed `Co-Authored-By:` trailer.
 
 **6 · Mark it complete** — the worker's half is done, awaiting confirmation:
