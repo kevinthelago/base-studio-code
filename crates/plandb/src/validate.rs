@@ -2339,3 +2339,99 @@ mod github_decision_tests {
         assert!(validate_classify_config(&legacy).is_ok());
     }
 }
+
+/// THE TAXONOMY CONTRACT (`the-classify-taxonomy-is-two-unbound-copies`).
+///
+/// [`APP_TYPES`], [`LIFECYCLES`] and [`SYSTEM_SOURCES`] are declared TWICE — here, and in
+/// `classify-config.ts` — and [`validate_classify_config`] REJECTS any value outside them, so this
+/// copy is a gate rather than documentation. They were byte-identical and bound by nothing.
+///
+/// The failure that motivates this is silent and asymmetric: the app offers an `appType` the CLI
+/// refuses, or the planner writes a `lifecycle` the app cannot read, and the first symptom is a
+/// rejected `bsc plan classify` write nobody expected. It is the shape of the two hand-copied gate
+/// tables behind `a-directors-pane-can-never-write-the-gate-that-lets-it-launch`.
+///
+/// `classifyTaxonomy.fixtures.json` is GENERATED from the TypeScript and read by both sides, so
+/// neither can move alone: a token added there makes the generator's own test stale, and a token
+/// added HERE fails the test below.
+#[cfg(test)]
+mod taxonomy_contract {
+    use super::{APP_TYPES, LIFECYCLES, SYSTEM_SOURCES};
+
+    /// Resolved BY FILENAME under `src/`, the rule every other cross-language contract here uses.
+    /// Exactly one match is required — zero or a collision is a hard failure, never a silent
+    /// first-hit.
+    fn fixture() -> serde_json::Value {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
+        let mut found: Vec<std::path::PathBuf> = Vec::new();
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some("classifyTaxonomy.fixtures.json") {
+                    out.push(p);
+                }
+            }
+        }
+        walk(&root, &mut found);
+        assert_eq!(found.len(), 1, "expected exactly one classifyTaxonomy.fixtures.json, got {found:?}");
+        serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+    fn tokens(v: &serde_json::Value, key: &str) -> Vec<String> {
+        v.get(key)
+            .and_then(|x| x.as_array())
+            .unwrap_or_else(|| panic!("fixture is missing {key:?}"))
+            .iter()
+            .map(|t| t.as_str().expect("taxonomy tokens are strings").to_string())
+            .collect()
+    }
+
+    /// ORDER AND ARITY ARE BOTH PART OF THE CONTRACT. Arity because a missing token is a value one
+    /// side accepts and the other rejects; order because `validate_classify_config` renders the list
+    /// back to the planner verbatim ("must be one of: …"), so a reordering changes the correction an
+    /// agent is handed.
+    #[test]
+    fn the_rust_taxonomy_matches_the_typescript_token_for_token() {
+        let fx = fixture();
+        assert_eq!(APP_TYPES.to_vec(), tokens(&fx, "appTypes"), "appType vocabulary drifted");
+        assert_eq!(LIFECYCLES.to_vec(), tokens(&fx, "lifecycles"), "lifecycle vocabulary drifted");
+        assert_eq!(SYSTEM_SOURCES.to_vec(), tokens(&fx, "systemSources"), "systemSource vocabulary drifted");
+    }
+
+    /// A fixture that lost its contents would make the test above pass vacuously against an equally
+    /// empty Rust list, so the sizes are asserted independently of the comparison.
+    #[test]
+    fn the_contract_is_not_vacuous() {
+        let fx = fixture();
+        assert_eq!(tokens(&fx, "appTypes").len(), 9);
+        assert_eq!(tokens(&fx, "lifecycles").len(), 5);
+        assert_eq!(tokens(&fx, "systemSources").len(), 2);
+        assert!(!APP_TYPES.is_empty() && !LIFECYCLES.is_empty() && !SYSTEM_SOURCES.is_empty());
+    }
+
+    /// Every token the gate accepts must be one a `validate_classify_config` caller can actually
+    /// write — this walks the real validator rather than the constants, so the contract covers the
+    /// PATH the planner takes rather than the list in isolation.
+    #[test]
+    fn every_token_in_the_contract_is_accepted_by_the_validator() {
+        let fx = fixture();
+        for (key, field) in
+            [("appTypes", "appType"), ("lifecycles", "lifecycle"), ("systemSources", "uiSystem"), ("systemSources", "algorithmSystem")]
+        {
+            for t in tokens(&fx, key) {
+                let v = serde_json::json!({ field: t });
+                assert!(
+                    super::validate_classify_config(&v).is_ok(),
+                    "the validator rejects {field}={t:?}, which the shared contract says is valid"
+                );
+            }
+        }
+        // And the converse: a token that is in NEITHER copy must still be refused, or the gate has
+        // stopped gating and the whole contract is decorative.
+        let bogus = serde_json::json!({ "appType": "not-an-app-type" });
+        assert!(super::validate_classify_config(&bogus).is_err());
+    }
+}
