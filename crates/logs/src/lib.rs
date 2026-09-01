@@ -19,6 +19,10 @@ pub mod instrument;
 pub mod cli;
 pub mod scope;
 pub mod waiting;
+/// The `coord.log` ingest (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) — parse a
+/// line, fold it into the coordination state, replay a whole log. Proved case by case against the
+/// TypeScript reducer it is ported from; see the module docs.
+pub mod coord;
 /// What awaits the DIRECTOR (issues to route, briefs to reconcile) — the sibling of [`waiting`],
 /// which is about a session blocked on a person. The header argues why they are two verbs.
 pub mod pending;
