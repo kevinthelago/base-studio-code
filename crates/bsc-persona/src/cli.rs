@@ -334,7 +334,17 @@ fn set_persona(args: &[String], dir: &std::path::Path, prog: &str) -> Result<(),
             "--dir" => {
                 it.next(); // already resolved into `dir` by the caller
             }
-            other => return Err(format!("{prog} set: unknown flag '{other}'")),
+            // ACCURATE ABOUT WHAT IT FOUND. Its three siblings — `model`, `use`, `whatami` — guard on
+            // `starts_with("--")`, so only this one calls a bare word a "flag": `bsc persona set foo`
+            // answered "unknown flag 'foo'". Still refused, because `set` takes no positionals and
+            // swallowing a typo silently is worse, but named for what it is.
+            other if other.starts_with("--") => return Err(format!("{prog} set: unknown flag '{other}'")),
+            other => {
+                return Err(format!(
+                    "{prog} set: unexpected argument '{other}' — `set` reads the persona from stdin and \
+                     takes flags only"
+                ))
+            }
         }
     }
 
@@ -1607,6 +1617,24 @@ mod tests {
     fn whatami_rejects_an_unknown_flag() {
         let e = whatami(&["whatami".into(), "--wat".into()], "bsc persona").unwrap_err();
         assert!(e.contains("unknown flag --wat"), "{e}");
+    }
+
+    /// A BARE WORD IS NOT A FLAG, and the refusal has to say so.
+    ///
+    /// `set` was the only one of persona's four subcommand parsers without a `starts_with("--")`
+    /// guard, so `bsc persona set foo` answered "unknown flag 'foo'" about something that is not a
+    /// flag, while `model`/`use`/`whatami` beside it would have taken it as a positional. It still
+    /// REFUSES — `set` reads its persona from stdin and has no positionals, so swallowing a typo
+    /// silently would be worse — but it names what it found.
+    #[test]
+    fn set_refuses_a_bare_argument_without_calling_it_a_flag() {
+        let dir = scratch("set-bare");
+        let e = set_persona(&["set".into(), "foo".into()], &dir, "bsc persona").unwrap_err();
+        assert!(e.contains("unexpected argument 'foo'"), "{e}");
+        assert!(!e.contains("unknown flag"), "a bare word is not a flag: {e}");
+        // A real unknown FLAG still reads as one.
+        let e = set_persona(&["set".into(), "--wat".into()], &dir, "bsc persona").unwrap_err();
+        assert!(e.contains("unknown flag '--wat'"), "{e}");
     }
 
     #[test]
