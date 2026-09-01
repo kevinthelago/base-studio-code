@@ -92,9 +92,205 @@ pub fn is_png(bytes: &[u8]) -> bool {
     bytes.len() >= 8 && bytes[..8] == PNG_MAGIC
 }
 
+/// Grid resolution for the per-tile pass, matching [`compare::TILES`] so the two surfaces describe a
+/// frame the same way.
+pub const FRAME_TILES: u32 = 8;
+
+/// How many low bits of each channel the colour census discards.
+///
+/// Three, so a smooth gradient or an anti-aliased edge does not read as thousands of distinct colours —
+/// which would make `colours` a measure of the encoder rather than of the UI. It is the same reasoning
+/// behind `compare`'s tile pass: a number is only useful once render noise has been averaged out of it.
+const QUANTIZE_BITS: u8 = 3;
+const BUCKETS: usize = 1 << (3 * (8 - QUANTIZE_BITS as usize));
+
+/// What a SINGLE capture can be said about locally, with no model and no reference render.
+///
+/// `compare` answers "did this change", which needs two images. This answers the question that comes
+/// FIRST and that a design loop cannot afford to get wrong: did anything render at all? A blank frame
+/// diffs clean against another blank frame, so a pipeline that only ever compares reports `unchanged`
+/// with total confidence about a component that has been broken the whole time.
+///
+/// Everything here is a MEASUREMENT rather than a judgement — except `blank`, which is a definition
+/// (see below), not a threshold. Deciding that 3% ink is "too empty" needs a number nobody has measured,
+/// and this repo's own `compare` docs are explicit that a constant picked here would be "a guess wearing
+/// a number's clothes".
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Frame {
+    pub w: u32,
+    pub h: u32,
+    /// The frame is ONE colour. A definition, not a tuned threshold: `colours <= 1` after quantization.
+    /// This is the render-did-not-happen signal.
+    pub blank: bool,
+    /// Distinct quantized colours present.
+    pub colours: usize,
+    /// The most common colour's EXACT RGB — the first pixel found in the modal bucket, not the bucket's
+    /// midpoint, so a pure `#000` background reports as `[0,0,0]` rather than a quantization artefact.
+    ///
+    /// An exact tie resolves to the HIGHEST bucket index. That is arbitrary and deliberately so: a frame
+    /// with two equally common colours has no background, and inventing a rule to pick one would dress a
+    /// coin flip as a finding. It is pinned only so the output is reproducible.
+    pub background: [u8; 3],
+    /// Fraction of pixels not in the modal bucket — "how much is drawn on the background", `0.0..=1.0`.
+    pub ink: f64,
+    /// Tiles (of `tiles`) with NO ink at all. Reported, never judged: a real UI has legitimately empty
+    /// regions, so this is only evidence — it is a whole side of the frame going missing that matters,
+    /// and that is the caller's call to make against its own subject.
+    pub empty_tiles: u32,
+    /// Total tiles in the grid, so `empty_tiles` reads without knowing [`FRAME_TILES`].
+    pub tiles: u32,
+}
+
+/// Census a decoded RGBA8 frame. `rgba` is `w * h * 4`; a short buffer is measured over the pixels it
+/// actually has rather than panicking, since a truncated decode is the caller's problem to report.
+///
+/// Alpha is ignored: a capture is composited output and opaque by construction (both platform arms ask
+/// for an opaque background), so an alpha channel here carries no signal.
+pub fn analyze_frame(w: u32, h: u32, rgba: &[u8]) -> Frame {
+    let px: Vec<[u8; 3]> = rgba.as_chunks::<4>().0.iter().map(|p| [p[0], p[1], p[2]]).collect();
+    let total = px.len();
+    if total == 0 {
+        return Frame { w, h, blank: true, colours: 0, background: [0, 0, 0], ink: 0.0, empty_tiles: 0, tiles: 0 };
+    }
+
+    let bucket = |p: [u8; 3]| -> usize {
+        let q = |c: u8| (c >> QUANTIZE_BITS) as usize;
+        (q(p[0]) << 10) | (q(p[1]) << 5) | q(p[2])
+    };
+
+    let mut counts = vec![0u32; BUCKETS];
+    for &p in &px {
+        counts[bucket(p)] += 1;
+    }
+    let colours = counts.iter().filter(|&&c| c > 0).count();
+    // `max_by_key` returns the LAST maximum, so ties land on the highest bucket index. Stated here
+    // rather than inherited silently — see `background` on [`Frame`] for why the rule is arbitrary.
+    let (modal, modal_count) = counts
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, &c)| c)
+        .map(|(i, &c)| (i, c as usize))
+        .unwrap_or((0, 0));
+
+    // The modal bucket's EXACT colour, from the first pixel that lands in it.
+    let background = px.iter().find(|&&p| bucket(p) == modal).copied().unwrap_or([0, 0, 0]);
+    let ink = (total - modal_count) as f64 / total as f64;
+
+    // Per-tile: a tile is empty when every pixel in it is the background colour. Tiles are derived from
+    // the DECLARED w/h, so a truncated buffer simply leaves later tiles unvisited rather than misindexing.
+    let mut empty_tiles = 0;
+    let mut tiles = 0;
+    if w > 0 && h > 0 {
+        for ty in 0..FRAME_TILES {
+            for tx in 0..FRAME_TILES {
+                let (x0, x1) = (w * tx / FRAME_TILES, w * (tx + 1) / FRAME_TILES);
+                let (y0, y1) = (h * ty / FRAME_TILES, h * (ty + 1) / FRAME_TILES);
+                if x0 >= x1 || y0 >= y1 {
+                    continue; // a frame narrower than the grid — no tile, rather than a zero-pixel one
+                }
+                tiles += 1;
+                let mut inked = false;
+                'rows: for y in y0..y1 {
+                    for x in x0..x1 {
+                        let i = (y as usize) * (w as usize) + x as usize;
+                        match px.get(i) {
+                            Some(&p) if bucket(p) != modal => {
+                                inked = true;
+                                break 'rows;
+                            }
+                            Some(_) => {}
+                            None => break 'rows, // truncated buffer: stop, do not wrap
+                        }
+                    }
+                }
+                if !inked {
+                    empty_tiles += 1;
+                }
+            }
+        }
+    }
+
+    Frame { w, h, blank: colours <= 1, colours, background, ink, empty_tiles, tiles }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build an RGBA frame from a per-pixel colour function.
+    fn frame_of(w: u32, h: u32, f: impl Fn(u32, u32) -> [u8; 3]) -> Vec<u8> {
+        let mut out = Vec::with_capacity((w as usize) * (h as usize) * 4);
+        for y in 0..h {
+            for x in 0..w {
+                let c = f(x, y);
+                out.extend_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+        }
+        out
+    }
+
+    /// THE SIGNAL THIS EXISTS FOR. A blank frame diffs clean against another blank frame, so a pipeline
+    /// that only ever COMPARES reports `unchanged` with total confidence about a component that has been
+    /// broken all along. One image is enough to catch it.
+    #[test]
+    fn a_blank_frame_is_named_as_blank_and_a_rendered_one_is_not() {
+        let blank = analyze_frame(64, 64, &frame_of(64, 64, |_, _| [10, 10, 10]));
+        assert!(blank.blank, "a single-colour frame is blank");
+        assert_eq!(blank.colours, 1);
+        assert_eq!(blank.ink, 0.0, "nothing is drawn on it");
+        assert_eq!(blank.background, [10, 10, 10], "the EXACT colour, not a quantization midpoint");
+        assert_eq!(blank.empty_tiles, blank.tiles, "every tile is empty");
+
+        // Content across the left QUARTER. Deliberately not a half: a 50/50 frame has no modal colour,
+        // so asserting a background there would be pinning a tie-break rather than the behaviour.
+        let drawn = analyze_frame(64, 64, &frame_of(64, 64, |x, _| if x < 16 { [200, 30, 30] } else { [10, 10, 10] }));
+        assert!(!drawn.blank);
+        assert_eq!(drawn.colours, 2);
+        assert!((drawn.ink - 0.25).abs() < 1e-9, "a quarter of the pixels are not background, got {}", drawn.ink);
+        assert_eq!(drawn.background, [10, 10, 10], "the MAJORITY colour is the background");
+        // 8x8 grid over 64px ⇒ 8px tiles; the drawn quarter covers the first two columns.
+        assert_eq!(drawn.tiles, 64);
+        assert_eq!(drawn.empty_tiles, 48, "six of eight tile columns are untouched");
+    }
+
+    /// A near-blank frame is NOT called blank — `blank` is a definition (`colours <= 1`), not a tuned
+    /// threshold. `ink` is reported so a caller can apply a threshold it has actually measured.
+    #[test]
+    fn one_stray_pixel_is_reported_as_ink_rather_than_judged() {
+        let px = frame_of(64, 64, |x, y| if (x, y) == (0, 0) { [255, 255, 255] } else { [0, 0, 0] });
+        let f = analyze_frame(64, 64, &px);
+        assert!(!f.blank, "it is not one colour, so it is not blank — the caller decides if it is empty ENOUGH");
+        assert_eq!(f.colours, 2);
+        assert!(f.ink > 0.0 && f.ink < 0.001, "reported, not judged: {}", f.ink);
+        assert_eq!(f.empty_tiles, f.tiles - 1, "exactly one tile has anything in it");
+    }
+
+    /// Quantization collapses render noise, so `colours` measures the UI and not the encoder. Without it
+    /// a smooth gradient would report thousands of colours and the number would say nothing.
+    #[test]
+    fn a_gradient_does_not_read_as_thousands_of_colours() {
+        // 256 distinct exact greys across the row; 3 discarded bits ⇒ 32 buckets.
+        let px = frame_of(256, 8, |x, _| [x as u8, x as u8, x as u8]);
+        let f = analyze_frame(256, 8, &px);
+        assert_eq!(f.colours, 32, "256 exact greys collapse to 32 buckets, got {}", f.colours);
+        assert!(!f.blank);
+    }
+
+    #[test]
+    fn a_degenerate_frame_is_measured_rather_than_panicking() {
+        let empty = analyze_frame(0, 0, &[]);
+        assert!(empty.blank && empty.tiles == 0 && empty.colours == 0);
+
+        // A buffer SHORTER than w*h*4 (a truncated decode) must not wrap around or index out of bounds.
+        let short = analyze_frame(64, 64, &frame_of(64, 8, |_, _| [7, 7, 7]));
+        assert!(short.blank, "measured over the pixels it actually has");
+
+        // A frame narrower than the tile grid mints no zero-pixel tiles.
+        let thin = analyze_frame(3, 3, &frame_of(3, 3, |_, _| [1, 2, 3]));
+        assert!(thin.tiles <= 9 && thin.tiles > 0, "got {}", thin.tiles);
+        assert_eq!(thin.empty_tiles, thin.tiles);
+    }
 
     #[test]
     fn the_request_round_trips_through_the_shared_envelope() {
