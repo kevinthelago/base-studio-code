@@ -157,6 +157,13 @@ pub(crate) fn ensure_session_settings(
     // The user's list is the one source that is not derived from anything, which is why it must
     // arrive: the composition would otherwise silently drop it.
     user_denied_commands: Option<Vec<String>>,
+    // The pane ID, the flow's GATE, and the user's global bypass toggle — the last three inputs the
+    // permission block needs and could not derive
+    // (`the-launch-composes-its-own-tool-rules-instead-of-receiving-them`). The pane id is what
+    // `is_full_capability_session` reads: the debug studio is always bypass, by definition.
+    pane_id: Option<String>,
+    flow_gate: Option<String>,
+    global_bypass: Option<bool>,
     // The persona's OWN hooks, resolved, so the launch can compose the rest of the chain around them
     // (`the-launch-composes-its-own-hook-chain-instead-of-receiving-it`). A fact: persona resolution
     // is the renderer's, the same way the surface catalog and the studio registry are.
@@ -211,86 +218,82 @@ pub(crate) fn ensure_session_settings(
         );
     }
     let denied_commands = recon.merged;
-    // THE OTHER HALF OF THE SAME GATE. Denies UNION (an extra deny only tightens); allows INTERSECT
-    // (an `Edit(<glob>)` allow AUTO-APPROVES writes, so unioning one the frontend did not send would
-    // GRANT what is not granted). Both are no-ops when the two agree, which parity says they do.
-    let (db_owned, dep_manifests) = crate::session::role_gate::write_locks();
-    let tools = crate::session::role_gate::reconcile_tool_rules(
-        role_capability.as_ref(),
-        &db_owned,
-        &dep_manifests,
-        allow_tool_rules,
-        deny_tool_rules,
-    );
-    if !tools.deny_missing.is_empty() || !tools.allow_missing.is_empty() {
-        // Two different statements, deliberately not symmetric. A missing DENY was added — an extra
-        // deny only tightens. A missing ALLOW is only REPORTED: an allow auto-approves, so adding one
-        // the frontend did not send would grant what is not granted. And nothing is dropped from the
-        // allow list any more — it legitimately carries the profile's grants and the restricted-role
-        // surface, which Rust does not derive (`the-tool-rule-intersect-drops-every-profile-and-restricted-allow`).
-        log::warn!(
-            "session settings[{cwd}]: tool rules disagreed with the derivation — ADDED {:?} to deny; \
-             the frontend omitted {:?} from allow, which is reported and NOT added. A disagreement \
-             means one side is wrong.",
-            tools.deny_missing,
-            tools.allow_missing,
-        );
-    }
-    let allow_tool_rules = tools.allow;
-    let deny_tool_rules = tools.deny;
-    // THE PROFILE, DERIVED RATHER THAN RECEIVED. `bash_posture` is the sharp one: `build_allow_rules`
-    // scales the ENTIRE auto-approve baseline by it, so until now the breadth of a session's shell
-    // surface was computed in a renderer and obeyed here without the backend being able to check it.
+    // THE WHOLE PERMISSION BLOCK, COMPOSED HERE. This supersedes the two narrower reconciliations
+    // that stood here — the role's tool rules and the profile's bridge — because
+    // `session_tool_rules` composes the same fields from the same inputs plus the flow and the pane,
+    // and three overlapping reconciliations of one block is one more than the block can explain.
     //
-    // A DUAL RUN, not a clean cut — the frontend still sends its own computation and this UNIONS with
-    // it, so the cutover can only restore what the profile grants, never drop what the frontend
-    // legitimately carries on top (the role gate, the restricted-role surface, the user's own lists).
-    // The TypeScript is deleted in its own slice, once the warning below has been empty in the field.
-    let prof = crate::session::profile_settings::reconcile_profile_settings(
-        agent_profile.as_ref(),
-        crate::session::profile_settings::ProfileSessionSettings {
+    // The LISTS union, frontend order first. The SCALARS do not, and each is decided on what its two
+    // failure directions cost rather than by one rule — see `reconcile_session_tool_rules`. `bypass`
+    // is the sharp one: it decides whether `permissions.deny` is honoured AT ALL, so a permissive
+    // error there stops every deny in this block applying at once.
+    let derived_tools = crate::session::tool_rules::session_tool_rules(
+        role_capability.as_ref(),
+        agent_profile
+            .as_ref()
+            .map(crate::session::profile_settings::resolve_profile_settings)
+            .as_ref(),
+        flow_push.as_deref(),
+        flow_gate.as_deref(),
+        pane_id.as_deref().unwrap_or_default(),
+        global_bypass.unwrap_or(false),
+    );
+    let tools = crate::session::tool_rules::reconcile_session_tool_rules(
+        crate::session::tool_rules::SessionToolRules {
             allowed_commands,
-            denied_commands,
             allow_tool_rules,
             deny_tool_rules,
+            ask_tool_rules,
             bash_posture,
+            restricted_allow: restricted_allow.unwrap_or(false),
+            bypass: bypass.unwrap_or(false),
         },
+        derived_tools,
+        role_capability.is_some(),
     );
-    if !prof.missing.is_empty() {
-        // The one direction that is a defect: Rust derived something the profile grants and the
-        // frontend did not send it. Named exactly, per field, because "some rules differed" is not
-        // something anyone can act on.
-        let detail = prof
+    if !tools.missing.is_empty() {
+        let detail = tools
             .missing
             .iter()
             .map(|(field, values)| format!("{field}={values:?}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let id = agent_profile.as_ref().map(|p| p.id.as_str()).unwrap_or("<none>");
         log::warn!(
-            "session settings[{cwd}]: the frontend OMITTED values profile `{id}` grants and Rust \
-             added — {detail}. The profile is the grant, so this is a renderer that lost it, not a \
-             difference of opinion."
+            "session settings[{cwd}]: the permission block was MISSING values the launch composed —              {detail}. Added. The frontend legitimately carries more (the user's own lists ride              along), so only this direction is a defect."
         );
     }
-    if let Some(d) = &prof.posture {
-        // A scalar cannot be unioned, so this is the one place a silent weakening could happen.
-        // Logged in BOTH directions — which side won is exactly what a reader needs.
+    if let Some(d) = &tools.bypass {
         log::warn!(
-            "session settings[{cwd}]: bash_posture disagreed — the frontend sent `{}`, Rust derived \
-             `{}` from the profile; the NARROWER `{}` wins (see reconcile_profile_settings).",
+            "session settings[{cwd}]: bypass disagreed — the frontend sent {}, the launch composed              {}; the RESTRICTIVE `false` wins. bypass decides whether permissions.deny is honoured at              all, so prompting less than intended is a hole while prompting more is a complaint.",
+            d.from_frontend,
+            d.derived,
+        );
+    }
+    if let Some(d) = &tools.posture {
+        log::warn!(
+            "session settings[{cwd}]: bash_posture disagreed — the frontend sent `{}`, the launch              composed `{}`; the NARROWER `{}` wins.",
             d.from_frontend,
             d.derived,
             d.chosen,
         );
     }
-    let crate::session::profile_settings::ProfileSessionSettings {
+    if let Some(d) = &tools.restricted_allow {
+        log::warn!(
+            "session settings[{cwd}]: restricted_allow disagreed — the frontend sent {}, the launch              composed {}; {} wins. It is a pure function of the role's own command surface, so with a              capability in hand the composition is simply right.",
+            d.from_frontend,
+            d.derived,
+            d.chosen,
+        );
+    }
+    let crate::session::tool_rules::SessionToolRules {
         allowed_commands,
-        denied_commands,
         allow_tool_rules,
         deny_tool_rules,
+        ask_tool_rules,
         bash_posture,
-    } = prof.merged;
+        restricted_allow,
+        bypass,
+    } = tools.merged;
     // THE HOOK CHAIN, COMPOSED HERE. Rust supplies every one of these gates — `bsc-deny` reads the
     // env this function just derived, `bsc-scope` and `bsc-confine` are its binaries — and could not
     // decide which of them run. The failure mode is SILENCE: an unregistered hook does not error, it
@@ -341,8 +344,11 @@ pub(crate) fn ensure_session_settings(
         skills: &skills,
         replace_permissions: replace_permissions.unwrap_or(false),
         bash_posture: &bash_posture,
-        bypass: bypass.unwrap_or(false),
-        restricted_allow: restricted_allow.unwrap_or(false),
+        // Both come from the reconciled block above, already resolved — the `unwrap_or` that stood
+        // here belonged to the raw arguments, which are now inputs to the composition rather than
+        // the answer.
+        bypass,
+        restricted_allow,
     })
 }
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime), taking a
@@ -1039,6 +1045,10 @@ mod tests {
             // no user denylist.
             None,
             None,
+            // pane_id · flow_gate · global_bypass — no pane identity, no gate, toggle off.
+            None,
+            None,
+            None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
             None,
@@ -1101,7 +1111,7 @@ mod tests {
             bare.to_string_lossy().to_string(),
             vec![], vec![],
             None, None, None, None, None, None, None, None, None, None,
-            None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
         let bare_cmds = commands_at(&bare);
@@ -1137,7 +1147,7 @@ mod tests {
             None, Some(vec![]), None, None, None, None, None, None, None, None,
             Some(cap),
             Some(vec![]),
-            None, None, None, None, None,
+            None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
         let worker_cmds = commands_at(&worker_dir);
@@ -1200,9 +1210,9 @@ mod tests {
             None,
             // The flow POLICY now, not the derived list — see `denies::flow_granted_push_commands`.
             Some("auto-pr".to_string()),
-            None,
-            None,
-            None,
+            // user_denied_commands · pane_id · flow_gate · global_bypass · persona_hooks ·
+            // namespace_hooks — this test is about the flow's push GRANT and nothing else.
+            None, None, None, None, None, None,
         )
         .expect("settings written");
 
@@ -1279,6 +1289,10 @@ mod tests {
             // no user denylist.
             None,
             None,
+            // pane_id · flow_gate · global_bypass — no pane identity, no gate, toggle off.
+            None,
+            None,
+            None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
             None,
@@ -1331,12 +1345,9 @@ mod tests {
             Some("allow".to_string()),
             None, None, None, None,
             Some(profile),
-            // flow_push · user_denied_commands · persona_hooks · namespace_hooks — this test is
-            // about the PROFILE half; none of them apply.
-            None,
-            None,
-            None,
-            None,
+            // flow_push · user_denied_commands · pane_id · flow_gate · global_bypass ·
+            // persona_hooks · namespace_hooks — this test is about the PROFILE half; none apply.
+            None, None, None, None, None, None, None,
         )
         .expect("settings written");
 
