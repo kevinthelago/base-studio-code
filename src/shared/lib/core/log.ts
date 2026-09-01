@@ -91,8 +91,22 @@ function drain(): void {
   flushTimer = null;
   const batch = queue.splice(0, queue.length);
   // Fire-and-forget, in order; swallow failures so logging never breaks flow.
+  //
+  // THE SWALLOW HAS TO COVER A SYNCHRONOUS THROW TOO, which `.catch()` alone does not. This runs from a
+  // TIMER, so nothing is on the stack to contain it: when a test tears down its Tauri mock, `invoke`
+  // returns `undefined`, `.catch` on it raises a TypeError, and that escapes as an UNCAUGHT EXCEPTION —
+  // turning a run where all 7,095 tests PASSED red, attributed to whichever test happened to be nearby.
+  // A red gate with nothing failing is worse than a red one that means something: it teaches the reader
+  // that red is noise.
+  //
+  // So: guard the call itself, and chain `.catch` only onto something actually thenable.
   for (const { level, scope, message } of batch) {
-    void invoke("frontend_log", { level, scope, message }).catch(() => { /* backend unavailable */ });
+    try {
+      const sent: unknown = invoke("frontend_log", { level, scope, message });
+      if (sent && typeof (sent as PromiseLike<unknown>).then === "function") {
+        void (sent as Promise<unknown>).catch(() => { /* backend unavailable */ });
+      }
+    } catch { /* the backend (or its mock) is gone — logging must never break flow */ }
   }
 }
 
