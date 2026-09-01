@@ -315,6 +315,27 @@ fn normalize_lf(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
 }
 
+/// Render a stored path to a GENERATED artifact, stating plainly when the file is no longer there.
+///
+/// # Why a bare path is a bug, not a shortcut
+///
+/// A `bsc shot` capture is TRANSIENT — the shots dir is held to a fixed window, so a path recorded in a
+/// durable store (`loop.turns.shot_path`, `requests.shot_path`) outlives the pixels it names, by design.
+/// Printing that path unchanged tells the reader a file is there. It reads as live, it is not, and the
+/// only way to find out is to try to open it — which is exactly the silent-wrong answer this repo keeps
+/// paying for. The durable record is the analysis stored ALONGSIDE the path; the image was only ever the
+/// thing that produced it.
+///
+/// A missing file is therefore reported, never treated as an error: `(reaped)` is the expected end state
+/// of a capture, not a fault to repair.
+pub fn artifact_ref(path: &str) -> String {
+    if std::path::Path::new(path).exists() {
+        path.to_string()
+    } else {
+        format!("{path} (reaped)")
+    }
+}
+
 /// The exact bytes [`print_raw`] emits for `s`: CR-normalized to LF, then trailing newlines collapsed
 /// to **exactly one** `\n`. Pure (no I/O) so the byte-clean contract is unit-testable without capturing
 /// stdout — the printer just writes this to the stdout handle. See [`print_raw`] for the hazards it
@@ -873,6 +894,20 @@ pub fn read_payload(file: Option<&str>) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A capture's path outlives the capture — the shots dir is a fixed window. The reader must be
+    /// told, not left to discover it by failing to open the file.
+    #[test]
+    fn an_artifact_ref_says_when_the_file_is_gone() {
+        // This crate's own manifest: guaranteed present while the test runs, and no temp dir needed.
+        let live = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        assert_eq!(super::artifact_ref(live), live, "a file that is there renders as the bare path");
+
+        let gone = concat!(env!("CARGO_MANIFEST_DIR"), "/no-such-capture-9f3a.png");
+        assert_eq!(super::artifact_ref(gone), format!("{gone} (reaped)"));
+        // The record's own bytes always come back first — a path is never rewritten or resolved.
+        assert!(super::artifact_ref(gone).starts_with(gone));
+    }
 
     /// The threshold, pinned at both edges — and the truncation bug that made the first cut of this
     /// report NOTHING while the binary genuinely was behind.

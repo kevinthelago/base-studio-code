@@ -120,13 +120,19 @@ pub fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> std:
 /// nothing, a `baseline --kit` afternoon keeps hundreds — so "how much disk is this" has no answer
 /// until you look.
 ///
-/// # The one interaction to know about: a burst larger than the window eats its own early frames
+/// # Sized to clear a burst, because a burst prunes itself
 ///
-/// `bsc shot frame --frames N` writes N PNGs through N separate captures, so with `--frames 20` and a
-/// window of 10, frames 1–10 are pruned by the time frame 20 lands. That is inherent to counting rather
-/// than aging, and it is pinned by a test rather than left to be discovered. Raise `$BSC_SHOT_KEEP`
-/// above the burst before running one.
-pub const DEFAULT_KEEP: usize = 10;
+/// `bsc shot frame --frames N` writes N PNGs through N SEPARATE captures, so a burst longer than the
+/// window eats its own early frames before it finishes — inherent to counting rather than aging, and
+/// pinned by a test rather than left to be discovered. 200 clears every realistic burst and every
+/// packaged-kit sweep with room over; the first cut of this was 10, which a `--frames 20` run would
+/// have silently halved. Baselines do not compete for the window at all — they live in a subdirectory
+/// the prune cannot reach — so this budget is spent only on ad-hoc `take`/`preview`/`frame` captures.
+///
+/// The disk it bounds is small but NOT fixed: a preview crop of sparse UI is ~3 KB, while a full-webview
+/// `take` of a dense screen is orders larger, so treat 200 as a bound on COUNT and not on bytes. Raise
+/// `$BSC_SHOT_KEEP` above anything bigger than this before running it.
+pub const DEFAULT_KEEP: usize = 200;
 
 /// The window, honouring `$BSC_SHOT_KEEP`. `0` (or an unparseable value) disables pruning — an operator
 /// who sets it to nonsense gets their files KEPT, never a directory emptied on a typo.
@@ -289,6 +295,22 @@ mod tests {
         assert_eq!(prune_captures(dir.path(), 2), 2);
         assert!(!files[0].exists() && !files[1].exists(), "the earlier frames go");
         assert!(files[2].exists() && files[3].exists(), "the later frames stay");
+    }
+
+    /// The default has to clear a realistic burst, or the caveat below becomes the common case rather
+    /// than an edge. The first cut was 10, which a plain `--frames 20` would have silently halved.
+    #[test]
+    fn the_default_window_clears_a_realistic_burst() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in 0..60u64 {
+            write_capture(dir.path(), &format!("burst-{n:02}.png"), n);
+            prune_captures(dir.path(), DEFAULT_KEEP);
+        }
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            60,
+            "a 60-frame burst survives DEFAULT_KEEP intact — this is what pins the default big enough"
+        );
     }
 
     /// THE CONSEQUENCE OF COUNTING RATHER THAN AGING, pinned so it is documented behaviour and not a

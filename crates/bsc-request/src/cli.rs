@@ -437,7 +437,9 @@ fn request_block(r: &Request) -> String {
         s.push_str(&format!("\nfailing command: {cmd}"));
     }
     if let Some(shot) = &r.shot_path {
-        s.push_str(&format!("\nshot: {shot}"));
+        // Through `artifact_ref`: a capture is transient (the shots dir is a fixed window), so a path
+        // recorded here outlives its pixels by design. Printing it bare reads as live when it is not.
+        s.push_str(&format!("\nshot: {}", bsc_cli_util::artifact_ref(shot)));
     }
     if let Some(note) = &r.note {
         s.push_str(&format!("\nresolved: {note}"));
