@@ -12,6 +12,7 @@
 pub mod node_urn;
 pub mod features;
 pub mod build_facet;
+pub mod impl_refresh;
 pub mod cli;
 /// The store→file direction (#4192) — the twin of `bsc ui emit`, with the shared-`src` hazard
 /// that makes an algorithm emit deliberately unlike a component one.

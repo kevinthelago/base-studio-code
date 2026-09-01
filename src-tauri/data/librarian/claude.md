@@ -206,6 +206,14 @@ reflects it:
 - `bsc graph impl revert <id> [--to <rev>]` — restore a previous `code`. Defaults to undoing the last
   source-moving write. It REFUSES rather than landing on a nearer revision when the target has aged past
   the retained rungs, and names which revisions are still reachable.
+- `bsc graph impl refresh <id>=<src-relative-path>… [--apply]` — refresh an EXISTING record's
+  `code` from the file it claims to be. The file is the authority here deliberately: it is the copy
+  `tsc`, `lint`, `vitest` and `vite build` all validate, and such a record claims to BE it. BY ID,
+  never a harvest — `bsc graph harvest --module --apply` derives the id from the FILE STEM, and
+  several feature barrels all derive `index.ts`, so applying them in turn writes them over one
+  another under one id. A dry run is the default. It reports the exports a refresh RESTORES, and
+  WARNS when one would REMOVE an export the record had — that means the record holds something the
+  file does not, which is a judgement call for you rather than a sync to apply.
 - `bsc graph impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` — a write here
   is to the RUNTIME store; the PACKAGED seed (`src-tauri/data/knowledge/algorithms.json`) is a checked-in
   file that only reaches git through this verb. Reach for it after a write you want to land on a branch:
