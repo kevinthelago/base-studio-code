@@ -1,0 +1,976 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch buildSessionSettings — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "UNGATED — no role, no profile, no skills: the floor only",
+      "role": null,
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "a profile but NO role — the gate is capability OR profile",
+      "role": null,
+      "hasProfile": true,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "role worker — adds the superseded edit gate",
+      "role": "worker",
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-superseded"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "role triage — gated, but no superseded gate",
+      "role": "triage",
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "role director",
+      "role": "director",
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "role planner",
+      "role": "planner",
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "role designer",
+      "role": "designer",
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "role reviewer",
+      "role": "reviewer",
+      "hasProfile": false,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "worker WITH skills — adds the skill hooks",
+      "role": "worker",
+      "hasProfile": false,
+      "hasSkills": true,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-superseded"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Skill",
+          "command": "bsc-skill"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "Skill",
+          "command": "bsc-skill"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "skills but UNGATED — skill hooks without the gated set",
+      "role": null,
+      "hasProfile": false,
+      "hasSkills": true,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "Skill",
+          "command": "bsc-skill"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "Skill",
+          "command": "bsc-skill"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "worker with a profile too",
+      "role": "worker",
+      "hasProfile": true,
+      "hasSkills": false,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-superseded"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    },
+    {
+      "label": "a profile AND skills, no role",
+      "role": null,
+      "hasProfile": true,
+      "hasSkills": true,
+      "hooks": [
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-audit"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "mcp__.*",
+          "command": "bsc-mcp"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "command": "bsc-scope"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "",
+          "command": "bsc-taint"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-supply"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Agent|Task",
+          "command": "bsc-fork"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Skill",
+          "command": "bsc-skill"
+        },
+        {
+          "event": "PostToolUse",
+          "matcher": "Skill",
+          "command": "bsc-skill"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
+          "command": "bsc-confine"
+        },
+        {
+          "event": "PreToolUse",
+          "matcher": "Bash",
+          "command": "bsc-deny"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "matcher": "",
+          "command": "bsc-activity run"
+        },
+        {
+          "event": "Notification",
+          "matcher": "",
+          "command": "bsc-activity attn"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-activity idle"
+        },
+        {
+          "event": "Stop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        },
+        {
+          "event": "SubagentStop",
+          "matcher": "",
+          "command": "bsc-tokens"
+        }
+      ]
+    }
+  ]
+}
