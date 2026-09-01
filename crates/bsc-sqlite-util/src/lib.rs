@@ -145,6 +145,41 @@ mod conn {
         Ok(conn)
     }
 
+    /// Open on disk at `path` and run `migrate` — the whole of a store crate's `open`, which six of
+    /// them assembled identically out of [`open_db`] + their own `schema::migrate`.
+    pub fn open_migrated(
+        path: &Path,
+        migrate: impl FnOnce(&Connection) -> rusqlite::Result<()>,
+    ) -> rusqlite::Result<Connection> {
+        let conn = open_db(path)?;
+        migrate(&conn)?;
+        Ok(conn)
+    }
+
+    /// The in-memory counterpart of [`open_migrated`] — a store crate's `open_in_memory`, the test path.
+    pub fn open_in_memory_migrated(
+        migrate: impl FnOnce(&Connection) -> rusqlite::Result<()>,
+    ) -> rusqlite::Result<Connection> {
+        let conn = open_in_memory_db()?;
+        migrate(&conn)?;
+        Ok(conn)
+    }
+
+    /// Empty every table in `tables`, leaving the schema in place.
+    ///
+    /// **DELETE, never DROP — and that is the invariant this function exists to state once.** These
+    /// stores run under WAL and are open concurrently by the desktop app and a `bsc-*` CLI, so a
+    /// `DROP TABLE` would take the schema out from under a live reader and leave every prepared
+    /// statement in the other process pointing at nothing. Truncating leaves the schema exactly as
+    /// `migrate` built it, so a clear is invisible to anyone holding the db open.
+    ///
+    /// Six crates each wrote this loop, which meant six places the rule could be forgotten and five
+    /// of them could drift without anything noticing.
+    pub fn clear_tables(conn: &Connection, tables: &[&str]) -> rusqlite::Result<()> {
+        let stmt = tables.iter().map(|t| format!("DELETE FROM {t};")).collect::<String>();
+        conn.execute_batch(&stmt)
+    }
+
     /// Open a SQLite db at `path`, honoring the `":memory:"` sentinel (an on-disk path gets its
     /// parent dirs created first), mapping every failure to `String` — the compliance/research store
     /// open path. `noun` labels the errors EXACTLY as those stores did: `"<noun> dir: …"` for the
@@ -208,7 +243,8 @@ mod conn {
 
 #[cfg(feature = "conn")]
 pub use conn::{
-    default_store_path, get_json, list_json, open_db, open_db_str, open_in_memory_db, BUSY_TIMEOUT_MS,
+    clear_tables, default_store_path, get_json, list_json, open_db, open_db_str, open_in_memory_db,
+    open_in_memory_migrated, open_migrated, BUSY_TIMEOUT_MS,
 };
 
 #[cfg(test)]
@@ -336,5 +372,58 @@ mod conn_tests {
         let all: Vec<serde_json::Value> =
             list_json(&conn, "SELECT json FROM rows ORDER BY ord", rusqlite::params![]);
         assert_eq!(all, vec![serde_json::json!({ "n": 1 }), serde_json::json!({ "n": 3 })]);
+    }
+
+    #[test]
+    fn open_migrated_creates_the_parent_and_runs_the_migration() {
+        // A dir name of its OWN. Sharing `bsc-sqlite-util-open-<pid>` with the open_db test above made
+        // the two delete each other's tree — invisible under `cargo nextest`, which gives every test
+        // its own process and therefore its own pid, and a hard failure under `cargo test`.
+        let dir = std::env::temp_dir().join(format!("bsc-sqlite-util-open-migrated-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join("store.db");
+        let conn = open_migrated(&path, |c| c.execute_batch("CREATE TABLE t (id TEXT);")).unwrap();
+        // The migration ran against the db that comes back — not against a throwaway connection.
+        conn.execute("INSERT INTO t VALUES ('x')", []).unwrap();
+        assert!(path.exists(), "open_migrated did not create the parent dirs");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failing_migration_is_the_error_open_migrated_returns() {
+        // The four-line assembly this replaces used `?` after migrate, so a broken schema surfaced as
+        // the migration's own error rather than a store that opens and then misbehaves.
+        let err = open_in_memory_migrated(|c| c.execute_batch("CREATE TABLE ((("));
+        assert!(err.is_err(), "a failing migration must not yield a usable store");
+    }
+
+    #[test]
+    fn clear_tables_empties_the_rows_and_leaves_the_schema_standing() {
+        // THE INVARIANT, and the assertion that separates DELETE from DROP: after a clear the tables
+        // must still be queryable. A `DROP TABLE` implementation passes a row-count check and fails
+        // this one — which is the whole reason the rule is worth stating in a single place.
+        let conn = open_in_memory_migrated(|c| {
+            c.execute_batch(
+                "CREATE TABLE a (id TEXT);
+                 CREATE TABLE b (id TEXT);
+                 INSERT INTO a VALUES ('1');
+                 INSERT INTO b VALUES ('2');",
+            )
+        })
+        .unwrap();
+        clear_tables(&conn, &["a", "b"]).unwrap();
+        for t in ["a", "b"] {
+            let n: i64 = conn
+                .query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
+                .unwrap_or_else(|e| panic!("table {t} did not survive the clear: {e}"));
+            assert_eq!(n, 0, "table {t} still holds rows");
+        }
+    }
+
+    #[test]
+    fn clearing_nothing_is_not_an_error() {
+        // A store whose ALL_TABLES is empty produces an empty batch; execute_batch must accept it.
+        let conn = open_in_memory_db().unwrap();
+        clear_tables(&conn, &[]).unwrap();
     }
 }
