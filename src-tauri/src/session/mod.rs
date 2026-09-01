@@ -16,6 +16,7 @@ pub mod access_env;
 pub mod fresh_only;
 pub mod hook_chain;
 pub mod tool_rules;
+pub mod resume_cmd;
 pub mod settings;
 pub mod sandbox;
 pub mod llm;
