@@ -8,3 +8,6 @@ pub mod dead_code;
 pub mod ui_skeleton;
 pub mod preview;
 pub mod graph_layout;
+/// The Glance integration band's data path — declarations joined to connector verdicts
+/// (`the-integration-band-gets-its-data-path`).
+pub mod integrations;
