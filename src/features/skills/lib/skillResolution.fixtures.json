@@ -1,0 +1,1566 @@
+{
+  "note": "GENERATED from @/features/skills/lib/skillsSession + skillsPayload — do not hand-edit; see the .gen.test.ts",
+  "library": [
+    {
+      "id": "global-on",
+      "name": "Global On",
+      "desc": "desc of global-on",
+      "prompt": "body of global-on",
+      "tools": [],
+      "projects": [],
+      "enabled": true,
+      "pinned": false
+    },
+    {
+      "id": "global-pinned",
+      "name": "Global Pinned",
+      "desc": "desc of global-pinned",
+      "prompt": "body of global-pinned",
+      "tools": [],
+      "projects": [],
+      "enabled": true,
+      "pinned": true
+    },
+    {
+      "id": "in-project",
+      "name": "In Project",
+      "desc": "desc of in-project",
+      "prompt": "body of in-project",
+      "tools": [],
+      "projects": [
+        "studio-code"
+      ],
+      "enabled": true,
+      "pinned": false
+    },
+    {
+      "id": "other-project",
+      "name": "Other Project",
+      "desc": "desc of other-project",
+      "prompt": "body of other-project",
+      "tools": [],
+      "projects": [
+        "something-else"
+      ],
+      "enabled": true,
+      "pinned": false
+    },
+    {
+      "id": "disabled-global",
+      "name": "Disabled Global",
+      "desc": "desc of disabled-global",
+      "prompt": "body of disabled-global",
+      "tools": [],
+      "projects": [],
+      "enabled": false,
+      "pinned": false
+    },
+    {
+      "id": "disabled-in-project",
+      "name": "Disabled In Project",
+      "desc": "desc of disabled-in-project",
+      "prompt": "body of disabled-in-project",
+      "tools": [],
+      "projects": [
+        "studio-code"
+      ],
+      "enabled": false,
+      "pinned": false
+    },
+    {
+      "id": "group-only",
+      "name": "Group Only",
+      "desc": "desc of group-only",
+      "prompt": "body of group-only",
+      "tools": [],
+      "projects": [
+        "something-else"
+      ],
+      "enabled": true,
+      "pinned": false
+    },
+    {
+      "id": "tooled",
+      "name": "Tooled",
+      "desc": "desc of tooled",
+      "prompt": "body of tooled",
+      "tools": [
+        "Read",
+        "Grep"
+      ],
+      "projects": [],
+      "enabled": true,
+      "pinned": false
+    },
+    {
+      "id": "unslugabble",
+      "name": "!!!",
+      "desc": "desc of unslugabble",
+      "prompt": "body of unslugabble",
+      "tools": [],
+      "projects": [],
+      "enabled": true,
+      "pinned": false
+    },
+    {
+      "id": "empty-project-entry",
+      "name": "Empty Project Entry",
+      "desc": "desc of empty-project-entry",
+      "prompt": "body of empty-project-entry",
+      "tools": [],
+      "projects": [
+        ""
+      ],
+      "enabled": true,
+      "pinned": false
+    }
+  ],
+  "cases": [
+    {
+      "label": "no override, no groups — the plain baseline",
+      "projectId": "studio-code",
+      "override": null,
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a group carries an out-of-scope skill in",
+      "projectId": "studio-code",
+      "override": null,
+      "groupIds": [
+        "group-only"
+      ],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": true,
+          "reason": "group",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "group-only",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "group-only",
+          "name": "Group Only",
+          "description": "desc of group-only",
+          "prompt": "body of group-only",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "an override ADDS an out-of-scope skill",
+      "projectId": "studio-code",
+      "override": {
+        "add": [
+          "other-project"
+        ],
+        "remove": []
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": true,
+          "reason": "added",
+          "overridden": true
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "other-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "other-project",
+          "name": "Other Project",
+          "description": "desc of other-project",
+          "prompt": "body of other-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "an override REMOVES an in-scope skill",
+      "projectId": "studio-code",
+      "override": {
+        "add": [],
+        "remove": [
+          "global-on"
+        ]
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": false,
+          "reason": "removed",
+          "overridden": true
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "remove beats add for the same skill",
+      "projectId": "studio-code",
+      "override": {
+        "add": [
+          "global-on"
+        ],
+        "remove": [
+          "global-on"
+        ]
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": false,
+          "reason": "removed",
+          "overridden": true
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "an override cannot enable a DISABLED skill",
+      "projectId": "studio-code",
+      "override": {
+        "add": [
+          "disabled-global"
+        ],
+        "remove": []
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "an override cannot enable a disabled in-project skill",
+      "projectId": "studio-code",
+      "override": {
+        "add": [
+          "disabled-in-project"
+        ],
+        "remove": []
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "REDUNDANT add — the skill was already on",
+      "projectId": "studio-code",
+      "override": {
+        "add": [
+          "global-on"
+        ],
+        "remove": []
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "REDUNDANT remove — the skill was already off",
+      "projectId": "studio-code",
+      "override": {
+        "add": [],
+        "remove": [
+          "other-project"
+        ]
+      },
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a group AND an override removing the same skill",
+      "projectId": "studio-code",
+      "override": {
+        "add": [],
+        "remove": [
+          "group-only"
+        ]
+      },
+      "groupIds": [
+        "group-only"
+      ],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "removed",
+          "overridden": true
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a group whose skill is ALSO in scope",
+      "projectId": "studio-code",
+      "override": null,
+      "groupIds": [
+        "in-project"
+      ],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "project",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "no project id at all — only globals are in scope",
+      "projectId": "",
+      "override": null,
+      "groupIds": [],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "no project id, but a group carries one in",
+      "projectId": "",
+      "override": null,
+      "groupIds": [
+        "in-project"
+      ],
+      "states": [
+        {
+          "id": "global-on",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "global-pinned",
+          "on": true,
+          "reason": "pinned",
+          "overridden": false
+        },
+        {
+          "id": "in-project",
+          "on": true,
+          "reason": "group",
+          "overridden": false
+        },
+        {
+          "id": "other-project",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "disabled-global",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "disabled-in-project",
+          "on": false,
+          "reason": "disabled",
+          "overridden": false
+        },
+        {
+          "id": "group-only",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        },
+        {
+          "id": "tooled",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "unslugabble",
+          "on": true,
+          "reason": "global",
+          "overridden": false
+        },
+        {
+          "id": "empty-project-entry",
+          "on": false,
+          "reason": "out-of-scope",
+          "overridden": false
+        }
+      ],
+      "effective": [
+        "global-on",
+        "global-pinned",
+        "in-project",
+        "tooled",
+        "unslugabble"
+      ],
+      "payload": [
+        {
+          "id": "global-on",
+          "name": "Global On",
+          "description": "desc of global-on",
+          "prompt": "body of global-on",
+          "tools": []
+        },
+        {
+          "id": "global-pinned",
+          "name": "Global Pinned",
+          "description": "desc of global-pinned",
+          "prompt": "body of global-pinned",
+          "tools": []
+        },
+        {
+          "id": "in-project",
+          "name": "In Project",
+          "description": "desc of in-project",
+          "prompt": "body of in-project",
+          "tools": []
+        },
+        {
+          "id": "tooled",
+          "name": "Tooled",
+          "description": "desc of tooled",
+          "prompt": "body of tooled",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        }
+      ]
+    }
+  ]
+}
