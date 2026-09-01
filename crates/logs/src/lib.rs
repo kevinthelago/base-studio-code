@@ -15,6 +15,7 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc logs …`), dispatched by the unified `bsc` binary
 //! (#1877) and by the legacy `bsc-logs` shim.
 
+pub mod divergence;
 pub mod instrument;
 pub mod cli;
 pub mod scope;
@@ -106,6 +107,10 @@ pub fn canonical_stream(name: &str) -> Option<&'static str> {
         "perm" | "perms" | "deny" | "denials" => Some("perm"),
         // UI-design activity (#2525): `bsc logs tail ui` — the designer session's `ui-touch` stream.
         "ui" => Some("ui"),
+        // Migration divergence: the two implementations of one migrated policy disagreed. The
+        // aliases are the words a reader reaches for when they do not recall the stream's name —
+        // `bsc logs tail disagreement` should not be a dead end.
+        "divergence" | "divergences" | "disagreement" | "disagreements" | "drift" => Some("divergence"),
         _ => None,
     }
 }
@@ -134,6 +139,14 @@ fn parse_line(stream: &'static str, line: &str) -> Option<LogEvent> {
         "done" => mk(f[1].into(), "done".into(), vec![]),
         // ts·pane·kind·a·b
         "coord" => mk(f[1].into(), format!("{} {} {}", f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&""), f.get(4).unwrap_or(&"")).trim().into(), f[2..].to_vec()),
+        // ts·pane·surface·derived_only·caller_only — a migration's two implementations disagreed.
+        // `derived_only` is the DEFECT direction (Rust derived it, the caller omitted it);
+        // `caller_only` is what a union legitimately produces and is not a fault.
+        "divergence" => mk(
+            f[1].into(),
+            format!("{} derived-only={} caller-only={}", f.get(2).unwrap_or(&""), f.get(3).unwrap_or(&"∅"), f.get(4).unwrap_or(&"∅")),
+            f[2..].to_vec(),
+        ),
         // ts·pane·gate·verdict·target·reason (#1607 slice 2) — a permission denial from a deny hook.
         "perm" => mk(
             f[1].into(),
