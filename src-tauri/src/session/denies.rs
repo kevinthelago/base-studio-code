@@ -25,11 +25,6 @@
 //! Nothing is de-duplicated across the three, matching the source: a pattern named by two sources
 //! appears twice, and since these are matched rather than counted that is harmless.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it. Deriving the denies and FLIPPING
-// the launch are separate slices with separate reverts: this list is what the bypass posture's only
-// enforcement reads, so changing where it comes from deserves its own revert.
-#![allow(dead_code)] // wired by `the-launch-composes-its-own-denies-instead-of-receiving-them`
-
 use super::role_gate::{role_denied_commands, RoleCapability};
 
 /// One row of `bsc surface list --json`, pared to what this reads. An ABSENT `status` means active —
@@ -125,9 +120,144 @@ pub fn session_denied_commands(
     out
 }
 
+
+/// The denies to write, and what the composition found the renderer had omitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionDenyReconciliation {
+    /// What to write. Never shorter than what the renderer sent.
+    pub merged: Vec<String>,
+    /// Patterns Rust composed that the frontend omitted — appended, and the one direction that is a
+    /// defect. "The frontend has extra" is expected: the user's own denylist rides in the same list.
+    pub missing: Vec<String>,
+}
+
+/// Reconcile the composed denies against the list the renderer sent.
+///
+/// # Union, and it can only ever ADD
+///
+/// This list is what the `bsc-deny` PreToolUse hook enforces through `$BSC_DENY_BASH`, and under the
+/// BYPASS posture that hook is the ONLY enforcement — `permissions.deny` is ignored there entirely. So
+/// a deny lost in this cutover is not a degraded setting; it is a command that now runs on a session
+/// that auto-runs everything. Taking the composed list alone would be able to drop one the frontend
+/// had; a union cannot.
+///
+/// # The frontend's ORDER survives, and that is deliberate
+///
+/// The composition's own order is user → role-minus-grants → profile, which the parity fixture pins.
+/// But these patterns are MATCHED, never counted or indexed, so order carries no meaning at the
+/// enforcing end — while a reordered list makes every future diff of a security-relevant value noisy
+/// for no gain. So the received list keeps its positions and anything missing is appended.
+///
+/// # Nothing is de-duplicated across the sources
+///
+/// Matching the composition it reconciles against: a pattern named by two sources appears twice there,
+/// and since these are matched rather than counted that is harmless. What IS avoided is appending a
+/// pattern the frontend already sent, which would grow the list on every launch.
+pub fn reconcile_session_denies(
+    from_frontend: Vec<String>,
+    user_denies: &[String],
+    cap: Option<&RoleCapability>,
+    deniable_surfaces: &[String],
+    flow_push: Option<&str>,
+    profile_denies: &[String],
+) -> SessionDenyReconciliation {
+    let derived =
+        session_denied_commands(user_denies, cap, deniable_surfaces, flow_push, profile_denies);
+    let missing: Vec<String> = derived
+        .into_iter()
+        .filter(|d| !from_frontend.iter().any(|f| f == d))
+        .collect();
+    let mut merged = from_frontend;
+    merged.extend(missing.iter().cloned());
+    SessionDenyReconciliation { merged, missing }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn worker_cap() -> RoleCapability {
+        RoleCapability {
+            role: "worker".into(),
+            github: super::super::role_gate::Tier::Read,
+            git: super::super::role_gate::Tier::Write,
+            code: super::super::role_gate::Tier::Write,
+            net: super::super::role_gate::Tier::Read,
+            ui: super::super::role_gate::Tier::Read,
+            write_globs: vec!["src/**".into()],
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: Vec::new(),
+        }
+    }
+
+    /// The cutover can only ever STRENGTHEN the gate. Taking the composed list alone could drop a deny
+    /// the frontend had; a union cannot. (Ported from `reconcile_role_denies`, which this supersedes.)
+    #[test]
+    fn reconciling_unions_rather_than_replaces() {
+        let cap = worker_cap();
+        // The frontend's list legitimately carries the user's own denies too — here one Rust is not
+        // told about, since `user_denies` is empty.
+        let from_frontend = vec!["curl".to_string(), "gh pr merge".to_string()];
+        let r = reconcile_session_denies(from_frontend, &[], Some(&cap), &[], None, &[]);
+        assert!(r.merged.iter().any(|d| d == "curl"), "a user deny Rust knows nothing about survives");
+        assert_eq!(
+            r.merged.iter().filter(|d| *d == "gh pr merge").count(),
+            1,
+            "one both sides derived is not appended twice"
+        );
+        assert!(!r.missing.iter().any(|d| d == "curl"), "extra on the frontend side is NOT a defect");
+    }
+
+    /// The direction that matters: Rust composed a deny the frontend omitted — a hole in the gate, and
+    /// under the bypass posture a hole in the ONLY enforcement.
+    #[test]
+    fn a_deny_the_frontend_omitted_is_reported_and_added() {
+        let cap = worker_cap();
+        let r = reconcile_session_denies(vec![], &[], Some(&cap), &[], None, &[]);
+        assert!(!r.missing.is_empty(), "an empty frontend list means it omitted every role deny");
+        assert!(
+            r.missing.iter().any(|d| d == "bsc request"),
+            "including the tooling-queue deny: {:?}",
+            r.missing
+        );
+        for d in &r.missing {
+            assert!(r.merged.contains(d), "everything missing is added to what gets written");
+        }
+    }
+
+    /// A role-less ad-hoc console with no user denies composes nothing and must not be second-guessed.
+    #[test]
+    fn nothing_to_compose_means_nothing_to_reconcile() {
+        let given = vec!["curl".to_string()];
+        let r = reconcile_session_denies(given.clone(), &[], None, &[], None, &[]);
+        assert_eq!(r.merged, given);
+        assert!(r.missing.is_empty());
+    }
+
+    /// THE FLOW GRANT SURVIVES THE COMPOSITION, which is the property that made the wire item unsafe
+    /// to land without it: the composed list must not re-deny what #304 lifted.
+    #[test]
+    fn the_flow_grant_is_never_composed_back_in() {
+        let cap = worker_cap();
+        let r = reconcile_session_denies(vec![], &[], Some(&cap), &[], Some("auto-pr"), &[]);
+        assert!(!r.missing.iter().any(|d| d == "gh pr create"), "{:?}", r.missing);
+        // …and only because of the flow: the same call with the default policy denies it.
+        let r = reconcile_session_denies(vec![], &[], Some(&cap), &[], None, &[]);
+        assert!(r.missing.iter().any(|d| d == "gh pr create"));
+    }
+
+    /// The frontend's ORDER survives — a reordered security-relevant list makes every future diff
+    /// noisy, and these patterns are matched rather than indexed, so nothing is bought by reordering.
+    #[test]
+    fn the_received_order_is_preserved_and_missing_values_append() {
+        let cap = worker_cap();
+        let from_frontend = vec!["zzz-user-deny".to_string(), "curl".to_string()];
+        let r = reconcile_session_denies(from_frontend.clone(), &[], Some(&cap), &[], None, &[]);
+        assert_eq!(&r.merged[..2], &from_frontend[..], "the received list keeps its positions");
+        assert_eq!(&r.merged[2..], &r.missing[..], "and the composed remainder is appended");
+    }
+
 
     fn fixture() -> serde_json::Value {
         fn find(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
