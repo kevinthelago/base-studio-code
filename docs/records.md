@@ -204,8 +204,8 @@ specifier goes back to resolving against the registry.
 ## Retiring a file
 
 ```bash
-node scripts/retirement-candidates.mjs          # the census — grades every candidate
-node scripts/retirement-candidates.mjs --all    # ...including the ones that are NOT safe
+bsc ui retirable                               # the census — grades every candidate
+bsc ui retirable --all                         # ...including the ones that are NOT safe
 ```
 
 The census is the authority. Only `same` and `reformatted` are safe; `BODY-DIFFERS` means retiring would
