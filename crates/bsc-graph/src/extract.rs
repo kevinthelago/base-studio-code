@@ -1661,6 +1661,49 @@ pub fn code_shingles(code: &str) -> std::collections::HashSet<u64> {
 /// language, not a duplicate — and at four or five tokens any two such lines score 1.0.
 pub const MIN_SHINGLES: usize = 8;
 
+/// Is this function's whole body a single forwarding call?
+///
+/// THE CLASS THE TOKEN FLOOR CANNOT SEE. `MIN_SHAPE_TOKENS` was calibrated to exclude `fn new()` and
+/// does — but a three-line delegation clears it easily, and delegations are where the report's headline
+/// number came from. MEASURED over 256 groups: 76% of the 353 "functions that could go" had bodies of
+/// nine lines or fewer, and the largest groups were these:
+///
+/// ```ignore
+/// pub fn blueprint_set(&self, data: &Value) -> Result<()> { self.blob_set("blueprint", data) }
+/// pub fn deploy_set(&self, data: &Value)    -> Result<()> { self.blob_set("deploy", data) }
+/// ```
+///
+/// THE DUPLICATION IS ALREADY FACTORED OUT — `blob_set` IS the shared thing. What repeats is the NAME,
+/// and the name is the API: `blueprint_get()` is typed and discoverable where `blob_get("blueprint")`
+/// pushes a magic string to every call site. Reporting these invites an edit that makes the code worse,
+/// so they are not evidence and must not reach the grouping step.
+///
+/// The test is STRUCTURAL, not a line count: exactly one statement in the body, and that statement is
+/// (or returns) a call. A one-line body that computes something — `xs.len() * 2 + 1` — is not a
+/// delegation and is still reported, because nothing has been factored out of it.
+fn is_pure_delegation(body: Node) -> bool {
+    let mut cursor = body.walk();
+    let stmts: Vec<Node> = body.named_children(&mut cursor).collect();
+    // A `block` in Rust carries its tail expression as a named child too, so "one statement" is the
+    // same question in both grammars.
+    if stmts.len() != 1 {
+        return false;
+    }
+    // Unwrap the shapes a single forwarding statement can take: `f(x)`, `return f(x);`, `f(x);`.
+    let mut node = stmts[0];
+    loop {
+        match node.kind() {
+            "expression_statement" | "return_statement" => match node.named_child(0) {
+                Some(inner) => node = inner,
+                None => return false,
+            },
+            // The forward itself. `await`/`?` wrap it and are still a forward.
+            "call_expression" | "await_expression" | "try_expression" => return true,
+            _ => return false,
+        }
+    }
+}
+
 /// The RENAME-INVARIANT shape of a function body — `None` when it is too trivial to be evidence.
 ///
 /// THE ONE SIGNAL THE EXISTING DETECTOR CANNOT HAVE. `dedup_findings` compares k-gram shingles over
@@ -1694,6 +1737,31 @@ pub fn shape_fingerprint(code: &str, tech: &str) -> Option<String> {
     parser.set_language(&language).ok()?;
     let bytes = code.as_bytes();
     let tree = parser.parse(bytes, None)?;
+
+    // A PURE DELEGATION IS NOT EVIDENCE — see `is_pure_delegation`. Checked before the walk so the
+    // rule holds for every caller of the fingerprint at once, in the store detector and the tree sweep
+    // alike, rather than at each grouping site where one would eventually be forgotten.
+    {
+        let mut stack = vec![tree.root_node()];
+        while let Some(node) = stack.pop() {
+            if fn_def_name(node, bytes).is_some() {
+                let body = node
+                    .child_by_field_name("body")
+                    .or_else(|| node.child_by_field_name("value").and_then(|v| v.child_by_field_name("body")));
+                if let Some(body) = body {
+                    if is_pure_delegation(body) {
+                        return None;
+                    }
+                }
+                break;
+            }
+            let mut c = node.walk();
+            let kids: Vec<Node> = node.named_children(&mut c).collect();
+            for child in kids.into_iter().rev() {
+                stack.push(child);
+            }
+        }
+    }
 
     let mut slots: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut out = String::new();
@@ -2256,6 +2324,40 @@ mod tests {
           }
           return acc;
         }"#;
+
+    /// A PURE DELEGATION IS NOT EVIDENCE. The duplication is already factored out — what repeats is
+    /// the NAME, and the name is the API. MEASURED: these were the largest groups in the whole report
+    /// and 76% of its headline number.
+    #[test]
+    fn a_forwarding_body_has_no_shape() {
+        for body in [
+            "export function blueprintSet(data: Value): Result { return this.blobSet(\"blueprint\", data); }",
+            "export function deploySet(data: Value): Result { return this.blobSet(\"deploy\", data); }",
+        ] {
+            assert_eq!(shape_fingerprint(body, "typescript"), None, "a forward is not evidence: {body}");
+        }
+        assert_eq!(
+            shape_fingerprint("pub fn blueprint_set(&self, d: &Value) -> Result<()> { self.blob_set(\"b\", d) }", "rust"),
+            None,
+        );
+    }
+
+    /// …AND THE LINE IS STRUCTURAL, NOT A LINE COUNT. This is the distinction that decides whether the
+    /// rule helps or guts the report: `blueprint_set` FORWARDS to an already-shared `blob_set` and is
+    /// excluded, while `automation_remove` is the same size and forwards to nothing — it carries a
+    /// hand-written `DELETE FROM automations` that is repeated nine times, each a place a table name
+    /// can be misspelled. The second is exactly what the report exists to find.
+    #[test]
+    fn a_small_body_that_forwards_to_nothing_is_still_evidence() {
+        let real = "pub fn automation_remove(&self, name: &str) -> rusqlite::Result<()> {\n                          self.conn.execute(\"DELETE FROM automations WHERE name = ?1\", params![name])?;\n                          Ok(())\n}";
+        assert!(
+            shape_fingerprint(real, "rust").is_some(),
+            "two statements and its own SQL — nothing has been factored out of this",
+        );
+        // A one-statement body that COMPUTES rather than forwards is evidence too.
+        let computes = "export function span(a: number[], b: number[]): number {\n                            return Math.max(...a, ...b) - Math.min(...a, ...b) + a.length + b.length;\n}";
+        assert!(shape_fingerprint(computes, "typescript").is_some());
+    }
 
     /// THE WHOLE POINT. Rename every identifier and the shape is unchanged.
     #[test]

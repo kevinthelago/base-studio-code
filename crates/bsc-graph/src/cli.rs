@@ -535,6 +535,94 @@ const CROSS_MODULE_ONLY: bool = true;
 /// `C` unrelated is a chain, and collapsing it asserts a similarity no member exhibits.
 const CLUSTER_DENSITY: f64 = 0.5;
 
+/// What to actually DO about a group — and it is not always "fold them".
+///
+/// Every group used to carry "pick the survivor, then fold the others with `bsc graph merge`". Across
+/// the six substantive findings on this repo that advice was correct for ZERO of them: two wanted a
+/// shared helper, two wanted a trait, one was already scheduled under its own item, and one must not
+/// move at all (two scoring policies that happen to share a skeleton). A confident wrong instruction is
+/// worse than none — the first reader who trusts it does the edits.
+///
+/// The distinction the report CAN make is what the evidence actually says:
+///
+///  * the same BODY or the same SHAPE — these ARE one implementation twice, so folding is right;
+///  * the same CONTRACT — they agree about what they take and their bodies merely corroborate it, so
+///    what is shared is a PATTERN. Folding would delete a real caller's function.
+///
+/// It deliberately stops there rather than guessing between "a helper", "a trait" and "leave it": the
+/// report cannot know whether two adapters over two providers should become one, and pretending
+/// otherwise is how the original suggestion went wrong.
+fn suggestion_for(signal_keys: &[&str], ids: &[String]) -> String {
+    // KEYED, NOT PROSE-MATCHED. This read `signals.iter().any(|s| s.contains("body") …)` over the
+    // rendered descriptions — and the CONTRACT signal's own description says "corroborated by ≥30%
+    // body overlap", so every contract group matched and got told to fold. Matching the text a message
+    // happens to contain is how a rule ends up depending on its own wording.
+    let same_code = signal_keys.iter().any(|k| *k == "same-body" || *k == "same-shape");
+    if same_code {
+        format!(
+            "these are one implementation more than once — pick the survivor and fold the rest in with \
+             `bsc graph merge <from> <into>` (it repoints every consumer). PROPOSE-ONLY: which one \
+             survives is not a diagnostic's call. Candidates: {}",
+            ids.join(", ")
+        )
+    } else {
+        format!(
+            "these share a CONTRACT, not an implementation — what repeats is the PATTERN, so extract \
+             what is common (a helper, or a trait with a default) and leave each caller its own \
+             function. DO NOT `bsc graph merge` these: folding them deletes a real caller. Members: {}",
+            ids.join(", ")
+        )
+    }
+}
+
+/// Grow pairs into connected components, with a density guard — a sparse component is a chain, and
+/// collapsing it invents a group no member exhibits.
+///
+/// SHARED BY EVERY PAIRWISE SIGNAL ON BOTH SURFACES. `dedup_findings` had this and `dupes` did not, so
+/// the tree sweep reported PAIRS where the store reported GROUPS: `parse_args` exists in ~9 crates and
+/// came out as FOURTEEN pair-rows instead of one nine-member group. That is the same "one more copy"
+/// this epic exists to find, committed by the epic — which is why it is a free function now rather than
+/// a closure inside one caller.
+fn cluster_pairs(pairs: &[(&str, &str)]) -> Vec<Vec<String>> {
+    let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+        std::collections::BTreeMap::new();
+    for (a, b) in pairs {
+        adj.entry(a).or_default().insert(b);
+        adj.entry(b).or_default().insert(a);
+    }
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let mut out: Vec<Vec<String>> = Vec::new();
+    for start in adj.keys().copied() {
+        if seen.contains(start) {
+            continue;
+        }
+        let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
+        while let Some(n) = stack.pop() {
+            if !seen.insert(n) {
+                continue;
+            }
+            group.push(n);
+            for m in adj.get(n).into_iter().flatten() {
+                if !seen.contains(m) {
+                    stack.push(m);
+                }
+            }
+        }
+        if group.len() < 2 {
+            continue;
+        }
+        let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
+        let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
+        let possible = group.len() * (group.len() - 1) / 2;
+        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
+            continue; // a chain, not a group
+        }
+        group.sort_unstable();
+        out.push(group.into_iter().map(str::to_string).collect());
+    }
+    out
+}
+
 /// Duplicate-candidate GROUPS over the impl set — the algorithms-graph dedup pass (#78).
 ///
 /// The library had no duplicate detection at all, so a session hunting duplicates built ad-hoc grep
@@ -693,57 +781,21 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
     // rows and broke this module's central promise that N duplicates report as ONE row naming every
     // member. The chaining worry that motivated pairs is exactly what `CLUSTER_DENSITY` already
     // answers, so there was never a second mechanism to invent.
-    let cluster = |pairs: &[(&str, &str)]| -> Vec<Vec<String>> {
-        let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
-            std::collections::BTreeMap::new();
-        for (a, b) in pairs {
-            adj.entry(a).or_default().insert(b);
-            adj.entry(b).or_default().insert(a);
-        }
-        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-        let mut out: Vec<Vec<String>> = Vec::new();
-        for start in adj.keys().copied() {
-            if seen.contains(start) {
-                continue;
-            }
-            let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
-            while let Some(n) = stack.pop() {
-                if !seen.insert(n) {
-                    continue;
-                }
-                group.push(n);
-                for m in adj.get(n).into_iter().flatten() {
-                    if !seen.contains(m) {
-                        stack.push(m);
-                    }
-                }
-            }
-            if group.len() < 2 {
-                continue;
-            }
-            let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
-            let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
-            let possible = group.len() * (group.len() - 1) / 2;
-            if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
-                continue; // a chain, not a group
-            }
-            group.sort_unstable();
-            out.push(group.into_iter().map(str::to_string).collect());
-        }
-        out
-    };
     // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every cluster into
     // one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each other) reported as a
     // single group of four — a confident wrong grouping, which is what the density guard prevents.
     // Connected components are disjoint, so the smallest member is a stable unique name.
-    for (signal, found) in [("same-body", cluster(&pairs)), ("same-contract", cluster(&contract_pairs))] {
+    for (signal, found) in [("same-body", cluster_pairs(&pairs)), ("same-contract", cluster_pairs(&contract_pairs))] {
         for group in found {
             buckets.entry((signal, group[0].clone())).or_default().extend(group);
         }
     }
 
     // Collapse to one entry per MEMBER SET, carrying every signal that grouped it.
-    let mut by_members: std::collections::BTreeMap<Vec<String>, Vec<String>> = std::collections::BTreeMap::new();
+    // The KEY rides alongside the description: the suggestion is decided by which signal grouped
+    // these, and a rendered message is not a reliable stand-in for that.
+    let mut by_members: std::collections::BTreeMap<Vec<String>, Vec<(&'static str, String)>> =
+        std::collections::BTreeMap::new();
     for ((signal, key), ids) in buckets {
         if ids.len() < 2 {
             continue;
@@ -769,24 +821,21 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
             // The body itself is never echoed — that it is the same body IS the finding.
             _ => format!("a near-identical body (≥{}% shingle overlap)", (NEAR_DUPLICATE * 100.0) as u32),
         };
-        by_members.entry(ids.into_iter().collect()).or_default().push(desc);
+        by_members.entry(ids.into_iter().collect()).or_default().push((signal, desc));
     }
 
     let mut out: Vec<(usize, Value)> = by_members
         .into_iter()
-        .map(|(ids, signals)| {
+        .map(|(ids, found)| {
             let n = ids.len();
+            let keys: Vec<&str> = found.iter().map(|(k, _)| *k).collect();
+            let signals: Vec<String> = found.into_iter().map(|(_, d)| d).collect();
             let v = serde_json::json!({
                 "category": "duplicate-candidate",
                 "ids": ids,
                 "signals": signals,
                 "detail": format!("{n} implementations share {} — {}", signals.join(" and "), ids.join(", ")),
-                "suggestion": format!(
-                    "pick the survivor, then fold the others into it with `bsc graph merge <from> <into>` \
-                     (it repoints every consumer). PROPOSE-ONLY — nothing is merged automatically, because \
-                     which one survives is not a diagnostic's call. Candidates: {}",
-                    ids.join(", ")
-                ),
+                "suggestion": suggestion_for(&keys, &ids),
             });
             (n, v)
         })
@@ -2251,19 +2300,30 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
-            groups.extend(contract_pairs.iter().map(|&(i, j)| {
-                let (a, b) = (&shapes[i], &shapes[j]);
+            // CLUSTERED, not emitted as pairs. `parse_args` exists in ~9 crates; as pairs that is
+            // fourteen rows saying one thing. Keyed by "src:line" because a tree function has no id.
+            let keyed: Vec<(String, usize)> = shapes
+                .iter()
+                .enumerate()
+                .map(|(i, f)| (format!("{}:{}", f.src, f.line), i))
+                .collect();
+            let by_key: std::collections::BTreeMap<&str, usize> =
+                keyed.iter().map(|(k, i)| (k.as_str(), *i)).collect();
+            let pair_keys: Vec<(&str, &str)> = contract_pairs
+                .iter()
+                .map(|&(i, j)| (keyed[i].0.as_str(), keyed[j].0.as_str()))
+                .collect();
+            groups.extend(cluster_pairs(&pair_keys).into_iter().map(|members| {
+                let idx: Vec<usize> = members.iter().filter_map(|k| by_key.get(k.as_str()).copied()).collect();
+                let a = &shapes[idx[0]];
                 serde_json::json!({
-                    // NAMED as the weaker claim it is: "same shape" says these ARE the same code,
-                    // this says they agree about what they take and their bodies corroborate it.
                     "signal": "same-contract",
                     "tech": a.tech,
                     "arity": a.arity,
-                    "count": 2,
-                    "members": [
-                        { "name": a.name, "src": a.src, "line": a.line },
-                        { "name": b.name, "src": b.src, "line": b.line },
-                    ],
+                    "count": idx.len(),
+                    "members": idx.iter().map(|&i| serde_json::json!({
+                        "name": shapes[i].name, "src": shapes[i].src, "line": shapes[i].line,
+                    })).collect::<Vec<_>>(),
                 })
             }));
             // Biggest groups first — N copies of one shape is a bigger finding than a pair, and a
@@ -6392,7 +6452,7 @@ mod already_harvested_tests {
 /// #78 — the dedup pass over the impl set.
 #[cfg(test)]
 mod dedup_tests {
-    use super::dedup_findings;
+    use super::{dedup_findings, suggestion_for};
     use serde_json::Value;
 
     fn im(id: &str, name: &str, extra: Value) -> Value {
@@ -6572,6 +6632,66 @@ mod dedup_tests {
             assert!(m["line"].as_u64().unwrap_or(0) >= 1, "a real line: {m}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// N FUNCTIONS ARE ONE GROUP IN THE TREE SWEEP TOO. It emitted PAIRS while `dedup_findings`
+    /// clustered, so `parse_args` across ~9 crates came out as FOURTEEN rows saying one thing —
+    /// the same "one more copy" this epic exists to find, committed by the epic.
+    #[test]
+    fn the_tree_sweep_clusters_a_family_instead_of_emitting_every_pair() {
+        let dir = crate::unique_temp("treecluster");
+        let _ = std::fs::remove_dir_all(&dir);
+        // Four crates, one contract, four genuinely different bodies — a family, not a copy.
+        for (n, (crate_name, extra)) in [
+            ("a", "const out = []; for (const r of rows) { if (r < cap) { out.push(r); } } return out;"),
+            ("b", "const out = []; for (const r of rows) { if (r <= cap) { out.push(r); } } return out;"),
+            ("c", "const out = []; let i = 0; while (i < rows.length) { if (rows[i] < cap) { out.push(rows[i]); } i += 1; } return out;"),
+            ("d", "const out = []; for (const r of rows) { if (r < cap) { out.push(r); } else { out.push(cap); } } return out;"),
+        ].iter().enumerate() {
+            let sub = dir.join(crate_name);
+            std::fs::create_dir_all(&sub).unwrap();
+            std::fs::write(
+                sub.join("cli.ts"),
+                format!("export function parseArgs(rows: number[], cap: number): number[] {{\n                             const label = String(cap) + \"{n}\";\n                             void label;\n  {extra}\n}}"),
+            )
+            .unwrap();
+        }
+        let (res, out) = bsc_util::capture_output(|| {
+            crate::cli::run(
+                ["dupes", dir.to_str().unwrap(), "--tech", "typescript"].iter().map(|s| s.to_string()).collect(),
+                "bsc graph",
+            )
+        });
+        res.expect("the verb runs");
+        let d: Value = serde_json::from_str(&out).expect("json");
+        let contract: Vec<&Value> = d["dupes"].as_array().unwrap().iter()
+            .filter(|g| g["signal"] == "same-contract").collect();
+        assert_eq!(contract.len(), 1, "ONE group, not one row per pair: {out}");
+        assert_eq!(contract[0]["count"], 4, "naming every member: {out}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE SUGGESTION FOLLOWS THE EVIDENCE. "Fold with `bsc graph merge`" is right for one
+    /// implementation written twice and WRONG for a shared pattern — folding a contract group deletes
+    /// a real caller's function. Across the six substantive findings on this repo the old blanket
+    /// advice was correct for none of them.
+    #[test]
+    fn the_suggestion_never_proposes_a_merge_for_a_shared_contract() {
+        let same_code = suggestion_for(&["same-body"], &["a.ts".into(), "b.ts".into()]);
+        assert!(same_code.contains("bsc graph merge"), "one implementation twice folds: {same_code}");
+
+        // The contract description CONTAINS the word "body" ("corroborated by ≥30% body overlap"),
+        // which is exactly what made prose-matching pick the wrong branch.
+        let shared_pattern = suggestion_for(&["same-contract"], &["a.ts".into(), "b.ts".into()]);
+        // It NAMES the command in order to forbid it, so "does not mention merge" is the wrong test —
+        // asserting on a substring of prose is the same mistake the code above just stopped making.
+        assert!(shared_pattern.contains("DO NOT `bsc graph merge`"), "forbids it by name: {shared_pattern}");
+        assert!(!shared_pattern.contains("pick the survivor"), "and never recommends folding: {shared_pattern}");
+        assert!(shared_pattern.contains("helper") || shared_pattern.contains("trait"), "{shared_pattern}");
+
+        // A group carrying BOTH signals is one implementation twice — the stronger claim wins.
+        let both = suggestion_for(&["same-shape", "same-contract"], &["a.ts".into(), "b.ts".into()]);
+        assert!(both.contains("bsc graph merge"), "shape is the stronger claim: {both}");
     }
 
     /// THE TREE SWEEP CARRIES THE CONTRACT SIGNAL TOO, not only the shape one.
