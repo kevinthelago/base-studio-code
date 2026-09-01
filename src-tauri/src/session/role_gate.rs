@@ -363,8 +363,11 @@ pub fn write_locks() -> (Vec<String>, Vec<String>) {
 pub struct ToolRuleReconciliation {
     pub allow: Vec<String>,
     pub deny: Vec<String>,
-    /// Allow rules the frontend sent that Rust did NOT derive. Dropped, not kept — see below.
-    pub allow_dropped: Vec<String>,
+    /// Allow rules RUST DERIVED that the frontend omitted. Reported, never added.
+    ///
+    /// It was `allow_dropped` — the opposite direction — and that was a live defect: the frontend's
+    /// allow list is not role-only, so "Rust did not derive it" never meant "it does not belong".
+    pub allow_missing: Vec<String>,
     /// Deny rules Rust derived that the frontend omitted. Added.
     pub deny_missing: Vec<String>,
 }
@@ -376,15 +379,26 @@ pub struct ToolRuleReconciliation {
 /// Getting this backwards would widen a security boundary while looking like tidy symmetry:
 ///
 /// - **DENY rules UNION.** An extra deny can only tighten. Same reasoning as the command denies.
-/// - **ALLOW rules INTERSECT.** An `Edit(<glob>)` allow AUTO-APPROVES writes to that glob. Unioning
-///   an allow that Rust derived but the frontend did not send would GRANT permission that is not
-///   granted today — the exact opposite of fail-closed. Intersection can only narrow.
+/// - **ALLOW rules PASS THROUGH and are only REPORTED against.** An `Edit(<glob>)` allow
+///   AUTO-APPROVES writes, so Rust must not ADD one the frontend did not send. But it must not DROP
+///   one either — and that distinction is this function's history.
+///
+///   IT USED TO INTERSECT, and the premise was false. "Both are no-ops in the healthy case, because
+///   the frontend computes from a capability and Rust derives from the SAME capability" does not hold
+///   for allow: the frontend sends `roleWriteRules(cap).allow ∪ profile.allowToolRules ∪
+///   (restrictedAllow ? ["Read"] : [])`, while `role_write_rules(cap).allow` is only `Edit(<glob>)`
+///   for the ROLE's globs. A bare tool name can never be in it. MEASURED on a designer capability
+///   with `write_globs = ["scratch/**"]`: sent `["Edit(scratch/**)", "Read", "Grep",
+///   "Edit(assets/**)"]`, kept `["Edit(scratch/**)"]`, dropped the other three — so a restricted
+///   studio session prompted on every read, and an assigned profile changed a UI and nothing else.
+///   Rust can only intersect against a set it fully derives; once it derives the PROFILE too, a
+///   meaningful intersect becomes possible.
 ///
 /// ## Why this is safe to land
 ///
-/// Both are NO-OPS in the healthy case. The frontend computes from a capability and sends it; Rust
-/// derives from the SAME capability with a function proved equal across 68 cases and 17 roles. So
-/// they agree, intersection equals both, union equals both, and the written file does not move. A
+/// The DENY union is a no-op when the two agree, and the allow side returns exactly what the frontend
+/// sent — which is what shipped for months before the intersect, so this restores behaviour rather
+/// than inventing it while KEEPING the divergence signal. A
 /// difference means one side is genuinely wrong — an older frontend, a renderer that died
 /// mid-compute, a caller invoking the command directly — and then tightening is the direction that
 /// cannot hurt.
@@ -401,7 +415,7 @@ pub fn reconcile_tool_rules(
         return ToolRuleReconciliation {
             allow: from_frontend_allow,
             deny: from_frontend_deny,
-            allow_dropped: Vec::new(),
+            allow_missing: Vec::new(),
             deny_missing: Vec::new(),
         };
     };
@@ -409,10 +423,14 @@ pub fn reconcile_tool_rules(
     let mut derived_deny = rules.deny;
     derived_deny.extend(role_denied_tools(cap));
 
-    // ALLOW: keep only what BOTH agree on.
-    let (allow, allow_dropped): (Vec<String>, Vec<String>) = from_frontend_allow
-        .into_iter()
-        .partition(|a| rules.allow.iter().any(|d| d == a));
+    // ALLOW: the frontend's list passes through untouched. Rust reports what IT derived and the
+    // frontend omitted — a real signal, since a missing role allow means the role's own write
+    // boundary is not auto-approved and a worker prompts inside its own lane — but it neither adds
+    // those (an allow auto-approves) nor removes what it did not derive (the list legitimately
+    // carries the profile's grants and the restricted-role surface).
+    let allow_missing: Vec<String> =
+        rules.allow.iter().filter(|d| !from_frontend_allow.iter().any(|f| f == *d)).cloned().collect();
+    let allow = from_frontend_allow;
 
     // DENY: everything either side asked for.
     let deny_missing: Vec<String> = derived_deny
@@ -423,7 +441,7 @@ pub fn reconcile_tool_rules(
     let mut deny = from_frontend_deny;
     deny.extend(deny_missing.iter().cloned());
 
-    ToolRuleReconciliation { allow, deny, allow_dropped, deny_missing }
+    ToolRuleReconciliation { allow, deny, allow_missing, deny_missing }
 }
 
 #[cfg(test)]
@@ -576,22 +594,62 @@ mod tests {
         assert!(r.missing.is_empty());
     }
 
-    /// An allow AUTO-APPROVES writes. Unioning one Rust derived but the frontend did not send would
-    /// GRANT what is not granted — so allows intersect, and the extra is dropped and reported.
+    /// AN ALLOW RUST DID NOT DERIVE IS KEPT, because the frontend's list is not role-only.
+    ///
+    /// This test asserted the opposite, and the ASSERTION was the bug: "only the backed allow
+    /// survives" is true of the code and false of the system. The frontend sends
+    /// `roleWriteRules(cap).allow ∪ profile.allowToolRules ∪ (restrictedAllow ? ["Read"] : [])`, so
+    /// "Rust did not derive it" never meant "it does not belong". The casualties, measured before the
+    /// fix: a restricted role's `Read` (so a designer prompted on every file read) and every path a
+    /// profile granted (so assigning a profile changed a UI and nothing else).
     #[test]
-    fn an_allow_the_derivation_does_not_back_is_dropped_not_kept() {
+    fn an_allow_rust_did_not_derive_is_kept_because_the_list_is_not_role_only() {
+        let cap = RoleCapability {
+            role: "designer".into(), github: Tier::None, git: Tier::None, code: Tier::None,
+            net: Tier::None, ui: Tier::Read, write_globs: vec!["scratch/**".into()],
+            allow: vec![], surfaces: None, harvest_roots: Vec::new(),
+        };
+        let r = reconcile_tool_rules(
+            Some(&cap), &[], &[],
+            vec![
+                "Edit(scratch/**)".into(), // the role's own
+                "Read".into(),             // the restricted-role surface — a BARE TOOL NAME, which
+                                           // the role's derived set can never contain
+                "Grep".into(),             // a profile tool grant
+                "Edit(assets/**)".into(),  // a profile PATH grant
+            ],
+            vec![],
+        );
+        assert_eq!(
+            r.allow,
+            vec![
+                "Edit(scratch/**)".to_string(),
+                "Read".to_string(),
+                "Grep".to_string(),
+                "Edit(assets/**)".to_string()
+            ],
+            "every grant survives, in order"
+        );
+        assert!(r.allow_missing.is_empty(), "the role's own allow WAS sent, so nothing is missing");
+    }
+
+    /// The direction that IS a defect: Rust derived a role allow the frontend omitted. REPORTED, and
+    /// deliberately not added — an allow auto-approves, so adding one would grant what is not granted.
+    #[test]
+    fn a_role_allow_the_frontend_omitted_is_reported_but_never_added() {
         let cap = RoleCapability {
             role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
             net: Tier::Read, ui: Tier::Read, write_globs: vec!["src/**".into()],
             allow: vec![], surfaces: None, harvest_roots: Vec::new(),
         };
-        let r = reconcile_tool_rules(
-            Some(&cap), &[], &[],
-            vec!["Edit(src/**)".into(), "Edit(/etc/**)".into()],   // the second is not derived
-            vec![],
+        let r = reconcile_tool_rules(Some(&cap), &[], &[], vec!["Read".into()], vec![]);
+        assert_eq!(r.allow, vec!["Read".to_string()], "what was sent is what is written");
+        assert!(
+            r.allow_missing.iter().any(|a| a == "Edit(src/**)"),
+            "the worker's own boundary was omitted — it will prompt in its own lane: {:?}",
+            r.allow_missing
         );
-        assert_eq!(r.allow, vec!["Edit(src/**)".to_string()], "only the backed allow survives");
-        assert_eq!(r.allow_dropped, vec!["Edit(/etc/**)".to_string()], "and the extra is reported");
+        assert!(!r.allow.iter().any(|a| a == "Edit(src/**)"), "reported, NOT granted");
     }
 
     /// Denies go the other way: anything either side wants is kept.
@@ -625,7 +683,7 @@ mod tests {
         let r = reconcile_tool_rules(Some(&cap), &[], &[], rules.allow.clone(), deny.clone());
         assert_eq!(r.allow, rules.allow, "nothing narrowed");
         assert_eq!(r.deny, deny, "nothing added");
-        assert!(r.allow_dropped.is_empty() && r.deny_missing.is_empty(), "and nothing to report");
+        assert!(r.allow_missing.is_empty() && r.deny_missing.is_empty(), "and nothing to report");
     }
 
     #[test]
@@ -634,7 +692,7 @@ mod tests {
         let d = vec!["Whatever".to_string()];
         let r = reconcile_tool_rules(None, &[], &[], a.clone(), d.clone());
         assert_eq!((r.allow, r.deny), (a, d));
-        assert!(r.allow_dropped.is_empty() && r.deny_missing.is_empty());
+        assert!(r.allow_missing.is_empty() && r.deny_missing.is_empty());
     }
 
     /// `None` surfaces is UNCONSTRAINED; an empty declared list would be the opposite. The two must
