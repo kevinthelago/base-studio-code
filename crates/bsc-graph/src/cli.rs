@@ -2059,6 +2059,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // decides whether vendoring the record equals importing the module, and any
                         // script reading the output saw a stateful module as stateless.
                         "moduleState": c.module_state,
+                        // The contract, visible WITHOUT applying. A dry harvest that could not show the
+                        // signature would make the one field a duplicate sweep reads unreviewable
+                        // before it lands.
+                        "signature": c.signature.to_json(),
                     })
                 })
                 .collect();
@@ -2119,6 +2123,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     });
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
+                    }
+                    // WHAT IT TAKES AND RETURNS (epic-a-graph-finds-its-own-duplicates). Written only
+                    // when non-empty, like `moduleState`: `impl set` is a MERGE, so an empty signature
+                    // would CLEAR one a previous pass established rather than leaving it alone.
+                    if !c.signature.is_empty() {
+                        im["signature"] = c.signature.to_json();
                     }
                     set_impl_skipping_retired(&mut g, im, &mut retired, &writer, "curate --apply: write a worthy candidate into the library")?;
                 }
@@ -3710,6 +3720,62 @@ mod tests {
         let h = help("bsc graph");
         assert!(h.contains("ANY language"), "curation must be described as open: {h:.0}");
         assert!(h.contains("harvest"), "the grammar-bound half must still be named");
+    }
+
+    /// THE SIGNATURE HAS TO REACH THE RECORD, or `bsc graph impl get` still cannot answer what a
+    /// function takes and returns without its reader parsing the body — which is the whole point of the
+    /// slice (epic-a-graph-finds-its-own-duplicates). Extraction is pinned next door in `extract.rs`;
+    /// this pins the CROSSING, which is the seam that silently drops fields.
+    #[test]
+    fn curate_apply_stores_the_signature_on_the_record() {
+        let dir = crate::unique_temp("sigcurate");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        // GENERIC on purpose: `curate` stores only WORTHY candidates and `classify` scores a type
+        // parameter +1 ("reusable across types"), which is what clears the bar. A monomorphic helper
+        // harvests a perfectly good signature and is then filtered out before the store — measured,
+        // and it is why this fixture is not the obvious `clamp(value, lo, hi)`.
+        std::fs::write(
+            src.join("firstWhere.ts"),
+            concat!(
+                "export function firstWhere<T>(xs: T[], pred: (x: T) => boolean): T | undefined {\n",
+                "  for (const x of xs) if (pred(x)) return x;\n",
+                "  return undefined;\n",
+                "}\n",
+            ),
+        )
+        .unwrap();
+
+        run(
+            ["curate", src.to_str().unwrap(), "--tech", "typescript", "--apply"]
+                .iter().map(|s| s.to_string()).collect(),
+            "bsc graph",
+        )
+        .unwrap();
+
+        let sig = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("name").and_then(Value::as_str) == Some("firstWhere"))
+            .and_then(|i| i.get("signature").cloned())
+            .expect("firstWhere was curated and carries a signature");
+
+        assert_eq!(
+            sig["params"],
+            serde_json::json!([
+                { "name": "xs", "type": "T[]" },
+                // A FUNCTION-TYPED parameter survives verbatim — arrows inside a type annotation are
+                // the shape a naive `split(',')` on the parameter list would tear in half.
+                { "name": "pred", "type": "(x: T) => boolean" },
+            ]),
+            "every parameter, in order, with its type: {sig}",
+        );
+        assert_eq!(sig["returns"], serde_json::json!({ "type": "T | undefined" }));
     }
 
     /// `impl set` must be able to WRITE the module state, not only a harvest. 27 of the 58 stateful

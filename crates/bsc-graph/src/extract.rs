@@ -59,6 +59,13 @@ pub struct Candidate {
     /// the two graphs cannot link. Derived from `src` at harvest, because backfilling it across a whole
     /// migration afterwards costs far more than computing it once, here.
     pub provides: Option<String>,
+    /// What this function TAKES and RETURNS — its contract, read off the same tree the name came from.
+    ///
+    /// Carried on the candidate so a duplicate sweep can compare functions by CONTRACT rather than by
+    /// name or by byte-identical text, which is all `doctor --dedup` could do
+    /// (`epic-a-graph-finds-its-own-duplicates`). Empty for a MODULE-granularity candidate: a module is
+    /// not a function and has no single signature.
+    pub signature: Signature,
     /// The reusability classification (#2745 slice 2) — library-worthy vs. project glue, with reasons.
     pub classification: Classification,
     /// The colocated test that could NOT be paired, carried here so `--apply` can route it into an EDGE
@@ -95,9 +102,215 @@ pub struct CandidateTest {
     pub src: String,
 }
 
-/// One collected definition: `(name, tech, source text, root-relative path)`. Named so the extra
-/// provenance field (#4091) doesn't turn every signature into an unreadable tuple.
-type Def = (String, String, String, String);
+/// One collected definition. A STRUCT, not a tuple: it was `(name, tech, code, rel)` with a doc
+/// comment already warning that "the extra provenance field doesn't turn every signature into an
+/// unreadable tuple" — and the signature (#epic-a-graph-finds-its-own-duplicates) is the fifth field
+/// that would have.
+#[derive(Debug, Clone)]
+struct Def {
+    name: String,
+    tech: String,
+    code: String,
+    /// Scanned-root-relative path of the file it came from.
+    rel: String,
+    sig: Signature,
+}
+
+/// How a parameter or return TYPE is known. THREE STATES, and keeping them apart is the whole point.
+///
+/// A signature is only useful for comparison if "I don't know this type" is distinguishable from "this
+/// type is X". Untyped parameters, `any`, and inferred returns are everywhere in TypeScript, and
+/// collapsing them onto a single "no type" would manufacture agreement out of missing information —
+/// the same distinction `cpuMs: null` vs `cpuMs: 0` carries in the reaper, where an unknown that reads
+/// as a value produces a confident wrong answer.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum TypeRef {
+    /// No annotation at all — the source said nothing.
+    #[default]
+    Absent,
+    /// Annotated, but the annotation carries no information: `any`, `unknown`. The source text is kept
+    /// because "it said `any`" is worth reading even though it is worth nothing to a comparison.
+    Opaque(String),
+    /// A real type, as written. VERBATIM and un-normalised: comparison is confined to ONE tech
+    /// (`epic-a-graph-finds-its-own-duplicates` rules cross-kit out), so there is no second language's
+    /// spelling to reconcile and nothing to gain from rewriting what the author wrote.
+    Known(String),
+}
+
+impl TypeRef {
+    /// Whether these two types are the SAME type — the question a similarity pass asks, and NOT what
+    /// `==` answers.
+    ///
+    /// `Absent` and `Opaque` match NOTHING, including each other. Two functions that both decline to
+    /// say what they take have told us nothing in common; deriving that from `PartialEq` would say they
+    /// agree. `==` is kept for the different, legitimate question of whether two records are identical.
+    pub fn matches(&self, other: &TypeRef) -> bool {
+        matches!((self, other), (TypeRef::Known(a), TypeRef::Known(b)) if a == b)
+    }
+
+    /// The source text, whatever the state — `None` only when there was no annotation.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            TypeRef::Absent => None,
+            TypeRef::Opaque(t) | TypeRef::Known(t) => Some(t),
+        }
+    }
+
+    /// Classify one annotation's source text. Trimmed of the leading `:` a TS `type_annotation` carries.
+    fn parse(raw: &str) -> TypeRef {
+        let t = raw.trim().trim_start_matches(':').trim();
+        if t.is_empty() {
+            return TypeRef::Absent;
+        }
+        // `any` says "stop checking"; `unknown` says "I will not tell you". Neither narrows anything,
+        // so neither can support a claim that two functions take the same thing.
+        if matches!(t, "any" | "unknown") {
+            return TypeRef::Opaque(t.to_string());
+        }
+        TypeRef::Known(t.to_string())
+    }
+}
+
+/// One parameter: what it is CALLED and what it takes.
+///
+/// The NAME is carried deliberately, and it is the reason the component library's contract measure
+/// cannot simply be pointed at functions. Component props are named at every call site — `title`,
+/// `onSelect`, `variant` — so their names carry meaning. A positional parameter's TYPE does not:
+/// `(s: string) => string` describes hundreds of unrelated functions, while `limit: number` and
+/// `count: number` share a type and mean different things. The name is the discriminating half.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Param {
+    /// The binding as written — an identifier, or a destructuring pattern verbatim (`{ ok }`).
+    pub name: String,
+    pub ty: TypeRef,
+}
+
+/// A function's contract: what it takes and what it gives back.
+///
+/// LANGUAGE-NATIVE, per the epic: cross-kit comparison is out of scope, so a Rust `Vec<T>` is never
+/// reconciled with a TypeScript `T[]` and no lowest-common-denominator type model exists to go wrong.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Signature {
+    pub params: Vec<Param>,
+    pub returns: TypeRef,
+}
+
+impl Signature {
+    /// Nothing was learned — no parameters AND no return type. Distinct from arity 0, which is a real
+    /// contract: `fn no_params() -> &'static str` takes nothing and says so.
+    ///
+    /// Used to decide whether the key is written at all: `impl set` is a MERGE (#4154), so emitting an
+    /// empty signature for a MODULE candidate would clear whatever a function-granularity pass had
+    /// established for that id rather than leaving it alone.
+    pub fn is_empty(&self) -> bool {
+        self.params.is_empty() && self.returns == TypeRef::Absent
+    }
+
+    /// The stored shape, as `bsc graph impl get` surfaces it.
+    ///
+    /// THE THREE TYPE STATES SURVIVE THE ROUND TRIP, which is the only hard requirement here:
+    ///
+    /// ```json
+    /// { "name": "xs", "type": "string[]" }                 // known
+    /// { "name": "n",  "type": null }                       // absent  — no annotation
+    /// { "name": "x",  "type": "any", "typeKnown": false }  // opaque  — annotated, says nothing
+    /// ```
+    ///
+    /// One rule for a consumer: a type is comparable iff `type` is non-null AND `typeKnown` is not
+    /// `false`. The source text is kept even when opaque, because "it said `any`" is worth reading to a
+    /// human even though it is worth nothing to a comparison.
+    pub fn to_json(&self) -> serde_json::Value {
+        fn ty(t: &TypeRef) -> serde_json::Value {
+            match t {
+                TypeRef::Absent => serde_json::json!({ "type": serde_json::Value::Null }),
+                TypeRef::Opaque(text) => serde_json::json!({ "type": text, "typeKnown": false }),
+                TypeRef::Known(text) => serde_json::json!({ "type": text }),
+            }
+        }
+        let params: Vec<serde_json::Value> = self
+            .params
+            .iter()
+            .map(|p| {
+                let mut v = ty(&p.ty);
+                v["name"] = serde_json::Value::String(p.name.clone());
+                v
+            })
+            .collect();
+        serde_json::json!({ "params": params, "returns": ty(&self.returns) })
+    }
+
+    /// How many parameters — the ARITY, which is the bucket key a duplicate sweep partitions on.
+    ///
+    /// Arity rather than name, and that inversion is deliberate: the component sweep's cheap first pass
+    /// is a NAME gate, which for functions discards precisely what we are hunting — the same routine
+    /// under two different names. Arity partitions without assuming anything about naming.
+    pub fn arity(&self) -> usize {
+        self.params.len()
+    }
+}
+
+/// The signature of the function `node` DEFINES. Empty when it defines none.
+///
+/// Handles the same four shapes [`fn_def_name`] does, and resolves the one indirection: a
+/// `variable_declarator` bound to an arrow keeps its parameters on the VALUE, not on the declarator.
+fn signature_of(node: Node, src: &[u8]) -> Signature {
+    // An arrow bound to a `const` declares its contract on the function expression, not the binding.
+    let f = match node.kind() {
+        "variable_declarator" => match node.child_by_field_name("value") {
+            Some(v) if matches!(v.kind(), "arrow_function" | "function" | "function_expression") => v,
+            _ => return Signature::default(),
+        },
+        _ => node,
+    };
+    let returns = match f.child_by_field_name("return_type") {
+        // TS hands back a `type_annotation` (`: T[]`); Rust hands back the type node itself. `parse`
+        // strips the leading colon either way, so one path covers both.
+        Some(r) => TypeRef::parse(r.utf8_text(src).unwrap_or_default()),
+        None => TypeRef::Absent,
+    };
+    let params = f
+        .child_by_field_name("parameters")
+        .map(|p| collect_params(p, src))
+        .unwrap_or_default();
+    Signature { params, returns }
+}
+
+/// The parameters declared inside a `formal_parameters` (TS) or `parameters` (Rust) node.
+///
+/// Walks NAMED children rather than matching an allow-list of node kinds: the two grammars spell a
+/// parameter half a dozen ways between them (`required_parameter`, `optional_parameter`,
+/// `rest_pattern`, `parameter`, `self_parameter`, and a bare `identifier` in an untyped arrow), and an
+/// allow-list is a list that silently drops whatever it forgot. Anything with a `pattern` field is a
+/// parameter; anything else in there is punctuation.
+fn collect_params(params: Node, src: &[u8]) -> Vec<Param> {
+    let mut out = Vec::new();
+    let mut cursor = params.walk();
+    for child in params.named_children(&mut cursor) {
+        // `self` is the RECEIVER, not part of the contract a caller supplies.
+        //
+        // REDUNDANT WITH THE `pattern` TEST BELOW, and deliberately kept. A `self_parameter` carries no
+        // `pattern` field, so the general rule already drops it — MEASURED by removing this arm and
+        // watching every test stay green, then removing both and watching `bump` harvest as
+        // `[&mut self, by]`. Stating the intent here means the next reader learns the rule from the
+        // code rather than from that experiment, and a grammar release that gives `self_parameter` a
+        // pattern cannot silently add a phantom first parameter to every method in the library.
+        if child.kind() == "self_parameter" {
+            continue;
+        }
+        let name = match child.child_by_field_name("pattern") {
+            Some(p) => p.utf8_text(src).unwrap_or_default().to_string(),
+            // An untyped arrow parameter is a bare identifier with no `pattern` field: `(x) => x`.
+            None if child.kind() == "identifier" => child.utf8_text(src).unwrap_or_default().to_string(),
+            None => continue,
+        };
+        let ty = match child.child_by_field_name("type") {
+            Some(t) => TypeRef::parse(t.utf8_text(src).unwrap_or_default()),
+            None => TypeRef::Absent,
+        };
+        out.push(Param { name, ty });
+    }
+    out
+}
 
 /// Path segments we never descend into or parse — vendored deps, build output, VCS/tooling dirs, and
 /// TEST TREES (#4136).
@@ -872,6 +1085,10 @@ pub fn harvest_module(file: &Path, root: &Path) -> Option<Candidate> {
         None => Vec::new(),
     };
     let mut c = Candidate {
+        // A MODULE HAS NO SIGNATURE, and empty is the honest answer rather than a gap. A file holds
+        // many functions with many contracts; picking one, or unioning them, would invent a contract
+        // the module does not have. Function-granularity candidates carry the real ones.
+        signature: Signature::default(),
         // What this module HOLDS. A module harvest is the whole file, so its top-level mutable
         // bindings come with it — recorded here so the record can say so rather than each caller
         // rediscovering it by reading the code.
@@ -912,12 +1129,12 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
     let dir = test_root;
     // Which (name, tech) pairs were actually harvested — so `composes` only links in-set candidates.
     let in_set: HashSet<(String, String)> =
-        defs.iter().map(|(n, t, _, _)| (n.clone(), t.clone())).collect();
+        defs.iter().map(|d| (d.name.clone(), d.tech.clone())).collect();
     // Colocated tests, read ONCE PER FILE (#4126). Many candidates share one source — this repo's
     // `sorts.test.ts` covers four impls and `graphAlgos.test.ts` five — so pairing per candidate would
     // re-read the same file dozens of times across a 1780-candidate walk.
     let mut test_cache: std::collections::BTreeMap<String, Vec<CandidateTest>> = Default::default();
-    for (_, _, _, src_rel) in &defs {
+    for src_rel in defs.iter().map(|d| &d.rel) {
         if test_cache.contains_key(src_rel) {
             continue;
         }
@@ -930,7 +1147,7 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
         test_cache.insert(src_rel.clone(), found);
     }
     defs.into_iter()
-        .map(|(name, tech, code, src_rel)| {
+        .map(|Def { name, tech, code, rel: src_rel, sig }| {
             let mut composes: Vec<String> = Vec::new();
             for (caller, callee, ctech) in &raw {
                 if caller == &name
@@ -963,6 +1180,7 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
                 src: src_rel,
                 // Function granularity: a fragment of a file satisfies no import specifier.
                 provides: None,
+                signature: sig,
                 classification: Classification::default(),
             // Function granularity never carries one: half a file is not a module, so it has no
             // colocated test of its own to route.
@@ -1029,7 +1247,16 @@ fn collect_defs(node: Node, src: &[u8], tech: &str, in_test: bool, rel: &str, ou
             // weak algorithm — it is a different KIND of node, owned by a different store.
             if module_level && !renders_jsx(node) {
                 if let Ok(code) = node.utf8_text(src) {
-                    out.push((name, tech.to_string(), code.to_string(), rel.to_string()));
+                    out.push(Def {
+                        name,
+                        tech: tech.to_string(),
+                        code: code.to_string(),
+                        rel: rel.to_string(),
+                        // Read from the SAME node the name came from, while the tree is in hand.
+                        // Re-parsing the stored `code` later would work and would be a second parser
+                        // to keep in step with this one.
+                        sig: signature_of(node, src),
+                    });
                 }
             }
         }
@@ -1347,6 +1574,151 @@ mod tests {
 
     fn fixtures() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures")
+    }
+
+    // ── SIGNATURES (epic-a-graph-finds-its-own-duplicates, slice 1) ──────────────────────────────
+    // Nothing can compare functions by CONTRACT until a harvested function carries one. `extract.rs`
+    // already walked every function node and pulled the `name` field and stopped there, so
+    // `doctor --dedup` could only ever key on a shared name, a shared src module, or byte-identical
+    // code — all three lexical, and all three blind to the same routine written twice under two names.
+    //
+    // Asserted against REAL fixture source rather than inline strings: the failure mode here is a
+    // grammar assumption (which node kind, which field name) being wrong, and an inline string written
+    // from the same wrong assumption would agree with it.
+
+    /// The signature of the named function harvested from `file`.
+    fn sig_of(file: &str, name: &str) -> Signature {
+        harvest_file(&fixtures().join(file))
+            .into_iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("{name} was not harvested from {file}"))
+            .signature
+    }
+    fn known(t: &str) -> TypeRef { TypeRef::Known(t.to_string()) }
+
+    /// THE DISTINCTION THE WHOLE SLICE RESTS ON. `n` has no annotation, `x` says `any`, `xs` says
+    /// `string[]`. Collapsing the first two onto one "no type" would let a later similarity pass
+    /// conclude that two functions which both decline to say what they take agree about it.
+    #[test]
+    fn a_type_is_known_absent_or_opaque_and_the_three_are_distinguishable() {
+        let sig = sig_of("signatures.ts", "threeStates");
+        assert_eq!(sig.arity(), 3, "one parameter per declared parameter: {sig:?}");
+        assert_eq!(sig.params[0], Param { name: "xs".into(), ty: known("string[]") });
+        assert_eq!(sig.params[1], Param { name: "n".into(), ty: TypeRef::Absent });
+        assert_eq!(sig.params[2], Param { name: "x".into(), ty: TypeRef::Opaque("any".into()) });
+        assert_eq!(sig.returns, known("number"), "the return type drops its leading colon");
+    }
+
+    /// AN UNKNOWN NEVER MATCHES AN UNKNOWN — the rule `PartialEq` would get wrong, which is why
+    /// `matches` exists beside it rather than instead of it.
+    #[test]
+    fn an_unknown_type_matches_nothing_including_another_unknown() {
+        assert!(known("T[]").matches(&known("T[]")));
+        assert!(!known("T[]").matches(&known("U[]")));
+
+        for unknowable in [TypeRef::Absent, TypeRef::Opaque("any".into())] {
+            assert!(!unknowable.matches(&unknowable.clone()), "{unknowable:?} agrees with itself");
+            assert!(!unknowable.matches(&known("T[]")));
+            assert!(!known("T[]").matches(&unknowable));
+        }
+        // ...while `==` still answers the DIFFERENT question of whether two records are identical, so
+        // the two must not be conflated.
+        assert_eq!(TypeRef::Absent, TypeRef::Absent, "structural equality is untouched");
+    }
+
+    /// `unknown` is a REAL TypeScript type that means "I will not tell you", so it is opaque, not known.
+    #[test]
+    fn the_unknown_type_is_opaque_rather_than_a_type_named_unknown() {
+        let sig = sig_of("signatures.ts", "opaqueUnknown");
+        assert_eq!(sig.params[0].ty, TypeRef::Opaque("unknown".into()));
+        // `void` IS a declared type — the contrast that keeps the opaque list from growing by feel.
+        assert_eq!(sig.returns, known("void"));
+    }
+
+    /// AN INFERRED RETURN IS ABSENT, and that is not the same as `: void`.
+    #[test]
+    fn an_inferred_return_is_absent_not_void() {
+        assert_eq!(sig_of("signatures.ts", "inferredReturn").returns, TypeRef::Absent);
+        assert_eq!(sig_of("signatures.ts", "opaqueUnknown").returns, known("void"));
+    }
+
+    /// AN ARROW DECLARES ITS CONTRACT ON THE VALUE, not on the binding. Reading the declarator node
+    /// finds no `parameters` field at all, so every `export const f = (…) => …` in the library — and
+    /// that is most of the TypeScript in this repo — would have harvested as arity 0.
+    #[test]
+    fn an_arrow_declarators_signature_comes_off_its_value() {
+        let sig = sig_of("signatures.ts", "typedArrow");
+        assert_eq!(sig.arity(), 2, "the arrow's parameters, not the declarator's absent ones");
+        assert_eq!(sig.params[0], Param { name: "xs".into(), ty: known("number[]") });
+        assert_eq!(sig.returns, known("number"));
+    }
+
+    /// An UNTYPED arrow parameter is a bare `identifier` with no `pattern` field — the shape an
+    /// allow-list of parameter node kinds drops silently, and the reason `collect_params` walks named
+    /// children and asks for a pattern instead of matching kinds.
+    #[test]
+    fn an_untyped_arrow_parameter_is_still_a_parameter() {
+        let sig = sig_of("signatures.ts", "untypedArrow");
+        assert_eq!(sig.params, vec![Param { name: "value".into(), ty: TypeRef::Absent }]);
+    }
+
+    /// A METHOD is reached only through `method_definition`, a different node kind from every other
+    /// case here.
+    #[test]
+    fn a_method_definition_carries_its_signature_too() {
+        let sig = sig_of("signatures.ts", "add");
+        assert_eq!(sig.arity(), 2);
+        assert_eq!(sig.params[1], Param { name: "at".into(), ty: known("number") });
+        assert_eq!(sig.returns, known("boolean"));
+    }
+
+    /// A DESTRUCTURED parameter keeps its pattern verbatim: there is no identifier to take, and
+    /// inventing one would put a name in the record that the source never used.
+    #[test]
+    fn a_destructured_parameter_keeps_its_pattern() {
+        let ts = sig_of("signatures.ts", "destructured");
+        assert_eq!(ts.arity(), 1, "one parameter, however many bindings it unpacks");
+        assert_eq!(ts.params[0].name, "{ ok, code }");
+        let rs = sig_of("signatures.rs", "destructured");
+        assert_eq!(rs.arity(), 1);
+        assert_eq!(rs.params[0], Param { name: "(lo, hi)".into(), ty: known("(u32, u32)") });
+    }
+
+    /// RUST: the grammar hands back the return type WITHOUT a colon, and a missing one is absent
+    /// rather than `()` — reporting `()` would be an annotation the author never wrote.
+    #[test]
+    fn a_rust_function_carries_its_signature() {
+        let two = sig_of("signatures.rs", "two_typed");
+        assert_eq!(two.params[0], Param { name: "xs".into(), ty: known("&[u32]") });
+        assert_eq!(two.params[1], Param { name: "seed".into(), ty: known("u32") });
+        assert_eq!(two.returns, known("Vec<u32>"));
+
+        assert_eq!(sig_of("signatures.rs", "no_return").returns, TypeRef::Absent);
+        assert_eq!(sig_of("signatures.rs", "no_params").arity(), 0, "arity 0 is a bucket, not a gap");
+    }
+
+    /// `self` IS THE RECEIVER, not a parameter a caller supplies. Counting it would make every method
+    /// one arity higher than the free function doing the same job — and land it in a different bucket
+    /// from the duplicate it is meant to be matched against.
+    ///
+    /// TWO GUARDS HOLD THIS AND EITHER ALONE IS ENOUGH (the explicit `self_parameter` arm, and the
+    /// `pattern`-field test that a receiver also fails), so removing one leaves this test green.
+    /// Removing BOTH harvests `bump` as `[&mut self, by]` — which is how the real dependency was
+    /// established rather than assumed.
+    #[test]
+    fn a_rust_receiver_is_not_a_parameter() {
+        let sig = sig_of("signatures.rs", "bump");
+        assert_eq!(sig.arity(), 1, "`by` alone; `&mut self` is the receiver: {sig:?}");
+        assert_eq!(sig.params[0], Param { name: "by".into(), ty: known("u32") });
+    }
+
+    /// A MODULE has no single contract, and empty is the honest answer rather than a gap: a file holds
+    /// many functions, so picking one or unioning them would invent a contract the module lacks.
+    #[test]
+    fn a_module_granularity_candidate_carries_no_signature() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let c = harvest_module(&fixtures().join("sample.ts"), root).unwrap();
+        assert_eq!(c.signature, Signature::default());
     }
 
     // ── MODULE GRANULARITY (graph-harvest-module-mode) ───────────────────────────────────────────
