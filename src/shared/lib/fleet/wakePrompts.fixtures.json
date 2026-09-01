@@ -1,0 +1,497 @@
+{
+  "note": "GENERATED from @/shared/lib/fleet/coordinationWakes — do not hand-edit; see the .gen.test.ts",
+  "waiterPrompts": [
+    {
+      "label": "one dep, landed, no checkpoint",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "session",
+            "id": "b"
+          }
+        ],
+        "registeredAt": 0
+      },
+      "latches": {
+        "session:b": {
+          "state": "satisfied",
+          "source": "landed",
+          "at": 1
+        }
+      },
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: session:b (landed)."
+    },
+    {
+      "label": "one dep, with a checkpoint",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "session",
+            "id": "b"
+          }
+        ],
+        "registeredAt": 0,
+        "checkpoint": "cp-17"
+      },
+      "latches": {
+        "session:b": {
+          "state": "satisfied",
+          "source": "landed",
+          "at": 1
+        }
+      },
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: session:b (landed).\nResume from your checkpoint: cp-17 -- read it first, then continue from where you left off."
+    },
+    {
+      "label": "TWO deps — the plural must agree",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "session",
+            "id": "b"
+          },
+          {
+            "kind": "session",
+            "id": "c"
+          }
+        ],
+        "registeredAt": 0,
+        "checkpoint": "cp-2"
+      },
+      "latches": {
+        "session:b": {
+          "state": "satisfied",
+          "source": "landed",
+          "at": 1
+        },
+        "session:c": {
+          "state": "satisfied",
+          "source": "merged",
+          "at": 1
+        }
+      },
+      "prompt": "Your blocking dependencies have landed -- resume now.\nSatisfied: session:b (landed), session:c (merged).\nResume from your checkpoint: cp-2 -- read it first, then continue from where you left off."
+    },
+    {
+      "label": "a dep satisfied by a different SOURCE",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "session",
+            "id": "b"
+          }
+        ],
+        "registeredAt": 0
+      },
+      "latches": {
+        "session:b": {
+          "state": "satisfied",
+          "source": "closed",
+          "at": 1
+        }
+      },
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: session:b (closed)."
+    },
+    {
+      "label": "a dep with NO latch — reported as ready",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "session",
+            "id": "ghost"
+          }
+        ],
+        "registeredAt": 0
+      },
+      "latches": {},
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: session:ghost (ready)."
+    },
+    {
+      "label": "an ISSUE dep",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "issue",
+            "number": 4212
+          }
+        ],
+        "registeredAt": 0,
+        "checkpoint": "cp-9"
+      },
+      "latches": {
+        "#4212": {
+          "state": "satisfied",
+          "source": "landed",
+          "at": 1
+        }
+      },
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: #4212 (landed).\nResume from your checkpoint: cp-9 -- read it first, then continue from where you left off."
+    },
+    {
+      "label": "a mix of kinds",
+      "waiter": {
+        "session": "a",
+        "deps": [
+          {
+            "kind": "session",
+            "id": "b"
+          },
+          {
+            "kind": "issue",
+            "number": 7
+          }
+        ],
+        "registeredAt": 0
+      },
+      "latches": {
+        "session:b": {
+          "state": "satisfied",
+          "source": "landed",
+          "at": 1
+        },
+        "#7": {
+          "state": "satisfied",
+          "source": "merged",
+          "at": 1
+        }
+      },
+      "prompt": "Your blocking dependencies have landed -- resume now.\nSatisfied: session:b (landed), #7 (merged)."
+    }
+  ],
+  "waitingPrompts": [
+    {
+      "label": "a reason and a checkpoint",
+      "waiting": {
+        "session": "a",
+        "reason": "needs a decision",
+        "checkpoint": "cp-3",
+        "at": 1
+      },
+      "prompt": "You paused for confirmation: needs a decision — the user has resumed you; proceed.\nResume from your checkpoint: cp-3 — read it first, then continue from where you left off."
+    },
+    {
+      "label": "a reason, no checkpoint",
+      "waiting": {
+        "session": "a",
+        "reason": "needs a decision",
+        "at": 1
+      },
+      "prompt": "You paused for confirmation: needs a decision — the user has resumed you; proceed."
+    },
+    {
+      "label": "an EMPTY reason",
+      "waiting": {
+        "session": "a",
+        "reason": "",
+        "at": 1
+      },
+      "prompt": "You paused for the user — you have been resumed; proceed."
+    },
+    {
+      "label": "a whitespace-only reason",
+      "waiting": {
+        "session": "a",
+        "reason": "   ",
+        "checkpoint": "cp-1",
+        "at": 1
+      },
+      "prompt": "You paused for the user — you have been resumed; proceed.\nResume from your checkpoint: cp-1 — read it first, then continue from where you left off."
+    }
+  ],
+  "answerPrompts": [
+    {
+      "label": "an answer and a checkpoint",
+      "answered": {
+        "session": "a",
+        "answer": "use the second approach",
+        "checkpoint": "cp-4"
+      },
+      "prompt": "The director responded: use the second approach — proceed on that basis; you are no longer parked. Do not ask the user.\nResume from your checkpoint: cp-4 — read it first, then continue."
+    },
+    {
+      "label": "an answer, no checkpoint",
+      "answered": {
+        "session": "a",
+        "answer": "use the second approach"
+      },
+      "prompt": "The director responded: use the second approach — proceed on that basis; you are no longer parked. Do not ask the user."
+    },
+    {
+      "label": "an EMPTY answer falls back to the notes",
+      "answered": {
+        "session": "a",
+        "answer": ""
+      },
+      "prompt": "The director responded: (see the director's notes) — proceed on that basis; you are no longer parked. Do not ask the user."
+    },
+    {
+      "label": "a whitespace-only answer",
+      "answered": {
+        "session": "a",
+        "answer": "  ",
+        "checkpoint": "cp-5"
+      },
+      "prompt": "The director responded: (see the director's notes) — proceed on that basis; you are no longer parked. Do not ask the user.\nResume from your checkpoint: cp-5 — read it first, then continue."
+    }
+  ],
+  "assignPrompts": [
+    {
+      "label": "title, body and checkpoint",
+      "assigned": {
+        "session": "a",
+        "title": "fix the parser",
+        "body": "It drops a trailing comma.",
+        "checkpoint": "cp-6"
+      },
+      "prompt": "The director assigned you new work: fix the parser. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user.\n\nIt drops a trailing comma.\n\nFirst re-read your checkpoint: cp-6, then begin the new work."
+    },
+    {
+      "label": "no title",
+      "assigned": {
+        "session": "a",
+        "title": "",
+        "body": "Do the thing.",
+        "checkpoint": "cp-7"
+      },
+      "prompt": "The director assigned you new work. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user.\n\nDo the thing.\n\nFirst re-read your checkpoint: cp-7, then begin the new work."
+    },
+    {
+      "label": "no body",
+      "assigned": {
+        "session": "a",
+        "title": "fix the parser",
+        "body": ""
+      },
+      "prompt": "The director assigned you new work: fix the parser. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user."
+    },
+    {
+      "label": "neither title nor body",
+      "assigned": {
+        "session": "a",
+        "title": "",
+        "body": ""
+      },
+      "prompt": "The director assigned you new work. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user."
+    },
+    {
+      "label": "a whitespace-only body",
+      "assigned": {
+        "session": "a",
+        "title": "t",
+        "body": "   ",
+        "checkpoint": "cp-8"
+      },
+      "prompt": "The director assigned you new work: t. Start on it now and carry it through your normal loop (implement → gate → integrate). Do not ask the user.\n\nFirst re-read your checkpoint: cp-8, then begin the new work."
+    }
+  ],
+  "planned": [
+    {
+      "session": "a",
+      "deps": [
+        {
+          "kind": "session",
+          "id": "b"
+        }
+      ],
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: session:b (landed).\nResume from your checkpoint: cp-1 -- read it first, then continue from where you left off."
+    },
+    {
+      "session": "z",
+      "deps": [
+        {
+          "kind": "session",
+          "id": "b"
+        }
+      ],
+      "prompt": "Your blocking dependency has landed -- resume now.\nSatisfied: session:b (landed)."
+    }
+  ],
+  "summaries": [
+    {
+      "label": "one waiter, pending",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "kind": "session",
+              "id": "ghost"
+            }
+          ],
+          "registeredAt": 0
+        }
+      ],
+      "latches": {},
+      "view": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "ref": "session:ghost",
+              "status": "pending"
+            }
+          ],
+          "stalled": false,
+          "deadlocked": false
+        }
+      ]
+    },
+    {
+      "label": "a STALLED chain — a dep failed",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "kind": "session",
+              "id": "b"
+            }
+          ],
+          "registeredAt": 0
+        }
+      ],
+      "latches": {
+        "session:b": {
+          "state": "failed",
+          "reason": "boom",
+          "at": 1
+        }
+      },
+      "view": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "ref": "session:b",
+              "status": "failed"
+            }
+          ],
+          "stalled": true,
+          "deadlocked": false
+        }
+      ]
+    },
+    {
+      "label": "a DEADLOCKED ring",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "kind": "session",
+              "id": "b"
+            }
+          ],
+          "registeredAt": 0
+        },
+        {
+          "session": "b",
+          "deps": [
+            {
+              "kind": "session",
+              "id": "a"
+            }
+          ],
+          "registeredAt": 0
+        }
+      ],
+      "latches": {},
+      "view": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "ref": "session:b",
+              "status": "pending"
+            }
+          ],
+          "stalled": false,
+          "deadlocked": true
+        },
+        {
+          "session": "b",
+          "deps": [
+            {
+              "ref": "session:a",
+              "status": "pending"
+            }
+          ],
+          "stalled": false,
+          "deadlocked": true
+        }
+      ]
+    },
+    {
+      "label": "a satisfied dep is neither stalled nor deadlocked",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "kind": "session",
+              "id": "b"
+            }
+          ],
+          "registeredAt": 0
+        }
+      ],
+      "latches": {
+        "session:b": {
+          "state": "satisfied",
+          "source": "landed",
+          "at": 1
+        }
+      },
+      "view": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "ref": "session:b",
+              "status": "satisfied"
+            }
+          ],
+          "stalled": false,
+          "deadlocked": false
+        }
+      ]
+    },
+    {
+      "label": "a waiter with a checkpoint",
+      "waiters": [
+        {
+          "session": "a",
+          "deps": [
+            {
+              "kind": "session",
+              "id": "ghost"
+            }
+          ],
+          "checkpoint": "cp-11",
+          "registeredAt": 0
+        }
+      ],
+      "latches": {},
+      "view": [
+        {
+          "session": "a",
+          "checkpoint": "cp-11",
+          "deps": [
+            {
+              "ref": "session:ghost",
+              "status": "pending"
+            }
+          ],
+          "stalled": false,
+          "deadlocked": false
+        }
+      ]
+    }
+  ]
+}
