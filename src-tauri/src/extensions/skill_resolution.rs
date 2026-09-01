@@ -6,10 +6,20 @@
 //! [`super::skills::write_session_skills`] writes the resolved list into `.claude/skills`, taking an
 //! already-chosen set. So the backend owned the store, owned the write, and could not answer "which".
 //!
-//! The cost of that split is recorded in the tree: a `bsc-agent` session received NO skills at all,
-//! because the only writer of `.claude/skills` is reached from `ensure_session_settings`, which the
-//! frontend calls only for a CLAUDE pane. The runtime scanned a directory nothing had ever created for
-//! it, found nothing, and looked exactly like a session that legitimately had none attached.
+//! The cost of that split is recorded in the tree, though NARROWER than it was first written down as.
+//! `ensure_session_settings` is indeed the only writer of `.claude/skills`, but the renderer calls it
+//! on `launchesClaude || paneNeedsGate(paneId)`, and `paneNeedsGate` is harness-INDEPENDENT — true for
+//! any `<a>:<b>` id that is not `man:`. So a bsc-agent FLEET pane already gets its skills written, and
+//! `bsc-agent` already reads them: `compose_skills_from` falls back to scanning
+//! `<cwd>/.claude/skills` whenever `$BSC_AGENT_SKILLS` is unset, which is always, since nothing in the
+//! app sets it.
+//!
+//! What was genuinely receiving nothing is a bsc-agent MANUAL console (`man:`), where both arms of
+//! that condition are false. Measured 2026-09-01 while wiring this; the original claim of "no skills
+//! at all" is corrected on
+//! `the-launch-resolves-its-own-skills-instead-of-receiving-them`. A caged session has a separate
+//! problem of the same shape — it reads from a directory nothing wrote — filed as
+//! `a-caged-session-reads-its-skills-from-a-directory-nothing-wrote`.
 //!
 //! # The precedence chain
 //!
@@ -26,9 +36,6 @@
 //! skill", which flags every REDUNDANT choice — an add for something already on — as a deviation. The
 //! UI reads this field to mark a session as differing from its project baseline, so a redundant choice
 //! showing as a deviation is a lie about what the user changed.
-
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-launch-resolves-its-own-skills-instead-of-receiving-them`
 
 use super::cfg::SkillCfg;
 use super::skills::skill_slug;
@@ -76,6 +83,11 @@ pub enum SkillReason {
 }
 
 impl SkillReason {
+    /// The wire spelling, and the ONLY caller is the parity test — which is the right caller: it is
+    /// how this port's reason is compared against the TypeScript's string, case by case. Clippy sees
+    /// no non-test use and calls it dead; deleting it would delete that comparison, and the reason is
+    /// a layered precedence chain where a rung nothing checks is a rung that can silently rot.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn as_str(self) -> &'static str {
         match self {
             SkillReason::Disabled => "disabled",
@@ -171,9 +183,175 @@ pub fn to_skill_cfgs(defs: &[&SkillDef]) -> Vec<SkillCfg> {
         .collect()
 }
 
+
+/// The library, read from the store Rust already owns.
+///
+/// `crates/skilldb` IS the skills library — `bsc skill` is its CLI and
+/// [`super::skills::record_skill_uses`] already opens it from here — so the resolution needs no
+/// library on the wire, only the per-session facts the renderer holds. A missing or unreadable store
+/// yields an EMPTY library, which resolves to no skills and lets the frontend's list stand; the
+/// alternative (failing the launch) would make an unreadable `skills.db` fatal to every session.
+pub fn library() -> Vec<SkillDef> {
+    let path = crate::skills_db();
+    if !path.exists() {
+        return Vec::new();
+    }
+    match skilldb::Store::open(&path).and_then(|s| s.list()) {
+        Ok(skills) => skills
+            .into_iter()
+            .map(|s| SkillDef {
+                id: s.id,
+                name: s.name,
+                desc: s.desc,
+                prompt: s.prompt,
+                tools: s.tools,
+                projects: s.projects,
+                enabled: s.enabled,
+                pinned: s.pinned,
+            })
+            .collect(),
+        Err(e) => {
+            log::warn!("skill resolution: reading the library failed ({e}) — resolving none");
+            Vec::new()
+        }
+    }
+}
+
+/// Expand toggled-on skill GROUPS into the skill ids they carry.
+///
+/// Also read from the store rather than passed in: a group's membership is store state, and the
+/// renderer holds only which groups are toggled ON for this session, which is the fact.
+pub fn group_skill_ids(group_ids: &[String]) -> Vec<String> {
+    if group_ids.is_empty() {
+        return Vec::new();
+    }
+    let path = crate::skills_db();
+    if !path.exists() {
+        return Vec::new();
+    }
+    let Ok(store) = skilldb::Store::open(&path) else { return Vec::new() };
+    let Ok(groups) = store.group_list() else { return Vec::new() };
+    let mut out: Vec<String> = Vec::new();
+    for g in groups.into_iter().filter(|g| group_ids.iter().any(|id| id == &g.id)) {
+        for sid in g.skill_ids {
+            if !out.contains(&sid) {
+                out.push(sid);
+            }
+        }
+    }
+    out
+}
+
+/// What the launch will write, and what the resolution and the renderer disagreed on.
+// `Clone` only: `SkillCfg` is a wire type with neither `Debug` nor `PartialEq`, and deriving them on
+// it to satisfy a report struct would widen a payload type for a test's convenience. The two report
+// lists are plain `String`s, which is what any assertion actually wants to read.
+#[derive(Clone)]
+pub struct SkillReconciliation {
+    pub merged: Vec<SkillCfg>,
+    /// Skills the RESOLUTION produced that the frontend omitted — added. On a Claude pane this is a
+    /// defect; on a pane the frontend never resolved for, it is the fix landing. The caller knows
+    /// which it is looking at and the log says so.
+    pub added: Vec<String>,
+    /// Skills the FRONTEND sent that the resolution did not produce — kept, and a defect either way.
+    pub missing_from_resolution: Vec<String>,
+}
+
+/// Reconcile the resolved skills against the list the renderer sent.
+///
+/// # A union, and the two directions mean different things here
+///
+/// Everywhere else in this cutover "the frontend has extra" is expected and says nothing. Here it is
+/// a DEFECT: both sides resolve from the same library against the same session, so neither has a
+/// legitimate extra. The list is unioned rather than replaced anyway — a skill dropped in the cutover
+/// is a session quietly missing instructions it was configured to have, and nothing downstream
+/// notices a prompt that is merely shorter.
+///
+/// The other direction is where this flip differs from its siblings: a skill the RESOLUTION produced
+/// and the frontend omitted is expected for a pane the renderer never resolved for at all, and is the
+/// whole point of doing this. The caller distinguishes the two cases; this function only reports them.
+///
+/// Matched by NAME rather than id, because the name is what `write_session_skills` slugs into the
+/// directory — two entries with different ids and the same name would collide on disk, so the name is
+/// the identity that matters downstream.
+pub fn reconcile_session_skills(
+    from_frontend: Vec<SkillCfg>,
+    resolved: Vec<SkillCfg>,
+) -> SkillReconciliation {
+    let added: Vec<SkillCfg> = resolved
+        .iter()
+        .filter(|r| !from_frontend.iter().any(|f| f.name == r.name))
+        .cloned()
+        .collect();
+    let missing_from_resolution: Vec<String> = from_frontend
+        .iter()
+        .filter(|f| !resolved.iter().any(|r| r.name == f.name))
+        .map(|f| f.name.clone())
+        .collect();
+    let added_names = added.iter().map(|s| s.name.clone()).collect();
+    let mut merged = from_frontend;
+    merged.extend(added);
+    SkillReconciliation { merged, added: added_names, missing_from_resolution }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cfg(name: &str) -> SkillCfg {
+        SkillCfg {
+            id: format!("id-{name}"),
+            name: name.to_string(),
+            description: String::new(),
+            prompt: String::new(),
+            tools: vec![],
+        }
+    }
+
+    /// THE FIX LANDING: a pane the renderer never resolved for sends nothing, and the resolution
+    /// supplies the set. This is the direction that is EXPECTED here and is a defect nowhere else in
+    /// the cutover, which is why the two are reported separately rather than as one "difference".
+    #[test]
+    fn a_skill_the_resolution_produced_and_the_frontend_omitted_is_added() {
+        let r = reconcile_session_skills(vec![], vec![cfg("review"), cfg("deploy")]);
+        assert_eq!(r.merged.len(), 2, "the session gets the resolved set");
+        assert_eq!(r.added, vec!["review".to_string(), "deploy".to_string()]);
+        assert!(r.missing_from_resolution.is_empty());
+    }
+
+    /// THE DEFECT DIRECTION, which here is BOTH directions being meaningful: both sides resolve from
+    /// the same library against the same session, so a skill only the frontend has is a disagreement
+    /// rather than a legitimate extra. It is KEPT regardless — a dropped skill is a session quietly
+    /// missing instructions, and nothing downstream notices a shorter prompt.
+    #[test]
+    fn a_skill_only_the_frontend_has_is_kept_and_reported() {
+        let r = reconcile_session_skills(vec![cfg("review")], vec![]);
+        assert_eq!(r.merged.len(), 1, "never dropped");
+        assert_eq!(r.missing_from_resolution, vec!["review".to_string()]);
+        assert!(r.added.is_empty());
+    }
+
+    /// Agreement is silent and changes nothing — the property that makes this safe on a Claude pane,
+    /// where the flip must be behaviour-preserving.
+    #[test]
+    fn agreement_adds_nothing_and_reports_nothing() {
+        let both = vec![cfg("review"), cfg("deploy")];
+        let r = reconcile_session_skills(both.clone(), both);
+        assert_eq!(r.merged.len(), 2);
+        assert!(r.added.is_empty() && r.missing_from_resolution.is_empty());
+    }
+
+    /// MATCHED BY NAME, not id. The name is what `write_session_skills` slugs into the directory, so
+    /// two entries with different ids and the same name collide on disk — the name is the identity
+    /// that matters downstream, and matching on id would duplicate the directory instead of merging.
+    #[test]
+    fn matching_is_by_name_because_the_name_is_what_becomes_the_directory() {
+        let front = vec![SkillCfg { id: "old-id".into(), ..cfg("review") }];
+        let resolved = vec![SkillCfg { id: "new-id".into(), ..cfg("review") }];
+        let r = reconcile_session_skills(front, resolved);
+        assert_eq!(r.merged.len(), 1, "one directory, not two: {:?}", r.added);
+        assert!(r.added.is_empty() && r.missing_from_resolution.is_empty());
+    }
 
     fn fixture() -> serde_json::Value {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
