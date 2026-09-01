@@ -140,6 +140,10 @@ pub(crate) fn ensure_session_settings(
     // two reasons as `role_capability`: a pane with no profile assigned has nothing to derive, and an
     // older frontend must keep working.
     agent_profile: Option<crate::session::profile_settings::AgentProfile>,
+    // The commands this pane's FLOW grants back over the role gate's denial (#304) — `git push` /
+    // `gh pr create` for an auto-pr or push-confirm flow, empty otherwise. A fact: the flow is
+    // per-pane data the renderer holds. Absent reproduces the pre-flow behaviour.
+    flow_granted_commands: Option<Vec<String>>,
 ) -> Result<(), String> {
     // Bind the unwrapped Options to locals so the borrowed spec can reference them.
     let mcp_servers = mcp_servers.unwrap_or_default();
@@ -158,6 +162,9 @@ pub(crate) fn ensure_session_settings(
     let recon = crate::session::role_gate::reconcile_role_denies(
         role_capability.as_ref(),
         &active_surfaces.unwrap_or_default(),
+        // The two commands the FLOW grants back over the role's denial (#304). Without these the
+        // union would re-deny `gh pr create` for every auto-pr worker — see `reconcile_role_denies`.
+        &flow_granted_commands.unwrap_or_default(),
         denied_commands,
     );
     if !recon.missing.is_empty() {
@@ -957,6 +964,8 @@ mod tests {
             Some(vec![]),
             // agent_profile — this test is about the ROLE half; no profile to derive.
             None,
+            // flow_granted_commands — no flow, so the role's denies stand unlifted.
+            None,
         )
         .expect("settings written");
 
@@ -976,6 +985,94 @@ mod tests {
 
     /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
     ///
+    /// THE REGRESSION SWITCHING THE WIRE ON WOULD HAVE CAUSED, driven through the real command.
+    ///
+    /// A worker is `github: read`, so the role gate denies `gh pr create`. An `auto-pr` flow is what
+    /// lets it open its own PR, and #304 makes the FLOW the authority over `git push` / `gh pr create`
+    /// specifically — the renderer already subtracts them from the role denies before sending.
+    ///
+    /// Union the UNFILTERED derived set instead and both come straight back, so every auto-pr worker
+    /// stops being able to push. That is the union's "it can only tighten" property turning into a
+    /// regression: tightening past a deliberate grant is not safety, and nothing downstream reports it
+    /// — the worker simply fails at push time, one step from where the cause is.
+    #[test]
+    fn the_flows_push_grant_survives_the_role_reconciliation() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("flow-grant-launch");
+        let cwd = home.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let cap = crate::session::role_gate::RoleCapability {
+            role: "worker".into(),
+            github: crate::session::role_gate::Tier::Read,
+            git: crate::session::role_gate::Tier::Write,
+            code: crate::session::role_gate::Tier::Write,
+            net: crate::session::role_gate::Tier::Read,
+            ui: crate::session::role_gate::Tier::Read,
+            write_globs: vec!["src/**".into()],
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: Vec::new(),
+        };
+        // Exactly what the renderer sends for an auto-pr worker: the role denies MINUS the two the
+        // flow grants back.
+        let sent: Vec<String> = crate::session::role_gate::role_denied_commands(&cap, &[])
+            .into_iter()
+            .filter(|d| d != "gh pr create" && d != "git push")
+            .collect();
+        assert!(
+            !sent.contains(&"gh pr create".to_string()),
+            "the fixture is wrong if the frontend list still carries it"
+        );
+
+        super::ensure_session_settings(
+            cwd.to_string_lossy().to_string(),
+            vec![],
+            sent,
+            None, None, None, None, None, None, None, None, None, None,
+            Some(cap),
+            Some(vec![]),
+            None,
+            Some(vec!["git push".to_string(), "gh pr create".to_string()]),
+        )
+        .expect("settings written");
+
+        let written: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(cwd.join(".claude/settings.json")).expect("settings.json"),
+        )
+        .unwrap();
+        let deny: Vec<String> = written["permissions"]["deny"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+
+        // EXACT RULES, not substrings. The dangerous floor legitimately denies `Bash(git push --force*)`
+        // and `Bash(git push -f *)` on every session, and those have nothing to do with the role gate —
+        // a `contains("git push")` test reads them as the regression and fails on correct behaviour.
+        // (It did, on the first run of this test.)
+        for granted in ["Bash(git push *)", "Bash(gh pr create *)"] {
+            assert!(
+                !deny.iter().any(|d| d == granted),
+                "the flow GRANTED `{granted}` and the reconciliation put it back — an auto-pr worker \
+                 cannot open its PR: {deny:?}"
+            );
+        }
+        // The floor is untouched by any of this, and saying so keeps the assertion above honest about
+        // what it is and is not claiming.
+        assert!(
+            deny.iter().any(|d| d == "Bash(git push --force*)"),
+            "the dangerous-command floor is not what the flow lifts: {deny:?}"
+        );
+        // …and everything the role denies that the flow did NOT grant is still denied, so this is a
+        // carve-out rather than the gate being switched off.
+        assert!(
+            deny.iter().any(|d| d == "Bash(gh pr merge *)"),
+            "only the two granted commands are lifted; the rest of the role gate stands: {deny:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// A frontend that omitted a role deny — because it crashed mid-compute, because it is an older
     /// build, or because someone called the command directly — must not produce a session that is
     /// more permissive than the role allows. Written through the real command so the wiring is
@@ -1007,6 +1104,8 @@ mod tests {
             Some(cap),
             Some(vec![]),
             // agent_profile — this test is about the ROLE half; no profile to derive.
+            None,
+            // flow_granted_commands — no flow, so the role's denies stand unlifted.
             None,
         )
         .expect("settings written");
@@ -1057,6 +1156,7 @@ mod tests {
             Some("allow".to_string()),
             None, None, None, None,
             Some(profile),
+            None,
         )
         .expect("settings written");
 

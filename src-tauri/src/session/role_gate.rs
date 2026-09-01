@@ -320,13 +320,29 @@ pub struct DenyReconciliation {
 pub fn reconcile_role_denies(
     cap: Option<&RoleCapability>,
     active_surfaces: &[String],
+    flow_granted: &[String],
     from_frontend: Vec<String>,
 ) -> DenyReconciliation {
     let Some(cap) = cap else {
         // No capability passed — an ad-hoc console with no role. Nothing to derive, nothing to check.
         return DenyReconciliation { merged: from_frontend, missing: Vec::new() };
     };
-    let derived = role_denied_commands(cap, active_surfaces);
+    // THE FLOW OUTRANKS THE ROLE ON EXACTLY TWO COMMANDS, and subtracting them here is not a
+    // refinement — it is what makes this reconciliation safe to switch on at all.
+    //
+    // A worker is `github: read`, so the role denies `gh pr create`; an `auto-pr` flow is what lets it
+    // open its own PR, and #304 makes the flow the AUTHORITY over `git push` / `gh pr create`
+    // specifically. The renderer already applies that (`sessionDeniedCommands` filters the role denies
+    // by `flowGrantedPushCommands`), so a union against the UNFILTERED derived set would silently add
+    // both back and stop every auto-pr worker pushing — the union's "can only tighten" property
+    // turning into a regression, because tightening past a deliberate grant is not safety.
+    //
+    // Passed in rather than derived: the flow is per-pane data the renderer holds, and porting it is
+    // its own item. `&[]` reproduces the pre-flow behaviour exactly.
+    let derived: Vec<String> = role_denied_commands(cap, active_surfaces)
+        .into_iter()
+        .filter(|d| !flow_granted.iter().any(|g| g == d))
+        .collect();
     let missing: Vec<String> =
         derived.iter().filter(|d| !from_frontend.iter().any(|f| f == *d)).cloned().collect();
     let mut merged = from_frontend;
@@ -566,7 +582,7 @@ mod tests {
         let cap = worker();
         // The frontend's list legitimately carries the user's own denies too.
         let from_frontend = vec!["curl".to_string(), "git push".to_string()];
-        let r = reconcile_role_denies(Some(&cap), &[], from_frontend);
+        let r = reconcile_role_denies(Some(&cap), &[], &[], from_frontend);
         assert!(r.merged.iter().any(|d| d == "curl"), "a user deny Rust knows nothing about survives");
         assert!(r.merged.iter().any(|d| d == "git push"), "and one they agree on is not duplicated away");
         assert_eq!(r.merged.iter().filter(|d| *d == "git push").count(), 1, "no duplicate");
@@ -577,7 +593,7 @@ mod tests {
     #[test]
     fn a_deny_the_frontend_omitted_is_reported_and_added() {
         let cap = worker();
-        let r = reconcile_role_denies(Some(&cap), &[], vec![]);
+        let r = reconcile_role_denies(Some(&cap), &[], &[], vec![]);
         assert!(!r.missing.is_empty(), "an empty frontend list means it omitted every role deny");
         assert!(r.missing.iter().any(|d| d == "bsc request"), "including the tooling-queue deny: {:?}", r.missing);
         for d in &r.missing {
@@ -589,7 +605,7 @@ mod tests {
     #[test]
     fn no_capability_means_nothing_to_reconcile() {
         let given = vec!["curl".to_string()];
-        let r = reconcile_role_denies(None, &[], given.clone());
+        let r = reconcile_role_denies(None, &[], &[], given.clone());
         assert_eq!(r.merged, given);
         assert!(r.missing.is_empty());
     }
