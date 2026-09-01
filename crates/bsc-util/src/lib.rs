@@ -93,6 +93,11 @@ pub mod pane_id;
 /// tunnel's desktop→mobile status mapping needs it on this side of the wire.
 pub mod pane_status;
 
+/// The turn-open GATE (#1184/#4005) — what the boundaries `bsc-activity` records MEAN, ported from
+/// `src/app/console/lib/paneActivity.ts`. It sits beside [`pane_status`] because both answer "what is
+/// this pane doing"; this one from recorded turn events, that one from the grid.
+pub mod pane_activity;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
