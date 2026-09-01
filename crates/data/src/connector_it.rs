@@ -390,3 +390,189 @@ fn one_try_costs_two_requests_per_resource() {
         "expected 2 requests per resource (objects() unions columns, then read() re-fetches) — got {n}"
     );
 }
+
+
+// ── check: the verdict, recorded and invalidated ────────────────────────────────────────────────
+
+/// A scratch checks store that removes itself, so a verdict cannot leak between tests.
+struct Checks(std::path::PathBuf);
+impl Drop for Checks {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+impl Checks {
+    fn new(tag: &str) -> Self {
+        let p = std::env::temp_dir().join(format!("bsc-checks-{tag}-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        Checks(p)
+    }
+}
+
+/// Run the same read `check` runs, over a real socket, and build the record from it.
+///
+/// Mirrors `cmd_connector_check`'s construction rather than calling the CLI, because the CLI resolves
+/// the REGISTERED store from `$HOME`; the point here is the verdict, not the argument plumbing.
+fn check_against(preset: &RuntimePreset, base: &str, secret: Option<String>) -> crate::checks::ConnectorCheck {
+    let authenticated = secret.is_some();
+    let fetch = build_fetch(base, &preset.auth, secret);
+    let conn = preset.connector(preset.id.clone(), fetch);
+    let result = run_try(&conn, 12, 20);
+    let resources = result["resources"]
+        .as_array()
+        .map(|rs| {
+            rs.iter()
+                .map(|r| crate::checks::CheckedResource {
+                    name: r["name"].as_str().unwrap_or_default().to_string(),
+                    sampled_count: r["count"].as_u64().unwrap_or(0) as usize,
+                    fields: r["fields"]
+                        .as_array()
+                        .map(|fs| fs.iter().filter_map(|f| f["name"].as_str().map(str::to_string)).collect())
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::checks::ConnectorCheck {
+        id: preset.id.clone(),
+        at: 1_788_300_000,
+        live: result["live"].as_bool().unwrap_or(false),
+        authenticated,
+        resources,
+        error: result["error"].as_str().map(str::to_string),
+        manifest_fingerprint: crate::checks::manifest_fingerprint(preset),
+    }
+}
+
+/// A passing check records what it actually observed — over a real socket, not a constructed value.
+#[test]
+fn a_passing_check_records_the_resources_it_really_read() {
+    let api = MockApi::start(fixture_routes());
+    let preset = fixture_preset(&api.base);
+    let c = check_against(&preset, &api.base, None);
+
+    assert!(c.live, "{c:?}");
+    assert!(c.error.is_none(), "{c:?}");
+    assert_eq!(c.resources.len(), 3);
+    let orders = c.resources.iter().find(|r| r.name == "orders").expect("orders");
+    // The SAMPLED count, matching the fixture — proof the rows were read, not that a 200 came back.
+    assert_eq!(orders.sampled_count, 3, "{c:?}");
+    assert!(orders.fields.contains(&"total".to_string()), "{:?}", orders.fields);
+}
+
+/// A failing check records the REASON, and says a credential was never resolved.
+///
+/// That second half is what keeps a keychain-less machine from reading as a dead vendor — on Linux
+/// today every credentialed connector fails this way, and the record has to be able to say so.
+#[test]
+fn a_failing_check_records_why_and_whether_it_was_authenticated() {
+    let dead = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap()
+    };
+    let base = format!("http://{dead}");
+    let c = check_against(&fixture_preset(&base), &base, None);
+
+    assert!(!c.live, "{c:?}");
+    assert!(!c.authenticated, "no secret was resolved, and the record must say so: {c:?}");
+    assert!(c.error.is_some_and(|e| !e.is_empty()), "a failure must carry a reason");
+}
+
+/// THE INVALIDATION, and the reason this slice is more than "write the try result to a file".
+///
+/// A `live: true` recorded against one manifest must NOT read as live once the manifest changes —
+/// otherwise an edit silently inherits a green light for a shape nobody ran.
+#[test]
+fn editing_the_manifest_makes_a_green_verdict_read_stale() {
+    let api = MockApi::start(fixture_routes());
+    let preset = fixture_preset(&api.base);
+    let recorded = check_against(&preset, &api.base, None);
+    assert_eq!(
+        crate::checks::check_state(Some(&recorded), &preset),
+        crate::checks::CheckState::Live,
+        "precondition: it verified against this very manifest",
+    );
+
+    // The kind of edit that genuinely changes what a read returns.
+    let mut edited = preset.clone();
+    edited.resources.push(RuntimeResource {
+        name: "invoices".into(),
+        path: "invoices".into(),
+        array_key: None,
+    });
+    assert_eq!(
+        crate::checks::check_state(Some(&recorded), &edited),
+        crate::checks::CheckState::Stale,
+        "a manifest edit must invalidate the verdict",
+    );
+
+    // ...and a path change too, which a coarser fingerprint would miss.
+    let mut repathed = preset.clone();
+    repathed.resources[0].path = "people".into();
+    assert_eq!(
+        crate::checks::check_state(Some(&recorded), &repathed),
+        crate::checks::CheckState::Stale,
+    );
+}
+
+/// NEVER CHECKED IS NOT HEALTHY, and it is not failing either. Both would be claims nobody earned —
+/// the same rule that makes a surface node say `off` rather than assert a health nobody measured.
+#[test]
+fn a_connector_nobody_has_checked_reads_as_no_signal() {
+    let api = MockApi::start(fixture_routes());
+    let preset = fixture_preset(&api.base);
+    assert_eq!(crate::checks::check_state(None, &preset), crate::checks::CheckState::NeverChecked);
+}
+
+/// A failing verdict about the CURRENT manifest is `failing`, distinct from `stale`. Collapsing the
+/// two would make "we know it is broken" indistinguishable from "we do not know".
+#[test]
+fn a_failure_against_the_current_manifest_is_failing_not_stale() {
+    let dead = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap()
+    };
+    let base = format!("http://{dead}");
+    let preset = fixture_preset(&base);
+    let c = check_against(&preset, &base, None);
+    assert_eq!(crate::checks::check_state(Some(&c), &preset), crate::checks::CheckState::Failing);
+}
+
+/// The store keeps ONE row per connector — the current state, not a history — and round-trips.
+#[test]
+fn recording_replaces_the_previous_verdict_and_round_trips() {
+    let api = MockApi::start(fixture_routes());
+    let store = Checks::new("record");
+    let preset = fixture_preset(&api.base);
+
+    crate::checks::record_check(&store.0, check_against(&preset, &api.base, None)).unwrap();
+    let mut second = check_against(&preset, &api.base, None);
+    second.at = 1_788_400_000;
+    crate::checks::record_check(&store.0, second.clone()).unwrap();
+
+    let all = crate::checks::load_checks(&store.0).unwrap();
+    assert_eq!(all.len(), 1, "one row per connector, not a log: {all:?}");
+    assert_eq!(all[0], second, "the later verdict wins and survives the round trip");
+    assert_eq!(crate::checks::find_check(&store.0, "fixture-api").unwrap(), Some(second));
+    assert_eq!(crate::checks::find_check(&store.0, "nope").unwrap(), None);
+}
+
+/// An absent store is "nothing checked yet" — the normal state on every machine today.
+#[test]
+fn an_absent_checks_store_is_empty_not_an_error() {
+    let p = std::env::temp_dir().join("bsc-checks-does-not-exist.json");
+    let _ = std::fs::remove_file(&p);
+    assert_eq!(crate::checks::load_checks(&p).unwrap(), vec![]);
+}
+
+/// The stored row count is the SAMPLED one and is named so. Pinned on the wire, because the field an
+/// integration node renders is the one that must not be mistaken for a total.
+#[test]
+fn the_wire_names_the_count_as_sampled() {
+    let api = MockApi::start(fixture_routes());
+    let preset = fixture_preset(&api.base);
+    let v = serde_json::to_value(check_against(&preset, &api.base, None)).unwrap();
+    assert!(v["resources"][0]["sampledCount"].is_number(), "{v}");
+    assert!(v["resources"][0]["count"].is_null(), "a bare `count` invites being read as a total: {v}");
+    assert!(v["manifestFingerprint"].as_str().is_some_and(|f| !f.is_empty()), "{v}");
+}
