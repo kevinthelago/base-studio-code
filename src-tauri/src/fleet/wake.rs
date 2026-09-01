@@ -47,6 +47,36 @@ pub struct WakeAck {
 #[derive(Default)]
 pub struct WakePending(Mutex<HashMap<String, Sender<WakeAck>>>);
 
+/// Which prompt the wake payload should carry — `None` meaning "leave the caller's alone".
+///
+/// THE PRECEDENCE IS THE POINT. An explicit `--prompt` is the director saying something the standard
+/// wake cannot know, so it always wins; only an ABSENT one falls back. `compose` is taken lazily and
+/// is NOT called for an explicit prompt, so the ordinary wake pays no coord-log read.
+///
+/// Whitespace-only counts as absent: `--prompt " "` is how a shell says nothing, and honouring it
+/// literally would wake a session to a blank instruction — the empty-prompt failure this replaces.
+fn wake_prompt_override(supplied: &str, compose: impl FnOnce() -> String) -> Option<String> {
+    supplied.trim().is_empty().then(compose)
+}
+
+/// The standard wake for a pane, composed from the coordination log.
+///
+/// Reads the SAME `coord.log` every other consumer replays, folds it with the shared reducer, and asks
+/// [`logs::wakes::compose_wake_prompt`] which of the three rungs applies. An unreadable or empty log is
+/// not an error: it folds to an empty state, which composes the generic change request — the same
+/// sentence the renderer used to supply, so a machine with no coordination history behaves exactly as
+/// it did before.
+///
+/// The tail is bounded rather than the whole file: `coord.log` is one app-wide append-only file, and a
+/// wake must not pay its full length. The cap is generous enough to cover the live waiters — a waiter
+/// registered further back than this has almost certainly been woken already.
+fn standard_wake(pane_id: &str) -> String {
+    const COORD_TAIL: usize = 5_000;
+    let lines = logs::tail_raw(&logs::log_dir(), "coord", COORD_TAIL, true);
+    let state = logs::coord::ingest_coord_log(&lines, logs::coord::CoordState::default()).state;
+    logs::wakes::compose_wake_prompt(pane_id, &state)
+}
+
 /// Ask the frontend to wake a pane, and block until it acks.
 pub fn apply(
     app: &tauri::AppHandle,
@@ -127,6 +157,20 @@ pub fn apply(
         if let Some(stream) = resolve_stream(&req.pane_id)? {
             obj.insert("stream".into(), stream);
         }
+    }
+
+    // THE STANDARD WAKE IS COMPOSED HERE (`the-wake-supplies-its-own-prompt-instead-of-receiving-it`).
+    //
+    // `bsc fleet wake` has always documented that "without --prompt the app supplies its standard
+    // change-request wake", and that sentence used to be composed in the renderer. A director that did
+    // not know about it re-sent the ORIGINAL TASK as a --prompt six times over, because the fallback it
+    // should have used sat across the boundary. Composed in the process that PERFORMS the wake, it
+    // cannot be skipped by a caller unaware of it.
+    //
+    // AN EXPLICIT --prompt STILL WINS: this only fires when none was given. The director saying
+    // something the standard wake cannot know must outrank a sentence derived from the log.
+    if let Some(p) = wake_prompt_override(&req.prompt, || standard_wake(&req.pane_id)) {
+        obj.insert("prompt".into(), serde_json::Value::String(p));
     }
 
     app.emit("bsc://fleet-wake", payload)
@@ -351,6 +395,58 @@ pub(crate) fn fleet_wake_ack(ack: WakeAck, state: tauri::State<'_, WakePending>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── the wake supplies its own prompt (`the-wake-supplies-its-own-prompt-instead-of-receiving-it`) ──
+
+    /// An explicit `--prompt` WINS, and the fallback is not even composed for it.
+    ///
+    /// The "not even composed" half is load-bearing twice: it is the precedence, and it means an
+    /// ordinary directed wake pays no coord-log read.
+    #[test]
+    fn an_explicit_prompt_wins_and_the_fallback_is_never_composed() {
+        let mut composed = false;
+        let got = wake_prompt_override("rebase onto develop", || {
+            composed = true;
+            "standard".into()
+        });
+        assert_eq!(got, None, "an explicit prompt must pass through untouched");
+        assert!(!composed, "composing it would be wasted work AND the wrong precedence");
+    }
+
+    /// An ABSENT prompt falls back — this is the rung the renderer used to own.
+    #[test]
+    fn an_absent_prompt_falls_back_to_the_composed_wake() {
+        assert_eq!(wake_prompt_override("", || "standard".into()), Some("standard".into()));
+    }
+
+    /// Whitespace-only is ABSENT. `--prompt " "` is how a shell says nothing, and honouring it
+    /// literally wakes a session to a blank instruction — the exact failure this item removes.
+    #[test]
+    fn a_whitespace_only_prompt_counts_as_absent() {
+        assert_eq!(wake_prompt_override("   \n ", || "standard".into()), Some("standard".into()));
+    }
+
+    /// THE CALL SITE, asserted against the shipped source.
+    ///
+    /// The pure tests above prove the decision; they cannot prove `apply` CONSULTS it. That is the
+    /// failure this epic has hit three times — a flip whose test passed with the call site reverted,
+    /// because it exercised the extracted function directly. `apply` needs a live `AppHandle`, so the
+    /// wiring is asserted where it is visible: in the source that ships.
+    #[test]
+    fn apply_actually_consults_the_override_before_emitting() {
+        let src = include_str!("wake.rs");
+        let apply = src.split("pub fn apply(").nth(1).expect("apply exists");
+        let body = apply.split("\nfn ").next().unwrap_or(apply);
+        assert!(
+            body.contains("wake_prompt_override(&req.prompt"),
+            "apply must ask for the override, or the standard wake is composed by nobody"
+        );
+        // NO ORDERING ASSERTION HERE, and that is a finding rather than an omission. Resolving the
+        // prompt AFTER the emit is UNREPRESENTABLE: `obj` borrows `payload`, so moving `payload` into
+        // `app.emit` first makes the later `obj.insert` a borrow error (E0505, verified by trying it).
+        // The borrow checker is the guarantee; an assertion here could never fail, and a test that
+        // cannot fail is not evidence.
+    }
 
     // ── which pane ids carry a plan row (#the-director-cannot-start-a-stream-that-never-launched) ──
 

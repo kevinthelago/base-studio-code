@@ -30,9 +30,6 @@
 //! agent may be matching on them, and a port that "tidies" them is a silent behaviour change in text
 //! another program reads.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-wake-supplies-its-own-prompt-instead-of-receiving-it`
-
 use crate::coord::{ref_key, CoordRef, CoordState, LatchStatus, Waiter, WaitingSession};
 use crate::deadlock::{detect_deadlocks, ProducerOf};
 
@@ -102,6 +99,46 @@ fn status_of(s: &CoordState, r: &CoordRef) -> &'static str {
 /// The checkpoint line the waiter and user-paused prompts share.
 fn resume_line(checkpoint: &str, dash: &str) -> String {
     format!("Resume from your checkpoint: {checkpoint} {dash} read it first, then continue from where you left off.")
+}
+
+/// The wake a director gets when it supplies no `--prompt` and the session is neither a parked waiter
+/// nor paused for the user.
+///
+/// A CHANGE-REQUEST framing rather than a bare "continue": a woken worker is being brought back
+/// because something needs doing, and an empty prompt would drop it at a prompt with no task.
+///
+/// It lives HERE, beside the four it is the fallback for, rather than in the renderer that used to own
+/// it. `wakePrompts.fixtures.json` binds this string to its TypeScript twin, so the two cannot drift
+/// into two different sentences for the same event.
+pub const DEFAULT_WAKE_PROMPT: &str =
+    "You have been woken by the director because there is a change request for your stream. \
+Re-read your assignment, check `bsc plan issue list` for what is open on it, and continue.";
+
+/// The standard wake for `session`, composed from the coordination state.
+///
+/// THIS IS THE FLIP. `bsc fleet wake` has always documented that "without `--prompt` the app supplies
+/// its standard change-request wake", and that sentence was composed in the renderer — so a director
+/// that did not know about it re-sent the original task as a `--prompt` six times over. Composing it
+/// in the process that performs the wake means it cannot be skipped by a caller unaware of it.
+///
+/// The precedence is by SPECIFICITY, and each rung says something the next cannot:
+///
+/// 1. a parked WAITER whose deps are the reason it stopped — it learns which landed and HOW, which is
+///    the only rung that can carry that;
+/// 2. a session paused for the USER — there are no deps to report, and it is told it was resumed;
+/// 3. anything else — the generic change request, because a woken session with no coordination record
+///    is being brought back for work the log cannot name.
+///
+/// An explicit `--prompt` never reaches here: the caller prefers it, and this is only consulted when
+/// none was given.
+pub fn compose_wake_prompt(session: &str, s: &CoordState) -> String {
+    if let Some(w) = s.waiters.iter().find(|w| w.session == session) {
+        return wake_prompt_for(w, s);
+    }
+    if let Some(w) = s.waiting.iter().find(|w| w.session == session) {
+        return waiting_wake_prompt(w);
+    }
+    DEFAULT_WAKE_PROMPT.to_string()
 }
 
 /// The prompt for a woken waiter — names the landed deps and HOW each was satisfied.
@@ -236,6 +273,68 @@ mod tests {
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one wakePrompts.fixtures.json, got {found:?}");
         serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+    /// The STANDARD wake must be the SAME SENTENCE on both sides.
+    ///
+    /// This is the rung the renderer used to own, and the whole item exists because a director that
+    /// did not know about it re-sent the original task six times over. Two subtly different fallbacks
+    /// for one event would be that failure wearing a new hat, so the fixture binds the string itself
+    /// rather than a description of it.
+    #[test]
+    fn the_standard_wake_matches_the_typescript_verbatim() {
+        let doc = fixture();
+        let want = doc["defaultWakePrompt"].as_str().expect("fixture carries the default wake");
+        assert_eq!(DEFAULT_WAKE_PROMPT, want);
+    }
+
+    /// The chooser picks by SPECIFICITY, and each rung carries something the next cannot.
+    #[test]
+    fn compose_prefers_the_waiter_then_the_paused_then_the_generic() {
+        let mut s = CoordState::default();
+        // 3 — no coordination record at all ⇒ the generic change request.
+        assert_eq!(compose_wake_prompt("nobody", &s), DEFAULT_WAKE_PROMPT);
+
+        // 2 — paused for the USER: told it was resumed, and no deps are claimed.
+        s.waiting.push(WaitingSession {
+            session: "api".into(),
+            reason: "confirm the migration".into(),
+            checkpoint: None,
+            at: 1,
+        });
+        let paused = compose_wake_prompt("api", &s);
+        assert!(paused.contains("the user has resumed you"), "{paused}");
+        assert_ne!(paused, DEFAULT_WAKE_PROMPT);
+
+        // 1 — a parked WAITER wins over the paused rung: it is the only one that can name the deps.
+        s.waiters.push(Waiter {
+            session: "api".into(),
+            deps: vec![CoordRef::Issue { number: 7 }],
+            checkpoint: Some("cp-1".into()),
+            registered_at: 0,
+        });
+        let woken = compose_wake_prompt("api", &s);
+        assert!(woken.contains("#7"), "names the dep it was waiting on: {woken}");
+        assert!(woken.contains("resume now"), "{woken}");
+        assert_ne!(woken, paused, "the waiter rung must outrank the paused one");
+    }
+
+    /// A waiter is told HOW each dep was satisfied — the half a fresh session needs to trust it.
+    #[test]
+    fn the_composed_waiter_wake_carries_the_source() {
+        let mut s = CoordState::default();
+        s.latches.insert(
+            ref_key(&CoordRef::Issue { number: 7 }),
+            LatchStatus::Satisfied { source: crate::coord::SatisfySource::Merged, at: 1 },
+        );
+        s.waiters.push(Waiter {
+            session: "api".into(),
+            deps: vec![CoordRef::Issue { number: 7 }],
+            checkpoint: None,
+            registered_at: 0,
+        });
+        let got = compose_wake_prompt("api", &s);
+        assert!(got.contains("merged"), "landed and merged are different facts: {got}");
     }
 
     fn state_with(latches: &serde_json::Value, waiters: &serde_json::Value) -> CoordState {
