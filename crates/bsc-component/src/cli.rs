@@ -972,20 +972,20 @@ A ui-scope MUTATION (#2470); errors when the component (or an animation with tha
         summary: "replace ONLY a component's srcText from stdin (gated by the JSX syntax check) (#3162)",
         usage: "\
 USAGE:
-  bsc ui set-src <id>   # the new srcText on stdin (raw text, not JSON)
+  bsc ui set-src <id> [--by <tag>] [--force]   # the new srcText on stdin (raw text, not JSON)
 
 Replaces JUST the `srcText` field of component <id> with stdin, leaving every other field untouched — the
 granular write that avoids a whole-record round-trip (and its ~10KB stdin ceiling) for a one-field source
 edit. The new source passes the SAME write-time JSX syntax gate as `bsc ui set` (#2928): a module
 `srcText` that won't build (e.g. an unterminated string) is REJECTED before anything is written. Errors
-when the component is absent (author it first with `bsc ui set`). A ui-scope MUTATION (#2470).",
+when the component is absent (author it first with `bsc ui set`). A ui-scope MUTATION (#2470).\n\n`--by <tag>` names the writer (else $BSC_UI_WRITER, else \"unknown\"), stamped to `updatedBy` and the history entry exactly as `bsc ui set --by` does. It is not cosmetic: an UNATTRIBUTED write over srcText someone else attributed to themselves is REFUSED (#119) — that is the shape that silently regressed a designer's preview fix twice. `--force` overrides that refusal, and the buildable-to-unbuildable one.",
     },
     CmdDoc {
         name: "patch",
         summary: "set ONE field of a component by JSON pointer; value parsed as JSON (#3162)",
         usage: "\
 USAGE:
-  bsc ui patch <id> <json-pointer> <value>
+  bsc ui patch <id> <json-pointer> <value> [--by <tag>] [--force]
 
 Sets a single field of component <id> at the RFC-6901 JSON pointer <json-pointer> (e.g. `/name`,
 `/props/0/req`; a leading `/` is optional), leaving every other field untouched — the granular write for
@@ -993,7 +993,7 @@ a one-field edit. <value> is parsed as JSON (so `true`, `42`, `[1,2]`, `\"text\"
 falling back to a bare string when it is not valid JSON. The pointer's PARENT container must already
 exist (an array index may equal the length to append, or `-` to push). The patched record still passes
 the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the pointer's parent is absent. A
-ui-scope MUTATION (#2470).",
+ui-scope MUTATION (#2470).\n\n`--by <tag>` names the writer (else $BSC_UI_WRITER, else \"unknown\"), stamped to `updatedBy` and the history entry. A patch landing on exactly `/srcText` also runs the #119 guards: an UNATTRIBUTED write over srcText someone else attributed to themselves is REFUSED, as is a buildable-to-unbuildable backslide. `--force` overrides both. Every OTHER pointer is unguarded, as before.",
     },
     CmdDoc {
         name: "features",
@@ -7182,6 +7182,77 @@ fn set_at_pointer(root: &mut serde_json::Value, pointer: &str, value: serde_json
     }
 }
 
+/// The writer that most recently authored a record's `srcText`, read from its change history — `None`
+/// when the record has no history, or no entry ever touched `srcText` (nothing recorded to protect).
+///
+/// A `created` entry counts. `changed_fields` records the first write as `["created"]` rather than
+/// listing the fields, so a record AUTHORED with its `srcText` and never rewritten would otherwise read
+/// as unattributed and be left unguarded — which is exactly the newly-authored Design Studio record
+/// this is meant to protect. The branch this is recovered from stopped at `srcText` entries and had
+/// that hole.
+fn last_src_writer(record: &serde_json::Value) -> Option<String> {
+    let authored_src = record
+        .get(crate::record::SRC_TEXT)
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|s| !s.trim().is_empty());
+    record
+        .get(crate::record::HISTORY)
+        .and_then(serde_json::Value::as_array)?
+        .iter()
+        .rev()
+        .find(|e| {
+            e.get("changed").and_then(serde_json::Value::as_array).is_some_and(|a| {
+                a.iter().any(|v| {
+                    v.as_str() == Some(crate::record::SRC_TEXT)
+                        || (authored_src && v.as_str() == Some("created"))
+                })
+            })
+        })
+        .and_then(|e| e.get("by").and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+}
+
+/// Refuse an UNATTRIBUTED `srcText` write (`writer == "unknown"` — no `--by`, no `$BSC_UI_WRITER`) that
+/// would replace content someone DID attribute to themselves.
+///
+/// This is the half [`refuse_buildable_regression`] cannot see. That guard asks whether the new source
+/// still BUILDS, so an overwrite that happens to stay buildable — most of them — passes it cleanly while
+/// still destroying someone's work with no record of who did it. `kitsharemodal` rev4-6 and
+/// `consolepage` rev11-12 were both lost exactly that way: writer `"unknown"`, no note, both restored by
+/// hand from `prevSrc` (bsc request #119).
+///
+/// Deliberately narrow, because a false refusal on a legitimate automated write would be a daily tax:
+/// an attributed writer of ANY name passes, a write over previously-unattributed source passes (there is
+/// no one to protect), identical content passes (nothing is lost), and `--force` passes. What is left is
+/// precisely "an anonymous write is about to destroy a named author's source".
+fn refuse_anonymous_src_overwrite(
+    id: &str,
+    prior: &serde_json::Value,
+    new_src: &str,
+    writer: &str,
+    force: bool,
+) -> Result<(), String> {
+    if force || writer != "unknown" {
+        return Ok(());
+    }
+    let Some(prior_writer) = last_src_writer(prior) else { return Ok(()) };
+    if prior_writer == "unknown" {
+        return Ok(());
+    }
+    let prior_src =
+        prior.get(crate::record::SRC_TEXT).and_then(serde_json::Value::as_str).unwrap_or_default();
+    if prior_src == new_src {
+        return Ok(()); // identical content — nothing would be lost
+    }
+    Err(format!(
+        "'{id}': refusing an UNATTRIBUTED write over srcText last authored by '{prior_writer}' — this is \
+         exactly the shape that silently regressed a designer's preview fix back to unbuildable app \
+         source (bsc request #119). Identify the write (--by <tag>, or $BSC_UI_WRITER), or pass --force \
+         if this really should overwrite '{prior_writer}'s source."
+    ))
+}
+
+
 /// Refuse to regress a PREVIEW-BUILDABLE `srcText` (the Design Studio preview sandbox can compile and
 /// mount it — [`crate::graph_health::looks_buildable_module`]) into one it cannot, on a record that
 /// carries no `provides`. `provides` is what turns "the preview sandbox can't build this" from a defect
@@ -7226,15 +7297,28 @@ fn refuse_buildable_regression(old_record: &serde_json::Value, new_src: &str) ->
 /// SAME write-time JSX syntax gate as `set` (#2928) before writing. The write funnels through
 /// [`stamped_set`] so it bumps `rev`/`updatedAt`/`updatedBy` like every other `bsc ui` mutation (#3164).
 /// Errors when the component is absent. Pure of stdin/print so tests drive it directly.
-fn replace_src(store: &bsc_json_store::Store, id: &str, src: &str) -> Result<(), String> {
+fn replace_src(
+    store: &bsc_json_store::Store,
+    id: &str,
+    src: &str,
+    by: Option<&str>,
+) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
+    let writer = crate::record::resolve_writer(by);
+    refuse_anonymous_src_overwrite(
+        id,
+        &record,
+        src,
+        &writer,
+        FORCE_WRITE.load(std::sync::atomic::Ordering::Relaxed),
+    )?;
     refuse_buildable_regression(&record, src)?;
     record
         .as_object_mut()
         .expect("load_component_object guarantees an object")
         .insert("srcText".to_string(), serde_json::Value::String(src.to_string()));
     validate_component_batch(std::slice::from_ref(&record))?;
-    stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
+    stamped_set(store, id, record, &writer)?;
     // #3737: `set-src` invalidates the last render — clear any stale `render-error` so `bsc ui doctor`
     // doesn't keep reporting the pre-edit throw (batch `set` already does this, #43; set-src/patch didn't,
     // which is how the #11/#21 stale errors survived). Best-effort; a no-op unless this id has an error.
@@ -7251,17 +7335,26 @@ fn apply_patch(
     id: &str,
     pointer: &str,
     value: serde_json::Value,
+    by: Option<&str>,
 ) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
     let pointer = normalize_pointer(pointer)?;
+    let writer = crate::record::resolve_writer(by);
     if pointer == "/srcText" {
         if let serde_json::Value::String(new_src) = &value {
+            refuse_anonymous_src_overwrite(
+                id,
+                &record,
+                new_src,
+                &writer,
+                FORCE_WRITE.load(std::sync::atomic::Ordering::Relaxed),
+            )?;
             refuse_buildable_regression(&record, new_src)?;
         }
     }
     set_at_pointer(&mut record, &pointer, value)?;
     validate_component_batch(std::slice::from_ref(&record))?;
-    stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
+    stamped_set(store, id, record, &writer)?;
     // #3737: a component patch invalidates the last render — clear any stale `render-error` (see `replace_src`).
     let _ = crate::preview_errors::clear(id);
     Ok(())
@@ -7285,20 +7378,41 @@ fn field_output(value: &serde_json::Value, raw: bool, pretty: bool) -> Result<St
     }
 }
 
-/// Pull a bare `--force` out of an args list and arm [`FORCE_WRITE`] when present, returning the rest for
-/// `parse_anim_args` (which errors on any flag it doesn't recognize). Shared by `set-src`/`patch` so both
-/// carry the same escape `set` already has for the page-role refusal — see
-/// [`refuse_buildable_regression`].
-fn strip_force_flag(args: &[String]) -> Vec<String> {
+/// The two flags the granular `srcText` writes (`set-src`, `patch`) accept beyond `parse_anim_args`:
+/// `--force` (armed into [`FORCE_WRITE`], the same escape `set` has for the page-role refusal) and
+/// `--by <tag>` (the writer, matching `bsc ui set --by`).
+///
+/// Parsed HERE rather than by widening [`parse_anim_args`], which a dozen other verbs share and whose
+/// strict unknown-flag errors must stay strict — the same reasoning `SuppressArgs` already follows.
+struct SrcWriteArgs {
+    /// Everything `parse_anim_args` should still see.
+    rest: Vec<String>,
+    /// `--by <tag>`, or `None` to fall back to `$BSC_UI_WRITER` and then `"unknown"`.
+    by: Option<String>,
+}
+
+/// Pull `--force` and `--by <tag>` out of an args list, arming [`FORCE_WRITE`] for the former and
+/// returning the rest for [`parse_anim_args`]. A `--by` with no value is an ERROR rather than a silent
+/// no-op: a write that MEANT to identify itself and silently did not is the failure this whole guard
+/// exists to stop, so it must not be reachable by a typo.
+fn parse_src_write_args(args: &[String]) -> Result<SrcWriteArgs, String> {
     let mut rest = Vec::with_capacity(args.len());
-    for a in args {
-        if a == "--force" {
-            FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
-        } else {
-            rest.push(a.clone());
+    let mut by = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--force" => FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed),
+            "--by" => {
+                let v = it.next().ok_or("--by needs a value: --by <tag>")?;
+                if v.trim().is_empty() || v.starts_with("--") {
+                    return Err("--by needs a value: --by <tag>".to_string());
+                }
+                by = Some(v.clone());
+            }
+            _ => rest.push(a.clone()),
         }
     }
-    rest
+    Ok(SrcWriteArgs { rest, by })
 }
 
 /// `set-src <id> [--dir D] [--force]` (#3162) — replace ONLY component <id>'s `srcText` from stdin. A
@@ -7306,13 +7420,16 @@ fn strip_force_flag(args: &[String]) -> Vec<String> {
 /// session refuses immediately without blocking on stdin). `--force` is the escape for
 /// [`refuse_buildable_regression`] (bsc request #119).
 fn cmd_set_src(args: &[String]) -> Result<(), String> {
-    let (pos, dir, _pretty) = parse_anim_args(&strip_force_flag(args))?;
-    let id = pos.first().ok_or("usage: bsc ui set-src <id> [--force]   # the new srcText on stdin")?;
+    let parsed = parse_src_write_args(args)?;
+    let (pos, dir, _pretty) = parse_anim_args(&parsed.rest)?;
+    let id = pos
+        .first()
+        .ok_or("usage: bsc ui set-src <id> [--by <tag>] [--force]   # the new srcText on stdin")?;
     bsc_cli_util::require_write_scope("ui")?;
     let mut src = String::new();
     std::io::stdin().read_to_string(&mut src).map_err(|e| format!("cannot read stdin: {e}"))?;
     let store = open_component_store(&dir)?;
-    replace_src(&store, id, &src)?;
+    replace_src(&store, id, &src, parsed.by.as_deref())?;
     bsc_util::emit_ui_activity("component", id);
     println!("{id}");
     Ok(())
@@ -7322,8 +7439,9 @@ fn cmd_set_src(args: &[String]) -> Result<(), String> {
 /// parsing <value> as JSON (else a bare string). A ui-scope MUTATION (gated before the store is touched).
 /// `--force` is the escape for [`refuse_buildable_regression`] when `<json-pointer>` is `/srcText`.
 fn cmd_patch(args: &[String]) -> Result<(), String> {
-    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value> [--force]";
-    let (pos, dir, _pretty) = parse_anim_args(&strip_force_flag(args))?;
+    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value> [--by <tag>] [--force]";
+    let parsed = parse_src_write_args(args)?;
+    let (pos, dir, _pretty) = parse_anim_args(&parsed.rest)?;
     let id = pos.first().ok_or(USAGE)?;
     let pointer = pos.get(1).ok_or(USAGE)?;
     let raw_value = pos.get(2).ok_or(USAGE)?;
@@ -7332,7 +7450,7 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
     let value: serde_json::Value = serde_json::from_str(raw_value)
         .unwrap_or_else(|_| serde_json::Value::String(raw_value.clone()));
     let store = open_component_store(&dir)?;
-    apply_patch(&store, id, pointer, value)?;
+    apply_patch(&store, id, pointer, value, parsed.by.as_deref())?;
     bsc_util::emit_ui_activity("component", id);
     println!("{id}");
     Ok(())
@@ -9572,7 +9690,7 @@ export const P = () => <X />;"
 
         // Replaces ONLY srcText — every other field is untouched.
         let good = "export function Button(){ return <button/>; }";
-        replace_src(&store, "btn", good).unwrap();
+        replace_src(&store, "btn", good, None).unwrap();
         let rec: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
         assert_eq!(rec["srcText"], good);
         assert_eq!(rec["name"], "Button");
@@ -9582,13 +9700,13 @@ export const P = () => <X />;"
 
         // A corrupt module srcText is rejected by the #2928 gate BEFORE anything is written — the stored
         // record is left exactly as it was.
-        let err = replace_src(&store, "btn", "export const s = [1,2].join(\"\n\");").unwrap_err();
+        let err = replace_src(&store, "btn", "export const s = [1,2].join(\"\n\");", None).unwrap_err();
         assert!(err.contains("unterminated string literal"), "{err}");
         let rec2: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
         assert_eq!(rec2["srcText"], good, "the rejected write left srcText untouched");
 
         // An absent component errors, naming it.
-        assert!(replace_src(&store, "ghost", "x").unwrap_err().contains("ghost"));
+        assert!(replace_src(&store, "ghost", "x", None).unwrap_err().contains("ghost"));
     }
 
     #[test]
@@ -9601,8 +9719,8 @@ export const P = () => <X />;"
             .unwrap();
 
         // Patch a top-level field and a nested array-element field; every other field stays put.
-        apply_patch(&store, "card", "/name", json!("Panel")).unwrap();
-        apply_patch(&store, "card", "/props/0/req", json!(true)).unwrap();
+        apply_patch(&store, "card", "/name", json!("Panel"), None).unwrap();
+        apply_patch(&store, "card", "/props/0/req", json!(true), None).unwrap();
         let rec: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
         assert_eq!(rec["name"], "Panel");
         assert_eq!(rec["props"][0]["req"], true);
@@ -9611,14 +9729,14 @@ export const P = () => <X />;"
 
         // A `patch /srcText` still passes through the #2928 gate — a broken module is refused and NOT
         // stored (the granular write can't bypass the syntax check).
-        let err = apply_patch(&store, "card", "/srcText", json!("export const s = [1,2].join(\"\n\");")).unwrap_err();
+        let err = apply_patch(&store, "card", "/srcText", json!("export const s = [1,2].join(\"\n\");"), None).unwrap_err();
         assert!(err.contains("unterminated string literal"), "{err}");
         let rec2: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
         assert!(rec2.get("srcText").is_none(), "the rejected srcText patch was never stored");
 
         // A missing parent and an absent component both error.
-        assert!(apply_patch(&store, "card", "/deep/x", json!(1)).is_err());
-        assert!(apply_patch(&store, "ghost", "/name", json!("x")).unwrap_err().contains("ghost"));
+        assert!(apply_patch(&store, "card", "/deep/x", json!(1), None).is_err());
+        assert!(apply_patch(&store, "ghost", "/name", json!("x"), None).unwrap_err().contains("ghost"));
     }
 
     /// bsc request #119: `refuse_buildable_regression` is what makes `set-src`/`patch /srcText` refuse
@@ -9672,22 +9790,158 @@ export const P = () => <X />;"
             .unwrap();
 
         let unbuildable = "import { useAppStore } from \"@/store\";\nexport const ConsolePage = () => useAppStore;";
-        let err = replace_src(&store, "consolepage", unbuildable).unwrap_err();
+        let err = replace_src(&store, "consolepage", unbuildable, None).unwrap_err();
         assert!(err.contains("#119"), "{err}");
         let rec: serde_json::Value = serde_json::from_str(&store.get("consolepage").unwrap().unwrap()).unwrap();
         assert_eq!(rec["srcText"], buildable, "the refused write left srcText untouched");
 
         // Setting `provides` in the SAME write (a genuine module lift, via `patch`) opts back in.
         use serde_json::json;
-        apply_patch(&store, "consolepage", "/provides", json!("@/app/console/ConsolePage")).unwrap();
-        assert!(replace_src(&store, "consolepage", unbuildable).is_ok(), "provides beats the preview sandbox");
+        apply_patch(&store, "consolepage", "/provides", json!("@/app/console/ConsolePage"), None).unwrap();
+        assert!(replace_src(&store, "consolepage", unbuildable, None).is_ok(), "provides beats the preview sandbox");
 
         // And `--force` overrides it even without `provides`, on a fresh record.
         store.set("kitsharemodal", r#"{"id":"kitsharemodal","name":"KitShareModal","srcText":"export const K = () => null;"}"#).unwrap();
         FORCE_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
-        let forced = replace_src(&store, "kitsharemodal", unbuildable);
+        let forced = replace_src(&store, "kitsharemodal", unbuildable, None);
         FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
         assert!(forced.is_ok(), "--force stores the regression deliberately");
+    }
+
+    /// #119 — the half `refuse_buildable_regression` cannot see. That guard asks whether the NEW source
+    /// still builds, so an anonymous overwrite that happens to stay buildable sails through it while
+    /// still destroying a named author's work. `kitsharemodal` rev4-6 and `consolepage` rev11-12 were
+    /// both lost that way. Every source here is buildable, precisely so the other guard stays silent
+    /// and this one is the only thing under test.
+    #[test]
+    fn an_unattributed_write_cannot_clobber_srctext_someone_signed_for() {
+        let dir = tmp_store_dir("anon-src-overwrite");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let designer_src = "export const KitShareModal = () => null;";
+        store
+            .set(
+                "kitsharemodal",
+                &format!(
+                    r#"{{"id":"kitsharemodal","name":"KitShareModal","srcText":{},
+                        "history":[{{"rev":1,"by":"designer","changed":["srcText"]}}]}}"#,
+                    serde_json::to_string(designer_src).unwrap()
+                ),
+            )
+            .unwrap();
+        let other = "export const KitShareModal = () => 1;";
+
+        // The filed shape: an anonymous sync overwrites a designer's source.
+        let err = replace_src(&store, "kitsharemodal", other, None).unwrap_err();
+        assert!(err.contains("UNATTRIBUTED"), "{err}");
+        assert!(err.contains("designer"), "it must name whose work is at risk: {err}");
+        let rec: serde_json::Value =
+            serde_json::from_str(&store.get("kitsharemodal").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["srcText"], designer_src, "the refused write left srcText untouched");
+
+        // An ATTRIBUTED write passes — any name, not just the prior one. Identifying yourself is the
+        // whole ask; the guard is not an ownership lock.
+        replace_src(&store, "kitsharemodal", other, Some("harvester")).unwrap();
+        let rec: serde_json::Value =
+            serde_json::from_str(&store.get("kitsharemodal").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["srcText"], other);
+        assert_eq!(rec["updatedBy"], "harvester", "--by flows through to the stamp");
+    }
+
+    /// The escapes and the non-cases, kept separate so a failure names which rule broke.
+    #[test]
+    fn the_anonymous_srctext_guard_stays_out_of_the_way_of_everything_else() {
+        use serde_json::json;
+        let signed = json!({
+            "id": "c", "srcText": "export const C = () => null;",
+            "history": [{ "rev": 1, "by": "designer", "changed": ["srcText"] }],
+        });
+
+        // --force is the deliberate override.
+        assert!(refuse_anonymous_src_overwrite("c", &signed, "next", "unknown", true).is_ok());
+        // Identical content loses nothing, so there is nothing to refuse.
+        assert!(
+            refuse_anonymous_src_overwrite("c", &signed, "export const C = () => null;", "unknown", false)
+                .is_ok()
+        );
+        // Nobody to protect: the prior write was itself unattributed.
+        let anon = json!({
+            "id": "c", "srcText": "x",
+            "history": [{ "rev": 1, "by": "unknown", "changed": ["srcText"] }],
+        });
+        assert!(refuse_anonymous_src_overwrite("c", &anon, "y", "unknown", false).is_ok());
+        // No history at all, and history that never moved srcText — nothing recorded to protect.
+        assert!(refuse_anonymous_src_overwrite("c", &json!({ "id": "c" }), "y", "unknown", false).is_ok());
+        let namesonly = json!({
+            "id": "c", "srcText": "x",
+            "history": [{ "rev": 1, "by": "designer", "changed": ["name"] }],
+        });
+        assert!(refuse_anonymous_src_overwrite("c", &namesonly, "y", "unknown", false).is_ok());
+
+        // A `created` entry DOES count when the record carries srcText — a record authored with its
+        // source and never rewritten is exactly the newly-authored Design Studio record this protects.
+        let created = json!({
+            "id": "c", "srcText": "export const C = () => null;",
+            "history": [{ "rev": 1, "by": "designer", "changed": ["created"] }],
+        });
+        assert!(refuse_anonymous_src_overwrite("c", &created, "y", "unknown", false).is_err());
+        // ...but not on a record with no source of its own — there was never any srcText authored.
+        let created_srcless =
+            json!({ "id": "c", "history": [{ "rev": 1, "by": "designer", "changed": ["created"] }] });
+        assert!(refuse_anonymous_src_overwrite("c", &created_srcless, "y", "unknown", false).is_ok());
+    }
+
+    /// The guard covers `patch /srcText` too, and NO other pointer — a patch is the second door into
+    /// the same field, and a guard on one door only is not a guard.
+    #[test]
+    fn patch_guards_srctext_and_leaves_every_other_pointer_alone() {
+        use serde_json::json;
+        let dir = tmp_store_dir("anon-patch-pointer");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store
+            .set(
+                "card",
+                r#"{"id":"card","name":"Card","srcText":"export const Card = () => null;",
+                    "history":[{"rev":1,"by":"designer","changed":["srcText"]}]}"#,
+            )
+            .unwrap();
+
+        let err =
+            apply_patch(&store, "card", "/srcText", json!("export const Card = () => 1;"), None)
+                .unwrap_err();
+        assert!(err.contains("UNATTRIBUTED"), "{err}");
+        // Any OTHER pointer is untouched by this — an anonymous rename is not what was lost.
+        apply_patch(&store, "card", "/name", json!("Panel"), None).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["name"], "Panel");
+        // ...and an attributed srcText patch lands.
+        apply_patch(&store, "card", "/srcText", json!("export const Card = () => 1;"), Some("librarian"))
+            .unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["updatedBy"], "librarian");
+    }
+
+    /// `--by` with no value must ERROR, never pass silently. A write that MEANT to identify itself and
+    /// quietly did not is the exact failure the guard exists to stop, so a typo must not reach it.
+    #[test]
+    fn the_src_write_parser_takes_by_and_force_and_refuses_a_valueless_by() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let p = parse_src_write_args(&a(&["btn", "--by", "designer"])).unwrap();
+        assert_eq!(p.by.as_deref(), Some("designer"));
+        assert_eq!(p.rest, vec!["btn".to_string()], "--by and its value leave the positional args");
+
+        assert!(parse_src_write_args(&a(&["btn", "--by"])).is_err(), "a valueless --by must error");
+        assert!(
+            parse_src_write_args(&a(&["btn", "--by", "--force"])).is_err(),
+            "a --by that swallowed the next FLAG must error, not name the writer '--force'"
+        );
+
+        let p = parse_src_write_args(&a(&["btn", "--force"])).unwrap();
+        assert!(FORCE_WRITE.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(p.by, None);
+        assert_eq!(p.rest, vec!["btn".to_string()]);
+        FORCE_WRITE.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[test]
