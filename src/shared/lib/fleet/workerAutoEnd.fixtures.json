@@ -1,0 +1,250 @@
+{
+  "note": "GENERATED from the live TypeScript — see workerAutoEnd.fixtures.gen.test.ts",
+  "defaults": {
+    "closeNudgeMs": 60000,
+    "lostQuestionMs": 300000
+  },
+  "cases": [
+    {
+      "name": "turn still open — never act, however idle",
+      "signals": {
+        "turnOpen": true,
+        "idleMs": 10000000,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "focused — never act, however idle",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 10000000,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        },
+        "focused": true
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "focused outranks an outstanding question",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 10000000,
+        "hasOutstandingQuestion": true,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        },
+        "focused": true
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "turnOpen outranks focused being false",
+      "signals": {
+        "turnOpen": true,
+        "idleMs": 10000000,
+        "hasOutstandingQuestion": true,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        },
+        "focused": false
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "question, just under lostQuestionMs",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 299999,
+        "hasOutstandingQuestion": true,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "question, exactly at lostQuestionMs — resurface",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 300000,
+        "hasOutstandingQuestion": true,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "resurface-question"
+    },
+    {
+      "name": "question, well past — resurface",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 900000,
+        "hasOutstandingQuestion": true,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "resurface-question"
+    },
+    {
+      "name": "a question outranks a done verdict past closeNudgeMs",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 60000,
+        "hasOutstandingQuestion": true,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "done, just under closeNudgeMs",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 59999,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "done, exactly at closeNudgeMs — nudge",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 60000,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "close-nudge"
+    },
+    {
+      "name": "needs-attention past closeNudgeMs — no nudge",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 120000,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "needs-attention",
+          "summary": "needs-attention summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "blocked past closeNudgeMs — no nudge",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 120000,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "blocked",
+          "summary": "blocked summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "idle zero, done — nothing yet",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 0,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 60000,
+        "lostQuestionMs": 300000
+      },
+      "action": "none"
+    },
+    {
+      "name": "custom thresholds are honoured, not the packaged ones",
+      "signals": {
+        "turnOpen": false,
+        "idleMs": 5,
+        "hasOutstandingQuestion": false,
+        "verdict": {
+          "state": "done",
+          "summary": "done summary"
+        }
+      },
+      "thresholds": {
+        "closeNudgeMs": 5,
+        "lostQuestionMs": 10
+      },
+      "action": "close-nudge"
+    }
+  ]
+}

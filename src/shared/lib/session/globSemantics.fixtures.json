@@ -1,0 +1,155 @@
+{
+  "note": "GENERATED from the live TypeScript matchGlob — see globSemantics.fixtures.gen.test.ts",
+  "pairs": [
+    {
+      "why": "plain literal",
+      "glob": "src/a.ts",
+      "path": "src/a.ts",
+      "matches": true
+    },
+    {
+      "why": "literal miss",
+      "glob": "src/a.ts",
+      "path": "src/b.ts",
+      "matches": false
+    },
+    {
+      "why": "* within one segment",
+      "glob": "src/*.ts",
+      "path": "src/a.ts",
+      "matches": true
+    },
+    {
+      "why": "* ACROSS a separator — the security case",
+      "glob": "src/*.ts",
+      "path": "src/a/b.ts",
+      "matches": false
+    },
+    {
+      "why": "* across two separators",
+      "glob": "src/*.ts",
+      "path": "src/a/b/c.ts",
+      "matches": false
+    },
+    {
+      "why": "** across a separator",
+      "glob": "src/**/*.ts",
+      "path": "src/a/b.ts",
+      "matches": true
+    },
+    {
+      "why": "** at the tail",
+      "glob": "src/**",
+      "path": "src/a/b/c.ts",
+      "matches": true
+    },
+    {
+      "why": "** matching nothing",
+      "glob": "src/**",
+      "path": "src/",
+      "matches": true
+    },
+    {
+      "why": "* does not escape the prefix",
+      "glob": "src/*.ts",
+      "path": "lib/a.ts",
+      "matches": false
+    },
+    {
+      "why": "anchoring — no prefix match",
+      "glob": "src/a.ts",
+      "path": "x/src/a.ts",
+      "matches": false
+    },
+    {
+      "why": "anchoring — no suffix match",
+      "glob": "src/a.ts",
+      "path": "src/a.tsx",
+      "matches": false
+    },
+    {
+      "why": "? as a wildcard or a literal",
+      "glob": "src/a?.ts",
+      "path": "src/ab.ts",
+      "matches": false
+    },
+    {
+      "why": "? against a literal question mark",
+      "glob": "src/a?.ts",
+      "path": "src/a?.ts",
+      "matches": false
+    },
+    {
+      "why": "? as a leaked regex quantifier — 'a' absent",
+      "glob": "src/a?.ts",
+      "path": "src/.ts",
+      "matches": true
+    },
+    {
+      "why": "? as a leaked regex quantifier — 'a' present",
+      "glob": "src/a?.ts",
+      "path": "src/a.ts",
+      "matches": true
+    },
+    {
+      "why": "unescaped alternation leaks too?",
+      "glob": "src/a|b.ts",
+      "path": "src/a",
+      "matches": false
+    },
+    {
+      "why": "bracket class or literal brackets",
+      "glob": "src/[ab].ts",
+      "path": "src/a.ts",
+      "matches": false
+    },
+    {
+      "why": "bracket against literal brackets",
+      "glob": "src/[ab].ts",
+      "path": "src/[ab].ts",
+      "matches": true
+    },
+    {
+      "why": "dot is not a wildcard",
+      "glob": "src/a.ts",
+      "path": "src/axts",
+      "matches": false
+    },
+    {
+      "why": "plus is literal",
+      "glob": "src/a+.ts",
+      "path": "src/a+.ts",
+      "matches": true
+    },
+    {
+      "why": "parens are literal",
+      "glob": "src/(a).ts",
+      "path": "src/(a).ts",
+      "matches": true
+    },
+    {
+      "why": "dollar is literal",
+      "glob": "src/a$.ts",
+      "path": "src/a$.ts",
+      "matches": true
+    },
+    {
+      "why": "contracts glob from a real capability",
+      "glob": "contracts/**/*.json",
+      "path": "contracts/x/y.json",
+      "matches": true
+    },
+    {
+      "why": "real capability glob, one level",
+      "glob": "src/**/*.tsx",
+      "path": "src/app/Thing.tsx",
+      "matches": true
+    },
+    {
+      "why": "real capability glob, zero levels",
+      "glob": "src/**/*.tsx",
+      "path": "src/Thing.tsx",
+      "matches": false
+    }
+  ]
+}

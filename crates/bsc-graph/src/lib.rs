@@ -9,6 +9,7 @@
 //! after a write reflects the write ("verify after every write"). #2745 layers the extract-to-harvest
 //! feeder (mine reusable code from a project into the library) on top.
 
+pub mod node_urn;
 pub mod features;
 pub mod build_facet;
 pub mod cli;

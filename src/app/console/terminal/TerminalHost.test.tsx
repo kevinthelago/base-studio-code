@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TerminalHost, ownerClaim, claimIsOnScreen, type SlotTerminalProps } from "./TerminalHost";
+import { TerminalHost, ownerClaim, claimIsOnScreen, onScreenPaneIds, type SlotTerminalProps } from "./TerminalHost";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 
 // #2378 guardrail: there is exactly ONE <TerminalView> per paneId (one xterm, one PTY listener), owned by
@@ -365,5 +365,79 @@ describe("claimIsOnScreen", () => {
 
   it("no claims ⇒ no owner", () => {
     expect(ownerClaim([])).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// onScreenPaneIds — what the backend reaper is allowed to protect.
+//
+// The backend's one unconditional protection is `if (on_screen) return false`, and it used to be fed a
+// SINGLE pane id resolved from the console grid's `focusedPaneIdx`. A studio session, a graph session
+// and a network architect are not console panes and never will be, so that guard was unreachable for
+// every session the app owns — and with a ten-second idle grace, an architect died while its terminal
+// was on screen in front of the user. MEASURED on the live store: `focusedPaneIdx` was unset and the
+// active workspace was `glance`, so the app reported NULL and nothing at all was protected.
+//
+// This is the derivation that replaces it, and it is composed from the two rules the host already
+// applies to decide which surface hosts the terminal, rather than re-derived from Glance state.
+
+/** A claim WITH an element, so `claimIsOnScreen` has something real to answer about. jsdom has no
+ *  layout, so the element is hand-built exactly as the `claimIsOnScreen` suite above does. */
+const domClaim = (slotId: string, p: Partial<SlotTerminalProps>, onScreen = true) => ({
+  slotId,
+  propsRef: { current: { visible: false, ...p } as SlotTerminalProps },
+  el: ({ offsetParent: onScreen ? {} : null, getClientRects: () => ({ length: onScreen ? 1 : 0 }) }) as unknown as HTMLElement,
+});
+
+describe("onScreenPaneIds — every pane a surface is showing, not one focused id", () => {
+  it("reports a studio, an architect and a console cell together", () => {
+    // The exact shape the report has to carry: sessions from three different surfaces at once. Only
+    // one of them could ever have been the console's focused pane, and two of them never could.
+    const reg = new Map([
+      ["twitter-clone-test:api", [domClaim("console-cell", { visible: true })]],
+      ["design-studio:designer-react", [domClaim("page-dock", { visible: true })]],
+      ["network-finance:architect", [domClaim("glance-morph", { visible: true })]],
+    ]);
+    expect(onScreenPaneIds(reg)).toEqual([
+      "design-studio:designer-react",
+      "network-finance:architect",
+      "twitter-clone-test:api",
+    ]);
+  });
+
+  it("excludes a PARKED holding mount — or the reaper could never reclaim a studio at all", () => {
+    // `StudioSessionHosts` keeps every wanted studio mounted off-screen so its terminal survives
+    // navigation. Counting that claim would pin every studio ever opened alive for ever, which is the
+    // opposite failure and exactly what the backend reaper exists to prevent.
+    const reg = new Map([
+      ["design-studio:designer-react", [domClaim("holding", { visible: false, parked: true })]],
+    ]);
+    expect(onScreenPaneIds(reg)).toEqual([]);
+  });
+
+  it("excludes a kept-mounted page dock the user has navigated away from", () => {
+    // A studio page stays MOUNTED and is CSS-hidden (`KeptMountedPage`), so its dock is still a live
+    // `visible` claim. `display:none` ⇒ no offsetParent and no client rects, which is the only signal
+    // that separates "showing" from "mounted" — and without it leaving the page would keep protecting
+    // the session for ever.
+    const reg = new Map([
+      ["algorithms-studio:librarian-rust", [domClaim("hidden-dock", { visible: true }, false)]],
+    ]);
+    expect(onScreenPaneIds(reg)).toEqual([]);
+  });
+
+  it("asks the OWNER claim, so a background console cell does not report its pane on screen", () => {
+    // Both claims are `visible` — that is a claim about the PANE, not about the screen (see
+    // `ownerClaim`'s header). The morph is the one actually rendered, and when it goes away the
+    // off-screen cell must not keep the pane protected.
+    const morph = domClaim("glance-morph", { visible: true });
+    const cell = domClaim("background-cell", { visible: true }, false);
+    expect(onScreenPaneIds(new Map([["p:director", [cell, morph]]]))).toEqual(["p:director"]);
+    expect(onScreenPaneIds(new Map([["p:director", [cell]]]))).toEqual([]);
+  });
+
+  it("is empty for an empty registry — nothing mounted means nothing protected", () => {
+    expect(onScreenPaneIds(new Map())).toEqual([]);
+    expect(onScreenPaneIds(new Map([["p:x", []]]))).toEqual([]);
   });
 });

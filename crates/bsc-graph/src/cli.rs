@@ -17,9 +17,9 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 19] = [
+pub const VERBS: [&str; 20] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
-    "used-by", "features", "merge", "emit", "promote", "reseed", "build", "migrate-crate", "help",
+    "used-by", "features", "merge", "emit", "promote", "reseed", "unmaterialize", "build", "migrate-crate", "help",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -976,6 +976,80 @@ fn write_seed_doc(path: &std::path::Path, doc: &Value) -> Result<(), String> {
     std::fs::write(&tmp, body).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
+
+/// One record the unmaterialize rollback would write back to disk, or refuse to.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RestoreEntry {
+    pub id: String,
+    pub path: String,
+    /// Set only on a refusal — why this record is NOT safe to write back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
+}
+
+/// Plan the files-to-zero ROLLBACK: which committed-store records can be written back to the `src`
+/// they were lifted from, and which must be refused.
+///
+/// Two refusals, and the second is the one the `scripts/graph-unmaterialize.mjs` this replaces got
+/// wrong:
+///
+///   - THE FILE STILL EXISTS. A materialized module's source is absent by construction, so a record
+///     whose `src` is still on disk is a FUNCTION lifted out of a live file, not the file itself.
+///     Writing it back would replace the module with one of its parts.
+///   - THE PATH IS CONTESTED. Several records can legitimately share one `src` — four impls carry
+///     `features/algorithms/viz/examples/sorts.ts` and two carry `searches.ts` in the committed store
+///     today. The script planned all six and let the LAST write win, restoring one record's code as
+///     the whole file and silently losing the rest. A rollback that loses data is worse than no
+///     rollback, so a contested path is refused and named rather than resolved by ordering.
+///
+/// Pure: `exists` is injected, so the whole decision is testable without a filesystem.
+pub fn plan_unmaterialize(
+    impls: &[Value],
+    exists: &dyn Fn(&str) -> bool,
+) -> (Vec<RestoreEntry>, Vec<RestoreEntry>) {
+    let restorable: Vec<(&str, &str)> = impls
+        .iter()
+        .filter_map(|i| {
+            let id = i.get("id").and_then(Value::as_str)?.trim();
+            let src = i.get("src").and_then(Value::as_str)?.trim();
+            let code = i.get("code").and_then(Value::as_str)?.trim();
+            (!id.is_empty() && !src.is_empty() && !code.is_empty()).then_some((id, src))
+        })
+        .collect();
+
+    let mut claims: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    for (id, src) in &restorable {
+        claims.entry(src).or_default().push(id);
+    }
+
+    let (mut plan, mut refused) = (Vec::new(), Vec::new());
+    for (id, src) in &restorable {
+        let entry = |refused: Option<String>| RestoreEntry {
+            id: (*id).to_string(),
+            path: (*src).to_string(),
+            refused,
+        };
+        let owners = &claims[src];
+        if owners.len() > 1 {
+            refused.push(entry(Some(format!(
+                "{} records claim this path ({}) — restoring would let one overwrite the others, so \
+                 the contest has to be resolved in the store first",
+                owners.len(),
+                owners.join(", "),
+            ))));
+        } else if exists(src) {
+            refused.push(entry(Some(
+                "the file EXISTS — a materialized module's source is absent by construction, so this \
+                 record is a function lifted out of a live file and writing it back would delete the rest"
+                    .to_string(),
+            )));
+        } else {
+            plan.push(entry(None));
+        }
+    }
+    (plan, refused)
+}
+
 
 /// `tests harvest <dir> [--dry-run]` (#4126) — carry each impl's COLOCATED test file onto its node,
 /// the algorithms twin of `bsc ui tests harvest` (#3907), pairing through the SAME
@@ -2202,6 +2276,72 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `tests harvest <dir>` (#4126) mirrors every impl's colocated test onto its node; `tests set`
         // (#140) pairs ONE record's test without needing a whole repo tree to resolve against. See
         // [`tests_harvest`] and [`tests_set`] for the reasoning behind each.
+        // `unmaterialize [--apply] [--root <dir>]` — the ROLLBACK for files-to-zero, ported from
+        // `scripts/graph-unmaterialize.mjs` (which is deleted with this change, not left beside it).
+        //
+        // NOT `emit`. That verb's contract is "one record = one file — NEVER written over the shared
+        // `src` it was lifted from", which is exactly the operation a rollback has to perform. The two
+        // are opposites, not duplicates.
+        //
+        // It matters because the bet is live and large: 25 crates compile from the graph today and 60
+        // committed-store records have no file on disk. Losing git blame, review diffs and
+        // goto-definition on those modules is a trade the maintainer took with the costs named, and a
+        // chosen trade should stay reversible while it is still being evaluated — from the tier every
+        // role holds, not from behind `node`.
+        //
+        // DRY BY DEFAULT. The paths it writes are exactly the paths a migration deleted, so an
+        // accidental run would resurrect a second live copy of every module — the two-live-copies state
+        // this architecture exists to avoid.
+        "unmaterialize" => {
+            let apply = args.iter().any(|a| a == "--apply");
+            let root = flag_value(&args, "--root")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+            let path = crate::repo_store::path_under(&root);
+            let repo = crate::repo_store::read_at(&path)?.unwrap_or_else(crate::repo_store::empty);
+            let impls: Vec<Value> = repo
+                .get("implementations")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+
+            let (plan, refused) =
+                plan_unmaterialize(&impls, &|rel: &str| root.join(rel).is_file());
+
+            let mut wrote: Vec<String> = Vec::new();
+            if apply {
+                let by_id: std::collections::HashMap<&str, &Value> = impls
+                    .iter()
+                    .filter_map(|i| i.get("id").and_then(Value::as_str).map(|id| (id, i)))
+                    .collect();
+                for e in &plan {
+                    let code = by_id
+                        .get(e.id.as_str())
+                        .and_then(|i| i.get("code"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let target = root.join(&e.path);
+                    if let Some(dir) = target.parent() {
+                        std::fs::create_dir_all(dir)
+                            .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
+                    }
+                    let body =
+                        if code.ends_with('\n') { code.to_string() } else { format!("{code}\n") };
+                    std::fs::write(&target, body)
+                        .map_err(|err| format!("cannot write {}: {err}", target.display()))?;
+                    wrote.push(e.path.clone());
+                }
+            }
+
+            emit(&serde_json::json!({
+                "apply": apply,
+                "store": path.to_string_lossy(),
+                "restorable": plan.len(),
+                "refused": refused,
+                "plan": plan,
+                "wrote": wrote,
+            }))
+        }
         "reseed" => {
             let check = args.iter().any(|a| a == "--check");
             let all = args.iter().any(|a| a == "--all");
@@ -3440,6 +3580,7 @@ fn help(prog: &str) -> String {
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
          {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest each top-level module as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has nested module directories, declares a module with no matching file, or declares a *_test/*_tests module harvest skips — and VERIFIES with a real build before it finishes\n\n\
+         {prog} unmaterialize [--apply] [--root <dir>]   # the ROLLBACK for files-to-zero: write every committed-store record whose `src` has NO file on disk back to that path, restoring the crate to an ordinary file tree (25 crates compile from the graph today; 60 records have no file). NOT `emit`, whose contract is the opposite — `emit` never writes over the shared `src` a record was lifted from, and that is exactly what a rollback must do. DRY BY DEFAULT, because the paths it writes are the ones a migration deleted and an accidental run would resurrect a second live copy of every module. REFUSES a record whose file still EXISTS (it is a function lifted out of a live file, not the file), and REFUSES a `src` claimed by more than one record rather than letting the last write win — the data-loss the `scripts/graph-unmaterialize.mjs` this replaces had, where six records contest two paths
          {prog} reseed [--id a,b] [--all] [--check] [--root <dir>]   # the SEED → RUNTIME STORE direction, the exact inverse of `promote --seed`. The per-user runtime store is the AUTHORING copy, and it can fall BEHIND what ships: after a refactor lands in the packaged seed, a machine that did not author it keeps serving the old body — and an impl's `provides` BEATS the platform registry, so the stale copy is handed to the page even when the bundle is perfectly correct. NO GATE CAN SEE THIS: tsc and vitest read `.bsc-records/`, emitted FROM the seed, so every gate reads a copy that is right and the only wrong one is on the user's disk. `--check` reports and exits non-zero. There is deliberately NO bare form — this OVERWRITES authoring, so name `--id a,b` or say `--all`
          {prog} promote [--id a,b] [--check] [--seed] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — or, with --seed, into the PACKAGED seed at src-tauri/data/knowledge/algorithms.json (what SHIPS and what a fresh install reconciles against; a record can legitimately be in one and not the other). --seed projects to the 15 fields the seed actually carries, normalises a file EXTENSION found in `tech` (`ts` -> `typescript`), prunes a `composes` target that is not an impl, and DECLINES any record whose promotion would stop a specifier something still imports from resolving — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
          {prog} build <id> | build --all [--wasm] [--force]   # compile a Tier-R node from its own composes closure and STAMP the verdict onto it, so `impl get` answers 'does this compile?' without running anything. The hash covers the MATERIALIZED source + the toolchain + the flags, because all three change the answer; an unchanged hash is reported `cached` and recompiles nothing, unless the artifact it names is gone — a cache that vanished must re-derive, never be trusted. `--wasm` adds the wasm32 target and writes the artifact to a CONTENT-ADDRESSED sidecar (~/.base-studio-code/knowledge/artifacts/<sha>.wasm), never inline: the store is 8.74 MB and every reader parses it\n\n\
@@ -6081,6 +6222,61 @@ mod reseed_tests {
         assert!(err.contains("--id"), "does not say how to proceed: {err}");
         assert!(err.contains("--all"), "does not offer the sweep: {err}");
         assert!(err.contains("OVERWRITES"), "does not say what is at stake: {err}");
+    }
+
+    /// The rollback's two refusals. The CONTESTED-PATH one is the defect this port fixes: the script
+    /// it replaces planned every restorable record and let the last write win, so a path claimed by
+    /// four records was restored as one of them and the other three were silently lost.
+    #[test]
+    fn unmaterialize_refuses_a_contested_path_and_a_file_that_still_exists() {
+        use serde_json::json;
+        let impls = vec![
+            json!({ "id": "a.ts", "src": "src/a.ts", "code": "export const a = 1;" }),
+            json!({ "id": "live.ts", "src": "src/live.ts", "code": "export const l = 1;" }),
+            // Four records claiming ONE path — the real shape in the committed store today
+            // (`features/algorithms/viz/examples/sorts.ts` is carried by four impls).
+            json!({ "id": "bubble", "src": "viz/sorts.ts", "code": "export const bubble = 1;" }),
+            json!({ "id": "heap",   "src": "viz/sorts.ts", "code": "export const heap = 2;" }),
+            json!({ "id": "merge",  "src": "viz/sorts.ts", "code": "export const merge = 3;" }),
+            json!({ "id": "quick",  "src": "viz/sorts.ts", "code": "export const quick = 4;" }),
+            // No code, or no src ⇒ not restorable at all, and not an error either.
+            json!({ "id": "spec-only", "src": "src/spec.ts" }),
+            json!({ "id": "srcless", "code": "export const x = 1;" }),
+        ];
+        let exists = |p: &str| p == "src/live.ts";
+        let (plan, refused) = plan_unmaterialize(&impls, &exists);
+
+        assert_eq!(plan.len(), 1, "only the clean record is restorable: {plan:?}");
+        assert_eq!(plan[0].id, "a.ts");
+        assert_eq!(plan[0].path, "src/a.ts");
+
+        let by_id = |id: &str| refused.iter().find(|e| e.id == id).cloned();
+        let live = by_id("live.ts").expect("a file that still exists is refused");
+        assert!(live.refused.as_deref().unwrap_or_default().contains("EXISTS"), "{live:?}");
+
+        // ALL FOUR contenders are refused — not three, and not "the last one wins".
+        for id in ["bubble", "heap", "merge", "quick"] {
+            let e = by_id(id).unwrap_or_else(|| panic!("{id} must be refused, not restored"));
+            let why = e.refused.unwrap_or_default();
+            assert!(why.contains("4 records claim this path"), "{id}: {why}");
+            assert!(why.contains("bubble") && why.contains("quick"), "names the contenders: {why}");
+        }
+        assert_eq!(refused.len(), 5, "one live file + four contenders: {refused:?}");
+    }
+
+    /// A record whose module genuinely went into the graph is restorable — the ordinary case, and the
+    /// one that makes the refusals above meaningful rather than a blanket no.
+    #[test]
+    fn unmaterialize_restores_a_record_whose_file_is_gone() {
+        use serde_json::json;
+        let impls = vec![json!({
+            "id": "cli.rs", "src": "crates/bsc-blueprint/src/cli.rs", "code": "pub fn run() {}"
+        })];
+        let (plan, refused) = plan_unmaterialize(&impls, &|_| false);
+        assert_eq!(refused, Vec::new());
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].path, "crates/bsc-blueprint/src/cli.rs");
+        assert!(plan[0].refused.is_none());
     }
 
     #[test]

@@ -1,0 +1,356 @@
+{
+  "note": "GENERATED from src/shared/lib/runtime/shadow/pageBinding.ts — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "a plain named import",
+      "source": "import { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a default import",
+      "source": "import React from \"react\";\n",
+      "imports": [
+        {
+          "specifier": "react",
+          "symbols": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a namespace import",
+      "source": "import * as ns from \"./ns\";\n",
+      "imports": [
+        {
+          "specifier": "./ns",
+          "symbols": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "default plus named",
+      "source": "import React, { useState } from \"react\";\n",
+      "imports": [
+        {
+          "specifier": "react",
+          "symbols": [
+            "default",
+            "useState"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a renamed binding takes the MODULE side name",
+      "source": "import { a as b } from \"./ab\";\n",
+      "imports": [
+        {
+          "specifier": "./ab",
+          "symbols": [
+            "a"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a first-party alias",
+      "source": "import { Card } from \"@/shared/ui/data/Card\";\n",
+      "imports": [
+        {
+          "specifier": "@/shared/ui/data/Card",
+          "symbols": [
+            "Card"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a parent-relative specifier",
+      "source": "import { X } from \"../ui/X\";\n",
+      "imports": [
+        {
+          "specifier": "../ui/X",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a scoped npm package",
+      "source": "import { z } from \"@scope/pkg/sub\";\n",
+      "imports": [
+        {
+          "specifier": "@scope/pkg/sub",
+          "symbols": [
+            "z"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "single quotes",
+      "source": "import { X } from './x';\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "an indented import",
+      "source": "  import { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a multi-line named list",
+      "source": "import {\n  A,\n  B,\n} from \"./ab\";\n",
+      "imports": [
+        {
+          "specifier": "./ab",
+          "symbols": [
+            "A",
+            "B"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a re-export is an import at runtime",
+      "source": "export { ProjectRow } from \"./published/ProjectRow\";\n",
+      "imports": [
+        {
+          "specifier": "./published/ProjectRow",
+          "symbols": [
+            "ProjectRow"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "export-star is too",
+      "source": "export * from \"./a\";\n",
+      "imports": [
+        {
+          "specifier": "./a",
+          "symbols": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "export-star-as is too",
+      "source": "export * as ns from \"./a\";\n",
+      "imports": [
+        {
+          "specifier": "./a",
+          "symbols": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a renamed re-export",
+      "source": "export { a as b } from \"./ab\";\n",
+      "imports": [
+        {
+          "specifier": "./ab",
+          "symbols": [
+            "a"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a statement-level type import is erased",
+      "source": "import type { T } from \"./t\";\n",
+      "imports": []
+    },
+    {
+      "label": "an all-inline-type clause is erased too",
+      "source": "import { type A, type B } from \"./ab\";\n",
+      "imports": []
+    },
+    {
+      "label": "ONE value binding keeps the whole import",
+      "source": "import { type A, b } from \"./ab\";\n",
+      "imports": [
+        {
+          "specifier": "./ab",
+          "symbols": [
+            "A",
+            "b"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a type re-export is erased",
+      "source": "export type { T } from \"./t\";\n",
+      "imports": []
+    },
+    {
+      "label": "a bare side-effect import",
+      "source": "import \"./a.css\";\n",
+      "imports": [
+        {
+          "specifier": "./a.css",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "label": "a dynamic import — the regex cannot see it",
+      "source": "const m = await import(\"./lazy\");\n",
+      "imports": []
+    },
+    {
+      "label": "`from \"…\"` inside a line comment is not an import",
+      "source": "// see the note from \"./ghost\" for why\nimport { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "`from \"…\"` inside a block comment is not an import",
+      "source": "/* lifted from \"./ghost\" */\nimport { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "`from \"…\"` inside a string literal is not an import",
+      "source": "const s = 'from \"./strghost\"';\nimport { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a require() call is not an ESM import",
+      "source": "function f() {\n  const m = require(\"./r\");\n}\nimport { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "the word `transform` does not contain an import",
+      "source": "const transform = 1; // from nothing\nimport { X } from \"./x\";\n",
+      "imports": [
+        {
+          "specifier": "./x",
+          "symbols": [
+            "X"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a provenance header naming a specifier is not an import",
+      "source": "// `@/shared/ui/data/Card` after the original module was retired\nexport function Card() {}\n",
+      "imports": []
+    },
+    {
+      "label": "several imports keep source order",
+      "source": "import { A } from \"./a\";\nimport { B } from \"./b\";\nimport \"./c.css\";\n",
+      "imports": [
+        {
+          "specifier": "./a",
+          "symbols": [
+            "A"
+          ]
+        },
+        {
+          "specifier": "./b",
+          "symbols": [
+            "B"
+          ]
+        },
+        {
+          "specifier": "./c.css",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "label": "a bare import BEFORE a named one",
+      "source": "import \"./a.css\";\nimport { B } from \"./b\";\n",
+      "imports": [
+        {
+          "specifier": "./b",
+          "symbols": [
+            "B"
+          ]
+        },
+        {
+          "specifier": "./a.css",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "label": "the same module twice",
+      "source": "import { A } from \"./ab\";\nimport { B } from \"./ab\";\n",
+      "imports": [
+        {
+          "specifier": "./ab",
+          "symbols": [
+            "A"
+          ]
+        },
+        {
+          "specifier": "./ab",
+          "symbols": [
+            "B"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "a file with no imports at all",
+      "source": "export function f() { return 1; }\n",
+      "imports": []
+    }
+  ]
+}
