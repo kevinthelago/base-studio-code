@@ -137,19 +137,23 @@ pub enum AgentPermsOutcome {
 /// (bscRole)` — so a document present with no capability means a ROLE pane whose capability was lost,
 /// and that launch is refused rather than run on a document the backend cannot vouch for.
 ///
-/// # `extra_deny_bash` is EMPTY here, deliberately, and that reproduces a live gap
+/// # `user_denies` is the ONLY route that list has on this harness
 ///
-/// The renderer calls `bscAgentPerms(cap, granted)` with the third argument defaulted, so the user's
-/// global denylist has never reached a `bsc-agent` session — even though `bscAgentPerms`'s own doc
-/// says it must ride in here because there is no settings file for it to ride in on, and
-/// `Permissions::from_env` reads no `$BSC_DENY_BASH`. Passing it here would FIX that, and fixing it
-/// is a change to what a session may do: it belongs in its own slice with its own revert and its own
-/// field check, exactly as the item says of the surface-complement gap. Filed separately.
+/// `bscAgentPerms`'s own doc says the user's global denylist must ride in here because bsc-agent has
+/// no `.claude/settings.json` for it to ride in on — and it is right: `Permissions::from_env` reads
+/// `BSC_AGENT_PERMS`, `BSC_REPO_ROOT` and `BSC_HARVEST_ROOTS`, and no `$BSC_DENY_BASH`. The renderer
+/// nonetheless called `bscAgentPerms(cap, granted)` with the argument defaulted, so a command the
+/// user denied in Settings was enforced on Claude and nowhere else
+/// (`a-bsc-agent-session-never-gets-the-users-denylist`).
+///
+/// It is the SAME list the Claude path composes into `denied_commands`, taken from the same store
+/// field, so the two harnesses deny one list rather than two restatements of it.
 pub fn reconcile_agent_perms(
     env: &mut std::collections::HashMap<String, String>,
     provider_is_bsc_agent: bool,
     cap: Option<&RoleCapability>,
     granted: &[String],
+    user_denies: &[String],
 ) -> Result<AgentPermsOutcome, String> {
     if !provider_is_bsc_agent {
         return Ok(AgentPermsOutcome::NotApplicable);
@@ -168,8 +172,7 @@ pub fn reconcile_agent_perms(
             _ => Ok(AgentPermsOutcome::NotApplicable),
         };
     };
-    // EMPTY extra_deny_bash — see the docs above; this reproduces the renderer rather than fixing it.
-    let doc = serde_json::to_string(&bsc_agent_perms(Some(cap), granted, &[]))
+    let doc = serde_json::to_string(&bsc_agent_perms(Some(cap), granted, user_denies))
         .map_err(|e| format!("could not render $BSC_AGENT_PERMS: {e}"))?;
     let differed = sent.as_deref().is_some_and(|s| s != doc);
     env.insert("BSC_AGENT_PERMS".to_string(), doc);
@@ -218,12 +221,74 @@ mod tests {
         );
     }
 
+    /// THE SHIPPED GAP (`a-bsc-agent-session-never-gets-the-users-denylist`). `bscAgentPerms`' third
+    /// argument defaults to `[]` and its only call site passed two, so a command the user denied in
+    /// Settings was enforced on Claude and nowhere else — and there is NO second route, since
+    /// `Permissions::from_env` reads `BSC_AGENT_PERMS`, `BSC_REPO_ROOT` and `BSC_HARVEST_ROOTS` and no
+    /// `$BSC_DENY_BASH`.
+    #[test]
+    fn the_users_denylist_reaches_the_document_the_runtime_actually_reads() {
+        let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
+        let mut env = std::collections::HashMap::new();
+        reconcile_agent_perms(
+            &mut env,
+            true,
+            Some(&worker),
+            &[],
+            &["curl".to_string(), "  ".to_string(), " nc ".to_string()],
+        )
+        .unwrap();
+        let doc: BscAgentPerms = serde_json::from_str(env.get("BSC_AGENT_PERMS").unwrap()).unwrap();
+        assert!(doc.deny_bash.iter().any(|d| d == "curl"), "{:?}", doc.deny_bash);
+        // TRIMMED, and empties DROPPED — a blank line in the settings field would otherwise become a
+        // substring that matches EVERY command.
+        assert!(doc.deny_bash.iter().any(|d| d == "nc"), "trimmed: {:?}", doc.deny_bash);
+        assert!(!doc.deny_bash.iter().any(|d| d.trim().is_empty()), "{:?}", doc.deny_bash);
+    }
+
+    /// THE TWO HARNESSES DENY ONE LIST, asserted from a single source rather than by restating it.
+    /// The Claude path composes the user's denies through `denies::session_denied_commands`; this
+    /// path renders them into the document. Both are fed the same slice here, and the property is
+    /// that every user entry survives BOTH — which is what "parity" means for this field.
+    #[test]
+    fn both_harnesses_deny_the_same_user_list() {
+        let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
+        let user = ["curl".to_string(), "nc".to_string()];
+
+        // The Claude path.
+        let claude = crate::session::denies::session_denied_commands(&user, Some(&worker), &[], None, &[]);
+        // The bsc-agent path.
+        let agent = bsc_agent_perms(Some(&worker), &[], &user);
+
+        for u in &user {
+            assert!(claude.contains(u), "the Claude path must deny `{u}`: {claude:?}");
+            assert!(agent.deny_bash.contains(u), "and so must the bsc-agent one: {:?}", agent.deny_bash);
+        }
+    }
+
+    /// The floor is STILL not rendered here. It is always-on inside the runtime
+    /// (`bsc_util::dangerous`), so an empty or missing document cannot drop it — and rendering it
+    /// would make an empty document *look* sufficient. Passing the user's list must not have smuggled
+    /// it in by another name.
+    #[test]
+    fn the_user_list_does_not_drag_the_catastrophic_floor_in_with_it() {
+        let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
+        let doc = bsc_agent_perms(Some(&worker), &[], &["curl".to_string()]);
+        for floor in ["sudo", "rm -rf /", "mkfs"] {
+            assert!(
+                !doc.deny_bash.iter().any(|d| d == floor),
+                "the floor stays the runtime's, not this document's: {:?}",
+                doc.deny_bash
+            );
+        }
+    }
+
     /// A `bsc-agent` pane with a role: the launch renders the document and installs its own.
     #[test]
     fn the_launch_renders_the_document_and_installs_it() {
         let designer = cap_for("designer", Tier::None, vec!["scratch/**".into()]);
         let mut env = std::collections::HashMap::new();
-        let out = reconcile_agent_perms(&mut env, true, Some(&designer), &[]).unwrap();
+        let out = reconcile_agent_perms(&mut env, true, Some(&designer), &[], &[]).unwrap();
         assert_eq!(out, AgentPermsOutcome::Rendered { differed: false });
         let doc: BscAgentPerms = serde_json::from_str(env.get("BSC_AGENT_PERMS").unwrap()).unwrap();
         assert_eq!(doc.write_globs, vec!["scratch/**"]);
@@ -238,13 +303,13 @@ mod tests {
             "BSC_AGENT_PERMS".to_string(),
             r#"{"deny_tools":[],"deny_bash":[],"write_globs":[]}"#.to_string(),
         )]);
-        let err = reconcile_agent_perms(&mut env, true, None, &[]).unwrap_err();
+        let err = reconcile_agent_perms(&mut env, true, None, &[], &[]).unwrap_err();
         assert!(err.contains("Refusing"), "the refusal must say what it is refusing and why: {err}");
         // …and a genuinely role-less console with no document is NOT refused: it is the permissive
         // ad-hoc case, and refusing it would break every bare bsc-agent shell.
         let mut bare = std::collections::HashMap::new();
         assert_eq!(
-            reconcile_agent_perms(&mut bare, true, None, &[]).unwrap(),
+            reconcile_agent_perms(&mut bare, true, None, &[], &[]).unwrap(),
             AgentPermsOutcome::NotApplicable
         );
         assert!(!bare.contains_key("BSC_AGENT_PERMS"));
@@ -257,7 +322,7 @@ mod tests {
         let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
         let mut env = std::collections::HashMap::new();
         assert_eq!(
-            reconcile_agent_perms(&mut env, false, Some(&worker), &[]).unwrap(),
+            reconcile_agent_perms(&mut env, false, Some(&worker), &[], &[]).unwrap(),
             AgentPermsOutcome::NotApplicable
         );
         assert!(env.is_empty());
