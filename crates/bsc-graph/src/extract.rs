@@ -1342,6 +1342,105 @@ pub fn module_state_of(src: &str, tsx: bool) -> Vec<String> {
     }
 }
 
+/// Node kinds whose TEXT is an author's choice of NAME. Alpha-renamed to a positional slot, which is
+/// what makes the fingerprint see through a copy-paste-and-rename.
+///
+/// Both grammars are covered by one list because the kinds do not collide: TypeScript spells a member
+/// access `property_identifier` and Rust spells it `field_identifier`, and neither language emits the
+/// other's kind. A kind missing here is not silently wrong — it falls through to the node-kind branch
+/// and is emitted verbatim, which makes the fingerprint STRICTER (two copies stop matching), never
+/// looser.
+const RENAMEABLE_KINDS: &[&str] = &[
+    "identifier",
+    "type_identifier",
+    "property_identifier",
+    "shorthand_property_identifier",
+    "shorthand_property_identifier_pattern",
+    "field_identifier",
+    "statement_identifier",
+];
+
+/// Node kinds whose TEXT is a VALUE. Replaced by the kind alone, so `clamp(x, 0, 10)` and
+/// `clamp(x, 0, 100)` share a shape — a constant is a parameter someone chose not to extract, and two
+/// copies differing only in one is the duplication this is hunting.
+const LITERAL_KINDS: &[&str] = &[
+    "number", "string", "string_fragment", "template_string", "regex", "char_literal",
+    "integer_literal", "float_literal", "string_literal", "raw_string_literal", "boolean_literal",
+    "true", "false", "null", "undefined",
+];
+
+/// A body shorter than this in SHAPE TOKENS carries no evidence. The mirror of `MIN_SHINGLES` on the
+/// shingle signal, and needed for the same reason with a sharper edge: a node-kind sequence for
+/// `fn new() { Self::default() }` is shared by every other trivial constructor in the workspace, so
+/// without a floor the largest "duplicate group" in any Rust crate is its boilerplate.
+pub const MIN_SHAPE_TOKENS: usize = 24;
+
+/// The RENAME-INVARIANT shape of a function body — `None` when it is too trivial to be evidence.
+///
+/// THE ONE SIGNAL THE EXISTING DETECTOR CANNOT HAVE. `dedup_findings` compares k-gram shingles over
+/// TOKENS, and a token stream contains the identifiers; rename them and the two sets are disjoint, so
+/// no threshold can recover the match. MEASURED: `groupItems(items, keyOf)` and
+/// `bucketRows(rows, labelFor)` — identical logic, every identifier renamed — were not grouped.
+///
+/// The normalization is three rules:
+///   * an IDENTIFIER becomes a positional slot, assigned on first sight and reused consistently, so
+///     `a + b` and `x + y` collapse to `#0 + #1` while `a + a` stays `#0 + #0` and does NOT match them;
+///   * a LITERAL becomes its kind, so two copies differing only in a constant still match;
+///   * everything else contributes its NODE KIND, so control flow is preserved exactly — a `for` loop
+///     and a `while` loop are different shapes, and so are an `if` with an `else` and one without.
+///
+/// Equal fingerprints ARE the same code under renaming, so this needs no threshold and has no false
+/// positives. That is why it ships ahead of the contract measure.
+///
+/// NOT STORED ON THE RECORD, deliberately. It is a pure function of `code`, so a stored copy is a cache
+/// that goes stale the moment the body is edited — and stale derived data is the failure this repo
+/// keeps paying for. Re-deriving 677 records costs a few hundred milliseconds.
+pub fn shape_fingerprint(code: &str, tech: &str) -> Option<String> {
+    let language: Language = match tech {
+        "rust" => tree_sitter_rust::LANGUAGE.into(),
+        // A `.tsx` body parsed as plain TS mis-reads JSX as comparison operators, but a JSX-rendering
+        // function is the COMPONENT graph's (`renders_jsx` already excludes it here), so the plain
+        // dialect is the right one for every body this store holds.
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        _ => return None,
+    };
+    let mut parser = Parser::new();
+    parser.set_language(&language).ok()?;
+    let bytes = code.as_bytes();
+    let tree = parser.parse(bytes, None)?;
+
+    let mut slots: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut out = String::new();
+    let mut stack = vec![tree.root_node()];
+    let mut tokens = 0usize;
+    // Explicit stack in PRE-ORDER, children pushed in reverse so they pop left-to-right: the sequence
+    // has to be deterministic, and a recursive walk over a deeply nested body is a stack overflow
+    // waiting for the one generated file that has it.
+    while let Some(node) = stack.pop() {
+        let kind = node.kind();
+        if RENAMEABLE_KINDS.contains(&kind) {
+            let text = node.utf8_text(bytes).unwrap_or_default().to_string();
+            let next = slots.len();
+            let slot = *slots.entry(text).or_insert(next);
+            out.push('#');
+            out.push_str(&slot.to_string());
+        } else if LITERAL_KINDS.contains(&kind) {
+            out.push_str(kind);
+        } else {
+            out.push_str(kind);
+            let mut cursor = node.walk();
+            let kids: Vec<Node> = node.named_children(&mut cursor).collect();
+            for child in kids.into_iter().rev() {
+                stack.push(child);
+            }
+        }
+        out.push(' ');
+        tokens += 1;
+    }
+    (tokens >= MIN_SHAPE_TOKENS)
+        .then(|| bsc_cli_util::vendored::sha256_hex(out.as_bytes())[..16].to_string())
+}
+
 fn parse(path: &Path) -> Option<(&'static str, Vec<u8>, tree_sitter::Tree)> {
     let (tech, language) = language_for(path)?;
     let src = std::fs::read(path).ok()?;
@@ -1710,6 +1809,135 @@ mod tests {
         let sig = sig_of("signatures.rs", "bump");
         assert_eq!(sig.arity(), 1, "`by` alone; `&mut self` is the receiver: {sig:?}");
         assert_eq!(sig.params[0], Param { name: "by".into(), ty: known("u32") });
+    }
+
+    // ── SHAPE FINGERPRINT (slice 2) ─────────────────────────────────────────────────────────────
+    // The one signal `dedup_findings` structurally cannot have: its shingles are taken over TOKENS,
+    // which include the identifiers, so a renamed copy has a DISJOINT set and no threshold recovers
+    // it. MEASURED before writing this: `groupItems(items, keyOf)` and `bucketRows(rows, labelFor)`
+    // were curated into a scratch store and `doctor --dedup` did not group them.
+
+    /// Long enough to clear MIN_SHAPE_TOKENS — the floor is real, so every fixture here has to carry
+    /// enough body to be evidence, exactly as a real candidate would.
+    const GROUP_A: &str = r#"
+        export function groupItems<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {
+          const out = new Map<string, T[]>();
+          for (const item of items) {
+            const key = keyOf(item);
+            const bucket = out.get(key);
+            if (bucket) { bucket.push(item); } else { out.set(key, [item]); }
+          }
+          return out;
+        }"#;
+    /// The SAME function with every identifier renamed — the copy-paste-then-rename case.
+    const GROUP_B: &str = r#"
+        export function bucketRows<R>(rows: R[], labelFor: (row: R) => string): Map<string, R[]> {
+          const acc = new Map<string, R[]>();
+          for (const row of rows) {
+            const label = labelFor(row);
+            const slot = acc.get(label);
+            if (slot) { slot.push(row); } else { acc.set(label, [row]); }
+          }
+          return acc;
+        }"#;
+
+    /// THE WHOLE POINT. Rename every identifier and the shape is unchanged.
+    #[test]
+    fn a_renamed_copy_has_the_same_shape() {
+        let a = shape_fingerprint(GROUP_A, "typescript").expect("long enough to be evidence");
+        let b = shape_fingerprint(GROUP_B, "typescript").expect("long enough to be evidence");
+        assert_eq!(a, b, "identical logic under renaming must fingerprint the same");
+    }
+
+    /// …and the CONVERSE, or the signal would be worthless: different control flow is a different
+    /// shape. A `while` is not a `for`, and an `if` without an `else` is not one with.
+    #[test]
+    fn different_control_flow_is_a_different_shape() {
+        let with_else = shape_fingerprint(GROUP_A, "typescript").unwrap();
+        let no_else = shape_fingerprint(
+            &GROUP_A.replace("if (bucket) { bucket.push(item); } else { out.set(key, [item]); }",
+                             "if (bucket) { bucket.push(item); }\n            out.set(key, [item]);"),
+            "typescript",
+        )
+        .unwrap();
+        assert_ne!(with_else, no_else, "dropping the else branch must change the shape");
+    }
+
+    /// CONSISTENT renaming, not blanket erasure. `a + b` and `x + y` are the same shape; `a + a` is
+    /// NOT — it reuses one binding where the others use two, and collapsing that would call two
+    /// genuinely different functions duplicates.
+    #[test]
+    fn renaming_is_consistent_so_reusing_one_binding_is_a_different_shape() {
+        let body = |expr: &str| format!(
+            r#"export function f(alpha: number, beta: number): number {{
+                 const first = alpha * 2;
+                 const second = beta * 3;
+                 const third = first + second;
+                 return {expr} + third;
+               }}"#);
+        let two = shape_fingerprint(&body("alpha + beta"), "typescript").unwrap();
+        let renamed = shape_fingerprint(
+            &body("alpha + beta").replace("alpha", "aa").replace("beta", "bb"), "typescript").unwrap();
+        let one = shape_fingerprint(&body("alpha + alpha"), "typescript").unwrap();
+        assert_eq!(two, renamed, "a consistent rename is the same shape");
+        assert_ne!(two, one, "`a + b` and `a + a` are different programs");
+    }
+
+    /// A LITERAL is a value, not a name: two copies differing only in a constant are still the same
+    /// shape, because a constant is a parameter someone chose not to extract.
+    #[test]
+    fn a_differing_literal_does_not_change_the_shape() {
+        let body = |n: &str| format!(
+            r#"export function clampAll(xs: number[]): number[] {{
+                 const out: number[] = [];
+                 for (const x of xs) {{ out.push(x > {n} ? {n} : x); }}
+                 return out;
+               }}"#);
+        assert_eq!(
+            shape_fingerprint(&body("10"), "typescript").unwrap(),
+            shape_fingerprint(&body("100"), "typescript").unwrap(),
+        );
+    }
+
+    /// THE TRIVIALITY FLOOR, and it is not optional. Without it the largest "duplicate group" in any
+    /// Rust crate is its boilerplate — every `fn new()` shares a node-kind sequence with every other.
+    #[test]
+    fn a_trivial_body_is_not_evidence() {
+        assert_eq!(shape_fingerprint("pub fn new() -> Self { Self::default() }", "rust"), None);
+        assert_eq!(shape_fingerprint("export const x = 1;", "typescript"), None);
+        // …and a real body IS.
+        assert!(shape_fingerprint(GROUP_A, "typescript").is_some());
+    }
+
+    /// Rust gets the same treatment, through a different grammar — `field_identifier` where TypeScript
+    /// says `property_identifier`, and neither language emits the other's kind.
+    #[test]
+    fn a_renamed_rust_copy_has_the_same_shape_too() {
+        let a = r#"pub fn tally(rows: &[u32], floor: u32) -> Vec<u32> {
+                     let mut out = Vec::new();
+                     for row in rows {
+                         if *row > floor { out.push(*row); } else { out.push(floor); }
+                     }
+                     out
+                   }"#;
+        let b = r#"pub fn collect_scores(items: &[u32], base: u32) -> Vec<u32> {
+                     let mut acc = Vec::new();
+                     for item in items {
+                         if *item > base { acc.push(*item); } else { acc.push(base); }
+                     }
+                     acc
+                   }"#;
+        assert_eq!(
+            shape_fingerprint(a, "rust").expect("long enough"),
+            shape_fingerprint(b, "rust").expect("long enough"),
+        );
+    }
+
+    /// An unknown tech returns None rather than guessing a grammar — a body parsed with the wrong
+    /// grammar yields a plausible fingerprint that means nothing, which is worse than no answer.
+    #[test]
+    fn an_unknown_tech_has_no_shape() {
+        assert_eq!(shape_fingerprint(GROUP_A, "python"), None);
     }
 
     /// A MODULE has no single contract, and empty is the honest answer rather than a gap: a file holds

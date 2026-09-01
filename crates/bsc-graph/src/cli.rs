@@ -611,7 +611,26 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
         // record twice; either half alone is a naming convention or a function-granularity harvest.
         if !id.is_empty() && !name.is_empty() && !src.is_empty() {
             let key = format!("{name}\u{0}{}", same_module_path(&src));
-            buckets.entry(("name-and-src", key)).or_default().insert(id);
+            buckets.entry(("name-and-src", key)).or_default().insert(id.clone());
+        }
+        // ── signal 3: the same SHAPE — a copy whose identifiers were renamed ──
+        //
+        // The one thing signal 1 structurally cannot find. Its shingles are taken over TOKENS, and the
+        // tokens include the identifiers, so a renamed copy has a DISJOINT set and no threshold
+        // recovers it. MEASURED: `groupItems(items, keyOf)` and `bucketRows(rows, labelFor)` — same
+        // logic, every identifier renamed — scored zero overlap and were not grouped.
+        //
+        // An EXACT key, not a threshold: equal fingerprints ARE the same code under renaming, so this
+        // buckets directly like `name-and-src` rather than going through the pair/cluster machinery
+        // that signal 1 needs. Grouping is free; it is the pairwise scoring that is not.
+        let tech = text(im, "tech");
+        if !id.is_empty() {
+            if let Some(shape) = crate::extract::shape_fingerprint(&text(im, "code"), &tech) {
+                // Keyed WITH the tech: cross-kit comparison is out of scope
+                // (`epic-a-graph-finds-its-own-duplicates`), and two languages can collide on a
+                // node-kind sequence — `identifier` and `block` mean different things in each grammar.
+                buckets.entry(("same-shape", format!("{tech}\u{0}{shape}"))).or_default().insert(id);
+            }
         }
     }
 
@@ -672,6 +691,11 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
                 let (name, src) = key.split_once('\u{0}').unwrap_or((key.as_str(), ""));
                 format!("the same `name` (`{name}`) in the same module (`{src}`)")
             }
+            // NAMED SEPARATELY from the shingle signal, because they mean different things to a
+            // reader deciding what to do. "near-identical body" says the two are ~the same text;
+            // "the same shape" says they are the same CODE with different names, which is a stronger
+            // claim and points at a straight rename-and-fold rather than a careful diff.
+            "same-shape" => "the same SHAPE — identical code under identifier renaming".to_string(),
             // The body itself is never echoed — that it is the same body IS the finding.
             _ => format!("a near-identical body (≥{}% shingle overlap)", (NEAR_DUPLICATE * 100.0) as u32),
         };
@@ -3571,7 +3595,7 @@ fn help(prog: &str) -> String {
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
-  \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
+  \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, on THREE signals — a near-identical BODY (tokenized k-gram shingles, so formatting and wrappers do not defeat it), the same SHAPE (identical code under identifier renaming, which the shingles structurally cannot find because they contain the identifiers), and a shared NAME together with a shared src MODULE (either alone is a naming convention, not a duplicate). N duplicates report as ONE row naming every member and every signal that grouped them, confined to one tech, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
@@ -6095,6 +6119,21 @@ mod dedup_tests {
         )
     }
 
+    /// A body with a DIFFERENT SHAPE from [`body`] — a loop and a branch where that one is a straight
+    /// expression.
+    ///
+    /// Needed once the detector gained a structural signal (slice 2). Every fixture in this suite was
+    /// `body()` with an identifier or a literal swapped, which is fine for a token-shingle detector and
+    /// is BY CONSTRUCTION a structural clone — so "a shared name alone is not a duplicate" was being
+    /// asserted with two records that really are the same code under renaming. The intent of those
+    /// tests is that a NAMING CONVENTION must not group; expressing it needs bodies that genuinely
+    /// differ.
+    fn other_body(unit: &str) -> String {
+        format!(
+            "export function summarize(rows, opts) {{\n                 const out = [];\n                 for (const row of rows) {{\n                     if (!row.ok) {{ continue; }}\n                     out.push(row.n);\n                 }}\n                 while (out.length > opts.cap) {{ out.pop(); }}\n                 return {{ rows: out, unit: \"{unit}\" }};\n}}"
+        )
+    }
+
     /// THE PAIR THE REQUEST WAS FILED FOR. `llm-energy.ts` and `algorithms-llm-energy.ts` differ by
     /// formatting and a wrapper — their raw `code` is NOT equal, their names differ, and one has no
     /// `src` at all. A byte comparison, a name match and a src match ALL miss it; the shingled body
@@ -6116,15 +6155,64 @@ mod dedup_tests {
         assert!(found[0]["signals"][0].as_str().unwrap().contains("body"), "names the signal");
     }
 
+    /// THE SIGNAL THE SHINGLES CANNOT HAVE (slice 2 of epic-a-graph-finds-its-own-duplicates).
+    ///
+    /// Signal 1 shingles TOKENS, and the tokens include the identifiers — so a copy whose identifiers
+    /// were all renamed has a DISJOINT shingle set and no threshold recovers it. These two records
+    /// share no name, no src, and no shingle; only their SHAPE is the same, which is precisely what a
+    /// copy-paste-then-rename looks like.
+    ///
+    /// MEASURED before the signal existed: this exact pair was curated into a scratch store and
+    /// `doctor --dedup` returned only the known `llm-energy` group.
+    #[test]
+    fn a_renamed_copy_groups_on_shape_when_nothing_else_matches() {
+        let original = "export function groupItems(items, keyOf) {\n                            const out = new Map();\n                            for (const item of items) {\n                                const key = keyOf(item);\n                                const bucket = out.get(key);\n                                if (bucket) { bucket.push(item); } else { out.set(key, [item]); }\n                            }\n                            return out;\n}";
+        // Every identifier renamed; not one token in common beyond the language's own keywords.
+        let renamed = original
+            .replace("groupItems", "bucketRows").replace("items", "rows").replace("keyOf", "labelFor")
+            .replace("item", "row").replace("out", "acc").replace("key", "label").replace("bucket", "slot");
+        let g = serde_json::json!({ "implementations": [
+            im("group-items.ts", "groupItems", serde_json::json!({ "code": original, "src": "src/a/group.ts", "tech": "typescript" })),
+            im("bucket-rows.ts", "bucketRows", serde_json::json!({ "code": renamed, "src": "src/b/bucket.ts", "tech": "typescript" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "the renamed copy must be found: {found:#?}");
+        assert_eq!(ids_of(&found[0]), vec!["bucket-rows.ts", "group-items.ts"]);
+        let signals = found[0]["signals"].as_array().unwrap();
+        assert_eq!(signals.len(), 1, "ONLY the shape signal — nothing else matches: {signals:?}");
+        assert!(signals[0].as_str().unwrap().contains("SHAPE"), "named as its own signal: {signals:?}");
+    }
+
+    /// A SHAPE MATCH IS CONFINED TO ONE TECH, per the epic: cross-kit comparison is out of scope, and
+    /// two grammars can collide on a node-kind sequence because `identifier` and `block` mean
+    /// different things in each. Same logic, two languages, no group.
+    #[test]
+    fn a_shape_never_groups_across_technologies() {
+        let ts = "export function tally(rows, floor) {\n                      const out = [];\n                      for (const row of rows) {\n                          if (row > floor) { out.push(row); } else { out.push(floor); }\n                      }\n                      return out;\n}";
+        let rs = "pub fn tally(rows: &[u32], floor: u32) -> Vec<u32> {\n                        let mut out = Vec::new();\n                        for row in rows {\n                              if *row > floor { out.push(*row); } else { out.push(floor); }\n                        }\n    out\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("tally.ts", "tally", serde_json::json!({ "code": ts, "src": "src/a/tally.ts", "tech": "typescript" })),
+            im("tally.rs", "tally", serde_json::json!({ "code": rs, "src": "crates/x/src/tally.rs", "tech": "rust" })),
+        ]});
+        let shapes = dedup_findings(&g);
+        assert!(
+            shapes.iter().all(|f| !f["signals"].as_array().unwrap().iter().any(|s| s.as_str().unwrap_or("").contains("SHAPE"))),
+            "no cross-tech shape group: {shapes:#?}",
+        );
+    }
+
     /// THE NOISE THE FIRST CUT PRODUCED, now pinned as a test. Implemented as the request literally
     /// asked — a shared name OR a shared src — these fixtures were 110 groups over 356 impls on the
     /// real store. Neither is a duplicate, and neither may report.
     #[test]
     fn a_shared_name_or_a_shared_src_alone_is_not_a_duplicate() {
         // Every feature has a `store`, an `index`, a `graphPlatform`. That is a convention.
+        // The bodies must differ STRUCTURALLY, not just by an identifier: two records built from the
+        // same canned body are a structural clone and the shape signal reports them correctly, which
+        // would make this test assert the opposite of what it means.
         let g = serde_json::json!({ "implementations": [
             im("github-store.ts", "store", serde_json::json!({ "code": body("a"), "src": "src/features/github/store.ts" })),
-            im("skills-store.ts", "store", serde_json::json!({ "code": body("b").replace("rate", "ratio"), "src": "src/features/skills/store.ts" })),
+            im("skills-store.ts", "store", serde_json::json!({ "code": other_body("b"), "src": "src/features/skills/store.ts" })),
         ]});
         assert!(dedup_findings(&g).is_empty(), "a shared name alone: {:#?}", dedup_findings(&g));
 
@@ -6133,7 +6221,8 @@ mod dedup_tests {
         let g = serde_json::json!({ "implementations": [
             im("fmt-bytes.ts", "fmtBytes", serde_json::json!({ "code": body("B"), "src": "src/shared/lib/core/format.ts" })),
             im("fmt-clock.ts", "fmtClock", serde_json::json!({
-                "code": body("s").replace("joules", "seconds").replace("rate", "unitRate"),
+                // Structurally different, for the same reason as the pair above.
+                "code": other_body("s"),
                 "src": "shared/lib/core/format.ts",
             })),
         ]});
@@ -6191,7 +6280,12 @@ mod dedup_tests {
         assert!(found.iter().all(|f| ids_of(f).len() == 2), "each names its own pair: {found:#?}");
     }
 
-    /// Two signals over the SAME members is still one fact, so it is one row carrying both.
+    /// Several signals over the SAME members is still one fact, so it is one row carrying all of them.
+    ///
+    /// THREE now, not two: two records with byte-identical `code` necessarily also have the same
+    /// SHAPE, so slice 2's signal fires here too and correctly. Asserted by NAMING the signals rather
+    /// than counting them — a count is the assertion that goes stale every time the detector learns
+    /// something, which is exactly what happened to it.
     #[test]
     fn signals_over_the_same_members_merge_into_one_row() {
         let g = serde_json::json!({ "implementations": [
@@ -6200,7 +6294,12 @@ mod dedup_tests {
         ]});
         let found = dedup_findings(&g);
         assert_eq!(found.len(), 1, "one row, not one per signal: {found:#?}");
-        assert_eq!(found[0]["signals"].as_array().unwrap().len(), 2, "carrying BOTH signals");
+        let signals = found[0]["signals"].as_array().unwrap();
+        let joined = signals.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" | ");
+        for expected in ["the same `name`", "near-identical body", "the same SHAPE"] {
+            assert!(joined.contains(expected), "missing `{expected}` in: {joined}");
+        }
+        assert_eq!(signals.len(), 3, "every signal that grouped them, and no duplicates: {joined}");
     }
 
     /// A retired id is already folded away (#77) — proposing a merge for it sends the reader to redo
