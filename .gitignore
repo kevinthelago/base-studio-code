@@ -70,3 +70,12 @@ wt-*/
 .idea
 .vscode/
 .vscode
+
+# `bsc shot` captures. They belong in ~/.base-studio-code/shots/ (or $BSC_SHOT_DIR, or a studio
+# session's confined <workspace>/shots/) and are never repo content — regenerable pixels, not source.
+# Ten of them WERE committed once (src-tauri/flat.png + src-tauri/shots/, merge 6b52a96d): the app
+# resolved a relative `out` against its own cwd, which is src-tauri/ under `tauri dev`. That hole is
+# closed in shot::capture now, but the anchor was only ever the app's cwd by accident, so ignore the
+# shape rather than the one path it happened to take.
+shots/
+/flat.png

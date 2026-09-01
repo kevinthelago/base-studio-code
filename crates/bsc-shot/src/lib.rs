@@ -92,9 +92,194 @@ pub fn is_png(bytes: &[u8]) -> bool {
     bytes.len() >= 8 && bytes[..8] == PNG_MAGIC
 }
 
+
+/// Resolve a capture's PNG destination against `shots` — the ONE rule both processes must apply.
+///
+/// No `out` ⇒ `<shots>/<id>.png`; a RELATIVE `out` ⇒ inside `shots`; an ABSOLUTE `out` ⇒ as-is.
+///
+/// It lives here, shared, because the two sides resolving this differently is not hypothetical: the app
+/// used to hand a relative `out` straight to `fs::write`, which anchored it at the APP's cwd — and under
+/// `tauri dev` that cwd is `src-tauri/`. Ten captures were committed to the repo that way (merge
+/// 6b52a96d) before anyone noticed, because a capture that lands somewhere unexpected still reports
+/// success. The CLI fixed the caller's half in #3662 and still carries its own private copy of this
+/// rule (a record, `bsc-shot--cli.rs`, returning a String) — identical today, and the thing to collapse
+/// into a call to this function the next time that record is opened. Until then `ShotResult::shots_dir`
+/// (#4163) is what makes a divergence between the two visible rather than silent.
+pub fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> std::path::PathBuf {
+    match out {
+        Some(o) if std::path::Path::new(o).is_absolute() => std::path::PathBuf::from(o),
+        Some(o) => shots.join(o),
+        None => default_png_path(shots, id),
+    }
+}
+
+/// How long a capture survives in the shots dir before [`sweep_captures`] removes it.
+///
+/// Seven days, not the `gc` sweeps' three: a capture is small (~3 KB) but a `baseline --kit` run makes
+/// one per component, and a burst from `--frames` is a set someone is part-way through reading. The cost
+/// of keeping one too long is nothing; the cost of eating the frame someone was about to diff is a
+/// re-run of an unattended overnight loop.
+pub const DEFAULT_MAX_AGE_SECS: u64 = 7 * 24 * 60 * 60;
+
+/// The retention window, honouring `$BSC_SHOT_MAX_AGE_SECS`. `0` (or an unparseable value) disables the
+/// sweep — an operator who sets it to nonsense gets their files KEPT, never deleted on a typo.
+pub fn max_age_secs() -> Option<std::time::Duration> {
+    let secs = match std::env::var("BSC_SHOT_MAX_AGE_SECS") {
+        Ok(v) if !v.trim().is_empty() => v.trim().parse::<u64>().ok()?,
+        _ => DEFAULT_MAX_AGE_SECS,
+    };
+    (secs > 0).then(|| std::time::Duration::from_secs(secs))
+}
+
+/// Remove captures in `shots` last modified longer than `max_age` before `now`. Returns how many went.
+///
+/// # What it will not touch, and why that is structural rather than a list
+///
+/// It reads ONE directory level and skips everything that is not a regular `.png` file. So
+/// `<shots>/baselines/` — the named reference renders `bsc shot diff` compares against — survives
+/// because it is a DIRECTORY, not because it is on a deny-list that a later subdir would have to
+/// remember to join. A baseline is the one thing under this dir that is not regenerable on demand: eat
+/// it and every subsequent diff reports a plausible number about nothing, which is the silent-wrong
+/// answer this repo keeps paying for. The same shape protects any future subdir for free.
+///
+/// # Fail-safe
+///
+/// A missing dir, an unreadable entry, a file that vanishes mid-sweep or one held open by another
+/// process is SKIPPED, never propagated: this runs beside a capture, and a janitor that could fail a
+/// capture would be worse than the disk it saves.
+pub fn sweep_captures(shots: &std::path::Path, now: std::time::SystemTime, max_age: std::time::Duration) -> usize {
+    let Ok(entries) = std::fs::read_dir(shots) else { return 0 };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // `file_type` here does not follow symlinks, so a link into a tree of real work is skipped too.
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()).map(|e| !e.eq_ignore_ascii_case("png")).unwrap_or(true) {
+            continue;
+        }
+        let aged = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|m| now.duration_since(m).ok())
+            .map(|age| age > max_age)
+            .unwrap_or(false);
+        if aged && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serializes the tests that mutate process-global env (see the retention test).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The rule the app used to get wrong. A RELATIVE `out` must land in the shots dir; before this was
+    /// shared, the app anchored it at its own cwd (`src-tauri/` under `tauri dev`) and ten captures were
+    /// committed to the repo as a result.
+    #[test]
+    fn a_relative_out_lands_in_the_shots_dir_and_an_absolute_one_is_honored() {
+        let shots = std::path::Path::new("/ws/shots");
+
+        assert_eq!(resolve_out(None, shots, "abc"), shots.join("abc.png"), "no --out ⇒ <shots>/<id>.png");
+        assert_eq!(resolve_out(Some("flat.png"), shots, "abc"), shots.join("flat.png"), "relative ⇒ inside shots");
+        assert_eq!(
+            resolve_out(Some("shots/kv-retest.png"), shots, "abc"),
+            shots.join("shots/kv-retest.png"),
+            "a relative SUBPATH is still anchored at shots — this is the exact pair of names that leaked",
+        );
+
+        let abs = if cfg!(windows) { "C:\\elsewhere\\x.png" } else { "/elsewhere/x.png" };
+        assert_eq!(resolve_out(Some(abs), shots, "abc"), std::path::PathBuf::from(abs), "absolute ⇒ as-is");
+    }
+
+    #[test]
+    fn the_sweep_takes_aged_captures_and_leaves_fresh_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let max_age = std::time::Duration::from_secs(100);
+
+        let write_at = |name: &str, secs_ago: u64| {
+            let p = dir.path().join(name);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, PNG_MAGIC).unwrap();
+            let t = now - std::time::Duration::from_secs(secs_ago);
+            filetime::set_file_mtime(&p, filetime::FileTime::from_system_time(t)).unwrap();
+            p
+        };
+
+        let aged = write_at("old.png", 500);
+        let fresh = write_at("new.png", 10);
+        // Exactly at the boundary is KEPT — the comparison is strictly greater-than, so a file is never
+        // removed on the same tick it becomes eligible.
+        let boundary = write_at("boundary.png", 100);
+
+        assert_eq!(sweep_captures(dir.path(), now, max_age), 1, "only the aged capture goes");
+        assert!(!aged.exists(), "the aged capture was removed");
+        assert!(fresh.exists() && boundary.exists(), "a fresh capture and the boundary case survive");
+    }
+
+    /// The guard that matters most. `<shots>/baselines/` is the named reference set `bsc shot diff`
+    /// compares against — the one thing here that is not regenerable on demand. It survives because the
+    /// sweep reads a single directory level, so no future subdir has to remember to join a deny-list.
+    #[test]
+    fn the_sweep_never_descends_into_baselines_however_aged() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let ancient = now - std::time::Duration::from_secs(999_999);
+
+        let baseline = dir.path().join("baselines").join("listitemcard.png");
+        std::fs::create_dir_all(baseline.parent().unwrap()).unwrap();
+        std::fs::write(&baseline, PNG_MAGIC).unwrap();
+        filetime::set_file_mtime(&baseline, filetime::FileTime::from_system_time(ancient)).unwrap();
+
+        // …and a non-PNG at the top level is left alone too: the sweep owns captures, not the directory.
+        let notes = dir.path().join("notes.txt");
+        std::fs::write(&notes, b"keep me").unwrap();
+        filetime::set_file_mtime(&notes, filetime::FileTime::from_system_time(ancient)).unwrap();
+
+        assert_eq!(sweep_captures(dir.path(), now, std::time::Duration::from_secs(1)), 0);
+        assert!(baseline.exists(), "a baseline is never swept, at any age");
+        assert!(notes.exists(), "a non-PNG is never swept");
+    }
+
+    #[test]
+    fn the_sweep_is_fail_safe_on_a_missing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("not-here");
+        assert_eq!(sweep_captures(&gone, std::time::SystemTime::now(), std::time::Duration::from_secs(1)), 0);
+    }
+
+    #[test]
+    fn a_zero_or_junk_retention_disables_the_sweep_rather_than_deleting_everything() {
+        // Serialized against the other env-touching tests in this crate; nextest also gives each test
+        // its own process, but `cargo test` threads them inside one binary.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let restore = std::env::var("BSC_SHOT_MAX_AGE_SECS").ok();
+
+        std::env::set_var("BSC_SHOT_MAX_AGE_SECS", "0");
+        assert_eq!(max_age_secs(), None, "0 disables the sweep");
+
+        std::env::set_var("BSC_SHOT_MAX_AGE_SECS", "not-a-number");
+        assert_eq!(max_age_secs(), None, "a typo KEEPS files — it must never fall back to deleting");
+
+        std::env::set_var("BSC_SHOT_MAX_AGE_SECS", "3600");
+        assert_eq!(max_age_secs(), Some(std::time::Duration::from_secs(3600)));
+
+        std::env::remove_var("BSC_SHOT_MAX_AGE_SECS");
+        assert_eq!(max_age_secs(), Some(std::time::Duration::from_secs(DEFAULT_MAX_AGE_SECS)));
+
+        match restore {
+            Some(v) => std::env::set_var("BSC_SHOT_MAX_AGE_SECS", v),
+            None => std::env::remove_var("BSC_SHOT_MAX_AGE_SECS"),
+        }
+    }
 
     #[test]
     fn the_request_round_trips_through_the_shared_envelope() {
