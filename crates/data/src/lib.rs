@@ -36,6 +36,9 @@ pub mod descriptor;
 // Connector dev-loop transport (#1963): authed HTTP + OS-keychain + sample inference for the
 // `bsc data connector probe/try/map` verbs. Pure inference is unit-tested; the network stays behind
 // `build_fetch`. Compiled unconditionally (the verbs that drive it live in the gated `cli`).
+/// What a REGISTERED connector last verified — the maintenance half of `try`
+/// (`a-registered-connector-records-what-it-last-verified`).
+pub mod checks;
 pub mod transport;
 /// Live-socket integration tests for the connector chain — the only place this crate opens a
 /// socket (`the-connector-chain-has-never-been-run-against-a-real-socket`).

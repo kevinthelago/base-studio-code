@@ -144,8 +144,24 @@ DEV-LOOP (author + test a REST connector on the fly, secret-free; read-only — 
   bsc data connector map             # read a `try` result (or manifest) JSON on stdin → a starter
                                      #   canonical DataModel JSON (one entity per resource)
 
+MAINTENANCE (does a REGISTERED connector still work? — `try` is for a draft, `check` is for a stored one):
+  bsc data connector check <id> [--project <k> --source <u>]
+                                     # sample-read the REGISTERED preset and RECORD the verdict:
+                                     #   { live, authenticated, resources:[{name,sampledCount,fields}] }
+                                     #   plus a fingerprint of the manifest it verified
+  bsc data connector status [<id>]   # read the verdicts back; never-checked reads as NO SIGNAL, and a
+                                     #   verdict whose manifest has changed since reads as STALE
+
+A VERDICT IS INVALIDATED BY A MANIFEST EDIT. Each record fingerprints the manifest it was about, so an
+edit makes the old verdict read `stale` rather than silently carrying a green light onto a shape nobody
+ran. `sampledCount` is the CAPPED sample size (≤20 rows), never a row total.
+
+A failure says WHICH failure: `authenticated: false` with `live: false` is \"this machine could not
+resolve a credential\", which is a different fact from \"the vendor is down\".
+
 Runtime REST connector presets live in ~/.base-studio-code/connectors.json ($BSC_CONNECTORS
-overrides) — the app-wide store, NOT the per-project DuckDB, so `connector` needs no --db.",
+overrides) — the app-wide store, NOT the per-project DuckDB, so `connector` needs no --db. The verdicts
+live beside them in connector-checks.json ($BSC_CONNECTOR_CHECKS overrides).",
     },
 ];
 
@@ -563,11 +579,133 @@ fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
         "probe" => cmd_connector_probe(args),
         "try" => cmd_connector_try(args),
         "map" => cmd_connector_map(args),
+        // ── maintenance (#a-registered-connector-records-what-it-last-verified) ──
+        "check" => cmd_connector_check(args),
+        "status" => cmd_connector_status(args),
         other => Err(format!(
             "unknown connector command '{other}'\n\n{}",
             bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "connector")
         )),
     }
+}
+
+/// `connector check <id>` — sample-read a REGISTERED preset and RECORD what it found.
+///
+/// The maintenance counterpart to `try`. `try` takes a DRAFT on stdin and persists nothing, which is
+/// the authoring contract and stays unchanged; this takes a registered id and writes a verdict, so an
+/// integration finally has a durable answer to "does it still work".
+///
+/// The read itself is byte-identical to `try`'s — same caps, same `run_try` — so the two cannot
+/// disagree about what "working" means.
+fn cmd_connector_check(args: &Args) -> Result<(), String> {
+    use crate::descriptor::RestPreset;
+    let id = args
+        .positional
+        .get(2)
+        .ok_or("usage: bsc data connector check <id> [--project <k> --source <u>]")?;
+    let store = crate::runtime_store_path();
+    let preset = crate::find_runtime_preset(&store, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no registered connector '{id}' — `bsc data connector list` shows them"))?;
+    let base = preset
+        .base_url
+        .clone()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("connector '{id}' has no base_url to check"))?;
+
+    // A handle is OPTIONAL: a connector against an endpoint needing no credential is checkable with
+    // no keychain at all, which is also what makes this testable on a machine whose keychain is broken.
+    let field = crate::transport::runtime_secret_field(&preset.auth);
+    let secret = match (&args.project, &args.source) {
+        (Some(p), Some(s)) => crate::transport::resolve_source_secret(p, s, field),
+        _ => None,
+    };
+    let authenticated = secret.is_some();
+
+    let fetch = crate::transport::build_fetch(&base, &preset.auth, secret);
+    let conn = preset.connector(preset.id.clone(), fetch);
+    let result = crate::transport::run_try(&conn, 12, 20);
+
+    let resources = result["resources"]
+        .as_array()
+        .map(|rs| {
+            rs.iter()
+                .map(|r| crate::checks::CheckedResource {
+                    name: r["name"].as_str().unwrap_or_default().to_string(),
+                    // `run_try` calls it `count`; it is the CAPPED sample size and is stored under a
+                    // name that cannot be read as a total. See `CheckedResource::sampled_count`.
+                    sampled_count: r["count"].as_u64().unwrap_or(0) as usize,
+                    fields: r["fields"]
+                        .as_array()
+                        .map(|fs| {
+                            fs.iter().filter_map(|f| f["name"].as_str().map(str::to_string)).collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let check = crate::checks::ConnectorCheck {
+        id: preset.id.clone(),
+        at: bsc_util::now_secs(),
+        live: result["live"].as_bool().unwrap_or(false),
+        authenticated,
+        resources,
+        error: result["error"].as_str().map(str::to_string),
+        manifest_fingerprint: crate::checks::manifest_fingerprint(&preset),
+    };
+    crate::checks::record_check(&crate::checks::checks_store_path(), check.clone())
+        .map_err(|e| e.to_string())?;
+
+    let value = serde_json::to_value(&check).map_err(|e| e.to_string())?;
+    bsc_sqlite_util::print_json(&value, args.pretty);
+    Ok(())
+}
+
+/// `connector status [<id>]` — the recorded verdicts, classified against the manifests registered now.
+///
+/// NEVER-CHECKED IS NOT HEALTHY. A connector nobody has run reads as `never-checked`, because both
+/// green and red would be claims nobody earned — the same reason a surface node says `off` rather than
+/// asserting a health nobody measured.
+fn cmd_connector_status(args: &Args) -> Result<(), String> {
+    let store = crate::runtime_store_path();
+    let presets = crate::load_runtime_presets(&store).map_err(|e| e.to_string())?;
+    let checks = crate::checks::load_checks(&crate::checks::checks_store_path())
+        .map_err(|e| e.to_string())?;
+    let only = args.positional.get(2).map(String::as_str);
+
+    let rows: Vec<serde_json::Value> = presets
+        .iter()
+        .filter(|p| only.is_none_or(|id| p.id == id))
+        .map(|p| {
+            let recorded = checks.iter().find(|c| c.id == p.id);
+            let state = crate::checks::check_state(recorded, p);
+            serde_json::json!({
+                "id": p.id,
+                "state": state,
+                "at": recorded.map(|c| c.at),
+                "authenticated": recorded.map(|c| c.authenticated),
+                "resources": recorded.map(|c| c.resources.len()).unwrap_or(0),
+                "error": recorded.and_then(|c| c.error.clone()),
+            })
+        })
+        .collect();
+
+    if args.json || args.pretty {
+        bsc_sqlite_util::print_json(&serde_json::Value::Array(rows), args.pretty);
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("(no registered connectors)");
+        return Ok(());
+    }
+    for r in &rows {
+        let state = r["state"].as_str().unwrap_or("?");
+        let extra = r["error"].as_str().map(|e| format!("  {e}")).unwrap_or_default();
+        println!("{}\t{}\t{} resource(s){}", r["id"].as_str().unwrap_or(""), state, r["resources"], extra);
+    }
+    Ok(())
 }
 
 /// `connector validate` — read a [`RuntimePreset`] JSON on stdin, run its structural + secret-free
