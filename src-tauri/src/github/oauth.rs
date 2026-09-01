@@ -159,3 +159,169 @@ mod tests {
     }
 }
 
+
+// ── What one poll MEANS (#594) — ported from `src/shared/lib/github/githubDeviceFlow.ts` ─────────
+//
+// `github_device_poll` above performs the exchange and returns the raw `{ access_token, error }`
+// pair. It did not say what that answer means — whether to keep polling, back off, or stop and why —
+// and that decision lived in the renderer, which is the inversion
+// `epic-frontend-logic-over-backend-resources-belongs-in-rust` closes. Proved against
+// `src/shared/lib/github/githubDeviceFlow.fixtures.json`, generated from the TypeScript.
+//
+// The DRIVER (`runDeviceFlow`) is deliberately not ported: it exists to outlive a component's
+// lifecycle, taking injected cancellation and callbacks, and moving it is an orchestration decision
+// rather than a derivation.
+
+// UNWIRED BY DESIGN, and the `allow` names the item that wires it. The ref is a REAL open item
+// (checked with `bsc plan get`) — a dangling `wired by` is invisible to every gate.
+/// GitHub's `slow_down` asks the client to add at least 5s to its poll interval.
+#[allow(dead_code)] // wired by `the-device-flow-ui-reads-the-rust-decision`
+pub const SLOW_DOWN_BUMP_SEC: i64 = 5;
+
+/// What the polling loop should do next.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // wired by `the-device-flow-ui-reads-the-rust-decision`
+pub enum DeviceFlowAction {
+    /// Authorized — this is the token.
+    Success { token: String },
+    /// Not yet; poll again after `interval_sec`.
+    Pending { interval_sec: i64 },
+    /// Stop, and tell the user this.
+    Error { message: String },
+}
+
+/// Interpret one poll result into the next action.
+///
+/// THREE RULES that a corpus of realistic results would not separate:
+///
+///   * the token is tested for TRUTHINESS, so an EMPTY `access_token` is not a success — it falls
+///     through to the error branch, where an accompanying `authorization_pending` still means pending;
+///   * an ABSENT error (`None` or empty) is its own case with its own message, distinct from an
+///     UNKNOWN error string, which is echoed. Collapsing the two changes what the user is told when
+///     GitHub returns nothing at all;
+///   * `slow_down` is the ONLY branch that changes the interval, and it adds
+///     [`SLOW_DOWN_BUMP_SEC`] rather than replacing it.
+///
+/// A token present ALONGSIDE an error wins: the check is ordered, not exclusive.
+#[allow(dead_code)] // wired by `the-device-flow-ui-reads-the-rust-decision`
+pub fn map_device_poll(access_token: Option<&str>, error: Option<&str>, interval_sec: i64) -> DeviceFlowAction {
+    if let Some(token) = access_token.filter(|t| !t.is_empty()) {
+        return DeviceFlowAction::Success { token: token.to_string() };
+    }
+    match error.unwrap_or("") {
+        "authorization_pending" => DeviceFlowAction::Pending { interval_sec },
+        "slow_down" => DeviceFlowAction::Pending { interval_sec: interval_sec + SLOW_DOWN_BUMP_SEC },
+        "expired_token" => DeviceFlowAction::Error {
+            message: "The code expired before you authorized. Please try again.".to_string(),
+        },
+        "access_denied" => DeviceFlowAction::Error { message: "Authorization was cancelled on GitHub.".to_string() },
+        "" => DeviceFlowAction::Error { message: "Unexpected response from GitHub. Please try again.".to_string() },
+        other => DeviceFlowAction::Error { message: format!("GitHub: {other}") },
+    }
+}
+
+#[cfg(test)]
+mod device_flow_tests {
+    use super::*;
+    use serde_json::Value;
+
+    /// Resolved BY FILENAME under `src/`, the rule every generated contract here uses.
+    fn fixture() -> Value {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let mut found: Vec<std::path::PathBuf> = Vec::new();
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some("githubDeviceFlow.fixtures.json") {
+                    out.push(p);
+                }
+            }
+        }
+        walk(&root, &mut found);
+        assert_eq!(found.len(), 1, "expected exactly one githubDeviceFlow.fixtures.json, got {found:?}");
+        serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+    /// Reports every mismatch at once — a wrong port is wrong in a pattern.
+    #[test]
+    fn the_poll_decision_matches_the_typescript_case_for_case() {
+        let doc = fixture();
+        assert_eq!(
+            doc["slowDownBumpSec"].as_i64(),
+            Some(SLOW_DOWN_BUMP_SEC),
+            "the bump is part of the contract and moved on one side only"
+        );
+        let mut bad: Vec<String> = Vec::new();
+
+        for c in doc["cases"].as_array().expect("cases") {
+            let label = c["label"].as_str().unwrap();
+            let got = map_device_poll(
+                c["res"]["access_token"].as_str(),
+                c["res"]["error"].as_str(),
+                c["intervalSec"].as_i64().unwrap(),
+            );
+            let a = &c["action"];
+            // WHOLE ACTION — kind AND payload. A kind-only check lets a wrong message or a wrong
+            // interval through, and the message is what the user reads.
+            let want = match a["kind"].as_str().unwrap() {
+                "success" => DeviceFlowAction::Success { token: a["token"].as_str().unwrap().to_string() },
+                "pending" => DeviceFlowAction::Pending { interval_sec: a["intervalSec"].as_i64().unwrap() },
+                "error" => DeviceFlowAction::Error { message: a["message"].as_str().unwrap().to_string() },
+                k => panic!("unknown action kind {k:?}"),
+            };
+            if got != want {
+                bad.push(format!("  {label:?}\n    ts   {want:?}\n    rust {got:?}"));
+            }
+        }
+
+        assert!(bad.is_empty(), "the Rust poll decision disagrees with the live TypeScript:\n{}", bad.join("\n"));
+    }
+
+    /// THE SENTINEL. An empty token is falsy, so it is not a success — and an accompanying
+    /// `authorization_pending` still means pending rather than an error.
+    #[test]
+    fn an_empty_token_is_not_a_success() {
+        assert_eq!(
+            map_device_poll(Some(""), Some("authorization_pending"), 5),
+            DeviceFlowAction::Pending { interval_sec: 5 }
+        );
+        assert!(matches!(map_device_poll(Some(""), None, 5), DeviceFlowAction::Error { .. }));
+        // …and a real token wins even alongside an error: the check is ordered, not exclusive.
+        assert_eq!(
+            map_device_poll(Some("gho_x"), Some("slow_down"), 5),
+            DeviceFlowAction::Success { token: "gho_x".into() }
+        );
+    }
+
+    /// An ABSENT error has its own message; an UNKNOWN one is echoed. Collapsing them changes what the
+    /// user is told when GitHub returns nothing at all.
+    #[test]
+    fn an_absent_error_is_not_an_unknown_error() {
+        let absent = map_device_poll(None, None, 5);
+        let empty = map_device_poll(None, Some(""), 5);
+        assert_eq!(absent, empty, "None and empty are the same case");
+        // The MESSAGE, not just its distinctness. Without this the test survives deleting the empty
+        // arm entirely: absent then falls through to the echo and becomes "GitHub: ", which is still
+        // equal to empty and still unequal to an unknown error. Measured — that mutation bit only the
+        // parity test until this line existed.
+        assert_eq!(
+            absent,
+            DeviceFlowAction::Error { message: "Unexpected response from GitHub. Please try again.".into() },
+            "an absent error has its OWN message, not an echo of nothing"
+        );
+        let unknown = map_device_poll(None, Some("weird_thing"), 5);
+        assert_ne!(absent, unknown);
+        assert_eq!(unknown, DeviceFlowAction::Error { message: "GitHub: weird_thing".into() });
+    }
+
+    /// Only `slow_down` moves the interval, and it ADDS rather than replaces.
+    #[test]
+    fn only_slow_down_changes_the_interval() {
+        assert_eq!(map_device_poll(None, Some("authorization_pending"), 12), DeviceFlowAction::Pending { interval_sec: 12 });
+        assert_eq!(map_device_poll(None, Some("slow_down"), 10), DeviceFlowAction::Pending { interval_sec: 15 });
+        assert_eq!(map_device_poll(None, Some("slow_down"), 0), DeviceFlowAction::Pending { interval_sec: 5 });
+    }
+}
