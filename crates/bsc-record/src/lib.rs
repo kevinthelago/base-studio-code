@@ -16,6 +16,12 @@
 //! (`bsc ui set --if-version <n>`) compares the CURRENT stored `rev` against `n` and refuses a stale
 //! overwrite, so a background writer can't silently clobber a record it never re-read.
 
+/// The single definition of how a FILE compares to a RECORD, shared by BOTH stores. It lives here
+/// rather than in `bsc-ui` because `bsc-ui` depends on `bsc-graph`, so the graph side could not
+/// reach it without a cycle — and a comparison re-derived per store is exactly the divergence its
+/// own header argues against.
+pub mod record_source;
+
 use serde_json::Value;
 
 /// The revision counter field.

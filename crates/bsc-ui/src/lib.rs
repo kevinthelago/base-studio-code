@@ -29,7 +29,10 @@ pub mod kit;
 /// `bsc ui tests adopt`, kept separate from [`tests_harvest`] since it is a generic byte-level editor
 /// with no test-harvesting knowledge of its own.
 pub mod claim_census;
-pub mod record_source;
+/// Moved to `bsc-record` so the GRAPH side can reach it too (`bsc-ui` depends on `bsc-graph`, so it
+/// could not live here and be shared). Re-exported under its original path: every `crate::record_source::…`
+/// call site in this crate is unchanged, which is what keeps the move reviewable as a move.
+pub use bsc_record::record_source;
 pub mod retirable;
 pub mod retire;
 pub mod shadow;

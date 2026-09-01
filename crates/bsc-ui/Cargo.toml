@@ -20,6 +20,8 @@ bsc-component = { path = "../bsc-component" }
 # The verbatim-JSON-per-id store (#2158) backing the designer-writable THEME collection (#2488):
 # `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json.
 bsc-json-store = { path = "../bsc-json-store" }
+# Named directly (not just via bsc-component) because `record_source` is re-exported from here.
+bsc-record = { path = "../bsc-record" }
 serde_json = "1"
 # Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.
 # Same pinned versions bsc-graph already locks, so this adds no new workspace dependency.
