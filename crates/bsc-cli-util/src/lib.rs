@@ -8,6 +8,8 @@
 //!   in the error is passed once (fixing the "wrong binary name in the error" footgun).
 //! - [`resolve_store_path`] — the `--flag` → `$ENV` → default precedence every store-backed CLI
 //!   repeats. The env value is trimmed and an empty/whitespace value falls through to the default.
+//! - [`args::walk`] — the argument walk itself: `-h`/`--help` to the `help` verb, the `unknown flag
+//!   '--x'` refusal, positionals in order, and the next argument handed to a flag that takes a value.
 //! - [`emit`] — the lean-text-vs-JSON output dispatch (`--pretty` ⇒ indented JSON, `--json` ⇒ compact
 //!   JSON, neither ⇒ the caller's lean/TSV rendering).
 //!
@@ -34,6 +36,11 @@ use std::process::ExitCode;
 /// app-can-discover-itself-from-claude-session-json). Lives HERE rather than in `bsc-util` because
 /// that crate is deliberately std-only, and beside `resolve_store_path` because it answers the same
 /// family of question: how does a session that nobody configured find out what it is.
+/// The argument walk every `bsc` CLI repeats — `-h` routing, the unknown-flag refusal, positionals —
+/// with each caller keeping its own flag set and its own refusal wording (`args::walk`). Seventeen
+/// hand-written copies, five of which had lost their `-h` arm.
+pub mod args;
+
 pub mod session;
 
 pub fn cli_main(prog: &str, run: impl FnOnce() -> Result<(), String>) -> ExitCode {
