@@ -167,6 +167,18 @@ pub(crate) fn ensure_session_settings(
     // The persona's OWN hooks, resolved, so the launch can compose the rest of the chain around them
     // (`the-launch-composes-its-own-hook-chain-instead-of-receiving-it`). A fact: persona resolution
     // is the renderer's, the same way the surface catalog and the studio registry are.
+    // The per-session SKILL facts the resolution cannot derive: which project this session belongs
+    // to, its explicit add/remove choices, and which skill GROUPS are toggled on. The LIBRARY is not
+    // among them — `crates/skilldb` is the store and Rust reads it directly
+    // (`the-launch-resolves-its-own-skills-instead-of-receiving-them`).
+    skill_project_id: Option<String>,
+    skill_override: Option<crate::extensions::skill_resolution::SessionSkillOverride>,
+    skill_group_ids: Option<Vec<String>>,
+    // The pane carries an EXPLICITLY SET skill list (`paneSkills`), which short-circuits the
+    // renderer's own resolution. When true the launch defers to it rather than resolving: unioning
+    // against an explicit choice would ADD skills the user did not choose, and would fire the
+    // divergence warning on every such pane — which is how a useful signal becomes noise.
+    skills_explicit: Option<bool>,
     persona_hooks: Option<Vec<HookCfg>>,
     // Whether `hooks` above is the SANDBOXED substitution rather than the ordinary chain. The
     // caller owns that swap (the sandbox cluster has its own items), so the launch must be told
@@ -331,6 +343,47 @@ pub(crate) fn ensure_session_settings(
             .into_iter()
             .map(|h| HookCfg { event: h.event, matcher: h.matcher, command: h.command })
             .collect()
+    };
+    // THE SKILLS, RESOLVED HERE. Rust owned the store (`crates/skilldb`) and the writer
+    // (`write_session_skills`) and could not answer WHICH — so the one decision in the chain it did
+    // not make was the only one that could leave a session silently under-instructed.
+    //
+    // UNION, and the two directions do NOT mean the same thing here. A skill the frontend sent that
+    // the resolution did not produce is a defect in either reading. A skill the RESOLUTION produced
+    // and the frontend omitted is the fix landing for a pane the renderer never resolved for.
+    let skills = if skills_explicit.unwrap_or(false) {
+        // An explicit per-pane set is not a derivation anyone can second-guess.
+        skills
+    } else {
+        let resolved = crate::extensions::skill_resolution::to_skill_cfgs(
+            &crate::extensions::skill_resolution::effective_session_skills(
+                &crate::extensions::skill_resolution::library(),
+                skill_project_id.as_deref().unwrap_or_default(),
+                skill_override.as_ref(),
+                &crate::extensions::skill_resolution::group_skill_ids(
+                    &skill_group_ids.unwrap_or_default(),
+                ),
+            ),
+        );
+        let recon = crate::extensions::skill_resolution::reconcile_session_skills(skills, resolved);
+        if !recon.missing_from_resolution.is_empty() {
+            log::warn!(
+                "session settings[{cwd}]: the frontend sent skills the resolution did NOT produce — \
+                 {:?}. Both sides resolve from the same library against the same session, so neither \
+                 has a legitimate extra: this is a disagreement, not a difference of scope. Kept, \
+                 because a dropped skill is a session quietly missing instructions it was configured \
+                 to have.",
+                recon.missing_from_resolution,
+            );
+        }
+        if !recon.added.is_empty() {
+            log::info!(
+                "session settings[{cwd}]: the resolution added skills the frontend omitted — {:?}. \
+                 Expected for a pane the renderer never resolved for; a DEFECT on one it did.",
+                recon.added,
+            );
+        }
+        recon.merged
     };
     write_session_settings(&SessionSettingsSpec {
         cwd: &cwd,
@@ -1049,6 +1102,12 @@ mod tests {
             None,
             None,
             None,
+            // skill_project_id · skill_override · skill_group_ids · skills_explicit — no project,
+            // no choices, no groups, resolution not short-circuited.
+            None,
+            None,
+            None,
+            None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
             None,
@@ -1071,6 +1130,56 @@ mod tests {
 
     /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
     ///
+    /// THE CALL SITE, and the fix landing. `skill_resolution`'s own tests stay green if
+    /// `ensure_session_settings` never calls it — measured, by short-circuiting the block: they
+    /// reconcile directly.
+    ///
+    /// This seeds a REAL `skills.db` under the test home, sends NO skills from the frontend — the
+    /// shape of a pane the renderer never resolved for — and asserts the launch wrote one anyway.
+    /// That is the whole point of the flip: the backend owned the store and the writer and could not
+    /// answer WHICH, so a session could be silently under-instructed and look exactly like one that
+    /// legitimately had none attached.
+    #[test]
+    fn the_launch_resolves_a_skill_the_frontend_never_sent() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("skill-resolution-launch");
+        let cwd = home.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        // A global, enabled skill in the real store `library()` reads.
+        let store = skilldb::Store::open(&crate::skills_db()).expect("open the seeded store");
+        store
+            .upsert(&skilldb::Skill {
+                id: "sk-review".into(),
+                name: "Code Review".into(),
+                desc: "a review checklist".into(),
+                prompt: "review carefully".into(),
+                enabled: true,
+                ..Default::default()
+            })
+            .expect("seed a skill");
+
+        super::ensure_session_settings(
+            cwd.to_string_lossy().to_string(),
+            vec![], vec![],
+            // skills: NONE — the pane the renderer never resolved for.
+            None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+        )
+        .expect("settings written");
+
+        let dir = cwd.join(".claude/skills/code-review/SKILL.md");
+        assert!(
+            dir.exists(),
+            "the launch resolved nothing — a session that should carry a skill got none, which is \
+             indistinguishable from one that legitimately has none: {}",
+            dir.display()
+        );
+        let body = std::fs::read_to_string(&dir).unwrap();
+        assert!(body.contains("review carefully"), "the skill's body reached the file: {body}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// THE CALL SITE for the hook chain, on both ends the item names. `session::hook_chain`'s own
     /// tests stay green if `ensure_session_settings` never calls it — they compose directly. This
     /// drives the real command and reads the `settings.json` it wrote, which is the file the gates are
@@ -1111,7 +1220,7 @@ mod tests {
             bare.to_string_lossy().to_string(),
             vec![], vec![],
             None, None, None, None, None, None, None, None, None, None,
-            None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
         let bare_cmds = commands_at(&bare);
@@ -1147,7 +1256,7 @@ mod tests {
             None, Some(vec![]), None, None, None, None, None, None, None, None,
             Some(cap),
             Some(vec![]),
-            None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
         let worker_cmds = commands_at(&worker_dir);
@@ -1210,9 +1319,9 @@ mod tests {
             None,
             // The flow POLICY now, not the derived list — see `denies::flow_granted_push_commands`.
             Some("auto-pr".to_string()),
-            // user_denied_commands · pane_id · flow_gate · global_bypass · persona_hooks ·
-            // namespace_hooks — this test is about the flow's push GRANT and nothing else.
-            None, None, None, None, None, None,
+            // user_denied_commands · pane_id · flow_gate · global_bypass · the four skill facts ·
+            // persona_hooks · namespace_hooks — this test is about the flow's push GRANT and nothing else.
+            None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
 
@@ -1293,6 +1402,12 @@ mod tests {
             None,
             None,
             None,
+            // skill_project_id · skill_override · skill_group_ids · skills_explicit — no project,
+            // no choices, no groups, resolution not short-circuited.
+            None,
+            None,
+            None,
+            None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
             None,
@@ -1345,9 +1460,9 @@ mod tests {
             Some("allow".to_string()),
             None, None, None, None,
             Some(profile),
-            // flow_push · user_denied_commands · pane_id · flow_gate · global_bypass ·
-            // persona_hooks · namespace_hooks — this test is about the PROFILE half; none apply.
-            None, None, None, None, None, None, None,
+            // flow_push · user_denied_commands · pane_id · flow_gate · global_bypass · the three
+            // skill facts · persona_hooks · namespace_hooks — this test is about the PROFILE half.
+            None, None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
 
