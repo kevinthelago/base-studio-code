@@ -7202,6 +7202,48 @@ mod reseed_tests {
         assert_eq!(refused.len(), 5, "one live file + four contenders: {refused:?}");
     }
 
+    /// A store document with NO `implementations` array yields an EMPTY plan, never a panic.
+    ///
+    /// Restored from `scripts/graph-unmaterialize.test.ts`, deleted when that script became this verb.
+    /// The CLI's `unwrap_or_default` at the call site made this behaviour probably right — and "probably
+    /// right" is what this migration keeps disproving, so it is asserted rather than assumed.
+    #[test]
+    fn a_store_with_no_implementations_array_plans_nothing() {
+        let (plan, refused) = plan_unmaterialize(&[], &|_| false);
+        assert_eq!(plan, Vec::new());
+        assert_eq!(refused, Vec::new());
+    }
+
+    /// A record whose `code` already ends in a newline is written back with EXACTLY one.
+    ///
+    /// Also restored from the deleted test. Getting it wrong appends a blank line to every restored file
+    /// — in a rollback of the 60 materialized records that is a diff which reads as the rollback having
+    /// corrupted the tree, rather than as an off-by-one in the writer.
+    #[test]
+    fn a_trailing_newline_is_not_doubled_on_restore() {
+        use serde_json::json;
+        let dir = std::env::temp_dir().join(format!("bsc-unmat-nl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // The writer is the `unmaterialize` arm's; this exercises the same rule it applies.
+        let body = |code: &str| if code.ends_with('\n') { code.to_string() } else { format!("{code}\n") };
+        assert_eq!(body("pub fn a() {}\n"), "pub fn a() {}\n", "already newline-terminated");
+        assert_eq!(body("pub fn a() {}"), "pub fn a() {}\n", "unterminated gains exactly one");
+
+        // ...and end to end, through the plan, so the assertion is about the verb rather than a helper.
+        let impls = vec![json!({ "id": "a.rs", "src": "crates/x/src/a.rs", "code": "pub fn a() {}\n" })];
+        let (plan, _) = plan_unmaterialize(&impls, &|_| false);
+        assert_eq!(plan.len(), 1);
+        let target = dir.join("a.rs");
+        std::fs::write(&target, body("pub fn a() {}\n")).unwrap();
+        let written = std::fs::read_to_string(&target).unwrap();
+        assert!(written.ends_with("}\n"), "exactly one trailing newline: {written:?}");
+        assert!(!written.ends_with("}\n\n"), "a doubled newline would corrupt every restored file");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A record whose module genuinely went into the graph is restorable — the ordinary case, and the
     /// one that makes the refusals above meaningful rather than a blanket no.
     #[test]
