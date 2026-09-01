@@ -1,0 +1,191 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch resolveStartupPromptFreshOnly — do not hand-edit; see the .gen.test.ts",
+  "studioPaneIds": [
+    "design-studio:designer-react",
+    "design-studio:designer-react-native",
+    "algorithms-studio:librarian-rust",
+    "algorithms-studio:librarian-typescript",
+    "algorithms-studio:librarian-python",
+    "teams-studio:architect",
+    "sound-studio:sound-designer",
+    "integration-studio:integrator",
+    "debug-studio:debugger"
+  ],
+  "cases": [
+    {
+      "label": "studio session design-studio:designer-react",
+      "paneId": "design-studio:designer-react",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session design-studio:designer-react-native",
+      "paneId": "design-studio:designer-react-native",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session algorithms-studio:librarian-rust",
+      "paneId": "algorithms-studio:librarian-rust",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session algorithms-studio:librarian-typescript",
+      "paneId": "algorithms-studio:librarian-typescript",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session algorithms-studio:librarian-python",
+      "paneId": "algorithms-studio:librarian-python",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session teams-studio:architect",
+      "paneId": "teams-studio:architect",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session sound-studio:sound-designer",
+      "paneId": "sound-studio:sound-designer",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session integration-studio:integrator",
+      "paneId": "integration-studio:integrator",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "studio session debug-studio:debugger",
+      "paneId": "debug-studio:debugger",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "the STANDING debug session IS fresh-only",
+      "paneId": "debug-studio:debugger",
+      "restoreRequested": false,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "a PER-REQUEST debug session is NOT — it resumes nothing",
+      "paneId": "debug-studio:req-4212",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "another per-request debug session",
+      "paneId": "debug-studio:req-99",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a fleet worker pane",
+      "paneId": "studio-code:kernel",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a fleet worker pane being crash-RESTORED",
+      "paneId": "studio-code:kernel",
+      "restoreRequested": true,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "a director pane",
+      "paneId": "studio-code:director",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a triage pane",
+      "paneId": "studio-code:base-studio-code:triage",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a triage pane being restored",
+      "paneId": "studio-code:base-studio-code:triage",
+      "restoreRequested": true,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "a manual console",
+      "paneId": "man:tab1:p0",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a manual console WITH restore requested — still never fresh-only",
+      "paneId": "man:tab1:p0",
+      "restoreRequested": true,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "another manual console",
+      "paneId": "man:tab2:p3",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a POSITIONAL pane id is not a manual one",
+      "paneId": "t0p0",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "a positional pane id being restored — the restore DOES apply",
+      "paneId": "t0p0",
+      "restoreRequested": true,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "an unknown pane id",
+      "paneId": "something-else",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    },
+    {
+      "label": "an unknown pane id being restored",
+      "paneId": "something-else",
+      "restoreRequested": true,
+      "freshOnly": true,
+      "freshOnlyNonClaude": true
+    },
+    {
+      "label": "the empty pane id",
+      "paneId": "",
+      "restoreRequested": false,
+      "freshOnly": false,
+      "freshOnlyNonClaude": false
+    }
+  ]
+}
