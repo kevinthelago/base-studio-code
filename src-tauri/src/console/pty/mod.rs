@@ -1839,6 +1839,55 @@ mod tests {
         assert!(!super::must_be_gated("pane"), "a bare id has no project identity");
     }
 
+    /// THE SAME QUESTION, ASKED OF ONE CONTRACT INSTEAD OF TWO TABLES.
+    ///
+    /// The test above and `src/app/console/paneNeedsGate.test.ts` are two hand-maintained tables that
+    /// must agree, which is the arrangement that produced the deadlock in the first place: nothing
+    /// checks that the tables themselves match, only that each side satisfies its own copy. This
+    /// reads `paneIdentity.fixtures.json` — GENERATED from the shipping TypeScript — and asserts the
+    /// backend's rule against every id in it, so a change on either side that moves the gate fails
+    /// here rather than being noticed by a director that cannot launch.
+    ///
+    /// It also asserts `bsc_util::pane_id::pane_needs_gate`, the ported grammar, against the same
+    /// corpus — so the day `must_be_gated` is replaced by a call to it, the replacement is already
+    /// known to be exact. (That replacement is a SEPARATE item; nothing is flipped here.)
+    #[test]
+    fn must_be_gated_matches_the_generated_frontend_contract_id_for_id() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let mut found: Vec<std::path::PathBuf> = Vec::new();
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some("paneIdentity.fixtures.json") {
+                    out.push(p);
+                }
+            }
+        }
+        walk(&root, &mut found);
+        assert_eq!(found.len(), 1, "expected exactly one paneIdentity.fixtures.json, got {found:?}");
+        let fx: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap();
+        let ids = fx["ids"].as_array().expect("fixture ids");
+        assert!(ids.len() >= 30, "the corpus must be the real one: {}", ids.len());
+        let mut gated = 0;
+        for c in ids {
+            let id = c["id"].as_str().unwrap();
+            let want = c["needsGate"].as_bool().unwrap();
+            assert_eq!(super::must_be_gated(id), want, "must_be_gated disagrees with the contract for {id:?}");
+            assert_eq!(
+                bsc_util::pane_id::pane_needs_gate(id),
+                want,
+                "the ported grammar disagrees with the contract for {id:?}"
+            );
+            gated += want as usize;
+        }
+        // Both answers must occur, or an all-true (or all-false) predicate would pass vacuously.
+        assert!(gated > 0 && gated < ids.len(), "the corpus must contain both answers: {gated}/{}", ids.len());
+    }
+
     /// The refusal a WAKE can ask about before it destroys anything.
     ///
     /// `a-wake-kills-a-pane-it-cannot-relaunch-and-reports-success`: the wake kills the PTY first —
