@@ -17,7 +17,7 @@
 //! hand the bytes back through a channel; the WAIT happens on the caller's thread. Blocking inside the
 //! closure would stall the message pump that has to deliver the very completion being waited on.
 
-use bsc_shot::{default_png_path, is_png, shots_dir, Rect, ShotRequest, ShotResult};
+use bsc_shot::{is_png, keep_count, prune_captures, resolve_out, shots_dir, Rect, ShotRequest, ShotResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -165,10 +165,21 @@ fn capture_scale(app: &tauri::AppHandle, img_w: u32) -> f64 {
     scale
 }
 
+/// Where this capture's PNG goes — named and separated from [`capture`] purely so it is TESTABLE, since
+/// `capture` needs a live `AppHandle` and this is the line that got it wrong.
+///
+/// It must go through the shared [`resolve_out`] and never `PathBuf::from` alone: a bare relative `out`
+/// reaches `fs::write` below and anchors at THIS process's cwd — `src-tauri/` under `tauri dev`. That is
+/// how ten captures came to be committed to the repo (merge 6b52a96d); each reported success, at a path
+/// nobody had asked for. The CLI resolves the caller's half the same way (#3662).
+fn destination(req: &ShotRequest, shots: &std::path::Path, id: &str) -> PathBuf {
+    resolve_out(req.out.as_deref(), shots, id)
+}
+
 /// Take one capture and write the PNG. `id` names the default output file when the request has no `out`.
 pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<ShotResult, String> {
     let shots = shots_dir()?;
-    let out: PathBuf = req.out.as_ref().map(PathBuf::from).unwrap_or_else(|| default_png_path(&shots, id));
+    let out = destination(req, &shots, id);
 
     // Resolve the crop rect BEFORE capturing, so an unregistered target fails fast (no wasted snapshot):
     // an explicit rect wins; else a named target (e.g. "preview") resolves to the frontend-registered
@@ -199,6 +210,19 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
         std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
     std::fs::write(&out, &bytes).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+
+    // Hold the shots dir to a fixed WINDOW of the newest captures, the way `take` already sweeps the
+    // request channel — it otherwise only ever grows (a `baseline --kit` run alone adds one PNG per
+    // component, every run). Best-effort and AFTER the write, so the capture just taken is counted and
+    // is always the last thing that would go: a janitor that could fail the capture it rides along with
+    // would cost more than the disk it reclaims. `prune_captures` reads one directory level, so
+    // `<shots>/baselines/` — the reference set `bsc shot diff` needs — is out of its reach structurally.
+    if let Some(keep) = keep_count() {
+        let n = prune_captures(&shots, keep);
+        if n > 0 {
+            log::debug!("pruned {n} capture(s) from {} (window {keep})", shots.display());
+        }
+    }
     // Report the dir THIS process resolved (#4163). The caller resolved `out` in its own env; when a
     // capture then cannot be read back, the two dirs side by side name the divergence directly instead
     // of leaving a bare `os error 2` to be guessed at.
@@ -320,6 +344,36 @@ fn capture_webview_png(_app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// THE REGRESSION GUARD for the ten PNGs that reached the repo (merge 6b52a96d). The app used to do
+    /// `req.out.as_ref().map(PathBuf::from)`, handing a relative path to `fs::write`, which anchors at
+    /// this process's cwd — `src-tauri/` under `tauri dev`.
+    ///
+    /// The property is ABSOLUTENESS, not a specific string: given an absolute shots dir, no request may
+    /// produce a relative destination, because a relative one is the only kind that can land somewhere
+    /// nobody chose. Reinstate `PathBuf::from` and the two relative cases here go red.
+    #[test]
+    fn no_request_can_steer_a_capture_outside_the_shots_dir() {
+        let shots = std::path::Path::new(if cfg!(windows) { "C:\\ws\\shots" } else { "/ws/shots" });
+        let req = |out: Option<&str>| ShotRequest { rect: None, out: out.map(str::to_string), target: None };
+
+        // The two shapes that actually leaked: a bare relative file, and a relative SUBPATH.
+        assert_eq!(destination(&req(Some("flat.png")), shots, "abc"), shots.join("flat.png"));
+        assert_eq!(destination(&req(Some("shots/kv-retest.png")), shots, "abc"), shots.join("shots/kv-retest.png"));
+
+        // No `out` at all ⇒ the dir's own default.
+        assert_eq!(destination(&req(None), shots, "abc"), shots.join("abc.png"));
+
+        for out in [None, Some("flat.png"), Some("shots/kv-retest.png")] {
+            let got = destination(&req(out), shots, "abc");
+            assert!(got.is_absolute(), "{out:?} produced a relative destination: {}", got.display());
+            assert!(got.starts_with(shots), "{out:?} escaped the shots dir: {}", got.display());
+        }
+
+        // An ABSOLUTE --out stays honored — the designer's known-good workaround must keep working.
+        let abs = if cfg!(windows) { "C:\\elsewhere\\x.png" } else { "/elsewhere/x.png" };
+        assert_eq!(destination(&req(Some(abs)), shots, "abc"), PathBuf::from(abs));
+    }
 
     #[test]
     fn a_named_target_registers_resolves_and_clears() {

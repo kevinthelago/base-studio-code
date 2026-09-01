@@ -92,9 +92,296 @@ pub fn is_png(bytes: &[u8]) -> bool {
     bytes.len() >= 8 && bytes[..8] == PNG_MAGIC
 }
 
+
+/// Resolve a capture's PNG destination against `shots` — the ONE rule both processes must apply.
+///
+/// No `out` ⇒ `<shots>/<id>.png`; a RELATIVE `out` ⇒ inside `shots`; an ABSOLUTE `out` ⇒ as-is.
+///
+/// It lives here, shared, because the two sides resolving this differently is not hypothetical: the app
+/// used to hand a relative `out` straight to `fs::write`, which anchored it at the APP's cwd — and under
+/// `tauri dev` that cwd is `src-tauri/`. Ten captures were committed to the repo that way (merge
+/// 6b52a96d) before anyone noticed, because a capture that lands somewhere unexpected still reports
+/// success. The CLI fixed the caller's half in #3662 and still carries its own private copy of this
+/// rule (a record, `bsc-shot--cli.rs`, returning a String) — identical today, and the thing to collapse
+/// into a call to this function the next time that record is opened. Until then `ShotResult::shots_dir`
+/// (#4163) is what makes a divergence between the two visible rather than silent.
+pub fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> std::path::PathBuf {
+    match out {
+        Some(o) if std::path::Path::new(o).is_absolute() => std::path::PathBuf::from(o),
+        Some(o) => shots.join(o),
+        None => default_png_path(shots, id),
+    }
+}
+
+/// How many captures the shots dir keeps. Each new capture prunes back to this, newest first.
+///
+/// A WINDOW rather than an age: it bounds the directory by the only thing anyone can predict from
+/// outside it. An age policy leaves the size depending on how busy you were — an idle week keeps
+/// nothing, a `baseline --kit` afternoon keeps hundreds — so "how much disk is this" has no answer
+/// until you look.
+///
+/// # Sized to clear a burst, because a burst prunes itself
+///
+/// `bsc shot frame --frames N` writes N PNGs through N SEPARATE captures, so a burst longer than the
+/// window eats its own early frames before it finishes — inherent to counting rather than aging, and
+/// pinned by a test rather than left to be discovered. 200 clears every realistic burst and every
+/// packaged-kit sweep with room over; the first cut of this was 10, which a `--frames 20` run would
+/// have silently halved. Baselines do not compete for the window at all — they live in a subdirectory
+/// the prune cannot reach — so this budget is spent only on ad-hoc `take`/`preview`/`frame` captures.
+///
+/// The disk it bounds is small but NOT fixed: a preview crop of sparse UI is ~3 KB, while a full-webview
+/// `take` of a dense screen is orders larger, so treat 200 as a bound on COUNT and not on bytes. Raise
+/// `$BSC_SHOT_KEEP` above anything bigger than this before running it.
+pub const DEFAULT_KEEP: usize = 200;
+
+/// The window, honouring `$BSC_SHOT_KEEP`. `0` (or an unparseable value) disables pruning — an operator
+/// who sets it to nonsense gets their files KEPT, never a directory emptied on a typo.
+pub fn keep_count() -> Option<usize> {
+    let keep = match std::env::var("BSC_SHOT_KEEP") {
+        Ok(v) if !v.trim().is_empty() => v.trim().parse::<usize>().ok()?,
+        _ => DEFAULT_KEEP,
+    };
+    (keep > 0).then_some(keep)
+}
+
+/// Keep the newest `keep` captures in `shots` and remove the rest. Returns how many went.
+///
+/// # What it will not touch, and why that is structural rather than a list
+///
+/// It reads ONE directory level and considers only regular `.png` files. So `<shots>/baselines/` — the
+/// named reference renders `bsc shot diff` compares against — survives because it is a DIRECTORY, not
+/// because it is on a deny-list that a later subdir would have to remember to join. A baseline is the
+/// one thing under this dir that is not regenerable on demand: eat it and every subsequent diff reports
+/// a plausible number about nothing, which is the silent-wrong answer this repo keeps paying for. The
+/// same shape protects any future subdir for free.
+///
+/// # Ordering is total, so the kept set is not luck
+///
+/// Newest first by mtime, ties broken by filename DESCENDING. Ties are not hypothetical: a `--frames`
+/// burst can land several PNGs inside one filesystem timestamp tick, and its names are zero-padded and
+/// ascending (`-01`, `-02`, …), so the larger name is the later frame. Without the tiebreak, which
+/// frames survived a burst would vary run to run.
+///
+/// # Fail-safe
+///
+/// A missing dir, or an entry whose metadata cannot be read, is SKIPPED — an unreadable file is never
+/// deleted and never counts toward the window, because the safe reading of "I cannot tell how old this
+/// is" is to leave it alone. A file that vanishes mid-prune, or is held open elsewhere, is likewise not
+/// an error: this runs beside a capture, and a janitor that could fail the capture it rides along with
+/// would cost more than the disk it reclaims.
+/// One capture the prune is weighing: when it was written, what it is called, where it is.
+type Capture = (std::time::SystemTime, std::ffi::OsString, std::path::PathBuf);
+
+/// Order captures newest-first, ties inside one filesystem timestamp tick broken by filename DESCENDING.
+///
+/// Split out of [`prune_captures`] because it is the half that can be WRONG SILENTLY and cannot be
+/// probed through the directory: `read_dir` yields in filesystem order, so a test driving the whole
+/// prune cannot tell a real tiebreak from a stable sort that happened to see the files in a convenient
+/// order. Given a deliberately shuffled slice, this can.
+fn newest_first(captures: &mut [Capture]) {
+    captures.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+}
+
+pub fn prune_captures(shots: &std::path::Path, keep: usize) -> usize {
+    let Ok(entries) = std::fs::read_dir(shots) else { return 0 };
+
+    let mut captures: Vec<Capture> = entries
+        .flatten()
+        .filter(|e| {
+            // `file_type` does not follow symlinks, so a link into a tree of real work is skipped too.
+            e.file_type().map(|t| t.is_file()).unwrap_or(false)
+                && e.path().extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("png"))
+        })
+        .filter_map(|e| {
+            let modified = e.metadata().and_then(|m| m.modified()).ok()?;
+            Some((modified, e.file_name(), e.path()))
+        })
+        .collect();
+
+    if captures.len() <= keep {
+        return 0;
+    }
+
+    newest_first(&mut captures);
+
+    captures[keep..].iter().filter(|(_, _, path)| std::fs::remove_file(path).is_ok()).count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serializes the tests that mutate process-global env (see the retention test).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The rule the app used to get wrong. A RELATIVE `out` must land in the shots dir; before this was
+    /// shared, the app anchored it at its own cwd (`src-tauri/` under `tauri dev`) and ten captures were
+    /// committed to the repo as a result.
+    #[test]
+    fn a_relative_out_lands_in_the_shots_dir_and_an_absolute_one_is_honored() {
+        let shots = std::path::Path::new("/ws/shots");
+
+        assert_eq!(resolve_out(None, shots, "abc"), shots.join("abc.png"), "no --out ⇒ <shots>/<id>.png");
+        assert_eq!(resolve_out(Some("flat.png"), shots, "abc"), shots.join("flat.png"), "relative ⇒ inside shots");
+        assert_eq!(
+            resolve_out(Some("shots/kv-retest.png"), shots, "abc"),
+            shots.join("shots/kv-retest.png"),
+            "a relative SUBPATH is still anchored at shots — this is the exact pair of names that leaked",
+        );
+
+        let abs = if cfg!(windows) { "C:\\elsewhere\\x.png" } else { "/elsewhere/x.png" };
+        assert_eq!(resolve_out(Some(abs), shots, "abc"), std::path::PathBuf::from(abs), "absolute ⇒ as-is");
+    }
+
+    /// A helper writing a capture with a chosen mtime, so the window is tested against a KNOWN order
+    /// rather than whatever the filesystem clock did during the test.
+    #[cfg(test)]
+    fn write_capture(dir: &std::path::Path, name: &str, tick: u64) -> std::path::PathBuf {
+        let p = dir.join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, PNG_MAGIC).unwrap();
+        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000 + tick);
+        filetime::set_file_mtime(&p, filetime::FileTime::from_system_time(t)).unwrap();
+        p
+    }
+
+    #[test]
+    fn the_window_keeps_the_newest_and_drops_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let files: Vec<_> = (0..15).map(|n| write_capture(dir.path(), &format!("shot-{n:02}.png"), n)).collect();
+
+        assert_eq!(prune_captures(dir.path(), 10), 5, "15 captures, window 10 ⇒ the oldest 5 go");
+        for (n, f) in files.iter().enumerate() {
+            assert_eq!(f.exists(), n >= 5, "shot-{n:02}.png: kept iff it is in the newest 10");
+        }
+
+        // Idempotent: at the window, a second prune is a no-op rather than eating another slice.
+        assert_eq!(prune_captures(dir.path(), 10), 0);
+    }
+
+    #[test]
+    fn a_directory_under_the_window_is_left_entirely_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let files: Vec<_> = (0..3).map(|n| write_capture(dir.path(), &format!("s-{n}.png"), n)).collect();
+        assert_eq!(prune_captures(dir.path(), 10), 0, "3 captures, window 10 ⇒ nothing to do");
+        assert!(files.iter().all(|f| f.exists()));
+    }
+
+    /// The ordering, driven directly — see [`newest_first`] for why this cannot go through the
+    /// directory. The input is deliberately SHUFFLED relative to both keys, so a sort missing either
+    /// half lands in the wrong order rather than being carried by luck.
+    #[test]
+    fn the_order_is_newest_first_then_filename_descending() {
+        let at = |t: u64| std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(t);
+        let cap = |t: u64, n: &str| (at(t), std::ffi::OsString::from(n), std::path::PathBuf::from(n));
+
+        // Three share tick 100; the fourth is older. Presented oldest-first and name-ascending — the
+        // exact reverse of the answer — so neither key can be satisfied by leaving the input alone.
+        let mut caps = vec![cap(50, "old.png"), cap(100, "burst-01.png"), cap(100, "burst-02.png"), cap(100, "burst-03.png")];
+        newest_first(&mut caps);
+
+        let order: Vec<_> = caps.iter().map(|(_, n, _)| n.to_str().unwrap()).collect();
+        assert_eq!(order, ["burst-03.png", "burst-02.png", "burst-01.png", "old.png"]);
+    }
+
+    /// A `--frames` burst can land several PNGs inside one filesystem timestamp tick, and its names are
+    /// zero-padded and ascending, so the later frames must be the ones that survive.
+    #[test]
+    fn captures_sharing_a_timestamp_keep_the_later_frames() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = ["burst-01.png", "burst-02.png", "burst-03.png", "burst-04.png"];
+        let files: Vec<_> = names.iter().map(|n| write_capture(dir.path(), n, 0)).collect();
+
+        assert_eq!(prune_captures(dir.path(), 2), 2);
+        assert!(!files[0].exists() && !files[1].exists(), "the earlier frames go");
+        assert!(files[2].exists() && files[3].exists(), "the later frames stay");
+    }
+
+    /// The default has to clear a realistic burst, or the caveat below becomes the common case rather
+    /// than an edge. The first cut was 10, which a plain `--frames 20` would have silently halved.
+    #[test]
+    fn the_default_window_clears_a_realistic_burst() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in 0..60u64 {
+            write_capture(dir.path(), &format!("burst-{n:02}.png"), n);
+            prune_captures(dir.path(), DEFAULT_KEEP);
+        }
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            60,
+            "a 60-frame burst survives DEFAULT_KEEP intact — this is what pins the default big enough"
+        );
+    }
+
+    /// THE CONSEQUENCE OF COUNTING RATHER THAN AGING, pinned so it is documented behaviour and not a
+    /// surprise: a `--frames N` burst larger than the window prunes its OWN early frames as it runs,
+    /// because each frame is a separate capture. Raise `$BSC_SHOT_KEEP` above the burst first.
+    #[test]
+    fn a_burst_longer_than_the_window_loses_its_own_early_frames() {
+        let dir = tempfile::tempdir().unwrap();
+        let keep = 10;
+        let mut frames = Vec::new();
+        for n in 0..20u64 {
+            frames.push(write_capture(dir.path(), &format!("burst-{n:02}.png"), n));
+            prune_captures(dir.path(), keep); // what capture() does after each write
+        }
+        assert_eq!(frames.iter().filter(|f| f.exists()).count(), keep);
+        assert!(!frames[0].exists(), "frame 00 did not survive a 20-frame burst through a 10 window");
+        assert!(frames[19].exists(), "the most recent frame always survives");
+    }
+
+    /// The guard that matters most. `<shots>/baselines/` is the named reference set `bsc shot diff`
+    /// compares against — the one thing here that is not regenerable on demand. It survives because the
+    /// prune reads a single directory level, so no future subdir has to remember to join a deny-list.
+    #[test]
+    fn the_window_never_descends_into_baselines_however_full_the_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in 0..15 {
+            write_capture(dir.path(), &format!("shot-{n:02}.png"), n as u64);
+        }
+        // Baselines are the OLDEST things here — an age sweep or a flat walk would take them first.
+        let baseline = write_capture(dir.path(), "baselines/listitemcard.png", 0);
+        let other = write_capture(dir.path(), "baselines/api-builder.png", 0);
+
+        // …and a non-PNG at the top level: the prune owns captures, not the directory.
+        let notes = dir.path().join("notes.txt");
+        std::fs::write(&notes, b"keep me").unwrap();
+
+        assert_eq!(prune_captures(dir.path(), 10), 5, "only top-level captures are counted and pruned");
+        assert!(baseline.exists() && other.exists(), "a baseline is never pruned, however full the dir");
+        assert!(notes.exists(), "a non-PNG is never pruned");
+    }
+
+    #[test]
+    fn the_prune_is_fail_safe_on_a_missing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(prune_captures(&dir.path().join("not-here"), 1), 0);
+    }
+
+    #[test]
+    fn a_zero_or_junk_window_disables_pruning_rather_than_emptying_the_dir() {
+        // Serialized against the other env-touching tests in this crate; nextest also gives each test
+        // its own process, but `cargo test` threads them inside one binary.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let restore = std::env::var("BSC_SHOT_KEEP").ok();
+
+        std::env::set_var("BSC_SHOT_KEEP", "0");
+        assert_eq!(keep_count(), None, "0 disables pruning — it does NOT mean keep nothing");
+
+        std::env::set_var("BSC_SHOT_KEEP", "not-a-number");
+        assert_eq!(keep_count(), None, "a typo KEEPS files — it must never fall back to deleting");
+
+        std::env::set_var("BSC_SHOT_KEEP", "50");
+        assert_eq!(keep_count(), Some(50), "raised above a burst, as the docs tell you to");
+
+        std::env::remove_var("BSC_SHOT_KEEP");
+        assert_eq!(keep_count(), Some(DEFAULT_KEEP));
+
+        match restore {
+            Some(v) => std::env::set_var("BSC_SHOT_KEEP", v),
+            None => std::env::remove_var("BSC_SHOT_KEEP"),
+        }
+    }
 
     #[test]
     fn the_request_round_trips_through_the_shared_envelope() {

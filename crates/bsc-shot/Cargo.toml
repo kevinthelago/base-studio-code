@@ -32,3 +32,6 @@ bsc-json-store = { path = "../bsc-json-store" }
 
 [dev-dependencies]
 tempfile = "3"
+# Backdates a capture's mtime so the retention sweep is tested against a CHOSEN age rather than
+# by sleeping. Already in the lockfile (0.2.29, via notify), so this pulls nothing new.
+filetime = "0.2"
