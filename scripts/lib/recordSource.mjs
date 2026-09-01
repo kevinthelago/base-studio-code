@@ -313,7 +313,50 @@ export function exportedNames(rawSrc) {
  * code. Anchoring cannot see this — only removing the prose can.
  */
 export function runtimeImports(src) {
-  return [...new Set([...stripComments(src).matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
+  const text = stripComments(src);
+  const out = [];
+  // Clause imports/re-exports. `(?!type\s)` drops a STATEMENT-level `import type`; the clause itself is
+  // captured so an ALL-inline-type one can be dropped too — see below.
+  for (const m of text.matchAll(/^\s*(?:import|export)\s+(?!type\s)([^"']*)from\s+["']([^"']+)["']/gm)) {
+    if (!clauseHasValueBinding(m[1])) continue;
+    out.push(m[2]);
+  }
+  // Bare side-effect imports — `import "./a.css"`. A real `require` at runtime with no `from` clause for
+  // the pattern above to match, so it was invisible: a guard that MISSES a dependency is the failure this
+  // family of checks exists to prevent (#the-fourth-import-scanner-is-measured-against-the-canonical-one).
+  for (const m of text.matchAll(/^\s*import\s+["']([^"']+)["']/gm)) out.push(m[1]);
+  return [...new Set(out)];
+}
+
+/**
+ * Does an import CLAUSE bind anything that survives to runtime?
+ *
+ * `import { type A, type B } from "x"` erases entirely and emits no `require`, so counting it is the
+ * exact mistake `platformBoundary.test.ts` was written to correct: #3858 measured the boundary as broken
+ * — 5 of 92 records short by three specifiers — and the guard showed it a FALSE ALARM, because all six
+ * occurrences were type-only and the analysis had counted them as runtime deps. The guard fixed the
+ * STATEMENT form (`import type {…}`) and left the inline form carrying the same error.
+ *
+ * A MIXED clause still counts, and that is deliberate rather than an oversight: `import { type A, b }`
+ * really does require the module for `b`, and `recordBoundary.test.ts` documents it as matching the
+ * eslint rule's `allowTypeImports` — "the file-side rule rather than inventing a stricter one".
+ *
+ * Anything that is not a brace clause — a default, a namespace, `export * from` — binds a value by
+ * construction, so it counts.
+ */
+function clauseHasValueBinding(clause) {
+  const open = clause.indexOf("{");
+  const close = clause.lastIndexOf("}");
+  if (open === -1 || close < open) return true; // default / namespace / `export *` — a value either way
+  const before = clause.slice(0, open).trim();
+  if (before && before !== ",") return true; // `React, { … }` — the default binding is a value
+  const members = clause
+    .slice(open + 1, close)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (!members.length) return false; // `import {} from "x"` binds nothing
+  return members.some((m) => !/^type\s/.test(m));
 }
 
 /**
