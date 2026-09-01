@@ -1082,8 +1082,14 @@ fn pty_create_inner(
     // A CAGED session is deliberately excluded: its transcripts live in the cage's private HOME under
     // the guest cwd, so the host's `~/.claude.json` says nothing about it and `--continue` remains the
     // only honest answer there.
+    //
+    // ASKED OF THE HARNESS, not of Claude's config directly. This was a bare `last_session_id(&cwd)`,
+    // put to every pane whatever it was about to run — so a studio directory Claude had ever run in
+    // handed a Claude UUID to a `bsc-agent` launch, and the `LaunchPlan::Init` arm below rewrote its
+    // `--continue` into `--resume <uuid>`: a flag that harness does not take, naming a conversation
+    // it does not have.
     let resume_id: Option<String> = if resumed && ns_argv.is_none() {
-        crate::session::claude_config::last_session_id(&cwd)
+        harness.resume_id(&cwd)
     } else {
         None
     };
@@ -1559,15 +1565,21 @@ pub(crate) fn kill_pane(pane_id: &str, state: &PtyState, perf_state: &perf::Perf
     }
 }
 
-/// The frontend reporting which pane the user is looking at.
+/// The frontend reporting every pane a surface is currently SHOWING.
 ///
-/// A REPORT, not a decision — the backend cannot know what a person is looking at, and this is the one
-/// piece of the reap input only the UI has. It carries an expiry (`FOCUS_REPORT_TTL_MS`) rather than
-/// latching, so a renderer that dies mid-session does not leave its last focused pane protected
-/// forever, which would be the exact opposite of what this is for.
+/// A REPORT, not a decision — the backend cannot know what a person can see, and this is the one piece
+/// of the reap input only the UI has. It carries an expiry (`FOCUS_REPORT_TTL_MS`) rather than
+/// latching, so a renderer that dies mid-session does not leave what it was showing protected forever,
+/// which would be the exact opposite of what this is for.
+///
+/// A LIST, because this was `pty_report_focus(Option<String>)` and one pane id was the wrong shape of
+/// answer twice over: several surfaces show different sessions at once (a console cell beside an open
+/// Glance morph), and the id the frontend could produce came from the console grid's `focusedPaneIdx`,
+/// which no studio, graph session or network architect is ever equal to. So the app's own sessions
+/// were unprotected at all times, under a ten-second idle grace.
 #[tauri::command]
-pub(crate) fn pty_report_focus(pane_id: Option<String>) {
-    reap::report_focus(pane_id);
+pub(crate) fn pty_report_onscreen(pane_ids: Vec<String>) {
+    reap::report_on_screen(pane_ids);
 }
 
 /// The frontend reporting the user's configured reap thresholds (Settings).
@@ -1609,7 +1621,7 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(reap::TICK_MS));
             let now = reap::now_ms();
-            let focused = reap::focused_pane(now);
+            let on_screen = reap::on_screen_panes(now);
             let policy = reap::policy();
             // One /proc walk per sweep, shared by the decision and the published snapshot so the two
             // can never disagree about why a pane was or was not taken.
@@ -1630,7 +1642,7 @@ pub(crate) fn spawn_reaper(app: AppHandle) {
             // "why is this still alive", and a file that only appears on a reap cannot answer it.
             reap::publish(&crate::bsc_base_dir().join("pty-activity.json"), now, &cpu, &policy);
             let doomed =
-                reap::panes_to_reap(&reap::snapshot(), now, focused.as_deref(), &cpu, &policy);
+                reap::panes_to_reap(&reap::snapshot(), now, &on_screen, &cpu, &policy);
             if doomed.is_empty() {
                 continue;
             }
@@ -1837,6 +1849,55 @@ mod tests {
         assert!(!super::must_be_gated("man:tab_abc:p2"), "a manual console is not refused");
         assert!(!super::must_be_gated("t0p1"), "a legacy positional pane is not refused");
         assert!(!super::must_be_gated("pane"), "a bare id has no project identity");
+    }
+
+    /// THE SAME QUESTION, ASKED OF ONE CONTRACT INSTEAD OF TWO TABLES.
+    ///
+    /// The test above and `src/app/console/paneNeedsGate.test.ts` are two hand-maintained tables that
+    /// must agree, which is the arrangement that produced the deadlock in the first place: nothing
+    /// checks that the tables themselves match, only that each side satisfies its own copy. This
+    /// reads `paneIdentity.fixtures.json` — GENERATED from the shipping TypeScript — and asserts the
+    /// backend's rule against every id in it, so a change on either side that moves the gate fails
+    /// here rather than being noticed by a director that cannot launch.
+    ///
+    /// It also asserts `bsc_util::pane_id::pane_needs_gate`, the ported grammar, against the same
+    /// corpus — so the day `must_be_gated` is replaced by a call to it, the replacement is already
+    /// known to be exact. (That replacement is a SEPARATE item; nothing is flipped here.)
+    #[test]
+    fn must_be_gated_matches_the_generated_frontend_contract_id_for_id() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let mut found: Vec<std::path::PathBuf> = Vec::new();
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some("paneIdentity.fixtures.json") {
+                    out.push(p);
+                }
+            }
+        }
+        walk(&root, &mut found);
+        assert_eq!(found.len(), 1, "expected exactly one paneIdentity.fixtures.json, got {found:?}");
+        let fx: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap();
+        let ids = fx["ids"].as_array().expect("fixture ids");
+        assert!(ids.len() >= 30, "the corpus must be the real one: {}", ids.len());
+        let mut gated = 0;
+        for c in ids {
+            let id = c["id"].as_str().unwrap();
+            let want = c["needsGate"].as_bool().unwrap();
+            assert_eq!(super::must_be_gated(id), want, "must_be_gated disagrees with the contract for {id:?}");
+            assert_eq!(
+                bsc_util::pane_id::pane_needs_gate(id),
+                want,
+                "the ported grammar disagrees with the contract for {id:?}"
+            );
+            gated += want as usize;
+        }
+        // Both answers must occur, or an all-true (or all-false) predicate would pass vacuously.
+        assert!(gated > 0 && gated < ids.len(), "the corpus must contain both answers: {gated}/{}", ids.len());
     }
 
     /// The refusal a WAKE can ask about before it destroys anything.

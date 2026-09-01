@@ -19,12 +19,6 @@
 //! This module changes no runtime behaviour yet — the frontend still computes. Flipping the caller is
 //! its own item, because that is where the risk is and it deserves its own gate and its own revert.
 
-// NOTHING CALLS THIS YET, AND THAT IS THE POINT OF THIS SLICE. The derivation is proved equal to the
-// TypeScript that ships today (see `tests`) BEFORE any caller is switched to it, because flipping the
-// caller is where the risk lives and it deserves its own gate and its own revert. Remove this the
-// moment `ensure_session_settings` takes a role instead of two computed lists.
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 /// How much of an axis a role gets. Mirrors the TS `AccessTier`.
@@ -97,6 +91,7 @@ const PERSONA_WRITE_DENY: &[&str] = &["bsc persona set", "bsc persona remove", "
 /// interpreter is a general-purpose escape from it.
 const INTERPRETER_DENY: &[&str] = &["python", "python3", "node", "jq", "perl", "ruby"];
 
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 const WRITE_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
 
 /// Roles whose `code: "none"` may still carry an explicit write boundary (the director's commons
@@ -112,11 +107,19 @@ pub const TOOLING_REQUEST_COMMAND: &str = "bsc request";
 
 /// A PATH-SCOPED file rule uses ONLY `Edit(<glob>)` — Claude Code matches file-permission rules on
 /// the `Edit` tool alone, and that one rule covers every file-editing tool.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn edit_path_rule(glob: &str) -> String {
     format!("Edit({glob})")
 }
 
 /// The `settings.json` allow/deny rules for the file-write tools.
+///
+/// STILL UNWIRED, and the `allow` says which item wires it. `ensure_session_settings` derives the
+/// COMMAND denies today (`reconcile_role_denies`); the write-tool rules and tool denies are the
+/// other half of the same gate and move in their own slice, because they land in a different field
+/// of `settings.json` and deserve their own reconciliation and their own revert. They are proved
+/// equal to the TypeScript already — see the parity test.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolPermissionRules {
     pub allow: Vec<String>,
@@ -162,6 +165,7 @@ pub fn may_file_tooling_request(cap: &RoleCapability) -> bool {
 }
 
 /// A `code: "none"` role that still owns an explicit write boundary.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn has_scoped_write_carve_out(cap: &RoleCapability) -> bool {
     CARVE_OUT_ROLES.contains(&cap.role.as_str())
         && cap.code == Tier::None
@@ -169,6 +173,7 @@ pub fn has_scoped_write_carve_out(cap: &RoleCapability) -> bool {
 }
 
 /// Whole-tool denies beyond the write tools.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn role_denied_tools(cap: &RoleCapability) -> Vec<String> {
     let mut out = Vec::new();
     // A worker must not spawn its own sub-agents: each reads as fresh activity the coordinator keeps
@@ -186,6 +191,7 @@ pub fn role_denied_tools(cap: &RoleCapability) -> Vec<String> {
 
 /// The file-write tool rules. `db_owned` / `dep_manifests` come from `write-locks.json`, passed in
 /// rather than re-read here so the data has ONE loader.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn role_write_rules(
     cap: &RoleCapability,
     db_owned_plan_files: &[String],
@@ -216,6 +222,7 @@ pub fn role_write_rules(
 }
 
 /// The `bsc` surface tiers a session carries.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn session_scopes(cap: &RoleCapability) -> std::collections::BTreeMap<String, Tier> {
     let mut m = std::collections::BTreeMap::new();
     m.insert("ui".to_string(), cap.ui);
@@ -281,6 +288,140 @@ pub fn role_denied_commands(cap: &RoleCapability, active_surfaces: &[String]) ->
         for c in INTERPRETER_DENY { push(c, &mut out) }
     }
     out
+}
+
+/// What Rust derived that the frontend did NOT send, and the list to actually write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DenyReconciliation {
+    /// The denies to write: the frontend's list UNIONED with whatever Rust derived.
+    pub merged: Vec<String>,
+    /// Role denies Rust derived and the frontend omitted. Non-empty means the two disagree, and the
+    /// frontend's copy is the one that was wrong — a gap in the gate, not a difference of opinion.
+    pub missing: Vec<String>,
+}
+
+/// Reconcile the frontend's denies against the ones Rust derives, during the cutover.
+///
+/// ## Why a union rather than a replacement
+///
+/// Only ONE direction is a defect. The frontend's list legitimately contains more than the role
+/// denies — the user's and the project's own `deniedCommands` ride in it too — so "the frontend has
+/// something Rust did not derive" is expected and means nothing. "Rust derived something the frontend
+/// omitted" is a HOLE IN THE GATE, and that is what `missing` reports.
+///
+/// Taking Rust's list alone would be the wrong move while both copies exist: it could DROP a deny the
+/// frontend had, which weakens a security boundary to make a migration tidier. A union can only ever
+/// strengthen it, so the cutover cannot make a session more permissive than it is today.
+///
+/// The transition ends when `missing` has been empty in the field for long enough to believe it —
+/// then Rust's list stands alone and the TypeScript derivation is deleted.
+pub fn reconcile_role_denies(
+    cap: Option<&RoleCapability>,
+    active_surfaces: &[String],
+    from_frontend: Vec<String>,
+) -> DenyReconciliation {
+    let Some(cap) = cap else {
+        // No capability passed — an ad-hoc console with no role. Nothing to derive, nothing to check.
+        return DenyReconciliation { merged: from_frontend, missing: Vec::new() };
+    };
+    let derived = role_denied_commands(cap, active_surfaces);
+    let missing: Vec<String> =
+        derived.iter().filter(|d| !from_frontend.iter().any(|f| f == *d)).cloned().collect();
+    let mut merged = from_frontend;
+    for d in missing.iter() {
+        merged.push(d.clone());
+    }
+    DenyReconciliation { merged, missing }
+}
+
+/// `dbOwnedPlanFiles` + `depManifestFiles`, from the one file both languages read.
+///
+/// `@data/permissions/write-locks.json` is loaded by the TypeScript via the `@data` glob and shipped
+/// in `src-tauri/data/`, so reading it here reads the SAME bytes rather than a second copy of the
+/// list. An unreadable file yields empty lists, which costs the two role-specific file denies and
+/// nothing else — the write globs and every other rule are unaffected.
+pub fn write_locks() -> (Vec<String>, Vec<String>) {
+    // `load_str` is on-disk-wins-then-embedded, the same overlay the TypeScript `@data` glob sees.
+    let text = crate::platform::config::load_str("permissions/write-locks.json");
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        log::warn!("role gate: write-locks.json unreadable — the two role file-denies are omitted");
+        return (Vec::new(), Vec::new());
+    };
+    let list = |k: &str| -> Vec<String> {
+        v.get(k)
+            .and_then(|x| x.as_array())
+            .map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect())
+            .unwrap_or_default()
+    };
+    (list("dbOwnedPlanFiles"), list("depManifestFiles"))
+}
+
+/// The tool-rule half of the reconciliation, and what disagreed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolRuleReconciliation {
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+    /// Allow rules the frontend sent that Rust did NOT derive. Dropped, not kept — see below.
+    pub allow_dropped: Vec<String>,
+    /// Deny rules Rust derived that the frontend omitted. Added.
+    pub deny_missing: Vec<String>,
+}
+
+/// Reconcile the tool rules, tightening in BOTH directions.
+///
+/// ## The safe direction is not the same on both sides
+///
+/// Getting this backwards would widen a security boundary while looking like tidy symmetry:
+///
+/// - **DENY rules UNION.** An extra deny can only tighten. Same reasoning as the command denies.
+/// - **ALLOW rules INTERSECT.** An `Edit(<glob>)` allow AUTO-APPROVES writes to that glob. Unioning
+///   an allow that Rust derived but the frontend did not send would GRANT permission that is not
+///   granted today — the exact opposite of fail-closed. Intersection can only narrow.
+///
+/// ## Why this is safe to land
+///
+/// Both are NO-OPS in the healthy case. The frontend computes from a capability and sends it; Rust
+/// derives from the SAME capability with a function proved equal across 68 cases and 17 roles. So
+/// they agree, intersection equals both, union equals both, and the written file does not move. A
+/// difference means one side is genuinely wrong — an older frontend, a renderer that died
+/// mid-compute, a caller invoking the command directly — and then tightening is the direction that
+/// cannot hurt.
+///
+/// `None` capability (a role-less ad-hoc console) derives nothing and passes both through untouched.
+pub fn reconcile_tool_rules(
+    cap: Option<&RoleCapability>,
+    db_owned_plan_files: &[String],
+    dep_manifest_files: &[String],
+    from_frontend_allow: Vec<String>,
+    from_frontend_deny: Vec<String>,
+) -> ToolRuleReconciliation {
+    let Some(cap) = cap else {
+        return ToolRuleReconciliation {
+            allow: from_frontend_allow,
+            deny: from_frontend_deny,
+            allow_dropped: Vec::new(),
+            deny_missing: Vec::new(),
+        };
+    };
+    let rules = role_write_rules(cap, db_owned_plan_files, dep_manifest_files);
+    let mut derived_deny = rules.deny;
+    derived_deny.extend(role_denied_tools(cap));
+
+    // ALLOW: keep only what BOTH agree on.
+    let (allow, allow_dropped): (Vec<String>, Vec<String>) = from_frontend_allow
+        .into_iter()
+        .partition(|a| rules.allow.iter().any(|d| d == a));
+
+    // DENY: everything either side asked for.
+    let deny_missing: Vec<String> = derived_deny
+        .iter()
+        .filter(|d| !from_frontend_deny.iter().any(|f| f == *d))
+        .cloned()
+        .collect();
+    let mut deny = from_frontend_deny;
+    deny.extend(deny_missing.iter().cloned());
+
+    ToolRuleReconciliation { allow, deny, allow_dropped, deny_missing }
 }
 
 #[cfg(test)]
@@ -387,6 +528,110 @@ mod tests {
             checked += 1;
         }
         assert_eq!(checked, fx.cases.len());
+    }
+
+
+    fn worker() -> RoleCapability {
+        RoleCapability {
+            role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
+            net: Tier::Read, ui: Tier::Read, write_globs: vec!["src/**".into()],
+            allow: vec![], surfaces: None,
+        }
+    }
+
+    /// The cutover can only ever STRENGTHEN the gate. Taking Rust's list alone could drop a deny the
+    /// frontend had; a union cannot.
+    #[test]
+    fn reconciling_unions_rather_than_replaces() {
+        let cap = worker();
+        // The frontend's list legitimately carries the user's own denies too.
+        let from_frontend = vec!["curl".to_string(), "git push".to_string()];
+        let r = reconcile_role_denies(Some(&cap), &[], from_frontend);
+        assert!(r.merged.iter().any(|d| d == "curl"), "a user deny Rust knows nothing about survives");
+        assert!(r.merged.iter().any(|d| d == "git push"), "and one they agree on is not duplicated away");
+        assert_eq!(r.merged.iter().filter(|d| *d == "git push").count(), 1, "no duplicate");
+        assert!(!r.missing.iter().any(|d| d == "curl"), "extra on the frontend side is NOT a defect");
+    }
+
+    /// The direction that matters: Rust derived a deny the frontend omitted — a hole in the gate.
+    #[test]
+    fn a_deny_the_frontend_omitted_is_reported_and_added() {
+        let cap = worker();
+        let r = reconcile_role_denies(Some(&cap), &[], vec![]);
+        assert!(!r.missing.is_empty(), "an empty frontend list means it omitted every role deny");
+        assert!(r.missing.iter().any(|d| d == "bsc request"), "including the tooling-queue deny: {:?}", r.missing);
+        for d in &r.missing {
+            assert!(r.merged.contains(d), "everything missing is added to what gets written");
+        }
+    }
+
+    /// A role-less ad-hoc console derives nothing and must not be second-guessed.
+    #[test]
+    fn no_capability_means_nothing_to_reconcile() {
+        let given = vec!["curl".to_string()];
+        let r = reconcile_role_denies(None, &[], given.clone());
+        assert_eq!(r.merged, given);
+        assert!(r.missing.is_empty());
+    }
+
+    /// An allow AUTO-APPROVES writes. Unioning one Rust derived but the frontend did not send would
+    /// GRANT what is not granted — so allows intersect, and the extra is dropped and reported.
+    #[test]
+    fn an_allow_the_derivation_does_not_back_is_dropped_not_kept() {
+        let cap = RoleCapability {
+            role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
+            net: Tier::Read, ui: Tier::Read, write_globs: vec!["src/**".into()],
+            allow: vec![], surfaces: None,
+        };
+        let r = reconcile_tool_rules(
+            Some(&cap), &[], &[],
+            vec!["Edit(src/**)".into(), "Edit(/etc/**)".into()],   // the second is not derived
+            vec![],
+        );
+        assert_eq!(r.allow, vec!["Edit(src/**)".to_string()], "only the backed allow survives");
+        assert_eq!(r.allow_dropped, vec!["Edit(/etc/**)".to_string()], "and the extra is reported");
+    }
+
+    /// Denies go the other way: anything either side wants is kept.
+    #[test]
+    fn a_deny_the_frontend_omitted_is_added_to_the_tool_rules() {
+        let cap = RoleCapability {
+            role: "worker".into(), github: Tier::Read, git: Tier::Write, code: Tier::Write,
+            net: Tier::None, ui: Tier::Read, write_globs: vec![], allow: vec![], surfaces: None,
+        };
+        let r = reconcile_tool_rules(Some(&cap), &[], &[], vec![], vec!["SomeUserDeny".into()]);
+        assert!(r.deny.contains(&"SomeUserDeny".to_string()), "the frontend's own deny survives");
+        for expected in ["Task", "WebFetch", "WebSearch"] {
+            assert!(r.deny.iter().any(|d| d == expected), "{expected} must be derived: {:?}", r.deny);
+            assert!(r.deny_missing.iter().any(|d| d == expected), "and reported as omitted");
+        }
+    }
+
+    /// THE PROPERTY THAT MAKES THIS SAFE TO LAND: when the two agree — which parity says they do —
+    /// reconciling changes nothing at all, in either direction.
+    #[test]
+    fn agreement_is_a_no_op_in_both_directions() {
+        let cap = RoleCapability {
+            role: "documentor".into(), github: Tier::Read, git: Tier::Read, code: Tier::None,
+            net: Tier::Read, ui: Tier::Read, write_globs: vec!["docs/**".into()],
+            allow: vec![], surfaces: None,
+        };
+        let rules = role_write_rules(&cap, &[], &[]);
+        let mut deny = rules.deny.clone();
+        deny.extend(role_denied_tools(&cap));
+        let r = reconcile_tool_rules(Some(&cap), &[], &[], rules.allow.clone(), deny.clone());
+        assert_eq!(r.allow, rules.allow, "nothing narrowed");
+        assert_eq!(r.deny, deny, "nothing added");
+        assert!(r.allow_dropped.is_empty() && r.deny_missing.is_empty(), "and nothing to report");
+    }
+
+    #[test]
+    fn no_capability_passes_the_tool_rules_through() {
+        let a = vec!["Edit(anything/**)".to_string()];
+        let d = vec!["Whatever".to_string()];
+        let r = reconcile_tool_rules(None, &[], &[], a.clone(), d.clone());
+        assert_eq!((r.allow, r.deny), (a, d));
+        assert!(r.allow_dropped.is_empty() && r.deny_missing.is_empty());
     }
 
     /// `None` surfaces is UNCONSTRAINED; an empty declared list would be the opposite. The two must

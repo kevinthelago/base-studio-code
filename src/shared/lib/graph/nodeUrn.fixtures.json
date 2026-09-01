@@ -1,0 +1,327 @@
+{
+  "note": "GENERATED from the live TypeScript — see nodeUrn.fixtures.gen.test.ts",
+  "graphs": [
+    "algo",
+    "ui",
+    "sound"
+  ],
+  "libraryRoot": "@bsc",
+  "librarySegment": {
+    "algo": "algorithms",
+    "ui": "ui",
+    "sound": "sounds"
+  },
+  "graphPredicate": [
+    {
+      "value": "algo",
+      "isNodeGraph": true
+    },
+    {
+      "value": "ui",
+      "isNodeGraph": true
+    },
+    {
+      "value": "sound",
+      "isNodeGraph": true
+    },
+    {
+      "value": "nope",
+      "isNodeGraph": false
+    },
+    {
+      "value": "",
+      "isNodeGraph": false
+    },
+    {
+      "value": "ALGO",
+      "isNodeGraph": false
+    }
+  ],
+  "formats": [
+    {
+      "why": "ordinary",
+      "graph": "algo",
+      "kit": "rust",
+      "id": "fibonacci",
+      "formatted": "algo:rust/fibonacci"
+    },
+    {
+      "why": "ui",
+      "graph": "ui",
+      "kit": "react",
+      "id": "Button",
+      "formatted": "ui:react/Button"
+    },
+    {
+      "why": "unknown graph is refused",
+      "graph": "nope",
+      "kit": "rust",
+      "id": "x",
+      "formatted": null
+    },
+    {
+      "why": "empty kit is refused",
+      "graph": "algo",
+      "kit": "",
+      "id": "x",
+      "formatted": null
+    },
+    {
+      "why": "empty id is refused",
+      "graph": "algo",
+      "kit": "rust",
+      "id": "",
+      "formatted": null
+    }
+  ],
+  "subjects": [
+    {
+      "why": "a plain urn",
+      "subject": "algo:rust/fibonacci",
+      "parseNodeUrn": {
+        "graph": "algo",
+        "kit": "rust",
+        "id": "fibonacci"
+      },
+      "isNodeUrn": true,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": "@bsc/algorithms/fibonacci"
+    },
+    {
+      "why": "the ui graph",
+      "subject": "ui:react/Button",
+      "parseNodeUrn": {
+        "graph": "ui",
+        "kit": "react",
+        "id": "Button"
+      },
+      "isNodeUrn": true,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": "@bsc/ui/Button"
+    },
+    {
+      "why": "the sound graph",
+      "subject": "sound:kit/click",
+      "parseNodeUrn": {
+        "graph": "sound",
+        "kit": "kit",
+        "id": "click"
+      },
+      "isNodeUrn": true,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": "@bsc/sounds/click"
+    },
+    {
+      "why": "a kit with a slash — LAST slash splits",
+      "subject": "algo:rust/nested/fibonacci",
+      "parseNodeUrn": {
+        "graph": "algo",
+        "kit": "rust/nested",
+        "id": "fibonacci"
+      },
+      "isNodeUrn": true,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": "@bsc/algorithms/fibonacci"
+    },
+    {
+      "why": "a deep kit",
+      "subject": "ui:react/a/b/c/Thing",
+      "parseNodeUrn": {
+        "graph": "ui",
+        "kit": "react/a/b/c",
+        "id": "Thing"
+      },
+      "isNodeUrn": true,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": "@bsc/ui/Thing"
+    },
+    {
+      "why": "unknown graph is refused",
+      "subject": "nope:rust/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "empty graph is refused",
+      "subject": ":rust/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "no colon is refused",
+      "subject": "algo/rust/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "colon at index 0 is refused",
+      "subject": ":algo:rust/x",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "no slash is refused",
+      "subject": "algo:rustfibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "slash at index 0 of the rest is refused",
+      "subject": "algo:/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "empty id is refused",
+      "subject": "algo:rust/",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "empty string is refused",
+      "subject": "",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "a bare graph name is refused",
+      "subject": "algo",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "a library spec is not a urn",
+      "subject": "@bsc/algorithms/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": {
+        "graph": "algo",
+        "name": "fibonacci"
+      },
+      "urnToImportSpec": null
+    },
+    {
+      "why": "ui library spec",
+      "subject": "@bsc/ui/Button",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": {
+        "graph": "ui",
+        "name": "Button"
+      },
+      "urnToImportSpec": null
+    },
+    {
+      "why": "sounds library spec",
+      "subject": "@bsc/sounds/click",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": {
+        "graph": "sound",
+        "name": "click"
+      },
+      "urnToImportSpec": null
+    },
+    {
+      "why": "a library spec with a nested name",
+      "subject": "@bsc/algorithms/a/b",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": {
+        "graph": "algo",
+        "name": "a/b"
+      },
+      "urnToImportSpec": null
+    },
+    {
+      "why": "unknown segment is refused",
+      "subject": "@bsc/nope/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "library root alone is refused",
+      "subject": "@bsc/",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "library root with no name is refused",
+      "subject": "@bsc/algorithms/",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": true,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "a near-miss root is not a library spec",
+      "subject": "@bscx/algorithms/fibonacci",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "an ordinary npm package is not a library spec",
+      "subject": "react",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    },
+    {
+      "why": "a scoped npm package is not a library spec",
+      "subject": "@scope/pkg",
+      "parseNodeUrn": null,
+      "isNodeUrn": false,
+      "isLibrarySpec": false,
+      "parseLibrarySpec": null,
+      "urnToImportSpec": null
+    }
+  ]
+}

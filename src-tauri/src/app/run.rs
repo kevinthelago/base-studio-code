@@ -333,7 +333,7 @@ pub fn run() {
             pty::pty_kill,
             pty::pty_launch_refusal,
             pty::pty_set_app_runner,
-            pty::pty_report_focus,
+            pty::pty_report_onscreen,
             pty::pty_activity,
             pty::pty_set_reap_policy,
             bsc::bsc,

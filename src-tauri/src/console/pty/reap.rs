@@ -110,22 +110,29 @@ pub const NEVER_STARTED_MIN_AGE_MS: u64 = 3 * 60_000;
 
 /// Whether this session should be reaped now.
 ///
-/// `focused` is reported BY the frontend rather than inferred here — the backend cannot know which
-/// pane a person is looking at. It is deliberately a report with an expiry (see [`focused_pane`]):
-/// when the renderer dies, no pane is focused, everything becomes reapable, and that is exactly the
-/// case this whole module exists for.
+/// `on_screen` is reported BY the frontend rather than inferred here — the backend cannot know which
+/// panes a person can see. It is deliberately a report with an expiry (see [`on_screen_panes`]): when
+/// the renderer dies, nothing is on screen, everything becomes reapable, and that is exactly the case
+/// this whole module exists for.
+///
+/// IT USED TO BE `focused`, AND THAT WORD WAS THE BUG. The frontend reported ONE pane id, resolved
+/// from the console grid's `focusedPaneIdx` — so a studio session, a graph session and a network
+/// architect could never be it, and this guard, the only unconditional protection in the whole
+/// policy, was unreachable for every session the app owns. With a ten-second idle grace that is the
+/// difference between a session and a corpse: the user watched their architect die while looking at
+/// it. What protects a session is being VISIBLE, not being the console's cursor.
 pub fn should_reap(
     a: &Activity,
     now_ms: u64,
-    focused: bool,
+    on_screen: bool,
     cpu_ms: Option<u64>,
     policy: &ReapPolicy,
 ) -> bool {
     // Saturating, like the silence below: a clock that moved backwards must read as YOUNG, which is
     // the protective direction.
     let age_ms = now_ms.saturating_sub(a.created_ms);
-    if focused {
-        return false; // the user is watching it
+    if on_screen {
+        return false; // a surface is showing it — the user can see this session
     }
     // Saturating: a clock that went backwards must read as "no silence yet", never as a huge one.
     let silent_ms = now_ms.saturating_sub(a.last_output_ms);
@@ -270,17 +277,20 @@ fn registry() -> &'static Mutex<HashMap<String, Activity>> {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The focused pane as last REPORTED by the frontend, with the epoch-ms it was reported at.
-fn focus_cell() -> &'static Mutex<Option<(String, u64)>> {
-    static F: OnceLock<Mutex<Option<(String, u64)>>> = OnceLock::new();
-    F.get_or_init(|| Mutex::new(None))
+/// Every pane a surface is showing, as last REPORTED by the frontend, with the epoch-ms of that
+/// report. Empty means "nothing is on screen" — which is also what a report that never arrived and a
+/// report that has expired both mean, and they are deliberately indistinguishable: each of the three
+/// says the same thing, that nothing here is protected.
+fn focus_cell() -> &'static Mutex<(std::collections::HashSet<String>, u64)> {
+    static F: OnceLock<Mutex<(std::collections::HashSet<String>, u64)>> = OnceLock::new();
+    F.get_or_init(|| Mutex::new((std::collections::HashSet::new(), 0)))
 }
 
-/// How long a focus report is trusted.
+/// How long an on-screen report is trusted.
 ///
-/// A REPORT WITH AN EXPIRY, not a latch. If the renderer dies while a pane is focused, a latched
-/// report would protect that pane forever — the one session guaranteed to survive would be the one the
-/// user was last looking at, in the exact situation where the UI is gone. The frontend re-reports on a
+/// A REPORT WITH AN EXPIRY, not a latch. If the renderer dies while panes are on screen, a latched
+/// report would protect them forever — the sessions guaranteed to survive would be the ones the user
+/// was last looking at, in the exact situation where the UI is gone. The frontend re-reports on a
 /// timer well inside this window, so a live UI never lapses.
 pub const FOCUS_REPORT_TTL_MS: u64 = 30_000;
 
@@ -331,27 +341,36 @@ pub fn forget(pane_id: &str) {
     }
 }
 
-/// The frontend reporting which pane the user is looking at. `None` clears it.
-pub fn report_focus(pane_id: Option<String>) {
+/// The frontend reporting every pane a surface is currently SHOWING. An empty list clears it.
+///
+/// A SET, not one id. The single-id form could only ever name the console grid's focused pane, so no
+/// studio, graph session or network architect was ever protected — and several surfaces genuinely do
+/// show different sessions at once (a console cell and an open Glance morph), so there is no one pane
+/// to name even when the answer is not a studio.
+pub fn report_on_screen(pane_ids: Vec<String>) {
     if let Ok(mut cell) = focus_cell().lock() {
-        *cell = pane_id.map(|p| (p, now_ms()));
+        *cell = (pane_ids.into_iter().collect(), now_ms());
     }
 }
 
-/// The focused pane, if the report is still fresh. See [`FOCUS_REPORT_TTL_MS`].
-pub fn focused_pane(now_ms_: u64) -> Option<String> {
-    let cell = focus_cell().lock().ok()?;
-    let (id, at) = cell.as_ref()?;
-    (now_ms_.saturating_sub(*at) < FOCUS_REPORT_TTL_MS).then(|| id.clone())
+/// The panes a surface is showing, if the report is still fresh. See [`FOCUS_REPORT_TTL_MS`].
+///
+/// A STALE REPORT IS AN EMPTY SET, never the last one seen. That is the whole reason this is a report
+/// with an expiry rather than a latch: when the renderer dies, everything it was showing has to become
+/// reapable, which is the case the backend reaper exists for.
+pub fn on_screen_panes(now_ms_: u64) -> std::collections::HashSet<String> {
+    let Ok(cell) = focus_cell().lock() else { return std::collections::HashSet::new() };
+    let (ids, at) = &*cell;
+    if now_ms_.saturating_sub(*at) < FOCUS_REPORT_TTL_MS { ids.clone() } else { std::collections::HashSet::new() }
 }
 
-/// Every pane that should be reaped right now, given a snapshot and the focus report.
+/// Every pane that should be reaped right now, given a snapshot and the on-screen report.
 ///
 /// Pure over its inputs so the whole decision is testable without a PTY, a clock or a webview.
 pub fn panes_to_reap(
     snapshot: &HashMap<String, Activity>,
     now_ms_: u64,
-    focused: Option<&str>,
+    on_screen: &std::collections::HashSet<String>,
     procs: &ProcSnapshot,
     policy: &ReapPolicy,
 ) -> Vec<String> {
@@ -361,7 +380,7 @@ pub fn panes_to_reap(
             // A root pid of 0 means the session never reported one, which is UNKNOWN rather than zero
             // CPU — the distinction that decides whether it takes the grace or the ceiling.
             let cpu_ms = (a.root_pid != 0).then(|| subtree_cpu_ms(a.root_pid, procs));
-            should_reap(a, now_ms_, Some(id.as_str()) == focused, cpu_ms, policy)
+            should_reap(a, now_ms_, on_screen.contains(id.as_str()), cpu_ms, policy)
         })
         .map(|(id, _)| id.clone())
         .collect();
@@ -372,6 +391,13 @@ pub fn panes_to_reap(
 /// A copy of the live registry, for the ticker and for reporting.
 pub fn snapshot() -> HashMap<String, Activity> {
     registry().lock().map(|m| m.clone()).unwrap_or_default()
+}
+
+/// The on-screen report as a set — the shape a live UI sends every few seconds. Test-only, and shared
+/// by every test module here so "nothing is on screen" has ONE spelling rather than a copy per module.
+#[cfg(test)]
+fn on_screen_set(ids: &[&str]) -> std::collections::HashSet<String> {
+    ids.iter().map(|s| (*s).to_string()).collect()
 }
 
 #[cfg(test)]
@@ -480,7 +506,7 @@ mod tests {
             let mut panes = HashMap::new();
             panes.insert("twitter-clone-test:api".to_string(), young(age));
             assert!(
-                panes_to_reap(&panes, NOW, None, &cpu, &p).is_empty(),
+                panes_to_reap(&panes, NOW, &on_screen_set(&[]), &cpu, &p).is_empty(),
                 "a {age}ms-old session waiting on the model must survive",
             );
         }
@@ -488,7 +514,7 @@ mod tests {
         // Past the age, a session that has STILL never used a CPU tick genuinely never started.
         let mut panes = HashMap::new();
         panes.insert("parked".to_string(), young(NEVER_STARTED_MIN_AGE_MS + 1_000));
-        assert_eq!(panes_to_reap(&panes, NOW, None, &cpu, &p), vec!["parked".to_string()]);
+        assert_eq!(panes_to_reap(&panes, NOW, &on_screen_set(&[]), &cpu, &p), vec!["parked".to_string()]);
     }
 
     /// The exited-agent case is UNTOUCHED — that is where "reap in seconds" is both wanted and safe,
@@ -550,7 +576,7 @@ mod tests {
         );
         // pgid 4242 is absent from the CPU map ⇒ genuinely zero ⇒ reapable on the short grace.
         let cpu = ProcSnapshot::default();
-        assert_eq!(panes_to_reap(&snap, NOW, None, &cpu, &p), vec!["parked".to_string()]);
+        assert_eq!(panes_to_reap(&snap, NOW, &on_screen_set(&[]), &cpu, &p), vec!["parked".to_string()]);
     }
 
     /// THE TOPOLOGY THAT BROKE IT, measured live:
@@ -585,7 +611,7 @@ mod tests {
         let mut panes = HashMap::new();
         panes.insert("twitter-clone-test:api".to_string(), a);
         assert!(
-            panes_to_reap(&panes, NOW, None, &snap, &p).is_empty(),
+            panes_to_reap(&panes, NOW, &on_screen_set(&[]), &snap, &p).is_empty(),
             "a session with real work is not reaped after 30s of quiet",
         );
     }
@@ -603,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn the_focused_pane_is_never_reaped_at_any_silence() {
+    fn a_pane_on_screen_is_never_reaped_at_any_silence() {
         let p = ReapPolicy::default();
         for st in [RunState::Run, RunState::Idle, RunState::Unknown] {
             assert!(!should_reap(&act(st, 10 * 60 * 60_000), NOW, true, WORKED, &p), "{st:?}");
@@ -619,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn the_selection_is_deterministic_and_respects_focus() {
+    fn the_selection_is_deterministic_and_respects_what_is_on_screen() {
         let p = ReapPolicy::default();
         let mut snap = HashMap::new();
         snap.insert("zzz:parked".into(), act(RunState::Run, 909_000));
@@ -627,23 +653,54 @@ mod tests {
         snap.insert("mmm:working".into(), act(RunState::Run, 2_000));
         snap.insert("bbb:watched".into(), act(RunState::Idle, 30_000));
 
-        let got = panes_to_reap(&snap, NOW, Some("bbb:watched"), &ProcSnapshot::default(), &p);
+        let watched = on_screen_set(&["bbb:watched"]);
+        let got = panes_to_reap(&snap, NOW, &watched, &ProcSnapshot::default(), &p);
         assert_eq!(got, vec!["aaa:exited".to_string(), "zzz:parked".to_string()]);
     }
 
-    /// A focus report EXPIRES. Latching it would mean that when the renderer dies, the one session
-    /// guaranteed to survive forever is whichever the user was last looking at — in exactly the
+    /// THE REGRESSION. Two surfaces can show two different sessions at once — a console cell and an
+    /// open Glance morph — and a studio or a network architect is never the console's focused pane at
+    /// all. The report was ONE pane id, so at most one of these could be protected and the app-owned
+    /// ones could not be protected at any time, under a ten-second grace.
+    #[test]
+    fn every_pane_a_surface_is_showing_is_protected_not_just_one() {
+        let p = ReapPolicy::default();
+        let mut snap = HashMap::new();
+        // Silent well past the idle grace, so ONLY the on-screen report can save them.
+        for id in [
+            "twitter-clone-test:api",          // a console grid cell
+            "design-studio:designer-react",    // a studio, docked on the Components page
+            "network-finance:architect",       // a network architect, open in a Glance morph
+            "algorithms-studio:librarian-rust",
+        ] {
+            snap.insert(id.to_string(), act(RunState::Idle, 30_000));
+        }
+        snap.insert("nobody:watching".into(), act(RunState::Idle, 30_000));
+
+        let shown = on_screen_set(&[
+            "twitter-clone-test:api",
+            "design-studio:designer-react",
+            "network-finance:architect",
+            "algorithms-studio:librarian-rust",
+        ]);
+        let got = panes_to_reap(&snap, NOW, &shown, &ProcSnapshot::default(), &p);
+        assert_eq!(got, vec!["nobody:watching".to_string()], "only the unwatched session goes");
+    }
+
+    /// An on-screen report EXPIRES. Latching it would mean that when the renderer dies, the sessions
+    /// guaranteed to survive forever are whichever the user was last looking at — in exactly the
     /// situation this module exists to handle.
     #[test]
-    fn a_stale_focus_report_stops_protecting_its_pane() {
-        report_focus(Some("watched".into()));
+    fn a_stale_on_screen_report_stops_protecting_its_panes() {
+        report_on_screen(vec!["watched".into(), "also-watched".into()]);
         let at = now_ms();
-        assert_eq!(focused_pane(at).as_deref(), Some("watched"));
-        assert_eq!(focused_pane(at + FOCUS_REPORT_TTL_MS - 1).as_deref(), Some("watched"));
-        assert_eq!(focused_pane(at + FOCUS_REPORT_TTL_MS), None, "the report has expired");
+        assert_eq!(on_screen_panes(at).len(), 2);
+        assert!(on_screen_panes(at).contains("watched"));
+        assert!(on_screen_panes(at + FOCUS_REPORT_TTL_MS - 1).contains("also-watched"));
+        assert!(on_screen_panes(at + FOCUS_REPORT_TTL_MS).is_empty(), "the report has expired");
 
-        report_focus(None);
-        assert_eq!(focused_pane(now_ms()), None);
+        report_on_screen(Vec::new());
+        assert!(on_screen_panes(now_ms()).is_empty());
     }
 
     /// The registry folds output time and state together, which is what the ticker reads.
@@ -712,28 +769,35 @@ pub const TICK_MS: u64 = 5_000;
 /// Best-effort and atomic-ish: a failed write must never end the sweep it is describing, and a
 /// half-written file must not be parsed, so it lands via a temp file and a rename.
 pub fn publish(path: &std::path::Path, now_ms_: u64, procs: &ProcSnapshot, policy: &ReapPolicy) {
-    let focused = focused_pane(now_ms_);
+    let on_screen = on_screen_panes(now_ms_);
     let panes: Vec<serde_json::Value> = {
         let mut v: Vec<_> = snapshot()
             .into_iter()
             .map(|(id, a)| {
                 let silent = now_ms_.saturating_sub(a.last_output_ms);
-                let is_focused = Some(id.as_str()) == focused.as_deref();
+                let is_on_screen = on_screen.contains(id.as_str());
                 let cpu_ms = (a.root_pid != 0).then(|| subtree_cpu_ms(a.root_pid, procs));
                 serde_json::json!({
                     "paneId": id,
                     "silentMs": silent,
                     "status": format!("{:?}", a.status).to_lowercase(),
-                    "focused": is_focused,
+                    "onScreen": is_on_screen,
                     // Surfaced because it is what decides WHICH threshold applies — a reader seeing
                     // `reapable: false` on a silent pane needs to know it is protected for having
                     // done work, not by an arbitrary number.
                     "cpuMs": cpu_ms,
-                    "reapable": should_reap(&a, now_ms_, is_focused, cpu_ms, policy),
+                    "reapable": should_reap(&a, now_ms_, is_on_screen, cpu_ms, policy),
                 })
             })
             .collect();
         v.sort_by(|a, b| a["paneId"].as_str().cmp(&b["paneId"].as_str()));
+        v
+    };
+    // Sorted OUTSIDE the macro: `json!` cannot parse a turbofish-free generic in a block, and a
+    // reader diffing two snapshots must see a real change rather than hash order.
+    let on_screen_sorted = {
+        let mut v: Vec<String> = on_screen.iter().cloned().collect();
+        v.sort();
         v
     };
     let doc = serde_json::json!({
@@ -742,9 +806,11 @@ pub fn publish(path: &std::path::Path, now_ms_: u64, procs: &ProcSnapshot, polic
             "idleGraceMs": policy.idle_grace_ms,
             "silenceCeilingMs": policy.silence_ceiling_ms,
         },
-        // Absent rather than empty-string when no UI is reporting: "nothing is focused" and "a pane
-        // named empty is focused" must not look the same to a reader.
-        "focusedPaneId": focused,
+        // SORTED, so a reader diffing two snapshots sees a real change rather than hash order. An
+        // empty array is the honest answer for all three of "no UI is reporting", "the report
+        // expired" and "the UI is showing nothing" — they mean the same thing here: nothing is
+        // protected.
+        "onScreenPaneIds": on_screen_sorted,
         "panes": panes,
     });
     let Ok(body) = serde_json::to_vec_pretty(&doc) else { return };
@@ -927,7 +993,7 @@ mod headless_tests {
         );
 
         // No focus report at all — the renderer is gone.
-        let doomed = panes_to_reap(&snap, now, None, &ProcSnapshot::default(), &policy);
+        let doomed = panes_to_reap(&snap, now, &on_screen_set(&[]), &ProcSnapshot::default(), &policy);
         assert_eq!(
             doomed,
             vec!["village-animal-hospital:director".to_string()],
@@ -952,13 +1018,14 @@ mod headless_tests {
         assert!(doc["writtenAtMs"].as_u64().unwrap_or(0) > 0);
         assert_eq!(doc["policy"]["idleGraceMs"], 10_000);
         assert_eq!(doc["policy"]["silenceCeilingMs"], 300_000);
-        // ABSENT, not empty-string: "nothing is focused" and "a pane named empty" must differ.
-        assert!(doc["focusedPaneId"].is_null());
+        // An ARRAY, always — the CLI iterates it. Empty here: this test reports nothing on screen.
+        assert_eq!(doc["onScreenPaneIds"].as_array().map(Vec::len), Some(0));
 
         let row = doc["panes"].as_array().expect("panes")
             .iter().find(|p| p["paneId"] == pane.as_str()).expect("our pane");
         assert_eq!(row["status"], "run", "lowercased for the CLI");
         assert_eq!(row["reapable"], false, "fresh output ⇒ not reapable");
+        assert_eq!(row["onScreen"], false, "nothing was reported on screen");
         // No pgid was recorded for this pane, so CPU is UNKNOWN — and unknown must serialize as null
         // rather than 0, or a reader cannot tell "never ran" from "could not tell".
         assert!(row["cpuMs"].is_null(), "unknown CPU is null, never zero");
@@ -970,10 +1037,10 @@ mod headless_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// An expired focus report must not keep protecting a pane. Without the TTL, the single session
-    /// guaranteed to survive a renderer death is whichever the user was last looking at.
+    /// An expired on-screen report must not keep protecting a pane. Without the TTL, the sessions
+    /// guaranteed to survive a renderer death are whichever the user was last looking at.
     #[test]
-    fn a_pane_focused_when_the_renderer_died_is_still_reaped_afterwards() {
+    fn a_pane_on_screen_when_the_renderer_died_is_still_reaped_afterwards() {
         let policy = ReapPolicy::default();
         let now = 1_788_000_000_000u64;
         let mut snap = HashMap::new();
@@ -983,9 +1050,11 @@ mod headless_tests {
         );
 
         // While the UI lived, it was protected.
-        assert!(panes_to_reap(&snap, now, Some("watched"), &ProcSnapshot::default(), &policy).is_empty());
-        // With the UI gone there is no report, so it is reapable like anything else.
-        assert_eq!(panes_to_reap(&snap, now, None, &ProcSnapshot::default(), &policy), vec!["watched".to_string()]);
+        let shown = on_screen_set(&["watched"]);
+        assert!(panes_to_reap(&snap, now, &shown, &ProcSnapshot::default(), &policy).is_empty());
+        // With the UI gone the report is EMPTY, so it is reapable like anything else.
+        let none = std::collections::HashSet::new();
+        assert_eq!(panes_to_reap(&snap, now, &none, &ProcSnapshot::default(), &policy), vec!["watched".to_string()]);
     }
 }
 

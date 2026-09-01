@@ -7,6 +7,12 @@
 /// both `api.rs` and `oauth.rs`.
 pub(crate) const USER_AGENT: &str = concat!("base-studio-code/", env!("CARGO_PKG_VERSION"));
 
+// The persisted board state's MODEL (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) —
+// the rules about a structure bsc-project already stores but, by its own doc comment, treats as
+// opaque. Nothing calls it yet: the caller flip is a separate item, so the derivation and the
+// behaviour change stay independently revertible.
+#[allow(dead_code)]
+pub(crate) mod board_state;
 pub mod api;
 pub mod oauth;
 pub mod git_hooks;

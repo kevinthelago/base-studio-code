@@ -7,3 +7,11 @@ description = "Tiny dependency-free leaf crate for base-studio-code (#1646) — 
 # Leaf crate: std only, no dependencies, so any CLI can pull it in for free.
 [lib]
 name = "bsc_util"
+
+# TESTS ONLY — a dev-dependency is not propagated to anything that links this crate, so the
+# "no dependencies" property above is unchanged for every consumer. `pane_id` is proved against
+# `src/app/console/paneIdentity.fixtures.json`, a fixture GENERATED from the TypeScript it was ported
+# from, and hand-rolling a JSON reader to avoid this line would reintroduce exactly the kind of
+# second parser the port exists to remove.
+[dev-dependencies]
+serde_json = "1"

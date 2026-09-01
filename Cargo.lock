@@ -546,6 +546,7 @@ dependencies = [
  "png 0.18.1",
  "portable-pty",
  "rand 0.10.2",
+ "regex",
  "reqwest 0.12.28",
  "rfd",
  "rusqlite",
@@ -889,6 +890,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
  "bsc-project",
+ "bsc-sandbox",
  "bsc-util",
  "logs",
  "plandb",
@@ -1211,6 +1213,9 @@ dependencies = [
 [[package]]
 name = "bsc-util"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "bsc-work"

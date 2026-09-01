@@ -6475,6 +6475,38 @@ export function X(){ return <i>{nope}</i>; }"
         assert!(module_defects(copy_only).is_empty(), "{:?}", module_defects(copy_only));
     }
 
+    /// #3897/#112 — the SIBLING-BY-ID form, pinned on the Rust side so the two twins cannot drift.
+    ///
+    /// `kit_targets` injects a synthetic `components/<id>.tsx` for every node, which is what lets a
+    /// migrated page import its panels as `@/components/<id>` — neither a `src` path nor a registered
+    /// module — without reading as `no-implementation`. That injection had NO test on either side, and
+    /// the frontend twin simply did not implement it: `bsc ui doctor` called such a component healthy
+    /// while `componentPreviewFiles` refused to build it, so `bsc navigate` threw "module not found" on
+    /// a kit the doctor reported clean. `componentPreview.test.ts`'s sibling-by-id block is the other
+    /// half of this pair; the two must move together, exactly as
+    /// `the_preview_predicate_uses_the_context_aware_scanner_too` pins the ellipsis rule.
+    #[test]
+    fn a_sibling_by_id_import_resolves_against_the_synthetic_component_target() {
+        let mut targets = BTreeSet::new();
+        targets.insert("components/glance-session-log.tsx".to_string());
+
+        let by_id = "import { GlanceSessionLog } from \"@/components/glance-session-log\";\n\
+                     export function GlanceChatDock() { return <GlanceSessionLog/>; }";
+        assert!(
+            is_preview_buildable(by_id, "src/features/glance/GlanceChatDock.tsx", &targets),
+            "a sibling-by-id import must resolve against the synthetic target kit_targets injects"
+        );
+
+        // ...and an id naming NO node in the kit is still unresolved — the injection must not turn
+        // `@/components/<anything>` into a blanket pass, which would hide a real dangling import.
+        let dangling = "import { Nope } from \"@/components/glance-nope\";\n\
+                        export function X() { return <Nope/>; }";
+        assert!(
+            !is_preview_buildable(dangling, "src/features/glance/X.tsx", &targets),
+            "an id with no node behind it must stay unresolved"
+        );
+    }
+
     #[test]
     fn artifact_buildable_srcs_collects_only_components_that_ship_source() {
         let artifact = json!({

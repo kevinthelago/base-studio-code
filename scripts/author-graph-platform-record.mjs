@@ -68,8 +68,8 @@ for (const rel of targets) {
     "graph", "impl", "set",
     "--id", id, "--tech", "typescript", "--role", "algorithm", "--name", "graphPlatform",
     "--code-file", f, "--src", `src/${rel}`, "--provides", provides,
-    // NO `--module-state`. These modules are stateless now (`scripts/drop-registrar-done-guard.mjs`),
-    // and declaring state here would re-trip the very guard that removal was for: `impl set` refuses a
+    // NO `--module-state`. These modules were made stateless by the registrar migration, and declaring
+    // state here would re-trip the very guard that removal was for: `impl set` refuses a
     // `provides` from a stateful record onto a REGISTERED specifier. The field is a DECLARATION the
     // store enforces against, not a description it ignores.
     "--clear", "moduleState",
