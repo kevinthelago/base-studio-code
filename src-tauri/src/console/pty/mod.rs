@@ -688,6 +688,13 @@ pub(crate) async fn pty_create(
     // (`denies::deniable_surface_names`) and complements the role's declaration against the result —
     // the half a bsc-agent session was missing entirely.
     surface_catalog: Option<Vec<crate::session::denies::SurfaceRow>>,
+    // The MCP library + this pane's persona carries, for `$BSC_AGENT_MCP` — the SECOND consumer of
+    // the same resolution, and the one that must narrow differently
+    // (`the-launch-resolves-its-own-mcp-servers-instead-of-receiving-them`). `.mcp.json` keeps http
+    // servers; this client cannot speak http, so an http entry hands it a config it fails on.
+    mcp_library: Option<Vec<crate::extensions::mcp_resolution::McpServer>>,
+    persona_mcp_ids: Option<Vec<String>>,
+    namespace_hooks: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     provider_id: Option<String>,
@@ -702,7 +709,7 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, flow_push, user_denied_commands, surface_catalog, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, flow_push, user_denied_commands, surface_catalog, mcp_library, persona_mcp_ids, namespace_hooks, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
@@ -759,6 +766,59 @@ fn launch_init_cmd(
             },
         ),
     )
+}
+
+/// Resolve `$BSC_AGENT_MCP` into `env`, in place — the SECOND consumer of the MCP resolution.
+///
+/// It must NOT share a list with `.mcp.json`. That one keeps http servers; this client cannot speak
+/// http, so forwarding an http entry hands it a config it fails on. Both narrow from the same
+/// resolution and each reconciles its OWN shape, which is why `reconcile_mcp` is generic rather than
+/// taking one concrete entry type.
+///
+/// The env value is only REWRITTEN when the pane already carries one: a pane with no `$BSC_AGENT_MCP`
+/// is not a bsc-agent pane, and inventing the variable for it would hand a Claude session a config it
+/// has no reader for.
+fn launch_agent_mcp(
+    env: &mut std::collections::HashMap<String, String>,
+    library: Vec<crate::extensions::mcp_resolution::McpServer>,
+    persona_mcp_ids: &[String],
+    sandboxed: bool,
+    pane_id: &str,
+) {
+    let Some(raw) = env.get("BSC_AGENT_MCP").cloned() else { return };
+    let Ok(sent) = serde_json::from_str::<Vec<crate::extensions::mcp_resolution::BscAgentMcpCfg>>(&raw)
+    else {
+        log::warn!("pty[{pane_id}] BSC_AGENT_MCP is unparseable — left as sent, resolving nothing");
+        return;
+    };
+    let builtins = crate::extensions::mcp_resolution::builtin_mcp_servers();
+    let resolved = crate::extensions::mcp_resolution::mcp_reachable_from(
+        &crate::extensions::mcp_resolution::resolve_persona_mcp(&library, persona_mcp_ids, &builtins),
+        sandboxed,
+        &builtins,
+    );
+    let payloads: Vec<crate::extensions::cfg::McpServerCfg> = resolved
+        .iter()
+        .filter_map(crate::extensions::mcp_resolution::to_mcp_payload)
+        .collect();
+    // THE STDIO-ONLY NARROWING, applied here and not shared with `.mcp.json`.
+    let stdio = crate::extensions::mcp_resolution::to_bsc_agent_mcp(&payloads);
+    let recon = crate::extensions::mcp_resolution::reconcile_mcp(&sent, &stdio, |e| e.name.clone());
+    if !recon.dropped.is_empty() || !recon.not_added.is_empty() {
+        log::warn!(
+            "pty[{pane_id}] $BSC_AGENT_MCP disagreed — DROPPED {:?}, did NOT add {:?}. The smaller \
+             list wins: an advertised server that cannot spawn costs retries and misdiagnosis.",
+            recon.dropped,
+            recon.not_added,
+        );
+    }
+    match serde_json::to_string(&recon.merged) {
+        Ok(v) => {
+            env.insert("BSC_AGENT_MCP".to_string(), v);
+        }
+        // Leaving the sent value in place is the safe failure: it is what would have run anyway.
+        Err(e) => log::warn!("pty[{pane_id}] could not render $BSC_AGENT_MCP ({e}) — left as sent"),
+    }
 }
 
 /// Derive this launch's write scope into `env`, in place.
@@ -893,6 +953,10 @@ fn pty_create_inner(
     // See the command above: bsc-agent's permission document is the only route the user's denylist has.
     user_denied_commands: Option<Vec<String>>,
     surface_catalog: Option<Vec<crate::session::denies::SurfaceRow>>,
+    // See the command above: the SECOND consumer of the MCP resolution, stdio-only.
+    mcp_library: Option<Vec<crate::extensions::mcp_resolution::McpServer>>,
+    persona_mcp_ids: Option<Vec<String>>,
+    namespace_hooks: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -1098,6 +1162,13 @@ fn pty_create_inner(
         // `session::write_scope::reconcile_write_scope`.
         let mut reconciled = reconciled;
         launch_write_scope(&mut reconciled, role_capability.as_ref(), &pane_id);
+        launch_agent_mcp(
+            &mut reconciled,
+            mcp_library.clone().unwrap_or_default(),
+            &persona_mcp_ids.clone().unwrap_or_default(),
+            namespace_hooks.unwrap_or(false),
+            &pane_id,
+        );
         Some(reconciled)
     };
     // THE bsc-agent PERMISSION DOCUMENT, RENDERED HERE. On that harness this doc is the entire gate —

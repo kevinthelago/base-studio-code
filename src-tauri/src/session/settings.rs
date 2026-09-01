@@ -179,6 +179,12 @@ pub(crate) fn ensure_session_settings(
     // against an explicit choice would ADD skills the user did not choose, and would fire the
     // divergence warning on every such pane — which is how a useful signal becomes noise.
     skills_explicit: Option<bool>,
+    // The MCP server LIBRARY and this pane's persona carries. Unlike the skills library this one is
+    // NOT backend-owned — `s.mcpServers` is frontend store state with no Rust store behind it — so it
+    // travels (`the-launch-resolves-its-own-mcp-servers-instead-of-receiving-them`). The BUILT-INS do
+    // not: `builtin_mcp_servers()` reads the same overlay file the renderer sees.
+    mcp_library: Option<Vec<crate::extensions::mcp_resolution::McpServer>>,
+    persona_mcp_ids: Option<Vec<String>>,
     persona_hooks: Option<Vec<HookCfg>>,
     // Whether `hooks` above is the SANDBOXED substitution rather than the ordinary chain. The
     // caller owns that swap (the sandbox cluster has its own items), so the launch must be told
@@ -381,6 +387,45 @@ pub(crate) fn ensure_session_settings(
                 "session settings[{cwd}]: the resolution added skills the frontend omitted — {:?}. \
                  Expected for a pane the renderer never resolved for; a DEFECT on one it did.",
                 recon.added,
+            );
+        }
+        recon.merged
+    };
+    // THE MCP SERVERS, RESOLVED HERE — and NARROWED, not unioned. The dangerous state on this one is
+    // ADVERTISED-BUT-BROKEN: a server in `.mcp.json` that cannot spawn is spent on retries and
+    // misdiagnosis, while a capability the agent is never told about costs nothing. So the two lists
+    // intersect and BOTH directions are reported.
+    //
+    // `namespace_hooks` doubles as the sandbox flag because it IS the same decision: `sandboxPlanFor`
+    // derives one plan and the renderer passes `namespaceHooks` out of it.
+    let mcp_servers = {
+        let builtins = crate::extensions::mcp_resolution::builtin_mcp_servers();
+        let resolved = crate::extensions::mcp_resolution::mcp_reachable_from(
+            &crate::extensions::mcp_resolution::resolve_persona_mcp(
+                &mcp_library.unwrap_or_default(),
+                &persona_mcp_ids.unwrap_or_default(),
+                &builtins,
+            ),
+            namespace_hooks.unwrap_or(false),
+            &builtins,
+        );
+        let resolved_payloads: Vec<McpServerCfg> = resolved
+            .iter()
+            .filter_map(crate::extensions::mcp_resolution::to_mcp_payload)
+            .collect();
+        let recon = crate::extensions::mcp_resolution::reconcile_mcp(
+            &mcp_servers,
+            &resolved_payloads,
+            |e: &McpServerCfg| e.name.clone(),
+        );
+        if !recon.dropped.is_empty() || !recon.not_added.is_empty() {
+            log::warn!(
+                "session settings[{cwd}]: MCP servers disagreed — DROPPED {:?} (the frontend sent \
+                 them, the resolution did not) and did NOT add {:?} (the reverse). The smaller list \
+                 wins here: an advertised server that cannot spawn costs retries and misdiagnosis, \
+                 while one the agent is never told about costs nothing.",
+                recon.dropped,
+                recon.not_added,
             );
         }
         recon.merged
@@ -1108,6 +1153,9 @@ mod tests {
             None,
             None,
             None,
+            // mcp_library · persona_mcp_ids — no library, no persona carries.
+            None,
+            None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
             None,
@@ -1130,6 +1178,50 @@ mod tests {
 
     /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
     ///
+    /// THE CALL SITE for the MCP narrowing. `mcp_resolution`'s own tests stay green if
+    /// `ensure_session_settings` never calls it — measured, by neutering the resolution: they
+    /// reconcile directly.
+    ///
+    /// The frontend sends a server the resolution does NOT produce — no persona carries it and it is
+    /// not a built-in — and the launch must drop it. This is the one flip that NARROWS: an advertised
+    /// server that cannot spawn is spent on retries and misdiagnosis, while one the agent is never
+    /// told about costs nothing.
+    #[test]
+    fn the_launch_drops_an_mcp_server_the_resolution_did_not_vouch_for() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("mcp-narrowing-launch");
+        let cwd = home.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+
+        let ghost = McpServerCfg {
+            name: "ghost".into(),
+            transport: "stdio".into(),
+            command: Some("node".into()),
+            args: vec!["./ghost.js".into()],
+            env: vec![],
+            url: None,
+        };
+        super::ensure_session_settings(
+            cwd.to_string_lossy().to_string(),
+            vec![], vec![],
+            // The renderer advertises it; NO library and NO persona carries back it up.
+            Some(vec![ghost]),
+            None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None,
+        )
+        .expect("settings written");
+
+        let path = cwd.join(".mcp.json");
+        let written = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            !written.contains("ghost"),
+            "an unvouched-for server reached .mcp.json — the agent will be told it has a capability \
+             that cannot spawn: {written}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// THE CALL SITE, and the fix landing. `skill_resolution`'s own tests stay green if
     /// `ensure_session_settings` never calls it — measured, by short-circuiting the block: they
     /// reconcile directly.
@@ -1165,6 +1257,7 @@ mod tests {
             // skills: NONE — the pane the renderer never resolved for.
             None, None, None, None, None, None, None, None, None, None,
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None,
         )
         .expect("settings written");
 
@@ -1221,6 +1314,7 @@ mod tests {
             vec![], vec![],
             None, None, None, None, None, None, None, None, None, None,
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None,
         )
         .expect("settings written");
         let bare_cmds = commands_at(&bare);
@@ -1256,7 +1350,7 @@ mod tests {
             None, Some(vec![]), None, None, None, None, None, None, None, None,
             Some(cap),
             Some(vec![]),
-            None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
         let worker_cmds = commands_at(&worker_dir);
@@ -1320,8 +1414,8 @@ mod tests {
             // The flow POLICY now, not the derived list — see `denies::flow_granted_push_commands`.
             Some("auto-pr".to_string()),
             // user_denied_commands · pane_id · flow_gate · global_bypass · the four skill facts ·
-            // persona_hooks · namespace_hooks — this test is about the flow's push GRANT and nothing else.
-            None, None, None, None, None, None, None, None, None, None,
+            // the two mcp facts · persona_hooks · namespace_hooks — the flow's push GRANT only.
+            None, None, None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
 
@@ -1408,6 +1502,9 @@ mod tests {
             None,
             None,
             None,
+            // mcp_library · persona_mcp_ids — no library, no persona carries.
+            None,
+            None,
             // persona_hooks · namespace_hooks — no persona, ordinary (non-caged) chain.
             None,
             None,
@@ -1461,8 +1558,8 @@ mod tests {
             None, None, None, None,
             Some(profile),
             // flow_push · user_denied_commands · pane_id · flow_gate · global_bypass · the three
-            // skill facts · persona_hooks · namespace_hooks — this test is about the PROFILE half.
-            None, None, None, None, None, None, None, None, None, None, None,
+            // skill facts · mcp facts · persona_hooks · namespace_hooks — the PROFILE half only.
+            None, None, None, None, None, None, None, None, None, None, None, None, None,
         )
         .expect("settings written");
 
