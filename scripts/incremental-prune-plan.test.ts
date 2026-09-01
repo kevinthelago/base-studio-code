@@ -142,3 +142,43 @@ describe("planPrune — conservative fallbacks", () => {
     expect(prune).toEqual(["bsc-ccccccccccccc", "bsc-ddddddddddddd", "bsc-bbbbbbbbbbbbb"]);
   });
 });
+
+/**
+ * THE FLOOR IS NOT A FLOOR — it is a blanket exemption, and that is why the default matters so much.
+ *
+ * `planPrune` keeps an entry when it is newest-per-crate OR newer than the cutoff. The OR is correct
+ * (both clauses are safety conditions) but it means every directory younger than the cutoff survives
+ * regardless of `keep`. At the old 3-day default, a tree built today had nothing eligible at all:
+ * MEASURED 2026-09-01, 0 of 266 dirs, on a repo holding 310 GB of incremental.
+ *
+ * These pin the SHAPE, so a future edit cannot restore a cutoff that exempts a working day.
+ */
+describe("the age cutoff has to be shorter than a working session", () => {
+  const now = Date.parse("2026-09-01T18:00:00Z");
+  const entry = (name: string, hoursAgo: number) => ({ name, mtimeMs: now - hoursAgo * 3_600_000 });
+
+  it("collects a cache untouched for a working day, keeping the newest per crate", () => {
+    const entries = [
+      entry("bsc_graph-1aaaaaaaaaaaa", 0.1), // the live cache for this crate
+      entry("bsc_graph-2bbbbbbbbbbbb", 8),
+      entry("bsc_graph-3ccccccccccc", 30),
+    ];
+    const { prune, keep } = planPrune(entries, { days: 6 / 24, keep: 1, now });
+    expect(keep).toContain("bsc_graph-1aaaaaaaaaaaa");
+    expect(prune).toEqual(["bsc_graph-3ccccccccccc", "bsc_graph-2bbbbbbbbbbbb"]); // oldest-first
+  });
+
+  it("spares everything at the old three-day cutoff — the no-op this default replaced", () => {
+    const entries = [entry("s-aaa-1", 0.1), entry("bsc_graph-2bbbbbbbbbbbb", 8), entry("s-aaa-3", 30)];
+    expect(planPrune(entries, { days: 3, keep: 1, now }).prune).toEqual([]);
+  });
+
+  /** The live cache is spared by IDENTITY, not by age, so a build writing right now is never a
+   *  candidate however short the cutoff gets. That is what makes a six-hour floor safe. */
+  it("never prunes the newest cache for a crate even when it is older than the cutoff", () => {
+    const entries = [entry("bsc_data-1ddddddddddd", 100), entry("bsc_data-2eeeeeeeeeee", 200)];
+    const { prune, keep } = planPrune(entries, { days: 6 / 24, keep: 1, now });
+    expect(keep).toEqual(["bsc_data-1ddddddddddd"]);
+    expect(prune).toEqual(["bsc_data-2eeeeeeeeeee"]);
+  });
+});

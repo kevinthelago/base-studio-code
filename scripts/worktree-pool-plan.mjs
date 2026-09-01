@@ -23,13 +23,20 @@ export function isParked(branch) {
   return typeof branch === "string" && /^parked-.+/.test(branch);
 }
 
-/** How long a tree must sit untouched before it may be collected (12h).
+/** How long a tree must sit untouched before it may be collected (6h).
  *
  *  The guard exists because MERGED IS NOT IDLE. A session merges its branch and keeps working in the
  *  same tree — the tree this janitor's own fix was written in was on a merged branch at the time —
  *  so without this, "collect merged trees" would delete a working tree out from under a live agent.
- *  Build recency cannot stand in for it: a tree can be actively edited for an hour without a compile. */
-export const DEFAULT_MIN_IDLE_MS = 12 * 60 * 60 * 1000;
+ *  Build recency cannot stand in for it: a tree can be actively edited for an hour without a compile.
+ *
+ *  WAS 12 HOURS, WHICH NO TREE HERE EVER REACHED. A parked tree is reclaimed by the next session that
+ *  wants one, measured at ~20 minutes, so the pool never contained a 12-hour-idle tree and this janitor
+ *  reported "nothing to remove" while 227 GB sat in eight parked trees (2026-09-01). Six hours is taken
+ *  from how long a session actually holds a tree — 30 minutes to 4 hours — with margin over the
+ *  longest, and the cost of being wrong is bounded: a collected tree is `parked-*` or already merged,
+ *  so the loss is a warm `target/` worth about two minutes, never work. */
+export const DEFAULT_MIN_IDLE_MS = 6 * 60 * 60 * 1000;
 
 /** A tree may be collected when its branch is parked OR already merged into the integration branch.
  *

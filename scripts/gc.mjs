@@ -49,9 +49,18 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const STAMP = join(REPO_ROOT, "target", ".bsc-gc-stamp");
 
-/** How long a sweep counts as recent. A day is well inside the 3-day age floor both sweeps use, so
- *  nothing can become eligible and sit unswept for longer than the floor plus this. */
-const STAMP_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** How long a sweep counts as recent.
+ *
+ *  THE INVARIANT IS THAT THIS STAYS UNDER THE AGE FLOOR the sweeps use, so nothing can become eligible
+ *  and sit unswept for longer than the floor plus this. It held at a 1-day window against a 3-day
+ *  floor; when the floor came down to six hours (see `prune-incremental`, which was a no-op at three
+ *  days) a 1-day window would have inverted it — the sweep would have been skipped for four times
+ *  longer than a directory takes to become eligible, and the collection this exists to do would have
+ *  happened once a day at best.
+ *
+ *  One hour: frequent enough that eligibility never outlives it, and the sweep costs ~1.5s, so the tax
+ *  on a gate that runs constantly during iteration stays negligible. */
+const STAMP_WINDOW_MS = 60 * 60 * 1000;
 
 function parseArgs(argv) {
   const passthrough = [];
