@@ -309,7 +309,7 @@ fn rel_import(from_dir: &str, to: &str) -> String {
 /// Every module specifier a source `import`s / `export … from`s / dynamically `import()`s. Scans for
 /// the quoted specifier after a `from`/`import` keyword — enough for the kit's sources (which use the
 /// `@/…` convention exclusively for first-party modules).
-fn import_specifiers(source: &str) -> Vec<String> {
+pub(crate) fn import_specifiers(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     let bytes = source.as_bytes();
     for kw in ["from", "import"] {
