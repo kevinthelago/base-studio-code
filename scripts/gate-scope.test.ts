@@ -199,6 +199,58 @@ describe("gate scope", () => {
   });
 });
 
+
+// ── a DELETION forces vitest unscoped ────────────────────────────────────────────────────────────
+//
+// `vitest --changed` selects tests by walking the module graph FROM the changed files. A DELETED file has
+// no edges in the new graph — nothing imports it, because it is gone — so it selects NOTHING, and the
+// tests that actually break are the ones reading from DISK rather than importing (`*.gen.test.ts`).
+//
+// MEASURED: retiring `src/features/skills/index.tsx` passed the scoped gate (60 files, 750 tests) and then
+// failed 4 tests in `reactUiKit.gen.test.ts`, because the deletion changed the packaged kit's closure.
+// Fifth stale packaged kit in one session; three reached `develop`.
+describe("a frontend DELETION runs vitest unscoped", () => {
+  const planWith = (files: string[], exists: (f: string) => boolean) =>
+    planGate({ files, graph, dirToCrate, exists });
+
+  it("forces the unscoped run, and NAMES the deletion as the trigger", () => {
+    const p = planWith(["src/features/skills/index.tsx"], () => false);
+    expect(p.vitestUnscoped).toBe(true);
+    expect(p.unscopedReason).toContain("DELETED");
+    expect(p.unscopedReason).toContain("src/features/skills/index.tsx");
+    // ...and the plan actually RUNS vitest, so the trigger is not moot.
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("does NOT abandon the narrowing for an ordinary edit", () => {
+    const p = planWith(["src/features/skills/index.tsx"], () => true);
+    expect(p.vitestUnscoped).toBe(false);
+    expect(p.unscopedReason).toBeNull();
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("names the RECORD STORE trigger when that is the one that fired", () => {
+    // Two rules reach the same decision; the note has to say which, or a reader learns to skip it.
+    const p = planWith(["src-tauri/data/components/app/x.json"], () => true);
+    expect(p.vitestUnscoped).toBe(true);
+    expect(p.unscopedReason).toContain("record store");
+    expect(p.unscopedReason).not.toContain("DELETED");
+  });
+
+  it("the emitted vitest command really is unscoped — no --changed", () => {
+    const cmds = gateCommands(planWith(["src/a/Gone.tsx"], () => false), "HEAD");
+    const vitest = cmds.find((c) => c.key === "vitest");
+    expect(vitest?.args).toEqual(["vitest", "run"]);
+    expect(vitest?.args).not.toContain("--changed");
+  });
+
+  it("a deletion makes it a HEAVY gate, so it queues for a slot like --full", () => {
+    // The slot follows the COST, not the tier: an unscoped vitest is the expensive half.
+    expect(needsGateSlot(planWith(["src/a/Gone.tsx"], () => false))).toBe(true);
+    expect(needsGateSlot(planWith(["src/a/Here.tsx"], () => true))).toBe(false);
+  });
+});
+
 // ── record stores are FRONTEND source, not backend data ──────────────────────────────────────────
 //
 // ~1,050 modules ship as records under `src-tauri/data/` (#3604). The scope split is by path, and
