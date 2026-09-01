@@ -461,7 +461,7 @@ for (const { rec, file } of promote.component) {
   //
   // The adoption is REFUSED when the existing seed already matches the file (nothing to gain) or when
   // it would drop an export the seed has and the record does not. Neither is a judgement call: both
-  // are the same three-way `refresh-drifted-seeds.mjs` grades on, read in the other direction.
+  // are the same three-way `bsc ui refresh-seed` grades on, read in the other direction.
   let adopting = false;
   if (existsSync(path)) {
     const seedRec = JSON.parse(readFileSync(path, "utf8"));

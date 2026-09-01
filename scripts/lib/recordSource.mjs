@@ -1,5 +1,5 @@
 // How a FILE's source compares to a RECORD's — the normalizations both the census
-// (`retirement-candidates.mjs`) and the refresh (`refresh-drifted-seeds.mjs`) must apply identically.
+// (`bsc ui retirable`) and the refresh (`bsc ui refresh-seed`) must apply identically.
 //
 // It is one module rather than two copies because this session has now watched a mirrored helper drift
 // three separate times (the e2e harness's copied resolver, twice; the four-resolver split). A census that

@@ -22,7 +22,9 @@ bsc-component = { path = "../bsc-component" }
 bsc-json-store = { path = "../bsc-json-store" }
 # Named directly (not just via bsc-component) because `record_source` is re-exported from here.
 bsc-record = { path = "../bsc-record" }
-serde_json = "1"
+# preserve_order: the packaged algorithms.json is REWRITTEN by `refresh-seed`, and a BTreeMap would
+# re-sort every key in a 6.6 MB file — a one-record change arriving as a 22,500-line diff.
+serde_json = { version = "1", features = ["preserve_order"] }
 # Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.
 # Same pinned versions bsc-graph already locks, so this adds no new workspace dependency.
 tree-sitter = "0.26"
