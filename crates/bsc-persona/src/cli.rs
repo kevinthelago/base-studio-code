@@ -40,6 +40,27 @@ Code's own default. `model` is projected here so the whole library's tiers are O
 which personas run cheap used to mean a `get` per persona.",
     },
     CmdDoc {
+        name: "reseed",
+        summary: "restore every built-in's FLOOR to the one the app ships with",
+        usage: "\
+USAGE:
+  bsc persona reseed [--dry-run] [--pretty]
+
+Rewrites the permission FLOOR of every packaged persona from the shipped definition, and touches
+nothing else — name, model, startPrompt and skills are yours and stay as they are.
+
+WHY IT EXISTS. A built-in's floor is seeded once and never reconciled, so a persona seeded at an
+older version kept that version's surface forever. MEASURED on a real store, 6 of 18 built-ins had
+drifted: `persona-librarian` offered five retired `bsc loop *` verbs while hiding `bsc session
+reply`, which its own charter instructs it to use, and `persona-curator` hid `bsc graph` and
+`bsc ui` — its entire tool surface. `bsc persona whatami` reported all of it, so a session asking
+what it was allowed to do got the wrong answer in both directions.
+
+It cannot widen anything past what shipped: the packaged floor IS the clamp ceiling, so a reseed is
+a narrowing-or-equal write by construction, and a surface the app never granted is refused rather
+than restored. --dry-run reports what would change and writes nothing.",
+    },
+    CmdDoc {
         name: "get",
         summary: "print one persona (JSON, verbatim) or null",
         usage: "\
@@ -202,6 +223,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // to for THIS invocation; a fn pointer could not see it and would silently clamp against the
     // default store while writing to another.
     let dir = store_dir(&args, prog)?;
+    if args.first().map(String::as_str) == Some("reseed") && args.get(1).map(String::as_str) != Some("help") {
+        return reseed(&args, &dir, prog);
+    }
     // `remove` is intercepted for the same reason `rename` is guarded: the shared scaffold knows
     // nothing about `builtin`, so the protection has to live where the noun does.
     if args.first().map(String::as_str) == Some("remove") && args.get(1).map(String::as_str) != Some("help") {
@@ -240,6 +264,63 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 /// seal correctly MISMATCHES the newly-written prose on the next reconcile — which is precisely the
 /// signal `reconcilePersonas` uses to recognize "a real edit happened, keep it" (see its doc comment).
 /// A user-authored persona (which never has a seal) round-trips exactly as before.
+/// Restore every packaged persona's FLOOR to the shipped one, leaving every other field alone.
+///
+/// FLOOR ONLY, and that is the whole design. `bsc persona model` moves a persona's tier and a user may
+/// rename one; rewriting the whole record would undo both to fix a permissions field. So this reads the
+/// stored record, replaces exactly `floor`, and writes it back — a persona that has never been stored
+/// is left absent rather than created, because seeding a library is not this verb's job.
+///
+/// It cannot widen: the packaged floor is the clamp ceiling (see `validate_floor_batch`), so writing it
+/// is narrowing-or-equal by construction. A stored surface the app never granted — the retired
+/// `bsc loop *` entries — is REMOVED by this rather than blessed, which is the direction that matters.
+fn reseed(args: &[String], dir: &std::path::Path, prog: &str) -> Result<(), String> {
+    let dry = args.iter().any(|a| a == "--dry-run");
+    let pretty = args.iter().any(|a| a == "--pretty");
+    let store = bsc_json_store::Store::new(dir.to_path_buf(), SPEC.noun);
+    let mut changed: Vec<serde_json::Value> = Vec::new();
+
+    for (id, shipped) in crate::packaged::packaged_personas() {
+        let Some(want) = shipped.get("floor") else { continue };
+        let Some(text) = store.get(&id)? else { continue }; // never stored ⇒ not this verb's job
+        let Ok(mut have) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        if have.get("floor") == Some(want) {
+            continue;
+        }
+        // NAME THE FIELDS THAT DIFFER, not just `allow`. Reporting the allow-list alone printed seven
+        // personas as "would reseed" with an identical list beside them — the difference was that their
+        // stored floor omitted every AXIS, which `floor.rs` reads as `none`. A report that cannot say
+        // what it is about to change is not a dry run.
+        let empty = serde_json::Map::new();
+        let hf = have.get("floor").and_then(|f| f.as_object()).unwrap_or(&empty);
+        let wf = want.as_object().unwrap_or(&empty);
+        let mut fields: Vec<String> = hf.keys().chain(wf.keys()).cloned().collect();
+        fields.sort();
+        fields.dedup();
+        fields.retain(|k| hf.get(k) != wf.get(k));
+        let before = have.get("floor").and_then(|f| f.get("allow")).cloned().unwrap_or(serde_json::Value::Null);
+        let after = want.get("allow").cloned().unwrap_or(serde_json::Value::Null);
+        changed.push(serde_json::json!({
+            "id": id, "fields": fields, "allowBefore": before, "allowAfter": after,
+        }));
+        if !dry {
+            if let Some(obj) = have.as_object_mut() {
+                obj.insert("floor".to_string(), want.clone());
+            }
+            store.set(&id, &have.to_string())?;
+        }
+    }
+
+    let out = serde_json::json!({
+        "reseeded": if dry { serde_json::Value::from(0) } else { serde_json::Value::from(changed.len()) },
+        "wouldReseed": if dry { serde_json::Value::from(changed.len()) } else { serde_json::Value::from(0) },
+        "personas": changed,
+    });
+    let _ = prog;
+    bsc_sqlite_util::print_json(&out, pretty);
+    Ok(())
+}
+
 fn set_persona(args: &[String], dir: &std::path::Path, prog: &str) -> Result<(), String> {
     let mut pretty = false;
     let mut file: Option<String> = None;
@@ -339,15 +420,35 @@ fn validate_floor_batch(items: &[serde_json::Value], dir: &std::path::Path, prog
 
         let derives = item.get("derivesFrom").and_then(serde_json::Value::as_str).map(str::trim).filter(|s| !s.is_empty());
 
-        // The ancestor chain, in order. The PACKAGED floor sits between "already stored" and
-        // "derives from", and it is the link that makes seeding possible at all: without it a store
-        // where nothing has a floor yet refuses every write, because every branch falls through to
-        // the closed floor. See `packaged.rs` — that was a real merged bug, found by the live CLI
-        // check and invisible to unit tests that seed their ancestor with `store.set()`.
-        let ancestor = match stored_floor(&store, &id, &pending)? {
-            Some(own) => own,
-            None => match crate::packaged::packaged_floor(&id) {
-                Some(shipped) => shipped,
+        // The ancestor chain, in order. For a persona the app SHIPS, the ceiling is its PACKAGED
+        // floor — not whatever the store happens to hold.
+        //
+        // That ordering used to be the other way round, and it made a built-in's floor a one-way
+        // ratchet. `stored_floor` short-circuited, so the first value ever written became the
+        // permanent ceiling and every later packaged widening was unreachable: `bsc persona set`
+        // refused the app's own shipped definition as "would WIDEN beyond its own stored floor".
+        // MEASURED on a real store, 6 of 18 built-ins had drifted that way — `persona-librarian`
+        // offering five retired `bsc loop *` verbs while hiding `bsc session reply`, which its
+        // charter instructs it to use, and `persona-curator` hiding `bsc graph` and `bsc ui`, its
+        // entire tool surface.
+        //
+        // NOTHING IS GIVEN UP BY THIS. The invariant that matters is "never wider than what shipped",
+        // and that is exactly what the packaged floor expresses; the stored value is a current
+        // setting, not a ceiling. A narrowing is still accepted, a widening PAST the packaged floor
+        // is still refused (which is what removes those `bsc loop *` entries rather than blessing
+        // them), and a persona the app does not ship is unaffected — its chain is still stored →
+        // derivesFrom → closed. What changes is only that a deliberate narrowing of a BUILT-IN is now
+        // reversible up to the capability the app shipped it with, which is the difference between a
+        // floor and a trap.
+        //
+        // The packaged link is also what makes seeding possible at all: without it a store where
+        // nothing has a floor yet refuses every write, because every branch falls through to the
+        // closed floor. See `packaged.rs` — that was a real merged bug, found by the live CLI check
+        // and invisible to unit tests that seed their ancestor with `store.set()`.
+        let ancestor = match crate::packaged::packaged_floor(&id) {
+            Some(shipped) => shipped,
+            None => match stored_floor(&store, &id, &pending)? {
+                Some(own) => own,
                 None => match derives {
                     Some(parent) => stored_floor(&store, parent, &pending)?
                         .or_else(|| crate::packaged::packaged_floor(parent))
@@ -362,12 +463,12 @@ fn validate_floor_batch(items: &[serde_json::Value], dir: &std::path::Path, prog
         let widened = crate::floor::widenings(want, &ancestor);
         if !widened.is_empty() {
             let anchor = match (
-                stored_floor(&store, &id, &pending)?.is_some(),
                 crate::packaged::packaged_floor(&id).is_some(),
+                stored_floor(&store, &id, &pending)?.is_some(),
                 derives,
             ) {
-                (true, _, _) => "its own stored floor".to_string(),
-                (false, true, _) => format!("the PACKAGED floor for '{id}'"),
+                (true, _, _) => format!("the PACKAGED floor for '{id}' — the capability the app ships it with"),
+                (false, true, _) => "its own stored floor".to_string(),
                 (false, false, Some(p)) => format!("'{p}' (derivesFrom)"),
                 (false, false, None) => "the closed floor — a new persona with no derivesFrom starts at none".to_string(),
             };
@@ -927,6 +1028,94 @@ mod tests {
         with_packaged("p-pkg", serde_json::json!({"ui": "write"}), || {
             let err = validate(&dir, r#"{"id":"p-invented","floor":{"ui":"write"}}"#).unwrap_err();
             assert!(err.contains("closed floor"), "{err}");
+        });
+    }
+
+    /// The real drift, end to end: a stored floor that both OFFERS a retired verb and HIDES a granted
+    /// one, reconciled in one call — and the behavioural fields left alone.
+    #[test]
+    fn reseed_removes_a_retired_verb_and_restores_a_granted_one() {
+        let dir = scratch("pkg-reseed-verb");
+        with_packaged_named(
+            "reseedverb",
+            "p-pkg",
+            serde_json::json!({"ui": "write", "allow": ["bsc graph", "bsc session reply"]}),
+            || {
+                // Exactly the shape found on the live store: `bsc loop watch` was retired from the
+                // shipped floor and never removed here; `bsc session reply` was added and never arrived.
+                store_at(&dir)
+                    .set(
+                        "p-pkg",
+                        r#"{"id":"p-pkg","name":"Renamed By Hand","model":"haiku","floor":{"ui":"write","allow":["bsc graph","bsc loop watch"]}}"#,
+                    )
+                    .unwrap();
+                reseed(&["reseed".to_string()], &dir, "bsc persona").unwrap();
+
+                let after: serde_json::Value =
+                    serde_json::from_str(&store_at(&dir).get("p-pkg").unwrap().unwrap()).unwrap();
+                let allow = after["floor"]["allow"].as_array().unwrap();
+                let allow: Vec<&str> = allow.iter().filter_map(serde_json::Value::as_str).collect();
+                assert!(!allow.contains(&"bsc loop watch"), "the retired verb survived: {allow:?}");
+                assert!(allow.contains(&"bsc session reply"), "the granted verb did not arrive: {allow:?}");
+                // FLOOR ONLY. A permissions reconcile that silently reverted a rename or a model tier
+                // would be a worse bug than the one it fixes.
+                assert_eq!(after["name"], "Renamed By Hand");
+                assert_eq!(after["model"], "haiku");
+            },
+        );
+    }
+
+    /// `--dry-run` reports and writes nothing — the store is untouched.
+    #[test]
+    fn reseed_dry_run_changes_nothing() {
+        let dir = scratch("pkg-reseed-dry");
+        with_packaged_named("reseeddry", "p-pkg", serde_json::json!({"ui": "write", "allow": ["bsc graph"]}), || {
+            let stored = r#"{"id":"p-pkg","floor":{"ui":"write","allow":["bsc graph","bsc loop watch"]}}"#;
+            store_at(&dir).set("p-pkg", stored).unwrap();
+            reseed(&["reseed".to_string(), "--dry-run".to_string()], &dir, "bsc persona").unwrap();
+            assert_eq!(store_at(&dir).get("p-pkg").unwrap().unwrap(), stored);
+        });
+    }
+
+    /// A BUILT-IN's ceiling is what the app SHIPS, not the first thing ever written to the store.
+    ///
+    /// This is the bug that pinned six of eighteen packaged personas. `stored_floor` used to
+    /// short-circuit the packaged floor, so once a record existed its own value became the permanent
+    /// ceiling: re-writing the app's own shipped definition was refused as a widening, and no verb
+    /// existed to break the cycle. `persona-librarian` was left offering five retired `bsc loop *`
+    /// verbs while hiding `bsc session reply`, which its charter instructs it to use.
+    #[test]
+    fn a_shipped_persona_can_be_restored_to_the_floor_it_ships_with() {
+        let dir = scratch("pkg-reseed");
+        with_packaged_named("reseed", "p-pkg", serde_json::json!({"ui": "write", "allow": ["bsc ui", "bsc graph"]}), || {
+            // Narrowed by hand — still allowed, that is the whole point of the clamp.
+            validate(&dir, r#"{"id":"p-pkg","floor":{"ui":"read","allow":["bsc ui"]}}"#).unwrap();
+            store_at(&dir)
+                .set("p-pkg", r#"{"id":"p-pkg","floor":{"ui":"read","allow":["bsc ui"]}}"#)
+                .unwrap();
+            // And now BACK to what shipped. Under the old ordering this was refused, which is what
+            // made the narrowing a trap rather than a setting.
+            validate(&dir, r#"{"id":"p-pkg","floor":{"ui":"write","allow":["bsc ui","bsc graph"]}}"#).unwrap();
+        });
+    }
+
+    /// Restoring is not widening: the packaged floor is a ceiling, and it still holds.
+    #[test]
+    fn a_shipped_persona_still_cannot_exceed_the_floor_it_ships_with() {
+        let dir = scratch("pkg-ceiling");
+        with_packaged_named("ceiling", "p-pkg", serde_json::json!({"ui": "write", "allow": ["bsc ui"]}), || {
+            store_at(&dir)
+                .set("p-pkg", r#"{"id":"p-pkg","floor":{"ui":"write","allow":["bsc ui"]}}"#)
+                .unwrap();
+            // A surface the app never shipped it with — this is how the retired `bsc loop *` entries
+            // are removed rather than blessed by a reseed.
+            let err = validate(&dir, r#"{"id":"p-pkg","floor":{"ui":"write","allow":["bsc ui","bsc loop watch"]}}"#)
+                .unwrap_err();
+            assert!(err.contains("bsc loop watch"), "{err}");
+            assert!(err.contains("PACKAGED floor"), "the refusal must name the ceiling it used: {err}");
+            // And an axis the app never granted.
+            let err = validate(&dir, r#"{"id":"p-pkg","floor":{"code":"write","allow":["bsc ui"]}}"#).unwrap_err();
+            assert!(err.contains("code"), "{err}");
         });
     }
 

@@ -43,6 +43,36 @@ fn persona_dirs() -> Vec<PathBuf> {
 ///
 /// The FIRST directory that yields a match wins, matching `data_dirs()`' documented precedence
 /// (`$BSC_DATA_DIR` over the shipped copy over the dev checkout).
+/// Every packaged persona as `(id, whole definition)`, in `data_dirs()` precedence order — the first
+/// directory that claims an id wins, matching [`packaged_floor`].
+///
+/// Exists so a reconcile can walk what the app SHIPS rather than what the store happens to hold: the
+/// store is the thing that has drifted, so it cannot be the list of what to check.
+pub fn packaged_personas() -> Vec<(String, Value)> {
+    let mut out: Vec<(String, Value)> = Vec::new();
+    for dir in persona_dirs() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let mut found: Vec<(String, Value)> = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+            let Some(id) = v.get("id").and_then(Value::as_str) else { continue };
+            found.push((id.to_string(), v));
+        }
+        found.sort_by(|a, b| a.0.cmp(&b.0));
+        for (id, v) in found {
+            if !out.iter().any(|(seen, _)| *seen == id) {
+                out.push((id, v));
+            }
+        }
+    }
+    out
+}
+
 pub fn packaged_floor(id: &str) -> Option<Value> {
     for dir in persona_dirs() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
