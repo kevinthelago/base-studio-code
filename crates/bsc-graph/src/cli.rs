@@ -3978,6 +3978,72 @@ fn runtime_metrics(record_id: &str) -> Value {
     serde_json::to_value(m).unwrap_or(Value::Null)
 }
 
+/// Serializes every test that repoints the process-global `BSC_GRAPH_STORE`.
+///
+/// THE COMMENT THIS REPLACES SAID "SAFETY: single-threaded test setup, before any other thread reads
+/// the env" — and it was false at all 21 sites. `cargo test` threads tests inside ONE process, so the
+/// set and the read of another test's store interleave freely. MEASURED on develop:
+///
+///     cargo test -p bsc-graph --lib     280 passed, 14 FAILED
+///     cargo nextest run -p bsc-graph     294 passed, 0 failed
+///
+/// Both runners were right about what they ran; nextest forks per test, so the hazard cannot fire
+/// there. The gate uses nextest and stayed green, which is why this survived — the cost was paid
+/// entirely in the inner loop, by anyone reaching for the obvious `cargo test -p bsc-graph` and
+/// finding fourteen failures that were not theirs.
+///
+/// The same mechanism `src-tauri/src/testutil.rs::ENV_LOCK` already uses for the same class of
+/// problem (tests repointing HOME), reused rather than reinvented.
+#[cfg(test)]
+static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The store lock, reachable from a sibling module's tests.
+///
+/// `lib.rs` needs it too: the packaged-seed cache test repoints `BSC_DATA_DIR`, which is the same
+/// process-global hazard these guards exist for, and a second lock would let the two races interleave.
+#[cfg(test)]
+pub(crate) mod test_support {
+    /// Take the same lock [`super::store_at`] takes, without setting anything.
+    pub(crate) fn store_lock() -> std::sync::MutexGuard<'static, ()> {
+        super::STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Point `BSC_GRAPH_STORE` at `path` for the rest of THIS test, serialized against every other test
+/// that does the same.
+///
+/// HOLD THE GUARD — `let _store = store_at(&p);`, never `let _ = store_at(&p);` and never a bare call.
+/// A dropped guard releases the lock immediately and restores exactly the race this exists to remove,
+/// while the test still passes in isolation. `#[must_use]` catches the bare call; the `let _` form is
+/// the one to watch for in review.
+///
+/// A poisoned lock is taken anyway (`into_inner`): a panicking test has already failed and must not
+/// take the rest of the suite with it.
+/// [`store_at`] for the tests that repoint the DATA dir as well. Both variables under ONE lock,
+/// because a test holding two guards would deadlock on the second and a second lock would let the two
+/// races interleave — the hazard is the pair, not either variable.
+#[cfg(test)]
+#[must_use = "hold the guard for the test's lifetime — dropping it re-opens the race"]
+fn store_and_data_at(store: &std::path::Path, data: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: serialized by the lock above against every other test that touches either variable.
+    unsafe {
+        std::env::set_var("BSC_GRAPH_STORE", store);
+        std::env::set_var("BSC_DATA_DIR", data);
+    }
+    guard
+}
+
+#[cfg(test)]
+#[must_use = "hold the guard for the test's lifetime — dropping it re-opens the race"]
+fn store_at(path: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: the lock above is what makes this single-threaded with respect to every other test that
+    // touches this variable — which is precisely what the comment it replaces only claimed.
+    unsafe { std::env::set_var("BSC_GRAPH_STORE", path) };
+    guard
+}
+
 #[cfg(test)]
 mod tests {
     /// The help is the thing that misled, so it is the thing under test: it must NOT present the
@@ -4007,8 +4073,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let src = dir.join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -4062,8 +4127,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let set = |extra: Vec<&str>| {
             let mut a: Vec<String> = ["impl", "set", "--tech", "typescript", "--id", "s.ts", "--role",
@@ -4248,7 +4312,7 @@ mod tests {
         let runtime_store = dir.join("runtime.json");
         // SAFETY: single-threaded test setup, before any other thread reads the env (nextest gives this
         // test its own process, per the note on `impl_set_writes_and_clears_module_state` above).
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
 
         let root = dir.to_string_lossy().into_owned();
         // No --src, no --no-src: the record's provenance already lives on the repo-only copy, and this
@@ -4366,7 +4430,7 @@ mod tests {
         let runtime_store = dir.join("runtime.json");
         // SAFETY: single-threaded test setup, before any other thread reads the env (nextest gives this
         // test its own process, per the note on `impl_set_writes_and_clears_module_state` above).
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
         std::fs::write(
             &runtime_store,
             serde_json::json!({
@@ -4482,7 +4546,7 @@ mod tests {
         .unwrap();
 
         let runtime_store = dir.join("runtime.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
         std::fs::write(
             &runtime_store,
             serde_json::json!({
@@ -4537,7 +4601,7 @@ mod tests {
         .unwrap();
 
         let runtime_store = dir.join("runtime.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
         std::fs::write(
             &runtime_store,
             serde_json::json!({
@@ -4653,8 +4717,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let set = |id: &str, name: &str| {
             crate::cli::run(
@@ -4701,7 +4764,7 @@ mod tests {
         // SAFETY: single-threaded test setup, before any other thread reads the env — the same
         // accepted-racy pattern `impl_set_writes_and_clears_module_state` already uses, since
         // `BSC_GRAPH_STORE` is process-global while Rust tests run in parallel.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let repo = dir.join("repo");
         std::fs::create_dir_all(repo.join("src/x")).unwrap();
@@ -4850,11 +4913,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: single-threaded test setup, before any other thread reads either env var.
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         // `load()` reconciles the packaged seed into the runtime store on first read, so the id above
         // is already present here with no `tests` — exactly the "retired module" shape #123 describes:
@@ -4944,7 +5003,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
         // SAFETY: single-threaded test setup, as in the neighbouring harvest tests.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let repo = dir.join("repo");
         std::fs::create_dir_all(repo.join("src/x")).unwrap();
@@ -5018,7 +5077,7 @@ mod tests {
         let store = dir.join("algorithms.json");
         // SAFETY: single-threaded test setup, before any other thread reads the env (same pattern as
         // the neighboring `impl_get_falls_back_…` test).
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         // Source carrying exactly what argv would corrupt silently: a backtick, a `${…}` interpolation,
         // and literal newlines — read from a file via `--code-file`, never typed on the command line.
@@ -5077,7 +5136,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5116,7 +5175,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5179,8 +5238,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5259,8 +5317,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5346,8 +5403,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5416,8 +5472,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5550,11 +5605,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: single-threaded test setup, before any other thread reads either var.
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         // The runtime store needs the SAME id before `tests set` can pair it — this mirrors a real
         // seeded record, which `reconcile_seed` would already have copied into a fresh store.
@@ -5717,11 +5768,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: single-threaded test setup, before any other thread reads either var.
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         // `suppress` requires the id to be KNOWN — a real seeded id is checked via `is_seeded`, which
         // reads the CACHED, process-wide `crate::seed()` (not `BSC_DATA_DIR`-aware once initialized).
@@ -5823,7 +5870,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("store.json");
 
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let err = run(
             vec!["impl".into(), "unsuppress".into(), "whatever.ts".into(), "--seed".into()],
@@ -5862,10 +5909,7 @@ mod tests {
         std::fs::write(&seed_path, serde_json::to_string(&serde_json::json!({ "implementations": [] })).unwrap())
             .unwrap();
 
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         run(
             vec![
