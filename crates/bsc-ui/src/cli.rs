@@ -3018,7 +3018,17 @@ fn cmd_retire(args: &[String]) -> Result<(), String> {
         std::process::exit(1);
     }
 
-    let rewrote = crate::retire::rewrite_importers(&repo, &files, &self_rel, &rel, &rel_specifier, &spec, dry, |f| {
+    let rewrote = crate::retire::rewrite_importers(
+        &repo,
+        &files,
+        &crate::retire::Target {
+            self_rel: &self_rel,
+            rel: &rel,
+            specifier: &rel_specifier,
+            spec: &spec,
+        },
+        dry,
+        |f| {
         bsc_util::emit_line(&format!("   {}  {f}", if dry { "would rewrite" } else { "rewrote" }));
     });
 

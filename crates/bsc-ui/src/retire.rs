@@ -183,6 +183,20 @@ pub fn build_config_importers(repo: &std::path::Path, rel: &str) -> Vec<String> 
         .collect()
 }
 
+/// The module being retired, in every spelling the rewrite needs. A BARREL is reachable three ways —
+/// `@/x/y`, `…/y/index` and a bare `from "./"` — and each of the three was learned from a separate
+/// TS2307 round that only appeared once the file was already deleted.
+pub struct Target<'a> {
+    /// The file as listed under `src/`, e.g. `shared/ui/charts/index.ts` — skipped as its own importer.
+    pub self_rel: &'a str,
+    /// The path form the argument named, extension off — `shared/ui/charts/index`.
+    pub rel: &'a str,
+    /// ...and the same with a trailing `/index` removed — `shared/ui/charts`.
+    pub specifier: &'a str,
+    /// The `@/…` specifier importers are rewritten ONTO.
+    pub spec: &'a str,
+}
+
 /// Rewrite every relative importer of `target_base` to `spec`, returning how many files changed.
 ///
 /// The specifier pattern allows a BARE `./` or `../` with no name after the slash: a directory import
@@ -192,15 +206,11 @@ pub fn build_config_importers(repo: &std::path::Path, rel: &str) -> Vec<String> 
 pub fn rewrite_importers(
     repo: &std::path::Path,
     files: &[String],
-    self_rel: &str,
-    // The path form the argument named, extension off — e.g. `shared/ui/charts/index`.
-    target_rel: &str,
-    // ...and the same with a trailing `/index` removed — `shared/ui/charts`.
-    target_specifier: &str,
-    spec: &str,
+    target: &Target<'_>,
     dry: bool,
     mut on_change: impl FnMut(&str),
 ) -> usize {
+    let Target { self_rel, rel: target_rel, specifier: target_specifier, spec } = target;
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
         regex::Regex::new(
@@ -210,7 +220,7 @@ pub fn rewrite_importers(
     });
     let mut rewrote = 0usize;
     for f in files {
-        if f == self_rel {
+        if f == *self_rel {
             continue;
         }
         let abs = repo.join("src").join(f);
@@ -417,10 +427,12 @@ mod tests {
         let n = rewrite_importers(
             &dir,
             &files,
-            "shared/ui/charts/index.ts",
-            "shared/ui/charts/index",
-            "shared/ui/charts",
-            "@/shared/ui/charts",
+            &Target {
+                self_rel: "shared/ui/charts/index.ts",
+                rel: "shared/ui/charts/index",
+                specifier: "shared/ui/charts",
+                spec: "@/shared/ui/charts",
+            },
             false,
             |f| touched.push(f.to_string()),
         );
@@ -464,7 +476,18 @@ mod tests {
 
         let before = snapshot(&dir);
         let files = vec!["shared/ui/a.ts".to_string(), "shared/ui/b.ts".to_string()];
-        let n = rewrite_importers(&dir, &files, "shared/ui/a.ts", "shared/ui/a", "shared/ui/a", "@/shared/ui/a", true, |_| {});
+        let n = rewrite_importers(
+            &dir,
+            &files,
+            &Target {
+                self_rel: "shared/ui/a.ts",
+                rel: "shared/ui/a",
+                specifier: "shared/ui/a",
+                spec: "@/shared/ui/a",
+            },
+            true,
+            |_| {},
+        );
         assert_eq!(n, 1, "the dry run must still REPORT the importer it would rewrite");
         assert_eq!(snapshot(&dir), before, "a dry run wrote to disk");
         let _ = std::fs::remove_dir_all(&dir);
