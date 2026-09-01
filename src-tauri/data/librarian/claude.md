@@ -218,6 +218,24 @@ reflects it:
 Steward toward one accurate, non-duplicated library: one algorithm per id, honest roles, real
 `composes` edges rooted in the language's primitives.
 
+## Before you author: ask whether the library already holds it
+
+The cheapest duplicate is the one never written, and you cannot answer this from memory — the library
+is far larger than a conversation.
+
+- `bsc graph similar --sig "(xs: T[], key: (t: T) => string) => Map<string, T[]>"` — does anything
+  already have this shape? It takes a SIGNATURE rather than an id precisely because the thing you are
+  about to write has no id yet, which is the whole difference between this and the sweeps below.
+- `bsc graph similar <id>` — the same question for something already stored, ranked by how much of the
+  contract overlaps.
+
+Read the score. **A match at 1.00 means read that record instead of writing a new one; an empty result
+means write it.** The ranking is floored, so "nothing like this exists" comes back as nothing at all
+rather than as a tail of weak matches — an empty answer is an answer, not a failure.
+
+A close match may still be the wrong thing: same shape, different meaning is common and legitimate.
+This proposes; you decide.
+
 ## Author a COMPLETE algorithm — code + kind + visualization
 
 An algorithm is not done until it can be SEEN. Every `algorithm` you author gets three things, the same
@@ -314,11 +332,29 @@ The library is only useful if it stays lean, and that is a set of TOOLS, not han
 - `bsc graph used-by <id>` — the composes-INVERSE: which implementations compose `<id>` (and how many).
   `bsc graph used-by --all` ranks every impl by usage. This is how you tell a load-bearing primitive
   from an orphan — the measure step before you decide what to combine or prune.
-- `bsc graph merge <from-id> <into-id>` — when two implementations do the same job, fold one INTO the
-  other in ONE step: it repoints every impl's `composes` from→into (deduped) then removes `<from>`.
-  Decide the survivor with `used-by`: **merge the LESS-used into the more-used**, so the one everything
-  builds on stays. Reach for it whenever `harvest`/`curate` surface a duplicate of something already in
-  the library — never leave two impls for the same algorithm.
+- `bsc graph doctor --dedup` — **the sweep over your own library.** Groups implementations that are
+  duplicates of each other and says WHICH EVIDENCE found each group. Run it as part of the doctor pass
+  above; duplicates used to reach you only by accident, when a `harvest` happened to collide with
+  something already stored.
+- `bsc graph dupes <dir>` — the same question asked of a whole SOURCE TREE rather than the store
+  (`bsc graph dupes crates`, `bsc graph dupes src`). This is where harvest candidates come from: a
+  shape repeated across files is a thing that wants to be one record. It reports a path and a line per
+  member, biggest groups first, and it keeps no index, so just run it.
+- `bsc graph merge <from-id> <into-id>` — fold one implementation INTO another in ONE step: it
+  repoints every impl's `composes` from→into (deduped) then removes `<from>`. Decide the survivor with
+  `used-by`: **merge the LESS-used into the more-used**, so the one everything builds on stays.
+
+**Read the SIGNAL before you act on a group — merge is the right answer to only one of them.**
+
+| the group shares | what that means | what to do |
+|---|---|---|
+| the same **body**, or the same **shape** (identical under renaming) | it is one implementation stored more than once | `merge` the less-used into the more-used |
+| only the same **contract** (they agree about their inputs and outputs, and their bodies merely corroborate it) | it is a PATTERN repeated, not one implementation | extract what is common and leave each caller its own function — **do not merge** |
+
+Folding a contract-only group deletes a real caller: two implementations that take the same arguments
+and do different things with them are not the same algorithm, however alike they look from outside.
+The tool states this per group in its own suggestion; when it says extract, extracting is the whole
+job and there is nothing to merge.
 
 ## What you never do
 

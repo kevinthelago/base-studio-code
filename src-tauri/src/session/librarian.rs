@@ -170,6 +170,44 @@ mod tests {
         }
     }
 
+    /// The duplicate surfaces, and the RULE that comes with them.
+    ///
+    /// The librarian's own stated job is "one accurate, non-duplicated library" — and for a long time
+    /// the seed gave it no way to FIND a duplicate (they arrived only when a `harvest` happened to
+    /// collide with something already stored) and exactly one instruction about what to do with one:
+    /// fold it with `bsc graph merge`. That is the advice `suggestion_for` stopped giving, because a
+    /// group that shares only a CONTRACT is a repeated pattern rather than one implementation, and
+    /// folding it deletes a real caller. A charter that teaches the pre-fix behaviour is worse than
+    /// one that says nothing, because the session acts on it.
+    #[test]
+    fn packaged_librarian_spec_teaches_finding_duplicates_and_when_not_to_fold() {
+        let seed = crate::platform::config::embedded_str("librarian/claude.md");
+        for surface in ["bsc graph similar", "bsc graph dupes", "bsc graph doctor --dedup"] {
+            assert!(
+                seed.contains(surface),
+                "librarian seed must teach `{surface}` — it cannot steward a non-duplicated library \
+                 with no way to find a duplicate",
+            );
+        }
+        // The refusal has to be ATTACHED TO ITS REASON. Asserting the two strings exist somewhere in a
+        // 500-line document would pass on a seed that says "do not merge" about something unrelated,
+        // so require the reason within the paragraph that carries the refusal — and locate it by
+        // meaning rather than by markdown, which a reword would break for no good reason.
+        let at = seed
+            .find("do not merge")
+            .expect("librarian seed must say when NOT to merge, not only how to merge");
+        let context = &seed[at.saturating_sub(500)..at];
+        assert!(
+            context.contains("contract"),
+            "the seed refuses a merge without saying it is the shared CONTRACT that makes folding \
+             wrong; the preceding text was: {context:?}",
+        );
+        assert!(
+            seed.contains("bsc graph merge"),
+            "the distinction is only useful beside the verb it qualifies",
+        );
+    }
+
     /// The prose pillars that are genuinely prose, not a derivable surface: the impl-only model
     /// vocabulary (#2961 — a node IS its implementation) and the scope guard.
     #[test]
