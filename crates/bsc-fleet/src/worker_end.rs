@@ -34,9 +34,6 @@
 //! confirmation. Conflating them is exactly how "marked complete but the PR never merged" would stop
 //! being visible.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-worker-end-is-classified-where-the-pty-exits`
-
 use logs::coord::{is_satisfied, parse_ref, CoordState};
 use plandb::is_done_status;
 

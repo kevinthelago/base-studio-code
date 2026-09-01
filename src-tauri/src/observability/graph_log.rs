@@ -139,6 +139,38 @@ pub struct GraphLogger {
     file_path: PathBuf,
 }
 
+/// Escape the C0 control bytes that would make the log file BINARY to `grep`, leaving everything else
+/// byte-faithful.
+///
+/// A single NUL anywhere in the file makes `grep` classify it as binary and print NOTHING — not
+/// "no match", literally no output and exit 1, with no note on stderr. For the system of record that is
+/// uniquely bad, because it is indistinguishable from the content having rotated away; it cost real
+/// minutes mid-P0 before anyone thought to add `-a`. MEASURED on a 1.6 MB app log: 15 NUL bytes made 331
+/// matching lines invisible.
+///
+/// THE NULs ARE LEGITIMATE CONTENT, not corruption — which is why the fix belongs here rather than at
+/// the caller. Rollup/Vite marks a VIRTUAL MODULE by prefixing its id with `\0`, so the graph loader's
+/// "declined the graph override for `\0graph-entry`" is faithfully reporting the id it was given. Any
+/// future sink of PTY or subprocess text can do the same, so the guard is at the one place every file
+/// line passes.
+///
+/// `\t` is kept: it is legal in a text file and `grep` does not object. `\n` never reaches here inside a
+/// line — it is the record separator.
+fn escape_control_bytes(line: &str) -> std::borrow::Cow<'_, str> {
+    if !line.bytes().any(|b| b < 0x20 && b != b'\t' && b != b'\n') {
+        return std::borrow::Cow::Borrowed(line);
+    }
+    let mut out = String::with_capacity(line.len() + 8);
+    for c in line.chars() {
+        match c {
+            '\t' | '\n' => out.push(c),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 impl GraphLogger {
     fn plain_line(ts: &str, level: log::Level, target: &str, message: &str) -> String {
         format!("{ts} {level:<5} {target} {message}\n")
@@ -166,7 +198,8 @@ impl GraphLogger {
         }
         if let Some(f) = slot.as_mut() {
             use std::io::Write;
-            let _ = f.write_all(line.as_bytes());
+            // Escaped at the SINK so the file is always a text file, whatever a caller logs.
+            let _ = f.write_all(escape_control_bytes(line).as_bytes());
         }
     }
 }
@@ -296,6 +329,72 @@ mod tests {
             std::process::id(),
             N.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+
+    /// THE FAILURE THIS PREVENTS, stated as the thing that actually happened: 15 NUL bytes in a 1.6 MB app
+    /// log made `grep` treat the SYSTEM OF RECORD as binary, so a pattern present on 331 lines printed
+    /// NOTHING and exited 1 — with no stderr note, indistinguishable from the content having rotated away.
+    #[test]
+    fn a_nul_byte_is_escaped_so_the_log_stays_a_text_file() {
+        // The real line: Rollup marks a VIRTUAL MODULE by prefixing its id with NUL, so this is faithful
+        // content rather than corruption.
+        let line = "WARN declined the graph override for \"\0graph-entry\"\n";
+        let out = escape_control_bytes(line);
+        assert!(!out.contains('\0'), "no raw NUL may reach the file: {out:?}");
+        assert!(out.contains("\\x00graph-entry"), "the id stays LEGIBLE, not dropped: {out}");
+        // The rest of the line is untouched, so the escape costs nothing a reader needs.
+        assert!(out.contains("declined the graph override"));
+        assert!(out.ends_with('\n'), "the record separator survives");
+    }
+
+    /// An ordinary line is passed through BORROWED — no allocation, and byte-faithful.
+    #[test]
+    fn an_ordinary_line_is_untouched() {
+        let line = "INFO something happened\twith a tab\n";
+        let out = escape_control_bytes(line);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)), "no copy for a clean line");
+        assert_eq!(out, line, "a TAB is legal in a text file and must survive");
+    }
+
+    /// Every other C0 byte goes too — an ANSI escape or a stray CR would not make the file binary, but a
+    /// half-written control sequence in the middle of a record is noise a reader never needs.
+    #[test]
+    fn other_control_bytes_are_escaped_and_utf8_is_not() {
+        let out = escape_control_bytes("a\u{1}b\u{1b}c\rd\n");
+        assert_eq!(out, "a\\x01b\\x1bc\\x0dd\n");
+        // Multi-byte UTF-8 is NOT a control byte and must pass through — the log is full of em dashes.
+        let em = "declined — because it threw\n";
+        assert_eq!(escape_control_bytes(em), em);
+    }
+
+
+    /// END TO END, through the real sink: a message carrying a NUL must leave the FILE free of one.
+    ///
+    /// The unit test above covers the escape; this covers the wiring, which is the half that was missing —
+    /// the escape existing somewhere is not the same as every file line passing through it.
+    #[test]
+    fn the_file_never_receives_a_nul_even_when_the_message_carries_one() {
+        let dir = tmp("nul");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("base-studio-code.log");
+        let reg = ScopeRegistry::new(dir.join("log-scopes.json"));
+        let logger = GraphLogger { registry: reg, file: Mutex::new(None), file_path: path.clone() };
+
+        // The real message, verbatim: Rollup prefixes a VIRTUAL MODULE id with NUL.
+        logger.write_file(&GraphLogger::plain_line(
+            "00:00:00",
+            log::Level::Warn,
+            "base_studio_code_lib::frontend::graph-loader",
+            "declined the graph override for \"\0graph-entry\"",
+        ));
+
+        let raw = std::fs::read(&path).unwrap();
+        assert!(!raw.contains(&0), "a raw NUL reached the file — grep will call the whole log binary");
+        let text = String::from_utf8(raw).expect("the log is valid UTF-8");
+        assert!(text.contains("\\x00graph-entry"), "the id is escaped, not dropped: {text}");
+        assert!(text.contains("declined the graph override"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -288,7 +288,10 @@ impl TunnelState {
     }
 
     /// Queue an FCM `warden_quarantine` push (#1102). Non-blocking. No-op without stored tokens.
-    pub(super) fn enqueue_warden_push(&self, session: &str, detail: &str) {
+    /// `pub(crate)` rather than `pub(super)`: the warden's enforcement loop
+    /// (`fleet::warden`) fires this directly now, because a quarantine has to alert the user even
+    /// when the renderer that used to invoke the command is gone.
+    pub(crate) fn enqueue_warden_push(&self, session: &str, detail: &str) {
         self.enqueue(PushJob::Warden {
             session: session.to_string(),
             detail: detail.to_string(),

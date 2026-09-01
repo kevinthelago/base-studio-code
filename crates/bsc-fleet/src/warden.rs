@@ -32,8 +32,10 @@
 //!
 //! Pinned against `warden.fixtures.json`, generated from the live TypeScript.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-warden-quarantines-from-rust-instead-of-the-render-loop`
+// WIRED by `the-warden-quarantines-from-rust-instead-of-the-render-loop`: `src-tauri/src/fleet/warden.rs`
+// calls `live_pane_ids_of`, `warden_sweep_targets`, `plan_warden` and (through it) `summarize_trips`
+// on the backend's own schedule. The module-level `allow(dead_code)` is GONE; the two functions below
+// that are still unwired carry their own, each naming what blocks it — see them for why.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -128,6 +130,13 @@ pub fn plan_warden(sessions: &[WardenSession], already_quarantined: &HashSet<Str
 ///
 /// **An unparseable timestamp is KEPT.** That is the fail-open, and it is the safer direction for a
 /// security filter: a row the floor cannot judge is treated as current rather than discarded.
+///
+/// STILL UNWIRED HERE. Rust gathers no activity of its own yet, because the verdict it would feed —
+/// `checkConformance`'s command arm — is only half the check, and the other half needs the glob engine
+/// that `the-two-write-scope-glob-engines-disagree` has open. Computing one arm here and taking the
+/// other from the renderer would split one security decision across two processes. The TypeScript
+/// caller uses this function today; it moves when that decision lands.
+#[allow(dead_code)] // wired by `the-warden-produces-its-own-verdicts-once-the-glob-engines-agree`
 pub fn parse_audit_commands(lines: &[String], pane_id: &str, since: i64) -> Vec<String> {
     lines
         .iter()
@@ -189,6 +198,10 @@ fn parse_iso8601_ms(ts: &str) -> Option<i64> {
 /// Reads `tracked` only (#3983): merging in untracked paths made a `.agentscratch.txt`
 /// indistinguishable from an out-of-lane source edit, and the warden killed four workers that had zero
 /// tracked changes between them.
+///
+/// STILL UNWIRED HERE, for the same reason as [`parse_audit_commands`]: the evidence is gathered where
+/// the verdict is computed, and that is the renderer until the glob decision lands.
+#[allow(dead_code)] // wired by `the-warden-produces-its-own-verdicts-once-the-glob-engines-agree`
 pub fn zip_worktree_changes(
     panes: &[String],
     changes: &[Option<WorktreeChanges>],
