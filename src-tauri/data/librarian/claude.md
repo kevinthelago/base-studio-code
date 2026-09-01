@@ -350,7 +350,17 @@ The library is only useful if it stays lean, and that is a set of TOOLS, not han
   member, biggest groups first, and it keeps no index, so just run it.
 - `bsc graph merge <from-id> <into-id>` — fold one implementation INTO another in ONE step: it
   repoints every impl's `composes` from→into (deduped) then removes `<from>`. Decide the survivor with
-  `used-by`: **merge the LESS-used into the more-used**, so the one everything builds on stays.
+  `used-by`: **merge the LESS-used into the more-used**, so the one everything builds on stays —
+  **unless one of them OWNS a seed module**, which outranks usage. `seedAlgorithms.gen.test.ts` maps
+  each seed file under `src/shared/lib/algorithms/` to the one node id that answers for it; fold that
+  node away and the file is orphaned and the gate goes red, however few impls composed it. `used-by`
+  cannot see that binding, so check it before you decide the survivor rather than after.
+- `bsc graph impl suppress <from-id> --superseded-by <into-id> --seed` — **the second half of every
+  merge, and `merge` will not tell you it is missing.** `merge` removes `<from>` from the runtime store
+  only; the PACKAGED SEED still carries it, the reconcile re-adds it, and the seed is the copy that gets
+  emitted — so a fold you do not follow with this undoes itself. The `--seed` form retires the id from
+  the packaged seed and `--superseded-by` records what replaced it, on the tombstone, which is the one
+  field the reconcile never overwrites.
 
 **Read the SIGNAL before you act on a group — merge is the right answer to only one of them.**
 
