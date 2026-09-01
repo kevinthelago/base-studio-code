@@ -600,5 +600,294 @@
       "ok": false,
       "nearMiss": []
     }
+  ],
+  "imports": [
+    {
+      "label": "one relative import",
+      "source": "import { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "import { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a parent-relative import",
+      "source": "import { X } from \"../ui/X\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "../ui/X"
+      ],
+      "absolutized": "import { X } from \"@/features/ui/X\";\n"
+    },
+    {
+      "label": "a deep parent walk",
+      "source": "import { X } from \"../../shared/X\";\n",
+      "fromRel": "features/a/b/c.ts",
+      "specifiers": [
+        "../../shared/X"
+      ],
+      "absolutized": "import { X } from \"@/features/shared/X\";\n"
+    },
+    {
+      "label": "an index specifier",
+      "source": "import { X } from \"./sub\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./sub"
+      ],
+      "absolutized": "import { X } from \"@/features/a/sub\";\n"
+    },
+    {
+      "label": "an already-aliased import is left alone",
+      "source": "import { X } from \"@/shared/X\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "import { X } from \"@/shared/X\";\n"
+    },
+    {
+      "label": "a package import is left alone",
+      "source": "import React from \"react\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "import React from \"react\";\n"
+    },
+    {
+      "label": "THREE relative imports rewritten together",
+      "source": "import { A } from \"./a\";\nimport { B } from \"../b\";\nimport { C } from \"./c/d\";\n",
+      "fromRel": "features/x/y.ts",
+      "specifiers": [
+        "./a",
+        "../b",
+        "./c/d"
+      ],
+      "absolutized": "import { A } from \"@/features/x/a\";\nimport { B } from \"@/features/b\";\nimport { C } from \"@/features/x/c/d\";\n"
+    },
+    {
+      "label": "a bare relative side-effect import",
+      "source": "import \"./styles\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./styles"
+      ],
+      "absolutized": "import \"@/features/a/styles\";\n"
+    },
+    {
+      "label": "a dynamic import is rewritten too",
+      "source": "const m = await import(\"./lazy\");\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./lazy"
+      ],
+      "absolutized": "const m = await import(\"@/features/a/lazy\");\n"
+    },
+    {
+      "label": "a vi.mock target is rewritten",
+      "source": "vi.mock(\"./dep\");\n",
+      "fromRel": "features/a/b.test.ts",
+      "specifiers": [
+        "./dep"
+      ],
+      "absolutized": "vi.mock(\"@/features/a/dep\");\n"
+    },
+    {
+      "label": "a relative specifier in a LINE comment is not an import",
+      "source": "// see \"./ghost\" for why\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "// see \"./ghost\" for why\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a relative specifier in a BLOCK comment is not an import",
+      "source": "/* lifted from \"./ghost\" */\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "/* lifted from \"./ghost\" */\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a COMMENTED-OUT import inside a block comment is not an import",
+      "source": "/*\nimport { Ghost } from \"./ghost\";\n*/\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "/*\nimport { Ghost } from \"./ghost\";\n*/\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a commented-out import on a `//` line is not one either",
+      "source": "// import { Ghost } from \"./ghost\";\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "// import { Ghost } from \"./ghost\";\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a require() inside a doc comment is prose, not a dependency",
+      "source": " * `require(\"./example\")` shows the shape\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": " * `require(\"./example\")` shows the shape\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a source that is ONLY prose mentioning a specifier is untouched",
+      "source": "// see \"./ghost\" for why\nexport const a = 1;\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "// see \"./ghost\" for why\nexport const a = 1;\n"
+    },
+    {
+      "label": "a specifier inside a STRING is not an import",
+      "source": "const s = \"./notanimport\";\nexport const a = 1;\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "const s = \"./notanimport\";\nexport const a = 1;\n"
+    },
+    {
+      "label": "nothing relative at all",
+      "source": "export const a = 1;\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "export const a = 1;\n"
+    }
+  ],
+  "assets": [
+    {
+      "label": "a css import goes",
+      "source": "import \"./styles.css\";\nexport const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    },
+    {
+      "label": "a bare svg import goes",
+      "source": "import \"./icon.svg\";\nexport const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    },
+    {
+      "label": "a BOUND asset import stays — it binds a value someone uses",
+      "source": "import icon from \"./icon.svg\";\nexport const a = icon;\n",
+      "dropped": "import icon from \"./icon.svg\";\nexport const a = icon;\n"
+    },
+    {
+      "label": "several asset kinds go",
+      "source": "import \"./a.scss\";\nimport \"./b.png\";\nimport \"./c.webp\";\nexport const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    },
+    {
+      "label": "a code import STAYS",
+      "source": "import { X } from \"./x\";\nexport const a = 1;\n",
+      "dropped": "import { X } from \"./x\";\nexport const a = 1;\n"
+    },
+    {
+      "label": "a .ts import stays",
+      "source": "import { X } from \"./x.ts\";\nexport const a = 1;\n",
+      "dropped": "import { X } from \"./x.ts\";\nexport const a = 1;\n"
+    },
+    {
+      "label": "nothing to drop",
+      "source": "export const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    }
+  ],
+  "aliases": [
+    {
+      "label": "a sibling",
+      "fromDir": "features/a",
+      "spec": "./b",
+      "forDir": "@/features/a/b",
+      "forFile": "@/features/a/b"
+    },
+    {
+      "label": "a parent walk",
+      "fromDir": "features/a/b",
+      "spec": "../c",
+      "forDir": "@/features/a/c",
+      "forFile": "@/features/a/c"
+    },
+    {
+      "label": "two parents up",
+      "fromDir": "features/a/b/c",
+      "spec": "../../d",
+      "forDir": "@/features/a/d",
+      "forFile": "@/features/a/d"
+    },
+    {
+      "label": "a `src/` prefix is stripped",
+      "fromDir": "src/features/a",
+      "spec": "./b",
+      "forDir": "@/features/a/b",
+      "forFile": "@/features/a/b"
+    },
+    {
+      "label": "a dot segment collapses",
+      "fromDir": "features/a",
+      "spec": "./././b",
+      "forDir": "@/features/a/b",
+      "forFile": "@/features/a/b"
+    },
+    {
+      "label": "from the root",
+      "fromDir": "",
+      "spec": "./b",
+      "forDir": "@/b",
+      "forFile": "@/b"
+    }
+  ],
+  "runtime": [
+    {
+      "label": "a plain import",
+      "source": "import { X } from \"./x\";\n",
+      "imports": [
+        "./x"
+      ]
+    },
+    {
+      "label": "an all-inline-type clause yields nothing",
+      "source": "import { type A, type B } from \"./ab\";\n",
+      "imports": []
+    },
+    {
+      "label": "a MIXED clause still counts",
+      "source": "import { type A, b } from \"./ab\";\n",
+      "imports": [
+        "./ab"
+      ]
+    },
+    {
+      "label": "a statement-level `import type` yields nothing",
+      "source": "import type { T } from \"./t\";\n",
+      "imports": []
+    },
+    {
+      "label": "a bare side-effect import counts",
+      "source": "import \"./a.css\";\n",
+      "imports": [
+        "./a.css"
+      ]
+    },
+    {
+      "label": "a re-export counts",
+      "source": "export { A } from \"./a\";\n",
+      "imports": [
+        "./a"
+      ]
+    },
+    {
+      "label": "a default import counts",
+      "source": "import React from \"react\";\n",
+      "imports": [
+        "react"
+      ]
+    },
+    {
+      "label": "an import in a comment does not",
+      "source": "// import { X } from \"./ghost\";\nexport const a = 1;\n",
+      "imports": []
+    }
   ]
 }

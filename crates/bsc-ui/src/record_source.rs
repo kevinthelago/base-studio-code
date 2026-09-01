@@ -571,6 +571,194 @@ pub fn seed_answers_specifier<'a>(
     (false, all.into_iter().filter(|s| s.to_lowercase() == lower).collect())
 }
 
+/// One relative specifier a record carries, and where it sits.
+///
+/// `at` is a BYTE offset into the source. The JavaScript this is derived from reports a UTF-16 code-unit
+/// offset instead. Both are internally consistent and [`absolutize_imports`] produces identical output
+/// either way, so the parity contract is the rewritten SOURCE and the specifier sequence — comparing a
+/// raw `at` across the two languages would be comparing different units and calling it a bug.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelSpec {
+    pub spec: String,
+    pub at: usize,
+}
+
+fn statement_spec() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r#"(?m)^[ \t]*(?:import|export)\s+(?:type\s+)?[^"';]*?\s*from\s*["']([^"']+)["']"#)
+            .expect("statement pattern")
+    })
+}
+fn bare_spec() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r#"(?m)^[ \t]*import\s*["']([^"']+)["']"#).expect("bare pattern")
+    })
+}
+fn inline_spec() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r#"\b(?:import|require|vi\.(?:mock|doMock|unmock))\s*\(\s*["']([^"']+)["']"#,
+        )
+        .expect("inline pattern")
+    })
+}
+fn asset_import() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r#"(?m)^[ \t]*import\s+['"][^'"]+\.(?:css|scss|sass|less|svg|png|jpg|jpeg|gif|webp)['"];?[ \t]*\n?"#,
+        )
+        .expect("asset pattern")
+    })
+}
+
+/// The line containing byte offset `index`.
+fn line_at(src: &str, index: usize) -> &str {
+    let start = src[..index].rfind('\n').map_or(0, |i| i + 1);
+    let end = src[index..].find('\n').map_or(src.len(), |i| index + i);
+    &src[start..end]
+}
+
+/// A line that is PROSE — a comment continuation. Only the INLINE pattern consults this: a `require("./x")`
+/// written inside a doc comment is an example, not a dependency.
+fn is_prose_line(line: &str) -> bool {
+    let t = line.trim_start();
+    t.starts_with('*') || t.starts_with("//") || t.starts_with("/*")
+}
+
+/// Every RELATIVE specifier a record carries, in source order, each with its offset.
+///
+/// Scanned over [`blank_comments`] output, which is why that primitive had to preserve every offset: a
+/// `from "./x"` written inside prose must not be rewritten, while the positions of the real imports stay
+/// true so [`absolutize_imports`] can splice on them.
+pub fn relative_specifiers(src: &str) -> Vec<RelSpec> {
+    let scan = blank_comments(src);
+    let mut out: Vec<RelSpec> = Vec::new();
+    for (re, prose_sensitive) in
+        [(statement_spec(), false), (bare_spec(), false), (inline_spec(), true)]
+    {
+        for c in re.captures_iter(&scan) {
+            let m = c.get(1).expect("group 1");
+            let spec = m.as_str();
+            if !spec.starts_with('.') {
+                continue;
+            }
+            if prose_sensitive && is_prose_line(line_at(src, m.start())) {
+                continue;
+            }
+            out.push(RelSpec { spec: spec.to_string(), at: m.start() });
+        }
+    }
+    // One offset can be reached by two patterns; the FIRST wins, and the result is source-ordered.
+    out.sort_by_key(|r| r.at);
+    out.dedup_by_key(|r| r.at);
+    out
+}
+
+/// `fromDir` + a relative specifier, collapsed to an `@/…` alias.
+pub fn alias_for_dir(from_dir: &str, spec: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let joined = format!("{from_dir}/{spec}");
+    for seg in joined.split('/') {
+        match seg {
+            "" | "." => continue,
+            ".." => {
+                out.pop();
+            }
+            _ => out.push(seg),
+        }
+    }
+    let path = out.join("/");
+    format!("@/{}", path.strip_prefix("src/").unwrap_or(&path))
+}
+
+/// [`alias_for_dir`] from a FILE-relative path — the directory is everything before the last `/`.
+pub fn alias_for(from_rel: &str, spec: &str) -> String {
+    let dir = from_rel.rfind('/').map_or("", |i| &from_rel[..i]);
+    alias_for_dir(dir, spec)
+}
+
+/// Rewrite every relative specifier in `src` to its `@/…` alias.
+///
+/// SPLICED IN REVERSE, and that is load-bearing: each replacement changes the length of the string, so
+/// rewriting front-to-back would invalidate every offset after the first.
+pub fn absolutize_imports(src: &str, from_rel: &str) -> String {
+    let mut out = src.to_string();
+    for r in relative_specifiers(src).into_iter().rev() {
+        let alias = alias_for(from_rel, &r.spec);
+        out.replace_range(r.at..r.at + r.spec.len(), &alias);
+    }
+    out
+}
+
+/// Drop stylesheet and image imports — a record cannot resolve them, and they are not behaviour.
+pub fn drop_asset_imports(src: &str) -> String {
+    asset_import().replace_all(src, "").into_owned()
+}
+
+/// The specifiers a record REQUIRES at runtime.
+///
+/// Matches the corrected JS (`runtime-imports-adopts-the-canonical-scanners-answer`), which agrees with
+/// [`crate::import_scan`] on all 31 corpus subjects:
+///
+///   - an ALL-inline-type clause yields nothing — it erases at compile time and emits no require;
+///   - a MIXED clause still counts, because it really does require the module for its value binding
+///     (this matches the eslint rule's `allowTypeImports`, which `recordBoundary.test.ts` depends on);
+///   - a BARE side-effect import counts — it is a real require with no `from` clause.
+pub fn runtime_imports(src: &str) -> Vec<String> {
+    let text = strip_comments(src);
+    let mut out: Vec<String> = Vec::new();
+    let clause_re = regex::Regex::new(
+        r#"(?m)^[ \t]*(?:import|export)\s+([^"']*)from\s*["']([^"']+)["']"#,
+    )
+    .expect("clause pattern");
+    for c in clause_re.captures_iter(&text) {
+        let clause = c.get(1).map_or("", |m| m.as_str());
+        // The JS drops a STATEMENT-level `import type` with a lookahead; Rust regex has none, so the
+        // clause is captured and tested here instead — the same restructuring the corrected JS uses.
+        if clause.trim_start().starts_with("type ") {
+            continue;
+        }
+        if !clause_has_value_binding(clause) {
+            continue;
+        }
+        out.push(c[2].to_string());
+    }
+    for c in bare_spec().captures_iter(&text) {
+        out.push(c[1].to_string());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    out.into_iter().filter(|s| seen.insert(s.clone())).collect()
+}
+
+/// Does an import CLAUSE bind anything that survives to runtime? See [`runtime_imports`].
+fn clause_has_value_binding(clause: &str) -> bool {
+    let Some(open) = clause.find('{') else { return true };
+    let Some(close) = clause.rfind('}') else { return true };
+    if close < open {
+        return true;
+    }
+    let before = clause[..open].trim();
+    if !before.is_empty() && before != "," {
+        return true; // `React, { … }` — the default binding is a value
+    }
+    let members: Vec<&str> =
+        clause[open + 1..close].split(',').map(str::trim).filter(|m| !m.is_empty()).collect();
+    if members.is_empty() {
+        return false; // `import {} from "x"` binds nothing
+    }
+    members.iter().any(|m| !m.starts_with("type "))
+}
+
+/// A FILE read as a record would carry it: assets dropped, relative imports absolutized, normalized.
+pub fn file_as_record_source(abs_path: &std::path::Path, rel_path: &str) -> std::io::Result<String> {
+    let raw = std::fs::read_to_string(abs_path)?;
+    Ok(absolutize_imports(&drop_asset_imports(&norm(&raw)), rel_path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,6 +958,108 @@ mod tests {
             specs.iter().any(|c| !c["nearMiss"].as_array().unwrap().is_empty()),
             "the case-mismatch near miss is what tells `missing` apart from `misspelled`"
         );
+    }
+
+    /// The import cluster. Parity is asserted on the OBSERVABLE result — the specifier sequence and the
+    /// rewritten source — never on the raw offset: the JS counts UTF-16 code units and Rust regex reports
+    /// bytes, so comparing `at` across the two would be comparing different units and calling it a bug.
+    /// The rewritten source is what proves the offsets were used correctly.
+    #[test]
+    fn the_import_cluster_matches_the_typescript() {
+        let fx = fixture();
+        let cases = fx["imports"].as_array().expect("imports[]");
+        assert!(cases.len() >= 12, "thin corpus: {}", cases.len());
+        for c in cases {
+            let label = c["label"].as_str().unwrap();
+            let src = c["source"].as_str().unwrap();
+            let from_rel = c["fromRel"].as_str().unwrap();
+
+            let specs: Vec<String> =
+                relative_specifiers(src).into_iter().map(|r| r.spec).collect();
+            let want: Vec<String> = c["specifiers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(specs, want, "specifiers — {label}");
+
+            assert_eq!(
+                absolutize_imports(src, from_rel),
+                c["absolutized"].as_str().unwrap(),
+                "absolutized — {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_asset_drop_and_alias_helpers_match_the_typescript() {
+        let fx = fixture();
+        for c in fx["assets"].as_array().expect("assets[]") {
+            let label = c["label"].as_str().unwrap();
+            assert_eq!(
+                drop_asset_imports(c["source"].as_str().unwrap()),
+                c["dropped"].as_str().unwrap(),
+                "{label}"
+            );
+        }
+        for c in fx["aliases"].as_array().expect("aliases[]") {
+            let label = c["label"].as_str().unwrap();
+            let (dir, spec) = (c["fromDir"].as_str().unwrap(), c["spec"].as_str().unwrap());
+            assert_eq!(alias_for_dir(dir, spec), c["forDir"].as_str().unwrap(), "forDir — {label}");
+            assert_eq!(
+                alias_for(&format!("{dir}/mod.ts"), spec),
+                c["forFile"].as_str().unwrap(),
+                "forFile — {label}"
+            );
+        }
+    }
+
+    /// `runtime_imports` pinned against the JS on BOTH stores' behalf — this is the function whose two
+    /// divergences from the canonical scanner were corrected in
+    /// `runtime-imports-adopts-the-canonical-scanners-answer`, so the corrected answer is what must hold.
+    #[test]
+    fn runtime_imports_matches_the_corrected_typescript() {
+        let fx = fixture();
+        let cases = fx["runtime"].as_array().expect("runtime[]");
+        assert!(cases.len() >= 6);
+        for c in cases {
+            let label = c["label"].as_str().unwrap();
+            let want: Vec<String> = c["imports"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(runtime_imports(c["source"].as_str().unwrap()), want, "{label}");
+        }
+    }
+
+    /// Both directions for the cluster, mirrored from the generator so a regeneration cannot hollow out
+    /// either side. The UNTOUCHED half is what proves the prose and string guards do anything: a
+    /// rewriter that rewrote everything would pass a corpus made only of things needing a rewrite.
+    #[test]
+    fn the_import_corpus_carries_both_directions() {
+        let fx = fixture();
+        let imports = fx["imports"].as_array().unwrap();
+        let changed = imports
+            .iter()
+            .filter(|c| c["absolutized"].as_str() != c["source"].as_str())
+            .count();
+        let same = imports
+            .iter()
+            .filter(|c| c["absolutized"].as_str() == c["source"].as_str())
+            .count();
+        assert!(changed >= 7, "nothing was rewritten — {changed}");
+        assert!(same >= 4, "everything was rewritten; the guards prove nothing — {same}");
+
+        let assets = fx["assets"].as_array().unwrap();
+        assert!(assets.iter().filter(|c| c["dropped"].as_str() != c["source"].as_str()).count() >= 3);
+        assert!(assets.iter().filter(|c| c["dropped"].as_str() == c["source"].as_str()).count() >= 3);
+
+        let rt = fx["runtime"].as_array().unwrap();
+        assert!(rt.iter().filter(|c| !c["imports"].as_array().unwrap().is_empty()).count() >= 4);
+        assert!(rt.iter().filter(|c| c["imports"].as_array().unwrap().is_empty()).count() >= 3);
     }
 
     /// Each decision function must answer BOTH ways somewhere in the corpus, mirrored from the generator
