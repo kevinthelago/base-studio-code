@@ -366,32 +366,31 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
+    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
-            "--roster" => a.roster = Some(it.next().ok_or("--roster needs a path")?),
-            "--stream" => a.stream = Some(it.next().ok_or("--stream needs a stream id")?),
-            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
-            "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
+            "--roster" => a.roster = Some(v.value("--roster needs a path")?),
+            "--stream" => a.stream = Some(v.value("--stream needs a stream id")?),
+            "--db" => a.db = Some(v.value("--db needs a path")?),
+            "--prompt" => a.prompt = Some(v.value("--prompt needs text")?),
             "--force" => a.force = true,
             "--strict" => a.strict = true,
             "--fix" => a.fix = true,
-            "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
-            "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
-            "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
+            "--token" => a.token = Some(v.value("--token needs a value")?),
+            "--source" => a.source = Some(v.value("--source needs a path or URL")?),
+            "--repo" => a.repos.push(v.value("--repo needs an owner/name")?),
             "--local" => a.local = true,
             "--timeout" => {
-                let v = it.next().ok_or("--timeout needs a value")?;
-                a.timeout_ms = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
+                let raw = v.value("--timeout needs a value")?;
+                a.timeout_ms = Some(raw.parse().map_err(|_| format!("--timeout: not a number: {raw}"))?);
             }
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 
