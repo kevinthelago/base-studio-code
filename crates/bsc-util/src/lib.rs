@@ -82,6 +82,11 @@ pub mod packaged;
 /// `bsc plan integrate` serializing `git merge` calls against a shared working tree.
 pub mod filelock;
 
+/// The pane-id grammar (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) — mint an
+/// identity, read one back, and the decisions that hang off it. Proved against the TypeScript it is
+/// ported from; see the module docs for the ambiguities it deliberately reproduces.
+pub mod pane_id;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
