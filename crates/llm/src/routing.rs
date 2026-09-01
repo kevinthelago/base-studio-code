@@ -23,23 +23,34 @@
 //! local one. The API key is dropped rather than carried, because it belongs to a provider this pane is
 //! no longer talking to.
 //!
-//! # Parity, faithfully — including one thing the TypeScript gets wrong
+//! # Parity, faithfully
 //!
 //! `paneLlmRouting.fixtures.json` is generated from the live `paneLlmConfig` over the REAL shipped tiers
 //! (`data/console/models.json`) and this module is asserted equal to it case by case.
 //!
-//! That includes a defect. The TypeScript writes `cfg.baseUrl || DEFAULT_LOCAL_BASE_URL`, a FALSY test,
-//! so an empty string defaults but a WHITESPACE-ONLY base URL (`"   "`) is truthy and survives verbatim
-//! — a base URL that cannot dial. This module reproduces that, deliberately, because the slice's contract
-//! is parity and silently "fixing" it here would change which endpoint a live session reaches without a
-//! revert of its own. It is filed as `a-whitespace-base-url-survives-the-pane-routing-and-cannot-dial`.
-//! [`crate::DEFAULT_LOCAL_BASE_URL`] is REUSED rather than restated, so only the emptiness TEST differs
-//! from the rest of the crate, never the endpoint itself.
+//! It used to reproduce a DEFECT, deliberately. The TypeScript wrote `cfg.baseUrl ||
+//! DEFAULT_LOCAL_BASE_URL`, a FALSY test, so an empty string defaulted but a WHITESPACE-ONLY base URL
+//! (`"   "`) was truthy and survived verbatim — an endpoint that cannot dial, reaching the agent as its
+//! base URL and failing far from the Settings field that caused it. The port mirrored that, because
+//! that slice's contract was parity and changing which endpoint a live session reaches wanted a revert
+//! of its own.
+//!
+//! `a-whitespace-base-url-survives-the-pane-routing-and-cannot-dial` is that revert, and BOTH SIDES
+//! MOVED TOGETHER: the TypeScript now writes `cfg.baseUrl.trim() || DEFAULT_LOCAL_BASE_URL`, this test
+//! trims, and the fixture is regenerated so the two still agree. The value is trimmed as well as tested,
+//! because `"  http://box:11434/v1  "` cannot dial either.
+//!
+//! The store's setter trims too (`setLocalBaseUrl`), which is where the item asked for the fix — a
+//! stored `"   "` is the actual defect and every downstream `||` is a symptom. Trimming here as well is
+//! NOT "trimming at every reader": it makes the ONE emptiness test on this path agree with
+//! `resolve_base_url`, which has always trimmed, and it is what covers the values persisted before the
+//! setter was fixed.
 //!
 //! One asymmetry inherited from the same source, worth naming so it is not read as a bug here: rule 3
 //! does NOT default the base URL (an `ollama` pane with none configured keeps `""`), while rule 4 does.
 //! Downstream, `resolve_base_url` supplies the default at provider-construction time, so the empty value
-//! never reaches a request.
+//! never reaches a request. Rule 3 also passes the configured URL through untrimmed; that is harmless
+//! for the same reason, and the setter is what keeps an untrimmed one from being stored at all.
 
 use crate::DEFAULT_LOCAL_BASE_URL;
 
@@ -81,15 +92,16 @@ pub fn pane_llm_config(global: &LlmConfig, pane_model: Option<&str>, tier_model_
     if provider_needs_bsc_agent(&global.provider) {
         return LlmConfig { model: pane_model.to_string(), ..global.clone() };
     }
-    // Rule 4 — #173. See the module docs for the falsy (not trimmed) emptiness test.
+    // Rule 4 — #173. The emptiness test TRIMS, matching `llm::resolve_base_url` and the TypeScript this
+    // is proved against — see the module docs.
     LlmConfig {
         provider: "ollama".to_string(),
         model: pane_model.to_string(),
         api_key: String::new(),
-        base_url: if global.base_url.is_empty() {
+        base_url: if global.base_url.trim().is_empty() {
             DEFAULT_LOCAL_BASE_URL.to_string()
         } else {
-            global.base_url.clone()
+            global.base_url.trim().to_string()
         },
         num_ctx: global.num_ctx,
     }
@@ -236,19 +248,33 @@ mod tests {
         );
     }
 
-    /// The inherited defect, pinned so it cannot change silently. A whitespace-only base URL is TRUTHY
-    /// in the TypeScript's `||`, so it survives and cannot dial. Reproduced deliberately for parity and
-    /// filed as its own item; this test is what will go red when that item fixes it, which is the point.
+    /// A whitespace-only endpoint resolves to the default, and a padded one is trimmed.
+    ///
+    /// THIS IS THE SAME TEST, UPDATED — not a new one, and not the old one deleted. It was written as
+    /// `a_whitespace_base_url_survives_verbatim_matching_the_typescripts_falsy_test`, asserting that
+    /// `"   "` survived, so that the ported defect could not change unnoticed. It is the test the fix
+    /// was supposed to turn RED, and this is that flip. Reading the diff of this function IS the
+    /// behaviour change.
     #[test]
-    fn a_whitespace_base_url_survives_verbatim_matching_the_typescripts_falsy_test() {
+    fn a_whitespace_base_url_resolves_to_the_default_instead_of_surviving_verbatim() {
         let got = pane_llm_config(&cfg("anthropic", "opus-4.5", "sk", "   "), Some("llama3.1"), &tiers());
         assert_eq!(
-            got.base_url, "   ",
-            "parity with the TypeScript's falsy test — see the module docs and \
-             `a-whitespace-base-url-survives-the-pane-routing-and-cannot-dial`"
+            got.base_url, DEFAULT_LOCAL_BASE_URL,
+            "was \"   \" — a whitespace-only endpoint is not an endpoint, and it reached the agent as one"
         );
+
         let empty = pane_llm_config(&cfg("anthropic", "opus-4.5", "sk", ""), Some("llama3.1"), &tiers());
-        assert_eq!(empty.base_url, DEFAULT_LOCAL_BASE_URL, "an EMPTY string is falsy and does default");
+        assert_eq!(empty.base_url, DEFAULT_LOCAL_BASE_URL, "an EMPTY string still defaults, as it always did");
+
+        // The value is TRIMMED, not merely tested: a padded URL cannot dial either.
+        let padded =
+            pane_llm_config(&cfg("anthropic", "opus-4.5", "sk", "  http://box:11434/v1  "), Some("llama3.1"), &tiers());
+        assert_eq!(padded.base_url, "http://box:11434/v1");
+
+        // …and a real endpoint is untouched, which is what a trim must not break.
+        let real =
+            pane_llm_config(&cfg("anthropic", "opus-4.5", "sk", "http://box:11434/v1"), Some("llama3.1"), &tiers());
+        assert_eq!(real.base_url, "http://box:11434/v1");
     }
 
     /// The context ceiling is a property of the user's configuration, not of the provider, so it must

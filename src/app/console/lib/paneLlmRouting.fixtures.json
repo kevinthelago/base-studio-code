@@ -295,7 +295,7 @@
         "provider": "ollama",
         "model": "llama3.1",
         "apiKey": "",
-        "baseUrl": "   "
+        "baseUrl": "http://localhost:11434/v1"
       }
     }
   ]

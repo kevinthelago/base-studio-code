@@ -180,12 +180,19 @@ pub fn seed_path_under(root: &Path) -> PathBuf {
 
 /// Every field the packaged impl seed actually carries, in the order it reads best.
 ///
-/// Derived from the 667 shipped records rather than hand-maintained — the list this replaces had
-/// drifted to omit `kind`, `summary`, `tests` and `vizCode`, so promoting over an existing entry
-/// silently dropped whichever of those it had.
+/// Derived from the shipped records rather than hand-maintained — the list this replaces had drifted
+/// to omit `kind`, `summary`, `tests` and `vizCode`, so promoting over an existing entry silently
+/// dropped whichever of those it had.
+///
+/// THAT DRIFT RECURRED, and the second time it did not fail silently — it failed CLOSED. `feature` is
+/// on all 670 packaged records and was absent here, so [`seed_content_of`] projected it away and the
+/// promote refused every single record rather than lose it. `bsc graph promote --seed` was inert for
+/// the whole seed, which is the safe direction and still a defect. The comment claiming this list was
+/// derived was the problem: it was WRITTEN by hand from a derivation done once, so
+/// `seed_fields_covers_every_field_the_packaged_seed_carries` now derives it on every run.
 pub const SEED_FIELDS: &[&str] = &[
-    "id", "tech", "name", "role", "domain", "folder", "src", "provides", "composes", "kind",
-    "summary", "ref", "tests", "code", "vizCode",
+    "id", "tech", "name", "role", "domain", "feature", "folder", "src", "provides", "composes",
+    "kind", "summary", "ref", "tests", "code", "vizCode",
 ];
 
 /// Project a runtime record down to what the SEED ships.
@@ -567,6 +574,56 @@ mod tests {
         assert!(tracked_ids(&empty()).is_empty());
     }
 
+
+    /// `SEED_FIELDS` must COVER every field the packaged seed actually carries — derived on every run,
+    /// not written down once and called derived.
+    ///
+    /// A field the seed has and this list lacks is projected away by [`seed_content_of`], and
+    /// `promote --seed` then refuses the record rather than lose it. MEASURED 2026-09-01: `feature` was
+    /// on all 670 packaged records and absent from the list, so the verb refused EVERY one of them —
+    /// `bsc graph promote --seed` was inert for the entire seed. That is the safe direction of the
+    /// failure and still a defect, and it is the SECOND time this list has drifted (the first dropped
+    /// `kind`, `summary`, `tests` and `vizCode`, which failed silently instead).
+    ///
+    /// Coverage, deliberately, not equality: a field in `SEED_FIELDS` that no record happens to carry
+    /// yet is fine — `vizCode` is optional and rare — but a field on a record that the list does not
+    /// name is a promotion that cannot happen.
+    #[test]
+    fn seed_fields_covers_every_field_the_packaged_seed_carries() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("crate is nested two levels under the repo root")
+            .to_path_buf();
+        let seed = root.join("src-tauri").join("data").join("knowledge").join("algorithms.json");
+        let Ok(text) = std::fs::read_to_string(&seed) else { return };
+        let Ok(doc) = serde_json::from_str::<Value>(&text) else { return };
+        let records = doc.get("implementations").and_then(Value::as_array).cloned().unwrap_or_default();
+        assert!(!records.is_empty(), "the packaged seed carries records");
+
+        let known: std::collections::BTreeSet<&str> = SEED_FIELDS.iter().copied().collect();
+        let mut missing: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for rec in &records {
+            let Some(obj) = rec.as_object() else { continue };
+            for key in obj.keys() {
+                if !known.contains(key.as_str()) {
+                    *missing.entry(key.clone()).or_default() += 1;
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "the packaged seed carries {} field(s) SEED_FIELDS does not name, so `promote --seed` \
+             REFUSES every record that has one rather than dropping it:\n{}\n\nAdd them to \
+             SEED_FIELDS (and say in its doc comment what drifted).",
+            missing.len(),
+            missing
+                .iter()
+                .map(|(k, n)| format!("  {k} — on {n} of {} records", records.len()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
 
     /// The committed store must parse and be readable WITHOUT a home dir, an env var, or the runtime
     /// store — that is the whole point of it existing. A fresh clone and a CI checkout have none of
