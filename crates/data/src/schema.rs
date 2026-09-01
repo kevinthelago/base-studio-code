@@ -69,24 +69,78 @@ pub struct Field {
     pub validate: Option<String>,
 }
 
+/// Is `name` usable as a SQL identifier in the store?
+///
+/// `[A-Za-z_][A-Za-z0-9_]*`, and ASCII deliberately: `café` is a perfectly good name and a bad
+/// column, so this rejects it rather than letting the store decide later. The TypeScript authoring
+/// side spells the same rule as `SAFE_IDENT` and the two are pinned against each other by
+/// `checkDataModel` parity (`identSamples` in dataModelCheck.fixtures.json).
+///
+/// This is the ONE definition: [`crate::ddl::quote_ident`] calls it, so the layer that admits a
+/// model and the layer that quotes it cannot disagree.
+pub fn is_safe_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => chars.all(|c| c.is_ascii_alphanumeric() || c == '_'),
+        _ => false,
+    }
+}
+
 impl DataModel {
     /// Find an entity by key.
     pub fn entity(&self, key: &str) -> Option<&Entity> {
         self.entities.iter().find(|e| e.key == key)
     }
 
-    /// Structural validation, independent of any data: unique entity/field keys,
+    /// Structural validation, independent of any data: SAFE IDENTIFIERS, unique entity/field keys,
     /// identity fields that actually exist, and `ref` fields that point at a real
     /// entity. Returns the list of problems (empty ⇒ valid) as a single error.
+    ///
+    /// The identifier rule is what makes this a real gate. Every create/insert path runs each key
+    /// through [`crate::ddl::quote_ident`], which rejects anything outside `[A-Za-z_][A-Za-z0-9_]*`;
+    /// until `the-data-model-check-rejects-what-the-store-will-reject` this method did not check it,
+    /// so a model could pass validation and then fail at DDL time with the load half-done.
+    ///
+    /// The problems, their wording and their ORDER are parity-proved against the TypeScript
+    /// `checkDataModel` over a generated corpus — see `data_model_check_matches_the_typescript`.
     pub fn check(&self) -> Result<()> {
+        let problems = self.problems();
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(DataError::Schema(problems.join("; ")))
+        }
+    }
+
+    /// The same validation as [`DataModel::check`], as the ORDERED list an editor surfaces — the
+    /// shape the TypeScript `checkDataModel` returns, and the shape parity is asserted on.
+    ///
+    /// `check` joins these with `"; "`, and a key may legitimately CONTAIN that separator
+    /// (`droptable; --` is in the corpus), so the joined string cannot be split back into the list.
+    /// Anything comparing problems one by one must come through here.
+    pub fn problems(&self) -> Vec<String> {
         let mut problems = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for e in &self.entities {
+            // Ordered exactly as the TypeScript emits them: the key's own problem precedes the
+            // duplicate problem, and blankness is tested on the TRIMMED key while safety is tested
+            // on the untrimmed one — so "   " is empty and " account" is unsafe. They are different
+            // answers and the corpus keeps them apart.
+            if e.key.trim().is_empty() {
+                problems.push("an entity has an empty key".to_string());
+            } else if !is_safe_ident(&e.key) {
+                problems.push(format!("entity key `{}` is not a safe identifier", e.key));
+            }
             if !seen.insert(&e.key) {
                 problems.push(format!("duplicate entity key `{}`", e.key));
             }
             let mut fseen = std::collections::HashSet::new();
             for f in &e.fields {
+                if f.key.trim().is_empty() {
+                    problems.push(format!("{}: a field has an empty key", e.key));
+                } else if !is_safe_ident(&f.key) {
+                    problems.push(format!("{}.{}: not a safe identifier", e.key, f.key));
+                }
                 if !fseen.insert(&f.key) {
                     problems.push(format!("{}: duplicate field key `{}`", e.key, f.key));
                 }
@@ -106,11 +160,7 @@ impl DataModel {
                 }
             }
         }
-        if problems.is_empty() {
-            Ok(())
-        } else {
-            Err(DataError::Schema(problems.join("; ")))
-        }
+        problems
     }
 }
 
@@ -160,6 +210,131 @@ mod tests {
         assert!(err.contains("unknown entity `ghost`"), "{err}");
         assert!(err.contains("identity field `missing`"), "{err}");
         assert!(err.contains("duplicate entity key `account`"), "{err}");
+    }
+
+    // ── parity with the TypeScript `checkDataModel` ────────────────────────────────────────────
+    //
+    // The corpus is GENERATED from the live record by
+    // `src/features/planner/data/dataModelCheck.fixtures.test.ts`; nothing here is hand-written.
+    // Renaming that file means updating FIXTURE below, exactly as `find_fixture` callers must.
+
+    const FIXTURE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../src/features/planner/data/dataModelCheck.fixtures.json"
+    );
+
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        cases: Vec<Case>,
+        #[serde(rename = "identSamples")]
+        ident_samples: Vec<IdentSample>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Case {
+        name: String,
+        model: DataModel,
+        problems: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct IdentSample {
+        ident: String,
+        safe: bool,
+    }
+
+    /// The ONE difference between the two sides' wording: this file quotes interpolated identifiers
+    /// in backticks (the house style in `schema.rs`), the TypeScript in double quotes. Nothing else
+    /// is normalized — a wording or ordering change on either side must fail.
+    fn ts_to_rust_quotes(msg: &str) -> String {
+        msg.replace('"', "`")
+    }
+
+    fn fixture() -> Fixture {
+        let raw = std::fs::read_to_string(FIXTURE).unwrap_or_else(|e| {
+            panic!("dataModelCheck.fixtures.json unreadable at {FIXTURE}: {e}\n\
+                    Regenerate: UPDATE_DATA_MODEL_FIXTURES=1 npx vitest run dataModelCheck.fixtures")
+        });
+        serde_json::from_str(&raw).expect("dataModelCheck.fixtures.json is not the expected shape")
+    }
+
+    #[test]
+    fn data_model_check_matches_the_typescript() {
+        let fx = fixture();
+        assert!(fx.cases.len() >= 20, "corpus shrank to {} cases", fx.cases.len());
+
+        for c in &fx.cases {
+            let expected: Vec<String> = c.problems.iter().map(|m| ts_to_rust_quotes(m)).collect();
+            // WHOLE list, IN ORDER — a set comparison would call a reordered list identical, and the
+            // ordering (key problem before duplicate problem) is precisely what this pins.
+            assert_eq!(self_problems(&c.model), expected, "case `{}`", c.name);
+            // ...and the two must agree on VALID too, or every empty expectation proves nothing.
+            assert_eq!(c.model.check().is_ok(), expected.is_empty(), "case `{}` ok-ness", c.name);
+        }
+    }
+
+    fn self_problems(m: &DataModel) -> Vec<String> {
+        m.problems()
+    }
+
+    #[test]
+    fn the_quote_normalization_is_not_inert() {
+        // If `ts_to_rust_quotes` ever became a no-op the parity test above would still pass on every
+        // message that carries no identifier — and silently stop checking the ones that do.
+        let fx = fixture();
+        let touched = fx
+            .cases
+            .iter()
+            .flat_map(|c| c.problems.iter())
+            .filter(|m| ts_to_rust_quotes(m) != **m)
+            .count();
+        assert!(touched >= 5, "only {touched} messages carry a quoted identifier — corpus too thin");
+        assert_eq!(ts_to_rust_quotes(r#"a "b" c"#), "a `b` c");
+    }
+
+    #[test]
+    fn the_identifier_predicate_matches_the_typescript_safe_ident() {
+        let fx = fixture();
+        assert!(fx.ident_samples.len() >= 20, "ident corpus shrank");
+        for s in &fx.ident_samples {
+            assert_eq!(is_safe_ident(&s.ident), s.safe, "ident {:?}", s.ident);
+        }
+        // both answers really occur, or this asserts nothing
+        assert!(fx.ident_samples.iter().any(|s| s.safe));
+        assert!(fx.ident_samples.iter().any(|s| !s.safe));
+    }
+
+    #[test]
+    fn the_store_quotes_exactly_what_the_model_admits() {
+        // The whole point of routing `quote_ident` through `is_safe_ident`: a model that passes
+        // `check` can never fail at DDL time. Proved over the same corpus, on the real function.
+        let fx = fixture();
+        for s in &fx.ident_samples {
+            assert_eq!(
+                crate::ddl::quote_ident(&s.ident).is_ok(),
+                s.safe,
+                "quote_ident disagrees with the model on {:?}",
+                s.ident
+            );
+        }
+    }
+
+    #[test]
+    fn a_model_that_passes_check_survives_create_table() {
+        // The end-to-end statement of the defect, on the path that actually broke: every key of a
+        // model `check` accepted must quote. Before this change an unsafe key passed `check` and
+        // blew up here.
+        let mut m = crm();
+        m.entities[0].key = "a-b".into();
+        assert!(m.check().is_err(), "an unsafe entity key must not pass check");
+        assert!(crate::ddl::quote_ident("a-b").is_err(), "...and would have failed at DDL time");
+
+        let good = crm();
+        assert!(good.check().is_ok());
+        for e in &good.entities {
+            assert!(crate::ddl::quote_ident(&e.key).is_ok(), "entity {}", e.key);
+            for f in &e.fields {
+                assert!(crate::ddl::quote_ident(&f.key).is_ok(), "field {}.{}", e.key, f.key);
+            }
+        }
     }
 
     #[test]
