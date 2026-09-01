@@ -752,6 +752,47 @@ fn launch_init_cmd(
     )
 }
 
+/// Derive this launch's write scope into `env`, in place.
+///
+/// A named function rather than an inline block for the same reason as its siblings: the branch a
+/// payload change can silently break is the one with no capability. Inventing a scope there would
+/// restrict every ad-hoc console; skipping it when a capability IS present would leave the variable
+/// unset, and unset ALLOWS.
+fn launch_write_scope(
+    env: &mut std::collections::HashMap<String, String>,
+    cap: Option<&crate::session::role_gate::RoleCapability>,
+    pane_id: &str,
+) {
+    let Some(cap) = cap else { return };
+    let ws = crate::session::write_scope::reconcile_write_scope(
+        env.get("BSC_SCOPE_GLOBS").map(String::as_str),
+        env.get("BSC_SCOPES").map(String::as_str),
+        cap,
+    );
+    if let Some((front, mine)) = &ws.globs_disagreement {
+        log::warn!(
+            "pty[{pane_id}] BSC_SCOPE_GLOBS disagreed — the frontend sent {front:?}, the launch \
+             derived {mine:?}; the NARROWER {:?} is what runs. This variable is the only write block \
+             that holds under the bypass posture, and its absent state ALLOWS, so the two sides \
+             differing is a session whose write boundary is in doubt.",
+            ws.scope_globs,
+        );
+    }
+    if ws.scopes_differed {
+        log::warn!(
+            "pty[{pane_id}] BSC_SCOPES disagreed — the launch's own value is what runs. It is a pure \
+             function of the capability with no user-supplied part, so a difference means one of the \
+             two derivations is wrong."
+        );
+    }
+    match ws.scope_globs {
+        Some(v) => { env.insert("BSC_SCOPE_GLOBS".to_string(), v); }
+        // UNSET is allow-all, so this arm is only ever reached when BOTH sides agreed on it.
+        None => { env.remove("BSC_SCOPE_GLOBS"); }
+    }
+    env.insert("BSC_SCOPES".to_string(), ws.scopes);
+}
+
 /// Render this launch's `$BSC_AGENT_PERMS`, from the raw command arguments.
 ///
 /// A named function rather than an inline block for the same reason as its two siblings: the
@@ -1034,6 +1075,13 @@ fn pty_create_inner(
                 report.added,
             );
         }
+        // THE WRITE SCOPE, in the same pass. `$BSC_SCOPE_GLOBS` is the only write block that survives
+        // the BYPASS posture — `permissions.deny` is ignored there and the `bsc-scope` hook is what is
+        // left — and its absent state ALLOWS, so a scope lost here is a session that can write
+        // anywhere. No union is defined over its three states; the NARROWER wins. See
+        // `session::write_scope::reconcile_write_scope`.
+        let mut reconciled = reconciled;
+        launch_write_scope(&mut reconciled, role_capability.as_ref(), &pane_id);
         Some(reconciled)
     };
     // THE bsc-agent PERMISSION DOCUMENT, RENDERED HERE. On that harness this doc is the entire gate —
@@ -2045,6 +2093,53 @@ mod tests {
         );
         assert_eq!(manual.derived, "claude", "every recovery signal set, and a manual console resumes none of them");
         assert!(manual.disagreement.is_none());
+    }
+
+    /// THE CALL SITE for the write scope, on both ends the item names. `session::write_scope`'s own
+    /// tests stay green if `pty_create` never calls it — they reconcile directly.
+    ///
+    /// The dangerous direction is silent: `$BSC_SCOPE_GLOBS` is the only write block that survives the
+    /// bypass posture, and its ABSENT state allows. So a scope lost between here and the child env is
+    /// a session that can write anywhere, with nothing saying so.
+    #[test]
+    fn the_launch_derives_the_write_scope_and_never_widens_it() {
+        use crate::session::role_gate::{RoleCapability, Tier};
+        let cap = |role: &str, code: Tier, globs: Vec<String>| RoleCapability {
+            role: role.into(),
+            github: Tier::Read,
+            git: Tier::Read,
+            code,
+            net: Tier::None,
+            ui: Tier::Read,
+            write_globs: globs,
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: vec![],
+        };
+
+        // END ONE: a TRIAGE pane (code:none, no carve-out) whose env arrived with NO scope at all —
+        // the shape where "may write nothing" becomes "may write anywhere".
+        let triage = cap("triage", Tier::None, vec![]);
+        let mut env = std::collections::HashMap::new();
+        super::launch_write_scope(&mut env, Some(&triage), "pane");
+        assert_eq!(
+            env.get("BSC_SCOPE_GLOBS").map(String::as_str),
+            Some(bsc_util::scope::DENY_ALL),
+            "an unset scope on a code:none role is the silent widening this exists to stop"
+        );
+        assert!(env.contains_key("BSC_SCOPES"), "the store tiers travel with it");
+
+        // END TWO: a DESIGNER — code:none WITH a carve-out — keeps its globs rather than collapsing.
+        let designer = cap("designer", Tier::None, vec!["scratch/**".into()]);
+        let mut env = std::collections::HashMap::new();
+        super::launch_write_scope(&mut env, Some(&designer), "pane");
+        assert_eq!(env.get("BSC_SCOPE_GLOBS").map(String::as_str), Some("scratch/**"));
+
+        // An UNGATED pane has no capability, so neither variable is touched — the branch belongs to
+        // the caller, and inventing a scope for a pane with no role would restrict an ad-hoc console.
+        let mut env = std::collections::HashMap::new();
+        super::launch_write_scope(&mut env, None, "pane");
+        assert!(env.is_empty(), "no capability ⇒ no scope, and no invention");
     }
 
     /// THE CALL SITE for the bsc-agent permission document. `session::agent_perms`'s own tests all

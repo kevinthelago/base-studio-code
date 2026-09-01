@@ -39,11 +39,6 @@
 //! constant and `the_deny_all_sentinel_matches_the_typescript` asserts the equality against the
 //! generated fixture, so the agreement is now tested rather than asserted in prose.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it. Deriving the scope and FLIPPING the
-// launch are separate slices with separate reverts — this env is what the only bypass-posture write
-// block reads.
-#![allow(dead_code)] // wired by `the-launch-derives-its-own-write-scope-instead-of-receiving-it`
-
 use bsc_util::scope::DENY_ALL;
 
 use super::role_gate::{has_scoped_write_carve_out, session_scopes, RoleCapability, Tier};
@@ -95,10 +90,179 @@ pub fn write_scope_env(cap: &RoleCapability) -> WriteScopeEnv {
     }
 }
 
+
+/// How WIDE a `$BSC_SCOPE_GLOBS` value is, as `bsc_util::scope::scope_verdict` actually reads it.
+///
+/// Ranked by permissiveness rather than by name, because the dangerous state is the one with no name:
+/// an ABSENT variable reads as "no scope configured" and ALLOWS. So unset is the widest, a glob set
+/// narrows to those paths, and the sentinel narrows to nothing.
+///
+/// These three are not orderable as VALUES — there is no union of the sentinel with a glob list — which
+/// is why the reconciliation below ranks them instead of merging them.
+fn scope_breadth(v: Option<&str>) -> u8 {
+    match v {
+        None => 0,                              // unset — allow-all, the widest
+        Some(s) if s == DENY_ALL => 2,          // the sentinel — writes nothing, the narrowest
+        Some(_) => 1,                           // a glob set
+    }
+}
+
+/// What the launch will set, and how the two sides disagreed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriteScopeReconciliation {
+    pub scope_globs: Option<String>,
+    pub scopes: String,
+    /// `Some((from_frontend, derived))` when `$BSC_SCOPE_GLOBS` differed. The chosen value is in
+    /// `scope_globs`; both originals are carried so the log can name them.
+    pub globs_disagreement: Option<(Option<String>, Option<String>)>,
+    /// True when `$BSC_SCOPES` differed. Rust's is taken — see below.
+    pub scopes_differed: bool,
+}
+
+/// Reconcile the write scope against what the renderer sent.
+///
+/// # The narrower value wins, and there is no union to take
+///
+/// `$BSC_SCOPE_GLOBS` is a single string with three states that do not combine: a glob set, the
+/// deny-all sentinel, and unset. "Union" is not defined over them. So the reconciliation RANKS them by
+/// how much they permit ([`scope_breadth`]) and takes the narrower, which is the only direction that
+/// cannot widen a session.
+///
+/// That matters more here than for the other scalars in this cutover. This variable is the only write
+/// block that survives the BYPASS posture — `permissions.deny` is ignored there and the `bsc-scope`
+/// hook is what is left — so a scope lost in the flip is not a weaker setting, it is a session that
+/// can write anywhere. And the loss is silent in the dangerous direction, because the absent state
+/// ALLOWS.
+///
+/// # Two different glob sets are the case the ranking does not decide
+///
+/// Both sides being at rank 1 with different globs means they disagree about WHERE a session may
+/// write, not about how much. The intersection is the only combination that cannot widen either, so
+/// that is what is taken — and when the intersection is EMPTY the two sides sanction no common path
+/// at all, which is not a difference of opinion but one side being badly wrong. That falls to the
+/// SENTINEL rather than to a guess: a session that can write nothing is loudly broken and recoverable,
+/// while a session writing where neither side sanctioned is neither.
+///
+/// # `$BSC_SCOPES` takes Rust's value outright
+///
+/// Unlike the deny lists, it has no user-supplied component: it is a pure function of the capability
+/// (`session_scopes`), so there is nothing the frontend could legitimately be carrying on top. A
+/// difference means one of the two derivations is wrong, and the derived one is the one under test.
+pub fn reconcile_write_scope(
+    from_frontend_globs: Option<&str>,
+    from_frontend_scopes: Option<&str>,
+    cap: &RoleCapability,
+) -> WriteScopeReconciliation {
+    let derived = write_scope_env(cap);
+    let (front, mine) = (from_frontend_globs, derived.scope_globs.as_deref());
+
+    let chosen: Option<String> = if front == mine {
+        mine.map(str::to_string)
+    } else if scope_breadth(front) != scope_breadth(mine) {
+        // Different states: the narrower one wins outright.
+        if scope_breadth(mine) > scope_breadth(front) { mine.map(str::to_string) } else { front.map(str::to_string) }
+    } else {
+        // Both are glob sets, and they differ. Intersect; an empty intersection falls to the sentinel.
+        let f: Vec<&str> = front.unwrap_or_default().split_whitespace().collect();
+        let m: Vec<&str> = mine.unwrap_or_default().split_whitespace().collect();
+        let both: Vec<&str> = f.into_iter().filter(|g| m.contains(g)).collect();
+        if both.is_empty() { Some(DENY_ALL.to_string()) } else { Some(both.join(" ")) }
+    };
+
+    let globs_disagreement = (front != mine)
+        .then(|| (front.map(str::to_string), mine.map(str::to_string)));
+    let scopes_differed = from_frontend_scopes.is_some_and(|s| s != derived.scopes);
+
+    WriteScopeReconciliation {
+        scope_globs: chosen,
+        scopes: derived.scopes,
+        globs_disagreement,
+        scopes_differed,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use bsc_util::scope::{scope_verdict, Scope};
+
+
+    fn cap_ws(role: &str, code: Tier, globs: Vec<String>) -> RoleCapability {
+        RoleCapability {
+            role: role.into(),
+            github: Tier::Read,
+            git: Tier::Read,
+            code,
+            net: Tier::None,
+            ui: Tier::Read,
+            write_globs: globs,
+            allow: vec![],
+            surfaces: None,
+            harvest_roots: vec![],
+        }
+    }
+
+    /// THE THREE STATES, ranked by what `scope_verdict` does with them rather than by their names —
+    /// the widest is the one with no name at all.
+    #[test]
+    fn the_ranking_is_by_permissiveness_and_unset_is_the_widest() {
+        assert!(scope_breadth(None) < scope_breadth(Some("src/**")));
+        assert!(scope_breadth(Some("src/**")) < scope_breadth(Some(DENY_ALL)));
+        // And the ranking agrees with the ENFORCER rather than with this module's opinion: an unset
+        // (empty) scope allows, the sentinel denies. That is the whole reason unset ranks widest.
+        assert!(matches!(scope_verdict("src/x.rs", "", "/repo"), Scope::Allow));
+        assert!(matches!(scope_verdict("src/x.rs", DENY_ALL, "/repo"), Scope::Deny(_)));
+    }
+
+    /// A DIFFERENT STATE ⇒ the narrower wins, in both directions. The dangerous one is the frontend
+    /// having lost the sentinel: a `code: none` role falling through to unset is "may write nothing"
+    /// silently converted into "may write anywhere".
+    #[test]
+    fn a_state_disagreement_resolves_to_the_narrower_value() {
+        let triage = cap_ws("triage", Tier::None, vec![]);
+        // The frontend lost it entirely.
+        let r = reconcile_write_scope(None, None, &triage);
+        assert_eq!(r.scope_globs.as_deref(), Some(DENY_ALL), "unset must never beat the sentinel");
+        assert!(r.globs_disagreement.is_some());
+
+        // …and the reverse: the frontend is NARROWER than the derivation, and still wins.
+        let worker = cap_ws("worker", Tier::Write, vec!["src/**".into()]);
+        let r = reconcile_write_scope(Some(DENY_ALL), None, &worker);
+        assert_eq!(r.scope_globs.as_deref(), Some(DENY_ALL), "Rust must not widen a scope the frontend narrowed");
+    }
+
+    /// TWO GLOB SETS are the case the ranking does not decide: they disagree about WHERE, not how
+    /// much. The intersection is the only combination that cannot widen either side.
+    #[test]
+    fn two_glob_sets_intersect_rather_than_pick_a_side() {
+        let worker = cap_ws("worker", Tier::Write, vec!["src/**".into(), "docs/**".into()]);
+        let r = reconcile_write_scope(Some("src/** tests/**"), None, &worker);
+        assert_eq!(r.scope_globs.as_deref(), Some("src/**"), "only what BOTH sides sanctioned");
+        assert!(r.globs_disagreement.is_some());
+    }
+
+    /// An EMPTY intersection means neither side sanctions a common path — one of them is badly wrong,
+    /// not merely different. That falls to the sentinel rather than to a guess: a session that can
+    /// write nothing is loudly broken and recoverable; one writing where neither side sanctioned is not.
+    #[test]
+    fn an_empty_intersection_falls_to_the_sentinel_rather_than_guessing() {
+        let worker = cap_ws("worker", Tier::Write, vec!["src/**".into()]);
+        let r = reconcile_write_scope(Some("vendor/**"), None, &worker);
+        assert_eq!(r.scope_globs.as_deref(), Some(DENY_ALL));
+        assert!(r.globs_disagreement.is_some(), "and it is never silent");
+    }
+
+    /// Agreement is silent, and the carve-out end of the branch survives it: a `code: none` designer
+    /// WITH globs keeps them rather than collapsing to the sentinel.
+    #[test]
+    fn a_carve_out_role_keeps_its_globs_and_agreement_reports_nothing() {
+        let designer = cap_ws("designer", Tier::None, vec!["scratch/**".into()]);
+        let derived = write_scope_env(&designer);
+        assert_eq!(derived.scope_globs.as_deref(), Some("scratch/**"), "code:none does NOT imply the sentinel");
+        let r = reconcile_write_scope(derived.scope_globs.as_deref(), Some(&derived.scopes), &designer);
+        assert_eq!(r.scope_globs, derived.scope_globs);
+        assert!(r.globs_disagreement.is_none() && !r.scopes_differed);
+    }
 
     fn fixture() -> serde_json::Value {
         fn find(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
