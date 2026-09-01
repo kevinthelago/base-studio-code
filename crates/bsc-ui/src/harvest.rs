@@ -509,9 +509,11 @@ impl InternalImport {
 /// A PROJECTION of [`crate::import_scan::scan_imports_all`], not a scanner of its own. It used to walk
 /// the root's `import_statement` children directly, which made every re-export invisible:
 ///
-///     export { ProjectRow } from "./published/ProjectRow";   -> []
-///     export * from "./a";                                   -> []
-///     export function load() { return import("./page"); }    -> []
+/// ```text
+/// export { ProjectRow } from "./published/ProjectRow";   -> []
+/// export * from "./a";                                   -> []
+/// export function load() { return import("./page"); }    -> []
+/// ```
 ///
 /// esbuild compiles a re-export to the same `require()` an import produces, so a component whose closure
 /// needed a re-exported sibling was certified `buildable: true` and then could not load — the gap the

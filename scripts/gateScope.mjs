@@ -41,6 +41,13 @@ export function gateCommands(plan, base) {
     c.push({ label: "vitest", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] });
     c.push({ label: "clippy", key: "clippy", stage: "lint", cmd: "cargo", args: ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"] });
     c.push({ label: "nextest", key: "nextest", stage: "test", cmd: "cargo", args: ["nextest", "run", "--workspace", "--no-fail-fast"] });
+    // DOCTESTS, which `nextest` structurally does not run. They were guarded by a static scan for
+    // untagged ``` fences, and that scan could not see an INDENTED code block — which rustdoc compiles
+    // as Rust just the same, and which cannot be tagged because there is nowhere to write `text` on it.
+    // Three doctests were failing on develop behind a green gate. Running the real thing needs no
+    // heuristic and cannot report a private item that could never have run: MEASURED at 7.53s warm for
+    // the whole workspace, cheaper than clippy.
+    c.push({ label: "doctest", key: "doctest", stage: "test", cmd: "cargo", args: ["test", "--workspace", "--doc"] });
     c.push(...graphCommands());
     return c;
   }
@@ -60,6 +67,7 @@ export function gateCommands(plan, base) {
     const p = plan.rustCrates.flatMap((x) => ["-p", x]);
     c.push({ label: "clippy (scoped)", key: "clippy", stage: "lint", cmd: "cargo", args: ["clippy", ...p, "--all-targets", "--", "-D", "warnings"] });
     c.push({ label: "nextest (scoped)", key: "nextest", stage: "test", cmd: "cargo", args: ["nextest", "run", ...p, "--no-fail-fast"] });
+    c.push({ label: "doctest (scoped)", key: "doctest", stage: "test", cmd: "cargo", args: ["test", ...p, "--doc"] });
   }
   if (plan.runGraph) c.push(...graphCommands());
   return c;

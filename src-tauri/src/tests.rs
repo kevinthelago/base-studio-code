@@ -118,33 +118,35 @@
             }
         }
     }
-
-    /// `cargo nextest` — the workspace test runner (#the-gate-runs-41-test-binaries-one-after-another)
-    /// — does NOT run doctests. Today that costs nothing: every doc-comment fence in the workspace is
-    /// language-tagged (`text` / `ignore` / `sh`), so there is no Rust doctest to skip. The hazard is
-    /// the NEXT one — a BARE fence in a doc comment is a Rust doctest by default, and under nextest it
-    /// would silently never run. That is the exact failure this repo keeps getting caught by: a gate
-    /// that stays green while covering less (a deleted Worker with tsc+lint+vitest green; ten orphaned
-    /// stylesheets; eight test files dropped from a vitest run that reported all-passing).
+    /// Doctests are RUN by the gate now, so nothing here has to guess about them.
     ///
-    /// So the moment someone writes one, fail here rather than discover it later. The fix is EITHER to
-    /// tag the fence (` ```text ` / ` ```ignore `) if it was never meant to execute, OR to add
-    /// `cargo test --doc --workspace` to the gate in CLAUDE.md and allow it here. Deleting the guard is
-    /// not one of the options.
+    /// This replaced a static scan for untagged ``` fences. The scan could not see an INDENTED code
+    /// block — Markdown makes one out of four spaces after a blank line, rustdoc compiles it as Rust
+    /// exactly as it would a bare fence, and there is nowhere to write ```text on it. THREE doctests
+    /// were failing on develop behind a green gate because of that blind spot, in `bsc-persona`,
+    /// `bsc-graph` and `bsc-ui`.
+    ///
+    /// Widening the scan to indented blocks was tried and abandoned: it flagged five and only two were
+    /// real, because rustdoc collects doctests from PUBLIC items only, so a `///` block on a private
+    /// static or a `pub(crate)` fn is inert and can never fail. A guard that cries wolf on three of
+    /// five is worse than the gap it closes.
+    ///
+    /// The old doc said the alternatives were to tag the fence or to add `cargo test --doc --workspace`
+    /// to the gate, and that deleting the guard was not one of them. The leg is added — MEASURED at
+    /// 7.53s warm for the whole workspace, cheaper than clippy — so the property is now enforced by
+    /// EXECUTION rather than by inspection. The guard is not deleted, it MOVED: `gate-scope.test.ts`
+    /// pins the leg in both tiers, which is what stops it quietly disappearing.
     #[test]
-    fn no_rust_doctests_are_silently_skipped() {
+    fn doctests_are_executed_by_the_gate_not_inspected_for() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest.parent().expect("src-tauri has a parent");
-        let mut found = Vec::new();
-        for root in [manifest.join("src"), workspace.join("crates")] {
-            collect_rust_doctests(&root, workspace, &mut found);
-        }
-        found.sort();
+        let scope = manifest.parent().expect("src-tauri has a parent").join("scripts/gateScope.mjs");
+        let src = std::fs::read_to_string(&scope).expect("scripts/gateScope.mjs is readable");
         assert!(
-            found.is_empty(),
-            "Rust doctest(s) found, and `cargo nextest` — the gate's runner — does not run them, so \
-             these would pass by never executing. Tag the fence (```text / ```ignore) if it was not \
-             meant to run, or add `cargo test --doc --workspace` to the gate: {found:?}",
+            src.contains(r#"key: "doctest""#),
+            "the gate no longer carries a doctest leg, and `cargo nextest` does not run doctests — so \
+             a failing one would pass by never executing. Restore the leg in {}, or restore a static \
+             guard here; leaving neither is the state this test exists to prevent.",
+            scope.display(),
         );
     }
 
@@ -452,44 +454,7 @@
     /// difference between "19 bare fences" (all closers, the real workspace) and a genuine doctest.
     /// State resets at any non-doc line, so an unbalanced fence in one item's docs cannot leak into
     /// the next item's.
-    fn collect_rust_doctests(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path.file_name().is_some_and(|n| n == "target") {
-                    continue; // build output, not source
-                }
-                collect_rust_doctests(&path, base, out);
-                continue;
-            }
-            if path.extension().is_none_or(|x| x != "rs") {
-                continue;
-            }
-            let Ok(contents) = std::fs::read_to_string(&path) else { continue };
-            let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-            let mut inside = false;
-            for (i, line) in contents.lines().enumerate() {
-                let t = line.trim_start();
-                let Some(doc) = t.strip_prefix("///").or_else(|| t.strip_prefix("//!")) else {
-                    inside = false; // left the doc comment — state cannot span items
-                    continue;
-                };
-                let doc = doc.trim();
-                let Some(rest) = doc.strip_prefix("```") else { continue };
-                if inside {
-                    inside = false; // this is the closer
-                } else {
-                    inside = true;
-                    if rest.trim().is_empty() {
-                        out.push(format!("{rel}:{}", i + 1)); // bare opener == Rust doctest
-                    }
-                }
-            }
-        }
-    }
-
-    /// **A plain sync `#[tauri::command]` runs on Tauri's MAIN THREAD**, which is also the window
+     /// **A plain sync `#[tauri::command]` runs on Tauri's MAIN THREAD**, which is also the window
     /// event loop — so a command that does file/SQLite/process I/O stalls the UI itself, not merely
     /// the next invoke. This repo has now fixed that same bug four times (#3630 log pollers, #4074
     /// the cost read + the `bsc` bridge, #4078 `graph_dump`, and the invoke-fairness slice), and each

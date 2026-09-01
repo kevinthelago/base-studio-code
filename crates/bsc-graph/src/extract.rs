@@ -1507,8 +1507,10 @@ pub fn signature_from_code(code: &str, tech: &str) -> Option<Signature> {
 /// The prevention half's whole point: a worker about to write a helper asks "is there already
 /// something with this shape?" and cannot pass an id, because the thing has no id yet.
 ///
-///     "(items: T[], key: (t: T) => string) => Map<string, T[]>"     typescript
-///     "(rows: &[u32], floor: u32) -> Vec<u32>"                      rust
+/// ```text
+/// "(items: T[], key: (t: T) => string) => Map<string, T[]>"     typescript
+/// "(rows: &[u32], floor: u32) -> Vec<u32>"                      rust
+/// ```
 ///
 /// SYNTHESIZES A STUB AND REUSES ONE PARSER rather than writing a second grammar for signatures.
 /// Wrapping the text in `function __q(…): R {}` and handing it to [`signature_from_code`] means the

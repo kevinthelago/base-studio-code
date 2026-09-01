@@ -131,6 +131,23 @@ describe("gate scope", () => {
     expect(nxScoped?.args).toEqual(["nextest", "run", "-p", "bsc", "-p", "bsc-ui", "--no-fail-fast"]);
   });
 
+  it("runs doctests in BOTH tiers — nextest structurally cannot", () => {
+    // `cargo nextest` does not run doctests at all. That property used to be defended by a static scan
+    // for untagged ``` fences in src-tauri/src/tests.rs, which could not see an INDENTED code block —
+    // rustdoc compiles those as Rust just the same, and there is nowhere to write ```text on one. Three
+    // doctests were failing on develop behind a green gate, and a naive widening of that scan reported
+    // three false positives out of five, because rustdoc never collects a doctest on a private item.
+    //
+    // So the gate runs the real thing instead of guessing about it: no heuristic, no false positives,
+    // and MEASURED at 7.53s warm for the whole workspace — cheaper than clippy. This test is what keeps
+    // the leg from quietly disappearing again.
+    const full = gateCommands(plan([], true), "develop");
+    expect(full.find((c) => c.key === "doctest")?.args).toEqual(["test", "--workspace", "--doc"]);
+
+    const scoped = gateCommands(plan(["crates/bsc-ui/src/kit.rs"]), "develop");
+    expect(scoped.find((c) => c.key === "doctest")?.args).toEqual(["test", "-p", "bsc", "-p", "bsc-ui", "--doc"]);
+  });
+
   it("builds the scoped frontend commands against the base", () => {
     const cmds = gateCommands(plan(["src/features/x/lib/y.ts"]), "develop");
     expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["typecheck", "lint", "vitest"]);
