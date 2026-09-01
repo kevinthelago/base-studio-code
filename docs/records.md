@@ -216,7 +216,7 @@ record wins and you adjudicate by hand:
 
 ```bash
 node scripts/refresh-drifted-seeds.mjs --store <ui-dump> --impls <impl-dump> [--apply]
-node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .tsx → a module-shaped record
+bsc ui lift <src-relative-path>… [--apply]              # a .tsx → a module-shaped record
 node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
 bsc ui retire <src-relative-path> [--dry]
 bsc ui shadow                                  # a catalogued page must become `file: null`
@@ -351,7 +351,7 @@ did silently — it kept whichever came last, so `telemetrypanel` became the who
 `@/components/splitbar` would have got a module whose export pick is not that component. Three records
 reached the seed that way before the adopt guard caught the rest.
 
-Author a **new** module record beside them (`scripts/lift-component-module.mjs`, id `<stem>-module`,
+Author a **new** module record beside them (`bsc ui lift`, id `<stem>-module`,
 `role: composite`). The components keep answering `@/components/<id>`; the module record answers
 `@/features/x/Y`. Nothing is overwritten, so no component record loses an export it declares.
 

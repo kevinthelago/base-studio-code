@@ -354,6 +354,41 @@ the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than
 { dir, synced, upToDate, diverged, unknown }.",
     },
     CmdDoc {
+        name: "lift",
+        summary: "reshape a preview-shaped component record into the MODULE its file stands for (#records)",
+        usage: "\
+USAGE:
+  bsc ui lift <src-relative-path>… [--apply] [--new-record] [--repo <dir>]
+
+Roughly 100 `.tsx` have records that are PREVIEW-SHAPED DERIVATIVES: `bsc ui harvest` lifts a COMPONENT,
+inlining what it cannot reach so the thing mounts standalone in the Design Studio. Right for previewing,
+wrong for retirement — such a record carries no `provides`, so nothing can import the module it stands
+for. This reshapes it. Dry run by default; `--apply` writes.
+
+The lift itself is `bsc graph harvest --module`, called in process rather than reimplemented: it carries
+three separately-learned rules a second copy would get wrong (strip the FILE's extension, strip a
+trailing `/index`, absolutize relative imports).
+
+SIX REFUSALS, reported per target so one bad path cannot stop a batch:
+  no such file                     nothing on disk at that path
+  NO COMPONENT RECORD points at it there is nothing to reshape — author one first
+  the module id is TAKEN           a different module already answers to it
+  the harvest returned NO CANDIDATE
+  it holds MODULE STATE            `provides` beats the platform registry, so the record would vendor a
+                                   SECOND copy of that state to every consumer — the failure that made
+                                   the a11y announcer go silent
+  the harvest derived NO PROVIDES  the record could answer no specifier
+
+A FILE WITH SEVERAL COMPONENT RECORDS GETS A NEW ONE rather than having one promoted — picking silently
+made `telemetrypanel` the whole of `telemetry.tsx` while its siblings went on claiming their own
+identity. Both things can be true at once: `AppBanners.tsx` is NINE banner components AND one module.
+`--new-record` forces that path for a single-record file whose record is not the module either.
+
+A REFUSED STORE WRITE IS A FINDING, NOT A CRASH. The store runs its own gates — most sharply it will not
+store a `role: page` record that cannot render. Letting one throw killed a 40-item batch on its first
+refusal and lost the other 39, so each write is caught and reported against its own target.",
+    },
+    CmdDoc {
         name: "retire",
         summary: "delete a module whose packaged record replaces it — refusals first (#records)",
         usage: "\
@@ -580,6 +615,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("diff") => cmd_diff(&args[1..]),
         Some("imports") => cmd_imports(&args[1..]),
         Some("retirable") => cmd_retirable(&args[1..]),
+        Some("lift") => cmd_lift(&args[1..]),
         Some("retire") => cmd_retire(&args[1..]),
         Some("shadow") => cmd_shadow(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
@@ -2969,6 +3005,166 @@ fn relative_specifier_summary(dir: &Option<String>) -> Result<(usize, usize, usi
     Ok((records.len(), findings, ids.len()))
 }
 
+
+/// `bsc ui lift <src-relative-path>… [--apply] [--new-record]` — the module reshape. Ports
+/// `scripts/lift-component-module.mjs`, which it replaces.
+fn cmd_lift(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc ui lift <src-relative-path>… [--apply] [--new-record] [--repo <dir>]";
+    let apply = args.iter().any(|a| a == "--apply");
+    let force_new = args.iter().any(|a| a == "--new-record");
+    let dir = flag_after(args, "--dir");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let by = flag_after(args, "--by");
+
+    let mut targets: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--repo" | "--dir" | "--by" => {
+                it.next();
+            }
+            other if other.starts_with("--") => {}
+            other => targets.push(other.to_string()),
+        }
+    }
+    if targets.is_empty() {
+        return Err(USAGE.into());
+    }
+
+    let store = bsc_component::cli::open_component_store(&dir)?;
+    // Every component record, and the `src` it was lifted from. A LIST per file, not one record: a file
+    // with several exported components has several records pointing at it, and keying by `src` silently
+    // kept whichever came last — which made the choice of which record becomes THE MODULE arbitrary.
+    let all: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|b| serde_json::from_str::<serde_json::Value>(b).ok())
+        .collect();
+    let norm = |s: &str| s.replace('\\', "/");
+    let all_ids: Vec<(String, String)> = all
+        .iter()
+        .filter_map(|c| {
+            let id = c.get("id")?.as_str()?.to_string();
+            let src = c.get("src").and_then(serde_json::Value::as_str).map(norm).unwrap_or_default();
+            Some((id, src))
+        })
+        .collect();
+
+    let (mut lifted, mut skipped) = (0usize, Vec::<String>::new());
+    for rel in &targets {
+        let rel_clean = rel.trim_start_matches("./").to_string();
+        let src_rel =
+            if rel_clean.starts_with("src/") { rel_clean.clone() } else { format!("src/{rel_clean}") };
+        let abs = repo.join(&src_rel);
+        let records: Vec<String> =
+            all_ids.iter().filter(|(_, s)| *s == src_rel).map(|(id, _)| id.clone()).collect();
+
+        // The harvest is only consulted once the cheap refusals have passed — it parses the file.
+        let cand = if abs.is_file() && !records.is_empty() {
+            bsc_graph::extract::harvest_module(&abs, &repo)
+        } else {
+            None
+        };
+        let cand_ref = cand
+            .as_ref()
+            .map(|c| (c.code.as_str(), c.module_state.as_slice(), c.provides.as_deref()));
+
+        let plan = match crate::lift::plan(
+            &rel_clean,
+            abs.is_file(),
+            &records,
+            &all_ids,
+            force_new,
+            cand_ref,
+        ) {
+            Ok(p) => p,
+            Err(skip) => {
+                skipped.push(format!("{rel} — {}", skip.reason()));
+                continue;
+            }
+        };
+        let c = cand.as_ref().expect("a plan implies a candidate");
+        let provides = c.provides.as_deref().unwrap_or_default();
+
+        let how = if plan.new_record {
+            format!("NEW record {}", plan.module_id)
+        } else {
+            plan.module_id.clone()
+        };
+        bsc_util::emit_line(&format!(
+            "  {} {how:<34} {provides}",
+            if apply { "lift" } else { "would lift" }
+        ));
+        if !apply {
+            lifted += 1;
+            continue;
+        }
+
+        // A REFUSED WRITE IS A FINDING, NOT A CRASH. The store runs its own gates, and letting one throw
+        // killed a 40-item batch on its first refusal and lost the other 39. Each target is caught here.
+        let wrote = (|| -> Result<(), String> {
+            if plan.new_record {
+                // `role: composite`, never `page` — a module record is the FILE, and the store's page
+                // gate rightly refuses a page that cannot render standalone. The per-component records
+                // keep their own roles; this one only has to answer the specifier.
+                let folder = all
+                    .iter()
+                    .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(&records[0]))
+                    .and_then(|c| c.get("folder").cloned())
+                    .unwrap_or(serde_json::Value::Null);
+                let mut rec = serde_json::json!({
+                    "id": plan.module_id, "name": plan.module_id, "kitId": "base-studio-code",
+                    "role": "composite", "provides": provides, "src": src_rel,
+                    "srcText": "export {};\n",
+                });
+                if !folder.is_null() {
+                    rec["folder"] = folder;
+                }
+                bsc_component::cli::apply_lift(
+                    &store,
+                    &[rec],
+                    by.as_deref(),
+                    "module record: this file is also a module, beside its component records",
+                )?;
+                bsc_component::cli::replace_src(&store, &plan.module_id, &c.code, by.as_deref())
+            } else {
+                bsc_component::cli::replace_src(&store, &plan.module_id, &c.code, by.as_deref())?;
+                bsc_component::cli::apply_lift(
+                    &store,
+                    &[serde_json::json!({
+                        "id": plan.module_id, "provides": provides, "src": src_rel
+                    })],
+                    by.as_deref(),
+                    "module lift: the faithful module, not the preview derivative",
+                )
+            }
+        })();
+        match wrote {
+            Ok(()) => lifted += 1,
+            Err(e) => skipped.push(format!(
+                "{rel} — the store REFUSED the write: {}",
+                e.trim().lines().next().unwrap_or("").trim_start_matches("bsc: ")
+            )),
+        }
+    }
+
+    if !skipped.is_empty() {
+        bsc_util::emit_line(&format!("\nskipped {}:", skipped.len()));
+        for s in &skipped {
+            bsc_util::emit_line(&format!("   {s}"));
+        }
+    }
+    bsc_util::emit_line(&format!(
+        "\n{lifted} component record(s) {}.",
+        if apply { "lifted" } else { "would be lifted" }
+    ));
+    if !apply && lifted > 0 {
+        bsc_util::emit_line("(dry run — pass --apply to write)");
+    }
+    Ok(())
+}
 
 /// `bsc ui shadow [--dry]` — the shadow-catalogue sweep. Ported from
 /// `scripts/sync-shadow-catalogue.mjs`, which it replaces.
