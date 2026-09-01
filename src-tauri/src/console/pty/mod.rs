@@ -679,6 +679,11 @@ pub(crate) async fn pty_create(
     // The policy rather than the derived command list: `denies::flow_granted_push_commands` is the
     // ported rule, and sending its OUTPUT would be receiving a computed answer again.
     flow_push: Option<String>,
+    // The user's own global denylist. On the bsc-agent harness this document is the ONLY route it
+    // has — `Permissions::from_env` reads no `$BSC_DENY_BASH` — so without this a command the user
+    // denied in Settings is enforced on Claude and nowhere else
+    // (`a-bsc-agent-session-never-gets-the-users-denylist`).
+    user_denied_commands: Option<Vec<String>>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     provider_id: Option<String>,
@@ -693,7 +698,7 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, flow_push, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, role_capability, stream_id, flow_push, user_denied_commands, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
@@ -810,6 +815,7 @@ fn launch_agent_perms(
     provider_id: Option<&str>,
     cap: Option<&crate::session::role_gate::RoleCapability>,
     flow_push: Option<&str>,
+    user_denies: &[String],
 ) -> Result<crate::session::agent_perms::AgentPermsOutcome, String> {
     let granted = crate::session::denies::flow_granted_push_commands(flow_push);
     crate::session::agent_perms::reconcile_agent_perms(
@@ -817,6 +823,7 @@ fn launch_agent_perms(
         provider_id == Some("bsc-agent"),
         cap,
         &granted,
+        user_denies,
     )
 }
 
@@ -877,6 +884,8 @@ fn pty_create_inner(
     role_capability: Option<crate::session::role_gate::RoleCapability>,
     stream_id: Option<String>,
     flow_push: Option<String>,
+    // See the command above: bsc-agent's permission document is the only route the user's denylist has.
+    user_denied_commands: Option<Vec<String>>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -1096,6 +1105,7 @@ fn pty_create_inner(
             provider_id.as_deref(),
             role_capability.as_ref(),
             flow_push.as_deref(),
+            &user_denied_commands.clone().unwrap_or_default(),
         ) {
             Ok(crate::session::agent_perms::AgentPermsOutcome::Rendered { differed: true }) => {
                 log::warn!(
@@ -2167,7 +2177,7 @@ mod tests {
         for not_agent in [None, Some("claude"), Some("aider")] {
             let mut env = std::collections::HashMap::new();
             assert_eq!(
-                super::launch_agent_perms(&mut env, not_agent, Some(&worker), None).unwrap(),
+                super::launch_agent_perms(&mut env, not_agent, Some(&worker), None, &[]).unwrap(),
                 AgentPermsOutcome::NotApplicable,
                 "{not_agent:?} is not the bsc-agent harness"
             );
@@ -2178,7 +2188,7 @@ mod tests {
         // `gh pr create` deny stands. Defaulting to `auto-pr` (which it once was) would lift it on
         // every launch that never went near the strategy layer.
         let mut env = std::collections::HashMap::new();
-        super::launch_agent_perms(&mut env, Some("bsc-agent"), Some(&worker), None).unwrap();
+        super::launch_agent_perms(&mut env, Some("bsc-agent"), Some(&worker), None, &[]).unwrap();
         let doc = env.get("BSC_AGENT_PERMS").expect("the gate must be written");
         assert!(
             doc.contains("gh pr create"),
@@ -2187,7 +2197,7 @@ mod tests {
 
         // …and an `auto-pr` flow lifts exactly that, through the same call.
         let mut env = std::collections::HashMap::new();
-        super::launch_agent_perms(&mut env, Some("bsc-agent"), Some(&worker), Some("auto-pr")).unwrap();
+        super::launch_agent_perms(&mut env, Some("bsc-agent"), Some(&worker), Some("auto-pr"), &[]).unwrap();
         let doc = env.get("BSC_AGENT_PERMS").unwrap();
         assert!(!doc.contains("gh pr create"), "an auto-pr worker opens its own PR: {doc}");
         assert!(doc.contains("gh pr merge"), "…and nothing else the role denies moves: {doc}");
@@ -2198,7 +2208,7 @@ mod tests {
             "BSC_AGENT_PERMS".to_string(),
             r#"{"deny_tools":[]}"#.to_string(),
         )]);
-        assert!(super::launch_agent_perms(&mut env, Some("bsc-agent"), None, None).is_err());
+        assert!(super::launch_agent_perms(&mut env, Some("bsc-agent"), None, None, &[]).is_err());
     }
 
     /// THE CALL SITE, not the rule. `session::fresh_only`'s own tests all stay green if `pty_create`
