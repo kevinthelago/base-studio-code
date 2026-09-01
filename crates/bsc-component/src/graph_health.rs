@@ -1967,6 +1967,43 @@ fn imported_identifiers(source: &str) -> BTreeSet<String> {
     out
 }
 
+/// Every symbol the source DECLARES — the INVERSE of [`declares_symbol`], derived in ONE pass.
+///
+/// Both `reimplementation` and `reimplemented-component` ask "does this source declare X?" for a large
+/// candidate set: every library ALGORITHM (~670) and every component NODE (~409) respectively, for each of
+/// ~409 components. That is ~440k whole-source scans, and MEASURED it was 2.19s + 1.26s of `bsc ui
+/// doctor`'s ~5s CPU — far and away its cost. Deriving the declared set once per component answers every
+/// candidate with a hash lookup.
+///
+/// EXACTLY EQUIVALENT to `declares_symbol`, including its quirks: the keyword needs no word boundary
+/// BEFORE it (so `myfunction foo` declares `foo` to both), and a keyword followed by anything that is not
+/// an identifier start yields no name (`const {a}` declares nothing, `const  x` declares nothing because
+/// the literal `"const x"` is absent). Pinned by
+/// `declared_symbols_agrees_with_declares_symbol_case_for_case`.
+///
+/// ONE INPUT DIFFERS, and it is not a real candidate: the EMPTY name. `declares_symbol(src, "")` searches
+/// for the bare keyword and so reports almost every source as declaring it, while a derived set holds no
+/// empty entry. Algorithm targets pass `is_js_identifier`, and a node whose name is empty firing this
+/// guardrail against every source containing `const ` would be a bug rather than a finding — so the
+/// caller below skips it explicitly instead of the set imitating the quirk.
+fn declared_symbols(source: &str) -> std::collections::HashSet<&str> {
+    let mut out = std::collections::HashSet::new();
+    for kw in ["function ", "const ", "let ", "var ", "class "] {
+        let mut from = 0;
+        while let Some(rel) = source[from..].find(kw) {
+            let at = from + rel + kw.len();
+            let end = source[at..]
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .map_or(source.len(), |o| at + o);
+            if end > at {
+                out.insert(&source[at..end]);
+            }
+            from = from + rel + 1;
+        }
+    }
+    out
+}
+
 fn declares_symbol(source: &str, name: &str) -> bool {
     ["function ", "const ", "let ", "var ", "class "].iter().any(|kw| {
         let needle = format!("{kw}{name}");
@@ -3020,6 +3057,8 @@ fn analyze_kit(
                 continue;
             };
             let imported = imported_identifiers(src);
+            // ONE pass, for the same reason — this filters over EVERY node in the kit.
+            let declared = declared_symbols(src);
             let verified_provider = |name: &str| {
                 !n.provides.is_empty()
                     && named_imports_by_spec.get(&n.provides).is_some_and(|names| names.contains(name))
@@ -3031,7 +3070,10 @@ fn analyze_kit(
             let mut recoded: Vec<&str> = nodes
                 .iter()
                 .filter(|t| t.name != n.name && (n.src.is_empty() || t.src != n.src))
-                .filter(|t| declares_symbol(src, &t.name) && !imported.contains(t.name.as_str()))
+                // `!t.name.is_empty()`: see `declared_symbols` — the empty name is the one input where
+                // the derived set and the predicate differ, and firing on it would be a bug.
+                .filter(|t| !t.name.is_empty())
+                .filter(|t| declared.contains(t.name.as_str()) && !imported.contains(t.name.as_str()))
                 .filter(|t| !verified_provider(&t.name))
                 .filter(|t| contract_overlap(src, &t.name, &t.props).is_none_or(|o| o >= REIMPL_CONTRACT_MIN))
                 .map(|t| t.name.as_str())
@@ -3079,10 +3121,12 @@ fn analyze_kit(
             continue;
         };
         let specs: BTreeSet<String> = import_specifiers(src).into_iter().collect();
+        // ONE pass over the source, not one per target — see `declared_symbols`.
+        let declared = declared_symbols(src);
         let mut recoded: Vec<(String, String)> = Vec::new(); // (name, importSpec)
         for (name, segment) in reimpl_targets() {
             let import_spec = format!("@bsc/{segment}/{name}");
-            if declares_symbol(src, name) && !specs.contains(&import_spec) {
+            if declared.contains(name.as_str()) && !specs.contains(&import_spec) {
                 recoded.push((name.clone(), import_spec));
             }
         }
@@ -4158,6 +4202,81 @@ mod provides_resolution_tests {
 
 #[cfg(test)]
 mod tests {
+
+    /// `declared_symbols` REPLACED `declares_symbol` in the two hot sweeps, so it has to answer the same
+    /// question — including the predicate's quirks, which are what a hand-written set would get wrong.
+    #[test]
+    fn declared_symbols_agrees_with_declares_symbol_case_for_case() {
+        let corpus = [
+            "export function Box(props) { return null; }",
+            "const Card = () => null;\nlet x = 1;\nvar y = 2;\nclass Thing {}",
+            // No word boundary is required BEFORE the keyword — the predicate finds `function foo`
+            // inside `myfunction foo`, so the set must too.
+            "myfunction foo() {}",
+            // A keyword followed by a non-identifier declares NOTHING to the predicate.
+            "const { a, b } = obj;",
+            "const  spaced = 1;",
+            "",
+            "function fibonacci(n) { return n; }\nconst fibonacci2 = 1;",
+        ];
+        // Every NON-EMPTY name: the empty one is the documented exception (see `declared_symbols`).
+        let names = [
+            "Box", "Card", "x", "y", "Thing", "foo", "a", "b", "obj", "spaced", "fibonacci",
+            "fibonacci2", "nope", "unction",
+        ];
+        for src in corpus {
+            let set = declared_symbols(src);
+            // The documented exception, asserted so it is a KNOWN difference rather than an unexamined one.
+            assert!(!set.contains(""), "a derived set never holds the empty name");
+            for n in names {
+                assert_eq!(
+                    set.contains(n),
+                    declares_symbol(src, n),
+                    "disagreement on {n:?} in {src:?} — set={:?}",
+                    {
+                        let mut v: Vec<&str> = set.iter().copied().collect();
+                        v.sort();
+                        v
+                    }
+                );
+            }
+        }
+    }
+
+    /// ...and against the REAL library, which is the corpus that actually matters: a quirk the cases above
+    /// miss would still have to survive 409 components of hand-written TSX.
+    #[test]
+    fn declared_symbols_agrees_with_declares_symbol_on_the_packaged_kit() {
+        let artifact: Value =
+            serde_json::from_str(packaged_kit_json()).expect("the packaged kit is valid JSON");
+        let comps = artifact.get("components").and_then(Value::as_array).expect("components[]");
+        let mut checked = 0usize;
+        for c in comps.iter().take(120) {
+            let Some(src) = c.get("source").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            let set = declared_symbols(src);
+            // Every name the SET claims must satisfy the predicate...
+            for n in &set {
+                assert!(declares_symbol(src, n), "set claims {n:?} which the predicate denies");
+                checked += 1;
+            }
+            // ...and a name the set lacks must be denied by it too, sampled over the other components'
+            // names so the check is not vacuous on its own declarations.
+            for other in comps.iter().take(40) {
+                if let Some(name) = other.get("name").and_then(Value::as_str) {
+                    if !set.contains(name) {
+                        assert!(
+                            !declares_symbol(src, name),
+                            "predicate finds {name:?} which the set missed"
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 500, "the corpus check was nearly vacuous: {checked} comparisons");
+    }
     /// The scanner is the whole finding, so its CONSERVATISM is what is under test: it must see real
     /// siblings and must NOT see nested arrows, indented helpers, or non-function consts. A false
     /// positive here pushes someone to split a file that never needed splitting.

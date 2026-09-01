@@ -61,8 +61,14 @@ function mainWorktree(from) {
  *  guard, the refusal text and the distance report cannot disagree about which ref they mean. */
 const APP_BRANCH = "main";
 
-/** The dedicated, detached worktree the gate runs in — see [`gateTree`]. */
-const GATE_TREE = "wt-promote-gate";
+/** The dedicated, detached worktree the gate runs in — see [`gateTree`].
+ *
+ *  DOT-PREFIXED, and not `wt-promote-gate`, because `wt-*` is this repo's convention for a WORK tree
+ *  and a detached one with no branch reads as free. MEASURED on the first real run: another session
+ *  claimed it mid-gate and checked develop's newer tip out from under the gate, which the moved-check
+ *  then correctly refused — the guard worked, the address was wrong. A dotted name is not the shape
+ *  anybody's "find a spare worktree" habit reaches for. */
+const GATE_TREE = ".promote-gate";
 
 const REPO_ROOT = mainWorktree(dirname(dirname(fileURLToPath(import.meta.url))));
 

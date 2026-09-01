@@ -54,6 +54,8 @@ Thumbs.db
 # which is a confusing mess to unpick and easy to commit by accident. Ignoring the convention itself is
 # cheaper than remembering not to.
 wt-*/
+# The detached worktree `npm run promote` gates in (scripts/promote-app.mjs).
+.promote-gate/
 
 # Editor / shell config that must never be tracked, and which tooling sandboxes
 # materialise as empty files at the repo root. Left untracked they show up in

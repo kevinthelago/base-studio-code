@@ -121,6 +121,32 @@ Re-derived from the whole log each call, so it is correct across an app restart.
 nothing is awaiting you.",
     },
     CmdDoc {
+        name: "divergence",
+        summary: "has a migrated surface's two implementations disagreed in the field?",
+        usage: "\
+USAGE:
+  bsc logs divergence [<surface>] [--json]
+
+THE QUESTION STEP 7 OF THE RUST-MIGRATION EPIC ASKS. Every migration ends the same way -- \"delete the
+TypeScript only after the disagreement log has been empty in the field\" -- and this is what answers
+it. Per surface: how many times the two implementations disagreed, when it first and last happened,
+which panes saw it, and the DISTINCT VALUES involved, which is what separates one stale entry from a
+systematic hole.
+
+TWO COLUMNS, AND THEY ARE NOT SYMMETRIC. A cutover reconciles by UNION, so the caller legitimately
+carries more than the derivation -- user and project denylists ride along, and caller-only means
+nothing. Only DERIVED-ONLY is a defect: a value Rust derived and the caller OMITTED, the one direction
+that would have weakened the result had the reconciliation replaced instead of unioned.
+
+AN ABSENT STREAM REPORTS UNKNOWN, NEVER ZERO. If nothing has ever written the stream, there is no
+evidence either way and this says so. `no rows` means the stream is live and that surface has not
+diverged -- which is the evidence a deletion needs. Do not read the two as the same answer; the whole
+verb exists because a rotating app log made them indistinguishable.
+
+Surfaces are named by their DERIVATION (`role-gate.denied-commands`), not by the file they live in.
+Written by `bsc_util::emit_divergence`, which is a no-op on agreement.",
+    },
+    CmdDoc {
         name: "pane-activity",
         summary: "each pane's latest run/idle turn state",
         usage: "\
@@ -434,6 +460,46 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 lines.join("\n")
             });
         }
+        // The migration epic's step-7 question: has this surface's two implementations disagreed in
+        // the field? UNKNOWN and CLEAN are different answers and are printed differently.
+        "divergence" => {
+            let surface = a.positional.get(1).map(String::as_str);
+            match crate::divergence::read_divergence(&dir, surface) {
+                None => {
+                    // No stream file. There is no evidence either way, and saying "0" here is the
+                    // exact lie this verb was built to stop telling.
+                    let msg = "unknown: no divergence stream has been written \
+(nothing has recorded a disagreement, and nothing has recorded watching for one)";
+                    emit(a.pretty, a.json, &serde_json::json!({"known": false, "surfaces": []}), || msg.to_string());
+                }
+                Some(rows) if rows.is_empty() => {
+                    let msg = match surface {
+                        Some(s) => format!("clean: the divergence stream is live and '{s}' has not diverged"),
+                        None => "clean: the divergence stream is live and no surface has diverged".to_string(),
+                    };
+                    emit(a.pretty, a.json, &serde_json::json!({"known": true, "surfaces": []}), || msg);
+                }
+                Some(rows) => {
+                    emit(a.pretty, a.json, &serde_json::json!({"known": true, "surfaces": &rows}), || {
+                        let mut lines =
+                            vec!["surface\tn\tfirst_seen\tlast_seen\tderived_only\tcaller_only\tpanes".to_string()];
+                        lines.extend(rows.iter().map(|r| {
+                            format!(
+                                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                r.surface,
+                                r.count,
+                                r.first_seen,
+                                r.last_seen,
+                                if r.derived_only.is_empty() { "∅".into() } else { r.derived_only.join(",") },
+                                if r.caller_only.is_empty() { "∅".into() } else { r.caller_only.join(",") },
+                                r.panes.join(","),
+                            )
+                        }));
+                        lines.join("\n")
+                    });
+                }
+            }
+        }
         // Panes that self-reported done (#1379).
         "done-panes" => {
             let rows = crate::done_panes(&dir);
@@ -558,6 +624,53 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{run, COMMANDS, TAGLINE};
+
+    /// The verb dispatches in all three states, and — the part that matters — UNKNOWN and CLEAN are
+    /// not the same output. A reader who cannot tell them apart has the rotating-app-log problem
+    /// back, one layer up.
+    #[test]
+    fn divergence_dispatches_and_distinguishes_unknown_from_clean() {
+        let d = std::env::temp_dir()
+            .join(format!("bsc-logs-div-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let dir = d.to_string_lossy().to_string();
+        let go = |args: Vec<&str>| {
+            let mut v: Vec<String> = args.into_iter().map(String::from).collect();
+            v.push("--dir".into());
+            v.push(dir.clone());
+            run(v, "bsc logs")
+        };
+
+        // No stream at all — unknown. Must not error, must not claim zero.
+        assert!(go(vec!["divergence"]).is_ok());
+        assert!(go(vec!["divergence", "--json"]).is_ok());
+
+        // A live but silent stream — clean.
+        std::fs::write(d.join("divergence.log"), "").unwrap();
+        assert!(go(vec!["divergence"]).is_ok());
+
+        // A real divergence, and the same query narrowed to one surface.
+        std::fs::write(
+            d.join("divergence.log"),
+            "2026-09-01T12:00:00Z\tp:a\trole-gate.denies\tgh pr merge\t∅\n",
+        )
+        .unwrap();
+        assert!(go(vec!["divergence"]).is_ok());
+        assert!(go(vec!["divergence", "role-gate.denies"]).is_ok());
+        assert!(go(vec!["divergence", "no-such-surface"]).is_ok());
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The verb is advertised. `bsc logs` lists COMMANDS, and a verb missing from that table is
+    /// unreachable in practice however well it dispatches.
+    #[test]
+    fn divergence_is_advertised_in_the_command_table() {
+        assert!(COMMANDS.iter().any(|c| c.name == "divergence"), "not listed by `bsc logs`");
+        let doc = COMMANDS.iter().find(|c| c.name == "divergence").unwrap();
+        assert!(doc.usage.contains("UNKNOWN, NEVER ZERO"), "the usage must state the criterion");
+    }
 
     #[test]
     fn new_read_verbs_dispatch_without_error() {
