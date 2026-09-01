@@ -473,59 +473,6 @@ fn entity_ids() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Token 5-grams of a body, hashed — the shape used to tell "the same implementation twice" from
-/// "two implementations that happen to share words".
-///
-/// Tokenizing first is what makes it robust to the only difference the real duplicates actually had:
-/// `llm-energy.ts` and `algorithms-llm-energy.ts` differ by 21 characters of formatting and wrapper,
-/// so their raw `code` is NOT equal — yet their shingle sets are IDENTICAL. A byte comparison misses
-/// the exact pair this was requested for.
-fn code_shingles(code: &str) -> std::collections::HashSet<u64> {
-    let mut tokens: Vec<&str> = Vec::new();
-    let bytes = code.as_bytes();
-    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b.is_ascii_whitespace() {
-            i += 1;
-        } else if word(b) {
-            let start = i;
-            while i < bytes.len() && word(bytes[i]) {
-                i += 1;
-            }
-            tokens.push(&code[start..i]);
-        } else {
-            // Every other byte is its own token, so punctuation-heavy code still shingles. Stepping by
-            // the CHAR width keeps a multi-byte character from being split into invalid slices.
-            let w = code[i..].chars().next().map_or(1, char::len_utf8);
-            tokens.push(&code[i..i + w]);
-            i += w;
-        }
-    }
-    const N: usize = 5;
-    tokens
-        .windows(N)
-        .map(|w| {
-            // FNV-1a over the window — a set of hashes is far cheaper to intersect than a set of
-            // string tuples, and a collision only ever costs a slightly higher score.
-            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-            for t in w {
-                for b in t.as_bytes() {
-                    h ^= u64::from(*b);
-                    h = h.wrapping_mul(0x1000_0000_01b3);
-                }
-                h ^= 0xff;
-                h = h.wrapping_mul(0x1000_0000_01b3);
-            }
-            h
-        })
-        .collect()
-}
-
-/// A body shorter than this carries no evidence. `export const x = 1;` repeated across records is a
-/// language, not a duplicate — and at four or five tokens any two such lines score 1.0.
-const MIN_SHINGLES: usize = 8;
 
 /// Shingle overlap at or above which two bodies are the SAME implementation. Measured on the real
 /// store: the two known duplicate pairs score **1.00**, while 400 random pairs have a median of
@@ -632,8 +579,8 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
             if id.is_empty() || code.is_empty() {
                 return None;
             }
-            let sh = code_shingles(&code);
-            (sh.len() >= MIN_SHINGLES).then_some((id, sh))
+            let sh = crate::extract::code_shingles(&code);
+            (sh.len() >= crate::extract::MIN_SHINGLES).then_some((id, sh))
         })
         .collect();
     // ── signal 4: the same CONTRACT, corroborated by the body, across MODULES ──
@@ -2244,11 +2191,55 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             for f in &shapes {
                 by_shape.entry((f.tech.clone(), f.shape.clone())).or_default().push(f);
             }
+            // ── the CONTRACT signal over the tree, the same rule the store detector applies ──
+            //
+            // `doctor --dedup` carried four signals over 32 Rust records while this carried one over
+            // 7,514 Rust functions — the weaker detector pointed at 99.6% of the Rust. Same constants,
+            // same cross-module condition, so the two surfaces cannot answer differently about the same
+            // pair of functions.
+            let mut contract_pairs: Vec<(usize, usize)> = Vec::new();
+            {
+                let mut by_arity: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+                for (i, f) in shapes.iter().enumerate() {
+                    // A contract that names nothing, or a body too short to corroborate one, cannot
+                    // take part — checked here so the pair loop below never considers them.
+                    if !f.signature.params.is_empty() && !f.shingles.is_empty() {
+                        by_arity.entry(f.arity).or_default().push(i);
+                    }
+                }
+                for idxs in by_arity.values() {
+                    for (n, &i) in idxs.iter().enumerate() {
+                        for &j in idxs.iter().skip(n + 1) {
+                            let (a, b) = (&shapes[i], &shapes[j]);
+                            // Neighbours in one FILE sharing a contract is a module convention — the
+                            // condition that took this signal from 161 pairs to 28 on the store.
+                            if CROSS_MODULE_ONLY && a.src == b.src {
+                                continue;
+                            }
+                            // Already grouped by shape: the contract adds nothing to a pair that is
+                            // literally the same code.
+                            if a.shape == b.shape {
+                                continue;
+                            }
+                            if crate::extract::contract_similarity(&a.signature, &b.signature) < CONTRACT_MATCH {
+                                continue;
+                            }
+                            let inter = a.shingles.intersection(&b.shingles).count();
+                            let union = a.shingles.len() + b.shingles.len() - inter;
+                            if union > 0 && (inter as f64) / (union as f64) >= CORROBORATING_BODY {
+                                contract_pairs.push((i, j));
+                            }
+                        }
+                    }
+                }
+            }
+
             let mut groups: Vec<Value> = by_shape
                 .into_values()
                 .filter(|fns| fns.len() > 1)
                 .map(|fns| {
                     serde_json::json!({
+                        "signal": "same-shape",
                         "tech": fns[0].tech,
                         "arity": fns[0].arity,
                         "count": fns.len(),
@@ -2260,6 +2251,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     })
                 })
                 .collect();
+            groups.extend(contract_pairs.iter().map(|&(i, j)| {
+                let (a, b) = (&shapes[i], &shapes[j]);
+                serde_json::json!({
+                    // NAMED as the weaker claim it is: "same shape" says these ARE the same code,
+                    // this says they agree about what they take and their bodies corroborate it.
+                    "signal": "same-contract",
+                    "tech": a.tech,
+                    "arity": a.arity,
+                    "count": 2,
+                    "members": [
+                        { "name": a.name, "src": a.src, "line": a.line },
+                        { "name": b.name, "src": b.src, "line": b.line },
+                    ],
+                })
+            }));
             // Biggest groups first — N copies of one shape is a bigger finding than a pair, and a
             // reader works down from the top.
             groups.sort_by(|a, b| {
@@ -3837,7 +3843,7 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
-  \n         {prog} dupes <dir> [--tech typescript|rust] [--pretty]   # the WHOLE-TREE duplicate sweep (epic-a-graph-finds-its-own-duplicates): every non-trivial function under <dir>, grouped by its rename-invariant SHAPE — so a copy whose identifiers were all renamed is found, which `doctor --dedup` structurally cannot do over the store. The TREE, not the records: the algorithms store holds 32 Rust records against 7,514 Rust functions on disk, so a record-level sweep sees 0.4% of the Rust here. STREAMS rather than harvesting (measured: 115 MB peak vs 962 MB for a `harvest` of the same directory) and keeps NO index — a cache would need invalidation and re-deriving costs ~1.7s. Reports a path and a LINE per member, biggest groups first, and `duplicated` = how many functions could go. PROPOSE-ONLY; for per-table CRUD twins the action is a shared helper, not deletion\n  \
+  \n         {prog} dupes <dir> [--tech typescript|rust] [--pretty]   # the WHOLE-TREE duplicate sweep (epic-a-graph-finds-its-own-duplicates): every non-trivial function under <dir>, on TWO signals — its rename-invariant SHAPE, and the same CONTRACT across FILES corroborated by the body (the same rule and constants `doctor --dedup` applies to the store, so the two surfaces cannot disagree about one pair). Each group names which signal found it — so a copy whose identifiers were all renamed is found, which `doctor --dedup` structurally cannot do over the store. The TREE, not the records: the algorithms store holds 32 Rust records against 7,514 Rust functions on disk, so a record-level sweep sees 0.4% of the Rust here. STREAMS rather than harvesting (measured: 115 MB peak vs 962 MB for a `harvest` of the same directory) and keeps NO index — a cache would need invalidation and re-deriving costs ~1.7s. Reports a path and a LINE per member, biggest groups first, and `duplicated` = how many functions could go. PROPOSE-ONLY; for per-table CRUD twins the action is a shared helper, not deletion\n  \
   \n         {prog} similar --sig \"(xs: T[]) => T\" [--tech t] [--limit n] | similar <id>   # DISCOVER BEFORE AUTHORING: does the library already hold this shape? Takes a SIGNATURE, not only an id, because the thing you are about to write has not been written yet — which is the whole difference between this and `doctor --dedup`, which compares what already exists. Ranked by CONTRACT overlap, floored at 0.34 so \"nothing like this exists\" answers with NOTHING rather than a tail of noise (measured: a real twin scores 1.00, an absent shape returns 0.14 on one shared parameter name). PROPOSE-ONLY — a close match may still be the wrong thing\n  \
          {prog} test <id> --out <dir> [--run] | test --all --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
   \n  {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
@@ -3978,6 +3984,72 @@ fn runtime_metrics(record_id: &str) -> Value {
     serde_json::to_value(m).unwrap_or(Value::Null)
 }
 
+/// Serializes every test that repoints the process-global `BSC_GRAPH_STORE`.
+///
+/// THE COMMENT THIS REPLACES SAID "SAFETY: single-threaded test setup, before any other thread reads
+/// the env" — and it was false at all 21 sites. `cargo test` threads tests inside ONE process, so the
+/// set and the read of another test's store interleave freely. MEASURED on develop:
+///
+///     cargo test -p bsc-graph --lib     280 passed, 14 FAILED
+///     cargo nextest run -p bsc-graph     294 passed, 0 failed
+///
+/// Both runners were right about what they ran; nextest forks per test, so the hazard cannot fire
+/// there. The gate uses nextest and stayed green, which is why this survived — the cost was paid
+/// entirely in the inner loop, by anyone reaching for the obvious `cargo test -p bsc-graph` and
+/// finding fourteen failures that were not theirs.
+///
+/// The same mechanism `src-tauri/src/testutil.rs::ENV_LOCK` already uses for the same class of
+/// problem (tests repointing HOME), reused rather than reinvented.
+#[cfg(test)]
+static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The store lock, reachable from a sibling module's tests.
+///
+/// `lib.rs` needs it too: the packaged-seed cache test repoints `BSC_DATA_DIR`, which is the same
+/// process-global hazard these guards exist for, and a second lock would let the two races interleave.
+#[cfg(test)]
+pub(crate) mod test_support {
+    /// Take the same lock [`super::store_at`] takes, without setting anything.
+    pub(crate) fn store_lock() -> std::sync::MutexGuard<'static, ()> {
+        super::STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Point `BSC_GRAPH_STORE` at `path` for the rest of THIS test, serialized against every other test
+/// that does the same.
+///
+/// HOLD THE GUARD — `let _store = store_at(&p);`, never `let _ = store_at(&p);` and never a bare call.
+/// A dropped guard releases the lock immediately and restores exactly the race this exists to remove,
+/// while the test still passes in isolation. `#[must_use]` catches the bare call; the `let _` form is
+/// the one to watch for in review.
+///
+/// A poisoned lock is taken anyway (`into_inner`): a panicking test has already failed and must not
+/// take the rest of the suite with it.
+/// [`store_at`] for the tests that repoint the DATA dir as well. Both variables under ONE lock,
+/// because a test holding two guards would deadlock on the second and a second lock would let the two
+/// races interleave — the hazard is the pair, not either variable.
+#[cfg(test)]
+#[must_use = "hold the guard for the test's lifetime — dropping it re-opens the race"]
+fn store_and_data_at(store: &std::path::Path, data: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: serialized by the lock above against every other test that touches either variable.
+    unsafe {
+        std::env::set_var("BSC_GRAPH_STORE", store);
+        std::env::set_var("BSC_DATA_DIR", data);
+    }
+    guard
+}
+
+#[cfg(test)]
+#[must_use = "hold the guard for the test's lifetime — dropping it re-opens the race"]
+fn store_at(path: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: the lock above is what makes this single-threaded with respect to every other test that
+    // touches this variable — which is precisely what the comment it replaces only claimed.
+    unsafe { std::env::set_var("BSC_GRAPH_STORE", path) };
+    guard
+}
+
 #[cfg(test)]
 mod tests {
     /// The help is the thing that misled, so it is the thing under test: it must NOT present the
@@ -4007,8 +4079,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let src = dir.join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -4062,8 +4133,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let set = |extra: Vec<&str>| {
             let mut a: Vec<String> = ["impl", "set", "--tech", "typescript", "--id", "s.ts", "--role",
@@ -4248,7 +4318,7 @@ mod tests {
         let runtime_store = dir.join("runtime.json");
         // SAFETY: single-threaded test setup, before any other thread reads the env (nextest gives this
         // test its own process, per the note on `impl_set_writes_and_clears_module_state` above).
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
 
         let root = dir.to_string_lossy().into_owned();
         // No --src, no --no-src: the record's provenance already lives on the repo-only copy, and this
@@ -4366,7 +4436,7 @@ mod tests {
         let runtime_store = dir.join("runtime.json");
         // SAFETY: single-threaded test setup, before any other thread reads the env (nextest gives this
         // test its own process, per the note on `impl_set_writes_and_clears_module_state` above).
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
         std::fs::write(
             &runtime_store,
             serde_json::json!({
@@ -4482,7 +4552,7 @@ mod tests {
         .unwrap();
 
         let runtime_store = dir.join("runtime.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
         std::fs::write(
             &runtime_store,
             serde_json::json!({
@@ -4537,7 +4607,7 @@ mod tests {
         .unwrap();
 
         let runtime_store = dir.join("runtime.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &runtime_store) };
+        let _store = store_at(&runtime_store);
         std::fs::write(
             &runtime_store,
             serde_json::json!({
@@ -4653,8 +4723,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let set = |id: &str, name: &str| {
             crate::cli::run(
@@ -4701,7 +4770,7 @@ mod tests {
         // SAFETY: single-threaded test setup, before any other thread reads the env — the same
         // accepted-racy pattern `impl_set_writes_and_clears_module_state` already uses, since
         // `BSC_GRAPH_STORE` is process-global while Rust tests run in parallel.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let repo = dir.join("repo");
         std::fs::create_dir_all(repo.join("src/x")).unwrap();
@@ -4850,11 +4919,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: single-threaded test setup, before any other thread reads either env var.
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         // `load()` reconciles the packaged seed into the runtime store on first read, so the id above
         // is already present here with no `tests` — exactly the "retired module" shape #123 describes:
@@ -4944,7 +5009,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
         // SAFETY: single-threaded test setup, as in the neighbouring harvest tests.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let repo = dir.join("repo");
         std::fs::create_dir_all(repo.join("src/x")).unwrap();
@@ -5018,7 +5083,7 @@ mod tests {
         let store = dir.join("algorithms.json");
         // SAFETY: single-threaded test setup, before any other thread reads the env (same pattern as
         // the neighboring `impl_get_falls_back_…` test).
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         // Source carrying exactly what argv would corrupt silently: a backtick, a `${…}` interpolation,
         // and literal newlines — read from a file via `--code-file`, never typed on the command line.
@@ -5077,7 +5142,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5116,7 +5181,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5179,8 +5244,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5259,8 +5323,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5346,8 +5409,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5416,8 +5478,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("algorithms.json");
-        // SAFETY: single-threaded test setup, before any other thread reads the env.
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         run(
             vec![
@@ -5550,11 +5611,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: single-threaded test setup, before any other thread reads either var.
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         // The runtime store needs the SAME id before `tests set` can pair it — this mirrors a real
         // seeded record, which `reconcile_seed` would already have copied into a fresh store.
@@ -5717,11 +5774,7 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: single-threaded test setup, before any other thread reads either var.
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         // `suppress` requires the id to be KNOWN — a real seeded id is checked via `is_seeded`, which
         // reads the CACHED, process-wide `crate::seed()` (not `BSC_DATA_DIR`-aware once initialized).
@@ -5823,7 +5876,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("store.json");
 
-        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+        let _store = store_at(&store);
 
         let err = run(
             vec!["impl".into(), "unsuppress".into(), "whatever.ts".into(), "--seed".into()],
@@ -5862,10 +5915,7 @@ mod tests {
         std::fs::write(&seed_path, serde_json::to_string(&serde_json::json!({ "implementations": [] })).unwrap())
             .unwrap();
 
-        unsafe {
-            std::env::set_var("BSC_GRAPH_STORE", &store);
-            std::env::set_var("BSC_DATA_DIR", &data_dir);
-        }
+        let _store = store_and_data_at(&store, &data_dir);
 
         run(
             vec![
@@ -6342,7 +6392,7 @@ mod already_harvested_tests {
 /// #78 — the dedup pass over the impl set.
 #[cfg(test)]
 mod dedup_tests {
-    use super::{code_shingles, dedup_findings};
+    use super::dedup_findings;
     use serde_json::Value;
 
     fn im(id: &str, name: &str, extra: Value) -> Value {
@@ -6524,6 +6574,75 @@ mod dedup_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// THE TREE SWEEP CARRIES THE CONTRACT SIGNAL TOO, not only the shape one.
+    ///
+    /// `doctor --dedup` had four signals over 32 Rust records while `dupes` had one over 7,514 Rust
+    /// functions — the weaker detector aimed at 99.6% of the Rust in this repo. These two functions
+    /// agree about what they take and their bodies corroborate it, but their SHAPES differ (one loops,
+    /// one folds), so the shape signal alone cannot see them.
+    #[test]
+    fn the_tree_sweep_reports_a_contract_pair_the_shape_signal_misses() {
+        let dir = crate::unique_temp("treecontract");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("b")).unwrap();
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::write(
+            dir.join("a").join("top.ts"),
+            "export function takeTop(xs: number[], limit: number): number[] {\n                 const sorted = xs.slice().sort((p, q) => q - p);\n                 const out: number[] = [];\n                 for (const v of sorted) { if (out.length < limit) { out.push(v); } }\n                 return out;\n}",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("b").join("topn.ts"),
+            "export function topN(xs: number[], limit: number): number[] {\n                 const sorted = xs.slice().sort((p, q) => q - p);\n                 const out: number[] = [];\n                 let i = 0;\n                 while (i < limit && i < sorted.length) { out.push(sorted[i]); i += 1; }\n                 return out;\n}",
+        )
+        .unwrap();
+
+        let (res, out) = bsc_util::capture_output(|| {
+            crate::cli::run(
+                ["dupes", dir.to_str().unwrap(), "--tech", "typescript"].iter().map(|s| s.to_string()).collect(),
+                "bsc graph",
+            )
+        });
+        res.expect("the verb runs");
+        let d: Value = serde_json::from_str(&out).expect("json");
+        let contract: Vec<&Value> = d["dupes"].as_array().unwrap().iter()
+            .filter(|g| g["signal"] == "same-contract").collect();
+        assert_eq!(contract.len(), 1, "the pair is found by contract: {out}");
+        // …and NOT by shape, or the signal would be redundant here.
+        assert!(
+            d["dupes"].as_array().unwrap().iter().all(|g| g["signal"] != "same-shape"),
+            "their shapes differ, so shape must not group them: {out}",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// TWO FUNCTIONS IN ONE FILE sharing a contract is a module convention here too — the same
+    /// condition that took the store signal from 161 pairs to 28.
+    #[test]
+    fn the_tree_sweep_does_not_group_a_contract_shared_inside_one_file() {
+        let dir = crate::unique_temp("treeconvention");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("math.ts"),
+            "export function toRadians(deg: number, scale: number): number {\n                 const base = (deg * Math.PI) / 180;\n                 const adjusted = base * scale;\n                 return Number.isFinite(adjusted) ? adjusted : 0;\n}\n             export function toDegrees(deg: number, scale: number): number {\n                 const base = (deg * 180) / Math.PI;\n                 const adjusted = base * scale;\n                 return Number.isFinite(adjusted) ? adjusted : 0;\n}",
+        )
+        .unwrap();
+        let (res, out) = bsc_util::capture_output(|| {
+            crate::cli::run(
+                ["dupes", dir.to_str().unwrap(), "--tech", "typescript"].iter().map(|s| s.to_string()).collect(),
+                "bsc graph",
+            )
+        });
+        res.expect("the verb runs");
+        let d: Value = serde_json::from_str(&out).expect("json");
+        assert!(
+            d["dupes"].as_array().unwrap().iter().all(|g| g["signal"] != "same-contract"),
+            "neighbours in one file must not group on contract: {out}",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// THE SIGNAL THE SHINGLES CANNOT HAVE (slice 2 of epic-a-graph-finds-its-own-duplicates).
     ///
     /// Signal 1 shingles TOKENS, and the tokens include the identifiers — so a copy whose identifiers
@@ -6690,7 +6809,7 @@ mod dedup_tests {
     /// which floods the report with the language rather than with duplication.
     #[test]
     fn a_body_below_the_shingle_floor_carries_no_signal() {
-        assert!(code_shingles("export const x = 1;").len() < super::MIN_SHINGLES, "too short to score");
+        assert!(crate::extract::code_shingles("export const x = 1;").len() < crate::extract::MIN_SHINGLES, "too short to score");
         let g = serde_json::json!({ "implementations": [
             im("p.ts", "p", serde_json::json!({ "code": "export const x = 1;" })),
             im("q.ts", "q", serde_json::json!({ "code": "export const x = 1;" })),
@@ -6701,7 +6820,7 @@ mod dedup_tests {
     /// Unicode in a body must not panic the tokenizer — it steps by CHAR width, not by byte.
     #[test]
     fn a_multibyte_body_tokenizes_without_panicking() {
-        assert!(!code_shingles("const s = \"h\u{e9}llo \u{2192} w\u{f6}rld\"; // ok ok ok ok").is_empty());
+        assert!(!crate::extract::code_shingles("const s = \"h\u{e9}llo \u{2192} w\u{f6}rld\"; // ok ok ok ok").is_empty());
     }
 }
 

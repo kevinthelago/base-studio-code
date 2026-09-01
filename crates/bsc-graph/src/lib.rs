@@ -52,8 +52,35 @@ pub(crate) fn unique_temp(tag: &str) -> PathBuf {
 /// every algorithms-record edit recompile this crate and everything downstream of it. Cached in a
 /// `OnceLock` and handed out as `&'static str`, so callers are unchanged.
 pub fn graph_json() -> &'static str {
-    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    V.get_or_init(|| bsc_util::packaged::read_required("knowledge/algorithms.json")).as_str()
+    // KEYED ON THE RESOLVED PATH, not on nothing. This was a bare `OnceLock<String>`, which caches
+    // the FIRST seed any caller asks for and then ignores where the next caller is pointing — so
+    // `BSC_DATA_DIR`, which `bsc_util::packaged` treats as its highest-priority override, silently
+    // stopped working the moment anything had already read a seed in that process.
+    //
+    // MEASURED: `tests_promote_syncs_tests_from_the_runtime_store_onto_the_packaged_seed` passes
+    // alone and fails in a `cargo test` suite, because a sibling test populates the cache first. A
+    // serial lock cannot fix that — the cache outlives the lock — and it is a real latent defect, not
+    // only a test artifact: a cache that ignores its own input is wrong wherever the input can vary.
+    //
+    // Still cached, so the 2.6 MB read happens ONCE PER PATH. Production resolves one path, so this
+    // is exactly the previous behaviour with the key made explicit.
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::BTreeMap<std::path::PathBuf, &'static str>>,
+    > = std::sync::OnceLock::new();
+    const REL: &str = "knowledge/algorithms.json";
+    // An unresolvable path keys as empty and still reads, so a missing seed panics in
+    // `read_required` with its own message rather than here with a worse one.
+    let key = bsc_util::packaged::resolved_path(REL).unwrap_or_default();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::BTreeMap::new()));
+    let mut map = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(text) = map.get(&key) {
+        return text;
+    }
+    // Leaked deliberately, exactly as the `OnceLock<String>` did: callers hold `&'static str`. One
+    // leak per DISTINCT seed path — one in production, a handful across a test suite.
+    let text: &'static str = Box::leak(bsc_util::packaged::read_required(REL).into_boxed_str());
+    map.insert(key, text);
+    text
 }
 
 /// The tiers an implementation may carry (#2863) — validated on `impl set`. A `primitive` is a LANGUAGE
@@ -1195,6 +1222,44 @@ pub fn doctor_with_entities(g: &Value, entities: &[String]) -> Vec<Finding> {
 
 #[cfg(test)]
 mod tests {
+    /// THE CACHE MUST FOLLOW ITS INPUT. `graph_json` memoized the first seed any caller asked for and
+    /// then ignored where the next caller pointed — so `BSC_DATA_DIR`, which `bsc_util::packaged`
+    /// treats as its highest-priority override, stopped working the moment anything in the process had
+    /// already read a seed.
+    ///
+    /// That is why `tests_promote_syncs_tests_from_the_runtime_store_onto_the_packaged_seed` passed
+    /// alone and failed inside a `cargo test` suite: a sibling populated the cache first. A serial lock
+    /// could not have fixed it, because the cache outlives the lock — which is the whole reason this is
+    /// a separate defect from the 13 that WERE an env race.
+    ///
+    /// Asserted by reading TWO different seeds in ONE process and requiring different answers. Under
+    /// nextest each test is its own process, so a test that merely read one seed would prove nothing.
+    #[test]
+    fn the_packaged_seed_cache_follows_the_data_dir_rather_than_the_first_caller() {
+        let _guard = crate::cli::test_support::store_lock();
+        let base = crate::unique_temp("seedcache");
+        let mut seen: Vec<String> = Vec::new();
+        for tag in ["alpha", "beta"] {
+            let dir = base.join(tag).join("knowledge");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("algorithms.json"),
+                format!("{{\"version\":1,\"implementations\":[{{\"id\":\"{tag}.ts\"}}]}}"),
+            )
+            .unwrap();
+            // SAFETY: serialized by the store lock above, like every other env-touching test here.
+            unsafe { std::env::set_var("BSC_DATA_DIR", base.join(tag)) };
+            seen.push(graph_json().to_string());
+        }
+        assert!(seen[0].contains("alpha.ts"), "the first read sees its own seed: {}", &seen[0][..60.min(seen[0].len())]);
+        assert!(
+            seen[1].contains("beta.ts"),
+            "the SECOND read must see the SECOND seed — a cache keyed on nothing returns the first: {}",
+            &seen[1][..60.min(seen[1].len())],
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     /// A record must not claim a specifier a LIVE platform module owns while holding state:
     /// `resolveGraphSource` checks records FIRST, so it would win and vendor a SECOND copy of that
     /// state to every graph consumer. Silent, unlike a broken override, which declines and falls back.
