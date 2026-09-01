@@ -33,8 +33,8 @@ pub const VERBS: [&str; 22] = [
 /// seed taught it to nobody — and because the spec drift test derives its expectations from THIS list,
 /// the one verb the records architecture tells every worker to reach for was the one verb no test could
 /// notice going undocumented. The list is only a drift guard if it is complete.
-pub const IMPL_SUBVERBS: [&str; 9] =
-    ["set", "get", "remove", "list", "suppress", "unsuppress", "history", "revert", "sync-seed"];
+pub const IMPL_SUBVERBS: [&str; 10] =
+    ["set", "get", "remove", "list", "suppress", "unsuppress", "history", "revert", "sync-seed", "refresh"];
 
 /// The `edge` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const EDGE_SUBVERBS: [&str; 4] = ["set", "get", "list", "remove"];
@@ -1977,6 +1977,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // to reach git, which is exactly the class of gap this repo's own rule (a script is a
             // missing command, not a workaround) exists to close.
             Some("sync-seed") => cmd_impl_sync_seed(&args),
+            // `impl refresh <id>=<src-relative-path>… [--apply]` — refresh an EXISTING record's `code`
+            // from the file it claims to be, BY ID. Ports `scripts/refresh-impl-from-file.mjs`. Not
+            // `harvest --module --apply`, which authors under an id derived from the FILENAME: four
+            // feature barrels all derive `index.ts`, so applying them in turn writes them over one
+            // another under one id — a collision that reads as success four times.
+            Some("refresh") => cmd_impl_refresh(&args),
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
@@ -3696,6 +3702,103 @@ fn diff_fields(existing: &Value, fresh: &Value) -> Vec<String> {
     keys.into_iter().filter(|k| existing.get(k) != fresh.get(k)).collect()
 }
 
+/// `bsc graph impl refresh <impl-id>=<src-relative-path>… [--apply]` — refresh a record's `code` from
+/// the file it claims to be. Ports `scripts/refresh-impl-from-file.mjs`, which it replaces.
+fn cmd_impl_refresh(args: &[String]) -> Result<(), String> {
+    const USAGE: &str =
+        "usage: bsc graph impl refresh <impl-id>=<src-relative-path>… [--apply] [--root <dir>]";
+    let apply = args.iter().any(|a| a == "--apply");
+    // `--root`, not a new `--repo`: this crate already uses that name for "the repo when the cwd is
+    // not it" on `promote`, and a second spelling for one concept is how a surface stops being learnable.
+    let repo = flag_value(args, "--root")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let writer = bsc_record::resolve_writer(flag_value(args, "--by").as_deref());
+
+    // Positionals after `impl refresh`, skipping flags AND the value token a value-taking flag brings.
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    let mut it = args.iter().skip(2);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--root" | "--by" => {
+                it.next();
+            }
+            other if other.starts_with("--") => {}
+            other => pairs.push(crate::impl_refresh::parse_pair(other)?),
+        }
+    }
+    if pairs.is_empty() {
+        return Err(USAGE.into());
+    }
+
+    let mut g = crate::load();
+    let mut by_id: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    for im in crate::implementations_of(&g) {
+        if let Some(id) = im.get("id").and_then(serde_json::Value::as_str) {
+            by_id.insert(id.to_string(), im);
+        }
+    }
+
+    let mut wrote = 0usize;
+    for (id, rel) in &pairs {
+        let rec = by_id.get(id);
+        let code = bsc_record::record_source::file_as_record_source(
+            &repo.join("src").join(rel),
+            rel,
+        )
+        .map_err(|e| format!("cannot read src/{rel}: {e}"))?;
+        let before = rec.and_then(|r| r.get("code")).and_then(serde_json::Value::as_str).unwrap_or("");
+        let before = rec.map(|_| before);
+
+        match crate::impl_refresh::verdict(before, &code) {
+            crate::impl_refresh::Verdict::NotInStore => {
+                bsc_util::emit_line(&format!("SKIP {id} — not in the store"));
+            }
+            crate::impl_refresh::Verdict::AlreadyEqual => {
+                bsc_util::emit_line(&format!("SKIP {id} — already equals its file"));
+            }
+            crate::impl_refresh::Verdict::Refresh(c) => {
+                bsc_util::emit_line(&format!(
+                    "{} {id:<20} {} -> {} chars",
+                    if apply { "REFRESH" } else { "would refresh" },
+                    c.before_len,
+                    c.after_len
+                ));
+                if let Some(r) = c.restored.as_ref().filter(|r| !r.is_empty()) {
+                    bsc_util::emit_line(&format!("    restores export(s): {}", r.join(", ")));
+                }
+                // A refresh should not REMOVE an export. If it does, the record held something the file
+                // does not — a judgement call rather than a sync — so it is surfaced, never quiet.
+                if let Some(r) = c.removed.as_ref().filter(|r| !r.is_empty()) {
+                    bsc_util::emit_line(&format!(
+                        "    ⚠ removes export(s) the record had: {} — adjudicate before applying",
+                        r.join(", ")
+                    ));
+                }
+                if !apply {
+                    continue;
+                }
+                let mut next = rec.cloned().unwrap_or_else(|| serde_json::json!({}));
+                next["code"] = serde_json::Value::String(code);
+                let note = format!(
+                    "refresh from {rel}: this record carries a provides naming that file, so it must BE \
+                     that file — the file is the copy every gate validates"
+                );
+                crate::set_impl_by(&mut g, next, &writer, Some(&note))?;
+                wrote += 1;
+                bsc_util::emit_line("    written");
+            }
+        }
+    }
+    if apply && wrote > 0 {
+        crate::save(&g)?;
+    }
+    if !apply {
+        bsc_util::emit_line("\n(dry run — pass --apply to write)");
+    }
+    Ok(())
+}
+
 /// `impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] [--pretty]` (#157) —
 /// the store-to-seed sync `bsc ui sync-seed` (#139) already does for the component store, ported here
 /// for the Algorithms library: write a runtime impl/edge record's CONTENT back into the packaged
@@ -3932,6 +4035,7 @@ fn help(prog: &str) -> String {
          {prog} impl revert <id> [--to <rev>] [--by <who>]   # restore a previous `code`. Defaults to undoing the last source-moving write; REFUSES rather than landing on a nearer revision when the target has aged past the retained rungs, and names which revisions are still reachable
   \
          {prog} impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] [--pretty]   # write a runtime impl/edge record's CONTENT back into the packaged <seed-dir>/algorithms.json, by id (#157) — the `bsc ui sync-seed` (#139) counterpart for this store. Deliberately BY ID: seed and store drift BOTH ways, so a sweep would as often overwrite real seed content as fresh store content. Dry run by default; --apply writes. --only <field>[,<field>…] (#167) syncs exactly the named fields, leaving the rest of the seed record untouched — a value naming no field is refused rather than silently matching nothing. Refuses (would-lose-fields) rather than dropping a non-empty field the seed already carries and the store copy lacks\n  \
+         {prog} impl refresh <id>=<src-relative-path>… [--apply]   # refresh an EXISTING record's `code` from the file it claims to be, BY ID — the file is the copy tsc/lint/vitest/vite-build all validate, and these records claim to BE it. NOT `harvest --module --apply`, which authors under an id derived from the FILENAME: four feature barrels all derive `index.ts`, so applying them in turn writes them over one another under one id. Dry run by default. Reports what it RESTORES, and WARNS when a refresh would REMOVE an export the record had — that is a judgement call, not a sync\n  \
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
