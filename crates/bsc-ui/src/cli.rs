@@ -649,6 +649,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("retirable") => cmd_retirable(&args[1..]),
         Some("lift") => cmd_lift(&args[1..]),
         Some("refresh-seed") => cmd_refresh_seed(&args[1..]),
+        Some("promote-seed") => cmd_promote_seed(&args[1..]),
         Some("retire") => cmd_retire(&args[1..]),
         Some("shadow") => cmd_shadow(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
@@ -3038,6 +3039,718 @@ fn relative_specifier_summary(dir: &Option<String>) -> Result<(usize, usize, usi
     Ok((records.len(), findings, ids.len()))
 }
 
+
+/// `bsc ui promote-seed [--apply] …` — promote a live store record into the PACKAGED SEED, the step that
+/// makes its file retirable. Ports `scripts/promote-records.mjs`, which it replaces.
+fn cmd_promote_seed(args: &[String]) -> Result<(), String> {
+    use serde_json::Value;
+    let apply = args.iter().any(|a| a == "--apply");
+    let adopt_seed = args.iter().any(|a| a == "--adopt-seed");
+    let only = flag_after(args, "--only");
+    let limit: usize = flag_after(args, "--limit")
+        .map(|v| v.parse().map_err(|_| format!("--limit '{v}' is not a number")))
+        .transpose()?
+        .unwrap_or(usize::MAX);
+    // Per-id and explicit, so a drop is reviewable in the command that caused it — never a blanket flag.
+    let allow_drop: std::collections::HashSet<String> = flag_after(args, "--allow-drop")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let dir = flag_after(args, "--dir");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+
+    let algos_path = repo.join("src-tauri/data/knowledge/algorithms.json");
+    let mut algorithms: Value = serde_json::from_str(
+        &std::fs::read_to_string(&algos_path).map_err(|e| format!("cannot read the algorithms seed: {e}"))?,
+    )
+    .map_err(|e| format!("the algorithms seed is not valid JSON: {e}"))?;
+
+    // BOTH STORES, read directly — the script took two dumped JSON files.
+    let store = bsc_component::cli::open_component_store(&dir)?;
+    let components: Vec<Value> = store
+        .list()
+        .iter()
+        .filter_map(|b| serde_json::from_str::<Value>(b).ok())
+        .collect();
+    let impls: Vec<Value> = bsc_graph::implementations();
+
+    // spec → the record that answers it. A COMPONENT wins over an impl for the same specifier.
+    let mut by_spec: std::collections::HashMap<String, (&'static str, Value)> =
+        std::collections::HashMap::new();
+    for c in &components {
+        let sp = c.get("provides").and_then(Value::as_str).unwrap_or("").trim();
+        let src = c.get("srcText").and_then(Value::as_str).unwrap_or("");
+        if !sp.is_empty() && !src.trim().is_empty() {
+            by_spec.insert(sp.to_string(), ("component", c.clone()));
+        }
+    }
+    for i in &impls {
+        let sp = i.get("provides").and_then(Value::as_str).unwrap_or("").trim();
+        let code = i.get("code").and_then(Value::as_str).unwrap_or("");
+        if !sp.is_empty() && !code.trim().is_empty() && !by_spec.contains_key(sp) {
+            by_spec.insert(sp.to_string(), ("impl", i.clone()));
+        }
+    }
+
+    // The packaged seed: which specifiers it provides, which ids it uses, and where each id's JSON sits.
+    // `SEED_COMPONENTS` globs the tree FLAT and keys by id, so a record's identity is its id and NOT
+    // where the file sits — which is why an adoption must find the existing seed BY ID rather than at a
+    // path derived from `folder`, a field that can and does disagree with reality.
+    let (mut seeded_specs, mut seed_ids, mut seed_path_by_id) = (
+        std::collections::HashSet::<String>::new(),
+        std::collections::HashSet::<String>::new(),
+        std::collections::HashMap::<String, std::path::PathBuf>::new(),
+    );
+    fn walk_seed(
+        dir: &std::path::Path,
+        specs: &mut std::collections::HashSet<String>,
+        ids: &mut std::collections::HashSet<String>,
+        paths: &mut std::collections::HashMap<String, std::path::PathBuf>,
+        under_app: bool,
+    ) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let mut list: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        list.sort();
+        for p in list {
+            if p.is_dir() {
+                walk_seed(&p, specs, ids, paths, under_app);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("json")
+                || std::fs::metadata(&p).map(|m| m.len() > 4_000_000).unwrap_or(true)
+            {
+                continue;
+            }
+            let Ok(body) = std::fs::read_to_string(&p) else { continue };
+            let Ok(r) = serde_json::from_str::<serde_json::Value>(&body) else { continue };
+            if let Some(sp) = r.get("provides").and_then(serde_json::Value::as_str) {
+                specs.insert(sp.trim().to_string());
+            }
+            if under_app {
+                if let Some(id) = r.get("id").and_then(serde_json::Value::as_str) {
+                    ids.insert(id.to_string());
+                    paths.entry(id.to_string()).or_insert_with(|| p.clone());
+                }
+            }
+        }
+    }
+    walk_seed(
+        &repo.join("src-tauri/data/components"),
+        &mut seeded_specs,
+        &mut std::collections::HashSet::new(),
+        &mut std::collections::HashMap::new(),
+        false,
+    );
+    walk_seed(
+        &repo.join("src-tauri/data/components/app"),
+        &mut std::collections::HashSet::new(),
+        &mut seed_ids,
+        &mut seed_path_by_id,
+        true,
+    );
+    for im in algorithms.get("implementations").and_then(Value::as_array).into_iter().flatten() {
+        if let Some(sp) = im.get("provides").and_then(Value::as_str) {
+            seeded_specs.insert(sp.trim().to_string());
+        }
+    }
+
+    // THE PACKAGED SEED COUNTS toward resolvability. `emit-records` materializes the SEED — never the
+    // store — into `.bsc-records/`, so a specifier the seed provides is precisely what the bundle will
+    // resolve. Building this from the registry and the STORE alone made every module whose file had been
+    // retired in favour of a seed record read as unresolvable.
+    let registered: std::collections::HashSet<String> =
+        std::fs::read_to_string(repo.join("src-tauri/data/ui/platform-modules.json"))
+            .ok()
+            .and_then(|b| serde_json::from_str::<Vec<String>>(&b).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+    let mut resolvable: std::collections::HashSet<String> = registered.clone();
+    resolvable.extend(seeded_specs.iter().cloned());
+    resolvable.extend(by_spec.keys().cloned());
+    for c in &components {
+        if let Some(id) = c.get("id").and_then(Value::as_str) {
+            resolvable.insert(format!("@/components/{id}"));
+        }
+    }
+
+    // Read from the SOURCE rather than imported, and it FAILS CLOSED: if the catalogue ever stops listing
+    // entries literally this is empty, and every app screen stays skipped — the safe direction.
+    let catalogued: std::collections::HashSet<String> = {
+        let re = regex::Regex::new(r#"pageId:\s*"([^"]+)""#).expect("pageId");
+        std::fs::read_to_string(repo.join("src/app/runtime/shadowPages.ts"))
+            .map(|b| re.captures_iter(&b).map(|c| c[1].to_string()).collect())
+            .unwrap_or_default()
+    };
+
+    let src_files = crate::retirable::list_src(&repo);
+    #[derive(Clone)]
+    struct Promotable {
+        file: String,
+        spec: String,
+        rec: Value,
+    }
+    let (mut promote_component, mut promote_impl) =
+        (Vec::<Promotable>::new(), Vec::<Promotable>::new());
+    let mut body_differs: Vec<String> = Vec::new();
+    let mut build_time_only: Vec<String> = Vec::new();
+    let mut page_record: Vec<String> = Vec::new();
+    let mut unresolvable: Vec<String> = Vec::new();
+    let mut uncompilable: Vec<String> = Vec::new();
+    let mut unclosed_composes: Vec<String> = Vec::new();
+    let (mut already_seeded_n, mut no_record_n) = (0usize, 0usize);
+
+    for file in src_files.iter().filter(|f| crate::promote::is_module(f)) {
+        if only.as_ref().is_some_and(|o| o != file) {
+            continue;
+        }
+        let spec = crate::promote::spec_of(file);
+        let hit = by_spec.get(&spec);
+        let file_src = hit
+            .map(|_| {
+                bsc_record::record_source::file_as_record_source(
+                    &repo.join("src").join(file),
+                    file,
+                )
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        let view = hit.map(|(kind, rec)| crate::promote::RecordView {
+            id: rec.get("id").and_then(Value::as_str).unwrap_or(""),
+            kind,
+            role: rec.get("role").and_then(Value::as_str),
+            page_kind: rec.get("pageKind").and_then(Value::as_str),
+            source: rec
+                .get("srcText")
+                .or_else(|| rec.get("code"))
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        });
+        let verdict = crate::promote::classify(
+            seeded_specs.contains(&spec),
+            view.as_ref(),
+            &file_src,
+            &|id| catalogued.contains(id),
+            &|s| resolvable.contains(s),
+            &bsc_record::record_source::runtime_imports,
+        );
+        match verdict {
+            Err(crate::promote::Skip::AlreadySeeded) => already_seeded_n += 1,
+            Err(crate::promote::Skip::NoRecord) => no_record_n += 1,
+            Err(crate::promote::Skip::BuildTimeOnly) => build_time_only.push(file.clone()),
+            Err(crate::promote::Skip::PageNotCatalogued(id)) => {
+                page_record.push(format!("{file} — catalogue `{id}` in SHADOW_PAGES first"));
+            }
+            Err(crate::promote::Skip::Unresolvable(specs)) => {
+                unresolvable.push(format!(
+                    "{file} — needs {}",
+                    specs.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            Err(crate::promote::Skip::BodyDiffers { record_len, file_len, delta }) => {
+                body_differs.push(format!(
+                    "{file} — record {record_len} vs file {file_len} chars ({}{delta})",
+                    if delta >= 0 { "+" } else { "" }
+                ));
+            }
+            Ok(()) => {
+                if promote_component.len() + promote_impl.len() >= limit {
+                    break;
+                }
+                let (kind, rec) = hit.expect("Ok implies a record");
+                let p = Promotable { file: file.clone(), spec, rec: rec.clone() };
+                if *kind == "component" { promote_component.push(p) } else { promote_impl.push(p) }
+            }
+        }
+    }
+
+    // FIXED POINT. Resolvability has to be judged against what the PACKAGE will hold once this run lands
+    // — registry ∪ already-seeded ∪ promoted-here — not against the live store, which knows records that
+    // will still be missing from the shipped seed afterwards. That is circular (whether A is promotable
+    // depends on whether B is), so it is settled by iterating until nothing more drops. It also covers
+    // BARE specifiers, not just `@/…`: `platformBoundary` checks those too, and `detachedtabstrip` failed
+    // on `@tauri-apps/api/window` after an earlier pass that only looked at `@/`.
+    let imports_of = |src: &str| -> Vec<String> {
+        bsc_record::record_source::runtime_imports(src)
+            .into_iter()
+            .filter(|s| !s.starts_with("./") && !s.starts_with("../"))
+            .filter(|s| crate::promote::needs_resolution(s))
+            .collect()
+    };
+    for _ in 0..20 {
+        let mut will_exist: std::collections::HashSet<String> = registered.clone();
+        will_exist.extend(seeded_specs.iter().cloned());
+        for p in promote_component.iter().chain(promote_impl.iter()) {
+            will_exist.insert(p.spec.clone());
+            if let Some(id) = p.rec.get("id").and_then(Value::as_str) {
+                will_exist.insert(format!("@/components/{id}"));
+            }
+        }
+        let mut dropped = 0usize;
+        for list in [&mut promote_component, &mut promote_impl] {
+            list.retain(|p| {
+                let src = p
+                    .rec
+                    .get("srcText")
+                    .or_else(|| p.rec.get("code"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let missing: Vec<String> =
+                    imports_of(src).into_iter().filter(|s| !will_exist.contains(s)).collect();
+                if missing.is_empty() {
+                    return true;
+                }
+                dropped += 1;
+                unresolvable.push(format!(
+                    "{} — needs {}",
+                    p.file,
+                    missing.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                ));
+                false
+            });
+        }
+        if dropped == 0 {
+            break;
+        }
+    }
+
+    // DOES IT COMPILE AS TSX? The runtime loader compiles every record with esbuild's **tsx** loader, and
+    // TSX is not a superset of TS: `<T>(x) => x` is a generic arrow in a `.ts` file and an unclosed JSX
+    // element in a `.tsx` one. So a module `tsc` and Vite accept all day can be uncompilable AS A RECORD —
+    // `deployEnv.ts` is exactly that, and it slips every gate above because its record matches its file
+    // perfectly.
+    //
+    // Batched through ONE esbuild invocation rather than N: each is ~300ms of process start, and the whole
+    // set compiles in well under a second together. esbuild names every file it could not build.
+    if !promote_component.is_empty() || !promote_impl.is_empty() {
+        let tmp = repo.join(".promote-compile-check");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("compile check: {e}"))?;
+        let all: Vec<Promotable> =
+            promote_component.iter().chain(promote_impl.iter()).cloned().collect();
+        for (i, p) in all.iter().enumerate() {
+            let src = p.rec.get("srcText").or_else(|| p.rec.get("code")).and_then(Value::as_str).unwrap_or("");
+            let _ = std::fs::write(tmp.join(format!("m{i:04}.tsx")), src);
+        }
+        let out = std::process::Command::new("npx")
+            .args([
+                "esbuild",
+                &format!("{}/*.tsx", tmp.display()),
+                "--loader:.tsx=tsx",
+                "--format=cjs",
+                &format!("--outdir={}/out", tmp.display()),
+            ])
+            .current_dir(&repo)
+            .output();
+        match out {
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                let re = regex::Regex::new(r"m(\d{4})\.tsx").expect("compile names");
+                let broken: std::collections::HashSet<usize> = re
+                    .captures_iter(&stderr)
+                    .filter_map(|c| c[1].parse::<usize>().ok())
+                    .collect();
+                if !broken.is_empty() {
+                    for (i, p) in all.iter().enumerate() {
+                        if broken.contains(&i) {
+                            uncompilable.push(format!("{} — does not compile as TSX", p.file));
+                        }
+                    }
+                    let bad: std::collections::HashSet<String> = all
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| broken.contains(i))
+                        .map(|(_, p)| p.file.clone())
+                        .collect();
+                    promote_component.retain(|p| !bad.contains(&p.file));
+                    promote_impl.retain(|p| !bad.contains(&p.file));
+                }
+            }
+            // A MISSING esbuild is REPORTED, never silently treated as "everything compiles" — that would
+            // turn the one gate no other check can stand in for into a no-op.
+            Err(e) => bsc_util::emit_line(&format!(
+                "   WARNING: the TSX compile check could not run ({e}) — `npx esbuild` is required; \
+                 every record below is UNVERIFIED for TSX compilability"
+            )),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // DOES ITS `composes` CLOSE? An impl names the impls it builds on, and `knowledge.test.ts` asserts
+    // every one is a REAL impl in the seed — so promoting an impl whose `composes` points at something
+    // still store-only breaks the seed the moment it lands.
+    let impl_by_id: std::collections::HashMap<String, Value> = impls
+        .iter()
+        .filter_map(|i| Some((i.get("id")?.as_str()?.to_string(), i.clone())))
+        .collect();
+    let rec_by_id: std::collections::HashMap<String, Value> = {
+        let mut m = impl_by_id.clone();
+        for c in &components {
+            if let Some(id) = c.get("id").and_then(Value::as_str) {
+                m.entry(id.to_string()).or_insert_with(|| c.clone());
+            }
+        }
+        m
+    };
+    let composes_of = |v: &Value| -> Vec<String> {
+        v.get("composes")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default()
+    };
+    let carry_for = |promote_impl: &[Promotable]| -> Vec<Value> {
+        let mut seeded: std::collections::HashSet<String> = algorithms
+            .get("implementations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|i| i.get("id")?.as_str().map(str::to_string))
+            .collect();
+        for p in promote_impl {
+            if let Some(id) = p.rec.get("id").and_then(Value::as_str) {
+                seeded.insert(id.to_string());
+            }
+        }
+        let by_id: std::collections::HashMap<String, crate::graph_closure::Rec> = impl_by_id
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    crate::graph_closure::Rec {
+                        provides: v.get("provides").and_then(Value::as_str).map(str::to_string),
+                        composes: composes_of(v),
+                    },
+                )
+            })
+            .collect();
+        let roots: Vec<String> = promote_impl
+            .iter()
+            .flat_map(|p| composes_of(&p.rec))
+            .filter(|c| !seeded.contains(c))
+            .collect();
+        crate::graph_closure::library_carry_closure(&roots, &by_id, &seeded)
+            .carry
+            .into_iter()
+            .filter_map(|id| impl_by_id.get(&id).cloned())
+            .collect()
+    };
+    let carried = carry_for(&promote_impl);
+
+    {
+        let mut impl_ids: std::collections::HashSet<String> = algorithms
+            .get("implementations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|i| i.get("id")?.as_str().map(str::to_string))
+            .collect();
+        for p in &promote_impl {
+            if let Some(id) = p.rec.get("id").and_then(Value::as_str) {
+                impl_ids.insert(id.to_string());
+            }
+        }
+        for c in &carried {
+            if let Some(id) = c.get("id").and_then(Value::as_str) {
+                impl_ids.insert(id.to_string());
+            }
+        }
+        // A COMPOSED id whose module is already RESOLVABLE closes the closure just as well as a seeded
+        // impl. The narrower question — "is this composed id a seeded impl?" — can never be satisfied by
+        // a permanently-file module: 7 of 34 blocking ids are `import.meta.glob` modules that CANNOT be
+        // records at all, so every record composing one was held forever on a condition it could not meet.
+        let spec_for_composed = |id: &str| -> Option<String> {
+            let rec = rec_by_id.get(id)?;
+            if let Some(p) = rec.get("provides").and_then(Value::as_str) {
+                if p.starts_with("@/") {
+                    return Some(p.trim().to_string());
+                }
+            }
+            let src = rec.get("src").and_then(Value::as_str)?.replace('\\', "/");
+            let stem = src.strip_prefix("src/").unwrap_or(&src);
+            let stem = [".tsx", ".ts"].iter().find_map(|e| stem.strip_suffix(*e)).unwrap_or(stem);
+            Some(format!("@/{}", stem.strip_suffix("/index").unwrap_or(stem)))
+        };
+        let closed_by_resolution = |id: &str| -> bool {
+            seeded_specs.contains(id)
+                || spec_for_composed(id).is_some_and(|s| resolvable.contains(&s))
+        };
+        // A FIXPOINT, not one pass: dropping an impl can dangle another that composed it.
+        loop {
+            let mut settled = true;
+            let mut keep: Vec<Promotable> = Vec::new();
+            for p in &promote_impl {
+                let missing: Vec<String> = composes_of(&p.rec)
+                    .into_iter()
+                    .filter(|c| !impl_ids.contains(c) && !closed_by_resolution(c))
+                    .collect();
+                if missing.is_empty() {
+                    keep.push(p.clone());
+                    continue;
+                }
+                unclosed_composes.push(format!(
+                    "{} — composes {}",
+                    p.file,
+                    missing.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                ));
+                if let Some(id) = p.rec.get("id").and_then(Value::as_str) {
+                    impl_ids.remove(id);
+                }
+                settled = false;
+            }
+            promote_impl = keep;
+            if settled {
+                break;
+            }
+        }
+    }
+
+    // Recompute the carry from what SURVIVED: the fixed point can drop an impl for an unrelated reason,
+    // and a library record carried only for that impl would be seeded with nothing referencing it.
+    let carried_kept = carry_for(&promote_impl);
+
+    bsc_util::emit_line(&format!(
+        "promotable: {} component(s) + {} impl(s){}",
+        promote_component.len(),
+        promote_impl.len(),
+        if carried_kept.is_empty() {
+            String::new()
+        } else {
+            format!(" (+ {} library record(s) carried to close their composes)", carried_kept.len())
+        }
+    ));
+    for c in &carried_kept {
+        bsc_util::emit_line(&format!(
+            "   carry: {}{}",
+            c.get("id").and_then(Value::as_str).unwrap_or(""),
+            if c.get("role").and_then(Value::as_str) == Some("primitive") {
+                "  [language primitive]"
+            } else {
+                ""
+            }
+        ));
+    }
+    bsc_util::emit_line(&format!(
+        "skipped — already seeded {already_seeded_n}, no record {no_record_n}, body differs {}, \
+         build-time-only {}, role:page {}, unresolvable {}, uncompilable {}, unclosed-composes {}",
+        body_differs.len(),
+        build_time_only.len(),
+        page_record.len(),
+        unresolvable.len(),
+        uncompilable.len(),
+        unclosed_composes.len()
+    ));
+    for f in &body_differs {
+        bsc_util::emit_line(&format!("   body differs: {f}"));
+    }
+    for f in &build_time_only {
+        bsc_util::emit_line(&format!("   import.meta.glob: {f}"));
+    }
+    for f in &page_record {
+        bsc_util::emit_line(&format!("   role:page (catalogue it in shadowPages first): {f}"));
+    }
+    for f in &unresolvable {
+        bsc_util::emit_line(&format!("   unresolvable import: {f}"));
+    }
+    for f in &uncompilable {
+        bsc_util::emit_line(&format!("   {f}"));
+    }
+    for f in &unclosed_composes {
+        bsc_util::emit_line(&format!("   unclosed composes: {f}"));
+    }
+    // NAME what will be promoted, not just how many — a bare count forced the operator to `--apply` in
+    // order to find out what `--apply` would do, the single thing a dry run exists to avoid.
+    for r in &promote_component {
+        bsc_util::emit_line(&format!("   + component {}", r.file));
+    }
+    for r in &promote_impl {
+        bsc_util::emit_line(&format!("   + impl      {}", r.file));
+    }
+
+    if !apply {
+        bsc_util::emit_line("\n(dry run — pass --apply to write)");
+        return Ok(());
+    }
+
+    let (mut skipped_at_write, mut adopted) = (0usize, 0usize);
+    for p in &promote_component {
+        let rec = &p.rec;
+        let id = rec.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        let folder = rec.get("folder").and_then(Value::as_str).filter(|f| !f.is_empty()).unwrap_or("misc");
+        let existing = seed_path_by_id.get(&id).cloned();
+        let path = existing.clone().unwrap_or_else(|| {
+            repo.join("src-tauri/data/components/app").join(folder).join(format!("{id}.json"))
+        });
+
+        // NEVER overwrite an existing seed — seven curated seeds were clobbered before this guard.
+        // `--adopt-seed` is the ONE narrow exception, and it inverts the case the guard was written for:
+        // there the seed is the worse copy, BEHIND the file while the store record IS the file, which the
+        // gate above has already proven.
+        let mut adopting = false;
+        if path.is_file() {
+            let seed_rec: Value = serde_json::from_str(
+                &std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?,
+            )
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+            let file_src = bsc_record::record_source::file_as_record_source(
+                &repo.join("src").join(&p.file),
+                &p.file,
+            )
+            .unwrap_or_default();
+            let a = bsc_record::record_source::seed_adoption(
+                seed_rec.get("srcText").and_then(Value::as_str).unwrap_or(""),
+                seed_rec.get("provides").and_then(Value::as_str),
+                rec.get("srcText").and_then(Value::as_str).unwrap_or(""),
+                rec.get("provides").and_then(Value::as_str),
+                &file_src,
+            );
+            if !adopt_seed {
+                bsc_util::emit_line(&format!(
+                    "   SKIPPED (a seed already occupies that path): {} → {id}.json{}",
+                    p.file,
+                    if a.verdict == "adopt" { " — it is STALE; --adopt-seed replaces it" } else { "" }
+                ));
+                skipped_at_write += 1;
+                continue;
+            }
+            // The export-loss refusal is the ONE `--allow-drop` can override, and only for a record named
+            // on the command line — `lost` being non-empty is what identifies it, so the flag cannot
+            // become a blanket "write anyway".
+            let overriding = a.verdict == "refuse" && !a.lost.is_empty() && allow_drop.contains(&id);
+            if a.verdict != "adopt" && !overriding {
+                bsc_util::emit_line(&format!(
+                    "   {} ({}): {id}",
+                    if a.verdict == "keep" { "kept" } else { "REFUSED" },
+                    a.reason
+                ));
+                skipped_at_write += 1;
+                continue;
+            }
+            if overriding {
+                bsc_util::emit_line(&format!(
+                    "   ADOPTED DESPITE dropping {} (--allow-drop): {id}",
+                    a.lost.join(", ")
+                ));
+            }
+            bsc_util::emit_line(&format!(
+                "   adopted the store record over a stale seed: {id}  ({})",
+                a.reason
+            ));
+            adopted += 1;
+            adopting = true;
+        }
+        // AND the id must be free ANYWHERE in the seed, not just at this path: `SEED_COMPONENTS` is a
+        // flat glob, so the same id under a DIFFERENT folder sails past a path check — which is what
+        // happened, leaving two records with one id and `reconcileSeed` re-pushing it every boot.
+        if !adopting && seed_ids.contains(&id) {
+            bsc_util::emit_line(&format!(
+                "   SKIPPED (that id is already in the seed elsewhere): {} → {id}",
+                p.file
+            ));
+            skipped_at_write += 1;
+            continue;
+        }
+        seed_ids.insert(id.clone());
+        let out = crate::promote::project(rec, &crate::promote::SEED_FIELDS);
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+        }
+        let body = serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?;
+        std::fs::write(&path, format!("{body}\n")).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+
+    // IMPLS — appended to the one algorithms document, sorted by id so the file stays reviewable and a
+    // re-run produces the same bytes.
+    if !promote_impl.is_empty() || !carried_kept.is_empty() {
+        let list = algorithms
+            .get_mut("implementations")
+            .and_then(Value::as_array_mut)
+            .ok_or("the algorithms seed has no implementations[]")?;
+        let mut at_by_id: std::collections::HashMap<String, usize> = list
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| Some((e.get("id")?.as_str()?.to_string(), i)))
+            .collect();
+        let writing: Vec<Value> =
+            carried_kept.iter().cloned().chain(promote_impl.iter().map(|p| p.rec.clone())).collect();
+        // Every id that WILL be an impl once this run finishes — `composes` is filtered against it.
+        let mut will_be_impl: std::collections::HashSet<String> =
+            list.iter().filter_map(|e| e.get("id")?.as_str().map(str::to_string)).collect();
+        for r in &writing {
+            if let Some(id) = r.get("id").and_then(Value::as_str) {
+                will_be_impl.insert(id.to_string());
+            }
+        }
+        for rec in &writing {
+            let mut entry = crate::promote::project(rec, &crate::promote::IMPL_KEEP);
+            let id = entry.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            let composes: Vec<String> = entry
+                .get("composes")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            // DROP a composes target that is not an impl: `composes` models an edge in the ALGORITHM
+            // graph, so a target that is a registered platform module or a component record is not an
+            // edge it can express — and writing one produces a DANGLING reference the seed's own
+            // integrity guard rejects. Dropping is not losing the dependency: the record still IMPORTS
+            // the module and resolves it through the registry. Only the edge goes, and it never existed.
+            let (keep, dropped): (Vec<String>, Vec<String>) =
+                composes.into_iter().partition(|c| will_be_impl.contains(c));
+            if !dropped.is_empty() {
+                bsc_util::emit_line(&format!(
+                    "   {id}: dropped {} non-impl composes target(s) — {}",
+                    dropped.len(),
+                    dropped.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            entry["composes"] = Value::Array(keep.into_iter().map(Value::String).collect());
+
+            // NEVER APPEND A DUPLICATE ID. An id comes from the FILE STEM, so promoting
+            // `…/examples/sort.ts` once appended a SECOND `sort.ts` beside a curated one.
+            if let Some(at) = at_by_id.get(&id).copied() {
+                if !adopt_seed {
+                    bsc_util::emit_line(&format!(
+                        "   SKIPPED (that impl id is already in the seed): {id}"
+                    ));
+                    skipped_at_write += 1;
+                    continue;
+                }
+                bsc_util::emit_line(&format!(
+                    "   replaced the seeded impl with the promoted module: {id}"
+                ));
+                list[at] = entry;
+                continue;
+            }
+            at_by_id.insert(id, list.len());
+            list.push(entry);
+        }
+        list.sort_by(|a, b| {
+            a.get("id").and_then(Value::as_str).unwrap_or("")
+                .cmp(b.get("id").and_then(Value::as_str).unwrap_or(""))
+        });
+        std::fs::write(&algos_path, crate::refresh_seed::serialize_algorithms(&algorithms)?)
+            .map_err(|e| format!("{}: {e}", algos_path.display()))?;
+    }
+
+    // COUNT WHAT LANDED, NOT WHAT WAS PLANNED. This used to print the size of the promote list — the
+    // number taken BEFORE the never-overwrite guard runs — so a run that wrote 43 reported 49. A tool
+    // that overstates its own output is worse than one that does nothing, because the next step trusts it.
+    let landed = promote_component.len() + promote_impl.len() - skipped_at_write.min(promote_component.len() + promote_impl.len());
+    bsc_util::emit_line(&format!(
+        "\npromoted {landed} record(s) into the seed{}{}",
+        if adopted > 0 { format!(", {adopted} of them ADOPTED over a stale seed") } else { String::new() },
+        if skipped_at_write > 0 {
+            format!(" ({skipped_at_write} declined — a seed already occupied the path)")
+        } else {
+            String::new()
+        }
+    ));
+    Ok(())
+}
 
 /// `bsc ui refresh-seed [--apply] [--only <src-path>]` — the drifted-seed sweep. Ports
 /// `scripts/refresh-drifted-seeds.mjs`, which it replaces. The `--store`/`--impls` JSON dumps the script

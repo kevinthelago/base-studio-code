@@ -390,6 +390,22 @@ mod tests {
         assert_eq!(imported_specifiers(src), vec!["@/x/a".to_string(), "@/x/c".to_string()]);
     }
 
+    /// The other two assertions migrated from `scripts/lib/seedFormat.test.ts`, whose module became
+    /// orphaned when the last JS writer was ported. Byte-equality against the shipped file above implies
+    /// both, but only for as long as that file happens to contain an em dash — so they are stated.
+    #[test]
+    fn the_seed_format_is_two_space_indented_with_one_trailing_newline_and_literal_non_ascii() {
+        let v: serde_json::Value = serde_json::json!({ "b": 1, "a": [1, 2, 3] });
+        let out = serialize_algorithms(&v).expect("serialize");
+        assert!(out.ends_with("}\n") && !out.ends_with("}\n\n"), "exactly one trailing newline: {out:?}");
+        assert!(out.contains("\n  \"b\": 1"), "2-space indent: {out:?}");
+
+        let v2: serde_json::Value = serde_json::json!({ "note": "em dash — and an accent é" });
+        let out2 = serialize_algorithms(&v2).expect("serialize");
+        assert!(out2.contains('—') && out2.contains('é'), "non-ASCII stays LITERAL: {out2}");
+        assert!(!out2.contains("\\u"), "nothing is \\u-escaped: {out2}");
+    }
+
     /// THE ONLY ASSERTION ABOUT THE SEED FORMAT THAT CANNOT DRIFT: parse the SHIPPED file and re-serialize
     /// it, and the bytes must come back identical. Two other scripts document this format as 1-space +
     /// escaped non-ASCII + no trailing newline; measured, that reconstruction differs from the real file

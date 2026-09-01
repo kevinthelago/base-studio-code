@@ -292,7 +292,7 @@ export function exportedNames(rawSrc) {
  * promoted record's import cannot resolve. A promotion tool that reads imports differently from the guard
  * is wrong in whichever direction it differs: more permissive and it packages a record that breaks the
  * suite; STRICTER and it silently refuses records that were always fine, which is what happened —
- * `promote-records.mjs` had its own loose regex and blocked 170 modules on two false positives:
+ * `bsc ui promote-seed` had its own loose regex and blocked 170 modules on two false positives:
  *
  *   `import type { AppStore } from "@/store/types"` — erases at compile time and emits NO require. A
  *   mixed `import { type A, B }` still requires, so only the whole-statement form is skipped.
@@ -403,7 +403,7 @@ export function stripComments(src) {
 /**
  * Should a promotion REPLACE the seed already sitting at its path?
  *
- * `promote-records.mjs` never overwrites a seed — seven curated ones were clobbered before that guard
+ * `bsc ui promote-seed` never overwrites a seed — seven curated ones were clobbered before that guard
  * existed. This is the one narrow inversion of it, and it is a rule rather than a judgement: the guard
  * protects a curated seed from a worse record, and here the seed is the WORSE copy. A record only
  * reaches the write loop once its body has been proven to match the file, so when the seed does not,
@@ -452,7 +452,7 @@ export function seedAdoption({ seedSrcText = "", seedProvides = null, recordSrcT
  *
  * The precondition for deleting anything. Importers keep writing `@/x/y`; once the file is gone the
  * only thing that can answer them is a shipped record. Two real failures came from nobody checking:
- * five modules retired while `promote-records` had SKIPPED their seed write (deleted, with the old
+ * five modules retired while `bsc ui promote-seed` had SKIPPED their seed write (deleted, with the old
  * derivative still shipping), and `pageheader` whose seed said `@/shared/ui/pages/PageHeader` against a
  * `pageHeader.tsx` file.
  *
@@ -477,7 +477,7 @@ export function seedAnswersSpecifier({ spec, seedProvides }) {
  * `seedAnswersSpecifier` asks whether anything will respond to `@/x/y`. That is necessary and NOT
  * sufficient: a seed record can answer the specifier while holding different code, and retiring the
  * file then ships the RECORD's behaviour under the file's name — silently, because it still compiles.
- * That is the BODY-DIFFERS hazard `promote-records` refuses to promote through, and the retire step had
+ * That is the BODY-DIFFERS hazard `bsc ui promote-seed` refuses to promote through, and the retire step had
  * no equivalent, so a divergent record that happened to be seeded sailed past.
  *
  * It cost ten test failures in one sweep: `Dialog`, `ModalCard`, `ModalScrim` and `a11y` are all
@@ -497,7 +497,7 @@ export function seedAnswersSpecifier({ spec, seedProvides }) {
  *  `.bsc-records/` and imported through the normal bundle resolution it is simply missing —
  *  "Cannot find package '@/components/algorithms-kit-graph'".
  *
- *  This is the real reason `promote-records.mjs` refuses `role: page` wholesale, and it is worth stating
+ *  This is the real reason `bsc ui promote-seed` refuses `role: page` wholesale, and it is worth stating
  *  as its own predicate: the refusal is not about pages being special, it is about this import form.
  *
  *  Learned the hard way — teaching `seedMatchesFile` that `@/components/glance-canvas` and

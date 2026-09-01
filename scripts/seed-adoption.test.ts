@@ -1,6 +1,6 @@
 // `seedAdoption` — the one case where a promotion is allowed to OVERWRITE an existing packaged seed.
 //
-// `promote-records.mjs` never overwrites a seed, because seven curated ones were clobbered before that
+// `bsc ui promote-seed` never overwrites a seed, because seven curated ones were clobbered before that
 // guard existed. This rule is its single inversion, so it is tested rather than trusted: the guard
 // protects a curated seed from a worse record, and adoption only fires when the seed is the worse copy.
 //

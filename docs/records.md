@@ -217,7 +217,7 @@ record wins and you adjudicate by hand:
 ```bash
 bsc ui refresh-seed [--apply] [--only <src-path>]
 bsc ui lift <src-relative-path>… [--apply]              # a .tsx → a module-shaped record
-node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
+bsc ui promote-seed [--apply] [--adopt-seed] [--limit N] [--only <path>]
 bsc ui retire <src-relative-path> [--dry]
 bsc ui shadow                                  # a catalogued page must become `file: null`
 bsc ui imports                                 # the RECORD half — `bsc ui retire` runs this too
@@ -310,7 +310,7 @@ A file may be deleted only once the thing that **ships** answers what its import
 of that are checked by `bsc ui retire`, and each was learned by shipping the bug first:
 
 - **The packaged SEED must provide the specifier**, matched EXACTLY, case included. Five modules were
-  retired while `promote-records` had printed `SKIPPED (a seed already occupies that path)` — deleted,
+  retired while `bsc ui promote-seed` had printed `SKIPPED (a seed already occupies that path)` — deleted,
   with the old derivative still shipping. And `pageheader`'s seed said `@/shared/ui/pages/PageHeader`
   against a `pageHeader.tsx` file: Windows resolves that case-insensitively, so tsc, `vite build` and the
   whole suite stayed green while a case-sensitive filesystem would have resolved to nothing.
