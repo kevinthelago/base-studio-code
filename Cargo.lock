@@ -953,6 +953,8 @@ dependencies = [
 name = "bsc-llm"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
  "futures-util",
  "regex",
  "reqwest 0.12.28",
