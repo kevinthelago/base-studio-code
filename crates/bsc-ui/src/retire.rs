@@ -253,6 +253,28 @@ pub fn rewrite_importers(
 }
 
 /// Does `rel_spec`, written inside `from_dir`, resolve to `target_base`?
+/// Delete the retired module — and NOTHING else. The colocated tests are passed in so this can REFUSE,
+/// rather than rely on the caller never asking: a retirement that takes the test with it trades executed
+/// coverage for stored coverage with the gate green either way, and that cost 31 assertions across two
+/// tranches before it was noticed. The test is kept and rewritten onto `@/…`, where it goes on testing
+/// the same behaviour — through the record instead of the file.
+pub fn delete_module(
+    repo: &std::path::Path,
+    self_rel: &str,
+    colocated: &[String],
+) -> Result<(), String> {
+    if colocated.iter().any(|c| c == self_rel) {
+        return Err(format!(
+            "retire: refusing to delete src/{self_rel} — it is a COLOCATED TEST, which is kept"
+        ));
+    }
+    let abs = repo.join("src").join(self_rel);
+    if abs.is_file() {
+        std::fs::remove_file(&abs).map_err(|e| format!("cannot delete {}: {e}", abs.display()))?;
+    }
+    Ok(())
+}
+
 /// A src-relative target path → the `rel` every other derivation is built from: extension off, and a
 /// leading `src/` off. Mirrors `rel` in the retired `scripts/retire-module.mjs`.
 pub fn normalize_target(target: &str) -> String {
@@ -505,6 +527,44 @@ mod tests {
         assert_eq!(colocated_tests(&files, "shared/lib/b"), vec!["shared/lib/b.spec.tsx".to_string()]);
         // A module with no colocated test is not an error — most have none.
         assert_eq!(colocated_tests(&files, "shared/lib/c"), Vec::<String>::new());
+    }
+
+    /// THE COLOCATED TEST SURVIVES. Asserted end to end — rewrite, then delete — because the guarantee
+    /// that matters is about the tree afterwards, not about which argument the caller happened to pass.
+    #[test]
+    fn retiring_a_module_keeps_and_rewires_its_colocated_test() {
+        let dir = std::env::temp_dir().join(format!("bsc-retire-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let src = dir.join("src/shared/lib");
+        std::fs::create_dir_all(&src).expect("mkdir");
+        std::fs::write(src.join("a.ts"), BODY).expect("write");
+        std::fs::write(src.join("a.test.ts"), "import { a } from \"./a\";\nexpect(a).toBe(1);\n")
+            .expect("write");
+
+        let files = vec!["shared/lib/a.ts".to_string(), "shared/lib/a.test.ts".to_string()];
+        let target = Target {
+            self_rel: "shared/lib/a.ts",
+            rel: "shared/lib/a",
+            specifier: "shared/lib/a",
+            spec: "@/shared/lib/a",
+        };
+        assert_eq!(rewrite_importers(&dir, &files, &target, false, |_| {}), 1);
+
+        let colocated = colocated_tests(&files, "shared/lib/a");
+        assert_eq!(colocated, vec!["shared/lib/a.test.ts".to_string()]);
+        delete_module(&dir, "shared/lib/a.ts", &colocated).expect("the module deletes");
+
+        assert!(!src.join("a.ts").exists(), "the retired module is gone");
+        assert!(src.join("a.test.ts").exists(), "ITS TEST MUST SURVIVE the retirement");
+        let t = std::fs::read_to_string(src.join("a.test.ts")).expect("read");
+        assert!(t.contains("\"@/shared/lib/a\""), "and now resolve through the record: {t}");
+        assert!(!t.contains("\"./a\""), "the relative import must be gone: {t}");
+
+        // And the refusal is real, not just unused: asked to delete the TEST, it says no.
+        let e = delete_module(&dir, "shared/lib/a.test.ts", &colocated).expect_err("must refuse");
+        assert!(e.contains("COLOCATED TEST"), "{e}");
+        assert!(src.join("a.test.ts").exists(), "a refused delete must not have deleted");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The CASE-MISMATCH branch. It is not a nicer "no record" — it is a record that resolves on Windows

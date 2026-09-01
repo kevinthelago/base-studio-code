@@ -3109,10 +3109,7 @@ fn cmd_retire(args: &[String]) -> Result<(), String> {
     if dry {
         bsc_util::emit_line(&format!("   would delete src/{self_rel}"));
     } else {
-        let abs = repo.join("src").join(&self_rel);
-        if abs.is_file() {
-            std::fs::remove_file(&abs).map_err(|e| format!("cannot delete {}: {e}", abs.display()))?;
-        }
+        crate::retire::delete_module(&repo, &self_rel, &colocated)?;
         bsc_util::emit_line(&format!("   deleted src/{self_rel}"));
     }
     Ok(())
