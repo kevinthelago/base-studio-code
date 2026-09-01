@@ -52,6 +52,23 @@ describe("planPromote", () => {
     expect(planPromote(state({ branch: "a-work-branch", behind: 9 })).reason).toBe("wrong-app-branch");
   });
 
+  /// The tree-moved check stays, and stays UNSOUND to weaken.
+  ///
+  /// Three consecutive promotes each gated clean and each was refused because the shared integration
+  /// tree moved mid-gate; `main` drifted from 8 commits behind to 22 during the attempts. The tempting
+  /// "fix" is to accept a tree that moved by COMPLETE merges and refuse only a half-merged one — but if
+  /// HEAD moves while the gate runs, the compiler and the test runner read files ACROSS the change, so
+  /// what got compiled is a mixture that exists in no commit whether or not both endpoints are clean.
+  /// The real fix is to gate somewhere that cannot move, which is what `gateTree` does; this pins that
+  /// the verdict is still refused whenever it DOES move.
+  it("treats any movement under the gate as untrustworthy, not just a dirty tree", () => {
+    expect(gateTreeMoved("aaa", "bbb").moved).toBe(true);
+    expect(gateTreeMoved("aaa", "aaa").moved).toBe(false);
+    // Unreadable is moved: not knowing whether it moved is not the same as knowing it did not.
+    expect(gateTreeMoved(null, "aaa").moved).toBe(true);
+    expect(gateTreeMoved("aaa", null).moved).toBe(true);
+  });
+
   /// Opting out is explicit, so a caller that legitimately promotes another ref still can.
   it("allows any branch when appBranch is null", () => {
     expect(planPromote(state({ branch: "a-work-branch", behind: 3, appBranch: null })).action).toBe("promote");

@@ -61,6 +61,9 @@ function mainWorktree(from) {
  *  guard, the refusal text and the distance report cannot disagree about which ref they mean. */
 const APP_BRANCH = "main";
 
+/** The dedicated, detached worktree the gate runs in — see [`gateTree`]. */
+const GATE_TREE = "wt-promote-gate";
+
 const REPO_ROOT = mainWorktree(dirname(dirname(fileURLToPath(import.meta.url))));
 
 function git(args, opts = {}) {
@@ -215,11 +218,27 @@ function main() {
       .join("\n"),
   );
 
+  // THE COMMIT THIS PROMOTE IS ABOUT, pinned before anything is verified.
+  //
+  // Everything below gates and fast-forwards to THIS sha, never to `develop` as it stands later. The
+  // gate used to run in the SHARED integration tree and then fast-forward to whatever develop had
+  // become — so a fleet that integrates every few minutes invalidated a 4-minute gate almost every
+  // time. MEASURED 2026-09-01: three consecutive promotes each gated CLEAN and each was refused for
+  // "HEAD moved while it ran", and `main` drifted from 8 commits behind to 22 during the attempts.
+  //
+  // The refusal was right — if HEAD moves mid-gate the compiler and the test runner read files ACROSS
+  // the change, so the state actually compiled is a mixture that exists in no commit, whether or not
+  // both endpoints are clean. Cleanliness at the end says nothing about what was read in the middle,
+  // which is why narrowing the check to "moved vs half-merged" is unsound and was rejected.
+  const pinned = git(["rev-parse", "develop"]);
+
   if (!opts.skipGate) {
-    console.log(`[promote-app] running the FULL gate on develop before promoting…`);
-    const tree = integrationTree();
+    console.log(`[promote-app] running the FULL gate on develop@${pinned.slice(0, 9)} before promoting…`);
+    const tree = gateTree(pinned);
     const startedAt = Date.now();
-    // HEAD of the SHARED integration tree, read either side of the gate — see `gateTreeMoved`.
+    // Still read either side — see `gateTreeMoved`. In a tree nobody else writes to this is now an
+    // INVARIANT rather than a coin flip, and if it ever fires it means something genuinely unexpected
+    // touched the gate tree rather than "the fleet was busy".
     const headBefore = headOf(tree);
     let gateFailed = false;
     try {
@@ -260,14 +279,17 @@ function main() {
   }
 
   if (opts.dryRun) {
-    console.log(`[promote-app] --dry-run: would fast-forward ${branch} to develop.`);
+    console.log(`[promote-app] --dry-run: would fast-forward ${branch} to develop@${pinned.slice(0, 9)}.`);
     return;
   }
 
   // BSC_PROMOTE is the ONE sanctioned hole in the ref guard (scripts/guard-policy.mjs): moving the
   // app's ref is refused everywhere else, so this announces itself explicitly rather than being
   // sniffed for.
-  git(["merge", "--ff-only", "develop"], { env: { ...process.env, BSC_PROMOTE: "1" } });
+  // TO THE PINNED SHA, not to `develop`. develop may well have moved during the gate — that is normal
+  // and fine — but what was verified is this commit, so this is what lands. Anything newer waits for
+  // the next promote, which is the honest trade: `main` moves to something that was actually gated.
+  git(["merge", "--ff-only", pinned], { env: { ...process.env, BSC_PROMOTE: "1" } });
   console.log(`[promote-app] ${branch} → ${git(["rev-parse", "--short", branch])}`);
   console.log(
     appIsRunning()
@@ -308,6 +330,48 @@ function integrationTree() {
     else if (line === "branch refs/heads/develop" && path) return path;
   }
   return REPO_ROOT;
+}
+
+/** A worktree holding EXACTLY `sha`, that no other session writes to — where the gate can run without
+ *  the ground moving under it.
+ *
+ *  WHY NOT `wt-integrate`, which is where this used to gate. That is the ONE tree every session merges
+ *  into, so a 4-minute gate there is racing every integration on the box; measured cadence was a merge
+ *  every 2-8 minutes, which made a clean promote a coin flip. Nothing about promoting NEEDS that tree —
+ *  merging develop into main takes only the ref, as this file's header says. It was borrowed purely
+ *  because `gate-tree-guard` refuses a second cargo over the root's `target/`, and any other worktree
+ *  satisfies that just as well.
+ *
+ *  DETACHED at `sha` on purpose: this tree holds no branch, so it can never be mistaken for somewhere
+ *  work belongs, and checking out a sha cannot disturb a ref another session is using. It is created on
+ *  first use and KEPT — its `target/` is the expensive part (~2 min cold, seconds warm), so throwing it
+ *  away would make every promote pay for a cold build.
+ *
+ *  Refuses a dirty gate tree rather than gating over somebody's edits — if that fires, something is
+ *  using this directory for work, which it is not for. */
+function gateTree(sha) {
+  const path = join(REPO_ROOT, GATE_TREE);
+  const exists = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: REPO_ROOT, encoding: "utf8" })
+    .split(/\r?\n/)
+    .some((l) => l === `worktree ${path}`);
+  if (!exists) {
+    console.log(`[promote-app] creating the gate worktree ${GATE_TREE} (first use builds its target/, ~2 min)`);
+    execFileSync("git", ["worktree", "add", "--detach", path, sha], { cwd: REPO_ROOT, stdio: "inherit" });
+    return path;
+  }
+  const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: path, encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean);
+  if (dirty.length) {
+    fail(
+      `the gate worktree ${GATE_TREE} has uncommitted changes, so gating there would verify something\n` +
+        `  other than develop@${sha.slice(0, 9)}:\n` +
+        dirty.map((l) => `    ${l}`).join("\n") +
+        `\n  It exists only to run the gate. Clean it, or remove it with \`git worktree remove ${GATE_TREE}\`.`,
+    );
+  }
+  execFileSync("git", ["checkout", "--detach", sha], { cwd: path, stdio: "ignore" });
+  return path;
 }
 
 /** HEAD of `tree`, or null when it cannot be read — which `gateTreeMoved` treats as moved. */
