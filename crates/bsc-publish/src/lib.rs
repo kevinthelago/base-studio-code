@@ -165,8 +165,26 @@ pub fn publish_repositories(
 
 // ── 2. Project board — reuse an existing board or create one, then link the repos ──
 
-/// Ensure a ProjectV2 board exists and every repo is linked to it. `existing` short-circuits to a
-/// board already recorded for the project.
+/// Ensure a ProjectV2 board exists and every repo is linked to it.
+///
+/// THREE OUTCOMES, not two. `existing` short-circuits to a board already recorded for the project;
+/// otherwise the owner's boards are fetched and one with the same TITLE is ADOPTED; only when none
+/// matches is a board created. Every outcome then runs the same repo-linking step below.
+///
+/// The adopt step is new (`the-publish-path-adopts-an-existing-board`) and it FIXES a defect rather
+/// than preserving behaviour. This resolved two ways before — recorded id, else create — and its
+/// GraphQL asked `repositoryOwner(login){ id }` and nothing else, so it could not adopt even in
+/// principle. That is the bug #444 fixed on the frontend path, whose own header records it: creation
+/// "used to fire blindly and mint a *second* board on every re-sync of a same-titled project". A
+/// publish through `bsc publish run` could therefore duplicate a board the app-side publish adopted.
+///
+/// The title match is [`board_choice::find_board_by_title`], the shared rule parity-proved against the
+/// TypeScript — trimmed, case-folded, blank matches nothing, first match wins.
+///
+/// Note what is deliberately NOT restructured: the `existing` short-circuit stays OUTSIDE the query,
+/// so an already-linked publish still costs no round trip. Routing that arm through
+/// [`board_choice::choose_board`] would read more uniformly and would fetch the owner's boards on
+/// every publish to answer a question already settled.
 pub fn ensure_project_board(
     api: &dyn GhApi,
     existing: Option<&str>,
@@ -191,13 +209,15 @@ pub fn ensure_project_board(
                 report.push(Outcome::new("project", Status::Error, "no owner to create project under"));
                 return None;
             }
+            // ONE round trip for the owner id AND its boards — the same shape the TypeScript uses, and
+            // the reason it can adopt where this could not.
             let owner = api.gql(
-                "query($login:String!){ repositoryOwner(login:$login){ id } }",
+                "query($login:String!){ repositoryOwner(login:$login){ id projectsV2(first:100){ nodes { id number url title } } } }",
                 serde_json::json!({ "login": owner_login }),
             );
-            let owner_id = owner
-                .ok()
-                .and_then(|v| v.get("repositoryOwner")?.get("id")?.as_str().map(str::to_string));
+            let owner = owner.ok();
+            let owner_node = owner.as_ref().and_then(|v| v.get("repositoryOwner"));
+            let owner_id = owner_node.and_then(|o| o.get("id")).and_then(|i| i.as_str()).map(str::to_string);
             let Some(owner_id) = owner_id else {
                 report.push(Outcome::new(
                     "project",
@@ -206,6 +226,34 @@ pub fn ensure_project_board(
                 ));
                 return None;
             };
+
+            // ADOPT before creating. A board already carrying this title is the one this project
+            // meant, and minting a second is the defect this closes. A missing/blank field degrades to
+            // a harmless default rather than dropping the board: a node without a `url` is still a
+            // board, and refusing to see it would resurrect the duplicate.
+            let boards: Vec<board_choice::BoardRef> = owner_node
+                .and_then(|o| o.get("projectsV2"))
+                .and_then(|p| p.get("nodes"))
+                .and_then(|n| n.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|b| {
+                            Some(board_choice::BoardRef {
+                                id: b.get("id")?.as_str()?.to_string(),
+                                number: b.get("number").and_then(|n| n.as_i64()).unwrap_or(0),
+                                url: b.get("url").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
+                                title: b.get("title").and_then(|t| t.as_str()).unwrap_or_default().to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if let Some(found) = board_choice::find_board_by_title(&boards, title) {
+                report.push(Outcome::new("project", Status::Exists, format!("#{} adopted", found.number)));
+                // Falls through to the shared repo-linking step below, exactly as create does.
+                Some(found.id.clone())
+            } else {
             let created = api.gql(
                 "mutation($ownerId:ID!,$title:String!){
                      createProjectV2(input:{ownerId:$ownerId,title:$title}){ projectV2 { id number url } }
@@ -235,6 +283,7 @@ pub fn ensure_project_board(
                     report.push(Outcome::new("project", Status::Error, e));
                     None
                 }
+            }
             }
         }
     };
