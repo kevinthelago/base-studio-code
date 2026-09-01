@@ -11,6 +11,7 @@ pub mod role_gate;
 pub mod profile_settings;
 pub mod denies;
 pub mod write_scope;
+pub mod agent_perms;
 pub mod settings;
 pub mod sandbox;
 pub mod llm;

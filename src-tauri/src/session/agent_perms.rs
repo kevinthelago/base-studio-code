@@ -1,0 +1,315 @@
+//! `bsc-agent`'s native permission document — the least-privilege gate on the model-agnostic harness.
+//!
+//! # The inversion, on the harness the local-model track depends on
+//!
+//! There is no `.claude/settings.json` on the `bsc-agent` path, so `$BSC_AGENT_PERMS` IS the gate:
+//! deny whole tools, deny `bash` by substring, and restrict `write_file`/`edit_file` to a glob set.
+//! `crates/bsc-agent/src/main.rs` calls `Permissions::from_env()` and enforces the result on every tool
+//! call. That runtime is Rust, and it could not compute the document it enforces.
+//!
+//! # The three fields
+//!
+//! * `deny_tools` — `["write_file", "edit_file"]` for a `code: none` role WITHOUT a scoped carve-out.
+//!   A carve-out role (#851) is `code: none` yet keeps its write tools, scoped by `write_globs`.
+//! * `deny_bash` — the role's denies minus the pushes the pane's flow grants back (#304), UNIONED with
+//!   the user's global denylist. The user's list rides in HERE because bsc-agent has no settings file
+//!   for it to ride in on; entries are trimmed and empties dropped. That is the half a port most easily
+//!   loses, because it is the only one that is not derived from the role.
+//! * `write_globs` — the capability's globs for `code: write` or a carve-out; empty otherwise. Empty
+//!   means NO restriction in the runtime, which is why a restricted role must get its denial from
+//!   `deny_tools` rather than from an empty glob list.
+//!
+//! # What is deliberately NOT here
+//!
+//! The catastrophic floor — `sudo`, `rm -rf /`, force-push — is always-on inside the runtime via
+//! `bsc_util::dangerous`, so an empty or missing document cannot drop it. Rendering it here as well
+//! would make an empty doc *look* sufficient and invite a future edit to treat this as the floor.
+//! `the_catastrophic_floor_is_not_rendered_here` asserts its absence.
+//!
+//! # A known asymmetry this module REPRODUCES rather than fixes
+//!
+//! The surface complement is absent. `role_denied_commands` takes the catalog of deniable `bsc`
+//! surfaces and denies every one the role did not declare; the Claude path passes the real catalog,
+//! while the TypeScript this is ported from calls its equivalent with the argument DEFAULTED to empty.
+//! Measured, a `designer` is denied `bsc plan`, `bsc skill`, `bsc graph` and `bsc org` on Claude and
+//! none of them here. That is reproduced deliberately for parity and filed as
+//! `a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`; fixing it here alone would put
+//! the two harnesses back out of step in the other direction.
+
+// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
+#![allow(dead_code)] // wired by `the-launch-renders-its-own-agent-perms-instead-of-receiving-them`
+
+use super::role_gate::{has_scoped_write_carve_out, role_denied_commands, RoleCapability, Tier};
+
+/// The document `bsc-agent` deserializes from `$BSC_AGENT_PERMS`.
+///
+/// SNAKE_CASE, matching the consumer's `Permissions` struct field-for-field — the names are the wire
+/// contract, and `the_field_names_match_the_consumer` checks them against that struct's own source
+/// rather than trusting this comment.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BscAgentPerms {
+    #[serde(default)]
+    pub deny_tools: Vec<String>,
+    #[serde(default)]
+    pub deny_bash: Vec<String>,
+    #[serde(default)]
+    pub write_globs: Vec<String>,
+}
+
+/// The tools a session that may not write must not reach.
+const WRITE_TOOLS: &[&str] = &["write_file", "edit_file"];
+
+/// Render a capability into the permission document.
+///
+/// `cap` is `None` for a role-less ad-hoc console — then only `extra_deny_bash` applies, which is the
+/// case that must not accidentally render an empty-but-restrictive doc.
+///
+/// `granted` are the flow's push commands ([`super::denies::flow_granted_push_commands`]); `role_denied_commands`
+/// is called with an EMPTY surface catalog, reproducing the source — see the module docs.
+pub fn bsc_agent_perms(
+    cap: Option<&RoleCapability>,
+    granted: &[String],
+    extra_deny_bash: &[String],
+) -> BscAgentPerms {
+    let carve_out = cap.map(has_scoped_write_carve_out).unwrap_or(false);
+
+    let mut deny_bash: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let role_denies = cap.map(|c| role_denied_commands(c, &[])).unwrap_or_default();
+    for d in role_denies.into_iter().filter(|d| !granted.contains(d)) {
+        // The `seen` set exists for the CROSS-SOURCE dedupe below, not for this loop:
+        // `role_denied_commands` already returns a de-duplicated list, so the guard here changes no
+        // outcome and removing it leaves the parity green. What matters is that `seen` ends up
+        // POPULATED with the role denies, so a user denylist entry repeating one is dropped rather
+        // than rendered twice.
+        if seen.insert(d.clone()) {
+            deny_bash.push(d);
+        }
+    }
+    // The user's global denylist, trimmed with empties dropped — a blank line in the settings field
+    // would otherwise become a substring that matches EVERY command.
+    for raw in extra_deny_bash {
+        let t = raw.trim();
+        if !t.is_empty() && seen.insert(t.to_string()) {
+            deny_bash.push(t.to_string());
+        }
+    }
+
+    let restricted = cap.map(|c| c.code == Tier::None).unwrap_or(false) && !carve_out;
+    let writes = cap
+        .filter(|c| c.code == Tier::Write || carve_out)
+        .map(|c| c.write_globs.clone())
+        .unwrap_or_default();
+
+    BscAgentPerms {
+        deny_tools: if restricted { WRITE_TOOLS.iter().map(|s| s.to_string()).collect() } else { Vec::new() },
+        deny_bash,
+        write_globs: writes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn find_named(name: &str, from: &std::path::Path) -> std::path::PathBuf {
+        fn walk(dir: &std::path::Path, name: &str, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, name, out);
+                } else if p.file_name().and_then(|n| n.to_str()) == Some(name) {
+                    out.push(p);
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(from, name, &mut found);
+        assert_eq!(found.len(), 1, "expected one {name}, got {found:?}");
+        found.pop().unwrap()
+    }
+
+    fn fixture() -> serde_json::Value {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let p = find_named("bscAgentPerms.fixtures.json", &root);
+        serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    }
+
+    fn strings(v: &serde_json::Value) -> Vec<String> {
+        v.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect()
+    }
+
+    /// Reports every mismatch at once — a wrong port is usually wrong in a pattern.
+    #[test]
+    fn the_rendered_doc_matches_the_typescript_case_for_case() {
+        let doc = fixture();
+        let cases = doc["cases"].as_array().expect("cases");
+        assert!(cases.len() >= 25, "fixture shrank to {} cases — regenerate it", cases.len());
+
+        let (mut denied_tools, mut with_globs, mut roleless) = (0usize, 0usize, 0usize);
+        let mut mismatches = Vec::new();
+        for case in cases {
+            let label = case["label"].as_str().unwrap();
+            let cap: Option<RoleCapability> = match &case["capability"] {
+                serde_json::Value::Null => None,
+                v => Some(serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{label}: {e}"))),
+            };
+            if cap.is_none() {
+                roleless += 1;
+            }
+            let want: BscAgentPerms = serde_json::from_value(case["perms"].clone())
+                .unwrap_or_else(|e| panic!("{label}: perms did not deserialize: {e}"));
+            if !want.deny_tools.is_empty() {
+                denied_tools += 1;
+            }
+            if !want.write_globs.is_empty() {
+                with_globs += 1;
+            }
+
+            let got = bsc_agent_perms(cap.as_ref(), &strings(&case["granted"]), &strings(&case["extraDenyBash"]));
+            if got != want {
+                mismatches.push(format!("  {label}\n    ts   {want:?}\n    rust {got:?}"));
+            }
+        }
+        assert!(denied_tools >= 3, "only {denied_tools} cases denied the write tools");
+        assert!(with_globs >= 5, "only {with_globs} cases produced write globs");
+        assert!(roleless >= 1, "the role-less ad-hoc console case is missing");
+        assert!(
+            mismatches.is_empty(),
+            "the Rust rendering disagrees with the live TypeScript on {} of {} cases:\n{}",
+            mismatches.len(),
+            cases.len(),
+            mismatches.join("\n")
+        );
+    }
+
+    /// THE FIELD NAMES ARE THE WIRE CONTRACT, checked against the CONSUMER'S OWN SOURCE.
+    ///
+    /// `bsc-agent` is a bin-only crate, so its `Permissions` struct cannot be linked and round-tripped
+    /// here. Reading its source out of the graph store is the stronger check anyway: it fails if either
+    /// side renames a field, which a locally-declared mirror struct could never notice.
+    #[test]
+    fn the_field_names_match_the_consumer() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let store: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(repo.join("graph/algorithms.json")).unwrap()).unwrap();
+        let record = store["implementations"]
+            .as_array()
+            .expect("implementations")
+            .iter()
+            .find(|n| n["id"] == "bsc-agent--permissions.rs")
+            .expect("the consumer's permissions record is missing from the graph store");
+        let src = record["code"].as_str().unwrap();
+
+        let rendered = serde_json::to_value(bsc_agent_perms(None, &[], &["curl".to_string()])).unwrap();
+        for key in rendered.as_object().unwrap().keys() {
+            assert!(
+                src.contains(&format!("pub {key}:")),
+                "the rendered doc carries `{key}`, which the consumer's Permissions struct does not declare"
+            );
+        }
+        // And the consumer's own serde-visible fields must all be renderable, or we are shipping a doc
+        // that silently under-specifies the gate.
+        for field in ["deny_tools", "deny_bash", "write_globs"] {
+            assert!(src.contains(&format!("pub {field}:")), "consumer lost `{field}`");
+            assert!(rendered.get(field).is_some(), "the rendering lost `{field}`");
+        }
+    }
+
+    /// The floor lives in the RUNTIME, not in this document. Rendering it here would make an empty doc
+    /// look sufficient, and invite a future edit to treat this as the floor it is not.
+    #[test]
+    fn the_catastrophic_floor_is_not_rendered_here() {
+        let doc = fixture();
+        for case in doc["cases"].as_array().unwrap() {
+            for d in strings(&case["perms"]["deny_bash"]) {
+                assert!(
+                    !d.contains("sudo") && !d.contains("rm -rf"),
+                    "{}: the catastrophic floor leaked into the doc via {d:?}",
+                    case["label"]
+                );
+            }
+        }
+    }
+
+    fn cap(role: &str, code: &str, globs: &[&str]) -> RoleCapability {
+        serde_json::from_value(serde_json::json!({
+            "role": role, "git": "none", "github": "none", "net": "none", "code": code,
+            "writeGlobs": globs, "ui": "read"
+        }))
+        .unwrap()
+    }
+
+    /// A role-less console renders ONLY the user's denylist — it must not accidentally restrict.
+    #[test]
+    fn a_roleless_console_renders_only_the_user_denylist() {
+        let bare = bsc_agent_perms(None, &[], &[]);
+        assert_eq!(bare, BscAgentPerms { deny_tools: vec![], deny_bash: vec![], write_globs: vec![] });
+        let with_user = bsc_agent_perms(None, &[], &["curl".to_string(), "  wget  ".to_string()]);
+        assert_eq!(with_user.deny_bash, vec!["curl", "wget"], "trimmed");
+        assert!(with_user.deny_tools.is_empty(), "no capability must never deny the write tools");
+    }
+
+    /// A blank denylist entry must never become a substring that matches every command.
+    #[test]
+    fn blank_user_denylist_entries_are_dropped_not_rendered() {
+        let p = bsc_agent_perms(None, &[], &["".into(), "   ".into(), "\t\n".into(), "curl".into()]);
+        assert_eq!(p.deny_bash, vec!["curl"], "a blank substring would deny EVERYTHING");
+    }
+
+    /// `code: none` denies the write tools; a carve-out role is `code: none` and keeps them, scoped.
+    #[test]
+    fn the_carve_out_keeps_its_write_tools_while_a_plain_restricted_role_loses_them() {
+        let plain = bsc_agent_perms(Some(&cap("triage", "none", &[])), &[], &[]);
+        assert_eq!(plain.deny_tools, vec!["write_file", "edit_file"]);
+        assert!(plain.write_globs.is_empty(), "an empty glob list means NO restriction in the runtime");
+
+        let carve = bsc_agent_perms(Some(&cap("designer", "none", &["scratch/**"])), &[], &[]);
+        assert!(carve.deny_tools.is_empty(), "a carve-out role keeps its write tools");
+        assert_eq!(carve.write_globs, vec!["scratch/**"], "scoped by its globs instead");
+    }
+
+    /// Globs handed to a restricted role WITHOUT a carve-out grant nothing — the same narrowing-only
+    /// rule the write-scope env enforces.
+    #[test]
+    fn globs_given_to_a_non_carve_out_restricted_role_grant_nothing() {
+        let p = bsc_agent_perms(Some(&cap("triage", "none", &["src/**"])), &[], &[]);
+        assert!(p.write_globs.is_empty(), "supplying a scope must narrow, never widen");
+        assert_eq!(p.deny_tools, vec!["write_file", "edit_file"]);
+    }
+
+    /// The de-duplication is across BOTH sources: a user deny that repeats a role deny appears once.
+    #[test]
+    fn a_user_deny_duplicating_a_role_deny_appears_once() {
+        let c = cap("worker", "write", &[]);
+        let role_only = bsc_agent_perms(Some(&c), &[], &[]);
+        let dup = role_only.deny_bash.first().cloned().expect("a worker denies something");
+        let with_dup = bsc_agent_perms(Some(&c), &[], std::slice::from_ref(&dup));
+        assert_eq!(with_dup.deny_bash.len(), role_only.deny_bash.len(), "{dup:?} was rendered twice");
+    }
+
+    /// The documented asymmetry, pinned so it cannot change unnoticed: this rendering passes an EMPTY
+    /// surface catalog, so no `bsc <surface>` complement denies appear. Filed as
+    /// `a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`; this test is what will go red
+    /// when that item fixes it, which is the point of writing it down rather than leaving it implicit.
+    #[test]
+    fn the_surface_complement_is_absent_reproducing_the_typescript() {
+        let c: RoleCapability = serde_json::from_value(serde_json::json!({
+            "role": "designer", "git": "none", "github": "none", "net": "none", "code": "none",
+            "writeGlobs": ["scratch/**"], "ui": "write", "surfaces": ["ui"]
+        }))
+        .unwrap();
+        let rendered = bsc_agent_perms(Some(&c), &[], &[]);
+        // With a real catalog the role gate WOULD deny the undeclared surfaces; here it denies none.
+        let with_catalog = role_denied_commands(&c, &["plan".to_string(), "skill".to_string()]);
+        assert!(
+            with_catalog.contains(&"bsc plan".to_string()),
+            "the role gate does produce a surface complement when given a catalog"
+        );
+        assert!(
+            !rendered.deny_bash.contains(&"bsc plan".to_string()),
+            "and this rendering deliberately does not — see the module docs"
+        );
+    }
+}
