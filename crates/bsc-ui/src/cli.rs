@@ -421,6 +421,37 @@ so writing the store here would be a second, racier path to the same place. IMPL
 record — and through a serializer pinned to round-trip that file byte for byte.",
     },
     CmdDoc {
+        name: "promote-seed",
+        summary: "promote a live store record into the PACKAGED SEED — the step that makes its file retirable (#records)",
+        usage: "\
+USAGE:
+  bsc ui promote-seed [--apply] [--limit N] [--only <path>] [--adopt-seed] [--allow-drop <id,…>] [--repo <dir>]
+
+`emit-records` materializes a retired module from the SEED, never from the store — the seed is what
+ships, the store is a per-machine working copy. So a module whose record exists only in the store cannot
+be retired however good that record is. This is the step that moves it. Dry run by default.
+
+ONLY a record whose CODE already matches its file, compared through the same module the census uses, so
+the two can never disagree about which files are safe.
+
+EIGHT REFUSALS: already seeded · no record · the record is NOT the same module as the file (promoting
+would ship the record's behaviour under the file's name, silently, since it still compiles) ·
+`import.meta.glob` (a VITE build-time transform the record would throw on) · a `role: page` not
+catalogued in shadowPages · an import nothing resolves · it does not compile AS TSX (the loader uses
+esbuild's tsx loader, and TSX is not a superset of TS) · its `composes` does not close.
+
+TWO FIXED POINTS, because both questions are circular: resolvability is judged against what the PACKAGE
+will hold once the run lands, and dropping one impl can dangle another that composed it.
+
+`--adopt-seed` replaces a STALE seed with the store record — the narrow inverse of the never-overwrite
+guard, for when the seed is BEHIND the file while the record IS the file. `--allow-drop <id,…>` overrides
+the export-loss refusal for exactly the named records, so the drop is reviewable in the command that
+caused it.
+
+REQUIRES `npx esbuild` for the TSX check. If it cannot run, the records are reported as UNVERIFIED for
+compilability rather than passed silently.",
+    },
+    CmdDoc {
         name: "retire",
         summary: "delete a module whose packaged record replaces it — refusals first (#records)",
         usage: "\
@@ -3039,6 +3070,42 @@ fn relative_specifier_summary(dir: &Option<String>) -> Result<(usize, usize, usi
     Ok((records.len(), findings, ids.len()))
 }
 
+
+
+/// EVERY DISPATCHED VERB MUST BE DISCOVERABLE. Read from the SOURCE rather than a hand-kept list, so it
+/// cannot drift from the dispatch it describes.
+#[cfg(test)]
+mod discoverability {
+    /// `bsc ui promote-seed` shipped WORKING AND UNLISTED through a full green gate, which is precisely
+    /// the failure this whole surface exists to fix — a capability found by reading the source is not a
+    /// surface. `bsc-component` has this guard for its own docs; `bsc-ui` had none, so nothing was
+    /// watching the verbs added here.
+    #[test]
+    fn every_dispatched_verb_has_a_help_entry() {
+        let src = include_str!("cli.rs");
+        let body = src
+            .split_once("pub fn run(args: Vec<String>, prog: &str)")
+            .expect("the dispatch function")
+            .1;
+        let re = regex::Regex::new(r#"(?m)^\s+Some\("([a-z][a-z0-9-]*)"\) => cmd_"#).expect("arms");
+        let dispatched: Vec<String> =
+            re.captures_iter(body).map(|c| c[1].to_string()).collect();
+        assert!(
+            dispatched.len() > 20,
+            "the dispatch scan found only {} verbs — the match block moved and this guard went blind",
+            dispatched.len()
+        );
+
+        let documented: std::collections::HashSet<&str> =
+            super::merged_commands().iter().map(|c| c.name).collect();
+        let missing: Vec<&String> =
+            dispatched.iter().filter(|v| !documented.contains(v.as_str())).collect();
+        assert!(
+            missing.is_empty(),
+            "these verbs dispatch but are absent from `bsc ui help`, so nothing advertises them: {missing:?}"
+        );
+    }
+}
 
 /// `bsc ui promote-seed [--apply] …` — promote a live store record into the PACKAGED SEED, the step that
 /// makes its file retirable. Ports `scripts/promote-records.mjs`, which it replaces.
