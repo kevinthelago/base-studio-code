@@ -30,6 +30,7 @@ pub mod kit;
 /// with no test-harvesting knowledge of its own.
 pub mod claim_census;
 pub mod record_source;
+pub mod retirable;
 #[cfg(test)]
 pub mod test_store;
 pub mod seed_patch;

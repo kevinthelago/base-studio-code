@@ -456,23 +456,20 @@ pub fn entries_importing_statically(
     exists: &dyn Fn(&str) -> bool,
 ) -> Vec<String> {
     const ENTRIES: [&str; 2] = ["app/main.tsx", "app/App.tsx"];
-    let needle_a = format!("\"@/{rel_specifier}\"");
-    let needle_b = format!("'@/{rel_specifier}'");
+    // Mirrors the JS `^\s*import\s+[^;]*from\s+["']@/<spec>["']` exactly. The `[^;]*` bars a semicolon
+    // BEFORE `from` — it does NOT bar the trailing one every real import line ends with, which is the
+    // distinction a hand-rolled predicate got wrong: rejecting any line containing `;` matched nothing
+    // in the actual tree, and the census then offered `ConsoleGraphHost` — the very module retired and
+    // restored because `App.tsx` imports it statically.
+    let pattern = format!(
+        r#"(?m)^\s*import\s+[^;]*from\s+["']@/{}["']"#,
+        regex::escape(rel_specifier)
+    );
+    let Ok(re) = regex::Regex::new(&pattern) else { return Vec::new() };
     ENTRIES
         .iter()
         .filter(|e| exists(&format!("{repo}/src/{e}")))
-        .filter(|e| {
-            let body = read(&format!("{repo}/src/{e}"));
-            body.split('\n').any(|line| {
-                let t = line.trim_start();
-                // `^\s*import\s+[^;]*from\s+["']@/<spec>["']` — line-anchored, so a comment continuation
-                // cannot match, and the specifier must be the WHOLE quoted string.
-                t.strip_prefix("import").is_some_and(|r| r.starts_with(char::is_whitespace))
-                    && !t.contains(';')
-                    && t.contains(" from ")
-                    && (t.ends_with(&needle_a) || t.ends_with(&needle_b))
-            })
-        })
+        .filter(|e| re.is_match(&read(&format!("{repo}/src/{e}"))))
         .map(|e| (*e).to_string())
         .collect()
 }

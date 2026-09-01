@@ -403,6 +403,25 @@
       "importedBy": []
     },
     {
+      "label": "a REAL import line, semicolon and all",
+      "relSpecifier": "app/console/ConsoleGraphHost",
+      "files": {
+        "app/main.tsx": "export const m = 1;\n",
+        "app/App.tsx": "import { ConsoleGraphHost } from \"@/app/console/ConsoleGraphHost\";\nexport const App = 1;\n"
+      },
+      "importedBy": [
+        "app/App.tsx"
+      ]
+    },
+    {
+      "label": "a semicolon BEFORE `from` is not a match",
+      "relSpecifier": "shared/ui/Card",
+      "files": {
+        "app/main.tsx": "const a = 1; import { Card } from \"@/shared/ui/Card\";\n"
+      },
+      "importedBy": []
+    },
+    {
       "label": "a missing entry file is skipped, not an error",
       "relSpecifier": "shared/ui/Card",
       "files": {

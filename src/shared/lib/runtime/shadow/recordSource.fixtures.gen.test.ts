@@ -142,6 +142,21 @@ const ENTRY_CASES: Array<[string, string, Record<string, string>]> = [
     { "app/main.tsx": '// see "@/app/console/TerminalHost" for why\nexport const m = 1;\n', "app/App.tsx": "export const App = 1;\n" },
   ],
   [
+    // EVERY REAL IMPORT LINE ENDS WITH A SEMICOLON, and the first corpus had none — which let a port
+    // that rejected any line containing `;` pass while matching nothing in the actual tree. The census
+    // then offered `ConsoleGraphHost`, the module retired and restored because `App.tsx` imports it.
+    "a REAL import line, semicolon and all",
+    "app/console/ConsoleGraphHost",
+    { "app/main.tsx": 'export const m = 1;\n', "app/App.tsx": 'import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";\nexport const App = 1;\n' },
+  ],
+  [
+    // The `[^;]*` bars a semicolon BEFORE `from`, so a preceding statement on the same line does not
+    // make the next one an entry import.
+    "a semicolon BEFORE `from` is not a match",
+    "shared/ui/Card",
+    { "app/main.tsx": 'const a = 1; import { Card } from "@/shared/ui/Card";\n' },
+  ],
+  [
     "a missing entry file is skipped, not an error",
     "shared/ui/Card",
     { "app/main.tsx": 'import { Card } from "@/shared/ui/Card"\n' },

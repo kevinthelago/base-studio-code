@@ -354,6 +354,39 @@ the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than
 { dir, synced, upToDate, diverged, unknown }.",
     },
     CmdDoc {
+        name: "retirable",
+        summary: "which files a packaged seed can replace — the retirement census (#records)",
+        usage: "\
+USAGE:
+  bsc ui retirable [--all] [--repo <dir>]
+
+A file is retirable when a packaged seed `provides` its specifier with real source: `emit-records`
+materializes that seed into `.bsc-records/` the moment the file is gone, and all four resolvers find it
+there. That much is mechanical.
+
+WHAT IS NOT is why this exists. A seed's `srcText` is a PROJECTION of the file taken at migration time,
+and the two drift. Retiring a file whose seed has fallen behind does not MOVE the module — it REPLACES
+it with an older copy, silently, and the gate stays green because the older copy still compiles.
+
+FOUR VERDICTS, and the order is the judgement:
+  same          byte-identical to the file once the seed's preamble is off — safe
+  reformatted   identical CODE; only comments and whitespace differ — safe
+  BREAKS        the seed is missing an EXPORT other modules import; outranks `reformatted` so a
+                formatting match can never hide a broken one
+  BODY-DIFFERS  the code itself differs, so retiring ships the RECORD's behaviour under the file's name
+
+Only the first two are safe without refreshing the seed first, and the unsafe ones are HIDDEN unless
+`--all` — the list is a worklist, not a report.
+
+A module an app ENTRY imports statically is skipped entirely, however good its record is: the dev
+server resolves the alias before the records plugin is installed, so it must exist as a file. That rule
+is shared with the retirement tool, so this cannot offer what the tool would refuse.
+
+`[+test]` marks a colocated test — a thing to KEEP, never to delete alongside the file. Nothing in the
+default gate runs a record's carried tests, so deleting the colocated file trades executed coverage for
+stored coverage with everything still green; it cost 31 assertions before anyone noticed.",
+    },
+    CmdDoc {
         name: "imports",
         summary: "relative specifiers in the LIVE store — report, or --fix them to `@/…` (#record-imports)",
         usage: "\
@@ -497,6 +530,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("census") => cmd_census(&args[1..]),
         Some("diff") => cmd_diff(&args[1..]),
         Some("imports") => cmd_imports(&args[1..]),
+        Some("retirable") => cmd_retirable(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -2768,6 +2802,82 @@ fn cmd_imports(args: &[String]) -> Result<(), String> {
         bsc_util::emit_line(&format!("  {r}"));
     }
     std::process::exit(1);
+}
+
+/// `bsc ui retirable [--all]` — the retirement census. Ported from
+/// `scripts/retirement-candidates.mjs`, deleted with this verb.
+fn cmd_retirable(args: &[String]) -> Result<(), String> {
+    let show_all = args.iter().any(|a| a == "--all");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let rows = crate::retirable::census(&repo);
+    let by = |v: &str| rows.iter().filter(|r| r.verdict == v).count();
+    let (same, reformatted) = (by("same"), by("reformatted"));
+    let (differs, breaks) = (by("BODY-DIFFERS"), by("BREAKS"));
+
+    bsc_util::emit_line(&format!(
+        "retirement candidates (a seed provides it, the file is still present): {}",
+        rows.len()
+    ));
+    bsc_util::emit_line(&format!("  RETIRABLE   {:>3}", same + reformatted));
+    bsc_util::emit_line(&format!(
+        "    same          {same:>3}  — byte-identical to the file once the preamble is off"
+    ));
+    bsc_util::emit_line(&format!(
+        "    reformatted   {reformatted:>3}  — identical CODE; only comments and whitespace differ"
+    ));
+    bsc_util::emit_line(&format!(
+        "  NOT RETIRABLE {:>3}  — refresh the seed from the file first",
+        differs + breaks
+    ));
+    bsc_util::emit_line(&format!(
+        "    BODY-DIFFERS  {differs:>3}  — the record's CODE differs; retiring ships ITS behaviour, and it compiles"
+    ));
+    bsc_util::emit_line(&format!(
+        "    BREAKS        {breaks:>3}  — the record is missing an EXPORT other modules import"
+    ));
+    bsc_util::emit_line(&format!(
+        "  with a colocated test:        {}",
+        rows.iter().filter(|r| r.test.is_some()).count()
+    ));
+    bsc_util::emit_line(&format!(
+        "  with RELATIVE importers:      {}  (each must be rewritten to @/ first)",
+        rows.iter().filter(|r| !r.relative.is_empty()).count()
+    ));
+    bsc_util::emit_line("");
+
+    let unsafe_row = |r: &crate::retirable::Candidate| r.verdict == "BREAKS" || r.verdict == "BODY-DIFFERS";
+    bsc_util::emit_line("verdict       imp rel  file");
+    for r in &rows {
+        if !show_all && unsafe_row(r) {
+            continue;
+        }
+        let lost = if r.missing_exports.is_empty() {
+            format!("  ({}{} chars)", if r.delta > 0 { "+" } else { "" }, r.delta)
+        } else {
+            format!(
+                "  missing export: {}",
+                r.missing_exports.iter().take(4).cloned().collect::<Vec<_>>().join(", ")
+            )
+        };
+        bsc_util::emit_line(&format!(
+            "{:<13} {:>3} {:>3}  {}{}{}",
+            r.verdict,
+            r.importers,
+            r.relative.len(),
+            r.file,
+            if r.test.is_some() { "  [+test]" } else { "" },
+            if unsafe_row(r) { lost } else { String::new() },
+        ));
+    }
+    let hidden = rows.iter().filter(|r| unsafe_row(r)).count();
+    if !show_all && hidden > 0 {
+        bsc_util::emit_line(&format!(
+            "\n({hidden} NOT-retirable candidate(s) hidden — `--all` to see them)"
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
