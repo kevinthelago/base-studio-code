@@ -19,3 +19,7 @@ pub mod inspect;
 /// (`the-worker-end-is-classified-where-the-pty-exits`). Caller for
 /// `bsc_fleet::worker_end::classify_worker_end`.
 pub mod worker_end;
+/// The warden's ENFORCEMENT loop, moved off the render loop
+/// (`the-warden-quarantines-from-rust-instead-of-the-render-loop`). The decision that hard-pauses a
+/// drifting worker now runs on the backend's own schedule, beside the sessions it pauses.
+pub mod warden;
