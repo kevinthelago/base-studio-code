@@ -189,6 +189,56 @@ pub fn read_facts(worktree: Option<&Path>) -> Option<WorktreeFacts> {
     })
 }
 
+/// Repair one pane's `.claude/settings.json` in place, returning whether anything changed.
+///
+/// The rewrite itself is `bsc_sandbox::rewrite_guest_hooks` — the SAME function the launch path runs
+/// in `console/pty` before handing the shell over. Deliberately not reimplemented here: a manual
+/// fleet-wide repair and an automatic launch-time one that rewrite a file two different ways is the
+/// drift this module exists to report, and it would be sitting inside the repair.
+///
+/// Reads and writes nothing when the file is absent or already correct, so it is safe to run across a
+/// whole fleet whether or not anything needed it.
+pub fn repair_settings_file(settings: &Path) -> Result<bool, String> {
+    if !settings.is_file() {
+        return Ok(false);
+    }
+    let body = std::fs::read_to_string(settings)
+        .map_err(|e| format!("cannot read {}: {e}", settings.display()))?;
+    let mut cfg: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("{} is not valid JSON: {e}", settings.display()))?;
+    if !bsc_sandbox::rewrite_guest_hooks(&mut cfg) {
+        return Ok(false);
+    }
+    let rendered = serde_json::to_string_pretty(&cfg)
+        .map_err(|e| format!("cannot render {}: {e}", settings.display()))?;
+    std::fs::write(settings, format!("{rendered}\n"))
+        .map_err(|e| format!("cannot write {}: {e}", settings.display()))?;
+    Ok(true)
+}
+
+/// A member's OWN directory: a stream's worktree, or — for the director and triage panes, which own
+/// no stream — the project hub itself.
+///
+/// `find_worktree` refuses an empty stream because there is no `--<stream>` suffix to match, which is
+/// correct for what it does and wrong as the only way to locate a member. `membership::Member::stream`
+/// is documented blank for the director and for triage panes, so routing every member through
+/// `find_worktree` alone hands `read_facts` a `None` — and `read_facts` opens with `let dir =
+/// worktree?`, so it returns before touching the disk. The result is not a missing check but an
+/// INVISIBLE one: `caged-floor`, `no-gate` and worktree-presence all silently do not run for the pane
+/// running at the project hub, and the report reads clean rather than absent. That is the same
+/// "wrong in the safe-looking direction" this module was written to catch, inside this module.
+pub fn member_dir(base: &Path, project_key: &str, stream: &str) -> Option<std::path::PathBuf> {
+    if stream.is_empty() {
+        return Some(hub_dir(base, project_key));
+    }
+    find_worktree(base, project_key, stream)
+}
+
+/// The project hub — `<base>/projects/<key>/`, where the director and triage panes run.
+pub fn hub_dir(base: &Path, project_key: &str) -> std::path::PathBuf {
+    base.join("projects").join(project_key)
+}
+
 /// Find a stream's worktree under `<base>/worktrees/<key>/`, matched by the `--<stream>` suffix.
 ///
 /// Matched by SUFFIX rather than rebuilt from `<repo>--<stream>`, deliberately. Re-deriving the name
@@ -218,6 +268,110 @@ mod tests {
 
     fn facts(gate_present: bool, guest_hooks: bool) -> Option<WorktreeFacts> {
         Some(WorktreeFacts { present: true, gate_present, guest_hooks })
+    }
+
+    /// The director and triage panes own no stream (`membership::Member::stream` is documented blank
+    /// for both), and they are the panes most worth checking — the director runs at the project hub
+    /// and coordinates the whole fleet. Routing them through `find_worktree` gave `None`, `read_facts`
+    /// returned before touching the disk, and the doctor reported a clean pane it had never opened.
+    #[test]
+    fn a_member_with_no_stream_resolves_to_the_project_hub_not_to_nothing() {
+        let base = std::path::Path::new("/tmp/bsc-doctor-fixture");
+        // A blank stream is the director / triage case: the hub, not None.
+        assert_eq!(
+            member_dir(base, "studio-code", ""),
+            Some(base.join("projects").join("studio-code")),
+            "a stream-less member must resolve to the hub — None here is what made every filesystem \
+             check invisible for the director",
+        );
+        // `find_worktree` itself is unchanged and still refuses a blank stream; the fallback is the
+        // caller's job, so the two cannot drift into disagreeing about what a worktree is.
+        assert_eq!(find_worktree(base, "studio-code", ""), None);
+    }
+
+    /// `--fix`'s repair, over a real file, including the round trip back through the checks.
+    ///
+    /// The assertion that matters is the LAST one: after repair the same pane reports nothing. A
+    /// repair that rewrites the file into some other shape the doctor still flags would pass a
+    /// "did it change the file" test and fail the only question anyone asks.
+    #[test]
+    fn repairing_a_caged_floor_makes_the_pane_report_clean() {
+        let dir = std::env::temp_dir().join(format!("bsc-fleet-repair-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        let settings = dir.join(".claude").join("settings.json");
+        std::fs::write(
+            &settings,
+            r#"{"hooks":{"PreToolUse":[{"hooks":[{"command":"/bsc-hook scope"}]}]}}"#,
+        )
+        .unwrap();
+
+        // Before: a real caged-floor finding.
+        let before = findings_for("k:api", read_facts(Some(&dir)));
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].category, "caged-floor");
+
+        assert!(repair_settings_file(&settings).unwrap(), "the file needed repairing");
+        // ...and the pane is now CLEAN, not merely different.
+        assert_eq!(findings_for("k:api", read_facts(Some(&dir))), Vec::new());
+
+        // Idempotent — safe to run across a whole fleet whether or not anything needed it.
+        assert!(!repair_settings_file(&settings).unwrap(), "a second run changes nothing");
+
+        // A pane with no settings file at all is left alone: that is `no-gate`, which `bsc fleet wake`
+        // fixes by PLACING a pane. Writing one here would paper over it with a file nothing configured.
+        let bare = dir.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        assert!(!repair_settings_file(&bare.join(".claude").join("settings.json")).unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The defect itself, end to end over a REAL directory — the composition `cmd_doctor` runs.
+    ///
+    /// The two helper assertions above pass in microseconds and would keep passing with `cmd_doctor`
+    /// still wired to `find_worktree`, so on their own they pin a helper nobody calls. This one walks
+    /// the whole seam a director pane goes through — blank stream → dir → facts → findings — and
+    /// contrasts it with what the old wiring produced, so reverting `member_dir` to `find_worktree`
+    /// turns it red.
+    #[test]
+    fn a_director_pane_at_the_hub_is_actually_examined() {
+        let base = std::env::temp_dir().join(format!("bsc-fleet-hub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let hub = base.join("projects").join("studio-code");
+        std::fs::create_dir_all(hub.join(".claude")).unwrap();
+        // The hub is gated, but with the in-cage binary the host cannot run — a real `caged-floor`.
+        std::fs::write(
+            hub.join(".claude").join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"hooks":[{"command":"/bsc-hook scope"}]}]}}"#,
+        )
+        .unwrap();
+
+        // The director's pane id carries no stream. This is the path `cmd_doctor` takes.
+        let dir = member_dir(&base, "studio-code", "");
+        let found = findings_for("studio-code:director", read_facts(dir.as_deref()));
+        assert_eq!(found.len(), 1, "the hub's broken floor must be REPORTED: {found:?}");
+        assert_eq!(found[0].category, "caged-floor");
+
+        // The old wiring, kept here as the contrast that makes the bug legible: `find_worktree` on a
+        // blank stream is `None`, `read_facts` returns before touching the disk, and the SAME broken
+        // hub yields an empty report — indistinguishable from a healthy pane.
+        let old = findings_for(
+            "studio-code:director",
+            read_facts(find_worktree(&base, "studio-code", "").as_deref()),
+        );
+        assert_eq!(old, Vec::new(), "this is what the doctor used to say about a broken director");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_stream_owning_member_still_resolves_through_find_worktree() {
+        // The fallback must not swallow the ordinary path: a real stream with no worktree on disk is
+        // still `None` (a genuine finding), never silently redirected to the hub — which would report
+        // the HUB's settings as if they were the worker's.
+        let base = std::path::Path::new("/tmp/bsc-doctor-fixture-absent");
+        assert_eq!(member_dir(base, "studio-code", "api"), None);
     }
 
     #[test]

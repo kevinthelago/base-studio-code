@@ -889,6 +889,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
  "bsc-project",
+ "bsc-sandbox",
  "bsc-util",
  "logs",
  "plandb",

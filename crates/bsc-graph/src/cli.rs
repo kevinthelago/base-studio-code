@@ -1032,6 +1032,23 @@ fn tests_harvest(
         ));
     }
 
+    // #123 — WHICH REQUESTED IDS THE STORE NEVER HELD. An `--id` the store does not carry matched
+    // nothing in the loop below and vanished: the run reported `paired: 0` and exited 0, which reads
+    // as "that record has no colocated test" when the truth is "you typed an id that does not exist".
+    // Same failure as the wrong-root case guarded above — a plausible number standing in for a
+    // question that was never asked — so it gets the same treatment: name it rather than count it.
+    let unknown_ids: Vec<String> = match ids {
+        None => Vec::new(),
+        Some(want) => {
+            let held: std::collections::HashSet<&str> =
+                impls.iter().filter_map(|im| im.get("id").and_then(Value::as_str)).collect();
+            let mut missing: Vec<String> =
+                want.iter().filter(|id| !held.contains(id.as_str())).cloned().collect();
+            missing.sort();
+            missing
+        }
+    };
+
     let (mut paired, mut no_src, mut no_test, mut retired_no_test) = (Vec::new(), 0usize, 0usize, 0usize);
     for im in impls {
         // #123 — out of scope for this run. Skipped BEFORE the counters so a scoped harvest's report
@@ -1098,6 +1115,7 @@ fn tests_harvest(
 
     Ok(serde_json::json!({
         "dryRun": dry,
+        "unknownIds": unknown_ids,
         "paired": paired.len(),
         "noSrc": no_src,
         "noColocatedTest": no_test,
@@ -2313,8 +2331,111 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 });
                 emit(&tests_harvest(dir, dry, ids.as_ref())?)
             }
+            // `tests promote --id a,b [--apply]` (#123) — carry a runtime-store impl's `tests` onto the
+            // SAME id in the PACKAGED seed (`src-tauri/data/knowledge/algorithms.json`, the file the app
+            // ships and `bsc graph promote` never touches — that verb feeds the UNRELATED committed
+            // build-input store at `graph/algorithms.json`, see `crate::repo_store`).
+            //
+            // WHY THIS EXISTS. `promote-records.mjs` promotes a record into the packaged seed only while
+            // its FILE still exists; a record whose module already retired is "already seeded" and never
+            // reconsidered. `sync-impl-seed.mjs` is the narrow reopening of that door, but it syncs only
+            // `code` — a test harvested onto a retired-module record had no way to reach the seed at all,
+            // so a session carrying one had to extend a build-tree script by hand (request #123). This is
+            // that missing door, on the `bsc` surface a build-tier-less session can actually reach.
+            //
+            // SYNC, NOT PROMOTE. Like `sync-impl-seed.mjs`, an id absent from the seed is refused rather
+            // than inserted — that is a full record promotion (`promote-records.mjs`'s job, once the
+            // module's file exists again), and inserting a bare `{ id, tests }` stub here would leave a
+            // seed record that answers no specifier.
+            Some("promote") => {
+                let ids: Vec<String> = flag_value(&args, "--id")
+                    .ok_or("usage: bsc graph tests promote --id a,b [--apply] [--pretty]")?
+                    .split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect();
+                if ids.is_empty() {
+                    return Err("usage: bsc graph tests promote --id a,b [--apply] [--pretty]".to_string());
+                }
+                let apply = args.iter().any(|a| a == "--apply");
+
+                let runtime = crate::implementations();
+                let seed_path = bsc_util::packaged::candidates("knowledge/algorithms.json")
+                    .into_iter()
+                    .find(|p| p.is_file())
+                    .ok_or_else(|| {
+                        "packaged seed knowledge/algorithms.json not found on this machine — run from a \
+                         dev checkout, or set BSC_DATA_DIR to the directory holding the packaged `data/` \
+                         tree"
+                            .to_string()
+                    })?;
+                let mut seed_doc: Value = serde_json::from_str(
+                    &std::fs::read_to_string(&seed_path)
+                        .map_err(|e| format!("cannot read {}: {e}", seed_path.display()))?,
+                )
+                .map_err(|e| format!("{} is not valid JSON: {e}", seed_path.display()))?;
+                let seed_impls = seed_doc
+                    .get_mut("implementations")
+                    .and_then(Value::as_array_mut)
+                    .ok_or_else(|| format!("{} has no `implementations` array", seed_path.display()))?;
+
+                let mut synced = Vec::new();
+                let mut skipped = Vec::new();
+                for id in &ids {
+                    let Some(rt) =
+                        runtime.iter().find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+                    else {
+                        skipped.push(serde_json::json!({ "id": id, "reason": "not in the runtime store" }));
+                        continue;
+                    };
+                    let rt_tests = rt.get("tests").cloned().unwrap_or(Value::Array(Vec::new()));
+                    if rt_tests.as_array().is_none_or(|t| t.is_empty()) {
+                        skipped.push(serde_json::json!({
+                            "id": id,
+                            "reason": "no tests recorded in the runtime store — run `tests harvest` first",
+                        }));
+                        continue;
+                    }
+                    let Some(seed_im) = seed_impls
+                        .iter_mut()
+                        .find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+                    else {
+                        skipped.push(serde_json::json!({
+                            "id": id,
+                            "reason": "not in the packaged seed — this only SYNCS tests onto an id already \
+                                       there; promote the record itself first (promote-records.mjs, once \
+                                       its module exists again, or `impl set`)",
+                        }));
+                        continue;
+                    };
+                    if seed_im.get("tests") == Some(&rt_tests) {
+                        skipped.push(serde_json::json!({ "id": id, "reason": "already identical" }));
+                        continue;
+                    }
+                    if apply {
+                        seed_im["tests"] = rt_tests.clone();
+                    }
+                    synced.push(id.clone());
+                }
+
+                if apply && !synced.is_empty() {
+                    let body = serde_json::to_string_pretty(&seed_doc)
+                        .map_err(|e| format!("cannot render {}: {e}", seed_path.display()))?;
+                    std::fs::write(&seed_path, format!("{body}\n"))
+                        .map_err(|e| format!("cannot write {}: {e}", seed_path.display()))?;
+                }
+
+                emit(&serde_json::json!({
+                    "apply": apply,
+                    "seed": seed_path.to_string_lossy(),
+                    "synced": synced,
+                    "skipped": skipped,
+                }))
+            }
             _ => Err(
-                "usage: bsc graph tests harvest <dir> [--dry-run] [--pretty] | tests set --id <id> --src <test-file> [--name <name>] [--seed] [--if-version <n>]"
+                "usage: bsc graph tests harvest <dir> [--id a,b] [--dry-run] [--pretty]  |  \
+                 tests set --id <id> --src <test-file> [--name <name>] [--seed] [--if-version <n>]  |  \
+                 tests promote --id a,b [--apply] [--pretty]"
                     .to_string(),
             ),
         },
@@ -4158,6 +4279,245 @@ mod tests {
         };
         assert!(has_tests("a.ts"), "the named id is paired");
         assert!(!has_tests("b.ts"), "an unnamed id is left alone even though it also has a colocated test");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #123 — a requested id the store never held must be NAMED, not silently dropped.
+    ///
+    /// Scoping filters inside the pairing loop, so an id that matches no record simply never comes up:
+    /// the run reports `paired: 0` and exits 0. That reads as "this record has no colocated test" when
+    /// the truth is "that id does not exist" — the same shape as the wrong-root guard a few lines
+    /// above, where a plausible count stood in for a question nobody asked. A typo in `--id` is the
+    /// everyday way to hit it.
+    /// The confinement boundary on `tests set --src`, which nothing pinned.
+    ///
+    /// `harvest_and_curate_refuse_a_target_outside_the_sessions_confinement_root` loops over `harvest`
+    /// and `curate` only — both take a DIRECTORY. `tests set --src` takes a FILE, down a different
+    /// path, and a boundary with no test is one a refactor can quietly drop. #3475 is the same
+    /// boundary: a harvest hands back file CONTENTS, so `bsc-confine` being blind to what this binary
+    /// reads is precisely why the check lives in the binary.
+    #[test]
+    fn tests_set_refuses_a_src_outside_the_sessions_confinement_root() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("sample.test.ts")
+            .to_string_lossy()
+            .into_owned();
+        let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
+        let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
+            run(
+                vec![
+                    "tests".into(),
+                    "set".into(),
+                    "--id".into(),
+                    "sample.ts".into(),
+                    "--src".into(),
+                    fixture,
+                ],
+                "bsc graph",
+            )
+            .unwrap_err()
+        });
+        assert!(
+            err.contains("outside every root this session may harvest"),
+            "{err}"
+        );
+    }
+
+    /// The usage string is the whole answer to "what CAN tests do", so it must name every verb. It
+    /// has grown one (`promote`, #123) and will grow more; nothing asserted its content.
+    #[test]
+    fn tests_with_an_unknown_subverb_names_both_verbs_in_its_usage() {
+        let err = bsc_cli_util::with_repo_root(None, || {
+            run(vec!["tests".into(), "bogus".into()], "bsc graph").unwrap_err()
+        });
+        assert!(
+            err.contains("tests set") && err.contains("tests harvest"),
+            "{err}"
+        );
+    }
+
+    /// #123 — a test harvested onto an ALREADY-RETIRED module's record had no route to the packaged
+    /// seed at all. `promote-records.mjs` promotes a record only while its file still exists, and
+    /// `sync-impl-seed.mjs` syncs only `code`, so the record was "already seeded" and never
+    /// reconsidered. This is that missing door, on the `bsc` surface a build-tier-less session holds.
+    #[test]
+    fn tests_promote_syncs_tests_from_the_runtime_store_onto_the_packaged_seed() {
+        let dir = crate::unique_temp("tests-promote");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+
+        // A throwaway PACKAGED data dir, standing in for `src-tauri/data`, so this test never touches
+        // the real committed seed. `BSC_DATA_DIR` is `bsc_util::packaged`'s highest-priority override.
+        let data_dir = dir.join("data");
+        std::fs::create_dir_all(data_dir.join("knowledge")).unwrap();
+        let seed_path = data_dir.join("knowledge/algorithms.json");
+        std::fs::write(
+            &seed_path,
+            serde_json::json!({
+                "implementations": [{
+                    "id": "seeded-123.ts", "name": "seeded-123.ts", "tech": "typescript",
+                    "role": "algorithm", "code": "export const x = 1;", "src": "tests/fixtures/sample.ts",
+                }],
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // SAFETY: single-threaded test setup, before any other thread reads either env var.
+        unsafe {
+            std::env::set_var("BSC_GRAPH_STORE", &store);
+            std::env::set_var("BSC_DATA_DIR", &data_dir);
+        }
+
+        // `load()` reconciles the packaged seed into the runtime store on first read, so the id above
+        // is already present here with no `tests` — exactly the "retired module" shape #123 describes:
+        // the record survives only as a seed/store copy, never as a file `tests harvest` could re-pair
+        // through provenance alone. Harvest onto it directly so the runtime store carries real `tests`.
+        let root = env!("CARGO_MANIFEST_DIR").to_string();
+        run(vec!["tests".into(), "harvest".into(), root, "--id".into(), "seeded-123.ts".into()], "bsc graph")
+            .expect("harvest pairs the colocated test");
+        let runtime_tests = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("id").and_then(Value::as_str) == Some("seeded-123.ts"))
+            .and_then(|i| i.get("tests").cloned())
+            .expect("the runtime store now carries tests");
+        assert!(!runtime_tests.as_array().unwrap().is_empty());
+
+        // A dry run (no --apply) must report what it WOULD do and touch nothing.
+        let (dry, dry_out) = bsc_util::capture_output(|| {
+            run(vec!["tests".into(), "promote".into(), "--id".into(), "seeded-123.ts".into()], "bsc graph")
+        });
+        dry.expect("a dry tests-promote succeeds");
+        assert!(dry_out.contains("\"seeded-123.ts\""), "{dry_out}");
+        let untouched: Value = serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        assert!(
+            untouched["implementations"][0].get("tests").is_none(),
+            "without --apply the packaged seed must be untouched: {untouched}"
+        );
+
+        // `--apply` writes the packaged seed.
+        run(
+            vec!["tests".into(), "promote".into(), "--id".into(), "seeded-123.ts".into(), "--apply".into()],
+            "bsc graph",
+        )
+        .expect("tests promote --apply succeeds");
+        let seeded: Value = serde_json::from_str(&std::fs::read_to_string(&seed_path).unwrap()).unwrap();
+        assert_eq!(
+            seeded["implementations"][0]["tests"], runtime_tests,
+            "the packaged seed must now carry the SAME tests the runtime store harvested"
+        );
+
+        // An id the packaged seed never had is a REFUSAL, not an insert — that would be a full record
+        // promotion (`promote-records.mjs`'s job), not a test sync onto an id already there.
+        let set = |id: &str| {
+            run(
+                vec![
+                    "impl".to_string(), "set".into(),
+                    "--tech".into(), "typescript".into(),
+                    "--id".into(), id.into(),
+                    "--role".into(), "algorithm".into(),
+                    "--name".into(), id.into(),
+                    "--code".into(), "export const y = 2;".into(),
+                    "--src".into(), "tests/fixtures/sample.ts".into(),
+                ],
+                "bsc graph",
+            )
+            .unwrap();
+        };
+        set("not-seeded-123.ts");
+        run(
+            vec!["tests".into(), "harvest".into(), env!("CARGO_MANIFEST_DIR").into(), "--id".into(),
+                 "not-seeded-123.ts".into()],
+            "bsc graph",
+        )
+        .unwrap();
+        let (res, out) = bsc_util::capture_output(|| {
+            run(
+                vec!["tests".into(), "promote".into(), "--id".into(), "not-seeded-123.ts".into(), "--apply".into()],
+                "bsc graph",
+            )
+        });
+        res.expect("promote of an unseeded id succeeds — it is reported as skipped, not an error");
+        assert!(
+            out.contains("not in the packaged seed"),
+            "an id absent from the packaged seed must be REFUSED, not silently inserted: {out}"
+        );
+
+        unsafe {
+            std::env::remove_var("BSC_GRAPH_STORE");
+            std::env::remove_var("BSC_DATA_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tests_harvest_names_an_id_the_store_never_held() {
+        let dir = crate::unique_temp("testsharvest-unknown-id");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, as in the neighbouring harvest tests.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(repo.join("src/x")).unwrap();
+        std::fs::write(repo.join("src/x/a.ts"), "export function a() {}\n").unwrap();
+        std::fs::write(
+            repo.join("src/x/a.test.ts"),
+            "describe(\"a\", () => { it(\"works\", () => {}); });\n",
+        )
+        .unwrap();
+
+        run(
+            vec![
+                "impl".into(), "set".into(),
+                "--tech".into(), "typescript".into(),
+                "--id".into(), "a.ts".into(),
+                "--role".into(), "algorithm".into(),
+                "--name".into(), "a.ts".into(),
+                "--code".into(), "export function x() {}".into(),
+                "--src".into(), "src/x/a.ts".into(),
+            ],
+            "bsc graph",
+        )
+        .unwrap();
+
+        // One real id and one that does not exist. The real one must still pair — naming the unknown
+        // is a REPORT, not a refusal, so a batch is not lost to one bad entry.
+        let (res, out) = bsc_util::capture_output(|| {
+            bsc_cli_util::with_repo_root(None, || {
+                run(
+                    vec![
+                        "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
+                        "--id".into(), "a.ts,no-such-id.ts".into(),
+                    ],
+                    "bsc graph",
+                )
+            })
+        });
+        res.unwrap();
+        assert!(out.contains("no-such-id.ts"), "an id the store never held must be NAMED: {out}");
+        assert!(out.contains("\"paired\":1"), "the real id still pairs: {out}");
+
+        // ...and a run whose ids all exist stays quiet, so `unknownIds` is signal rather than noise.
+        let (res, clean) = bsc_util::capture_output(|| {
+            bsc_cli_util::with_repo_root(None, || {
+                run(
+                    vec![
+                        "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
+                        "--id".into(), "a.ts".into(),
+                    ],
+                    "bsc graph",
+                )
+            })
+        });
+        res.unwrap();
+        assert!(clean.contains("\"unknownIds\":[]"), "nothing unknown when every id exists: {clean}");
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);

@@ -179,11 +179,18 @@ the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
     summary: "the claims this fleet makes about itself that do not hold",
     usage: "\
 USAGE:
-  bsc fleet doctor [--db <plan.db>] [--strict] [--json|--pretty]
+  bsc fleet doctor [--db <plan.db>] [--fix] [--strict] [--json|--pretty]
 
 One finding per claim that does not hold, each naming the pane, what is wrong, WHAT IT COSTS, and the
 fix. Prints nothing when the fleet is clean — a doctor whose normal output is a wall of `ok` is one
 nobody reads, and then the one real line scrolls past.
+
+`--fix` repairs `caged-floor` findings in place — rewriting the in-cage hook path to the host form in
+every affected pane's `.claude/settings.json`, INCLUDING the director's at the project hub rather than
+a stream worktree — then re-checks and reports what is left. The rewrite is the same
+`bsc_sandbox::rewrite_guest_hooks` a launch runs, so a manual repair and an automatic one cannot
+produce two different files. Nothing else is touched: `no-gate` still needs `bsc fleet wake`, which
+places a pane rather than editing a file. Safe to run whether or not anything needed it.
 
 NEEDS NO APP, unlike `fleet list`. Every check is a fact about a worktree on disk or about the stream
 id in plan.db, so this answers when the app is DOWN — which is exactly when a director most needs it.
@@ -338,6 +345,8 @@ struct Args {
     /// `doctor --strict`: exit non-zero when anything is found, so it can be a gate. Plain runs
     /// report and exit 0 — a guard that lands red protects nothing (see `bsc ui parity`).
     strict: bool,
+    /// `doctor --fix`: repair `caged-floor` findings in place instead of only reporting them.
+    fix: bool,
     timeout_ms: Option<i64>,
     /// `clone`: the PAT for a private repo. Never echoed — a failed clone redacts it.
     token: Option<String>,
@@ -357,7 +366,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
+    let mut a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -369,6 +378,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--prompt" => a.prompt = Some(it.next().ok_or("--prompt needs text")?),
             "--force" => a.force = true,
             "--strict" => a.strict = true,
+            "--fix" => a.fix = true,
             "--token" => a.token = Some(it.next().ok_or("--token needs a value")?),
             "--source" => a.source = Some(it.next().ok_or("--source needs a path or URL")?),
             "--repo" => a.repos.push(it.next().ok_or("--repo needs an owner/name")?),
@@ -1071,21 +1081,58 @@ fn cmd_doctor(args: &Args) -> Result<(), String> {
     };
     let base = bsc_util::bsc_base_dir().ok_or("bsc fleet doctor: no base dir")?;
 
-    let findings: Vec<doctor::Finding> = members
-        .iter()
-        .flat_map(|m| {
-            // The id check runs FIRST and unconditionally. Every other check needs a worktree, and a
-            // broken id is what stops one from ever existing — so ordering it after them would put
-            // the cause below the symptoms, on the one fleet where there are no symptoms to print.
-            let mut fs = doctor::id_findings_for(&m.pane_id, &m.stream);
-            let wt = doctor::find_worktree(&base, &key, &m.stream);
-            fs.extend(doctor::findings_for(&m.pane_id, doctor::read_facts(wt.as_deref())));
-            fs
-        })
-        .collect();
+    let collect_findings = || -> Vec<doctor::Finding> {
+        members
+            .iter()
+            .flat_map(|m| {
+                // The id check runs FIRST and unconditionally. Every other check needs a worktree, and
+                // a broken id is what stops one from ever existing — so ordering it after them would
+                // put the cause below the symptoms, on the one fleet where there are no symptoms.
+                let mut fs = doctor::id_findings_for(&m.pane_id, &m.stream);
+                // `member_dir`, not `find_worktree`: the director and every triage pane own no stream,
+                // and `find_worktree` answers `None` for a blank one — which `read_facts` turns into
+                // "no facts" rather than "no worktree", so every filesystem check silently skipped the
+                // pane at the hub.
+                let dir = doctor::member_dir(&base, &key, &m.stream);
+                fs.extend(doctor::findings_for(&m.pane_id, doctor::read_facts(dir.as_deref())));
+                fs
+            })
+            .collect()
+    };
+
+    // `--fix` runs BEFORE the report, so what gets printed is what is STILL wrong. Repairing and then
+    // printing the pre-repair findings would read as having done nothing — the same
+    // report-that-does-not-match-reality this whole verb exists to catch.
+    let mut repaired: Vec<String> = Vec::new();
+    if args.fix {
+        for m in &members {
+            let Some(dir) = doctor::member_dir(&base, &key, &m.stream) else { continue };
+            match doctor::repair_settings_file(&dir.join(".claude").join("settings.json")) {
+                Ok(true) => repaired.push(m.pane_id.clone()),
+                Ok(false) => {}
+                // A pane that cannot be repaired is NOT fatal: the remaining panes still get fixed, and
+                // the finding it leaves behind is printed below, so the failure stays visible.
+                Err(e) => eprintln!("bsc fleet doctor --fix: {}: {e}", m.pane_id),
+            }
+        }
+        if !args.json && !args.pretty && !repaired.is_empty() {
+            println!("repaired {} pane(s): {}", repaired.len(), repaired.join(", "));
+        }
+    }
+
+    let findings: Vec<doctor::Finding> = collect_findings();
 
     if args.json || args.pretty {
-        bsc_cli_util::emit(args.pretty, args.json, &findings, String::new);
+        if args.fix {
+            bsc_cli_util::emit(
+                args.pretty,
+                args.json,
+                &serde_json::json!({ "repaired": repaired, "findings": findings }),
+                String::new,
+            );
+        } else {
+            bsc_cli_util::emit(args.pretty, args.json, &findings, String::new);
+        }
     } else {
         for f in &findings {
             println!("{}  {}", f.pane_id, f.category);
