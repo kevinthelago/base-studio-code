@@ -31,6 +31,7 @@ pub mod kit;
 pub mod claim_census;
 pub mod record_source;
 pub mod retirable;
+pub mod retire;
 #[cfg(test)]
 pub mod test_store;
 pub mod seed_patch;
