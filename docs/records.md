@@ -219,7 +219,7 @@ node scripts/refresh-drifted-seeds.mjs --store <ui-dump> --impls <impl-dump> [--
 node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .tsx → a module-shaped record
 node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
 bsc ui retire <src-relative-path> [--dry]
-node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
+bsc ui shadow                                  # a catalogued page must become `file: null`
 bsc ui imports                                 # the RECORD half — `bsc ui retire` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
@@ -234,7 +234,7 @@ declares.
 ### The SIX downstream obligations, in this order
 
 ```bash
-node scripts/sync-shadow-catalogue.mjs                                                   # 3
+bsc ui shadow                                                                            # 3
 UPDATE_KITS=1    npx vitest run src/features/designs/lib/platformModules.gen.test.ts     # 5
 UPDATE_KITS=1    npx vitest run src/features/designs/lib/reactUiKit.gen.test.ts          # 4  ← kit LAST
 UPDATE_RECORDS=1 npx vitest run src/features/glance/glancepageRecord.gen.test.ts         # 6  ← then this
