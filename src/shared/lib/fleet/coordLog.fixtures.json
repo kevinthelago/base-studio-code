@@ -1,0 +1,2072 @@
+{
+  "note": "GENERATED from the live TypeScript — see coordLog.fixtures.gen.test.ts",
+  "refs": [
+    {
+      "token": "",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "   ",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "#42",
+      "ref": {
+        "kind": "issue",
+        "number": 42
+      },
+      "key": "#42"
+    },
+    {
+      "token": "#1",
+      "ref": {
+        "kind": "issue",
+        "number": 1
+      },
+      "key": "#1"
+    },
+    {
+      "token": "#0",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "#-1",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "#abc",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "#4.5",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "#",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "42",
+      "ref": {
+        "kind": "issue",
+        "number": 42
+      },
+      "key": "#42"
+    },
+    {
+      "token": "007",
+      "ref": {
+        "kind": "issue",
+        "number": 7
+      },
+      "key": "#7"
+    },
+    {
+      "token": "0",
+      "ref": {
+        "kind": "issue",
+        "number": 0
+      },
+      "key": "#0"
+    },
+    {
+      "token": "# 7",
+      "ref": {
+        "kind": "issue",
+        "number": 7
+      },
+      "key": "#7"
+    },
+    {
+      "token": "#1e3",
+      "ref": {
+        "kind": "issue",
+        "number": 1000
+      },
+      "key": "#1000"
+    },
+    {
+      "token": "#  ",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "contract:TunnelState",
+      "ref": {
+        "kind": "contract",
+        "name": "TunnelState"
+      },
+      "key": "contract:TunnelState"
+    },
+    {
+      "token": "contract:",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "contract:  ",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "file:src/lib/x.ts",
+      "ref": {
+        "kind": "file",
+        "path": "src/lib/x.ts"
+      },
+      "key": "file:src/lib/x.ts"
+    },
+    {
+      "token": "file:",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "predicate:tests-pass",
+      "ref": {
+        "kind": "predicate",
+        "expr": "tests-pass"
+      },
+      "key": "predicate:tests-pass"
+    },
+    {
+      "token": "predicate:symbol:Foo",
+      "ref": {
+        "kind": "predicate",
+        "expr": "symbol:Foo"
+      },
+      "key": "predicate:symbol:Foo"
+    },
+    {
+      "token": "session:studio-code:api",
+      "ref": {
+        "kind": "session",
+        "id": "studio-code:api"
+      },
+      "key": "session:studio-code:api"
+    },
+    {
+      "token": "session:",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "unknown:foo",
+      "ref": null,
+      "key": null
+    },
+    {
+      "token": "tests-pass",
+      "ref": {
+        "kind": "predicate",
+        "expr": "tests-pass"
+      },
+      "key": "predicate:tests-pass"
+    },
+    {
+      "token": "a bare phrase",
+      "ref": {
+        "kind": "predicate",
+        "expr": "a bare phrase"
+      },
+      "key": "predicate:a bare phrase"
+    },
+    {
+      "token": ":leading",
+      "ref": {
+        "kind": "predicate",
+        "expr": ":leading"
+      },
+      "key": "predicate::leading"
+    },
+    {
+      "token": "  #42  ",
+      "ref": {
+        "kind": "issue",
+        "number": 42
+      },
+      "key": "#42"
+    },
+    {
+      "token": "#42 extra",
+      "ref": null,
+      "key": null
+    }
+  ],
+  "projects": [
+    {
+      "from": "alpha:director",
+      "target": "alpha:api",
+      "fromProject": "alpha",
+      "targetProject": "alpha",
+      "same": true
+    },
+    {
+      "from": "alpha:director",
+      "target": "beta:api",
+      "fromProject": "alpha",
+      "targetProject": "beta",
+      "same": false
+    },
+    {
+      "from": "alpha:director",
+      "target": "alpha:repo:triage",
+      "fromProject": "alpha",
+      "targetProject": "alpha",
+      "same": true
+    },
+    {
+      "from": "t0p2",
+      "target": "alpha:api",
+      "fromProject": "t0p2",
+      "targetProject": "alpha",
+      "same": true
+    },
+    {
+      "from": "alpha:director",
+      "target": "t0p2",
+      "fromProject": "alpha",
+      "targetProject": "t0p2",
+      "same": true
+    },
+    {
+      "from": "t0p2",
+      "target": "t0p3",
+      "fromProject": "t0p2",
+      "targetProject": "t0p3",
+      "same": true
+    },
+    {
+      "from": "?",
+      "target": "alpha:api",
+      "fromProject": "?",
+      "targetProject": "alpha",
+      "same": true
+    },
+    {
+      "from": "alpha",
+      "target": "alpha",
+      "fromProject": "alpha",
+      "targetProject": "alpha",
+      "same": true
+    },
+    {
+      "from": "",
+      "target": "alpha:api",
+      "fromProject": "",
+      "targetProject": "alpha",
+      "same": true
+    }
+  ],
+  "refusalKeys": [
+    {
+      "refusal": {
+        "kind": "answer",
+        "from": "beta:director",
+        "target": "alpha:api",
+        "at": 1
+      },
+      "key": "answer@beta:director@alpha:api@1"
+    },
+    {
+      "refusal": {
+        "kind": "assign",
+        "from": "beta:director",
+        "target": "alpha:api",
+        "at": 1
+      },
+      "key": "assign@beta:director@alpha:api@1"
+    },
+    {
+      "refusal": {
+        "kind": "answer",
+        "from": "beta:director",
+        "target": "alpha:api",
+        "at": 2
+      },
+      "key": "answer@beta:director@alpha:api@2"
+    }
+  ],
+  "lines": [
+    {
+      "name": "too few columns",
+      "line": "2026-08-31T12:00:00Z\talpha:api\twoke",
+      "event": null
+    },
+    {
+      "name": "empty line",
+      "line": "",
+      "event": null
+    },
+    {
+      "name": "woke",
+      "line": "2026-08-31T12:00:01Z\talpha:api\twoke\t",
+      "event": {
+        "type": "woke",
+        "session": "alpha:api",
+        "at": 1788177601000
+      }
+    },
+    {
+      "name": "woke with a trailing CRLF",
+      "line": "2026-08-31T12:00:01Z\talpha:api\twoke\t\r\n",
+      "event": {
+        "type": "woke",
+        "session": "alpha:api",
+        "at": 1788177601000
+      }
+    },
+    {
+      "name": "woke with a trailing LF",
+      "line": "2026-08-31T12:00:01Z\talpha:api\twoke\t\n",
+      "event": {
+        "type": "woke",
+        "session": "alpha:api",
+        "at": 1788177601000
+      }
+    },
+    {
+      "name": "unknown kind (brief-done IS emitted by the shell and has no arm here)",
+      "line": "2026-08-31T12:00:01Z\talpha:api\tbrief-done\talpha:planner@1\t",
+      "event": null
+    },
+    {
+      "name": "kind is case sensitive",
+      "line": "2026-08-31T12:00:01Z\talpha:api\tLanded\t#42\t",
+      "event": null
+    },
+    {
+      "name": "unparseable timestamp falls back to 0",
+      "line": "not-a-time\talpha:api\twoke\t",
+      "event": {
+        "type": "woke",
+        "session": "alpha:api",
+        "at": 0
+      }
+    },
+    {
+      "name": "empty timestamp falls back to 0",
+      "line": "\talpha:api\twoke\t",
+      "event": {
+        "type": "woke",
+        "session": "alpha:api",
+        "at": 0
+      }
+    },
+    {
+      "name": "blocked with mixed refs, one unparseable",
+      "line": "2026-08-31T12:00:02Z\talpha:api\tblocked\t#42,contract:X,bogus:\tnotes/cp.md",
+      "event": {
+        "type": "blocked",
+        "session": "alpha:api",
+        "deps": [
+          {
+            "kind": "issue",
+            "number": 42
+          },
+          {
+            "kind": "contract",
+            "name": "X"
+          }
+        ],
+        "checkpoint": "notes/cp.md",
+        "at": 1788177602000
+      }
+    },
+    {
+      "name": "blocked with no parseable ref",
+      "line": "2026-08-31T12:00:02Z\talpha:api\tblocked\t,,\t",
+      "event": null
+    },
+    {
+      "name": "blocked with an empty checkpoint column",
+      "line": "2026-08-31T12:00:02Z\talpha:api\tblocked\t#7\t",
+      "event": {
+        "type": "blocked",
+        "session": "alpha:api",
+        "deps": [
+          {
+            "kind": "issue",
+            "number": 7
+          }
+        ],
+        "at": 1788177602000
+      }
+    },
+    {
+      "name": "blocked with a whitespace checkpoint",
+      "line": "2026-08-31T12:00:02Z\talpha:api\tblocked\t#7\t   ",
+      "event": {
+        "type": "blocked",
+        "session": "alpha:api",
+        "deps": [
+          {
+            "kind": "issue",
+            "number": 7
+          }
+        ],
+        "at": 1788177602000
+      }
+    },
+    {
+      "name": "blocked with no checkpoint column at all",
+      "line": "2026-08-31T12:00:02Z\talpha:api\tblocked\t#7",
+      "event": {
+        "type": "blocked",
+        "session": "alpha:api",
+        "deps": [
+          {
+            "kind": "issue",
+            "number": 7
+          }
+        ],
+        "at": 1788177602000
+      }
+    },
+    {
+      "name": "landed",
+      "line": "2026-08-31T12:00:03Z\talpha:api\tlanded\t#42\t",
+      "event": {
+        "type": "landed",
+        "ref": {
+          "kind": "issue",
+          "number": 42
+        },
+        "at": 1788177603000
+      }
+    },
+    {
+      "name": "landed with an unparseable ref",
+      "line": "2026-08-31T12:00:03Z\talpha:api\tlanded\tunknown:x\t",
+      "event": null
+    },
+    {
+      "name": "merged",
+      "line": "2026-08-31T12:00:03Z\talpha:api\tmerged\tcontract:TunnelState\t",
+      "event": {
+        "type": "merged",
+        "ref": {
+          "kind": "contract",
+          "name": "TunnelState"
+        },
+        "at": 1788177603000
+      }
+    },
+    {
+      "name": "closed",
+      "line": "2026-08-31T12:00:03Z\talpha:api\tclosed\tsession:alpha:web\t",
+      "event": {
+        "type": "closed",
+        "ref": {
+          "kind": "session",
+          "id": "alpha:web"
+        },
+        "at": 1788177603000
+      }
+    },
+    {
+      "name": "failed with a reason",
+      "line": "2026-08-31T12:00:04Z\talpha:api\tfailed\t#42\tthe gate went red",
+      "event": {
+        "type": "failed",
+        "ref": {
+          "kind": "issue",
+          "number": 42
+        },
+        "reason": "the gate went red",
+        "at": 1788177604000
+      }
+    },
+    {
+      "name": "failed with no reason column",
+      "line": "2026-08-31T12:00:04Z\talpha:api\tfailed\t#42",
+      "event": {
+        "type": "failed",
+        "ref": {
+          "kind": "issue",
+          "number": 42
+        },
+        "reason": "",
+        "at": 1788177604000
+      }
+    },
+    {
+      "name": "failed with an unparseable ref",
+      "line": "2026-08-31T12:00:04Z\talpha:api\tfailed\t\twhy",
+      "event": null
+    },
+    {
+      "name": "waiting with a reason and a checkpoint",
+      "line": "2026-08-31T12:00:05Z\talpha:api\twaiting\tneeds a decision\tnotes/cp.md",
+      "event": {
+        "type": "waiting",
+        "session": "alpha:api",
+        "reason": "needs a decision",
+        "checkpoint": "notes/cp.md",
+        "at": 1788177605000
+      }
+    },
+    {
+      "name": "waiting with an empty reason",
+      "line": "2026-08-31T12:00:05Z\talpha:api\twaiting\t\t",
+      "event": {
+        "type": "waiting",
+        "session": "alpha:api",
+        "reason": "",
+        "at": 1788177605000
+      }
+    },
+    {
+      "name": "ask with a checkpoint",
+      "line": "2026-08-31T12:00:06Z\talpha:api\task\twhich pagination?\tnotes/cp.md",
+      "event": {
+        "type": "ask",
+        "session": "alpha:api",
+        "question": "which pagination?",
+        "checkpoint": "notes/cp.md",
+        "at": 1788177606000
+      }
+    },
+    {
+      "name": "ask with no checkpoint",
+      "line": "2026-08-31T12:00:06Z\talpha:api\task\twhich pagination?\t",
+      "event": {
+        "type": "ask",
+        "session": "alpha:api",
+        "question": "which pagination?",
+        "at": 1788177606000
+      }
+    },
+    {
+      "name": "fork with a subagent type",
+      "line": "2026-08-31T12:00:07Z\talpha:director\tfork\treview three PRs\tgeneral-purpose",
+      "event": {
+        "type": "fork",
+        "session": "alpha:director",
+        "description": "review three PRs",
+        "subagentType": "general-purpose",
+        "at": 1788177607000
+      }
+    },
+    {
+      "name": "fork with no subagent type",
+      "line": "2026-08-31T12:00:07Z\talpha:director\tfork\treview three PRs\t",
+      "event": {
+        "type": "fork",
+        "session": "alpha:director",
+        "description": "review three PRs",
+        "at": 1788177607000
+      }
+    },
+    {
+      "name": "fork with an empty description",
+      "line": "2026-08-31T12:00:07Z\talpha:director\tfork\t\tgeneral-purpose",
+      "event": null
+    },
+    {
+      "name": "fork with a whitespace description",
+      "line": "2026-08-31T12:00:07Z\talpha:director\tfork\t   \t",
+      "event": null
+    },
+    {
+      "name": "answer",
+      "line": "2026-08-31T12:00:08Z\talpha:director\tanswer\talpha:api\tuse cursor pagination",
+      "event": {
+        "type": "answer",
+        "from": "alpha:director",
+        "target": "alpha:api",
+        "answer": "use cursor pagination",
+        "at": 1788177608000
+      }
+    },
+    {
+      "name": "answer across projects (parses; refused at fold)",
+      "line": "2026-08-31T12:00:08Z\talpha:director\tanswer\tbeta:api\tuse cursor pagination",
+      "event": {
+        "type": "answer",
+        "from": "alpha:director",
+        "target": "beta:api",
+        "answer": "use cursor pagination",
+        "at": 1788177608000
+      }
+    },
+    {
+      "name": "answer with an empty target",
+      "line": "2026-08-31T12:00:08Z\talpha:director\tanswer\t\ttext",
+      "event": null
+    },
+    {
+      "name": "answer with no answer column",
+      "line": "2026-08-31T12:00:08Z\talpha:director\tanswer\talpha:api",
+      "event": {
+        "type": "answer",
+        "from": "alpha:director",
+        "target": "alpha:api",
+        "answer": "",
+        "at": 1788177608000
+      }
+    },
+    {
+      "name": "request",
+      "line": "2026-08-31T12:00:09Z\talpha:api\trequest\t7\tthere is no develop branch",
+      "event": {
+        "type": "request",
+        "session": "alpha:api",
+        "id": "7",
+        "text": "there is no develop branch",
+        "at": 1788177609000
+      }
+    },
+    {
+      "name": "request with an empty id",
+      "line": "2026-08-31T12:00:09Z\talpha:api\trequest\t\ttext",
+      "event": null
+    },
+    {
+      "name": "request-resolved",
+      "line": "2026-08-31T12:00:09Z\talpha:director\trequest-resolved\t7\t",
+      "event": {
+        "type": "request-resolved",
+        "id": "7",
+        "at": 1788177609000
+      }
+    },
+    {
+      "name": "request-resolved with an empty id",
+      "line": "2026-08-31T12:00:09Z\talpha:director\trequest-resolved\t\t",
+      "event": null
+    },
+    {
+      "name": "issue with every column",
+      "line": "2026-08-31T12:00:10Z\talpha:issuer\tissue\tRate limiting is missing\tbody text\tapi\tiss-1",
+      "event": {
+        "type": "issue",
+        "session": "alpha:issuer",
+        "id": "iss-1",
+        "title": "Rate limiting is missing",
+        "body": "body text",
+        "suggested": "api",
+        "at": 1788177610000
+      }
+    },
+    {
+      "name": "issue with no id (falls back to session@at)",
+      "line": "2026-08-31T12:00:10Z\talpha:issuer\tissue\tRate limiting is missing\tbody text\tapi\t",
+      "event": {
+        "type": "issue",
+        "session": "alpha:issuer",
+        "id": "alpha:issuer@1788177610000",
+        "title": "Rate limiting is missing",
+        "body": "body text",
+        "suggested": "api",
+        "at": 1788177610000
+      }
+    },
+    {
+      "name": "issue with only a title",
+      "line": "2026-08-31T12:00:10Z\talpha:issuer\tissue\tRate limiting is missing\t\t\t",
+      "event": {
+        "type": "issue",
+        "session": "alpha:issuer",
+        "id": "alpha:issuer@1788177610000",
+        "title": "Rate limiting is missing",
+        "at": 1788177610000
+      }
+    },
+    {
+      "name": "issue with an empty title",
+      "line": "2026-08-31T12:00:10Z\talpha:issuer\tissue\t\tbody\tapi\tiss-2",
+      "event": null
+    },
+    {
+      "name": "assign with every column",
+      "line": "2026-08-31T12:00:11Z\talpha:director\tassign\talpha:api\tstart on the rate limiter\tiss-1\tRate limiting is missing",
+      "event": {
+        "type": "assign",
+        "session": "alpha:director",
+        "target": "alpha:api",
+        "body": "start on the rate limiter",
+        "issueId": "iss-1",
+        "title": "Rate limiting is missing",
+        "at": 1788177611000
+      }
+    },
+    {
+      "name": "assign with only a target and body",
+      "line": "2026-08-31T12:00:11Z\talpha:director\tassign\talpha:api\tstart on the rate limiter\t\t",
+      "event": {
+        "type": "assign",
+        "session": "alpha:director",
+        "target": "alpha:api",
+        "body": "start on the rate limiter",
+        "at": 1788177611000
+      }
+    },
+    {
+      "name": "assign with an empty target",
+      "line": "2026-08-31T12:00:11Z\talpha:director\tassign\t\tbody\t\t",
+      "event": null
+    },
+    {
+      "name": "maintain with a note",
+      "line": "2026-08-31T12:00:12Z\talpha:api\tmaintain\towned issues complete\t",
+      "event": {
+        "type": "maintain",
+        "session": "alpha:api",
+        "note": "owned issues complete",
+        "at": 1788177612000
+      }
+    },
+    {
+      "name": "maintain with no note",
+      "line": "2026-08-31T12:00:12Z\talpha:api\tmaintain\t\t",
+      "event": {
+        "type": "maintain",
+        "session": "alpha:api",
+        "at": 1788177612000
+      }
+    },
+    {
+      "name": "brief with a ref",
+      "line": "2026-08-31T12:00:13Z\talpha:planner\tbrief\tdirector\tscope grew: add SSO\t#77",
+      "event": {
+        "type": "brief",
+        "from": "alpha:planner",
+        "target": "director",
+        "body": "scope grew: add SSO",
+        "ref": {
+          "kind": "issue",
+          "number": 77
+        },
+        "id": "alpha:planner@1788177613000",
+        "at": 1788177613000
+      }
+    },
+    {
+      "name": "brief with an unparseable ref",
+      "line": "2026-08-31T12:00:13Z\talpha:planner\tbrief\tdirector\tscope grew: add SSO\tunknown:x",
+      "event": {
+        "type": "brief",
+        "from": "alpha:planner",
+        "target": "director",
+        "body": "scope grew: add SSO",
+        "id": "alpha:planner@1788177613000",
+        "at": 1788177613000
+      }
+    },
+    {
+      "name": "brief with an empty target",
+      "line": "2026-08-31T12:00:13Z\talpha:planner\tbrief\t\tbody\t",
+      "event": null
+    },
+    {
+      "name": "brief with an empty body",
+      "line": "2026-08-31T12:00:13Z\talpha:planner\tbrief\tdirector\t\t",
+      "event": null
+    },
+    {
+      "name": "brief with a whitespace body",
+      "line": "2026-08-31T12:00:13Z\talpha:planner\tbrief\tdirector\t   \t",
+      "event": null
+    },
+    {
+      "name": "commission with a ref",
+      "line": "2026-08-31T12:00:14Z\talpha:designer\tcommission\tlibrarian\tauthor a debounce impl\tfile:src/x.ts",
+      "event": {
+        "type": "commission",
+        "from": "alpha:designer",
+        "target": "librarian",
+        "body": "author a debounce impl",
+        "ref": {
+          "kind": "file",
+          "path": "src/x.ts"
+        },
+        "id": "alpha:designer@1788177614000",
+        "at": 1788177614000
+      }
+    },
+    {
+      "name": "commission with an empty target",
+      "line": "2026-08-31T12:00:14Z\talpha:designer\tcommission\t\tbody\t",
+      "event": null
+    },
+    {
+      "name": "commission with a whitespace body",
+      "line": "2026-08-31T12:00:14Z\talpha:designer\tcommission\tlibrarian\t  \t",
+      "event": null
+    },
+    {
+      "name": "deliver",
+      "line": "2026-08-31T12:00:15Z\talpha:librarian\tdeliver\talpha:designer@1\tdebounce.ts",
+      "event": {
+        "type": "deliver",
+        "commissionId": "alpha:designer@1",
+        "artifactId": "debounce.ts",
+        "from": "alpha:librarian",
+        "at": 1788177615000
+      }
+    },
+    {
+      "name": "deliver with no artifact",
+      "line": "2026-08-31T12:00:15Z\talpha:librarian\tdeliver\talpha:designer@1\t",
+      "event": null
+    },
+    {
+      "name": "deliver with no commission",
+      "line": "2026-08-31T12:00:15Z\talpha:librarian\tdeliver\t\tdebounce.ts",
+      "event": null
+    },
+    {
+      "name": "verdict pass",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tpass\t\t",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "pass",
+        "relevant": true,
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict reject with a reason",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\treject\tno test covers the null path\t",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "reject",
+        "reason": "no test covers the null path",
+        "relevant": true,
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict is case insensitive on the word",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tPASS\t\t",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "pass",
+        "relevant": true,
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict relevant=false",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tpass\t\tfalse",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "pass",
+        "relevant": false,
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict relevant=0",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tpass\t\t0",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "pass",
+        "relevant": false,
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict relevant=true",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tpass\t\ttrue",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "pass",
+        "relevant": true,
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict with an absent relevant column is undefined, an EMPTY one is true",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tpass\t",
+      "event": {
+        "type": "verdict",
+        "juror": "alpha:juror",
+        "target": "#42",
+        "verdict": "pass",
+        "at": 1788177616000
+      }
+    },
+    {
+      "name": "verdict with an unknown word",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t#42\tmaybe\t\t",
+      "event": null
+    },
+    {
+      "name": "verdict with an empty target",
+      "line": "2026-08-31T12:00:16Z\talpha:juror\tverdict\t\tpass\t\t",
+      "event": null
+    }
+  ],
+  "logs": [
+    {
+      "name": "an empty log",
+      "lines": [],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "every line unparseable",
+      "lines": [
+        "",
+        "garbage",
+        "2026-08-31T12:00:00Z\talpha:api\tbrief-done\tx\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "blocked then satisfied wakes the waiter and leaves it awaiting a woke ack",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\tblocked\t#42,contract:X\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\talpha:web\tlanded\t#42\t",
+        "2026-08-31T12:00:03Z\talpha:web\tmerged\tcontract:X\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "satisfied",
+              "source": "landed",
+              "at": 1788177602000
+            },
+            "contract:X": {
+              "state": "satisfied",
+              "source": "merged",
+              "at": 1788177603000
+            }
+          },
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              },
+              {
+                "kind": "contract",
+                "name": "X"
+              }
+            ],
+            "checkpoint": "notes/cp.md",
+            "registeredAt": 1788177601000
+          }
+        ],
+        "ready": [
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              },
+              {
+                "kind": "contract",
+                "name": "X"
+              }
+            ],
+            "checkpoint": "notes/cp.md",
+            "registeredAt": 1788177601000
+          }
+        ],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "three waiters on one dep come back in arrival order, and a re-satisfy keeps that order",
+      "lines": [
+        "2026-08-31T12:00:01Z\tzulu:api\tblocked\t#42\tnotes/z.md",
+        "2026-08-31T12:00:02Z\talpha:api\tblocked\t#42\tnotes/a.md",
+        "2026-08-31T12:00:03Z\tmike:api\tblocked\t#42\tnotes/m.md",
+        "2026-08-31T12:00:04Z\talpha:svc\tlanded\t#42\t",
+        "2026-08-31T12:00:05Z\talpha:svc\tmerged\t#42\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "satisfied",
+              "source": "merged",
+              "at": 1788177605000
+            }
+          },
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [
+          {
+            "session": "zulu:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/z.md",
+            "registeredAt": 1788177601000
+          },
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/a.md",
+            "registeredAt": 1788177602000
+          },
+          {
+            "session": "mike:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/m.md",
+            "registeredAt": 1788177603000
+          }
+        ],
+        "ready": [
+          {
+            "session": "zulu:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/z.md",
+            "registeredAt": 1788177601000
+          },
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/a.md",
+            "registeredAt": 1788177602000
+          },
+          {
+            "session": "mike:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/m.md",
+            "registeredAt": 1788177603000
+          }
+        ],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "answers and assignments are pending in arrival order too",
+      "lines": [
+        "2026-08-31T12:00:01Z\tzulu:api\task\twhich pagination?\t",
+        "2026-08-31T12:00:02Z\talpha:api\task\twhich cache?\t",
+        "2026-08-31T12:00:03Z\talpha:director\tanswer\talpha:api\tredis",
+        "2026-08-31T12:00:04Z\tzulu:director\tanswer\tzulu:api\tcursor",
+        "2026-08-31T12:00:05Z\talpha:director\tassign\talpha:web\tstart on the shell\t\t",
+        "2026-08-31T12:00:06Z\talpha:director\tassign\talpha:api\tthen the limiter\t\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [
+          {
+            "session": "alpha:api",
+            "answer": "redis",
+            "at": 1788177603000
+          },
+          {
+            "session": "zulu:api",
+            "answer": "cursor",
+            "at": 1788177604000
+          }
+        ],
+        "assigned": [
+          {
+            "session": "alpha:web",
+            "body": "start on the shell",
+            "at": 1788177605000
+          },
+          {
+            "session": "alpha:api",
+            "body": "then the limiter",
+            "at": 1788177606000
+          }
+        ],
+        "refused": []
+      }
+    },
+    {
+      "name": "the woke ack retires the pending wake",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\tblocked\t#42\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\talpha:web\tlanded\t#42\t",
+        "2026-08-31T12:00:03Z\talpha:api\twoke\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "satisfied",
+              "source": "landed",
+              "at": 1788177602000
+            }
+          },
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "checkpoint": "notes/cp.md",
+            "registeredAt": 1788177601000
+          }
+        ],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "satisfy BEFORE the block is the lost-wakeup case: no waiter is registered, and ingest reports no pending wake",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:web\tlanded\t#42\t",
+        "2026-08-31T12:00:02Z\talpha:api\tblocked\t#42\tnotes/cp.md"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "satisfied",
+              "source": "landed",
+              "at": 1788177601000
+            }
+          },
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "requests": [],
+          "commissions": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "failed is not a satisfy — the dependent stays blocked",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\tblocked\t#42\t",
+        "2026-08-31T12:00:02Z\talpha:web\tfailed\t#42\tthe gate went red"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "failed",
+              "reason": "the gate went red",
+              "at": 1788177602000
+            }
+          },
+          "waiters": [
+            {
+              "session": "alpha:api",
+              "deps": [
+                {
+                  "kind": "issue",
+                  "number": 42
+                }
+              ],
+              "registeredAt": 1788177601000
+            }
+          ],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "a later satisfy overwrites a failed latch and wakes the dependent",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\tblocked\t#42\t",
+        "2026-08-31T12:00:02Z\talpha:web\tfailed\t#42\tthe gate went red",
+        "2026-08-31T12:00:03Z\talpha:web\tmerged\t#42\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "satisfied",
+              "source": "merged",
+              "at": 1788177603000
+            }
+          },
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "registeredAt": 1788177601000
+          }
+        ],
+        "ready": [
+          {
+            "session": "alpha:api",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              }
+            ],
+            "registeredAt": 1788177601000
+          }
+        ],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "ask then answer, same project",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\task\twhich pagination?\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\talpha:director\tanswer\talpha:api\tcursor"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [
+          {
+            "session": "alpha:api",
+            "answer": "cursor",
+            "checkpoint": "notes/cp.md",
+            "at": 1788177602000
+          }
+        ],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "an answer from ANOTHER project is refused and leaves the ask outstanding",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\task\twhich pagination?\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\tbeta:director\tanswer\talpha:api\tcursor"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [
+            {
+              "session": "alpha:api",
+              "question": "which pagination?",
+              "checkpoint": "notes/cp.md",
+              "at": 1788177601000
+            }
+          ],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": [
+          {
+            "kind": "answer",
+            "from": "beta:director",
+            "target": "alpha:api",
+            "at": 1788177602000
+          }
+        ]
+      }
+    },
+    {
+      "name": "an answer to a bare, unplaceable id is allowed",
+      "lines": [
+        "2026-08-31T12:00:01Z\tt0p2\task\twhich pagination?\t",
+        "2026-08-31T12:00:02Z\talpha:director\tanswer\tt0p2\tcursor"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [
+          {
+            "session": "t0p2",
+            "answer": "cursor",
+            "at": 1788177602000
+          }
+        ],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "an answer resumes a user-wait too, carrying its checkpoint",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\twaiting\tneeds a decision\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\talpha:director\tanswer\talpha:api\tdo the second one"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [
+          {
+            "session": "alpha:api",
+            "answer": "do the second one",
+            "checkpoint": "notes/cp.md",
+            "at": 1788177602000
+          }
+        ],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "ask supersedes a plain wait for the same session",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\twaiting\tneeds a decision\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\talpha:api\task\twhich pagination?\tnotes/cp2.md"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [
+            {
+              "session": "alpha:api",
+              "question": "which pagination?",
+              "checkpoint": "notes/cp2.md",
+              "at": 1788177602000
+            }
+          ],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "declaring a dependency leaves the manual-wait list",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\twaiting\tneeds a decision\tnotes/cp.md",
+        "2026-08-31T12:00:02Z\talpha:api\tblocked\t#42\tnotes/cp.md"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [
+            {
+              "session": "alpha:api",
+              "deps": [
+                {
+                  "kind": "issue",
+                  "number": 42
+                }
+              ],
+              "checkpoint": "notes/cp.md",
+              "registeredAt": 1788177602000
+            }
+          ],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "requests": [],
+          "commissions": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "issue then assign clears the pending issue and injects the work",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:issuer\tissue\tRate limiting is missing\tbody\tapi\tiss-1",
+        "2026-08-31T12:00:02Z\talpha:director\tassign\talpha:api\tstart on it\tiss-1\tRate limiting is missing"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [
+          {
+            "session": "alpha:api",
+            "title": "Rate limiting is missing",
+            "body": "start on it",
+            "at": 1788177602000
+          }
+        ],
+        "refused": []
+      }
+    },
+    {
+      "name": "an assign from ANOTHER project is refused and the issue stays pending",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:issuer\tissue\tRate limiting is missing\tbody\tapi\tiss-1",
+        "2026-08-31T12:00:02Z\tbeta:director\tassign\talpha:api\tstart on it\tiss-1\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [
+            {
+              "id": "iss-1",
+              "session": "alpha:issuer",
+              "title": "Rate limiting is missing",
+              "body": "body",
+              "suggested": "api",
+              "at": 1788177601000
+            }
+          ],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": [
+          {
+            "kind": "assign",
+            "from": "beta:director",
+            "target": "alpha:api",
+            "at": 1788177602000
+          }
+        ]
+      }
+    },
+    {
+      "name": "an assign with no issueId leaves intake untouched",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:issuer\tissue\tRate limiting is missing\tbody\tapi\tiss-1",
+        "2026-08-31T12:00:02Z\talpha:director\tassign\talpha:api\tstart on it\t\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [
+            {
+              "id": "iss-1",
+              "session": "alpha:issuer",
+              "title": "Rate limiting is missing",
+              "body": "body",
+              "suggested": "api",
+              "at": 1788177601000
+            }
+          ],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [
+          {
+            "session": "alpha:api",
+            "body": "start on it",
+            "at": 1788177602000
+          }
+        ],
+        "refused": []
+      }
+    },
+    {
+      "name": "maintain clears a wait and an ask, and survives a woke",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\twaiting\tneeds a decision\t",
+        "2026-08-31T12:00:02Z\talpha:api\task\twhich pagination?\t",
+        "2026-08-31T12:00:03Z\talpha:api\tmaintain\towned issues complete\t",
+        "2026-08-31T12:00:04Z\talpha:api\twoke\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [
+            {
+              "session": "alpha:api",
+              "note": "owned issues complete",
+              "at": 1788177603000
+            }
+          ],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "a replayed log does not double a brief, a fork, an issue or a request",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:planner\tbrief\tdirector\tscope grew\t#77",
+        "2026-08-31T12:00:02Z\talpha:director\tfork\treview three PRs\tgeneral-purpose",
+        "2026-08-31T12:00:03Z\talpha:issuer\tissue\tRate limiting is missing\t\t\tiss-1",
+        "2026-08-31T12:00:04Z\talpha:api\trequest\t7\tno develop branch",
+        "2026-08-31T12:00:01Z\talpha:planner\tbrief\tdirector\tscope grew\t#77",
+        "2026-08-31T12:00:02Z\talpha:director\tfork\treview three PRs\tgeneral-purpose",
+        "2026-08-31T12:00:03Z\talpha:issuer\tissue\tRate limiting is missing\t\t\tiss-1",
+        "2026-08-31T12:00:04Z\talpha:api\trequest\t7\tno develop branch"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [
+            {
+              "id": "iss-1",
+              "session": "alpha:issuer",
+              "title": "Rate limiting is missing",
+              "at": 1788177603000
+            }
+          ],
+          "maintaining": [],
+          "briefs": [
+            {
+              "id": "alpha:planner@1788177601000",
+              "from": "alpha:planner",
+              "target": "director",
+              "body": "scope grew",
+              "ref": {
+                "kind": "issue",
+                "number": 77
+              },
+              "at": 1788177601000
+            }
+          ],
+          "forks": [
+            {
+              "id": "alpha:director@1788177602000",
+              "session": "alpha:director",
+              "description": "review three PRs",
+              "subagentType": "general-purpose",
+              "at": 1788177602000
+            }
+          ],
+          "commissions": [],
+          "requests": [
+            {
+              "id": "7",
+              "from": "alpha:api",
+              "text": "no develop branch",
+              "at": 1788177604000
+            }
+          ]
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "request-resolved empties the open request",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\trequest\t7\tno develop branch",
+        "2026-08-31T12:00:02Z\talpha:director\trequest-resolved\t7\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "commission then deliver stamps the artifact id",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:designer\tcommission\tlibrarian\tauthor a debounce impl\tfile:src/x.ts",
+        "2026-08-31T12:00:02Z\talpha:librarian\tdeliver\talpha:designer@1788177601000\tdebounce.ts"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [
+            {
+              "id": "alpha:designer@1788177601000",
+              "from": "alpha:designer",
+              "target": "librarian",
+              "body": "author a debounce impl",
+              "ref": {
+                "kind": "file",
+                "path": "src/x.ts"
+              },
+              "at": 1788177601000,
+              "delivered": "debounce.ts"
+            }
+          ],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "an unmatched deliver is a no-op",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:designer\tcommission\tlibrarian\tauthor a debounce impl\t",
+        "2026-08-31T12:00:02Z\talpha:librarian\tdeliver\tno-such-commission\tdebounce.ts"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [
+            {
+              "id": "alpha:designer@1788177601000",
+              "from": "alpha:designer",
+              "target": "librarian",
+              "body": "author a debounce impl",
+              "at": 1788177601000
+            }
+          ],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "a verdict moves no state",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:juror\tverdict\t#42\treject\tno test covers the null path\t",
+        "2026-08-31T12:00:02Z\talpha:juror2\tverdict\t#42\tpass\t\tfalse"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": []
+      }
+    },
+    {
+      "name": "two refusals for the same pair at different times are BOTH reported",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\task\twhich pagination?\t",
+        "2026-08-31T12:00:02Z\tbeta:director\tanswer\talpha:api\tcursor",
+        "2026-08-31T12:00:03Z\tbeta:director\tanswer\talpha:api\tcursor, really"
+      ],
+      "result": {
+        "state": {
+          "latches": {},
+          "waiters": [],
+          "waiting": [],
+          "asking": [
+            {
+              "session": "alpha:api",
+              "question": "which pagination?",
+              "at": 1788177601000
+            }
+          ],
+          "issues": [],
+          "maintaining": [],
+          "briefs": [],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [],
+        "ready": [],
+        "answered": [],
+        "assigned": [],
+        "refused": [
+          {
+            "kind": "answer",
+            "from": "beta:director",
+            "target": "alpha:api",
+            "at": 1788177602000
+          },
+          {
+            "kind": "answer",
+            "from": "beta:director",
+            "target": "alpha:api",
+            "at": 1788177603000
+          }
+        ]
+      }
+    },
+    {
+      "name": "a mixed realistic log with unparseable lines interleaved",
+      "lines": [
+        "2026-08-31T12:00:01Z\talpha:api\twaiting\tneeds a decision\tnotes/cp.md",
+        "garbage",
+        "2026-08-31T12:00:02Z\talpha:issuer\tissue\tRate limiting is missing\tbody\tapi\tiss-1",
+        "2026-08-31T12:00:03Z\talpha:web\tblocked\t#42,predicate:tests-pass\tnotes/web.md",
+        "2026-08-31T12:00:04Z\talpha:director\tassign\talpha:api\tstart on it\tiss-1\tRate limiting",
+        "2026-08-31T12:00:05Z\talpha:api\twoke\t",
+        "2026-08-31T12:00:06Z\talpha:svc\tlanded\t#42\t",
+        "2026-08-31T12:00:07Z\talpha:planner\tbrief\tdirector\tscope grew\t#77",
+        "2026-08-31T12:00:08Z\tbeta:director\tanswer\talpha:web\tnot yours",
+        "2026-08-31T12:00:09Z\talpha:svc\tlanded\tpredicate:tests-pass\t",
+        "2026-08-31T12:00:10Z\talpha:svc\tmaintain\towned issues complete\t"
+      ],
+      "result": {
+        "state": {
+          "latches": {
+            "#42": {
+              "state": "satisfied",
+              "source": "landed",
+              "at": 1788177606000
+            },
+            "predicate:tests-pass": {
+              "state": "satisfied",
+              "source": "landed",
+              "at": 1788177609000
+            }
+          },
+          "waiters": [],
+          "waiting": [],
+          "asking": [],
+          "issues": [],
+          "maintaining": [
+            {
+              "session": "alpha:svc",
+              "note": "owned issues complete",
+              "at": 1788177610000
+            }
+          ],
+          "briefs": [
+            {
+              "id": "alpha:planner@1788177607000",
+              "from": "alpha:planner",
+              "target": "director",
+              "body": "scope grew",
+              "ref": {
+                "kind": "issue",
+                "number": 77
+              },
+              "at": 1788177607000
+            }
+          ],
+          "forks": [],
+          "commissions": [],
+          "requests": []
+        },
+        "woken": [
+          {
+            "session": "alpha:web",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              },
+              {
+                "kind": "predicate",
+                "expr": "tests-pass"
+              }
+            ],
+            "checkpoint": "notes/web.md",
+            "registeredAt": 1788177603000
+          }
+        ],
+        "ready": [
+          {
+            "session": "alpha:web",
+            "deps": [
+              {
+                "kind": "issue",
+                "number": 42
+              },
+              {
+                "kind": "predicate",
+                "expr": "tests-pass"
+              }
+            ],
+            "checkpoint": "notes/web.md",
+            "registeredAt": 1788177603000
+          }
+        ],
+        "answered": [],
+        "assigned": [],
+        "refused": [
+          {
+            "kind": "answer",
+            "from": "beta:director",
+            "target": "alpha:web",
+            "at": 1788177608000
+          }
+        ]
+      }
+    }
+  ]
+}
