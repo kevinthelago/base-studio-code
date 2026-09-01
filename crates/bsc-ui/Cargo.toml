@@ -32,3 +32,8 @@ sha2 = "0.11"
 # whose JS semantics are a translation rather than a re-derivation. Already in the workspace lock via
 # `bsc-agent` and `llm`, so it costs no new compile.
 regex = "1"
+# `bsc ui census` reads BOTH record stores — the components here and the algorithm impls there —
+# because a record can claim a module from either. bsc-graph takes bsc-data with default-features off,
+# so this does NOT drag the DuckDB amalgamation back into `cargo check -p bsc-ui` (2m28s vs 20.8s,
+# measured — see bsc-graph's own Cargo.toml for why that dependency is pinned off).
+bsc-graph = { path = "../bsc-graph" }

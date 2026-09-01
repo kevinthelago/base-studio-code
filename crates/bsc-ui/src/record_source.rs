@@ -649,13 +649,42 @@ pub fn relative_specifiers(src: &str) -> Vec<RelSpec> {
             if prose_sensitive && is_prose_line(line_at(src, m.start())) {
                 continue;
             }
-            out.push(RelSpec { spec: spec.to_string(), at: m.start() });
+            // TRANSLATE THE OFFSET BACK TO THE ORIGINAL. `blank_comments` preserves UTF-16 length, not
+            // BYTE length: an em-dash inside a comment is one UTF-16 unit but three UTF-8 bytes, and
+            // blanking replaces it with a one-byte space. So the blanked string is SHORTER in bytes than
+            // the source while staying identical in UTF-16 units, and a regex byte offset into it points
+            // at the wrong place in the original. UTF-16 is the coordinate the two share.
+            //
+            // This is not hypothetical — this repo's comments are full of em-dashes.
+            // `src/features/sounds/index.ts` opens with one, and splicing on the raw byte offset
+            // corrupted its rewrite, which the census caught as a record disagreeing with its own file.
+            let at = byte_offset_for_utf16(src, scan[..m.start()].encode_utf16().count());
+            out.push(RelSpec { spec: spec.to_string(), at });
         }
     }
     // One offset can be reached by two patterns; the FIRST wins, and the result is source-ordered.
     out.sort_by_key(|r| r.at);
     out.dedup_by_key(|r| r.at);
     out
+}
+
+/// The BYTE offset in `s` at which `want` UTF-16 units have elapsed.
+///
+/// The bridge between the two coordinate systems this module straddles: the JavaScript it is proved
+/// against counts UTF-16 code units, Rust regex reports bytes, and [`blank_comments`] preserves only the
+/// former. Walking the char boundaries is O(n) but runs once per match on source-file-sized inputs.
+fn byte_offset_for_utf16(s: &str, want: usize) -> usize {
+    if want == 0 {
+        return 0;
+    }
+    let mut units = 0usize;
+    for (byte_idx, ch) in s.char_indices() {
+        if units == want {
+            return byte_idx;
+        }
+        units += ch.len_utf16();
+    }
+    s.len()
 }
 
 /// `fromDir` + a relative specifier, collapsed to an `@/…` alias.

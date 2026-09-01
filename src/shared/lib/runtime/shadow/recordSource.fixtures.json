@@ -750,6 +750,25 @@
       "absolutized": "const s = \"./notanimport\";\nexport const a = 1;\n"
     },
     {
+      "label": "a NON-ASCII comment before an import — the offset-coordinate case",
+      "source": "// Public API barrel — cross-feature consumers import ONLY from here.\nimport { X } from \"./x\";\n",
+      "fromRel": "features/sounds/index.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "// Public API barrel — cross-feature consumers import ONLY from here.\nimport { X } from \"@/features/sounds/x\";\n"
+    },
+    {
+      "label": "several non-ascii comments before several imports",
+      "source": "// one — dash\nimport { A } from \"./a\";\n// two — dash\nimport { B } from \"../b\";\n",
+      "fromRel": "features/x/y.ts",
+      "specifiers": [
+        "./a",
+        "../b"
+      ],
+      "absolutized": "// one — dash\nimport { A } from \"@/features/x/a\";\n// two — dash\nimport { B } from \"@/features/b\";\n"
+    },
+    {
       "label": "nothing relative at all",
       "source": "export const a = 1;\n",
       "fromRel": "features/a/b.ts",

@@ -28,6 +28,7 @@ pub mod kit;
 /// Surgical single-field JSON patch for on-disk SEED files (#109) — the write half of
 /// `bsc ui tests adopt`, kept separate from [`tests_harvest`] since it is a generic byte-level editor
 /// with no test-harvesting knowledge of its own.
+pub mod claim_census;
 pub mod record_source;
 pub mod seed_patch;
 pub mod tests_harvest;

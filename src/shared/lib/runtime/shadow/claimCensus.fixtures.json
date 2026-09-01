@@ -1,0 +1,203 @@
+{
+  "note": "FROZEN. Captured from scripts/lib/claimCensus.mjs by claimCensus.fixtures.gen.test.ts, both of which were DELETED when `bsc ui census` replaced them. It is no longer a parity fixture — there is no second implementation to agree with — it is the REGRESSION baseline: the exact verdicts the JS produced, which the Rust had to reproduce and must keep reproducing. Do not hand-edit; a change here is a change to what the census decides, and wants its own argument.",
+  "cases": [
+    {
+      "label": "a record defining SAMPLE data its file does not is a preview derivative",
+      "recordSrc": "const SAMPLE_ROWS = [1, 2];\nexport function Widget() { return SAMPLE_ROWS; }\nexport const other = 1;\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget",
+        "other"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "preview-derivative",
+        "why": "defines SAMPLE/MOCK data its file does not",
+        "keepsProvides": false
+      }
+    },
+    {
+      "label": "a record that stops importing and stands it in locally is too",
+      "recordSrc": "function helper() { return 1; }\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget",
+        "other"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "preview-derivative",
+        "why": "stops importing ./helper and stands it in locally",
+        "keepsProvides": false
+      }
+    },
+    {
+      "label": "a TINY record dropping an import is not a derivative — the half-length guard",
+      "recordSrc": "export const other = 1;\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n// padding so the record is well under half\n// padding\n// padding\n// padding\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "other"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "drops-exports",
+        "why": "the file exports Widget and the record does not",
+        "keepsProvides": false
+      }
+    },
+    {
+      "label": "dropping exports is EXPECTED when several records share the file",
+      "recordSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget"
+      ],
+      "sharesSrc": 3,
+      "verdict": {
+        "kind": "per-component-lift",
+        "why": "3 records share this file; exporting only its own is expected",
+        "keepsProvides": false
+      }
+    },
+    {
+      "label": "a star export makes the verdict UNKNOWN rather than a guess",
+      "recordSrc": "import { helper } from \"./helper\";\nexport * from \"./all\";\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": null,
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "unknown",
+        "why": "a star export means the exports cannot be enumerated",
+        "keepsProvides": false
+      }
+    },
+    {
+      "label": "dropping exports with ONE claimant is drops-exports",
+      "recordSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "drops-exports",
+        "why": "the file exports other and the record does not",
+        "keepsProvides": false
+      }
+    },
+    {
+      "label": "same exports, different body is newer-truth — the only verdict that KEEPS provides",
+      "recordSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper() + 1; }\nexport const other = 2;\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget",
+        "other"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "newer-truth",
+        "why": "same exports, different body",
+        "keepsProvides": true
+      }
+    },
+    {
+      "label": "an identical record is newer-truth too — nothing distinguishes it",
+      "recordSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileSrc": "import { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget",
+        "other"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "newer-truth",
+        "why": "same exports, different body",
+        "keepsProvides": true
+      }
+    },
+    {
+      "label": "a file that itself defines SAMPLE data does not make its record a derivative",
+      "recordSrc": "const SAMPLE_ROWS = [1];\nimport { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileSrc": "const SAMPLE_ROWS = [1];\nimport { helper } from \"./helper\";\nexport function Widget() { return helper(); }\nexport const other = 1;\n",
+      "fileExports": [
+        "Widget",
+        "other"
+      ],
+      "recordExports": [
+        "Widget",
+        "other"
+      ],
+      "sharesSrc": 1,
+      "verdict": {
+        "kind": "newer-truth",
+        "why": "same exports, different body",
+        "keepsProvides": true
+      }
+    }
+  ],
+  "specs": [
+    {
+      "label": "a plain from-import",
+      "src": "import { A } from \"./a\";\n",
+      "specifiers": [
+        "./a"
+      ]
+    },
+    {
+      "label": "two imports",
+      "src": "import { A } from \"./a\";\nexport { B } from \"./b\";\n",
+      "specifiers": [
+        "./a",
+        "./b"
+      ]
+    },
+    {
+      "label": "none at all",
+      "src": "export const a = 1;\n",
+      "specifiers": []
+    }
+  ],
+  "totals": {
+    "total": 9,
+    "counts": {
+      "preview-derivative": 2,
+      "drops-exports": 2,
+      "per-component-lift": 1,
+      "unknown": 1,
+      "newer-truth": 3
+    },
+    "shouldDropProvides": 6
+  }
+}
