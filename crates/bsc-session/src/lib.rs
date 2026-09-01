@@ -335,6 +335,20 @@ fn yes() -> bool {
 /// and why it has to be discovered instead.
 pub const DEBUG_STUDIO_PREFIX: &str = "debug-studio:";
 
+/// The ONE debug-studio pane id that is fixed: the standing debugger, which genuinely resumes across
+/// app restarts. Every other session under [`DEBUG_STUDIO_PREFIX`] is a per-request
+/// `debug-studio:req-<n>` that resumes nothing.
+///
+/// It lives here rather than in [`SYSTEM_SESSIONS`] because that table is the argument space of
+/// `bsc session start|stop|ask`, and the debug studio is toggled from Settings rather than named to
+/// the CLI — see the prefix's doc above. But the standing id IS a stable, app-owned fact, and callers
+/// that need the full app-owned pane registry (rather than the CLI's argument space) need it by name:
+/// `startup_prompt_fresh_only` is the first, and reaching for the PREFIX there instead of this
+/// constant is precisely the bug that stranded every per-request debug session at an empty prompt.
+///
+/// Mirrors `DEBUG_STUDIO_SESSION_ID` in `src/shared/lib/session/systemSessions.ts`.
+pub const DEBUG_STUDIO_STANDING_PANE_ID: &str = "debug-studio:debugger";
+
 /// The short id and summary for a DISCOVERED session — one the app is running that this verb does not
 /// manage.
 ///

@@ -71,7 +71,7 @@ afterEach(cleanup);
 const launch = () => {
   const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === "pty_create");
   return call?.[1] as
-    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean }
+    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean }
     | undefined;
 };
 
@@ -95,6 +95,14 @@ describe("a studio woken to serve an ask", () => {
     // BACKEND dropped it, because `fresh_only && has_history` suppresses a startup prompt and every
     // one of those panes had history. A studio ALWAYS has history — its pane id is stable so it
     // resumes — so a fresh-only errand would be suppressed on every launch that matters.
+    //
+    // The frontend no longer sends that answer (`the-launch-derives-its-own-fresh-only-instead-of-
+    // receiving-it`): it sends `startupPromptIsErrand`, and the backend's carve-out is what keeps the
+    // errand. THIS ASSERTION USED TO READ `p!.startupPromptFreshOnly ?? false`, and that `?? false`
+    // is why it has to change here rather than simply passing: with the key gone it would have kept
+    // passing while checking nothing at all — the vacuous-green shape this repo keeps getting caught
+    // by. A studio IS in the registry, so without the errand fact the backend derives fresh-only TRUE
+    // and drops the errand; this is the one payload field standing between the two.
     useAppStore.getState().setStudioPendingDirective(DEF.id, ERRAND);
     render(<TerminalHost><StudioSessionMount studio={DEF.id} /></TerminalHost>);
 
@@ -102,9 +110,13 @@ describe("a studio woken to serve an ask", () => {
       const p = launch();
       expect(p?.startupPrompt).toBeTruthy();
       expect(
-        p!.startupPromptFreshOnly ?? false,
-        "a fresh-only errand is dropped whenever the studio has a prior conversation, which is always",
-      ).toBe(false);
+        p!.startupPromptIsErrand,
+        "a studio always has a prior conversation, so only the errand fact keeps its errand alive",
+      ).toBe(true);
+      expect(
+        p!.startupPromptFreshOnly,
+        "the computed flag must not come back — the backend derives it now",
+      ).toBeUndefined();
     });
   });
 

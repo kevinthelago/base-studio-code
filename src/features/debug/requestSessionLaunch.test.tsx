@@ -109,18 +109,31 @@ describe("a spawned debug session launches with its charter", () => {
   /// the charter was dropped on every launch that has ever happened, and the session came up as a
   /// bare `claude` with nothing to do.
   ///
-  /// Asserting the flag — not just the prompt — is what makes this a guard rather than a coincidence:
-  /// a prompt that is present in the payload and then discarded downstream looks identical to a
-  /// working launch from here.
+  /// Asserting the payload — not just the prompt — is what makes this a guard rather than a
+  /// coincidence: a prompt that is present in the payload and then discarded downstream looks
+  /// identical to a working launch from here.
+  ///
+  /// The FLAG IS GONE (`the-launch-derives-its-own-fresh-only-instead-of-receiving-it`). The frontend
+  /// no longer decides; it sends the two facts and the backend derives the rule from them plus its own
+  /// studio registry. So the assertion moves with it: send the facts that make the backend DELIVER,
+  /// and let `console::pty::tests::the_launch_derives_fresh_only_from_the_facts_it_is_given` prove the
+  /// backend does. Asserting the old key here would have gone vacuous rather than red — `undefined`
+  /// is not `false`, but a `?? false` would have swallowed exactly that.
   it("does NOT ask the backend to suppress the charter — the launch is fresh, so there is nothing to re-greet", async () => {
     render(<TerminalHost><RequestSessionsMount /></TerminalHost>);
     await waitFor(() => {
-      const p = launch() as ({ startupPromptFreshOnly?: boolean } & Record<string, unknown>) | undefined;
+      const p = launch() as
+        | ({ startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean } & Record<string, unknown>)
+        | undefined;
       expect(p, "pty_create was never called").toBeTruthy();
       expect(
         p!.startupPromptFreshOnly,
-        "fresh-only is set, so the backend drops the charter wherever claude has run before — which is always",
-      ).toBe(false);
+        "the computed flag must not come back — the backend derives it, and a second opinion on the wire is what this whole inversion removes",
+      ).toBeUndefined();
+      // A per-request session is not a crash restore, and `debug-studio:req-<id>` is not in the studio
+      // registry — so these two facts are what make the backend deliver the charter.
+      expect(p!.restoreRequested, "a freshly claimed request is not a crash restore").toBe(false);
+      expect(typeof p!.startupPromptIsErrand, "the errand fact must be sent, not omitted").toBe("boolean");
     });
   });
 
