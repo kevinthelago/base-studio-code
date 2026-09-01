@@ -17,9 +17,14 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 20] = [
+pub const VERBS: [&str; 22] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
     "used-by", "features", "merge", "emit", "promote", "reseed", "unmaterialize", "build", "migrate-crate", "help",
+    // The duplicate surfaces (epic-a-graph-finds-its-own-duplicates). They dispatched and appeared in
+    // `help` from the day they were written but were never listed HERE, so both sat outside every
+    // drift guard — and the librarian charter test, which asserts the seed names only verbs the CLI
+    // has, could not accept prose that taught them.
+    "dupes", "similar",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
