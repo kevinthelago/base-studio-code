@@ -18,6 +18,7 @@ import {
   norm, blankComments, stripComments, codeOnly, splitPreamble,
   exportedNames, seedMatchesFile, importsSiblingsByRecordId, entriesImportingStatically,
   seedAdoption, seedAnswersSpecifier,
+  relativeSpecifiers, aliasFor, aliasForDir, absolutizeImports, dropAssetImports, runtimeImports,
 } from "../../../../../scripts/lib/recordSource.mjs";
 
 const FIXTURE = join(process.cwd(), "src/shared/lib/runtime/shadow/recordSource.fixtures.json");
@@ -201,6 +202,75 @@ const SPECS: Array<[string, string, string[]]> = [
   ["nothing seeded at all", "@/nowhere", []],
 ];
 
+/** The import cluster. `fromRel` is the record's own path — what a relative specifier resolves against. */
+const IMPORTS: Array<[string, string, string]> = [
+  ["one relative import", 'import { X } from "./x";\n', "features/a/b.ts"],
+  ["a parent-relative import", 'import { X } from "../ui/X";\n', "features/a/b.ts"],
+  ["a deep parent walk", 'import { X } from "../../shared/X";\n', "features/a/b/c.ts"],
+  ["an index specifier", 'import { X } from "./sub";\n', "features/a/b.ts"],
+  ["an already-aliased import is left alone", 'import { X } from "@/shared/X";\n', "features/a/b.ts"],
+  ["a package import is left alone", 'import React from "react";\n', "features/a/b.ts"],
+  // MULTIPLE specifiers in one source. Each rewrite changes the string's length, so a forward splice
+  // corrupts every offset after the first — this is what proves the reverse order.
+  ["THREE relative imports rewritten together", 'import { A } from "./a";\nimport { B } from "../b";\nimport { C } from "./c/d";\n', "features/x/y.ts"],
+  ["a bare relative side-effect import", 'import "./styles";\n', "features/a/b.ts"],
+  ["a dynamic import is rewritten too", 'const m = await import("./lazy");\n', "features/a/b.ts"],
+  ["a vi.mock target is rewritten", 'vi.mock("./dep");\n', "features/a/b.test.ts"],
+  // The traps. `blankComments` is what makes these safe, and it is why offsets had to survive it.
+  ["a relative specifier in a LINE comment is not an import", '// see "./ghost" for why\nimport { X } from "./x";\n', "features/a/b.ts"],
+  ["a relative specifier in a BLOCK comment is not an import", '/* lifted from "./ghost" */\nimport { X } from "./x";\n', "features/a/b.ts"],
+  // THE CASE blankComments EXISTS FOR, and the one the other comment subjects miss: a COMMENTED-OUT
+  // import is line-anchored, so `^[ \t]*import` matches it in the raw source. Only blanking the comment
+  // first stops it being rewritten as a real dependency. Without this subject, deleting the blanking step
+  // passes the whole corpus.
+  ["a COMMENTED-OUT import inside a block comment is not an import", '/*\nimport { Ghost } from "./ghost";\n*/\nimport { X } from "./x";\n', "features/a/b.ts"],
+  ["a commented-out import on a `//` line is not one either", '// import { Ghost } from "./ghost";\nimport { X } from "./x";\n', "features/a/b.ts"],
+  ["a require() inside a doc comment is prose, not a dependency", ' * `require("./example")` shows the shape\nimport { X } from "./x";\n', "features/a/b.ts"],
+  // PROSE ONLY, with no real import to rewrite — the strongest form of the guard: the whole source must
+  // come back byte-identical. The comment subjects above still CHANGE, because their real import is
+  // rewritten alongside the prose that must not be.
+  ["a source that is ONLY prose mentioning a specifier is untouched", '// see "./ghost" for why\nexport const a = 1;\n', "features/a/b.ts"],
+  ["a specifier inside a STRING is not an import", 'const s = "./notanimport";\nexport const a = 1;\n', "features/a/b.ts"],
+  ["nothing relative at all", "export const a = 1;\n", "features/a/b.ts"],
+];
+
+/** `dropAssetImports` — what a record cannot resolve. */
+const ASSETS: Array<[string, string]> = [
+  ["a css import goes", 'import "./styles.css";\nexport const a = 1;\n'],
+  ["a bare svg import goes", 'import "./icon.svg";\nexport const a = 1;\n'],
+  // A BOUND asset import STAYS, and that is right rather than an oversight: `icon` has a user, so
+  // deleting the line would leave an undefined reference. Only side-effect imports — which bind nothing
+  // — can be removed safely. The pattern requires a quote directly after `import`, which is what draws
+  // that line.
+  ["a BOUND asset import stays — it binds a value someone uses", 'import icon from "./icon.svg";\nexport const a = icon;\n'],
+  ["several asset kinds go", 'import "./a.scss";\nimport "./b.png";\nimport "./c.webp";\nexport const a = 1;\n'],
+  ["a code import STAYS", 'import { X } from "./x";\nexport const a = 1;\n'],
+  ["a .ts import stays", 'import { X } from "./x.ts";\nexport const a = 1;\n'],
+  ["nothing to drop", "export const a = 1;\n"],
+];
+
+/** `aliasForDir` / `aliasFor` — path collapsing, including the `src/` strip. */
+const ALIASES: Array<[string, string, string]> = [
+  ["a sibling", "features/a", "./b"],
+  ["a parent walk", "features/a/b", "../c"],
+  ["two parents up", "features/a/b/c", "../../d"],
+  ["a `src/` prefix is stripped", "src/features/a", "./b"],
+  ["a dot segment collapses", "features/a", "./././b"],
+  ["from the root", "", "./b"],
+];
+
+/** `runtimeImports` — the corrected behaviour, pinned here too so both stores agree. */
+const RUNTIME: Array<[string, string]> = [
+  ["a plain import", 'import { X } from "./x";\n'],
+  ["an all-inline-type clause yields nothing", 'import { type A, type B } from "./ab";\n'],
+  ["a MIXED clause still counts", 'import { type A, b } from "./ab";\n'],
+  ["a statement-level `import type` yields nothing", 'import type { T } from "./t";\n'],
+  ["a bare side-effect import counts", 'import "./a.css";\n'],
+  ["a re-export counts", 'export { A } from "./a";\n'],
+  ["a default import counts", 'import React from "react";\n'],
+  ["an import in a comment does not", '// import { X } from "./ghost";\nexport const a = 1;\n'],
+];
+
 describe("recordSource fixtures", () => {
   it("captures every primitive over every subject", () => {
     const cases = SUBJECTS.map(([label, source]) => ({
@@ -254,6 +324,23 @@ describe("recordSource fixtures", () => {
       seedFile,
       adoptions,
       specs,
+      imports: IMPORTS.map(([label, source, fromRel]) => ({
+        label,
+        source,
+        fromRel,
+        // The SPEC SEQUENCE, not the raw offsets: JS counts UTF-16 units and Rust regex reports bytes,
+        // so `at` is not comparable across the two. The rewritten source below is what proves the
+        // offsets were used correctly.
+        specifiers: relativeSpecifiers(source).map((r: { spec: string }) => r.spec),
+        absolutized: absolutizeImports(source, fromRel),
+      })),
+      assets: ASSETS.map(([label, source]) => ({ label, source, dropped: dropAssetImports(source) })),
+      aliases: ALIASES.map(([label, fromDir, spec]) => ({
+        label, fromDir, spec,
+        forDir: aliasForDir(fromDir, spec),
+        forFile: aliasFor(`${fromDir}/mod.ts`, spec),
+      })),
+      runtime: RUNTIME.map(([label, source]) => ({ label, source, imports: runtimeImports(source) })),
     };
 
     if (process.env.UPDATE_FIXTURES) {
@@ -300,5 +387,15 @@ describe("recordSource fixtures", () => {
     const answered = SPECS.map(([, spec, seedProvides]) => seedAnswersSpecifier({ spec, seedProvides }));
     expect(answered.filter((a) => a.ok).length, "never matched").toBeGreaterThanOrEqual(2);
     expect(answered.filter((a) => a.nearMiss.length > 0).length, "no near-miss case").toBeGreaterThanOrEqual(1);
+
+    // The import cluster, both directions: sources that get rewritten and sources that must not.
+    const rewritten = IMPORTS.filter(([, s, f]) => absolutizeImports(s, f) !== s).length;
+    const untouched = IMPORTS.filter(([, s, f]) => absolutizeImports(s, f) === s).length;
+    expect(rewritten, "nothing was rewritten").toBeGreaterThanOrEqual(7);
+    expect(untouched, "everything was rewritten — the prose/alias guards prove nothing").toBeGreaterThanOrEqual(4);
+    expect(ASSETS.filter(([, s]) => dropAssetImports(s) !== s).length).toBeGreaterThanOrEqual(3);
+    expect(ASSETS.filter(([, s]) => dropAssetImports(s) === s).length).toBeGreaterThanOrEqual(3);
+    expect(RUNTIME.filter(([, s]) => runtimeImports(s).length > 0).length).toBeGreaterThanOrEqual(4);
+    expect(RUNTIME.filter(([, s]) => runtimeImports(s).length === 0).length).toBeGreaterThanOrEqual(3);
   });
 });
