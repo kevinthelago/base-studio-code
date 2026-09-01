@@ -14,3 +14,6 @@ path = "src/lib.rs"
 serde_json = "1"
 # The epoch↔ISO clock pair. bsc-util is the dependency-free leaf, so this stays a two-dep crate.
 bsc-util = { path = "../bsc-util" }
+# For `record_source` only. bsc-record is depended on by just bsc-graph and bsc-component, so this
+# stays narrow — bsc-util would have put regex into 36 of 40 crates' rebuild scope.
+regex = "1"
