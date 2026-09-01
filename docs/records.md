@@ -215,7 +215,7 @@ When the record is behind and nobody edited it, refresh it from the file. When t
 record wins and you adjudicate by hand:
 
 ```bash
-node scripts/refresh-drifted-seeds.mjs --store <ui-dump> --impls <impl-dump> [--apply]
+bsc ui refresh-seed [--apply] [--only <src-path>]
 bsc ui lift <src-relative-path>… [--apply]              # a .tsx → a module-shaped record
 node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
 bsc ui retire <src-relative-path> [--dry]

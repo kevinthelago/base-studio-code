@@ -389,6 +389,38 @@ store a `role: page` record that cannot render. Letting one throw killed a 40-it
 refusal and lost the other 39, so each write is caught and reported against its own target.",
     },
     CmdDoc {
+        name: "refresh-seed",
+        summary: "refresh a drifted packaged seed from the file it mirrors — only where nobody edited it (#records)",
+        usage: "\
+USAGE:
+  bsc ui refresh-seed [--apply] [--only <src-path>] [--repo <dir>]
+
+Turns a DRIFTED retirement candidate into a retirable one. A seed's source is a projection of the file
+taken at migration time, and the two drift. Dry run by default.
+
+THE THREE-WAY IS THE TOOL — seed vs STORE vs file:
+  store == seed   the record was never edited since packaging, so the drift is entirely the file moving
+                  on, and refreshing loses nothing. THE ONLY CASE THIS TOUCHES.
+  store != seed   a designer edited the record; refreshing would DISCARD that edit. Whether it was a
+                  deliberate improvement is a judgement, so this REFUSES rather than asking. An ABSENT
+                  live copy refuses too — no store must ever read as `nobody edited it`.
+
+TWO MORE GATES, each of which the store gate cannot see:
+  it would DROP AN IMPORTED EXPORT   a record can carry a standalone adaptation the file never had, and
+                                     the record is pristine, so nothing else in the sweep would catch it
+  a RECORD CANNOT RESOLVE its imports a file may import a plain sibling; the loader has only the registry
+                                     and the record store, so a sibling is unresolvable to a record
+
+THE PREAMBLE SURVIVES. Every migrated record opens with an `AS GRAPH SOURCE` block the file never had.
+Overwriting the source with the raw file deletes it — four records SHRANK that way while their change
+only added attributes. It is kept verbatim and the file's content appended.
+
+ONLY THE SEED IS WRITTEN. For a pristine builtin the store adopts the refreshed seed at the next hydrate,
+so writing the store here would be a second, racier path to the same place. IMPL seeds live inside one
+`algorithms.json`, so they are flushed ONCE after the sweep rather than rewriting a 6.6 MB file per
+record — and through a serializer pinned to round-trip that file byte for byte.",
+    },
+    CmdDoc {
         name: "retire",
         summary: "delete a module whose packaged record replaces it — refusals first (#records)",
         usage: "\
@@ -616,6 +648,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("imports") => cmd_imports(&args[1..]),
         Some("retirable") => cmd_retirable(&args[1..]),
         Some("lift") => cmd_lift(&args[1..]),
+        Some("refresh-seed") => cmd_refresh_seed(&args[1..]),
         Some("retire") => cmd_retire(&args[1..]),
         Some("shadow") => cmd_shadow(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
@@ -3005,6 +3038,199 @@ fn relative_specifier_summary(dir: &Option<String>) -> Result<(usize, usize, usi
     Ok((records.len(), findings, ids.len()))
 }
 
+
+/// `bsc ui refresh-seed [--apply] [--only <src-path>]` — the drifted-seed sweep. Ports
+/// `scripts/refresh-drifted-seeds.mjs`, which it replaces. The `--store`/`--impls` JSON dumps the script
+/// took are gone: this reads both stores directly.
+fn cmd_refresh_seed(args: &[String]) -> Result<(), String> {
+    let apply = args.iter().any(|a| a == "--apply");
+    let only = flag_after(args, "--only");
+    let dir = flag_after(args, "--dir");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+
+    let src_files = crate::retirable::list_src(&repo);
+    let (seeds, algos) = crate::refresh_seed::collect(&repo);
+
+    // Every `@/…` a RECORD may import: a registered platform module, or a specifier some record
+    // provides. Mirrors what `platformBoundary.test.ts` asserts.
+    let mut resolvable: std::collections::HashSet<String> =
+        std::fs::read_to_string(repo.join("src-tauri/data/ui/platform-modules.json"))
+            .ok()
+            .and_then(|b| serde_json::from_str::<Vec<String>>(&b).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+    for s in &seeds {
+        resolvable.insert(s.spec.clone());
+        resolvable.insert(format!("@/components/{}", s.id));
+    }
+
+    // The import index, over BOTH the packaged records and `src/`.
+    let mut sources: Vec<(String, String)> =
+        seeds.iter().map(|s| (format!("record:{}", s.id), s.source.clone())).collect();
+    for f in &src_files {
+        if f.ends_with(".ts") || f.ends_with(".tsx") {
+            if let Ok(b) = std::fs::read_to_string(repo.join("src").join(f)) {
+                sources.push((f.clone(), b));
+            }
+        }
+    }
+    let index = crate::refresh_seed::import_index(&sources);
+
+    // The LIVE copies — the "has anyone edited this record" gate. An impl store that cannot be read
+    // leaves impls unconsidered rather than refreshed blind.
+    let store = bsc_component::cli::open_component_store(&dir)?;
+    let live_component = |id: &str| -> Option<String> {
+        store.get(id).ok().flatten().and_then(|b| {
+            serde_json::from_str::<serde_json::Value>(&b)
+                .ok()?
+                .get("srcText")?
+                .as_str()
+                .map(str::to_string)
+        })
+    };
+    let mut live_impl: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for im in bsc_graph::implementations() {
+        if let (Some(id), Some(code)) = (
+            im.get("id").and_then(serde_json::Value::as_str),
+            im.get("code").and_then(serde_json::Value::as_str),
+        ) {
+            live_impl.insert(id.to_string(), code.to_string());
+        }
+    }
+
+    let (mut refreshed, mut already_ok) = (0usize, 0usize);
+    let (mut edited, mut breaking, mut unresolvable) =
+        (Vec::<String>::new(), Vec::<String>::new(), Vec::<String>::new());
+    let mut algos = algos;
+    let mut algos_dirty = false;
+
+    for seed in &seeds {
+        let Some(file) = crate::refresh_seed::file_for(&seed.spec, &src_files) else { continue };
+        if only.as_ref().is_some_and(|o| *o != file) {
+            continue;
+        }
+        // The file's source as a RECORD states its imports absolutely, so every comparison below asks
+        // about the form the record would actually hold rather than the form on disk.
+        let Ok(file_src) =
+            bsc_record::record_source::file_as_record_source(&repo.join("src").join(&file), &file)
+        else {
+            continue;
+        };
+        let live = if seed.kind == "impl" {
+            live_impl.get(&seed.id).cloned()
+        } else {
+            live_component(&seed.id)
+        };
+        let empty: Vec<String> = Vec::new();
+        let consumers_of = |n: &str| {
+            index.get(&seed.spec).and_then(|m| m.get(n)).unwrap_or(&empty).clone()
+        };
+        let is_resolvable = |s: &str| resolvable.contains(s);
+
+        match crate::refresh_seed::decide(
+            &seed.source,
+            &file_src,
+            live.as_deref(),
+            &consumers_of,
+            &is_resolvable,
+        ) {
+            crate::refresh_seed::Verdict::AlreadyOk => already_ok += 1,
+            crate::refresh_seed::Verdict::Edited => edited.push(file.clone()),
+            crate::refresh_seed::Verdict::WouldDropExport { lost, consumers } => {
+                breaking.push(format!(
+                    "{file} — would drop {} (imported by {})",
+                    lost.join(", "),
+                    consumers.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            crate::refresh_seed::Verdict::Unresolvable(specs) => {
+                unresolvable.push(format!(
+                    "{file} — imports {}, which no record provides and the platform does not register",
+                    specs.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            crate::refresh_seed::Verdict::Refresh { next, preamble_lines } => {
+                refreshed += 1;
+                bsc_util::emit_line(&format!(
+                    "   {}  [{}] {file}  ({} → {} chars, preamble {})",
+                    if apply { "refreshed" } else { "would refresh" },
+                    seed.kind,
+                    bsc_record::record_source::norm(&seed.source).chars().count(),
+                    next.trim_end().chars().count(),
+                    if preamble_lines > 0 {
+                        format!("{preamble_lines} lines kept")
+                    } else {
+                        "none".to_string()
+                    }
+                ));
+                if !apply {
+                    continue;
+                }
+                if seed.kind == "impl" {
+                    // Mutated in memory and the whole document flushed ONCE after the sweep — writing
+                    // per record would rewrite 6.6 MB N times and leave it half-updated if one threw.
+                    if let Some(list) = algos
+                        .as_mut()
+                        .and_then(|a| a.get_mut("implementations"))
+                        .and_then(serde_json::Value::as_array_mut)
+                    {
+                        if let Some(im) = list.iter_mut().find(|im| {
+                            im.get("id").and_then(serde_json::Value::as_str) == Some(&seed.id)
+                        }) {
+                            im["code"] = serde_json::Value::String(next);
+                            algos_dirty = true;
+                        }
+                    }
+                } else if let Some(p) = seed.path.as_ref() {
+                    let mut rec: serde_json::Value =
+                        serde_json::from_str(&std::fs::read_to_string(p).map_err(|e| e.to_string())?)
+                            .map_err(|e| format!("{}: {e}", p.display()))?;
+                    rec["srcText"] = serde_json::Value::String(next);
+                    let body = serde_json::to_string_pretty(&rec).map_err(|e| e.to_string())?;
+                    std::fs::write(p, format!("{body}\n")).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+
+    if apply && algos_dirty {
+        if let Some(a) = algos.as_ref() {
+            std::fs::write(
+                repo.join("src-tauri/data/knowledge/algorithms.json"),
+                crate::refresh_seed::serialize_algorithms(a)?,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    bsc_util::emit_line(&format!("\nseeds already matching the file: {already_ok}"));
+    bsc_util::emit_line(&format!(
+        "{}:                {refreshed}",
+        if apply { "refreshed" } else { "would refresh" }
+    ));
+    bsc_util::emit_line(&format!("SKIPPED — the record was edited:  {}", edited.len()));
+    for f in &edited {
+        bsc_util::emit_line(&format!("   {f}"));
+    }
+    bsc_util::emit_line(&format!("SKIPPED — would drop a used export: {}", breaking.len()));
+    for f in &breaking {
+        bsc_util::emit_line(&format!("   {f}"));
+    }
+    bsc_util::emit_line(&format!(
+        "SKIPPED — a record cannot resolve its imports: {}",
+        unresolvable.len()
+    ));
+    for f in &unresolvable {
+        bsc_util::emit_line(&format!("   {f}"));
+    }
+    if !apply {
+        bsc_util::emit_line("\n(dry run — pass --apply to write)");
+    }
+    Ok(())
+}
 
 /// `bsc ui lift <src-relative-path>… [--apply] [--new-record]` — the module reshape. Ports
 /// `scripts/lift-component-module.mjs`, which it replaces.

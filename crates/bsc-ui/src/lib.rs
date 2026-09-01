@@ -35,6 +35,7 @@ pub mod claim_census;
 pub use bsc_record::record_source;
 pub mod retirable;
 pub mod lift;
+pub mod refresh_seed;
 pub mod retire;
 pub mod shadow;
 #[cfg(test)]
