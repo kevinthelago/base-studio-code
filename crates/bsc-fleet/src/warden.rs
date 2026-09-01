@@ -136,7 +136,7 @@ pub fn plan_warden(sessions: &[WardenSession], already_quarantined: &HashSet<Str
 /// that `the-two-write-scope-glob-engines-disagree` has open. Computing one arm here and taking the
 /// other from the renderer would split one security decision across two processes. The TypeScript
 /// caller uses this function today; it moves when that decision lands.
-#[allow(dead_code)] // wired by `the-two-write-scope-glob-engines-disagree`
+#[allow(dead_code)] // wired by `the-warden-produces-its-own-verdicts-once-the-glob-engines-agree`
 pub fn parse_audit_commands(lines: &[String], pane_id: &str, since: i64) -> Vec<String> {
     lines
         .iter()
@@ -201,7 +201,7 @@ fn parse_iso8601_ms(ts: &str) -> Option<i64> {
 ///
 /// STILL UNWIRED HERE, for the same reason as [`parse_audit_commands`]: the evidence is gathered where
 /// the verdict is computed, and that is the renderer until the glob decision lands.
-#[allow(dead_code)] // wired by `the-two-write-scope-glob-engines-disagree`
+#[allow(dead_code)] // wired by `the-warden-produces-its-own-verdicts-once-the-glob-engines-agree`
 pub fn zip_worktree_changes(
     panes: &[String],
     changes: &[Option<WorktreeChanges>],
