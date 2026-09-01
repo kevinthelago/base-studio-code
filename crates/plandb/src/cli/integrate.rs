@@ -59,6 +59,10 @@ pub(crate) fn cmd_integrate(args: &Args) -> Result<(), String> {
     })
     .map_err(|e| format!("could not acquire the integrate lock on {}: {e}", dir.display()))?;
 
+    // HEAD BEFORE the merge, so "did anything actually land" is answerable afterwards rather than
+    // inferred from an exit code.
+    let before = git_head_sha(&dir);
+
     let out = Command::new("git")
         .arg("merge")
         .arg("--no-ff")
@@ -68,12 +72,36 @@ pub(crate) fn cmd_integrate(args: &Args) -> Result<(), String> {
         .map_err(|e| format!("could not run `git merge --no-ff {r}` in {}: {e}", dir.display()))?;
 
     if out.status.success() {
+        // A ZERO EXIT IS NOT A MERGE. `git merge` exits 0 for `Already up to date` without creating a
+        // commit, so the old success branch could not tell a merge from a no-op — and the sha it
+        // printed was simply whatever HEAD was, INCLUDING a merge another session had just made in
+        // this shared tree. That is what reported a merge that never happened
+        // (`bsc-plan-integrate-reports-a-merge-it-did-not-perform`), and the workflow deletes the
+        // branch on the strength of this line.
+        let after = git_head_sha(&dir);
+        let outcome = merge_outcome(is_ancestor(&dir, r), before.as_deref(), after.as_deref());
         lock.release();
-        let sha = git_head_sha(&dir).unwrap_or_default();
+        let merged = outcome_to_result(outcome, r, &dir)?;
+        let sha = after.clone().unwrap_or_default();
         if args.json {
-            print_json(&serde_json::json!({"ref": r, "dir": dir.display().to_string(), "sha": sha}), args.pretty);
+            print_json(
+                &serde_json::json!({
+                    "ref": r,
+                    "dir": dir.display().to_string(),
+                    "sha": sha,
+                    // The distinction a scripted caller needs: it is what decides whether this run is
+                    // the one that landed the work.
+                    "merged": merged,
+                    "alreadyUpToDate": !merged,
+                }),
+                args.pretty,
+            );
+        } else if merged {
+            println!("merged {r} into {} — merge commit {sha}", dir.display());
         } else {
-            println!("merged {r} into {} — HEAD is now {sha}", dir.display());
+            // Still Ok: the ref IS in, so deleting the branch is safe. It just was not this run that
+            // put it there, and saying "merged" would be a lie a re-run tells every time.
+            println!("{r} was ALREADY merged into {} — nothing to do, HEAD stays {sha}", dir.display());
         }
         return Ok(());
     }
@@ -123,6 +151,67 @@ fn integrate_dir(args: &Args) -> Result<PathBuf, String> {
 fn merge_head_present(dir: &Path) -> bool {
     Command::new("git")
         .args(["rev-parse", "-q", "--verify", "MERGE_HEAD"])
+        .current_dir(dir)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// What a zero-exit `git merge` ACTUALLY did.
+///
+/// The whole bug this type exists for: `git merge` exits 0 both when it creates a merge commit and
+/// when it has nothing to do, and the old code could not tell those apart — so a no-op printed the
+/// same sentence a real merge printed, with whatever sha HEAD happened to be. Keeping the decision
+/// as a value (rather than as a branch inside a println) is what makes it testable at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MergeOutcome {
+    /// HEAD moved and the ref is in: this run landed it.
+    Merged,
+    /// The ref was already in and HEAD did not move. Safe — but this run did not land it, and
+    /// saying "merged" would be a lie every idempotent re-run tells.
+    AlreadyUpToDate,
+    /// A zero exit that left the ref OUT. The dangerous one: the workflow deletes the branch on the
+    /// strength of the success line, and the commits are only on that branch.
+    NotMerged,
+}
+
+/// Classify the merge from what git can be asked afterwards, never from the exit status alone.
+pub(crate) fn merge_outcome(is_ancestor: bool, before: Option<&str>, after: Option<&str>) -> MergeOutcome {
+    if !is_ancestor {
+        return MergeOutcome::NotMerged;
+    }
+    if before == after {
+        MergeOutcome::AlreadyUpToDate
+    } else {
+        MergeOutcome::Merged
+    }
+}
+
+/// Turn the classification into the caller's result: `Ok(true)` landed it, `Ok(false)` found it
+/// already in, `Err` means nothing was merged.
+///
+/// Split out so the ERROR PATH is testable. `git merge` will not produce a zero exit with the ref
+/// left out on demand, so [`MergeOutcome::NotMerged`] cannot be driven end to end through a real
+/// repo — which is exactly why the branch that acts on it is a function with its own test rather
+/// than an `if` nothing can reach.
+pub(crate) fn outcome_to_result(outcome: MergeOutcome, r: &str, dir: &Path) -> Result<bool, String> {
+    match outcome {
+        MergeOutcome::Merged => Ok(true),
+        MergeOutcome::AlreadyUpToDate => Ok(false),
+        MergeOutcome::NotMerged => Err(format!(
+            "`git merge --no-ff {r}` exited 0 in {}, but {r} is NOT an ancestor of HEAD — nothing \
+             was merged. DO NOT DELETE THE BRANCH: its commits are only on it. Re-run the \
+             integrate, and if it reports this again, merge by hand and read git's own output.",
+            dir.display()
+        )),
+    }
+}
+
+/// Is `r` an ancestor of `HEAD` in `dir`? The question "did this ref actually get in", asked of git
+/// rather than inferred from an exit status.
+fn is_ancestor(dir: &Path, r: &str) -> bool {
+    Command::new("git")
+        .args(["merge-base", "--is-ancestor", r, "HEAD"])
         .current_dir(dir)
         .output()
         .map(|o| o.status.success())
@@ -318,4 +407,123 @@ mod tests {
         let name = filelock::lock_name(LOCK_PREFIX, &repo);
         assert!(!filelock::is_held(&name, MAX_AGE_MS), "a plain refusal releases the lock rather than leaking it");
     }
+    /// A REAL MERGE MOVES HEAD, and the reported sha is the merge commit it created.
+    #[test]
+    fn a_real_merge_reports_the_commit_it_created() {
+        let home = tmp_dir("real-merge");
+        let _h = HomeGuard::set(&home);
+        let dir = clean_merge_repo(&home);
+        let before = git_head_sha(&dir).unwrap();
+
+        cmd_integrate(&args_for(&dir, "feat")).expect("a clean merge succeeds");
+
+        let after = git_head_sha(&dir).unwrap();
+        assert_ne!(before, after, "a real merge must move HEAD");
+        assert!(is_ancestor(&dir, "feat"), "and the ref must be in");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// AN `ALREADY UP TO DATE` NO-OP IS NOT A MERGE. This is the bug that was shipping: `git merge`
+    /// exits 0 without creating a commit, and the old code printed `merged … HEAD is now <sha>` —
+    /// the same sentence a real merge prints, with whatever sha HEAD happened to be.
+    ///
+    /// It stays Ok, deliberately: the ref IS in, so deleting the branch is safe. What must not
+    /// happen is claiming this run landed it.
+    #[test]
+    fn an_already_merged_ref_is_reported_as_a_no_op_not_as_a_merge() {
+        let home = tmp_dir("noop-merge");
+        let _h = HomeGuard::set(&home);
+        let dir = clean_merge_repo(&home);
+
+        cmd_integrate(&args_for(&dir, "feat")).expect("the first merge lands");
+        let after_first = git_head_sha(&dir).unwrap();
+
+        // Second call: git says `Already up to date` and exits 0.
+        cmd_integrate(&args_for(&dir, "feat")).expect("a no-op is still Ok — the ref is in");
+        let after_second = git_head_sha(&dir).unwrap();
+
+        assert_eq!(after_first, after_second, "the second call must not create a commit");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// THE DANGEROUS CASE, and the reason this item exists: a zero exit that leaves the ref UNMERGED
+    /// must be an error, because the workflow deletes the branch on the strength of the success line.
+    ///
+    /// Driven through the predicate rather than by faking a git failure: `is_ancestor` is the check
+    /// the success path now makes, and a ref that was never merged must answer false. If it ever
+    /// answers true for an unmerged ref, the guard is decorative.
+    #[test]
+    fn an_unmerged_ref_is_not_an_ancestor_so_the_guard_can_fire() {
+        let home = tmp_dir("unmerged");
+        let _h = HomeGuard::set(&home);
+        let dir = clean_merge_repo(&home);
+
+        assert!(!is_ancestor(&dir, "feat"), "feat is NOT merged yet — the guard's precondition");
+        cmd_integrate(&args_for(&dir, "feat")).expect("merge");
+        assert!(is_ancestor(&dir, "feat"), "and true once it is");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// THE DECISION ITSELF, asserted as a value rather than through git's side effects.
+    ///
+    /// My first pass at these tests only checked that HEAD did or did not move — which is git's
+    /// behaviour, true whatever this code reports, so reverting the distinction would not have
+    /// failed them. This is the assertion that bites.
+    #[test]
+    fn the_outcome_distinguishes_a_merge_a_no_op_and_an_unmerged_ref() {
+        // HEAD moved and the ref is in.
+        assert_eq!(merge_outcome(true, Some("aaa"), Some("bbb")), MergeOutcome::Merged);
+        // The ref is in but nothing moved — a re-run, not a landing.
+        assert_eq!(merge_outcome(true, Some("aaa"), Some("aaa")), MergeOutcome::AlreadyUpToDate);
+        // THE DANGEROUS ONE: a zero exit that left the ref out. It must not read as either success.
+        assert_eq!(merge_outcome(false, Some("aaa"), Some("bbb")), MergeOutcome::NotMerged);
+        assert_eq!(merge_outcome(false, Some("aaa"), Some("aaa")), MergeOutcome::NotMerged);
+        // An unreadable HEAD must not silently become "merged" — not an ancestor still wins.
+        assert_eq!(merge_outcome(false, None, None), MergeOutcome::NotMerged);
+        // And an ancestor with an unreadable HEAD on both sides is a no-op, never a claimed merge.
+        assert_eq!(merge_outcome(true, None, None), MergeOutcome::AlreadyUpToDate);
+    }
+
+    /// THE ERROR PATH, which no real repo can drive: git will not exit 0 with the ref left out.
+    /// So the branch that acts on that classification is tested directly, and the message is part of
+    /// the contract — it is read by whoever is about to delete a branch.
+    #[test]
+    fn an_unmerged_outcome_is_an_error_that_says_not_to_delete_the_branch() {
+        let dir = Path::new("/tmp/wt-integrate");
+        assert_eq!(outcome_to_result(MergeOutcome::Merged, "feat", dir), Ok(true));
+        assert_eq!(outcome_to_result(MergeOutcome::AlreadyUpToDate, "feat", dir), Ok(false));
+
+        let err = outcome_to_result(MergeOutcome::NotMerged, "feat", dir).expect_err("must be an error");
+        assert!(err.contains("DO NOT DELETE THE BRANCH"), "the message must stop the next step: {err}");
+        assert!(err.contains("feat"), "and name the ref: {err}");
+        assert!(err.contains("NOT an ancestor"), "and say what was checked: {err}");
+    }
+
+    /// End to end: the same call twice must classify differently, which is what a caller branches on.
+    #[test]
+    fn the_second_integrate_of_one_ref_classifies_as_already_up_to_date() {
+        let home = tmp_dir("classify-twice");
+        let _h = HomeGuard::set(&home);
+        let dir = clean_merge_repo(&home);
+
+        let before = git_head_sha(&dir);
+        cmd_integrate(&args_for(&dir, "feat")).expect("first");
+        let after = git_head_sha(&dir);
+        assert_eq!(
+            merge_outcome(is_ancestor(&dir, "feat"), before.as_deref(), after.as_deref()),
+            MergeOutcome::Merged,
+            "the first call lands it"
+        );
+
+        let before2 = git_head_sha(&dir);
+        cmd_integrate(&args_for(&dir, "feat")).expect("second");
+        let after2 = git_head_sha(&dir);
+        assert_eq!(
+            merge_outcome(is_ancestor(&dir, "feat"), before2.as_deref(), after2.as_deref()),
+            MergeOutcome::AlreadyUpToDate,
+            "the second call must NOT claim to have merged it"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
 }
