@@ -484,6 +484,7 @@ pub fn run() {
             perf::perf_clear_history,
             perf::perf_get_recent_samples,
             discovery::discover_sessions,
+            discovery::recover_sessions,
             discovery::reap_session,
             logs::list_log_files,
             logs::read_log_tail,

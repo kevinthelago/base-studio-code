@@ -15,7 +15,7 @@
 //! what to restore (#1266 Stages 3–4). Manual `man:…` panes surface (from the ledger) but are
 //! never auto-restored.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 use crate::worktree_dir_name;
@@ -351,22 +351,27 @@ mod tests {
 // `src/app/console/sessionRecovery.fixtures.json`, generated from the TypeScript it replaces.
 
 /// A tab, as the reconcile needs it: enough to resolve which pane ids it currently shows.
-// No non-test caller until the banner is flipped, which is deliberately its own item — a flip inside a
-// derivation slice hides which of the two changed the behaviour. The ref is a REAL open item, checked
-// with `bsc plan get`, because a dangling `wired by` is invisible to every gate.
-#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
-#[derive(Debug, Clone, Default)]
+///
+/// SENT BY THE FRONTEND, which is why this deserializes. The open-tab layout is the one input the
+/// renderer genuinely owns — it is store state that exists nowhere on disk — so it is REPORTED here
+/// rather than re-derived, and the decision it feeds stays in Rust.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReconcileTab {
+    #[serde(default)]
     pub id: Option<String>,
+    #[serde(default)]
     pub kind: Option<String>,
+    /// `paneIds` is optional in the store's `Tab` and its cells may be null, so both are tolerated.
+    #[serde(default)]
     pub pane_ids: Vec<Option<String>>,
+    #[serde(default)]
     pub layout: Option<String>,
 }
 
 /// A discovered session the store cannot account for, with what to do about it.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
 pub struct RecoverableSession {
     /// Every field of the discovered session, flattened — a recoverable session IS a discovered one
     /// plus a verdict, and re-listing the fields here is how one silently goes missing.
@@ -385,7 +390,6 @@ pub struct RecoverableSession {
 /// the fixture: this prefers `pane_ids.len()` over the layout entirely; its grammar accepts an ASCII
 /// `x` and surrounding spaces; and `2×0` is ZERO cells here (the parse succeeds and multiplies) where
 /// the other reads the zero as falsy and answers two.
-#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
 fn reconcile_cell_count(tab: &ReconcileTab) -> i64 {
     if !tab.pane_ids.is_empty() {
         return tab.pane_ids.len() as i64;
@@ -407,7 +411,6 @@ fn reconcile_cell_count(tab: &ReconcileTab) -> i64 {
 }
 
 /// Every pane id currently open across all tabs — each cell's resolved identity id.
-#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
 pub fn open_pane_ids(tabs: &[ReconcileTab]) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     for (tab_idx, tab) in tabs.iter().enumerate() {
@@ -435,7 +438,6 @@ pub fn open_pane_ids(tabs: &[ReconcileTab]) -> std::collections::BTreeSet<String
 ///     not;
 ///   * reap-only — a manual scratch shell or an `orphaned` shell of a deleted project is killed rather
 ///     than restored. That is a FLAG, not an exclusion: it still reaches the user.
-#[allow(dead_code)] // wired by `the-recovery-banner-reads-the-rust-reconcile`
 pub fn reconcile_sessions(
     discovered: &[DiscoveredSession],
     tabs: &[ReconcileTab],
@@ -459,13 +461,36 @@ pub fn reconcile_sessions(
         .collect()
 }
 
+/// Discover every store-independent session AND reconcile it against the open tabs, in Rust (#1266
+/// S3, `the-recovery-banner-reads-the-rust-reconcile`).
+///
+/// THIS REPLACES A TWO-STEP THE RENDERER USED TO DRIVE. It called `discover_sessions` and then
+/// reconciled the result itself, so the decision about which sessions the store had LOST lived in a
+/// process that this project has watched get OOM-killed — over a list this very file produces. The
+/// two halves are one call now, and the renderer cannot hold the half-answer.
+///
+/// The frontend still supplies the two inputs only IT has, and nothing more:
+///   * `tabs` — the open-tab layout, store state that exists nowhere on disk;
+///   * `studio_pane_ids` — the app-owned studio singletons, a frontend constant
+///     (`STUDIO_SESSION_PANE_IDS`). Passed rather than re-listed here, so one list stays one list.
+#[tauri::command]
+pub fn recover_sessions(tabs: Vec<ReconcileTab>, studio_pane_ids: Vec<String>) -> Vec<RecoverableSession> {
+    reconcile_sessions(&discover_sessions(), &tabs, &studio_pane_ids)
+}
+
 #[cfg(test)]
 mod reconcile_tests {
     use super::*;
     use serde_json::Value;
 
-    /// The generated contract, resolved BY FILENAME under `src/` — the rule the pane-identity, tunnel
+    /// The recorded corpus, resolved BY FILENAME under `src/` — the rule the pane-identity, tunnel
     /// and role-gate fixtures already use. Exactly one match; zero or a collision fails hard.
+    ///
+    /// IT NO LONGER BINDS TWO LANGUAGES. It was GENERATED from `sessionRecovery.ts`, which this item
+    /// deleted, so its generator went with its subject. The cases are kept because they are correct
+    /// and were machine-produced from the behaviour being preserved — deleting 500 lines of verified
+    /// corpus to tidy up a name would lose real coverage. Read it as a golden corpus for the Rust,
+    /// not as a live cross-language contract; there is no second implementation left to disagree.
     fn fixture() -> Value {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
         let mut found: Vec<std::path::PathBuf> = Vec::new();
@@ -520,7 +545,7 @@ mod reconcile_tests {
 
     /// Reports every mismatch at once — a wrong port is wrong in a pattern.
     #[test]
-    fn the_reconcile_matches_the_typescript_case_for_case() {
+    fn the_reconcile_matches_the_recorded_corpus_case_for_case() {
         let doc = fixture();
         let studios = studio_ids();
         let mut bad: Vec<String> = Vec::new();
