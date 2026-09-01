@@ -162,8 +162,9 @@ if (!plan.full) {
     : "";
   process.stdout.write(`  frontend files: ${plan.frontendFiles.length}${lintNote}\n`);
   if (plan.vitestUnscoped) {
-    process.stdout.write(`  note: a record store changed, so vitest runs UNSCOPED — --changed cannot see\n`);
-    process.stdout.write(`        from a JSON blob to the modules emit:records materializes from it.\n`);
+      // NAME THE TRIGGER: two different rules reach this — a record store, or a DELETION — and a note
+      // that does not say which one teaches the reader to skip it.
+      process.stdout.write(`  note: vitest runs UNSCOPED — ${plan.unscopedReason}.\n`);
     // Say it here, BEFORE the wait. This plan calls itself scoped and is about to queue like a full one;
     // without a line saying why, the pause reads as a hang in the one tier nobody expects to wait.
     process.stdout.write(`        this makes it a HEAVY gate, so it takes a fleet slot like --full does.\n`);

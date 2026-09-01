@@ -60,7 +60,7 @@ export function gateCommands(plan, base) {
     // edge from a JSON blob to the modules `emit:records` materializes out of it. Scoping there would
     // report a green gate over tests it never selected.
     c.push(plan.vitestUnscoped
-      ? { label: "vitest (unscoped — a record store changed)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] }
+      ? { label: "vitest (unscoped)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] }
       : { label: "vitest (--changed: module-graph affected)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run", "--changed", base] });
   }
   if (plan.rustCrates.length) {
@@ -327,6 +327,26 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
   // disk go unnoticed. So a record-store change runs the suite UNSCOPED rather than pretending the diff
   // told us which tests are affected.
   const touchedRecordStore = files.some(isRecordStorePath);
+  // ...AND A DELETION, for a DIFFERENT blind spot that composes with that one. `--changed` selects tests
+  // by walking the module graph FROM the changed files, and a deleted file has no edges in the new graph —
+  // nothing imports it, because it is gone — so it selects NOTHING. The tests that actually break are the
+  // ones that read from DISK rather than importing (`*.gen.test.ts`), which no import walk could have
+  // reached anyway.
+  //
+  // MEASURED: retiring `src/features/skills/index.tsx` passed the scoped gate (60 files, 750 tests) and
+  // then failed 4 tests in `reactUiKit.gen.test.ts`, because deleting it changed the packaged kit's
+  // closure. That was the FIFTH stale packaged kit in one session and three of them reached `develop`.
+  //
+  // The record-store rule does not cover this: that change touches `src/` only, so it never fires.
+  const deletedFrontend = touchedFrontend.filter((f) => !exists(f));
+
+  // WHICH trigger fired, so the printed scope can say. Two rules reach the same decision for different
+  // reasons, and "vitest runs unscoped" without the why is the kind of note a reader learns to skip.
+  const unscopedReason = touchedRecordStore
+    ? "a record store changed — `--changed` cannot see from a JSON blob to the modules emit:records materializes from it"
+    : deletedFrontend.length
+      ? `${deletedFrontend.length} frontend file(s) DELETED (${deletedFrontend.slice(0, 3).join(", ")}) — a deleted file has no module-graph edges, so \`--changed\` selects nothing`
+      : null;
 
   return {
     full: false,
@@ -335,7 +355,8 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
     frontendFiles,
     runVitest: touchedFrontend.length > 0,
     runTsc: touchedFrontend.length > 0,
-    vitestUnscoped: touchedRecordStore,
+    vitestUnscoped: Boolean(unscopedReason),
+    unscopedReason,
     runGraph: files.some(isGraphSourcePath),
   };
 }
