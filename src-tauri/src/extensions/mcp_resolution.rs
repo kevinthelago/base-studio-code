@@ -32,9 +32,6 @@
 //! a director declared two servers and both failed to spawn. Only the built-ins, and only under a
 //! namespace: a repo-authored stdio server legitimately works in there.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-launch-resolves-its-own-mcp-servers-instead-of-receiving-them`
-
 use std::collections::BTreeMap;
 
 use super::cfg::McpServerCfg;
@@ -60,7 +57,11 @@ pub struct McpServer {
 }
 
 /// The `$BSC_AGENT_MCP` entry `bsc-agent` reads. `env` is a plain object there, not a pair list.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+///
+/// `Deserialize` as well as `Serialize`, because the launch READS the value the renderer already put
+/// in the env and reconciles against it rather than taking the list a second time on the wire — the
+/// same shape as the credential gate, which reads `GH_TOKEN` out of the env it was handed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BscAgentMcpCfg {
     pub name: String,
     pub command: String,
@@ -174,9 +175,113 @@ pub fn to_bsc_agent_mcp(payloads: &[McpServerCfg]) -> Vec<BscAgentMcpCfg> {
         .collect()
 }
 
+
+/// The resolved list, and what the two sides disagreed on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpReconciliation<T> {
+    /// What to write — the SMALLER of the two, entry by entry.
+    pub merged: Vec<T>,
+    /// Names the frontend sent that the resolution did not produce. Dropped.
+    pub dropped: Vec<String>,
+    /// Names the resolution produced that the frontend omitted. NOT added — see below.
+    pub not_added: Vec<String>,
+}
+
+/// Reconcile a resolved server list against the one the renderer sent, keeping the SMALLER.
+///
+/// # This one narrows where the others union, and the asymmetry is the point
+///
+/// Everywhere else in this cutover a missing value is the defect and the union is the safe direction.
+/// Here the dangerous state is ADVERTISED-BUT-BROKEN. A server declared in `.mcp.json` that cannot
+/// spawn is spent on retries and misdiagnosis — the agent is told it has a capability, tries it, and
+/// gets a failure it cannot interpret. A capability it is never told about costs nothing.
+///
+/// So the intersection is taken in BOTH directions, and both are reported: a name only the frontend
+/// had is dropped, and a name only the resolution had is NOT added. Neither side can advertise
+/// something the other did not vouch for.
+///
+/// # It is generic because the two consumers must NOT share a list
+///
+/// `.mcp.json` keeps http servers; `$BSC_AGENT_MCP` is stdio-only, because that client cannot speak
+/// http and an http entry hands it a config it fails on. Resolving once and feeding both the same
+/// list breaks one of them, so each consumer narrows first and reconciles its OWN shape — which is
+/// what this function being generic over the entry type enforces rather than merely documents.
+pub fn reconcile_mcp<T: Clone>(
+    from_frontend: &[T],
+    resolved: &[T],
+    name_of: impl Fn(&T) -> String,
+) -> McpReconciliation<T> {
+    let front_names: Vec<String> = from_frontend.iter().map(&name_of).collect();
+    let resolved_names: Vec<String> = resolved.iter().map(&name_of).collect();
+
+    let merged: Vec<T> = from_frontend
+        .iter()
+        .filter(|e| resolved_names.contains(&name_of(e)))
+        .cloned()
+        .collect();
+    let dropped: Vec<String> =
+        front_names.iter().filter(|n| !resolved_names.contains(n)).cloned().collect();
+    let not_added: Vec<String> =
+        resolved_names.iter().filter(|n| !front_names.contains(n)).cloned().collect();
+    McpReconciliation { merged, dropped, not_added }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// THE SMALLER LIST WINS, in BOTH directions — the opposite of the union every other flip uses.
+    /// An advertised server that cannot spawn is spent on retries and misdiagnosis; one the agent is
+    /// never told about costs nothing.
+    #[test]
+    fn the_smaller_list_wins_and_both_directions_are_reported() {
+        let front = vec!["research".to_string(), "ghost".to_string()];
+        let resolved = vec!["research".to_string(), "unseen".to_string()];
+        let r = reconcile_mcp(&front, &resolved, |s: &String| s.clone());
+        assert_eq!(r.merged, vec!["research".to_string()], "only what BOTH vouched for");
+        assert_eq!(r.dropped, vec!["ghost".to_string()], "the frontend's extra is dropped");
+        assert_eq!(r.not_added, vec!["unseen".to_string()], "and the resolution's is NOT added");
+    }
+
+    /// Agreement is silent and changes nothing — the property that makes the narrowing safe to land.
+    #[test]
+    fn agreement_narrows_nothing() {
+        let both = vec!["research".to_string(), "compliance".to_string()];
+        let r = reconcile_mcp(&both, &both, |s: &String| s.clone());
+        assert_eq!(r.merged, both);
+        assert!(r.dropped.is_empty() && r.not_added.is_empty());
+    }
+
+    /// THE TWO CONSUMERS MUST NOT SHARE A LIST, which is the item's central warning. `.mcp.json` keeps
+    /// an http server; `$BSC_AGENT_MCP` drops it, because that client cannot speak http and an http
+    /// entry hands it a config it fails on. Asserted from ONE resolution narrowed two ways, so a
+    /// future change that collapses them fails here rather than in a session.
+    #[test]
+    fn the_two_consumers_narrow_the_same_resolution_differently() {
+        let library = vec![
+            srv("research", "stdio", true, Some("node"), None),
+            srv("dashboard", "http", true, None, Some("https://x")),
+        ];
+        let ids = vec!["research".to_string(), "dashboard".to_string()];
+        let resolved = resolve_persona_mcp(&library, &ids, &[]);
+
+        let payloads: Vec<McpServerCfg> = resolved.iter().filter_map(to_mcp_payload).collect();
+        // `.mcp.json` KEEPS the http server.
+        assert!(
+            payloads.iter().any(|p| p.name == "dashboard"),
+            "the mcp.json consumer keeps http: {:?}",
+            payloads.iter().map(|p| &p.name).collect::<Vec<_>>()
+        );
+        // `$BSC_AGENT_MCP` DROPS it.
+        let stdio = to_bsc_agent_mcp(&payloads);
+        assert!(stdio.iter().any(|e| e.name == "research"), "stdio survives");
+        assert!(
+            !stdio.iter().any(|e| e.name == "dashboard"),
+            "an http entry must never reach the agent client: {:?}",
+            stdio.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_ne!(payloads.len(), stdio.len(), "the two lists are genuinely different");
+    }
 
     fn fixture() -> serde_json::Value {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
