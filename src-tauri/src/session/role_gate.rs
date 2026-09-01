@@ -91,6 +91,7 @@ const PERSONA_WRITE_DENY: &[&str] = &["bsc persona set", "bsc persona remove", "
 /// interpreter is a general-purpose escape from it.
 const INTERPRETER_DENY: &[&str] = &["python", "python3", "node", "jq", "perl", "ruby"];
 
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 const WRITE_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
 
 /// Roles whose `code: "none"` may still carry an explicit write boundary (the director's commons
@@ -106,11 +107,19 @@ pub const TOOLING_REQUEST_COMMAND: &str = "bsc request";
 
 /// A PATH-SCOPED file rule uses ONLY `Edit(<glob>)` — Claude Code matches file-permission rules on
 /// the `Edit` tool alone, and that one rule covers every file-editing tool.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn edit_path_rule(glob: &str) -> String {
     format!("Edit({glob})")
 }
 
 /// The `settings.json` allow/deny rules for the file-write tools.
+///
+/// STILL UNWIRED, and the `allow` says which item wires it. `ensure_session_settings` derives the
+/// COMMAND denies today (`reconcile_role_denies`); the write-tool rules and tool denies are the
+/// other half of the same gate and move in their own slice, because they land in a different field
+/// of `settings.json` and deserve their own reconciliation and their own revert. They are proved
+/// equal to the TypeScript already — see the parity test.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolPermissionRules {
     pub allow: Vec<String>,
@@ -156,6 +165,7 @@ pub fn may_file_tooling_request(cap: &RoleCapability) -> bool {
 }
 
 /// A `code: "none"` role that still owns an explicit write boundary.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn has_scoped_write_carve_out(cap: &RoleCapability) -> bool {
     CARVE_OUT_ROLES.contains(&cap.role.as_str())
         && cap.code == Tier::None
@@ -163,6 +173,7 @@ pub fn has_scoped_write_carve_out(cap: &RoleCapability) -> bool {
 }
 
 /// Whole-tool denies beyond the write tools.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn role_denied_tools(cap: &RoleCapability) -> Vec<String> {
     let mut out = Vec::new();
     // A worker must not spawn its own sub-agents: each reads as fresh activity the coordinator keeps
@@ -180,6 +191,7 @@ pub fn role_denied_tools(cap: &RoleCapability) -> Vec<String> {
 
 /// The file-write tool rules. `db_owned` / `dep_manifests` come from `write-locks.json`, passed in
 /// rather than re-read here so the data has ONE loader.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn role_write_rules(
     cap: &RoleCapability,
     db_owned_plan_files: &[String],
@@ -210,6 +222,7 @@ pub fn role_write_rules(
 }
 
 /// The `bsc` surface tiers a session carries.
+#[allow(dead_code)] // wired by `the-launch-derives-the-write-rules-too`
 pub fn session_scopes(cap: &RoleCapability) -> std::collections::BTreeMap<String, Tier> {
     let mut m = std::collections::BTreeMap::new();
     m.insert("ui".to_string(), cap.ui);

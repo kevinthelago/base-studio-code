@@ -825,7 +825,6 @@ mod tests {
         assert_eq!(bsc_sandbox::HOOK_GUEST_PATH, "/bsc-hook");
     }
 
-    #[test]
     /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
     ///
     /// A frontend that omitted a role deny — because it crashed mid-compute, because it is an older
@@ -873,6 +872,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    #[test]
     fn ensure_session_settings_merges_mandatory_and_custom_commands() {
         use crate::session::settings::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
