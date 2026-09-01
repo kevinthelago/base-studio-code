@@ -442,8 +442,109 @@ pub struct LifecycleResult {
     pub outcome: LifecycleOutcome,
 }
 
+// ── Where a session's conversation lives ───────────────────────────────────────────────────────────
+//
+// ONE definition, shared by the app and `bsc session`. It sits in this Tauri-free crate rather than in
+// `src-tauri` because the CLI cannot reach a `pub(crate)` there — and re-deriving these paths on the
+// CLI side is the one thing that must not happen. `launch.rs` already documents that exact bug: the
+// launcher bound `<root>/home/bsc-agent` while the probe asked the per-cwd host path, "so a caged
+// worker reported `has_history=false` with eleven messages sitting in its cage and restarted from
+// nothing on every launch". A second copy of a path IS that bug, waiting.
+
+/// Claude Code's on-disk directory name for a launch `cwd`: every non-alphanumeric character replaced
+/// by `-`, no cap (`C:\Users\Kevin\foo` → `C--Users-Kevin-foo`).
+///
+/// SEMANTICS ARE FROZEN — this must match what Claude Code itself writes under `~/.claude/projects`,
+/// so it is not ours to tidy. Not to be confused with the app's `claude_project_key`, which
+/// slash-normalises the same cwd for the `projects` map in `~/.claude.json`: a different transform for
+/// a different on-disk contract, deliberately kept separate.
+pub fn claude_project_dir_name(cwd: &str) -> String {
+    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// Where `bsc-agent` persists (and resumes) the conversation for `cwd` on the HOST:
+/// `~/.base-studio-code/agent-sessions/<cwd-key>/conversation.json`.
+///
+/// Empty `cwd` ⇒ `None`: no cwd means no persistence, and a path built from an empty slug would at
+/// the parent directory itself.
+pub fn agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    Some(
+        bsc_util::bsc_base_dir()?
+            .join("agent-sessions")
+            .join(claude_project_dir_name(cwd))
+            .join("conversation.json"),
+    )
+}
+
+/// Where a caged `bsc-agent` keeps its conversation, as the GUEST sees it.
+pub const CAGED_AGENT_SESSION_GUEST: &str = "/home/agent/.bsc-agent/conversation.json";
+
+/// The HOST directory backing [`CAGED_AGENT_SESSION_GUEST`] for a pane whose sandbox stores live at
+/// `stores_root`.
+pub fn caged_agent_conversation_dir(stores_root: &std::path::Path) -> std::path::PathBuf {
+    stores_root.join("home").join("bsc-agent")
+}
+
+/// The HOST path of a caged `bsc-agent`'s conversation file.
+///
+/// Derived from the guest path's own file name rather than repeating the literal, so the two cannot
+/// drift apart silently.
+pub fn caged_agent_conversation_path(stores_root: &std::path::Path) -> std::path::PathBuf {
+    let name = std::path::Path::new(CAGED_AGENT_SESSION_GUEST)
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_else(|| std::ffi::OsString::from("conversation.json"));
+    caged_agent_conversation_dir(stores_root).join(name)
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// THE FROZEN CONTRACT, pinned with the app's own vectors so the extraction is provably
+    /// behaviour-preserving. These are the exact assertions `launch.rs` carried before this function
+    /// moved; if they ever need changing, Claude Code changed first and the app must follow — this is
+    /// not ours to tidy.
+    #[test]
+    fn the_claude_project_slug_matches_the_dir_claude_code_creates() {
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\Projects\rust\base-studio-code"),
+            "C--Users-Kevin-Projects-rust-base-studio-code"
+        );
+        // Consecutive specials (`\` then `.`) each map to their OWN dash — not collapsed.
+        assert_eq!(
+            claude_project_dir_name(r"C:\Users\Kevin\.base-studio-code\documents"),
+            "C--Users-Kevin--base-studio-code-documents"
+        );
+        // A posix path, and the empty case.
+        assert_eq!(claude_project_dir_name("/home/u/p"), "-home-u-p");
+        assert_eq!(claude_project_dir_name(""), "");
+    }
+
+    #[test]
+    fn an_empty_cwd_has_no_conversation_path_rather_than_one_at_the_parent() {
+        assert!(agent_session_path("").is_none());
+        let p = agent_session_path("/home/u/p").expect("a real cwd resolves");
+        assert!(p.ends_with("conversation.json"));
+        assert!(p.to_string_lossy().contains("/agent-sessions/"));
+        assert!(p.to_string_lossy().contains("-home-u-p"), "keyed by the frozen slug: {}", p.display());
+    }
+
+    /// The bind and the probe must agree. They did not once, and a caged worker reported
+    /// `has_history=false` with eleven messages sitting in its cage.
+    #[test]
+    fn the_caged_conversation_path_is_the_guest_file_under_the_host_dir() {
+        let root = std::path::Path::new("/stores/pane");
+        assert_eq!(caged_agent_conversation_dir(root), std::path::Path::new("/stores/pane/home/bsc-agent"));
+        assert_eq!(
+            caged_agent_conversation_path(root),
+            std::path::Path::new("/stores/pane/home/bsc-agent/conversation.json")
+        );
+        // The file name is DERIVED from the guest constant, so the two cannot drift.
+        assert!(CAGED_AGENT_SESSION_GUEST.ends_with("conversation.json"));
+    }
     use super::*;
 
     /// The routing keys must not collide with each other or with any sibling verb's — one channel,
