@@ -14,11 +14,13 @@
 //! | `from` in comment | ignored            | **FALSE POSITIVE**                   | ignored                               |
 //! | `from` in string  | ignored            | **FALSE POSITIVE**                   | ignored                               |
 //!
-//! `import_specifiers` is a raw keyword-SUBSTRING scan, so prose and string literals read as imports and
-//! type-only imports the bundler erases are counted. `internal_imports` is tree-sitter and clean but walks
+//! `import_specifiers` WAS a raw keyword-SUBSTRING scan, so prose and string literals read as imports and
+//! type-only imports the bundler erases were counted; slice 2 pointed emit here and DELETED it, so the
+//! third column above is history. `internal_imports` is tree-sitter and clean but walks
 //! only `import_statement`, so every re-export is invisible — the exact gap the TypeScript names as
-//! having shipped `projectspage` broken (#3874). And both are on LIVE paths: emit resolves a component's
-//! closure from the first, harvest computes its buildability verdict from the second.
+//! having shipped `projectspage` broken (#3874). Both were on LIVE paths: emit resolved a component's
+//! closure from the first (fixed — `emit-vendors-a-closure-from-a-substring-scan`), harvest still computes
+//! its buildability verdict from the second.
 //!
 //! # What "right" means here, precisely
 //!
@@ -386,7 +388,7 @@ mod tests {
             vec![ImportRef { specifier: "./a".into(), symbols: vec!["*".into()] }]
         );
 
-        // emit::import_specifiers is a substring scan, so all three of these are false positives there.
+        // All three of these were false positives in emit's old substring scan.
         assert!(
             scan_imports("// see the note from \"./ghost\" for why\n").is_empty(),
             "prose is not an import — records in this tree carry provenance headers"
@@ -455,38 +457,45 @@ mod tests {
 #[cfg(test)]
 mod existing_scanners {
     use super::scan_imports;
-    use crate::emit::import_specifiers;
     use crate::harvest::internal_imports;
 
-    /// `emit::import_specifiers` is a keyword-SUBSTRING scan over raw text, so it has no idea what a
-    /// comment or a string literal is, and no idea that a type-only import is erased.
+    /// The four cases emit used to get wrong, now stated as the answers it gives.
+    ///
+    /// THIS IS THE SAME TEST, UPDATED — not a new one, and not the old one deleted. It was written as a
+    /// characterization test asserting emit's WRONG answers (`import_specifiers` was a keyword-SUBSTRING
+    /// scan: `./ghost` out of a comment, `./strghost` out of a string literal, and two type-only imports
+    /// the bundler erases), so that the defect could not change unnoticed. Slice 2 pointed emit at
+    /// `scan_imports` and deleted that scanner, so the four cases keep their place here and their
+    /// expectations flip. Reading the diff of this function IS the behaviour change.
+    ///
+    /// What emit got right — a re-export and a dynamic import — is asserted below, because a flip that
+    /// fixed the false positives by losing a true positive would be a worse scanner, not a better one.
     #[test]
-    fn emit_scanner_reports_four_things_that_are_not_imports() {
+    fn emit_no_longer_reports_the_four_things_that_are_not_imports() {
+        let specs = |src: &str| -> Vec<String> { scan_imports(src).into_iter().map(|i| i.specifier).collect() };
+
         assert_eq!(
-            import_specifiers("// see the note from \"./ghost\" for why\nimport { X } from \"./x\";\n"),
-            vec!["./ghost", "./x"],
-            "DEFECT: prose read as an import. Records in this tree carry provenance headers naming a \
-             specifier, and emit.rs:163 vendors a component's closure from this list."
+            specs("// see the note from \"./ghost\" for why\nimport { X } from \"./x\";\n"),
+            vec!["./x"],
+            "was [./ghost, ./x] — prose is not an import"
         );
         assert_eq!(
-            import_specifiers("const s = 'from \"./strghost\"';\nimport { X } from \"./x\";\n"),
-            vec!["./strghost", "./x"],
-            "DEFECT: a string literal read as an import"
+            specs("const s = 'from \"./strghost\"';\nimport { X } from \"./x\";\n"),
+            vec!["./x"],
+            "was [./strghost, ./x] — a string literal is not an import"
         );
-        assert_eq!(
-            import_specifiers("import type { T } from \"./t\";\n"),
-            vec!["./t"],
-            "DEFECT: a type-only import is erased by the bundler and never required"
+        assert!(
+            specs("import type { T } from \"./t\";\n").is_empty(),
+            "was [./t] — a type-only import is erased by the bundler and never required"
         );
-        assert_eq!(
-            import_specifiers("import { type A, type B } from \"./ab\";\n"),
-            vec!["./ab"],
-            "DEFECT: an all-inline-type clause is erased too"
+        assert!(
+            specs("import { type A, type B } from \"./ab\";\n").is_empty(),
+            "was [./ab] — an all-inline-type clause is erased too"
         );
 
-        // What it gets RIGHT, and what a flip must therefore preserve.
-        assert_eq!(import_specifiers("export { X } from \"./y\";\n"), vec!["./y"], "re-export: correct");
-        assert_eq!(import_specifiers("const m = await import(\"./lazy\");\n"), vec!["./lazy"], "dynamic: correct");
+        // What it already got right, and what the flip had to PRESERVE.
+        assert_eq!(specs("export { X } from \"./y\";\n"), vec!["./y"], "re-export: still seen");
+        assert_eq!(specs("const m = await import(\"./lazy\");\n"), vec!["./lazy"], "dynamic: still seen");
     }
 
     /// `harvest::internal_imports` is tree-sitter and therefore immune to the prose and string cases, but
@@ -511,11 +520,15 @@ mod existing_scanners {
         assert!(internal_imports("import type { T } from \"./t\";\n")[0].type_only, "type-only: flagged");
     }
 
-    /// The roll-up: on the eleven cases first measured, how many of the three agree with the canonical
-    /// scanner. This is the number slices 2 and 3 move, and pinning it means a partial flip cannot be
-    /// mistaken for a whole one.
+    /// The roll-up: on the eleven cases first measured, how many of the remaining scanners disagree with
+    /// the canonical one. This is the number slices 2 and 3 move, and pinning it means a partial flip
+    /// cannot be mistaken for a whole one.
+    ///
+    /// SLICE 2 MOVED IT FROM SEVEN TO THREE. Emit had four disagreements, all false positives, and it no
+    /// longer has a scanner of its own to disagree with — `import_specifiers` is deleted, so its column
+    /// is not zero, it is absent. What is left is harvest's three, all misses, which is slice 3.
     #[test]
-    fn two_of_three_scanners_disagree_with_the_canonical_one_on_seven_of_eleven_cases() {
+    fn one_remaining_scanner_disagrees_with_the_canonical_one_on_three_of_eleven_cases() {
         const CASES: &[&str] = &[
             "export { ProjectRow } from \"./published/ProjectRow\";\n",
             "export * from \"./a\";\n",
@@ -529,13 +542,9 @@ mod existing_scanners {
             "const s = 'from \"./strghost\"';\nimport { X } from \"./x\";\n",
             "function f() {\n  const m = require(\"./r\");\n}\nimport { X } from \"./x\";\n",
         ];
-        let mut emit_differs = 0;
         let mut harvest_differs = 0;
         for src in CASES {
             let canonical: Vec<String> = scan_imports(src).into_iter().map(|i| i.specifier).collect();
-            if import_specifiers(src) != canonical {
-                emit_differs += 1;
-            }
             // Harvest is compared on its NON-type-only imports, which is the fair comparison: its
             // contract is a spec plus a `type_only` FLAG and its caller filters on that, so counting a
             // correctly-flagged type-only import as a disagreement would charge it for being right.
@@ -545,20 +554,19 @@ mod existing_scanners {
                 harvest_differs += 1;
             }
         }
-        assert_eq!(emit_differs, 4, "emit disagrees on four cases — all false positives");
         assert_eq!(harvest_differs, 3, "harvest disagrees on three — all misses");
-        // Four and three, overlapping nowhere, is SEVEN distinct cases of the eleven — not six. The
-        // first pass of this arithmetic said six and this assertion is what caught it, which is the
-        // whole reason the count is asserted rather than only written in a comment.
+        // Emit's four and harvest's three overlapped nowhere, which is why the count was SEVEN of eleven
+        // rather than six — the first pass of this arithmetic said six and this assertion caught it.
+        // With emit on the canonical scanner, the four are gone and the three that remain are harvest's.
         let mut disagreeing = 0;
         for src in CASES {
             let canonical: Vec<String> = scan_imports(src).into_iter().map(|i| i.specifier).collect();
             let harvested: Vec<String> =
                 internal_imports(src).into_iter().filter(|i| !i.type_only).map(|i| i.spec).collect();
-            if import_specifiers(src) != canonical || harvested != canonical {
+            if harvested != canonical {
                 disagreeing += 1;
             }
         }
-        assert_eq!(disagreeing, 7, "seven of the eleven cases have at least one scanner disagreeing");
+        assert_eq!(disagreeing, 3, "three of the eleven cases still have a scanner disagreeing — all harvest\'s");
     }
 }

@@ -17,6 +17,7 @@
 //! is preserved and each `@/X` rewrites to `relative(dir_of_this_file, X)`. Provenance is stamped on
 //! every file (the marker ②·3 `sync` keys on).
 
+use crate::import_scan::scan_imports;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -160,7 +161,12 @@ impl EmitKit {
                 needed.remove(&path);
                 continue;
             };
-            for spec in import_specifiers(source) {
+            // THE CALL SITE (`emit-vendors-a-closure-from-a-substring-scan`). This used to walk
+            // `import_specifiers`, a keyword-SUBSTRING scan that read a `from "…"` inside a comment or a
+            // string literal as an import and counted type-only imports the bundler erases — so a
+            // provenance header naming a specifier vendored a module nothing requires. `scan_imports`
+            // parses, and is parity-proved against the live TypeScript.
+            for spec in scan_imports(source).into_iter().map(|i| i.specifier) {
                 if let Some(first_party) = spec.strip_prefix("@/") {
                     // An unresolved first-party path (shouldn't happen for a complete kit) is skipped.
                     if let Some(target) = self.resolve(first_party) {
@@ -306,36 +312,6 @@ fn rel_import(from_dir: &str, to: &str) -> String {
     }
 }
 
-/// Every module specifier a source `import`s / `export … from`s / dynamically `import()`s. Scans for
-/// the quoted specifier after a `from`/`import` keyword — enough for the kit's sources (which use the
-/// `@/…` convention exclusively for first-party modules).
-pub(crate) fn import_specifiers(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let bytes = source.as_bytes();
-    for kw in ["from", "import"] {
-        let mut search = 0;
-        while let Some(rel) = source[search..].find(kw) {
-            let at = search + rel;
-            search = at + kw.len();
-            // The keyword must be a word boundary (not e.g. `transform`), and be followed by the
-            // specifier after optional whitespace / a `(` (dynamic import).
-            let before_ok = at == 0 || !bytes[at - 1].is_ascii_alphanumeric() && bytes[at - 1] != b'_';
-            if !before_ok {
-                continue;
-            }
-            let rest = &source[search..];
-            let trimmed = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '(');
-            let Some(quote) = trimmed.chars().next().filter(|c| *c == '"' || *c == '\'') else {
-                continue;
-            };
-            if let Some(end) = trimmed[1..].find(quote) {
-                out.push(trimmed[1..1 + end].to_string());
-            }
-        }
-    }
-    out
-}
-
 /// The first-party (`@/…`) specifiers `content` still IMPORTS — the precise form of "this file's closure
 /// is incomplete", and empty when it is complete.
 ///
@@ -343,10 +319,10 @@ pub(crate) fn import_specifiers(source: &str) -> Vec<String> {
 /// two BYTES appear anywhere. Records carry a provenance header naming their own specifier
 /// (``// `@/shared/ui/data/Card` after the original module was retired``), so five emitted files tripped a
 /// check on a comment while every real import had been rewritten correctly — the emit was right and the
-/// test was wrong. Asking [`import_specifiers`] instead asks what the assertion always meant.
+/// test was wrong. Asking [`scan_imports`] instead asks what the assertion always meant.
 #[cfg(test)]
 pub(crate) fn unvendored_aliases(content: &str) -> Vec<String> {
-    import_specifiers(content).into_iter().filter(|s| s.starts_with("@/")).collect()
+    scan_imports(content).into_iter().map(|i| i.specifier).filter(|s| s.starts_with("@/")).collect()
 }
 
 /// The verbatim module source of a STORE component record for emit — its `source`, else its `srcText`,
@@ -433,13 +409,15 @@ mod tests {
         assert_eq!(rel_import("", "Top"), "./Top");
     }
 
+    /// The three edge kinds emit's closure walk depends on — a plain import, a re-export, and a dynamic
+    /// import — asked of the scanner emit actually uses now that `import_specifiers` is gone.
     #[test]
-    fn import_specifiers_finds_first_party_and_external() {
+    fn the_closure_scanner_finds_first_party_and_external() {
         let src = "import { A } from \"@/x/y\";\nexport { B } from '@/z';\nconst m = await import(\"react\");";
-        let specs = import_specifiers(src);
+        let specs: Vec<String> = scan_imports(src).into_iter().map(|i| i.specifier).collect();
         assert!(specs.contains(&"@/x/y".to_string()));
-        assert!(specs.contains(&"@/z".to_string()));
-        assert!(specs.contains(&"react".to_string()));
+        assert!(specs.contains(&"@/z".to_string()), "a re-export is an import — esbuild emits the same require");
+        assert!(specs.contains(&"react".to_string()), "a dynamic import is an import");
     }
 
     #[test]
@@ -449,6 +427,85 @@ mod tests {
         assert_eq!(external_package("d3-scale"), Some("d3-scale".into()));
         assert_eq!(external_package("@scope/pkg/sub"), Some("@scope/pkg".into()));
         assert_eq!(external_package("./local"), None);
+    }
+
+    /// A kit whose Card names four ghost modules the way a real record does — in a provenance comment,
+    /// in a string literal, and in two type-only imports — with every ghost PRESENT in the runtime map so
+    /// it genuinely resolves. Only `format` is a real import.
+    ///
+    /// The ghosts must resolve or this fixture proves nothing: an unresolvable `@/…` is dropped by
+    /// `resolve` whichever scanner reported it, so the test would pass against the defect.
+    fn ghost_fixture() -> EmitKit {
+        let json = serde_json::json!({
+            "id": "acme/kit",
+            "version": "2.1.0",
+            "components": [
+                { "id": "card", "src": "shared/ui/data/Card.tsx",
+                  "source": "// ported from \"@/shared/lib/core/ghost\" when that module was retired\n\
+const NOTE = 'from \"@/shared/lib/core/strghost\"';\n\
+import type { T } from \"@/shared/lib/core/typeghost\";\n\
+import { type A, type B } from \"@/shared/lib/core/inlineghost\";\n\
+import { fmt } from \"@/shared/lib/core/format\";\n\
+export const Card = () => null;" }
+            ],
+            "runtime": {
+                "shared/lib/core/format.ts": "export const fmt = (x: number) => String(x);",
+                "shared/lib/core/ghost.ts": "export const ghost = 1;",
+                "shared/lib/core/strghost.ts": "export const strghost = 1;",
+                "shared/lib/core/typeghost.ts": "export type T = 1;",
+                "shared/lib/core/inlineghost.ts": "export type A = 1; export type B = 2;"
+            }
+        });
+        EmitKit::from_artifact(&json.to_string()).unwrap()
+    }
+
+    /// THE CALL SITE, pinned. Revert `plan_from_roots` to `import_specifiers` and this goes red.
+    ///
+    /// It is deliberately an assertion about the PLAN, not about a scanner. The scanner was already
+    /// correct and parity-proved before this slice; the defect was that emit's closure walk did not ask
+    /// it. A test that only exercised `scan_imports` would pass with the call site reverted, which is
+    /// the shape of "an extracted function is tested and the flip is not".
+    #[test]
+    fn the_closure_does_not_vendor_a_specifier_named_only_in_prose_or_erased_by_the_bundler() {
+        let plan = ghost_fixture().plan_component("card").unwrap();
+        let paths: Vec<&str> = plan.files.iter().map(|f| f.path.as_str()).collect();
+
+        assert_eq!(
+            paths,
+            vec!["shared/lib/core/format.ts", "shared/ui/data/Card.tsx"],
+            "the closure is Card plus its ONE real import — the substring scan vendored all four ghosts too"
+        );
+        for ghost in ["ghost", "strghost", "typeghost", "inlineghost"] {
+            assert!(
+                !paths.iter().any(|p| p.contains(ghost)),
+                "{ghost} is named in a comment, a string or a type-only import — none of which the \
+                 compiled module requires: {paths:?}"
+            );
+        }
+    }
+
+    /// The other half of the same flip: what emit already got right must survive it. A re-export and a
+    /// dynamic import are real edges, and a scanner that fixed the false positives by dropping these
+    /// would be worse, not better — and the closure would then MISS a module the bundle needs.
+    #[test]
+    fn the_closure_still_follows_a_re_export_and_a_dynamic_import() {
+        let json = serde_json::json!({
+            "id": "acme/kit",
+            "version": "2.1.0",
+            "components": [
+                { "id": "card", "src": "shared/ui/data/Card.tsx",
+                  "source": "export { Re } from \"@/shared/lib/core/reexported\";\n\
+export const load = () => import(\"@/shared/lib/core/lazy\");\n" }
+            ],
+            "runtime": {
+                "shared/lib/core/reexported.ts": "export const Re = 1;",
+                "shared/lib/core/lazy.ts": "export const lazy = 1;"
+            }
+        });
+        let plan = EmitKit::from_artifact(&json.to_string()).unwrap().plan_component("card").unwrap();
+        let paths: Vec<&str> = plan.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"shared/lib/core/reexported.ts"), "a re-export compiles to a require: {paths:?}");
+        assert!(paths.contains(&"shared/lib/core/lazy.ts"), "a dynamic import is a real edge: {paths:?}");
     }
 
     #[test]
