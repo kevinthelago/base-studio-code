@@ -234,7 +234,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         positional: vec![],
         session: None,
         stream: None,
@@ -251,29 +251,27 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         duration: None,
         proc_dir: None,
     };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
             "--json" => a.json = true,
             "--pretty" => { a.json = true; a.pretty = true; }
             "--oldest" => a.oldest = true,
             "--full" => a.full = true,
             "--all" => a.all = true,
             "--watch" => a.watch = true,
-            "--interval" => a.interval = Some(it.next().ok_or("--interval needs a value")?.parse().map_err(|_| "--interval must be seconds")?),
-            "--duration" => a.duration = Some(it.next().ok_or("--duration needs a value")?.parse().map_err(|_| "--duration must be seconds")?),
-            "--proc" => a.proc_dir = Some(PathBuf::from(it.next().ok_or("--proc needs a value")?)),
-            "--session" => a.session = Some(it.next().ok_or("--session needs a value")?),
-            "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
-            "--since" => a.since = Some(it.next().ok_or("--since needs a value")?.parse().map_err(|_| "--since must be epoch ms")?),
-            "--limit" => a.limit = Some(it.next().ok_or("--limit needs a value")?.parse().map_err(|_| "--limit must be a number")?),
-            "--dir" => a.dir = Some(PathBuf::from(it.next().ok_or("--dir needs a value")?)),
-            // `-h`/`--help` route to the help command (handled in run()).
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            other => a.positional.push(other.to_string()),
+            "--interval" => a.interval = Some(v.value("--interval needs a value")?.parse().map_err(|_| "--interval must be seconds")?),
+            "--duration" => a.duration = Some(v.value("--duration needs a value")?.parse().map_err(|_| "--duration must be seconds")?),
+            "--proc" => a.proc_dir = Some(PathBuf::from(v.value("--proc needs a value")?)),
+            "--session" => a.session = Some(v.value("--session needs a value")?),
+            "--stream" => a.stream = Some(v.value("--stream needs a value")?),
+            "--since" => a.since = Some(v.value("--since needs a value")?.parse().map_err(|_| "--since must be epoch ms")?),
+            "--limit" => a.limit = Some(v.value("--limit needs a value")?.parse().map_err(|_| "--limit must be a number")?),
+            "--dir" => a.dir = Some(PathBuf::from(v.value("--dir needs a value")?)),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

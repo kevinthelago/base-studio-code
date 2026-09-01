@@ -274,19 +274,15 @@ Restore the default graph: the global root shows warn (deps stay quiet) and the 
 /// default). Help is resolved before touching the file.
 pub fn run_cli(args: Vec<String>, prog: &str) -> Result<(), String> {
     // Parse: a leading verb + positionals, plus `--json` and `--file <path>`.
-    let mut positional: Vec<String> = Vec::new();
-    let mut json = false;
-    let mut file: Option<String> = None;
-    let mut it = args.into_iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--json" | "--pretty" => json = true,
-            "--file" => file = Some(it.next().ok_or("--file needs a value")?),
-            "-h" | "--help" => positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            other => positional.push(other.to_string()),
-        }
-    }
+    let ((json, file), positional) =
+        bsc_cli_util::args::walk(args, (false, None::<String>), |flag, (json, file): &mut (bool, Option<String>), v| {
+            match flag {
+                "--json" | "--pretty" => *json = true,
+                "--file" => *file = Some(v.value("--file needs a value")?),
+                _ => return Ok(false),
+            }
+            Ok(true)
+        })?;
 
     if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &positional) {
         return Ok(());

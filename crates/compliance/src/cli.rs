@@ -127,7 +127,7 @@ fn csv(s: &str) -> Vec<String> {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         db: None,
         pretty: false,
         domain: None,
@@ -136,25 +136,21 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         domains: Vec::new(),
         positional: Vec::new(),
     };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
+            "--db" => a.db = Some(v.value("--db needs a path")?),
             "--pretty" => a.pretty = true,
             // Output is always JSON; --json is accepted so callers can be explicit.
             "--json" => {}
-            "--domain" => a.domain = Some(it.next().ok_or("--domain needs a value")?),
-            "--regions" => a.regions = csv(&it.next().ok_or("--regions needs a comma-separated value")?),
-            "--data-types" => {
-                a.data_types = csv(&it.next().ok_or("--data-types needs a comma-separated value")?)
-            }
-            "--domains" => a.domains = csv(&it.next().ok_or("--domains needs a comma-separated value")?),
-            // `-h`/`--help` route to the help command (handled in run()).
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            "--domain" => a.domain = Some(v.value("--domain needs a value")?),
+            "--regions" => a.regions = csv(&v.value("--regions needs a comma-separated value")?),
+            "--data-types" => a.data_types = csv(&v.value("--data-types needs a comma-separated value")?),
+            "--domains" => a.domains = csv(&v.value("--domains needs a comma-separated value")?),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

@@ -74,7 +74,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         json: false,
         pretty: false,
         full: false,
@@ -85,22 +85,21 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         db: None,
         positional: Vec::new(),
     };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--full" => a.full = true,
             "--strict" => a.strict = true,
             "--dry-run" => a.dry_run = true,
-            "--ref" => a.r#ref = Some(it.next().ok_or("--ref needs a plan ref")?),
-            "--note" => a.note = Some(it.next().ok_or("--note needs text")?),
-            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            "--ref" => a.r#ref = Some(v.value("--ref needs a plan ref")?),
+            "--note" => a.note = Some(v.value("--note needs text")?),
+            "--db" => a.db = Some(v.value("--db needs a path")?),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

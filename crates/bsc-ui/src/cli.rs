@@ -354,6 +354,29 @@ the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than
 { dir, synced, upToDate, diverged, unknown }.",
     },
     CmdDoc {
+        name: "diff",
+        summary: "what differs between a record and the file it claims — the adjudication view (#claim-census)",
+        usage: "\
+USAGE:
+  bsc ui diff <src-relative-path> [--full] [--repo <dir>] [--dir <store>]
+
+`bsc ui census` says WHICH records disagree with the file they claim; this is what you read to decide
+what to do about one. The path is `src/`-relative — `features/sounds/index.ts`, not `src/features/…`.
+
+IT NORMALIZES EXACTLY AS THE PROMOTER DOES (file-as-record-source, then strip the preamble, then
+code-only), which is why it is not a `git diff`: comparing raw text reports every transcription preamble
+and every absolutized import as a difference, and that is how 21 candidates were once written off as
+drift.
+
+A LINE-SET DIFF, NOT AN LCS. The question is what one copy has that the other does not; for a decision
+about DROPPED EXPORTS a set difference answers it directly, while a positional diff buries it under
+reordering noise. Capped at 25 lines each way — `--full` prints everything.
+
+THE EXPORT VERDICT IS THE DECISIVE ONE: a dropped export breaks importers, where a changed body only
+changes behaviour. A star re-export on either side reports UNKNOWN rather than clean, because it cannot
+be enumerated and \"drops nothing\" would be the one answer worse than saying so.",
+    },
+    CmdDoc {
         name: "census",
         summary: "which records CLAIM a module they are not — the provides audit (#claim-census)",
         usage: "\
@@ -443,6 +466,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("env") => cmd_env(&args[1..]),
         Some("changes") => cmd_changes(&args[1..]),
         Some("census") => cmd_census(&args[1..]),
+        Some("diff") => cmd_diff(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -2311,6 +2335,127 @@ fn cmd_census(args: &[String]) -> Result<(), String> {
 /// The value after `flag` in `args`, if present.
 fn flag_after(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// `bsc ui diff <src-relative-path> [--full]` — WHAT DIFFERS between a record and the file it claims.
+///
+/// Ported from `scripts/show-body-diff.mjs`, deleted with this verb. That script defaulted `BSC` to a
+/// hardcoded absolute Windows path, so on any other machine it worked only if `BSC_BIN` happened to be
+/// set; this reads the stores in-process and needs no binary at all.
+fn cmd_diff(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc ui diff <src-relative-path> [--full]";
+    let full = args.iter().any(|a| a == "--full");
+    let dir = flag_after(args, "--dir");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let rel = args
+        .iter()
+        .find(|a| !a.starts_with("--") && flag_after(args, "--dir").as_ref() != Some(*a)
+            && flag_after(args, "--repo").as_ref() != Some(*a))
+        .ok_or(USAGE)?;
+
+    let stem = rel.trim_end_matches(".tsx").trim_end_matches(".ts");
+    let spec = format!("@/{}", stem.strip_suffix("/index").unwrap_or(stem));
+
+    let store = bsc_component::cli::open_component_store(&dir)?;
+    let mut all: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .collect();
+    if dir.is_none() {
+        all.extend(bsc_graph::implementations());
+    }
+
+    // BY `provides` FIRST, then by `src`. A record that answers the specifier is the one an importer
+    // actually gets; a record merely claiming the path may be one of several lifted from it.
+    let want_src = format!("src/{rel}");
+    let rec = all
+        .iter()
+        .find(|r| r.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim() == spec)
+        .or_else(|| {
+            all.iter().find(|r| {
+                r.get("src").and_then(serde_json::Value::as_str).unwrap_or("").replace('\\', "/")
+                    == want_src
+            })
+        })
+        .ok_or_else(|| format!("no record provides {spec} nor claims src/{rel}"))?;
+
+    let abs = repo.join("src").join(rel);
+    let file_src = crate::record_source::file_as_record_source(&abs, rel)
+        .map_err(|e| format!("cannot read {}: {e}", abs.display()))?;
+    let raw_body = rec
+        .get("srcText")
+        .or_else(|| rec.get("code"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let (_, body) = crate::record_source::split_preamble(
+        &crate::record_source::norm(raw_body),
+        &file_src,
+    );
+
+    let r_code = crate::record_source::code_only(&body);
+    let f_code = crate::record_source::code_only(&file_src);
+    let r_lines: Vec<&str> = r_code.split('\n').collect();
+    let f_lines: Vec<&str> = f_code.split('\n').collect();
+
+    let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or("");
+    let provides = rec.get("provides").and_then(serde_json::Value::as_str).unwrap_or("").trim();
+    println!(
+        "{id}  ({})",
+        if provides.is_empty() { "no provides".to_string() } else { format!("provides {provides}") }
+    );
+    println!("record {} lines / file {} lines\n", r_lines.len(), f_lines.len());
+
+    // A LINE-SET DIFF, NOT AN LCS — see the verb's help for why.
+    let set = |v: &[&str]| -> std::collections::BTreeSet<String> {
+        v.iter().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+    };
+    let (set_r, set_f) = (set(&r_lines), set(&f_lines));
+    let only_record: Vec<&String> = set_r.iter().filter(|l| !set_f.contains(*l)).collect();
+    let only_file: Vec<&String> = set_f.iter().filter(|l| !set_r.contains(*l)).collect();
+    let cap = if full { usize::MAX } else { 25 };
+
+    println!("ONLY IN THE RECORD ({}):", only_record.len());
+    for l in only_record.iter().take(cap) {
+        println!("  + {l}");
+    }
+    if only_record.len() > cap {
+        println!("  … {} more (--full)", only_record.len() - cap);
+    }
+    println!("\nONLY IN THE FILE ({}):", only_file.len());
+    for l in only_file.iter().take(cap) {
+        println!("  - {l}");
+    }
+    if only_file.len() > cap {
+        println!("  … {} more (--full)", only_file.len() - cap);
+    }
+
+    // THE DECISIVE QUESTION for a retirement: does either copy declare an export the other does not? A
+    // dropped export breaks importers; a changed body only changes behaviour.
+    //
+    // Uses the SHARED `exported_names`. The script this replaces once had its own regex, and it
+    // disagreed on `export type { A, B } from "…"` — reporting NetworkPage's record as declaring four
+    // exports its file "lacked", when the file re-exports two of them on one line.
+    let (e_r, e_f) =
+        (crate::record_source::exported_names(&r_code), crate::record_source::exported_names(&f_code));
+    let (Some(e_r), Some(e_f)) = (e_r, e_f) else {
+        println!("\nEXPORTS: one side uses `export * from`, so the comparison is UNKNOWN, not clean.");
+        return Ok(());
+    };
+    let lost: Vec<&String> = e_f.iter().filter(|n| !e_r.contains(*n)).collect();
+    let added: Vec<&String> = e_r.iter().filter(|n| !e_f.contains(*n)).collect();
+    let join = |v: &[&String]| {
+        if v.is_empty() {
+            "(none)".to_string()
+        } else {
+            v.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        }
+    };
+    println!("\nEXPORTS the record would DROP: {}", join(&lost));
+    println!("EXPORTS only the record has:   {}", join(&added));
+    Ok(())
 }
 
 #[cfg(test)]

@@ -98,34 +98,37 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         json: false, pretty: false, db: None, project: None, stage: None, source: None,
         session: None, since: None, at: None, limit: None, seconds: None, positional: Vec::new(),
     };
-    let mut it = raw.into_iter();
-    while let Some(t) = it.next() {
-        let num = |v: &str, flag: &str| -> Result<i64, String> {
-            v.parse::<i64>().map_err(|_| format!("{flag}: not a number: {v}"))
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        let num = |raw: &str, flag: &str| -> Result<i64, String> {
+            raw.parse::<i64>().map_err(|_| format!("{flag}: not a number: {raw}"))
         };
-        match t.as_str() {
+        match flag {
             "--json" => a.json = true,
             "--pretty" => { a.json = true; a.pretty = true }
-            "--db" => a.db = it.next(),
-            "--project" => a.project = it.next(),
-            "--stage" => a.stage = it.next(),
-            "--source" => a.source = it.next(),
-            "--session" => a.session = it.next(),
-            "--since" => a.since = Some(num(&it.next().ok_or("--since needs a value")?, "--since")?),
-            "--at" => a.at = Some(num(&it.next().ok_or("--at needs a value")?, "--at")?),
-            "--limit" => a.limit = Some(num(&it.next().ok_or("--limit needs a value")?, "--limit")?),
+            // These four took the next argument whatever it was and stayed None at end-of-line, with
+            // no refusal at all. Preserved: `value` is the only thing that refuses, so `ok()` keeps
+            // `bsc mem --db` behaving exactly as it did rather than growing an error here.
+            "--db" => a.db = v.value("--db needs a path").ok(),
+            "--project" => a.project = v.value("--project needs a value").ok(),
+            "--stage" => a.stage = v.value("--stage needs a value").ok(),
+            "--source" => a.source = v.value("--source needs a value").ok(),
+            "--session" => a.session = v.value("--session needs a value").ok(),
+            "--since" => a.since = Some(num(&v.value("--since needs a value")?, "--since")?),
+            "--at" => a.at = Some(num(&v.value("--at needs a value")?, "--at")?),
+            "--limit" => a.limit = Some(num(&v.value("--limit needs a value")?, "--limit")?),
             "--seconds" => {
-                let v = it.next().ok_or("--seconds needs a value")?;
-                a.seconds = Some(v.parse().map_err(|_| format!("--seconds: not a number: {v}"))?);
+                let raw = v.value("--seconds needs a value")?;
+                a.seconds = Some(raw.parse().map_err(|_| format!("--seconds: not a number: {raw}"))?);
             }
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            other => a.positional.push(other.to_string()),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 
