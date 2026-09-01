@@ -42,7 +42,7 @@ pub const BOOL_FLAGS: [&str; 13] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 52] = [
+pub const FLAGS: [&str; 54] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
@@ -117,6 +117,10 @@ pub const FLAGS: [&str; 52] = [
     // (`code`, typically) and optionally spill it to the scratch dir instead of stdout.
     "--field",
     "--raw",
+    // `similar --sig "<signature>"` — the DISCOVER-BEFORE-AUTHORING query, which takes a signature
+    // rather than an id because the thing being looked for does not exist yet.
+    "--sig",
+    "--limit",
 ];
 
 /// Materialize ONE record into `out` and, when `run`, execute its paired tests there.
@@ -529,6 +533,56 @@ const MIN_SHINGLES: usize = 8;
 /// chasm rather than a tuned knob.
 const NEAR_DUPLICATE: f64 = 0.8;
 
+/// The floor below which `similar` reports NOTHING rather than a weak match.
+///
+/// MEASURED on the real library: a genuine twin scores **1.00** (`tree-view-motion.ts` against its six
+/// siblings), while a query for something that does NOT exist there - a `groupBy` shape - returns a
+/// tail at **0.14**, matching on one shared parameter name and nothing else. The gap is wide, so the
+/// exact value is not delicate; 0.34 is the component library's own `NAME_GATE`, reused so the two
+/// surfaces answer "similar" at the same bar.
+///
+/// A FLOOR MATTERS MORE HERE THAN IN A DEDUP REPORT. This verb exists to be asked BEFORE a function is
+/// written, and an answer padded to `--limit` with 0.14 noise reads as "yes, several of these already
+/// exist" - the opposite of the truth, delivered confidently.
+const MIN_SIMILAR: f64 = 0.34;
+
+/// Contract overlap at or above which two functions AGREE ABOUT WHAT THEY TAKE — never sufficient on
+/// its own.
+///
+/// MEASURED over 716,507 arity-bucketed pairs in `crates/`: pairs that are structural clones have a
+/// median contract similarity of **1.00**, but non-clones reach **0.50 at the 99th percentile and 1.00
+/// at the maximum**. There is NO CHASM here, unlike the body signal — a contract is a far weaker claim
+/// for a function than a prop set is for a component, because `(v: Vec3) -> f32` describes `abs`,
+/// `normalize`, `max0` and every other routine in a maths module. So this threshold sits above the
+/// 99th percentile of non-clones and still admits thousands of pairs; what makes it usable is the two
+/// conditions below, not the number.
+const CONTRACT_MATCH: f64 = 0.6;
+
+/// Body overlap that must ALSO hold for a contract match to report. Well below [`NEAR_DUPLICATE`] —
+/// a pair above that is already found by signal 1 — so this is the band where the bodies are alike
+/// but not alike enough to speak for themselves.
+///
+/// THE BODY IS REQUIRED, NOT OPTIONAL, and that is a deliberate divergence from the component
+/// library's measure, which lets a strong contract flag on its own (`HIGH_CONTRACT_MATCH`). Component
+/// props are named at every call site so their names are meaning; a function signature is not, and the
+/// distribution above is what that difference looks like in numbers.
+const CORROBORATING_BODY: f64 = 0.30;
+
+/// Two functions in the SAME module sharing a contract is a MODULE CONVENTION, not duplication, and
+/// excluding it is what makes this signal usable at all.
+///
+/// MEASURED: with contract ≥ 0.6 and body in [0.30, 0.80) the sweep over `crates/` returns **161**
+/// pairs, and inspection shows almost all are neighbours in one file — `abs` beside `normalize`,
+/// `cross` beside `cmin`, `home_dir` beside `bsc_base_dir`. Requiring different modules cuts that to
+/// **28**, and those read as real: an `is_safe_*` validator family duplicated across two modules of
+/// one crate, `parse_args` in two crates, `build_messages`/`build_contents` per LLM provider,
+/// `normalize_response` in both `gemini.rs` and `openai.rs`.
+///
+/// This is the same lesson #78 recorded for the NAME signal — "every feature has a `store`, an
+/// `index`, a `graphPlatform`; that is a convention" — one level down: every maths module has a
+/// handful of `(Vec3) -> f32`.
+const CROSS_MODULE_ONLY: bool = true;
+
 /// Minimum share of a group's possible pairs that must be observed for it to report as one cluster —
 /// the anti-chaining guard, matching the component-side detector (#74). `A~B` and `B~C` with `A` and
 /// `C` unrelated is a chain, and collapsing it asserts a similarity no member exhibits.
@@ -582,6 +636,56 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
             (sh.len() >= MIN_SHINGLES).then_some((id, sh))
         })
         .collect();
+    // ── signal 4: the same CONTRACT, corroborated by the body, across MODULES ──
+    //
+    // The "same job, different implementation" case: two functions that agree about what they take and
+    // return, whose bodies are alike but not alike enough for signal 1 to speak. Arity-BUCKETED, and
+    // arity is the right key precisely because it is not a name — the component sweep's cheap first
+    // pass is a NAME gate, which for functions discards exactly what is being hunted.
+    let contracts: Vec<(String, String, crate::extract::Signature)> = impls
+        .iter()
+        .filter_map(|im| {
+            let (id, code, tech) = (text(im, "id"), text(im, "code"), text(im, "tech"));
+            let sig = crate::extract::signature_from_code(&code, &tech)?;
+            // A contract that names nothing cannot corroborate anything.
+            (!id.is_empty() && !sig.params.is_empty()).then(|| (id, same_module_path(&text(im, "src")), sig))
+        })
+        .collect();
+    let shingles_by_id: std::collections::BTreeMap<&str, &std::collections::HashSet<u64>> =
+        bodies.iter().map(|(id, sh)| (id.as_str(), sh)).collect();
+    let mut contract_pairs: Vec<(&str, &str)> = Vec::new();
+    {
+        let mut by_arity: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+        for (i, c) in contracts.iter().enumerate() {
+            by_arity.entry(c.2.arity()).or_default().push(i);
+        }
+        for idxs in by_arity.values() {
+            for (n, &i) in idxs.iter().enumerate() {
+                for &j in idxs.iter().skip(n + 1) {
+                    // A MODULE CONVENTION IS NOT DUPLICATION — see `CROSS_MODULE_ONLY`. Measured, this
+                    // one condition takes the finding from 161 pairs to 28.
+                    if CROSS_MODULE_ONLY && contracts[i].1 == contracts[j].1 && !contracts[i].1.is_empty() {
+                        continue;
+                    }
+                    if crate::extract::contract_similarity(&contracts[i].2, &contracts[j].2) < CONTRACT_MATCH {
+                        continue;
+                    }
+                    // THE BODY IS REQUIRED. A contract alone reaches 1.00 on unrelated pairs.
+                    let (Some(a), Some(b)) =
+                        (shingles_by_id.get(contracts[i].0.as_str()), shingles_by_id.get(contracts[j].0.as_str()))
+                    else {
+                        continue;
+                    };
+                    let inter = a.intersection(b).count();
+                    let union = a.len() + b.len() - inter;
+                    if union > 0 && (inter as f64) / (union as f64) >= CORROBORATING_BODY {
+                        contract_pairs.push((contracts[i].0.as_str(), contracts[j].0.as_str()));
+                    }
+                }
+            }
+        }
+    }
+
     let mut pairs: Vec<(&str, &str)> = Vec::new();
     for (a, (id_a, sh_a)) in bodies.iter().enumerate() {
         for (id_b, sh_b) in bodies.iter().skip(a + 1) {
@@ -611,54 +715,84 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
         // record twice; either half alone is a naming convention or a function-granularity harvest.
         if !id.is_empty() && !name.is_empty() && !src.is_empty() {
             let key = format!("{name}\u{0}{}", same_module_path(&src));
-            buckets.entry(("name-and-src", key)).or_default().insert(id);
+            buckets.entry(("name-and-src", key)).or_default().insert(id.clone());
+        }
+        // ── signal 3: the same SHAPE — a copy whose identifiers were renamed ──
+        //
+        // The one thing signal 1 structurally cannot find. Its shingles are taken over TOKENS, and the
+        // tokens include the identifiers, so a renamed copy has a DISJOINT set and no threshold
+        // recovers it. MEASURED: `groupItems(items, keyOf)` and `bucketRows(rows, labelFor)` — same
+        // logic, every identifier renamed — scored zero overlap and were not grouped.
+        //
+        // An EXACT key, not a threshold: equal fingerprints ARE the same code under renaming, so this
+        // buckets directly like `name-and-src` rather than going through the pair/cluster machinery
+        // that signal 1 needs. Grouping is free; it is the pairwise scoring that is not.
+        let tech = text(im, "tech");
+        if !id.is_empty() {
+            if let Some(shape) = crate::extract::shape_fingerprint(&text(im, "code"), &tech) {
+                // Keyed WITH the tech: cross-kit comparison is out of scope
+                // (`epic-a-graph-finds-its-own-duplicates`), and two languages can collide on a
+                // node-kind sequence — `identifier` and `block` mean different things in each grammar.
+                buckets.entry(("same-shape", format!("{tech}\u{0}{shape}"))).or_default().insert(id);
+            }
         }
     }
 
-    // Cluster the body pairs into connected components, with the same density guard the component
-    // detector uses — a sparse component is a chain, and collapsing it invents a group.
-    let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
-        std::collections::BTreeMap::new();
-    for (a, b) in &pairs {
-        adj.entry(a).or_default().insert(b);
-        adj.entry(b).or_default().insert(a);
-    }
-    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    for start in adj.keys().copied() {
-        if seen.contains(start) {
-            continue;
+    // Cluster pairs into connected components, with the same density guard the component detector
+    // uses — a sparse component is a chain, and collapsing it invents a group.
+    //
+    // SHARED BY BOTH PAIRWISE SIGNALS, and that sharing is the fix for a real defect rather than tidying:
+    // the contract signal first emitted one bucket PER PAIR, so four identical records produced six
+    // rows and broke this module's central promise that N duplicates report as ONE row naming every
+    // member. The chaining worry that motivated pairs is exactly what `CLUSTER_DENSITY` already
+    // answers, so there was never a second mechanism to invent.
+    let cluster = |pairs: &[(&str, &str)]| -> Vec<Vec<String>> {
+        let mut adj: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+            std::collections::BTreeMap::new();
+        for (a, b) in pairs {
+            adj.entry(a).or_default().insert(b);
+            adj.entry(b).or_default().insert(a);
         }
-        let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
-        while let Some(n) = stack.pop() {
-            if !seen.insert(n) {
+        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let mut out: Vec<Vec<String>> = Vec::new();
+        for start in adj.keys().copied() {
+            if seen.contains(start) {
                 continue;
             }
-            group.push(n);
-            for m in adj.get(n).into_iter().flatten() {
-                if !seen.contains(m) {
-                    stack.push(m);
+            let (mut stack, mut group): (Vec<&str>, Vec<&str>) = (vec![start], Vec::new());
+            while let Some(n) = stack.pop() {
+                if !seen.insert(n) {
+                    continue;
+                }
+                group.push(n);
+                for m in adj.get(n).into_iter().flatten() {
+                    if !seen.contains(m) {
+                        stack.push(m);
+                    }
                 }
             }
+            if group.len() < 2 {
+                continue;
+            }
+            let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
+            let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
+            let possible = group.len() * (group.len() - 1) / 2;
+            if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
+                continue; // a chain, not a group
+            }
+            group.sort_unstable();
+            out.push(group.into_iter().map(str::to_string).collect());
         }
-        if group.len() < 2 {
-            continue;
+        out
+    };
+    // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every cluster into
+    // one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each other) reported as a
+    // single group of four — a confident wrong grouping, which is what the density guard prevents.
+    // Connected components are disjoint, so the smallest member is a stable unique name.
+    for (signal, found) in [("same-body", cluster(&pairs)), ("same-contract", cluster(&contract_pairs))] {
+        for group in found {
+            buckets.entry((signal, group[0].clone())).or_default().extend(group);
         }
-        let members: std::collections::BTreeSet<&str> = group.iter().copied().collect();
-        let observed = pairs.iter().filter(|(a, b)| members.contains(a) && members.contains(b)).count();
-        let possible = group.len() * (group.len() - 1) / 2;
-        if possible == 0 || (observed as f64) / (possible as f64) < CLUSTER_DENSITY {
-            continue; // a chain, not a group
-        }
-        // Keyed on the cluster's own smallest id, NOT a constant. A constant key merged every body
-        // cluster into one bucket, so two unrelated duplicate pairs (measured 0.002 similar to each
-        // other) reported as a single group of four — a confident wrong grouping, which is exactly
-        // what the density guard above exists to prevent. Connected components are disjoint, so the
-        // smallest member is a stable unique name for the cluster.
-        group.sort_unstable();
-        buckets
-            .entry(("same-body", group[0].to_string()))
-            .or_default()
-            .extend(group.iter().map(|s| (*s).to_string()));
     }
 
     // Collapse to one entry per MEMBER SET, carrying every signal that grouped it.
@@ -672,6 +806,19 @@ fn dedup_findings(g: &Value) -> Vec<Value> {
                 let (name, src) = key.split_once('\u{0}').unwrap_or((key.as_str(), ""));
                 format!("the same `name` (`{name}`) in the same module (`{src}`)")
             }
+            // NAMED SEPARATELY from the shingle signal, because they mean different things to a
+            // reader deciding what to do. "near-identical body" says the two are ~the same text;
+            // "the same shape" says they are the same CODE with different names, which is a stronger
+            // claim and points at a straight rename-and-fold rather than a careful diff.
+            "same-shape" => "the same SHAPE — identical code under identifier renaming".to_string(),
+            // NAMED as the weaker claim it is. "Same shape" says these ARE the same code; this says
+            // they agree about what they take and their bodies overlap enough to corroborate it —
+            // a refactor opportunity, not necessarily a copy.
+            "same-contract" => format!(
+                "the same CONTRACT across modules (≥{}% signature overlap, corroborated by ≥{}% body overlap)",
+                (CONTRACT_MATCH * 100.0) as u32,
+                (CORROBORATING_BODY * 100.0) as u32,
+            ),
             // The body itself is never echoed — that it is the same body IS the finding.
             _ => format!("a near-identical body (≥{}% shingle overlap)", (NEAR_DUPLICATE * 100.0) as u32),
         };
@@ -2059,6 +2206,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         // decides whether vendoring the record equals importing the module, and any
                         // script reading the output saw a stateful module as stateless.
                         "moduleState": c.module_state,
+                        // The contract, visible WITHOUT applying. A dry harvest that could not show the
+                        // signature would make the one field a duplicate sweep reads unreviewable
+                        // before it lands.
+                        "signature": c.signature.to_json(),
                     })
                 })
                 .collect();
@@ -2075,6 +2226,132 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // classify a project, keep only the WORTHY candidates, and plan each into the library — an `add`,
         // or an `optimize` when the store already holds that id (the harvested version replaces it).
         // `--apply` writes them to the runtime store (`impl set` semantics); without it, a dry-run plan.
+        // The WHOLE-TREE duplicate sweep (slice 3 of epic-a-graph-finds-its-own-duplicates). `doctor
+        // --dedup` reports over the STORE; this reports over the SOURCE TREE, which for Rust is the
+        // only corpus that matters — the store holds 32 Rust records against 7,514 functions on disk.
+        "dupes" => {
+            let dir = positional
+                .get(1)
+                .ok_or("usage: bsc graph dupes <dir> [--tech typescript|rust] [--pretty]")?;
+            let tech = flag_value(&args, "--tech");
+            let started = std::time::Instant::now();
+            let shapes = crate::extract::scan_shapes(std::path::Path::new(dir), tech.as_deref());
+
+            // (tech, shape) -> the functions carrying it. Keyed WITH the tech because cross-kit is out
+            // of scope and two grammars can collide on a node-kind sequence.
+            let mut by_shape: std::collections::BTreeMap<(String, String), Vec<&crate::extract::FnShape>> =
+                std::collections::BTreeMap::new();
+            for f in &shapes {
+                by_shape.entry((f.tech.clone(), f.shape.clone())).or_default().push(f);
+            }
+            let mut groups: Vec<Value> = by_shape
+                .into_values()
+                .filter(|fns| fns.len() > 1)
+                .map(|fns| {
+                    serde_json::json!({
+                        "tech": fns[0].tech,
+                        "arity": fns[0].arity,
+                        "count": fns.len(),
+                        // WHERE, not just what: a tree duplicate has no id to look up, so the report
+                        // has to carry the path and line or it cannot be acted on.
+                        "members": fns.iter().map(|f| serde_json::json!({
+                            "name": f.name, "src": f.src, "line": f.line,
+                        })).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            // Biggest groups first — N copies of one shape is a bigger finding than a pair, and a
+            // reader works down from the top.
+            groups.sort_by(|a, b| {
+                b["count"].as_u64().cmp(&a["count"].as_u64())
+                    .then_with(|| a["members"][0]["src"].as_str().cmp(&b["members"][0]["src"].as_str()))
+            });
+            let duplicated: usize = groups.iter().filter_map(|g| g["count"].as_u64()).map(|n| n as usize - 1).sum();
+            emit(&serde_json::json!({
+                "scanned": shapes.len(),
+                "groups": groups.len(),
+                // How many functions could go if every group collapsed to one — the SIZE of the
+                // finding, which a count of groups does not convey.
+                "duplicated": duplicated,
+                "elapsedMs": started.elapsed().as_millis() as u64,
+                "dupes": groups,
+            }))
+        }
+        // DISCOVER BEFORE AUTHORING (slice 5). Cleanup decays; this is what stops the library growing
+        // duplicates again — a worker about to write a helper asks whether one already exists.
+        //
+        // Takes a SIGNATURE, not only an id, because the thing being looked for has not been written
+        // yet and so has no id. That is the whole difference between this and `doctor --dedup`, which
+        // compares things that already exist.
+        "similar" => {
+            let tech = flag_value(&args, "--tech").unwrap_or_else(|| "typescript".into());
+            let limit: usize = flag_value(&args, "--limit")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8);
+            let query = match (flag_value(&args, "--sig"), positional.get(1)) {
+                (Some(sig), _) => crate::extract::parse_signature_query(&sig, &tech)
+                    .ok_or_else(|| format!(
+                        "could not read that signature. Expected `(name: Type, …) => Return`                          (or `-> Return` for rust), e.g. --sig \"(xs: T[], key: (t: T) => string) => Map<string, T[]>\". Got: {sig}"
+                    ))?,
+                // …and by ID too, mirroring `bsc ui similar`: once the thing exists, "what else looks
+                // like this" is the same question asked from the other side.
+                (None, Some(id)) => {
+                    let g = crate::load();
+                    let im = crate::implementations_of(&g)
+                        .into_iter()
+                        .find(|im| im.get("id").and_then(Value::as_str) == Some(&**id))
+                        .ok_or_else(|| format!("unknown implementation '{id}'"))?;
+                    let t = im.get("tech").and_then(Value::as_str).unwrap_or(&tech).to_string();
+                    crate::extract::signature_from_code(
+                        im.get("code").and_then(Value::as_str).unwrap_or_default(), &t,
+                    )
+                    .ok_or_else(|| format!(
+                        "'{id}' has no function definition to take a signature from - a data or config \
+                         module (an object of properties, a constants table) is a record without a \
+                         contract, and `similar` compares CONTRACTS. Query by --sig instead."
+                    ))?
+                }
+                (None, None) => return Err(
+                    "usage: bsc graph similar --sig \"(xs: T[]) => T\" [--tech t] [--limit n]  |  bsc graph similar <id>".into()
+                ),
+            };
+            let started = std::time::Instant::now();
+            let g = crate::load();
+            let mut scored: Vec<(f64, Value)> = crate::implementations_of(&g)
+                .into_iter()
+                .filter(|im| im.get("tech").and_then(Value::as_str) == Some(tech.as_str()))
+                .filter(|im| im.get("id").and_then(Value::as_str).is_some_and(|id| !crate::is_suppressed(&g, id)))
+                .filter_map(|im| {
+                    let id = im.get("id").and_then(Value::as_str)?.to_string();
+                    let sig = crate::extract::signature_from_code(
+                        im.get("code").and_then(Value::as_str).unwrap_or_default(), &tech,
+                    )?;
+                    let score = crate::extract::contract_similarity(&query, &sig);
+                    // BELOW THE FLOOR IS NOT A WEAK MATCH, IT IS NO MATCH. Padding an answer out to
+                    // `--limit` teaches the reader to ignore the tail, and for the PREVENTION use case
+                    // it is worse: a worker asking "does this already exist" and seeing five rows
+                    // concludes yes.
+                    (score >= MIN_SIMILAR).then(|| (score, serde_json::json!({
+                        "id": id,
+                        "name": im.get("name").and_then(Value::as_str).unwrap_or_default(),
+                        "score": (score * 100.0).round() / 100.0,
+                        "arity": sig.arity(),
+                        "src": im.get("src").and_then(Value::as_str).unwrap_or_default(),
+                        "signature": sig.to_json(),
+                    })))
+                })
+                .collect();
+            scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            scored.truncate(limit);
+            emit(&serde_json::json!({
+                "query": query.to_json(),
+                "tech": tech,
+                "elapsedMs": started.elapsed().as_millis() as u64,
+                // PROPOSE-ONLY, and said out loud: this answers "does something like this exist",
+                // never "do not write it". A close match may still be the wrong thing.
+                "matches": scored.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+            }))
+        }
         "curate" => {
             let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
@@ -2119,6 +2396,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     });
                     if let Some(f) = bsc_util::folder_from_src(&c.src) {
                         im["folder"] = Value::String(f);
+                    }
+                    // WHAT IT TAKES AND RETURNS (epic-a-graph-finds-its-own-duplicates). Written only
+                    // when non-empty, like `moduleState`: `impl set` is a MERGE, so an empty signature
+                    // would CLEAR one a previous pass established rather than leaving it alone.
+                    if !c.signature.is_empty() {
+                        im["signature"] = c.signature.to_json();
                     }
                     set_impl_skipping_retired(&mut g, im, &mut retired, &writer, "curate --apply: write a worthy candidate into the library")?;
                 }
@@ -3554,6 +3837,8 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
+  \n         {prog} dupes <dir> [--tech typescript|rust] [--pretty]   # the WHOLE-TREE duplicate sweep (epic-a-graph-finds-its-own-duplicates): every non-trivial function under <dir>, grouped by its rename-invariant SHAPE — so a copy whose identifiers were all renamed is found, which `doctor --dedup` structurally cannot do over the store. The TREE, not the records: the algorithms store holds 32 Rust records against 7,514 Rust functions on disk, so a record-level sweep sees 0.4% of the Rust here. STREAMS rather than harvesting (measured: 115 MB peak vs 962 MB for a `harvest` of the same directory) and keeps NO index — a cache would need invalidation and re-deriving costs ~1.7s. Reports a path and a LINE per member, biggest groups first, and `duplicated` = how many functions could go. PROPOSE-ONLY; for per-table CRUD twins the action is a shared helper, not deletion\n  \
+  \n         {prog} similar --sig \"(xs: T[]) => T\" [--tech t] [--limit n] | similar <id>   # DISCOVER BEFORE AUTHORING: does the library already hold this shape? Takes a SIGNATURE, not only an id, because the thing you are about to write has not been written yet — which is the whole difference between this and `doctor --dedup`, which compares what already exists. Ranked by CONTRACT overlap, floored at 0.34 so \"nothing like this exists\" answers with NOTHING rather than a tail of noise (measured: a real twin scores 1.00, an absent shape returns 0.14 on one shared parameter name). PROPOSE-ONLY — a close match may still be the wrong thing\n  \
          {prog} test <id> --out <dir> [--run] | test --all --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
   \n  {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
@@ -3561,7 +3846,7 @@ fn help(prog: &str) -> String {
          {prog} relink <dir> [--tech t] [--dry-run] [--pretty]   # recover `src` (and the folder it derives) by matching stored impls to a fresh harvest (#4119)
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
-  \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, keyed on a shared name, a shared src module (normalized for the src/ prefix), or byte-identical code — N duplicates report as ONE row naming every member and the signal, and it is propose-only (fold with `{prog} merge`)\n  \
+  \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, on THREE signals — a near-identical BODY (tokenized k-gram shingles, so formatting and wrappers do not defeat it), the same SHAPE (identical code under identifier renaming, which the shingles structurally cannot find because they contain the identifiers), and a shared NAME together with a shared src MODULE (either alone is a naming convention, not a duplicate). N duplicates report as ONE row naming every member and every signal that grouped them, confined to one tech, and it is propose-only (fold with `{prog} merge`)\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
@@ -3710,6 +3995,62 @@ mod tests {
         let h = help("bsc graph");
         assert!(h.contains("ANY language"), "curation must be described as open: {h:.0}");
         assert!(h.contains("harvest"), "the grammar-bound half must still be named");
+    }
+
+    /// THE SIGNATURE HAS TO REACH THE RECORD, or `bsc graph impl get` still cannot answer what a
+    /// function takes and returns without its reader parsing the body — which is the whole point of the
+    /// slice (epic-a-graph-finds-its-own-duplicates). Extraction is pinned next door in `extract.rs`;
+    /// this pins the CROSSING, which is the seam that silently drops fields.
+    #[test]
+    fn curate_apply_stores_the_signature_on_the_record() {
+        let dir = crate::unique_temp("sigcurate");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join("algorithms.json");
+        // SAFETY: single-threaded test setup, before any other thread reads the env.
+        unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
+
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        // GENERIC on purpose: `curate` stores only WORTHY candidates and `classify` scores a type
+        // parameter +1 ("reusable across types"), which is what clears the bar. A monomorphic helper
+        // harvests a perfectly good signature and is then filtered out before the store — measured,
+        // and it is why this fixture is not the obvious `clamp(value, lo, hi)`.
+        std::fs::write(
+            src.join("firstWhere.ts"),
+            concat!(
+                "export function firstWhere<T>(xs: T[], pred: (x: T) => boolean): T | undefined {\n",
+                "  for (const x of xs) if (pred(x)) return x;\n",
+                "  return undefined;\n",
+                "}\n",
+            ),
+        )
+        .unwrap();
+
+        run(
+            ["curate", src.to_str().unwrap(), "--tech", "typescript", "--apply"]
+                .iter().map(|s| s.to_string()).collect(),
+            "bsc graph",
+        )
+        .unwrap();
+
+        let sig = crate::implementations()
+            .into_iter()
+            .find(|i| i.get("name").and_then(Value::as_str) == Some("firstWhere"))
+            .and_then(|i| i.get("signature").cloned())
+            .expect("firstWhere was curated and carries a signature");
+
+        assert_eq!(
+            sig["params"],
+            serde_json::json!([
+                { "name": "xs", "type": "T[]" },
+                // A FUNCTION-TYPED parameter survives verbatim — arrows inside a type annotation are
+                // the shape a naive `split(',')` on the parameter list would tear in half.
+                { "name": "pred", "type": "(x: T) => boolean" },
+            ]),
+            "every parameter, in order, with its type: {sig}",
+        );
+        assert_eq!(sig["returns"], serde_json::json!({ "type": "T | undefined" }));
     }
 
     /// `impl set` must be able to WRITE the module state, not only a harvest. 27 of the 58 stateful
@@ -4316,7 +4657,7 @@ mod tests {
         unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
 
         let set = |id: &str, name: &str| {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".to_string(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4378,7 +4719,7 @@ mod tests {
         .unwrap();
 
         let set = |id: &str, src: &str| {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".into(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4401,7 +4742,7 @@ mod tests {
         // depends on whether the CALLING session happens to have `$BSC_REPO_ROOT` set, which is exactly
         // the ambient-env dependency #3475 exists to avoid asserting around.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
                     "--id".into(), "a.ts".into(),
@@ -4449,7 +4790,7 @@ mod tests {
             .into_owned();
         let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
         let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(),
                     "set".into(),
@@ -4556,7 +4897,7 @@ mod tests {
         // An id the packaged seed never had is a REFUSAL, not an insert — that would be a full record
         // promotion (`promote-records.mjs`'s job), not a test sync onto an id already there.
         let set = |id: &str| {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".to_string(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4578,7 +4919,7 @@ mod tests {
         )
         .unwrap();
         let (res, out) = bsc_util::capture_output(|| {
-            run(
+            crate::cli::run(
                 vec!["tests".into(), "promote".into(), "--id".into(), "not-seeded-123.ts".into(), "--apply".into()],
                 "bsc graph",
             )
@@ -4692,7 +5033,7 @@ mod tests {
         // (#3475); unconfine the thread so a `/tmp` fixture is readable, matching every other
         // `--code-file` test in this module.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".into(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4711,7 +5052,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).unwrap();
         bsc_cli_util::with_scratch(scratch.to_str(), || {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".into(), "get".into(), "llm-config.ts".into(),
                     "--field".into(), "code".into(), "--raw".into(), "--out".into(), "llmConfig.ts".into(),
@@ -4865,7 +5206,7 @@ mod tests {
         // `--code-file`-style reads go through the FS-confinement gate (#3475); unconfine the thread so
         // a `/tmp` fixture is readable, matching every other file-reading test in this module.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "paired.ts".into(),
@@ -4890,7 +5231,7 @@ mod tests {
         // An id that does not exist is refused — `tests set` pairs an EXISTING record, it never
         // creates one.
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "not-a-real-id.ts".into(),
@@ -4949,7 +5290,7 @@ mod tests {
 
         // rev 0 is STALE — the record moved on to rev 1 at create. Rejected, nothing written.
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "guarded.ts".into(),
@@ -4971,7 +5312,7 @@ mod tests {
 
         // The matching version lands.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "guarded.ts".into(),
@@ -5033,7 +5374,7 @@ mod tests {
         std::fs::write(&test_file, contents).unwrap();
 
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5103,7 +5444,7 @@ mod tests {
         std::fs::write(&e1, e1_contents).unwrap();
 
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5115,7 +5456,7 @@ mod tests {
         })
         .unwrap();
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5151,7 +5492,7 @@ mod tests {
         let e0_updated_contents = "it('scopeWriteGlobs (#1297)', () => { /* updated */ });\n";
         std::fs::write(&e0_updated, e0_updated_contents).unwrap();
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5239,7 +5580,7 @@ mod tests {
         std::fs::write(&test_file, contents).unwrap();
 
         let out = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "seeded.rs".into(),
@@ -5275,7 +5616,7 @@ mod tests {
         // An id that does not exist ANYWHERE is refused by the runtime-store lookup first, exactly
         // as plain `tests set` already refuses one.
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "not-in-the-seed.rs".into(),
@@ -5308,7 +5649,7 @@ mod tests {
         )
         .unwrap();
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "custom.rs".into(),
@@ -6029,6 +6370,21 @@ mod dedup_tests {
         )
     }
 
+    /// A body with a DIFFERENT SHAPE from [`body`] — a loop and a branch where that one is a straight
+    /// expression.
+    ///
+    /// Needed once the detector gained a structural signal (slice 2). Every fixture in this suite was
+    /// `body()` with an identifier or a literal swapped, which is fine for a token-shingle detector and
+    /// is BY CONSTRUCTION a structural clone — so "a shared name alone is not a duplicate" was being
+    /// asserted with two records that really are the same code under renaming. The intent of those
+    /// tests is that a NAMING CONVENTION must not group; expressing it needs bodies that genuinely
+    /// differ.
+    fn other_body(unit: &str) -> String {
+        format!(
+            "export function summarize(rows, opts) {{\n                 const out = [];\n                 for (const row of rows) {{\n                     if (!row.ok) {{ continue; }}\n                     out.push(row.n);\n                 }}\n                 while (out.length > opts.cap) {{ out.pop(); }}\n                 return {{ rows: out, unit: \"{unit}\" }};\n}}"
+        )
+    }
+
     /// THE PAIR THE REQUEST WAS FILED FOR. `llm-energy.ts` and `algorithms-llm-energy.ts` differ by
     /// formatting and a wrapper — their raw `code` is NOT equal, their names differ, and one has no
     /// `src` at all. A byte comparison, a name match and a src match ALL miss it; the shingled body
@@ -6050,15 +6406,182 @@ mod dedup_tests {
         assert!(found[0]["signals"][0].as_str().unwrap().contains("body"), "names the signal");
     }
 
+    /// SIGNAL 4 (slice 4): the same CONTRACT across modules, corroborated by the body.
+    ///
+    /// The "same job, different implementation" case — two functions that agree about what they take
+    /// and return, whose bodies overlap enough to corroborate it but NOT enough for signal 1 to speak.
+    /// Neither existing signal sees it: the shingles are below NEAR_DUPLICATE and the shapes differ.
+    #[test]
+    fn the_same_contract_across_modules_is_a_signal_when_the_body_corroborates() {
+        // Same contract (xs/limit and their types), genuinely different implementations.
+        let a = "export function takeTop(xs: number[], limit: number): number[] {\n                     const sorted = xs.slice().sort((p, q) => q - p);\n                     const out: number[] = [];\n                     for (const v of sorted) { if (out.length < limit) { out.push(v); } }\n                     return out;\n}";
+        let b = "export function takeTop(xs: number[], limit: number): number[] {\n                     const sorted = xs.slice().sort((p, q) => q - p);\n                     const out: number[] = [];\n                     let i = 0;\n                     while (i < limit && i < sorted.length) { out.push(sorted[i]); i += 1; }\n                     return out;\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("take-top.ts", "takeTop", serde_json::json!({ "code": a, "src": "src/a/top.ts", "tech": "typescript" })),
+            im("top-n.ts", "topN", serde_json::json!({ "code": b, "src": "src/b/topn.ts", "tech": "typescript" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "the pair is surfaced: {found:#?}");
+        let signals = found[0]["signals"].as_array().unwrap();
+        assert!(
+            signals.iter().any(|s| s.as_str().unwrap_or("").contains("CONTRACT")),
+            "named as the contract signal: {signals:?}",
+        );
+    }
+
+    /// A CONTRACT COINCIDENCE IS NOT A DUPLICATE, and this is the measured failure mode. Over
+    /// `crates/`, non-clone pairs reach a contract similarity of 0.50 at the 99th percentile and 1.00
+    /// at the maximum — there is no chasm — so the body is a REQUIRED co-signal rather than an
+    /// optional one, which is where this diverges from the component library's measure.
+    #[test]
+    fn a_contract_match_with_an_unrelated_body_is_not_reported() {
+        // Byte-for-byte the same signature; nothing else in common.
+        let a = "export function alpha(xs: number[], limit: number): number[] {\n                     const seen = new Map<number, number>();\n                     for (const x of xs) { seen.set(x, (seen.get(x) ?? 0) + limit); }\n                     return [...seen.keys()];\n}";
+        let b = "export function beta(xs: number[], limit: number): number[] {\n                     const total = xs.reduce((p, q) => p * q, limit);\n                     const digits = String(total).split(\"\").map(Number);\n                     return digits.filter((d) => d % 2 === 0);\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("alpha.ts", "alpha", serde_json::json!({ "code": a, "src": "src/a/alpha.ts", "tech": "typescript" })),
+            im("beta.ts", "beta", serde_json::json!({ "code": b, "src": "src/b/beta.ts", "tech": "typescript" })),
+        ]});
+        assert!(dedup_findings(&g).is_empty(), "a shared signature alone: {:#?}", dedup_findings(&g));
+    }
+
+    /// TWO FUNCTIONS IN ONE MODULE SHARING A CONTRACT IS A CONVENTION, not duplication — every maths
+    /// module has a handful of `(Vec3) -> f32`. MEASURED: without this condition the sweep over
+    /// `crates/` returns 161 pairs, almost all neighbours in one file (`abs` beside `normalize`,
+    /// `cross` beside `cmin`); with it, 28, and those read as real. It is the same lesson #78 recorded
+    /// for the NAME signal, one level down.
+    #[test]
+    fn a_shared_contract_inside_one_module_is_a_convention_not_a_duplicate() {
+        let a = "export function toRadians(deg: number, scale: number): number {\n                     const base = (deg * Math.PI) / 180;\n                     const adjusted = base * scale;\n                     return Number.isFinite(adjusted) ? adjusted : 0;\n}";
+        let b = "export function toDegrees(deg: number, scale: number): number {\n                     const base = (deg * 180) / Math.PI;\n                     const adjusted = base * scale;\n                     return Number.isFinite(adjusted) ? adjusted : 0;\n}";
+        let same = "src/shared/lib/core/math.ts";
+        let g = serde_json::json!({ "implementations": [
+            im("to-radians.ts", "toRadians", serde_json::json!({ "code": a, "src": same, "tech": "typescript" })),
+            im("to-degrees.ts", "toDegrees", serde_json::json!({ "code": b, "src": same, "tech": "typescript" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert!(
+            !found.iter().any(|f| f["signals"].as_array().unwrap().iter()
+                .any(|s| s.as_str().unwrap_or("").contains("CONTRACT"))),
+            "neighbours in one module must not group on contract: {found:#?}",
+        );
+    }
+
+    /// N duplicates are ONE row, and that holds for the contract signal too. It first emitted one
+    /// bucket PER PAIR, so four identical records produced SIX rows — breaking this module's central
+    /// promise. The chaining worry that motivated pairs is what `CLUSTER_DENSITY` already answers, so
+    /// both pairwise signals now share one clustering pass.
+    #[test]
+    fn the_contract_signal_reports_a_group_not_a_row_per_pair() {
+        let c = serde_json::json!({ "code": body("Wh"), "tech": "typescript" });
+        let g = serde_json::json!({ "implementations": [
+            im("a.ts", "a", c.clone()), im("b.ts", "b", c.clone()),
+            im("c.ts", "c", c.clone()), im("d.ts", "d", c.clone()),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "ONE row for four identical records, not six pairs: {found:#?}");
+        assert_eq!(ids_of(&found[0]).len(), 4);
+    }
+
+    /// THE TREE SWEEP (slice 3) reports duplicates the STORE cannot contain — a real path and a real
+    /// line for each member, because a tree duplicate has no id to look up.
+    #[test]
+    fn dupes_reports_tree_duplicates_with_a_path_and_a_line() {
+        let dir = crate::unique_temp("treedupes");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        // The same routine twice, in two FILES, every identifier renamed — invisible to a shingle
+        // detector and to any per-file check, which is why the sweep is tree-wide.
+        let original = "export function groupItems(items, keyOf) {\n                            const out = new Map();\n                            for (const item of items) {\n                                const key = keyOf(item);\n                                const bucket = out.get(key);\n                                if (bucket) { bucket.push(item); } else { out.set(key, [item]); }\n                            }\n                            return out;\n}";
+        std::fs::write(dir.join("a.ts"), original).unwrap();
+        std::fs::write(
+            dir.join("nested").join("b.ts"),
+            original
+                .replace("groupItems", "bucketRows").replace("items", "rows").replace("keyOf", "labelFor")
+                .replace("item", "row").replace("out", "acc").replace("key", "label").replace("bucket", "slot"),
+        )
+        .unwrap();
+
+        let (res, out) = bsc_util::capture_output(|| {
+            crate::cli::run(
+                ["dupes", dir.to_str().unwrap(), "--tech", "typescript"]
+                    .iter().map(|s| s.to_string()).collect(),
+                "bsc graph",
+            )
+        });
+        res.expect("the verb runs");
+        let d: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(d["groups"], 1, "one group: {out}");
+        assert_eq!(d["duplicated"], 1, "one function could go, not two");
+        let members = d["dupes"][0]["members"].as_array().unwrap();
+        assert_eq!(members.len(), 2);
+        let srcs: Vec<&str> = members.iter().filter_map(|m| m["src"].as_str()).collect();
+        assert!(srcs.contains(&"a.ts"), "root-relative, forward-slashed: {srcs:?}");
+        assert!(srcs.contains(&"nested/b.ts"), "reaches a subdirectory: {srcs:?}");
+        for m in members {
+            assert!(m["line"].as_u64().unwrap_or(0) >= 1, "a real line: {m}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE SIGNAL THE SHINGLES CANNOT HAVE (slice 2 of epic-a-graph-finds-its-own-duplicates).
+    ///
+    /// Signal 1 shingles TOKENS, and the tokens include the identifiers — so a copy whose identifiers
+    /// were all renamed has a DISJOINT shingle set and no threshold recovers it. These two records
+    /// share no name, no src, and no shingle; only their SHAPE is the same, which is precisely what a
+    /// copy-paste-then-rename looks like.
+    ///
+    /// MEASURED before the signal existed: this exact pair was curated into a scratch store and
+    /// `doctor --dedup` returned only the known `llm-energy` group.
+    #[test]
+    fn a_renamed_copy_groups_on_shape_when_nothing_else_matches() {
+        let original = "export function groupItems(items, keyOf) {\n                            const out = new Map();\n                            for (const item of items) {\n                                const key = keyOf(item);\n                                const bucket = out.get(key);\n                                if (bucket) { bucket.push(item); } else { out.set(key, [item]); }\n                            }\n                            return out;\n}";
+        // Every identifier renamed; not one token in common beyond the language's own keywords.
+        let renamed = original
+            .replace("groupItems", "bucketRows").replace("items", "rows").replace("keyOf", "labelFor")
+            .replace("item", "row").replace("out", "acc").replace("key", "label").replace("bucket", "slot");
+        let g = serde_json::json!({ "implementations": [
+            im("group-items.ts", "groupItems", serde_json::json!({ "code": original, "src": "src/a/group.ts", "tech": "typescript" })),
+            im("bucket-rows.ts", "bucketRows", serde_json::json!({ "code": renamed, "src": "src/b/bucket.ts", "tech": "typescript" })),
+        ]});
+        let found = dedup_findings(&g);
+        assert_eq!(found.len(), 1, "the renamed copy must be found: {found:#?}");
+        assert_eq!(ids_of(&found[0]), vec!["bucket-rows.ts", "group-items.ts"]);
+        let signals = found[0]["signals"].as_array().unwrap();
+        assert_eq!(signals.len(), 1, "ONLY the shape signal — nothing else matches: {signals:?}");
+        assert!(signals[0].as_str().unwrap().contains("SHAPE"), "named as its own signal: {signals:?}");
+    }
+
+    /// A SHAPE MATCH IS CONFINED TO ONE TECH, per the epic: cross-kit comparison is out of scope, and
+    /// two grammars can collide on a node-kind sequence because `identifier` and `block` mean
+    /// different things in each. Same logic, two languages, no group.
+    #[test]
+    fn a_shape_never_groups_across_technologies() {
+        let ts = "export function tally(rows, floor) {\n                      const out = [];\n                      for (const row of rows) {\n                          if (row > floor) { out.push(row); } else { out.push(floor); }\n                      }\n                      return out;\n}";
+        let rs = "pub fn tally(rows: &[u32], floor: u32) -> Vec<u32> {\n                        let mut out = Vec::new();\n                        for row in rows {\n                              if *row > floor { out.push(*row); } else { out.push(floor); }\n                        }\n    out\n}";
+        let g = serde_json::json!({ "implementations": [
+            im("tally.ts", "tally", serde_json::json!({ "code": ts, "src": "src/a/tally.ts", "tech": "typescript" })),
+            im("tally.rs", "tally", serde_json::json!({ "code": rs, "src": "crates/x/src/tally.rs", "tech": "rust" })),
+        ]});
+        let shapes = dedup_findings(&g);
+        assert!(
+            shapes.iter().all(|f| !f["signals"].as_array().unwrap().iter().any(|s| s.as_str().unwrap_or("").contains("SHAPE"))),
+            "no cross-tech shape group: {shapes:#?}",
+        );
+    }
+
     /// THE NOISE THE FIRST CUT PRODUCED, now pinned as a test. Implemented as the request literally
     /// asked — a shared name OR a shared src — these fixtures were 110 groups over 356 impls on the
     /// real store. Neither is a duplicate, and neither may report.
     #[test]
     fn a_shared_name_or_a_shared_src_alone_is_not_a_duplicate() {
         // Every feature has a `store`, an `index`, a `graphPlatform`. That is a convention.
+        // The bodies must differ STRUCTURALLY, not just by an identifier: two records built from the
+        // same canned body are a structural clone and the shape signal reports them correctly, which
+        // would make this test assert the opposite of what it means.
         let g = serde_json::json!({ "implementations": [
             im("github-store.ts", "store", serde_json::json!({ "code": body("a"), "src": "src/features/github/store.ts" })),
-            im("skills-store.ts", "store", serde_json::json!({ "code": body("b").replace("rate", "ratio"), "src": "src/features/skills/store.ts" })),
+            im("skills-store.ts", "store", serde_json::json!({ "code": other_body("b"), "src": "src/features/skills/store.ts" })),
         ]});
         assert!(dedup_findings(&g).is_empty(), "a shared name alone: {:#?}", dedup_findings(&g));
 
@@ -6067,7 +6590,8 @@ mod dedup_tests {
         let g = serde_json::json!({ "implementations": [
             im("fmt-bytes.ts", "fmtBytes", serde_json::json!({ "code": body("B"), "src": "src/shared/lib/core/format.ts" })),
             im("fmt-clock.ts", "fmtClock", serde_json::json!({
-                "code": body("s").replace("joules", "seconds").replace("rate", "unitRate"),
+                // Structurally different, for the same reason as the pair above.
+                "code": other_body("s"),
                 "src": "shared/lib/core/format.ts",
             })),
         ]});
@@ -6125,7 +6649,12 @@ mod dedup_tests {
         assert!(found.iter().all(|f| ids_of(f).len() == 2), "each names its own pair: {found:#?}");
     }
 
-    /// Two signals over the SAME members is still one fact, so it is one row carrying both.
+    /// Several signals over the SAME members is still one fact, so it is one row carrying all of them.
+    ///
+    /// THREE now, not two: two records with byte-identical `code` necessarily also have the same
+    /// SHAPE, so slice 2's signal fires here too and correctly. Asserted by NAMING the signals rather
+    /// than counting them — a count is the assertion that goes stale every time the detector learns
+    /// something, which is exactly what happened to it.
     #[test]
     fn signals_over_the_same_members_merge_into_one_row() {
         let g = serde_json::json!({ "implementations": [
@@ -6134,7 +6663,12 @@ mod dedup_tests {
         ]});
         let found = dedup_findings(&g);
         assert_eq!(found.len(), 1, "one row, not one per signal: {found:#?}");
-        assert_eq!(found[0]["signals"].as_array().unwrap().len(), 2, "carrying BOTH signals");
+        let signals = found[0]["signals"].as_array().unwrap();
+        let joined = signals.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" | ");
+        for expected in ["the same `name`", "near-identical body", "the same SHAPE"] {
+            assert!(joined.contains(expected), "missing `{expected}` in: {joined}");
+        }
+        assert_eq!(signals.len(), 3, "every signal that grouped them, and no duplicates: {joined}");
     }
 
     /// A retired id is already folded away (#77) — proposing a merge for it sends the reader to redo
