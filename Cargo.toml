@@ -11,8 +11,36 @@ resolver = "2"
 # ONCE then cached — near-release backend speed in dev). First rebuild recompiles the Rust deps at opt-3 once.
 [profile.dev]
 opt-level = 1
-# `debug` is deliberately UNSET (dev default: full debug info) for our own crates. Dependencies are
-# exempt below. `debug = "line-tables-only"` was the obvious next lever and was MEASURED AND REJECTED
+# `debug = "line-tables-only"` for our own crates. Dependencies are exempt below (`debug = false`).
+#
+# THIS WAS REJECTED ONCE, AS A SPEED LEVER, AND THE REJECTION STANDS ON ITS OWN TERMS — the original
+# note is kept verbatim below because its reasoning is still correct about speed. It was taken ON MSVC,
+# where debug info lives in a separate PDB, and it closed with the exact instruction this change
+# follows: "If disk ever becomes the constraint (target/ is ~28 GB per worktree x 11 worktrees),
+# revisit it as a SPACE lever with its own numbers, not as a speed one."
+#
+# Disk became the constraint. MEASURED 2026-09-01 on Linux, where debug info lives INSIDE the artifact
+# rather than beside it: 57% of every large build artifact was debug info — `base-studio-code` 349 MB
+# of which 213 MB (61%), the `bsc` test binary 289 MB of which 153 MB (52%). Across 17 worktrees the
+# repo held 554 GB, 513 GB of it build cache.
+#
+# A/B on `cargo build -p bsc-graph --tests`, interleaved B/A/B/A so drift would show:
+#
+#                        debug = true      line-tables-only
+#   cold build              103s              72s        -30%  FASTER
+#   touch-one-line       803 / 750ms       760 / 879ms   a wash (within-arm spread is larger)
+#   tree size               735 MB            584 MB     -21%
+#
+# So the original finding REPRODUCES — rebuild time is unchanged — and the platform difference is what
+# is new: on Linux there is no PDB, so a smaller artifact is less to write and link, and the cold build
+# gets meaningfully quicker instead of staying flat. The size win is the point.
+#
+# Debuggability: a panic backtrace still names file and line (the original note verified this on our
+# own frames). What is lost is inspecting locals in a debugger, which is the same trade the original
+# weighed and declined only because it bought nothing at the time.
+#
+# ── the original note, kept because its measurement is still the reason speed is not the argument ──
+# `debug = "line-tables-only"` was the obvious next lever and was MEASURED AND REJECTED
 # — do not re-attempt it without new evidence.
 #
 # Quiet machine, arms interleaved B/A/B so drift would show, min of 3 touch-one-line rebuilds each
@@ -32,6 +60,7 @@ opt-level = 1
 # name file and line (verified on our own frames, not std's) — so debuggability was not the blocker.
 # If disk ever becomes the constraint (target/ is ~28 GB per worktree × 11 worktrees), revisit it as a
 # SPACE lever with its own numbers, not as a speed one.
+debug = "line-tables-only"
 
 # Strip debug info from DEPENDENCIES in dev/test builds (our own crates keep theirs).
 # Bundled DuckDB's `-g` C++ objects + arrow bloat the test-binary link so much that the

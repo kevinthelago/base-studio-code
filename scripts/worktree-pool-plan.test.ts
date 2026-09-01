@@ -1,7 +1,7 @@
 // Unit tests for the pure parked-worktree cap selection. These cover the guards that decide what
 // may be DELETED — a mistake here removes someone's working tree, so every exclusion is pinned.
 import { describe, expect, it } from "vitest";
-import { isCollectable, isParked, planCap } from "./worktree-pool-plan.mjs";
+import { DEFAULT_MIN_IDLE_MS, isCollectable, isParked, planCap } from "./worktree-pool-plan.mjs";
 
 const tree = (
   name: string,
@@ -177,5 +177,37 @@ describe("planCap activity guard", () => {
       { keep: 1, now }
     );
     expect(remove).toEqual(["/a", "/b"]); // oldest first; /c is the warmest and survives
+  });
+});
+
+/**
+ * The idle guard has to be shorter than a session, or the janitor is a no-op on the only pool that
+ * grows.
+ *
+ * MEASURED 2026-09-01: at the previous 12 hours nothing here was ever eligible — a parked tree is
+ * reclaimed by the next session that wants one, at roughly 20 minutes — so `cap-worktrees` reported
+ * "nothing to remove" while 227 GB sat in eight parked trees. Sessions run 30 minutes to 4 hours, so
+ * the guard is pinned BETWEEN the longest session and half a day: long enough that a working tree is
+ * never taken, short enough that an abandoned one is.
+ */
+describe("the idle guard is scaled to a session, not to a day", () => {
+  it("is longer than the longest session and well under half a day", () => {
+    const hours = DEFAULT_MIN_IDLE_MS / 3_600_000;
+    expect(hours).toBeGreaterThan(4);
+    expect(hours).toBeLessThanOrEqual(8);
+  });
+
+  it("would still have spared a tree touched inside a session, and collected one left overnight", () => {
+    const now = Date.parse("2026-09-01T18:00:00Z");
+    const tree = (name: string, hoursAgo: number) => ({
+      name: `/repo/${name}`,
+      branch: `parked-${name}`,
+      lastBuiltMs: now - hoursAgo * 3_600_000,
+      lastActiveMs: now - hoursAgo * 3_600_000,
+    });
+    // keep: 0 so the age guard is the only thing deciding.
+    const { remove } = planCap([tree("fresh", 1), tree("stale", 9)], { keep: 0, now });
+    expect(remove).toContain("/repo/stale");
+    expect(remove).not.toContain("/repo/fresh");
   });
 });

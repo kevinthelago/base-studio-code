@@ -6,7 +6,7 @@
 //
 //   node scripts/prune-incremental.mjs [--days N] [--keep N] [--dry-run] [--quiet]
 //
-//     --days N     only prune directories untouched for N days (default 3)
+//     --days N     only prune directories untouched for N days (default 0.25 — six hours)
 //
 // The default was 14 and it MEASURED as useless: on a tree holding 697 dirs it pruned 0, because
 // orphans accumulate daily and the oldest was 5 days old. At 3 days the same tree pruned 214 dirs
@@ -35,9 +35,22 @@ function parseArgs(argv) {
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   };
   return {
-    // 3, not 14 — the RUNNER's default is the one that applies, because it always passes an explicit
-    // value to planPrune. Changing only planPrune's default (as an earlier pass did) is dead code.
-    days: num("--days", 3),
+    // The RUNNER's default is the one that applies, because it always passes an explicit value to
+    // planPrune. Changing only planPrune's default (as an earlier pass did) is dead code.
+    //
+    // 0.25 DAYS — SIX HOURS — and the unit is why this was a no-op for so long. `planPrune` keeps a
+    // directory that is newest-per-crate OR newer than the floor, so the floor is not a floor: it is a
+    // blanket exemption for everything younger than it. At three days, every directory in a tree that
+    // was built today qualified, `--keep` could never bind, and the sweep collected nothing on exactly
+    // the trees that grow. MEASURED 2026-09-01: 0 of 266 dirs at the 3-day default; 1,936 of 6,482 and
+    // 72 GB at one day, on a repo holding 310 GB of incremental across 17 worktrees.
+    //
+    // Six hours is chosen from how long a session actually holds a tree — 30 minutes to 4 hours
+    // (maintainer, 2026-09-01) — with margin over the longest. A session that outruns it recompiles
+    // the crates it had not touched in six hours, which the maintainer accepted explicitly as the
+    // cheaper side of the trade. The newest cache per crate is spared regardless of age, so the
+    // directory a live build is writing is never a candidate.
+    days: num("--days", 6 / 24),
     keep: num("--keep", 1),
     dryRun: argv.includes("--dry-run"),
     quiet: argv.includes("--quiet"),

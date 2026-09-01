@@ -3,7 +3,7 @@
 //
 //   node scripts/sweep-target.mjs [--days N] [--keep N] [--dry-run] [--quiet]
 //
-//     --days N     only sweep units untouched for N days (default 3)
+//     --days N     only sweep units untouched for N days (default 0.25 — six hours)
 //     --keep N     always spare the newest N per crate name (default 3)
 //     --root DIR   sweep DIR/target instead of this checkout's (default: the tree this script is in)
 //     --dry-run    report what would go, delete nothing
@@ -70,7 +70,10 @@ function parseArgs(argv) {
   };
   const rootAt = argv.indexOf("--root");
   return {
-    days: num("--days", 3),
+    // Six hours, matching `prune-incremental` — the two share `planPrune`, so a floor that exempts
+    // everything younger than it makes BOTH a no-op on an active tree. MEASURED 2026-09-01: 39 GB of
+    // orphaned dep units across 12 trees were collectable the moment the floor came down.
+    days: num("--days", 6 / 24),
     keep: num("--keep", 3),
     root: rootAt === -1 ? DEFAULT_ROOT : (argv[rootAt + 1] ?? DEFAULT_ROOT),
     dryRun: argv.includes("--dry-run"),
