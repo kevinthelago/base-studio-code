@@ -437,11 +437,11 @@ fn resolves_outside_the_set(spec: &str, from_rel: &str) -> bool {
 /// that matches a harvested component — and is EMPTY for a form whose bindings can't be attributed to
 /// named exports (`import * as X`, a bare side-effect import), which therefore never counts as a sibling
 /// import.
-struct InternalImport {
-    spec: String,
+pub(crate) struct InternalImport {
+    pub(crate) spec: String,
     names: Vec<String>,
     /// Syntactically type-only (#4076) — erased before the bundler resolves anything, so it never blocks.
-    type_only: bool,
+    pub(crate) type_only: bool,
 }
 
 /// The harvested set indexed for import resolution: component NAME → the module BASE(s) it was
@@ -515,7 +515,7 @@ impl InternalImport {
 /// "./space"`) keeps that import verbatim, and it was silently exempted from the buildability check —
 /// certifying `buildable: true` for a candidate `doctor`'s stricter, sibling-aware check then correctly
 /// flags `no-implementation` on (#4). Scanning `./`/`../` here too closes that gap.
-fn internal_imports(src_text: &str) -> Vec<InternalImport> {
+pub(crate) fn internal_imports(src_text: &str) -> Vec<InternalImport> {
     let mut out = Vec::new();
     let mut parser = Parser::new();
     let language: Language = tree_sitter_typescript::LANGUAGE_TSX.into();
