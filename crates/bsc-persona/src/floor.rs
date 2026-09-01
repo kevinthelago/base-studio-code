@@ -7,7 +7,9 @@
 //! passthrough: it round-trips `unknownFutureField: 42` verbatim, and `bsc` is in the always-allowed
 //! mandatory tier. Any session could therefore run
 //!
-//!     bsc persona get X | jq '.role = "debugger"' | bsc persona set
+//! ```text
+//! bsc persona get X | jq '.role = "debugger"' | bsc persona set
+//! ```
 //!
 //! and `debugger` is `write` on github, git, code AND ui. Nothing rejected it. That was not live only
 //! because `persona.role` reached no launch path — the studio sessions carry their own hardcoded role
