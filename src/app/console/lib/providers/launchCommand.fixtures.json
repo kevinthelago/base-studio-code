@@ -1,0 +1,182 @@
+{
+  "note": "GENERATED from @/app/console/lib/providers/providers/aider — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "no config at all — the bare fleet-safe launch",
+      "config": null,
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "label": "an empty config",
+      "config": {},
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "label": "an llm config supplies the model",
+      "config": {
+        "llm": {
+          "provider": "anthropic",
+          "model": "opus-4.5",
+          "apiKey": "",
+          "baseUrl": ""
+        }
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --model 'anthropic/opus-4.5'"
+    },
+    {
+      "label": "a local llm config",
+      "config": {
+        "llm": {
+          "provider": "ollama",
+          "model": "qwen2.5-coder",
+          "apiKey": "",
+          "baseUrl": ""
+        }
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --model 'openai/qwen2.5-coder'"
+    },
+    {
+      "label": "a bare model string, no llm",
+      "config": {
+        "model": "gpt-4o"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --model 'gpt-4o'"
+    },
+    {
+      "label": "llm WINS over a bare model string",
+      "config": {
+        "llm": {
+          "provider": "anthropic",
+          "model": "opus-4.5",
+          "apiKey": "",
+          "baseUrl": ""
+        },
+        "model": "ignored-model"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --model 'anthropic/opus-4.5'"
+    },
+    {
+      "label": "a whitespace-only model emits NO flag",
+      "config": {
+        "model": "   "
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "label": "an empty model emits no flag",
+      "config": {
+        "model": ""
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "label": "one read file",
+      "config": {
+        "readFiles": [
+          "CLAUDE.local.md"
+        ]
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --read 'CLAUDE.local.md'"
+    },
+    {
+      "label": "several read files",
+      "config": {
+        "readFiles": [
+          "CLAUDE.local.md",
+          "docs/plan.md"
+        ]
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --read 'CLAUDE.local.md' --read 'docs/plan.md'"
+    },
+    {
+      "label": "a read file with a space in its name",
+      "config": {
+        "readFiles": [
+          "my notes.md"
+        ]
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --read 'my notes.md'"
+    },
+    {
+      "label": "a read file with an APOSTROPHE",
+      "config": {
+        "readFiles": [
+          "worker's plan.md"
+        ]
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --read 'worker'\\''s plan.md'"
+    },
+    {
+      "label": "a plain prompt",
+      "config": {
+        "startupPrompt": "do the thing"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --message 'do the thing'"
+    },
+    {
+      "label": "a prompt with an APOSTROPHE",
+      "config": {
+        "startupPrompt": "don't stop"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --message 'don'\\''t stop'"
+    },
+    {
+      "label": "a prompt that tries to CLOSE the quote and run a command",
+      "config": {
+        "startupPrompt": "x'; rm -rf /tmp/pwned; echo '"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --message 'x'\\''; rm -rf /tmp/pwned; echo '\\'''"
+    },
+    {
+      "label": "a prompt with a double quote",
+      "config": {
+        "startupPrompt": "say \"hello\""
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --message 'say \"hello\"'"
+    },
+    {
+      "label": "a prompt with a backtick and a dollar",
+      "config": {
+        "startupPrompt": "cost is `date` and $HOME"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --message 'cost is `date` and $HOME'"
+    },
+    {
+      "label": "a MULTI-LINE prompt — newlines survive inside single quotes",
+      "config": {
+        "startupPrompt": "line one\nline two\nline three"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --message 'line one\nline two\nline three'"
+    },
+    {
+      "label": "a whitespace-only prompt emits NO --message",
+      "config": {
+        "startupPrompt": "   "
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "label": "an empty prompt emits no --message",
+      "config": {
+        "startupPrompt": ""
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "label": "everything at once",
+      "config": {
+        "llm": {
+          "provider": "ollama",
+          "model": "qwen",
+          "apiKey": "",
+          "baseUrl": ""
+        },
+        "readFiles": [
+          "CLAUDE.local.md"
+        ],
+        "startupPrompt": "ship it — don't wait"
+      },
+      "cmd": "aider --no-auto-commits --no-dirty-commits --model 'openai/qwen' --read 'CLAUDE.local.md' --message 'ship it — don'\\''t wait'"
+    }
+  ]
+}
