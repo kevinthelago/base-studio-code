@@ -691,6 +691,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // for it. The pure planner (`bsc_component::backing::relink_plan`) stays down there where the
         // rest of `backing` is; only the half that needs a harvest is intercepted.
         Some("backing") if args.get(1).map(String::as_str) == Some("relink") => cmd_relink(&args[2..]),
+        Some("backing") if args.get(1).map(String::as_str) == Some("reconcile") => {
+            cmd_backing_reconcile(&args[2..])
+        }
         Some(v) if bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
             bsc_component::cli::run(args, prog)
         }
@@ -3105,6 +3108,306 @@ mod discoverability {
             "these verbs dispatch but are absent from `bsc ui help`, so nothing advertises them: {missing:?}"
         );
     }
+}
+
+/// `bsc ui backing reconcile [--json] [--apply] [--annotate] [--retire]` — the SEED-side record↔file
+/// provenance reconcile. Ports `scripts/reconcile-record-src.cjs`, which it replaces.
+///
+/// `backing audit` reads the STORE; this reads the packaged seed. They are DIFFERENT POPULATIONS and
+/// neither stands in for the other.
+fn cmd_backing_reconcile(args: &[String]) -> Result<(), String> {
+    use crate::backing_reconcile as br;
+    use serde_json::{json, Value};
+
+    let apply = args.iter().any(|a| a == "--apply");
+    let annotate = args.iter().any(|a| a == "--annotate");
+    let retire = args.iter().any(|a| a == "--retire");
+    let as_json = args.iter().any(|a| a == "--json");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let seed_dir = repo.join("src-tauri/data/components/app");
+
+    // Every packaged seed record, with the file it was read from so a write can go back. SORTED, where
+    // the script inherited `readdirSync` order — an unspecified order made its row order machine-dependent.
+    let mut seed_paths: Vec<std::path::PathBuf> = Vec::new();
+    fn walk_json(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let mut list: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        list.sort();
+        for p in list {
+            if p.is_dir() {
+                walk_json(&p, out);
+            } else if p.extension().and_then(|x| x.to_str()) == Some("json") {
+                out.push(p);
+            }
+        }
+    }
+    walk_json(&seed_dir, &mut seed_paths);
+
+    // Every source file under `src/`, with its line set precomputed once.
+    let mut files: Vec<br::SrcFile> = Vec::new();
+    fn walk_src(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<br::SrcFile>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let mut list: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        list.sort();
+        for p in list {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            if name == "node_modules" || name.starts_with('.') {
+                continue;
+            }
+            if p.is_dir() {
+                walk_src(&p, root, out);
+                continue;
+            }
+            let is_src = [".ts", ".tsx", ".js", ".jsx"].iter().any(|e| name.ends_with(e));
+            let is_test = [".test.", ".spec."].iter().any(|m| name.contains(m));
+            if !is_src || is_test {
+                continue;
+            }
+            if let Ok(body) = std::fs::read_to_string(&p) {
+                let rel = p
+                    .strip_prefix(root)
+                    .unwrap_or(&p)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push(br::SrcFile { rel, lines: crate::backing_reconcile::line_set(&body) });
+            }
+        }
+    }
+    walk_src(&repo.join("src"), &repo, &mut files);
+
+    let read_file = |rel: &str| -> Option<String> { std::fs::read_to_string(repo.join(rel)).ok() };
+
+    let mut rows: Vec<Value> = Vec::new();
+    let (mut repointed, mut annotated, mut retired) = (0usize, 0usize, 0usize);
+    for path in &seed_paths {
+        let rel_file = path.strip_prefix(&repo).unwrap_or(path).to_string_lossy().replace('\\', "/");
+        let body = std::fs::read_to_string(path).unwrap_or_default();
+        let Ok(mut rec) = serde_json::from_str::<Value>(&body) else {
+            rows.push(json!({ "file": rel_file, "verdict": "parse-error" }));
+            continue;
+        };
+        let id = rec.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        let src = rec.get("src").and_then(Value::as_str).map(str::to_string);
+        let v = br::classify(
+            rec.get("name").and_then(Value::as_str),
+            src.as_deref(),
+            rec.get("srcText").and_then(Value::as_str).unwrap_or(""),
+            rec.get("srcDivergence").and_then(Value::as_str),
+            &files,
+            &read_file,
+        );
+
+        // ONLY the keys this verdict sets, matching the script's per-verdict spread: a key a branch never
+        // set was ABSENT, not null, and a `--json` consumer that tells those apart would otherwise read
+        // every record as confident-false.
+        let mut row = json!({
+            "id": id, "src": src, "file": rel_file, "verdict": v.verdict, "symbol": v.symbol,
+        });
+        for k in v.keys {
+            let val = match *k {
+                "score" => json!(v.score),
+                "region" => json!(v.region),
+                "by" => json!(v.by),
+                "best" => json!(v.best),
+                "bestScore" => json!(v.best_score),
+                "runnerUp" => json!(v.runner_up),
+                "runnerUpScore" => json!(v.runner_up_score),
+                "confident" => json!(v.confident),
+                "renamedTo" => json!(v.renamed_to),
+                "reason" => json!(v.reason),
+                _ => Value::Null,
+            };
+            row[*k] = val;
+        }
+
+        let mut write_back = false;
+        if apply && (v.verdict == "stale-pointer" || v.verdict == "moved") && v.confident {
+            if let Some(b) = v.best.as_ref() {
+                rec["src"] = Value::String(b.clone());
+                row["repointedTo"] = Value::String(b.clone());
+                repointed += 1;
+                write_back = true;
+            }
+        }
+        // The file is gone and nothing in `src/` matches, so there is nothing to re-point TO. `src` goes
+        // away and the path it named is preserved in `srcRetired` — nulling alone would throw away the one
+        // fact a later reader needs.
+        if retire
+            && v.verdict == "stale-pointer"
+            && !v.confident
+            && src.is_some()
+            && rec.get("srcRetired").is_none()
+        {
+            rec["srcRetired"] = Value::String(src.clone().unwrap_or_default());
+            if let Some(o) = rec.as_object_mut() {
+                // SHIFT, not swap. With `preserve_order` on, `Map::remove` is a SWAP-remove: it moves the
+                // LAST entry into the removed slot, which put the just-appended `srcRetired` where `src`
+                // had been. Functionally the same record, but a different file on disk — and every seed
+                // retired before this carries `srcRetired` at the END, so a swap would leave two
+                // conventions in one tree.
+                o.shift_remove("src");
+            }
+            row["retiredFrom"] = Value::String(src.clone().unwrap_or_default());
+            retired += 1;
+            write_back = true;
+        }
+        if annotate
+            && v.verdict == "drifted"
+            && v.reason.is_some()
+            && rec.get("srcDivergence").is_none()
+        {
+            rec["srcDivergence"] = Value::String(v.reason.clone().unwrap_or_default());
+            row["annotated"] = Value::Bool(true);
+            annotated += 1;
+            write_back = true;
+        }
+        if write_back {
+            let out = serde_json::to_string_pretty(&rec).map_err(|e| e.to_string())?;
+            std::fs::write(path, format!("{out}\n"))
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        rows.push(row);
+    }
+
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for r in &rows {
+        *counts.entry(r["verdict"].as_str().unwrap_or("").to_string()).or_default() += 1;
+    }
+
+    if as_json {
+        let summary = json!({
+            "total": rows.len(), "counts": counts, "repointed": repointed,
+            "annotated": annotated, "retired": retired,
+            "applied": apply, "annotateMode": annotate,
+        });
+        bsc_util::emit(&serde_json::to_string_pretty(&json!({ "summary": summary, "rows": rows }))
+            .map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+
+    bsc_util::emit_line(&format!(
+        "\nrecord↔file provenance — {} packaged records under data/components/app/**",
+        rows.len()
+    ));
+    let mut ordered: Vec<(&String, &usize)> = counts.iter().collect();
+    ordered.sort_by(|a, b| b.1.cmp(a.1));
+    for (k, v) in ordered {
+        bsc_util::emit_line(&format!("  {k:<14} {v}"));
+    }
+    if apply {
+        bsc_util::emit_line(&format!("\n  re-pointed: {repointed}"));
+    }
+
+    let of = |verdict: &str| -> Vec<&Value> {
+        rows.iter().filter(|r| r["verdict"].as_str() == Some(verdict)).collect()
+    };
+    let s_of = |r: &Value, k: &str| r[k].as_str().unwrap_or("").to_string();
+    // JS interpolates an absent value as the literal `null`, and these lines are read by a human deciding
+    // a re-point by hand — an empty gap reads as "no runner-up name", which is a different claim.
+    let j_of = |r: &Value, k: &str| r[k].as_str().unwrap_or("null").to_string();
+    let n_of = |r: &Value, k: &str| r[k].as_f64().unwrap_or(0.0);
+
+    let stale = of("stale-pointer");
+    if !stale.is_empty() {
+        bsc_util::emit_line(&format!(
+            "\nSTALE POINTERS ({}) — src names a file that is not here:",
+            stale.len()
+        ));
+        for r in &stale {
+            let fix = if let Some(t) = r.get("repointedTo").and_then(Value::as_str) {
+                format!("  ⇒ re-pointed to {t} ({})", n_of(r, "score"))
+            } else if r["confident"].as_bool() == Some(true) {
+                format!(
+                    "  ⇒ --apply would re-point to {} ({}, runner-up {})",
+                    j_of(r, "best"),
+                    n_of(r, "score"),
+                    n_of(r, "runnerUpScore")
+                )
+            } else if r["best"].is_string() && n_of(r, "score") > 0.1 {
+                format!(
+                    "  ⇒ WEAK/AMBIGUOUS best={} ({}) runner-up={} ({}) — decide by hand",
+                    j_of(r, "best"),
+                    n_of(r, "score"),
+                    j_of(r, "runnerUp"),
+                    n_of(r, "runnerUpScore")
+                )
+            } else {
+                "  ⇒ NO match in src/ — the file is genuinely gone; null the pointer".to_string()
+            };
+            bsc_util::emit_line(&format!("  {:<30} {}\n{fix}", s_of(r, "id"), s_of(r, "src")));
+        }
+    }
+
+    let moved = of("moved");
+    if !moved.is_empty() {
+        bsc_util::emit_line(&format!(
+            "\nMOVED ({}) — src resolves, but the record's symbol is no longer in that file:",
+            moved.len()
+        ));
+        for r in &moved {
+            let fix = if let Some(t) = r.get("repointedTo").and_then(Value::as_str) {
+                format!("  ⇒ re-pointed to {t}")
+            } else if r["confident"].as_bool() == Some(true) {
+                format!(
+                    "  ⇒ --apply would re-point to {} ({}, runner-up {})",
+                    j_of(r, "best"),
+                    n_of(r, "bestScore"),
+                    n_of(r, "runnerUpScore")
+                )
+            } else {
+                format!(
+                    "  ⇒ best={} ({}) runner-up={} ({}) — decide by hand",
+                    j_of(r, "best"),
+                    n_of(r, "bestScore"),
+                    j_of(r, "runnerUp"),
+                    n_of(r, "runnerUpScore")
+                )
+            };
+            let sym = r["symbol"].as_str().unwrap_or("?");
+            bsc_util::emit_line(&format!(
+                "  {:<30} {sym} not in {}\n{fix}",
+                s_of(r, "id"),
+                s_of(r, "src")
+            ));
+        }
+    }
+
+    let mut drifted = of("drifted");
+    if !drifted.is_empty() {
+        bsc_util::emit_line(&format!(
+            "\nDRIFTED ({}) — src resolves, but the record is not what the file holds:",
+            drifted.len()
+        ));
+        drifted.sort_by(|a, b| {
+            let k = |r: &Value| r["region"].as_f64().unwrap_or_else(|| r["score"].as_f64().unwrap_or(0.0));
+            k(a).partial_cmp(&k(b)).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for r in &drifted {
+            let region = r["region"].as_f64().map(|v| v.to_string()).unwrap_or("?".to_string());
+            bsc_util::emit_line(&format!(
+                "  region={region:<6} {:<30} {}  {}",
+                s_of(r, "id"),
+                if r["reason"].is_string() { "explained" } else { "NEEDS VERDICT" },
+                s_of(r, "src")
+            ));
+        }
+        let explained = drifted.iter().filter(|r| r["reason"].is_string()).count();
+        bsc_util::emit_line(&format!(
+            "\n  {explained} EXPLAINED — preview parameterization, evidenced per record. `--annotate` writes"
+        ));
+        bsc_util::emit_line(
+            "  the reason to `srcDivergence`, which moves them to the `intentional` verdict.",
+        );
+        bsc_util::emit_line(&format!(
+            "  {} NOT explained — each needs a human verdict. Refresh is the EXCEPTION:",
+            drifted.len() - explained
+        ));
+        bsc_util::emit_line("  the record is frequently the RICHER copy.");
+    }
+    bsc_util::emit_line("");
+    Ok(())
 }
 
 /// `bsc ui promote-seed [--apply] …` — promote a live store record into the PACKAGED SEED, the step that
