@@ -50,8 +50,11 @@ pub(crate) fn claude_model_flag(model: &str) -> Option<&'static str> {
 /// (`C:/Users/Kevin/foo`), a different transform for a different on-disk Claude Code contract. Both
 /// names are frozen to match what Claude Code writes; do not "unify" them.
 pub(crate) fn claude_project_dir_name(cwd: &str) -> String {
-    // keep [A-Za-z0-9] → '-', no cap (delegates to map_slug; semantics frozen).
-    crate::platform::fsx::map_slug(cwd, |c| c.is_ascii_alphanumeric(), '-', None)
+    // ONE definition, in `bsc-session`, because `bsc session reset` needs the same answer and cannot
+    // reach a `pub(crate)` here. Semantics stay frozen; this is now a re-export in function form so
+    // the nine existing call sites keep their name. (`map_slug` deliberately did NOT move — it has
+    // other callers in `fsx.rs`, and only its RULE was needed here.)
+    bsc_session::claude_project_dir_name(cwd)
 }
 /// Claude Code's on-disk *transcripts directory* for a launch cwd:
 /// `~/.claude/projects/<claude_project_dir_name(cwd)>`, where each conversation is stored as a
@@ -92,15 +95,7 @@ pub(crate) fn dir_holds_a_transcript(dir: &std::path::Path) -> bool {
 /// the path to the sidecar through `$BSC_AGENT_SESSION`; the sidecar just reads/writes it. The
 /// adapter checks the same path for `detect_history`. Empty cwd ⇒ None (no persistence). (#1144)
 pub(crate) fn bsc_agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {
-    if cwd.is_empty() {
-        return None;
-    }
-    Some(
-        bsc_base_dir()
-            .join("agent-sessions")
-            .join(claude_project_dir_name(cwd))
-            .join("conversation.json"),
-    )
+    bsc_session::agent_session_path(cwd)
 }
 /// Where a caged `bsc-agent` keeps its conversation, inside the guest.
 ///
@@ -114,7 +109,7 @@ pub(crate) fn bsc_agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {
 /// It lives HERE, beside the host path it is the caged twin of, because the launcher binds it and the
 /// resume probe reads it and those two agreeing is the whole correctness condition — see
 /// [`caged_agent_conversation_dir`].
-pub(crate) const CAGED_AGENT_SESSION_GUEST: &str = "/home/agent/.bsc-agent/conversation.json";
+pub(crate) const CAGED_AGENT_SESSION_GUEST: &str = bsc_session::CAGED_AGENT_SESSION_GUEST;
 
 /// The HOST directory backing [`CAGED_AGENT_SESSION_GUEST`] for a pane whose sandbox stores live at
 /// `stores_root`.
@@ -124,7 +119,7 @@ pub(crate) const CAGED_AGENT_SESSION_GUEST: &str = "/home/agent/.bsc-agent/conve
 /// `agent-sessions/<slug>/conversation.json`, so a caged worker reported `has_history=false` with
 /// eleven messages sitting in its cage and restarted from nothing on every launch.
 pub(crate) fn caged_agent_conversation_dir(stores_root: &std::path::Path) -> std::path::PathBuf {
-    stores_root.join("home").join("bsc-agent")
+    bsc_session::caged_agent_conversation_dir(stores_root)
 }
 
 /// The HOST path of a caged `bsc-agent`'s conversation file — the file the guest sees at
@@ -133,11 +128,7 @@ pub(crate) fn caged_agent_conversation_dir(stores_root: &std::path::Path) -> std
 /// Derived from the guest path's own file name rather than repeating the literal, so the two cannot
 /// drift apart silently.
 pub(crate) fn caged_agent_conversation_path(stores_root: &std::path::Path) -> std::path::PathBuf {
-    let name = std::path::Path::new(CAGED_AGENT_SESSION_GUEST)
-        .file_name()
-        .map(std::ffi::OsStr::to_os_string)
-        .unwrap_or_else(|| std::ffi::OsString::from("conversation.json"));
-    caged_agent_conversation_dir(stores_root).join(name)
+    bsc_session::caged_agent_conversation_path(stores_root)
 }
 
 /// The HOST directory holding a caged Claude session's transcripts, for a pane whose sandbox stores
