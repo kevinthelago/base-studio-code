@@ -59,6 +59,66 @@ mod tests {
         ))
     }
 
+    /// THE CONFINEMENT (#4055). The Integrator gets its work list without leaving its cage, and the
+    /// cage widens by exactly ONE read verb.
+    ///
+    /// `bsc project` is not a read-only noun — it carries `new`, `link`, `github-state` and `db`. A
+    /// bare `bsc project` on the allow-list would hand a studio confined to connectors the ability to
+    /// CREATE projects and rewrite their contracts. The entry must therefore be the full three-token
+    /// verb, and this test exists because "widen the allow-list" is exactly the kind of change that
+    /// gets made one token too short.
+    #[test]
+    fn the_work_list_verb_is_allowed_and_nothing_wider_is() {
+        let raw = crate::platform::config::embedded_str("personas/integrator.json");
+        let persona: serde_json::Value = serde_json::from_str(&raw).expect("the packaged persona parses");
+        let allow: Vec<&str> = persona["floor"]["allow"]
+            .as_array()
+            .expect("the floor carries an allow-list")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        assert!(
+            allow.contains(&"bsc project integrations"),
+            "the Integrator cannot read its work list from inside its cage: {allow:?}",
+        );
+        // Nothing wider on that noun, and nothing on the plan store either — the roll-up exists so the
+        // studio never needs `bsc plan`, which is per-project and would need 40 grants to be useful.
+        for wider in ["bsc project", "bsc plan", "bsc"] {
+            assert!(
+                !allow.contains(&wider),
+                "`{wider}` would grant far more than the work list — allow: {allow:?}",
+            );
+        }
+        // The write axes stay shut: reading a work list is not a reason to gain any of them.
+        let floor = &persona["floor"];
+        for axis in ["github", "git", "code", "ui"] {
+            assert_eq!(floor[axis], "none", "`{axis}` must stay none: {floor}");
+        }
+    }
+
+    /// The spec and the persona must AGREE about the work list, because the session reads the persona
+    /// first and the spec second; a surface named in one and not the other is how a studio ends up
+    /// told to run a command it is not allowed to run (or allowed one it is never told about).
+    #[test]
+    fn the_spec_and_the_persona_both_describe_the_work_list() {
+        let md = crate::platform::config::embedded_str("integrator/claude.md");
+        let persona = crate::platform::config::embedded_str("personas/integrator.json");
+        for doc in [&md, &persona] {
+            assert!(
+                doc.contains("bsc project integrations"),
+                "both the spec and the persona must name the work-list verb",
+            );
+        }
+        // The two readings that are easy to get wrong, both stated in the spec rather than learned by
+        // being surprised: an empty list is normal, and `unreadable` is not the same as empty.
+        assert!(md.contains("empty list is normal"), "an empty work list must read as normal");
+        assert!(
+            md.contains("`unreadable` is NOT the same as empty"),
+            "a short list must not be mistaken for a complete one",
+        );
+    }
+
     #[test]
     fn creates_the_workspace_and_writes_the_integrator_claude_md() {
         let base = scratch();
