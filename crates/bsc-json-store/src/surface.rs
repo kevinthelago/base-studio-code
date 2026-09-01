@@ -18,17 +18,26 @@
 //! falls back for exactly that reason. A surface record is the same shape of override — global, and
 //! able to break a surface it was only meant to adjust.
 //!
-//! ## The `&'static str` question, answered explicitly
+//! ## The `&'static str` question: DECIDED, and it stays the leak
 //!
-//! [`CliSpec`] holds `&'static str`. A runtime-loaded spec therefore needs either owned strings
-//! (`Cow<'static, str>`, which touches all five call sites) or a one-time leak. This takes the leak, on
-//! purpose: `bsc` is a short-lived process that answers one command and exits, so leaking one spec at
-//! startup costs a few hundred bytes for the life of a process measured in milliseconds. `Cow` is the
-//! right production shape if this graduates past a spike — recorded here so the choice is a decision
-//! rather than something a later reader has to reverse-engineer.
+//! [`CliSpec`] holds `&'static str`, so a runtime-loaded spec needs either owned strings
+//! (`Cow<'static, str>`) or a one-time leak. The spike took the leak and recorded `Cow` as the right
+//! production shape "if this graduates past a spike". It graduated
+//! (`generalize-the-surface-record-beyond-json-store`) and the decision went the other way, on an
+//! argument the spike did not have: [`bsc_cli_util::CmdDoc`] is `Copy` with `&'static str` fields, and
+//! that is load-bearing for catalog COMPOSITION — `bsc ui` merges another CLI's verbs into its own help
+//! tree by copying `CmdDoc`s. `Cow` is not `Copy`. The full reasoning lives with the shared
+//! implementation in [`bsc_cli_util::surface`]; this module follows it rather than holding a second copy.
+//!
+//! ## What lives here, and what moved down
+//!
+//! The GENERIC half — the record home, the `commands` parse, the empty-catalog refusal and the
+//! "a record may not conjure a verb" rule — is [`bsc_cli_util::surface`], shared with all 29
+//! `CmdDoc`-driven CLIs. What stays here is what only this runner has: the [`CliSpec`] fields no other
+//! CLI carries (`dir_env`, `dir_segment`, the lean/graph projections and the field aliases), and the
+//! fact that its dispatchable set is its RUNNER's verbs rather than its catalog's.
 
 use crate::cli::CliSpec;
-use bsc_cli_util::CmdDoc;
 use serde_json::Value;
 
 /// The verbs [`crate::cli::run`] can actually dispatch.
@@ -41,23 +50,12 @@ use serde_json::Value;
 /// sees it.
 const DISPATCHABLE: &[&str] = &["list", "get", "set", "remove", "help", "rename"];
 
-/// Where surface records live: `$BSC_SURFACE_DIR`, else `~/.base-studio-code/surfaces/`.
-///
-/// The env var exists so a test — and an agent trying this out — can point at a throwaway directory
-/// without touching the real one. Same shape as every other store's `--dir`/env override.
-pub fn surface_dir() -> Option<std::path::PathBuf> {
-    if let Ok(d) = std::env::var("BSC_SURFACE_DIR") {
-        if !d.trim().is_empty() {
-            return Some(std::path::PathBuf::from(d));
-        }
-    }
-    Some(bsc_util::bsc_base_dir()?.join("surfaces"))
-}
+/// Where surface records live — ONE home, shared with every other `CmdDoc`-driven CLI
+/// (`bsc_cli_util::surface::surface_dir`). Re-exported rather than restated: two functions computing
+/// the same directory is the shape that drifts, and this store's records sit beside the others'.
+pub use bsc_cli_util::surface::surface_dir;
 
-/// Leak an owned string into the `&'static str` [`CliSpec`] wants. See the module note on why.
-fn leak(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
-}
+use bsc_cli_util::surface::leak;
 
 fn need_str(v: &Value, key: &str) -> Result<String, String> {
     v.get(key)
@@ -89,39 +87,13 @@ pub fn spec_from_json(v: &Value) -> Result<&'static CliSpec, String> {
     let dir_segment = need_str(v, "dir_segment")?;
     let tagline = need_str(v, "tagline")?;
 
-    let cmds_val = v.get("commands").ok_or_else(|| "missing `commands`".to_string())?;
-    let arr = cmds_val.as_array().ok_or_else(|| "`commands` is not an array".to_string())?;
-    let mut commands = Vec::with_capacity(arr.len());
-    for (i, c) in arr.iter().enumerate() {
-        let at = |e: String| format!("commands[{i}]: {e}");
-        commands.push(CmdDoc {
-            name: leak(need_str(c, "name").map_err(at)?),
-            summary: leak(need_str(c, "summary").map_err(|e| format!("commands[{i}]: {e}"))?),
-            usage: leak(need_str(c, "usage").map_err(|e| format!("commands[{i}]: {e}"))?),
-        });
-    }
-    if commands.is_empty() {
-        // A surface with no commands would dispatch nothing while looking like a valid override —
-        // the exact "present but useless" state that is worse than absent.
-        return Err("`commands` is empty — a surface with no verbs would replace a working one".into());
-    }
-
-    // THE SURFACE IS DATA; THE OPERATIONS ARE CODE. The runner implements exactly `list`/`get`/`set`/
-    // `remove` (plus `help`), and a wrapper crate may intercept a verb of its own before delegating —
-    // `bsc persona rename` does. A record naming anything else renders in `help` and then dies at
-    // dispatch with `unknown command`, which is a surface PROMISING something it cannot deliver.
-    //
-    // Observed in the spike: adding a `count` verb by record edit put it in the help output while
-    // `bsc persona count` answered `unknown command 'count'`. Rejecting the record is the honest
-    // outcome — the alternative is a help catalog that lies, and a help catalog is the one thing an
-    // agent reads to decide what it may call.
-    if let Some(bad) = commands.iter().find(|c| !DISPATCHABLE.contains(&c.name)) {
-        return Err(format!(
-            "command `{}` has no implementation — this runner dispatches {:?}. The surface record can \
-             change help, projections and aliases; a NEW operation is code, not data",
-            bad.name, DISPATCHABLE
-        ));
-    }
+    // THE SURFACE IS DATA; THE OPERATIONS ARE CODE — the shared rule, with this runner's OWN verb set
+    // rather than its catalog's. The two differ on purpose: `rename` dispatches (a wrapper crate
+    // intercepts it before delegating, as `bsc persona` does) while `help` is answered before the store
+    // is opened, so neither is reliably present in a given spec's `commands`. Parsing, the empty-catalog
+    // refusal and the "no implementation" error all live in `bsc_cli_util::surface`, so this store and
+    // the other 29 CLIs cannot disagree about what a surface record may say.
+    let commands = bsc_cli_util::surface::commands_from_json(v, DISPATCHABLE)?;
 
     let meta_fields: Vec<&'static str> = str_list(v, "meta_fields")?.into_iter().map(leak).collect();
     let graph_fields: Vec<&'static str> = str_list(v, "graph_fields")?.into_iter().map(leak).collect();
@@ -144,7 +116,7 @@ pub fn spec_from_json(v: &Value) -> Result<&'static CliSpec, String> {
         dir_env: leak(dir_env),
         dir_segment: leak(dir_segment),
         tagline: leak(tagline),
-        commands: Box::leak(commands.into_boxed_slice()),
+        commands,
         meta_fields: Box::leak(meta_fields.into_boxed_slice()),
         graph_fields: Box::leak(graph_fields.into_boxed_slice()),
         field_aliases: Box::leak(field_aliases.into_boxed_slice()),

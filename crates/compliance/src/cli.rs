@@ -201,11 +201,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 }
                 "" => Err(format!(
                     "usage: bsc compliance standards <list|get>\n\n{}",
-                    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "standards")
+                    bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "standards")
                 )),
                 other => Err(format!(
                     "unknown standards command '{other}'\n\n{}",
-                    bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "standards")
+                    bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "standards")
                 )),
             }
         }

@@ -298,16 +298,23 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
     // Help surface — handled before touching the log dir (help must work anywhere). `help` /
     // `help <cmd>` and the trailing `<cmd> help` form; a bare `bsc logs` keeps its `sessions` default.
+    //
+    // The surface RECORD is resolved explicitly here (`generalize-the-surface-record-beyond-json-store`).
+    // Every other `CmdDoc`-driven CLI gets it for free from `handle_help`; this one hand-rolls its block
+    // for the bare-invocation default above, so the one line that opts it in is the price of that
+    // difference. Resolved at the point of printing, so a real verb never pays the record read.
     if a.positional.first().map(String::as_str) == Some("help") {
+        let (tagline, cmds) = bsc_cli_util::surface::resolve_surface(prog, TAGLINE, COMMANDS);
         match a.positional.get(1) {
-            Some(name) => print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, name)),
-            None => print!("{}", bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)),
+            Some(name) => print!("{}", bsc_cli_util::help_for(prog, tagline, cmds, name)),
+            None => print!("{}", bsc_cli_util::help_overview(prog, tagline, cmds)),
         }
         return Ok(());
     }
     if a.positional.get(1).map(String::as_str) == Some("help") {
         let name = a.positional[0].clone();
-        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, &name));
+        let (tagline, cmds) = bsc_cli_util::surface::resolve_surface(prog, TAGLINE, COMMANDS);
+        print!("{}", bsc_cli_util::help_for(prog, tagline, cmds, &name));
         return Ok(());
     }
 
@@ -532,10 +539,10 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // A single stream (the verb is the stream name).
         other => {
             let s = canonical_stream(other).ok_or_else(|| {
-                format!(
-                    "unknown command/stream '{other}'\n\n{}",
-                    bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)
-                )
+                // The same catalog help shows — the reader who just typed an unknown stream is the one
+                // most likely to act on the list they are handed.
+                let (tagline, cmds) = bsc_cli_util::surface::resolve_surface(prog, TAGLINE, COMMANDS);
+                format!("unknown command/stream '{other}'\n\n{}", bsc_cli_util::help_overview(prog, tagline, cmds))
             })?;
             let events = query(&dir, &[s], a.session.as_deref(), a.since, a.limit);
             emit(a.pretty, a.json, &events, || {

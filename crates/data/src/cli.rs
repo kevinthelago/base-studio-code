@@ -440,7 +440,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         _ => Err(format!(
             "unknown command: {cmd} {sub}\n\n{}",
-            bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS)
+            bsc_cli_util::surface::help_overview(prog, TAGLINE, COMMANDS)
         )),
     }
 }
@@ -565,7 +565,7 @@ fn cmd_connector(args: &Args, prog: &str) -> Result<(), String> {
         "map" => cmd_connector_map(args),
         other => Err(format!(
             "unknown connector command '{other}'\n\n{}",
-            bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "connector")
+            bsc_cli_util::surface::help_for(prog, TAGLINE, COMMANDS, "connector")
         )),
     }
 }
