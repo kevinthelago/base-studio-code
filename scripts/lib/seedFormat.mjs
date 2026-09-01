@@ -1,5 +1,6 @@
-// Request #169: `sync-impl-seed.mjs` and `promote-records.mjs` each carried their own copy of this
-// function, and both copies' docstrings claimed the packaged seed (`src-tauri/data/knowledge/algorithms.json`)
+// Request #169: two callers each carried their own copy of this function — `promote-records.mjs`, and
+// the since-deleted `sync-impl-seed.mjs` (ported to `bsc graph impl sync-seed`, #157) — and both copies'
+// docstrings claimed the packaged seed (`src-tauri/data/knowledge/algorithms.json`)
 // is written 1-space indented with non-ASCII escaped and no trailing newline — Python's
 // `json.dumps(d, indent=1, ensure_ascii=True)`. Measured against the actual file: it is 2-space indented,
 // non-ASCII left as literal UTF-8, WITH a trailing newline — i.e. `JSON.stringify(value, null, 2) + "\n"`.
