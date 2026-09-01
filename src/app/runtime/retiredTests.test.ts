@@ -21,6 +21,7 @@
 // it is guarding. `planRecords` deliberately WRITES NOTHING — calling `emitRecords` here would `rmSync`
 // the tree out from under every other test file being collected in parallel.
 import { describe, it, expect } from "vitest";
+import { relativeImportSpecifiers } from "@/shared/lib/runtime/shadow/pageBinding";
 import { planRecords, edgeTestPath } from "../../../scripts/emit-records.mjs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -107,12 +108,31 @@ describe("a retired module keeps its tests in the gate", () => {
     // `@/shared/ui/data/Avatar` carries a test importing `./LabelChip`, and LabelChip is still a FILE.
     // Emitted verbatim into `.bsc-records/`, that relative import reaches nothing — the two trees are not
     // bridged relatively — so the test would silently stop running on a green gate.
+    // POSITIONS, not import-shaped TEXT. The scan used to be a bare regex over the whole source, and a
+    // fixture is text: `pageBinding.test.ts` is a test FOR this very parser and its fixtures ARE import
+    // statements, while `componentScan.test.ts` holds a component record whose `srcText` is
+    // `"import { Dep } from './dep';"`. Both were refused for imports they do not have, and rewriting
+    // them would have changed what they assert rather than fixing anything.
+    //
+    // `relativeImportSpecifiers` shares the anchored FROM_IMPORT / BARE_IMPORT of the repo's reference
+    // scanner, so a specifier only counts at the start of a line — which is exactly what separates a
+    // real import from one quoted inside a fixture. It keeps TYPE-ONLY imports, which `parseImports`
+    // drops: esbuild erases them so they never become a require, but `tsc` still has to resolve them,
+    // and resolution is the whole thing at stake when a test moves trees.
     const plan = planRecords();
     for (const t of plan.tests) {
-      expect(t.src, `${t.spec} carries no unrewritten relative import`).not.toMatch(
-        /(?:from|import|vi\.mock|require)\s*\(?\s*["']\.{1,2}(?:\/|["'])/,
-      );
+      expect(relativeImportSpecifiers(t.src), `${t.spec} carries no unrewritten relative import`).toEqual([]);
     }
+  });
+
+  it("still refuses a GENUINE relative import — narrowing the scan must not blunt it", () => {
+    // The half that keeps the narrowing honest. Loosening a guard is only safe if the case it exists
+    // for still fails, and this one cost real coverage before anything checked: a carried test emitted
+    // into `.bsc-records/` with a surviving `./sibling` reaches nothing and stops running on a green
+    // gate. Both real forms, and the type-only one that `parseImports` would have waved through.
+    expect(relativeImportSpecifiers(`import { x } from "./sibling";\n`)).toEqual(["./sibling"]);
+    expect(relativeImportSpecifiers(`import type { X } from "../up/there";\n`)).toEqual(["../up/there"]);
+    expect(relativeImportSpecifiers(`import "./styles.css";\n`)).toEqual(["./styles.css"]);
   });
 });
 
