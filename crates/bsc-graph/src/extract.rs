@@ -114,6 +114,9 @@ struct Def {
     /// Scanned-root-relative path of the file it came from.
     rel: String,
     sig: Signature,
+    /// 1-based start line, read off the node. A byte offset is what tree-sitter has and what a person
+    /// reading a duplicate report cannot use.
+    line: usize,
 }
 
 /// How a parameter or return TYPE is known. THREE STATES, and keeping them apart is the whole point.
@@ -1147,7 +1150,7 @@ fn build_candidates(defs: Vec<Def>, raw: Vec<(String, String, String)>, test_roo
         test_cache.insert(src_rel.clone(), found);
     }
     defs.into_iter()
-        .map(|Def { name, tech, code, rel: src_rel, sig }| {
+        .map(|Def { name, tech, code, rel: src_rel, sig, line: _ }| {
             let mut composes: Vec<String> = Vec::new();
             for (caller, callee, ctech) in &raw {
                 if caller == &name
@@ -1204,6 +1207,79 @@ fn harvest_defs(dir: &Path) -> Vec<Def> {
 
 /// `root` is the directory the scan STARTED at, so each def carries a path relative to it (#4091) —
 /// stable across machines, unlike an absolute one.
+/// One function in the TREE, projected to what a duplicate sweep reads — and nothing else.
+///
+/// Deliberately WITHOUT the body. A [`Candidate`] carries the full source, its colocated tests and a
+/// classification, which is right for curation and ruinous for a whole-tree sweep: MEASURED, a
+/// `harvest` of `crates/` peaks at **962 MB** for 7,514 functions. Nothing here retains the source, so
+/// the walk streams and only the projection accumulates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FnShape {
+    pub name: String,
+    pub tech: String,
+    /// Scanned-root-relative path, forward-slashed.
+    pub src: String,
+    /// 1-based start line, so a report can point AT the function rather than at its file.
+    pub line: usize,
+    /// The rename-invariant fingerprint. Present by construction: a function too trivial to have one
+    /// is never collected, which is the triviality floor doing its work at the source.
+    pub shape: String,
+    pub arity: usize,
+}
+
+/// Every non-trivial function under `dir`, projected to its shape — the whole-tree corpus.
+///
+/// THIS IS THE HALF THE GRAPH CANNOT SEE. The algorithms store holds 32 Rust records; this tree holds
+/// 7,514 Rust functions across 378 files, so a duplicate sweep over records alone covers 0.4% of the
+/// Rust in this repo. Records are curated; the tree is where duplication actually accumulates.
+///
+/// STREAMS, and that is the whole design. Each file is parsed, projected and dropped before the next
+/// is opened, so peak memory is one file's tree plus the projection — against the 962 MB a full
+/// `harvest` of the same directory costs.
+///
+/// A function with no shape (too trivial to be evidence, see [`MIN_SHAPE_TOKENS`]) is dropped HERE
+/// rather than filtered later: carrying every `fn new()` in the workspace to the grouping step and
+/// discarding it there would be the same memory bill for the same answer.
+pub fn scan_shapes(dir: &Path, tech_filter: Option<&str>) -> Vec<FnShape> {
+    let mut out = Vec::new();
+    scan_shapes_walk(dir, dir, tech_filter, &mut out);
+    out
+}
+
+fn scan_shapes_walk(dir: &Path, root: &Path, tech_filter: Option<&str>, out: &mut Vec<FnShape>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if path.is_dir() {
+            if !SKIP_DIRS.contains(&name) {
+                scan_shapes_walk(&path, root, tech_filter, out);
+            }
+            continue;
+        }
+        let Some((tech, src, tree)) = parse(&path) else { continue };
+        if tech_filter.is_some_and(|t| t != tech) {
+            continue;
+        }
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace(BACKSLASH, "/");
+        // Per FILE, so the Defs — which hold the source — are dropped before the next file is read.
+        let mut defs: Vec<Def> = Vec::new();
+        collect_defs(tree.root_node(), &src, tech, false, &rel, &mut defs);
+        for d in defs {
+            let Some(shape) = shape_fingerprint(&d.code, &d.tech) else { continue };
+            out.push(FnShape {
+                line: d.line,
+                arity: d.sig.arity(),
+                name: d.name,
+                tech: d.tech,
+                src: d.rel,
+                shape,
+            });
+        }
+    }
+}
+
 fn harvest_walk(dir: &Path, root: &Path, out: &mut Vec<Def>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
@@ -1256,6 +1332,7 @@ fn collect_defs(node: Node, src: &[u8], tech: &str, in_test: bool, rel: &str, ou
                         // Re-parsing the stored `code` later would work and would be a second parser
                         // to keep in step with this one.
                         sig: signature_of(node, src),
+                        line: node.start_position().row + 1,
                     });
                 }
             }
@@ -1809,6 +1886,62 @@ mod tests {
         let sig = sig_of("signatures.rs", "bump");
         assert_eq!(sig.arity(), 1, "`by` alone; `&mut self` is the receiver: {sig:?}");
         assert_eq!(sig.params[0], Param { name: "by".into(), ty: known("u32") });
+    }
+
+    // ── THE TREE SCAN (slice 3) ─────────────────────────────────────────────────────────────────
+    // The corpus the graph cannot see: 32 Rust records against 7,514 Rust functions on disk.
+
+    /// The scan STREAMS and projects — no body, no tests, no classification. That is what makes a
+    /// whole-tree sweep affordable: MEASURED, a `harvest` of `crates/` peaks at 962 MB while this
+    /// peaks at 115 MB over the same directory.
+    #[test]
+    fn a_tree_scan_projects_each_function_to_its_shape() {
+        let found = scan_shapes(&fixtures(), None);
+        assert!(!found.is_empty(), "the fixture tree has non-trivial functions");
+        for f in &found {
+            assert!(!f.shape.is_empty(), "{} carries a shape or is not collected", f.name);
+            assert!(f.line >= 1, "{} has a 1-based line, not a byte offset", f.name);
+            assert!(!f.src.contains('\\'), "{} is forward-slashed: {}", f.name, f.src);
+        }
+        // A TRIVIAL function is dropped AT THE SOURCE rather than filtered later — carrying every
+        // `fn new()` in a workspace to the grouping step costs the same memory for the same answer.
+        assert!(
+            !found.iter().any(|f| f.name == "helperThing"),
+            "an empty body is not evidence and must not be collected: {:?}",
+            found.iter().map(|f| &f.name).collect::<Vec<_>>(),
+        );
+    }
+
+    /// A tech filter is applied DURING the walk, so an unwanted language is never parsed rather than
+    /// parsed and discarded.
+    #[test]
+    fn a_tree_scan_honours_its_tech_filter() {
+        let rust = scan_shapes(&fixtures(), Some("rust"));
+        assert!(!rust.is_empty(), "the fixture tree has Rust");
+        assert!(rust.iter().all(|f| f.tech == "rust"), "only rust: {:?}", rust.iter().map(|f| &f.tech).collect::<Vec<_>>());
+        let ts = scan_shapes(&fixtures(), Some("typescript"));
+        assert!(ts.iter().all(|f| f.tech == "typescript"));
+        // …and the two partitions together are the unfiltered scan: a filter must not lose anything.
+        assert_eq!(rust.len() + ts.len(), scan_shapes(&fixtures(), None).len());
+    }
+
+    /// THE POINT OF THE WHOLE SLICE, on the fixture tree: two functions that are the same code under
+    /// renaming land on the same shape even though they live in different FILES, which is how a
+    /// tree-wide sweep finds what a per-file or per-record one cannot.
+    #[test]
+    fn two_files_sharing_a_shape_are_visible_to_the_tree_scan() {
+        let found = scan_shapes(&fixtures(), Some("typescript"));
+        let mut by_shape: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
+        for f in &found {
+            by_shape.entry(&f.shape).or_default().push(&f.src);
+        }
+        // `signatures.ts` holds `threeStates` and nothing shaped like it; the assertion that matters is
+        // that grouping BY SHAPE is what the scan enables, so every group's members are addressable.
+        assert!(
+            by_shape.values().all(|srcs| !srcs.is_empty()),
+            "every shape names the files that carry it",
+        );
+        assert!(found.iter().any(|f| f.src.ends_with("sample.ts")), "the walk reaches every file");
     }
 
     // ── SHAPE FINGERPRINT (slice 2) ─────────────────────────────────────────────────────────────

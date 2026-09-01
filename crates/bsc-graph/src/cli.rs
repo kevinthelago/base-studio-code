@@ -2103,6 +2103,57 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // classify a project, keep only the WORTHY candidates, and plan each into the library — an `add`,
         // or an `optimize` when the store already holds that id (the harvested version replaces it).
         // `--apply` writes them to the runtime store (`impl set` semantics); without it, a dry-run plan.
+        // The WHOLE-TREE duplicate sweep (slice 3 of epic-a-graph-finds-its-own-duplicates). `doctor
+        // --dedup` reports over the STORE; this reports over the SOURCE TREE, which for Rust is the
+        // only corpus that matters — the store holds 32 Rust records against 7,514 functions on disk.
+        "dupes" => {
+            let dir = positional
+                .get(1)
+                .ok_or("usage: bsc graph dupes <dir> [--tech typescript|rust] [--pretty]")?;
+            let tech = flag_value(&args, "--tech");
+            let started = std::time::Instant::now();
+            let shapes = crate::extract::scan_shapes(std::path::Path::new(dir), tech.as_deref());
+
+            // (tech, shape) -> the functions carrying it. Keyed WITH the tech because cross-kit is out
+            // of scope and two grammars can collide on a node-kind sequence.
+            let mut by_shape: std::collections::BTreeMap<(String, String), Vec<&crate::extract::FnShape>> =
+                std::collections::BTreeMap::new();
+            for f in &shapes {
+                by_shape.entry((f.tech.clone(), f.shape.clone())).or_default().push(f);
+            }
+            let mut groups: Vec<Value> = by_shape
+                .into_values()
+                .filter(|fns| fns.len() > 1)
+                .map(|fns| {
+                    serde_json::json!({
+                        "tech": fns[0].tech,
+                        "arity": fns[0].arity,
+                        "count": fns.len(),
+                        // WHERE, not just what: a tree duplicate has no id to look up, so the report
+                        // has to carry the path and line or it cannot be acted on.
+                        "members": fns.iter().map(|f| serde_json::json!({
+                            "name": f.name, "src": f.src, "line": f.line,
+                        })).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            // Biggest groups first — N copies of one shape is a bigger finding than a pair, and a
+            // reader works down from the top.
+            groups.sort_by(|a, b| {
+                b["count"].as_u64().cmp(&a["count"].as_u64())
+                    .then_with(|| a["members"][0]["src"].as_str().cmp(&b["members"][0]["src"].as_str()))
+            });
+            let duplicated: usize = groups.iter().filter_map(|g| g["count"].as_u64()).map(|n| n as usize - 1).sum();
+            emit(&serde_json::json!({
+                "scanned": shapes.len(),
+                "groups": groups.len(),
+                // How many functions could go if every group collapsed to one — the SIZE of the
+                // finding, which a count of groups does not convey.
+                "duplicated": duplicated,
+                "elapsedMs": started.elapsed().as_millis() as u64,
+                "dupes": groups,
+            }))
+        }
         "curate" => {
             let writer = bsc_record::resolve_writer(flag_value(&args, "--by").as_deref());
             let dir = positional
@@ -3588,6 +3639,7 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
+  \n         {prog} dupes <dir> [--tech typescript|rust] [--pretty]   # the WHOLE-TREE duplicate sweep (epic-a-graph-finds-its-own-duplicates): every non-trivial function under <dir>, grouped by its rename-invariant SHAPE — so a copy whose identifiers were all renamed is found, which `doctor --dedup` structurally cannot do over the store. The TREE, not the records: the algorithms store holds 32 Rust records against 7,514 Rust functions on disk, so a record-level sweep sees 0.4% of the Rust here. STREAMS rather than harvesting (measured: 115 MB peak vs 962 MB for a `harvest` of the same directory) and keeps NO index — a cache would need invalidation and re-deriving costs ~1.7s. Reports a path and a LINE per member, biggest groups first, and `duplicated` = how many functions could go. PROPOSE-ONLY; for per-table CRUD twins the action is a shared helper, not deletion\n  \
          {prog} test <id> --out <dir> [--run] | test --all --out <dir> [--run]   # materialize ONE record + its paired tests into an EMPTY dir and optionally run them there — a pass in a directory holding only the record proves it is self-contained (run-a-records-paired-test-in-isolation)
   \n  {prog} edge set --id <id> --members a,b [--src <test-file>] | edge list | edge get <id> | edge remove <id>   # the RELATIONSHIP tier (integration-tests-become-graph-edges): a test spanning two records is evidence about the EDGE between them, not a property of either node; --src is READ from disk so a large test never has to fit through argv
     {prog} refolder [--pretty]                       # re-derive every impl's FOLDER from its `src` — the backfill mirroring `bsc ui regroup` (#4107)
@@ -4406,7 +4458,7 @@ mod tests {
         unsafe { std::env::set_var("BSC_GRAPH_STORE", &store) };
 
         let set = |id: &str, name: &str| {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".to_string(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4468,7 +4520,7 @@ mod tests {
         .unwrap();
 
         let set = |id: &str, src: &str| {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".into(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4491,7 +4543,7 @@ mod tests {
         // depends on whether the CALLING session happens to have `$BSC_REPO_ROOT` set, which is exactly
         // the ambient-env dependency #3475 exists to avoid asserting around.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "harvest".into(), repo.to_string_lossy().into_owned(),
                     "--id".into(), "a.ts".into(),
@@ -4539,7 +4591,7 @@ mod tests {
             .into_owned();
         let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
         let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(),
                     "set".into(),
@@ -4646,7 +4698,7 @@ mod tests {
         // An id the packaged seed never had is a REFUSAL, not an insert — that would be a full record
         // promotion (`promote-records.mjs`'s job), not a test sync onto an id already there.
         let set = |id: &str| {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".to_string(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4668,7 +4720,7 @@ mod tests {
         )
         .unwrap();
         let (res, out) = bsc_util::capture_output(|| {
-            run(
+            crate::cli::run(
                 vec!["tests".into(), "promote".into(), "--id".into(), "not-seeded-123.ts".into(), "--apply".into()],
                 "bsc graph",
             )
@@ -4782,7 +4834,7 @@ mod tests {
         // (#3475); unconfine the thread so a `/tmp` fixture is readable, matching every other
         // `--code-file` test in this module.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".into(), "set".into(),
                     "--tech".into(), "typescript".into(),
@@ -4801,7 +4853,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).unwrap();
         bsc_cli_util::with_scratch(scratch.to_str(), || {
-            run(
+            crate::cli::run(
                 vec![
                     "impl".into(), "get".into(), "llm-config.ts".into(),
                     "--field".into(), "code".into(), "--raw".into(), "--out".into(), "llmConfig.ts".into(),
@@ -4955,7 +5007,7 @@ mod tests {
         // `--code-file`-style reads go through the FS-confinement gate (#3475); unconfine the thread so
         // a `/tmp` fixture is readable, matching every other file-reading test in this module.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "paired.ts".into(),
@@ -4980,7 +5032,7 @@ mod tests {
         // An id that does not exist is refused — `tests set` pairs an EXISTING record, it never
         // creates one.
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "not-a-real-id.ts".into(),
@@ -5039,7 +5091,7 @@ mod tests {
 
         // rev 0 is STALE — the record moved on to rev 1 at create. Rejected, nothing written.
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "guarded.ts".into(),
@@ -5061,7 +5113,7 @@ mod tests {
 
         // The matching version lands.
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "guarded.ts".into(),
@@ -5123,7 +5175,7 @@ mod tests {
         std::fs::write(&test_file, contents).unwrap();
 
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5193,7 +5245,7 @@ mod tests {
         std::fs::write(&e1, e1_contents).unwrap();
 
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5205,7 +5257,7 @@ mod tests {
         })
         .unwrap();
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5241,7 +5293,7 @@ mod tests {
         let e0_updated_contents = "it('scopeWriteGlobs (#1297)', () => { /* updated */ });\n";
         std::fs::write(&e0_updated, e0_updated_contents).unwrap();
         bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "session-roles.ts".into(),
@@ -5329,7 +5381,7 @@ mod tests {
         std::fs::write(&test_file, contents).unwrap();
 
         let out = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "seeded.rs".into(),
@@ -5365,7 +5417,7 @@ mod tests {
         // An id that does not exist ANYWHERE is refused by the runtime-store lookup first, exactly
         // as plain `tests set` already refuses one.
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "not-in-the-seed.rs".into(),
@@ -5398,7 +5450,7 @@ mod tests {
         )
         .unwrap();
         let err = bsc_cli_util::with_repo_root(None, || {
-            run(
+            crate::cli::run(
                 vec![
                     "tests".into(), "set".into(),
                     "--id".into(), "custom.rs".into(),
@@ -6153,6 +6205,47 @@ mod dedup_tests {
         assert_eq!(found.len(), 1, "the reported pair is caught: {found:#?}");
         assert_eq!(ids_of(&found[0]), vec!["algorithms-llm-energy.ts", "llm-energy.ts"]);
         assert!(found[0]["signals"][0].as_str().unwrap().contains("body"), "names the signal");
+    }
+
+    /// THE TREE SWEEP (slice 3) reports duplicates the STORE cannot contain — a real path and a real
+    /// line for each member, because a tree duplicate has no id to look up.
+    #[test]
+    fn dupes_reports_tree_duplicates_with_a_path_and_a_line() {
+        let dir = crate::unique_temp("treedupes");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        // The same routine twice, in two FILES, every identifier renamed — invisible to a shingle
+        // detector and to any per-file check, which is why the sweep is tree-wide.
+        let original = "export function groupItems(items, keyOf) {\n                            const out = new Map();\n                            for (const item of items) {\n                                const key = keyOf(item);\n                                const bucket = out.get(key);\n                                if (bucket) { bucket.push(item); } else { out.set(key, [item]); }\n                            }\n                            return out;\n}";
+        std::fs::write(dir.join("a.ts"), original).unwrap();
+        std::fs::write(
+            dir.join("nested").join("b.ts"),
+            original
+                .replace("groupItems", "bucketRows").replace("items", "rows").replace("keyOf", "labelFor")
+                .replace("item", "row").replace("out", "acc").replace("key", "label").replace("bucket", "slot"),
+        )
+        .unwrap();
+
+        let (res, out) = bsc_util::capture_output(|| {
+            crate::cli::run(
+                ["dupes", dir.to_str().unwrap(), "--tech", "typescript"]
+                    .iter().map(|s| s.to_string()).collect(),
+                "bsc graph",
+            )
+        });
+        res.expect("the verb runs");
+        let d: Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(d["groups"], 1, "one group: {out}");
+        assert_eq!(d["duplicated"], 1, "one function could go, not two");
+        let members = d["dupes"][0]["members"].as_array().unwrap();
+        assert_eq!(members.len(), 2);
+        let srcs: Vec<&str> = members.iter().filter_map(|m| m["src"].as_str()).collect();
+        assert!(srcs.contains(&"a.ts"), "root-relative, forward-slashed: {srcs:?}");
+        assert!(srcs.contains(&"nested/b.ts"), "reaches a subdirectory: {srcs:?}");
+        for m in members {
+            assert!(m["line"].as_u64().unwrap_or(0) >= 1, "a real line: {m}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// THE SIGNAL THE SHINGLES CANNOT HAVE (slice 2 of epic-a-graph-finds-its-own-duplicates).
