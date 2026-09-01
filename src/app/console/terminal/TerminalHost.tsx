@@ -135,6 +135,50 @@ export function claimIsOnScreen(claim: { el?: HTMLElement }): boolean {
   return claim.el.offsetParent !== null || claim.el.getClientRects?.().length > 0;
 }
 
+/** Every paneId whose OWNER claim is a surface the user can actually see.
+ *
+ *  THIS IS THE ANSWER TO "is the user looking at this session", and it is the only place in the app
+ *  that has it. The backend reaper's one unconditional protection — `if (on_screen) return false` —
+ *  used to be fed a single pane id resolved from the console grid's `focusedPaneIdx`, so a studio
+ *  session, a graph session and a network architect could never be it. They are not console panes and
+ *  never will be. Under a ten-second idle grace that meant a session died while its terminal was on
+ *  screen in front of the user.
+ *
+ *  Composed from the two rules the host already applies rather than re-derived: `ownerClaim` picks the
+ *  surface that visually hosts the terminal, and `claimIsOnScreen` is the DOM check that a
+ *  kept-mounted-but-CSS-hidden page dock does not count (`display: none` ⇒ no `offsetParent`, no
+ *  client rects). A page the user navigated away from therefore stops protecting its studio, which is
+ *  what makes the reaper still able to do its job.
+ *
+ *  A `parked` owner never counts: it is the off-screen holding mount that exists only to keep the PTY
+ *  alive, so counting it would protect every wanted studio for ever and disable the reaper entirely
+ *  for exactly the sessions it was built to bound. */
+/** The mounted host's live claim registry, published for {@link onScreenPaneIdsNow}. Null when no
+ *  <TerminalHost> is mounted — in which case nothing is on screen, which is the correct answer. */
+let liveRegistry: ReadonlyMap<string, readonly Claim[]> | null = null;
+
+/** {@link onScreenPaneIds} for the mounted host — the form `useIdleReaper` reports to the backend.
+ *
+ *  Empty with no host mounted, and that is not a degraded answer: with no terminal host there is no
+ *  terminal on screen. The backend treats an empty report exactly as it treats a missing one — nothing
+ *  is protected — so an app that has not painted yet cannot accidentally pin sessions alive. */
+export function onScreenPaneIdsNow(): string[] {
+  return liveRegistry ? onScreenPaneIds(liveRegistry) : [];
+}
+
+export function onScreenPaneIds<T extends { propsRef: { readonly current: SlotTerminalProps }; el?: HTMLElement }>(
+  registry: ReadonlyMap<string, readonly T[]>,
+): string[] {
+  const out: string[] = [];
+  for (const [paneId, claims] of registry) {
+    if (claims.length === 0) continue;
+    const owner = ownerClaim(claims, claimIsOnScreen);
+    const p = owner?.propsRef.current;
+    if (p && !p.parked && p.visible && claimIsOnScreen(owner)) out.push(paneId);
+  }
+  return out.sort();
+}
+
 /** A registered claim on a paneId's terminal. Claims are ordered by registration; the last non-`parked`
  *  claim is the current owner (see {@link ownerClaim}) — the surface that visually hosts + drives the
  *  terminal. `propsRef` is read live at portal-render
@@ -196,6 +240,19 @@ export function TerminalHost({ children }: { children: ReactNode }) {
     },
     touch: rerender,
   }), [rerender]);
+
+  // PUBLISH THE LIVE REGISTRY for `onScreenPaneIdsNow`. Not context, because the one consumer —
+  // `useIdleReaper` — is called in `App`'s body, ABOVE this provider, and deliberately so: it is one
+  // of the always-on shell hooks, and `idleReaperMounted.test.ts` pins it there because "a reaper that
+  // only runs while somebody is looking at the Console is not a reaper". Module state is the honest
+  // way for something above the tree to read something inside it, and this file is a FILE rather than
+  // a record precisely because a registered record may not hold module state.
+  useEffect(() => {
+    liveRegistry = registryRef.current;
+    // Only clear what WE published: under StrictMode's double-mount the second host has already
+    // published its own registry by the time the first one's cleanup runs.
+    return () => { if (liveRegistry === registryRef.current) liveRegistry = null; };
+  }, []);
 
   /** The stable container for a paneId, created on first render that needs it. Kept in a ref so the same
    *  node is reused across owner changes — that node (with its xterm inside) is what gets re-parented. */

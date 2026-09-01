@@ -23,6 +23,7 @@ pub mod emit;
 /// the Rust face of `src/shared/ui/spec/generalNode.ts`. Both read the same generated contract.
 pub mod general_node;
 pub mod harvest;
+pub mod import_scan;
 pub mod kit;
 /// Surgical single-field JSON patch for on-disk SEED files (#109) — the write half of
 /// `bsc ui tests adopt`, kept separate from [`tests_harvest`] since it is a generic byte-level editor

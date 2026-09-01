@@ -1,0 +1,656 @@
+{
+  "note": "GENERATED from the live TypeScript — see githubState.fixtures.gen.test.ts",
+  "fetches": [
+    {
+      "name": "every item state — OPEN counts open, CLOSED and MERGED count closed, a draft counts as NEITHER",
+      "projects": [
+        {
+          "id": "PVT_1",
+          "number": 7,
+          "title": "Studio Code",
+          "shortDescription": "the desktop host",
+          "url": "https://github.com/users/x/projects/7",
+          "closed": false,
+          "updatedAt": "2026-08-31T12:00:00Z",
+          "items": {
+            "totalCount": 42,
+            "nodes": [
+              {
+                "content": {
+                  "state": "OPEN"
+                }
+              },
+              {
+                "content": {
+                  "state": "OPEN"
+                }
+              },
+              {
+                "content": {
+                  "state": "CLOSED"
+                }
+              },
+              {
+                "content": {
+                  "state": "MERGED"
+                }
+              },
+              {
+                "content": null
+              },
+              {
+                "content": {
+                  "state": "QUEUED"
+                }
+              }
+            ]
+          },
+          "repositories": {
+            "nodes": [
+              {
+                "nameWithOwner": "x/base-studio-code"
+              },
+              {
+                "nameWithOwner": "x/mobile"
+              }
+            ]
+          }
+        }
+      ],
+      "records": [
+        {
+          "id": "PVT_1",
+          "number": 7,
+          "title": "Studio Code",
+          "shortDescription": "the desktop host",
+          "url": "https://github.com/users/x/projects/7",
+          "closed": false,
+          "updatedAt": "2026-08-31T12:00:00Z",
+          "itemsTotalCount": 42,
+          "openCount": 2,
+          "closedCount": 2,
+          "repos": [
+            "x/base-studio-code",
+            "x/mobile"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "totalCount is the HEADLINE number and is independent of the fetched page",
+      "projects": [
+        {
+          "id": "PVT_2",
+          "number": 1,
+          "title": "Big Board",
+          "shortDescription": null,
+          "url": "https://github.com/users/x/projects/1",
+          "closed": true,
+          "updatedAt": "2026-01-02T03:04:05Z",
+          "items": {
+            "totalCount": 100,
+            "nodes": [
+              {
+                "content": {
+                  "state": "OPEN"
+                }
+              }
+            ]
+          },
+          "repositories": {
+            "nodes": []
+          }
+        }
+      ],
+      "records": [
+        {
+          "id": "PVT_2",
+          "number": 1,
+          "title": "Big Board",
+          "shortDescription": null,
+          "url": "https://github.com/users/x/projects/1",
+          "closed": true,
+          "updatedAt": "2026-01-02T03:04:05Z",
+          "itemsTotalCount": 100,
+          "openCount": 1,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    },
+    {
+      "name": "no items and no repos",
+      "projects": [
+        {
+          "id": "PVT_3",
+          "number": 2,
+          "title": "Empty",
+          "shortDescription": null,
+          "url": "https://github.com/users/x/projects/2",
+          "closed": false,
+          "updatedAt": "2026-02-02T00:00:00Z",
+          "items": {
+            "totalCount": 0,
+            "nodes": []
+          },
+          "repositories": {
+            "nodes": []
+          }
+        }
+      ],
+      "records": [
+        {
+          "id": "PVT_3",
+          "number": 2,
+          "title": "Empty",
+          "shortDescription": null,
+          "url": "https://github.com/users/x/projects/2",
+          "closed": false,
+          "updatedAt": "2026-02-02T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    },
+    {
+      "name": "no projects at all",
+      "projects": [],
+      "records": []
+    },
+    {
+      "name": "several boards keep their order",
+      "projects": [
+        {
+          "id": "PVT_B",
+          "number": 9,
+          "title": "Beta",
+          "shortDescription": "b",
+          "url": "u9",
+          "closed": false,
+          "updatedAt": "2026-03-01T00:00:00Z",
+          "items": {
+            "totalCount": 2,
+            "nodes": [
+              {
+                "content": {
+                  "state": "OPEN"
+                }
+              },
+              {
+                "content": {
+                  "state": "CLOSED"
+                }
+              }
+            ]
+          },
+          "repositories": {
+            "nodes": [
+              {
+                "nameWithOwner": "x/beta"
+              }
+            ]
+          }
+        },
+        {
+          "id": "PVT_A",
+          "number": 8,
+          "title": "Alpha",
+          "shortDescription": null,
+          "url": "u8",
+          "closed": true,
+          "updatedAt": "2026-03-02T00:00:00Z",
+          "items": {
+            "totalCount": 1,
+            "nodes": [
+              {
+                "content": {
+                  "state": "MERGED"
+                }
+              }
+            ]
+          },
+          "repositories": {
+            "nodes": [
+              {
+                "nameWithOwner": "x/alpha"
+              }
+            ]
+          }
+        }
+      ],
+      "records": [
+        {
+          "id": "PVT_B",
+          "number": 9,
+          "title": "Beta",
+          "shortDescription": "b",
+          "url": "u9",
+          "closed": false,
+          "updatedAt": "2026-03-01T00:00:00Z",
+          "itemsTotalCount": 2,
+          "openCount": 1,
+          "closedCount": 1,
+          "repos": [
+            "x/beta"
+          ]
+        },
+        {
+          "id": "PVT_A",
+          "number": 8,
+          "title": "Alpha",
+          "shortDescription": null,
+          "url": "u8",
+          "closed": true,
+          "updatedAt": "2026-03-02T00:00:00Z",
+          "itemsTotalCount": 1,
+          "openCount": 0,
+          "closedCount": 1,
+          "repos": [
+            "x/alpha"
+          ]
+        }
+      ]
+    }
+  ],
+  "inflate": [
+    {
+      "name": "stubs are synthesized so the progress fraction is reproduced exactly",
+      "record": {
+        "id": "PVT_1",
+        "number": 7,
+        "title": "Studio Code",
+        "shortDescription": "the desktop host",
+        "url": "u",
+        "closed": false,
+        "updatedAt": "2026-08-31T12:00:00Z",
+        "itemsTotalCount": 42,
+        "openCount": 2,
+        "closedCount": 3,
+        "repos": [
+          "x/base-studio-code"
+        ]
+      },
+      "project": {
+        "id": "PVT_1",
+        "number": 7,
+        "title": "Studio Code",
+        "shortDescription": "the desktop host",
+        "url": "u",
+        "closed": false,
+        "updatedAt": "2026-08-31T12:00:00Z",
+        "items": {
+          "totalCount": 42,
+          "nodes": [
+            {
+              "content": {
+                "state": "OPEN"
+              }
+            },
+            {
+              "content": {
+                "state": "OPEN"
+              }
+            },
+            {
+              "content": {
+                "state": "CLOSED"
+              }
+            },
+            {
+              "content": {
+                "state": "CLOSED"
+              }
+            },
+            {
+              "content": {
+                "state": "CLOSED"
+              }
+            }
+          ]
+        },
+        "repositories": {
+          "nodes": [
+            {
+              "nameWithOwner": "x/base-studio-code"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a record with no items synthesizes no stubs",
+      "record": {
+        "id": "PVT_3",
+        "number": 2,
+        "title": "Empty",
+        "shortDescription": null,
+        "url": "u",
+        "closed": false,
+        "updatedAt": "2026-02-02T00:00:00Z",
+        "itemsTotalCount": 0,
+        "openCount": 0,
+        "closedCount": 0,
+        "repos": []
+      },
+      "project": {
+        "id": "PVT_3",
+        "number": 2,
+        "title": "Empty",
+        "shortDescription": null,
+        "url": "u",
+        "closed": false,
+        "updatedAt": "2026-02-02T00:00:00Z",
+        "items": {
+          "totalCount": 0,
+          "nodes": []
+        },
+        "repositories": {
+          "nodes": []
+        }
+      }
+    }
+  ],
+  "filters": [
+    {
+      "name": "MATCH PATH 1 — the local key is the record's name-derived projectSlug",
+      "records": [
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ],
+      "locals": [
+        {
+          "key": "studio-code",
+          "title": "something else entirely"
+        }
+      ],
+      "kept": [
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    },
+    {
+      "name": "MATCH PATH 2 — a grandfathered hub keyed by the legacy sanitizeProjectKey",
+      "records": [
+        {
+          "id": "My Project!",
+          "number": 1,
+          "title": "My Project!",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ],
+      "locals": [
+        {
+          "key": "My_Project_",
+          "title": "unrelated"
+        }
+      ],
+      "kept": [
+        {
+          "id": "My Project!",
+          "number": 1,
+          "title": "My Project!",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    },
+    {
+      "name": "MATCH PATH 3 — the titles match case-insensitively, whatever the key is",
+      "records": [
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ],
+      "locals": [
+        {
+          "key": "p-9f3a2b",
+          "title": "STUDIO CODE"
+        }
+      ],
+      "kept": [
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    },
+    {
+      "name": "THE RULE ITSELF — a record with no local project is DROPPED, never resurrected",
+      "records": [
+        {
+          "id": "Deleted Project",
+          "number": 1,
+          "title": "Deleted Project",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        },
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ],
+      "locals": [
+        {
+          "key": "studio-code",
+          "title": "Studio Code"
+        }
+      ],
+      "kept": [
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    },
+    {
+      "name": "no records — empty in, empty out",
+      "records": [],
+      "locals": [
+        {
+          "key": "studio-code",
+          "title": "Studio Code"
+        }
+      ],
+      "kept": []
+    },
+    {
+      "name": "no locals — everything is dropped, since nothing can vouch for a record",
+      "records": [
+        {
+          "id": "Studio Code",
+          "number": 1,
+          "title": "Studio Code",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ],
+      "locals": [],
+      "kept": []
+    },
+    {
+      "name": "surviving records keep their ORDER, not the locals' order",
+      "records": [
+        {
+          "id": "Zulu",
+          "number": 1,
+          "title": "Zulu",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        },
+        {
+          "id": "Alpha",
+          "number": 1,
+          "title": "Alpha",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        },
+        {
+          "id": "Mike",
+          "number": 1,
+          "title": "Mike",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ],
+      "locals": [
+        {
+          "key": "alpha",
+          "title": "Alpha"
+        },
+        {
+          "key": "mike",
+          "title": "Mike"
+        },
+        {
+          "key": "zulu",
+          "title": "Zulu"
+        }
+      ],
+      "kept": [
+        {
+          "id": "Zulu",
+          "number": 1,
+          "title": "Zulu",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        },
+        {
+          "id": "Alpha",
+          "number": 1,
+          "title": "Alpha",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        },
+        {
+          "id": "Mike",
+          "number": 1,
+          "title": "Mike",
+          "shortDescription": null,
+          "url": "u",
+          "closed": false,
+          "updatedAt": "2026-01-01T00:00:00Z",
+          "itemsTotalCount": 0,
+          "openCount": 0,
+          "closedCount": 0,
+          "repos": []
+        }
+      ]
+    }
+  ]
+}

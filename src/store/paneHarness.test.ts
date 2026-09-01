@@ -37,9 +37,47 @@ describe("paneHarness — the harness a pane actually launches on", () => {
     expect(paneHarness(state({ fleetHarness: "bsc-agent" }), PANE)).toBe("bsc-agent");
   });
 
-  it("honours a provider that forces bsc-agent fleet-wide, even with no stream", () => {
-    // A local LlmProvider implies the harness regardless of the toggle (`effectiveHarness`).
-    expect(paneHarness(state({ llmProvider: "ollama" as never }), PANE)).toBe("bsc-agent");
+  it("does NOT let the LLM provider override the fleet-harness toggle", () => {
+    // THE BUG THIS REPLACES, and the assertion it replaces asserted it: a local `llmProvider` used to
+    // imply the harness "regardless of the toggle". So designating ONE project local — which is done
+    // per pane — put every studio, every network architect, the planner and every un-designated fleet
+    // pane on the local model, and the stored `fleetHarness` was never read.
+    //
+    // The two settings answer different questions: the provider says WHICH MODEL a bsc-agent session
+    // talks to, the toggle says WHETHER a session is one.
+    expect(paneHarness(state({ llmProvider: "ollama" as never }), PANE)).toBe("claude");
+    // ...and the toggle still decides, on a local provider as on any other.
+    expect(paneHarness(state({ llmProvider: "ollama" as never, fleetHarness: "bsc-agent" }), PANE)).toBe("bsc-agent");
+  });
+
+  // THE LIVE STORE, VERBATIM (~/.local/share/com.basestudio.code/app-state.json, 2026-09-01). Two panes
+  // were designated local by hand; every other session ran local anyway. This is the whole report
+  // ("all sessions are running the local model now ... only twitter-clone-test was designated to be
+  // local") reduced to the four fields the resolver reads.
+  it("leaves every UN-designated pane on claude while the designated ones stay local", () => {
+    const live = state({
+      llmProvider: "ollama" as never,
+      fleetHarness: "claude",
+      paneProviders: {
+        "twitter-clone-test:director": "bsc-agent",
+        "twitter-clone-test:api": "bsc-agent",
+      } as never,
+    });
+    // The two the user designated — unchanged, because an explicit choice is nearest and always won.
+    expect(paneHarness(live, "twitter-clone-test:director")).toBe("bsc-agent");
+    expect(paneHarness(live, "twitter-clone-test:api")).toBe("bsc-agent");
+    // Everything else — the studios, a network architect, another project's director. All of these
+    // returned "bsc-agent" before, and not one of them had been designated anything.
+    for (const pane of [
+      "design-studio:designer-react",
+      "algorithms-studio:librarian-rust",
+      "teams-studio:architect",
+      "sound-studio:sound-designer",
+      "network-finance:architect",
+      "studio-code:director",
+    ]) {
+      expect(paneHarness(live, pane), pane).toBe("claude");
+    }
   });
 
   it("ignores a junk stored provider rather than passing it through", () => {

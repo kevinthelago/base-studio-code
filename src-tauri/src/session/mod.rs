@@ -8,6 +8,7 @@ pub mod harness;
 pub mod claude_config;
 pub mod launch;
 pub mod role_gate;
+pub mod profile_settings;
 pub mod settings;
 pub mod sandbox;
 pub mod llm;
