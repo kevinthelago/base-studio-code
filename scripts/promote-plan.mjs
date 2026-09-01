@@ -32,6 +32,9 @@ export function planPromote(state) {
     // is empty? See the `ahead > 0` arm for why this, and not a whole-tree comparison against
     // develop's current state.
     aheadAddsNothing = false,
+    // The branch the APP's tree is expected to be on. `null` opts out (the `--tree`/testing path),
+    // which is why this is a stated field rather than a hardcoded "main" inside the check.
+    appBranch = "main",
   } = state ?? {};
 
   if (!treeExists) {
@@ -41,6 +44,22 @@ export function planPromote(state) {
   // kind of helpfulness that moves the running app somewhere nobody chose.
   if (!branch || branch === "HEAD") {
     return { action: "fail", reason: "detached-head" };
+  }
+  // THE ROOT IS ON SOME OTHER BRANCH, so "promote" would fast-forward the wrong ref and say nothing.
+  //
+  // Every other guard here exists for the case where this script's central assumption fails — a
+  // detached HEAD, a dirty tree, a ref ahead of develop — and each one explains what it found. The one
+  // assumption never checked was the one the script is NAMED for: that the root is on the APP branch.
+  //
+  // MEASURED 2026-09-01: someone had run `git checkout -B <work-ref> develop` at the repo ROOT, which
+  // the convention forbids precisely because the root is the app's tree. `branch` was therefore a work
+  // branch already sitting at develop's tip, so `behind` was 0 and the script reported "already matches
+  // develop — nothing to promote" and exited 0. `main` was five commits back and nobody was told.
+  //
+  // That failure is SILENT and GREEN, which is worse than any of the ones this does catch. Reading
+  // main's position needs only the ref, not a checkout, so the check costs nothing.
+  if (appBranch && branch !== appBranch) {
+    return { action: "fail", reason: "wrong-app-branch" };
   }
   // Someone edited the RUNNING copy. `dirty` is deliberately TRACKED modifications only: a
   // fast-forward cannot destroy an untracked file — git leaves it alone, and at worst refuses the

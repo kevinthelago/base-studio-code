@@ -57,6 +57,10 @@ function mainWorktree(from) {
   return dirname(common);
 }
 
+/** The branch the repo root is expected to hold — the app's tree (see the header). Named once so the
+ *  guard, the refusal text and the distance report cannot disagree about which ref they mean. */
+const APP_BRANCH = "main";
+
 const REPO_ROOT = mainWorktree(dirname(dirname(fileURLToPath(import.meta.url))));
 
 function git(args, opts = {}) {
@@ -119,10 +123,22 @@ function main() {
       : 0;
   const aheadAddsNothing = branch !== "HEAD" && ahead > 0 ? addsNothingBeyondMergeBase(branch, "develop") : false;
 
-  const { action, reason } = planPromote({ treeExists: true, branch, dirty, ahead, behind, aheadContent, aheadAddsNothing });
+  // How far the APP branch actually is from develop — asked of the ref, not of the checkout, so the
+  // refusal below can answer the question the caller came with even while the root is on something else.
+  const appBehind = Number(git(["rev-list", "--count", `${APP_BRANCH}..develop`]) || "0");
+
+  const { action, reason } = planPromote({
+    treeExists: true, branch, dirty, ahead, behind, aheadContent, aheadAddsNothing, appBranch: APP_BRANCH,
+  });
   if (action === "fail") {
     const why = {
-      "detached-head": "the repo root is in detached HEAD; check out the app branch (main) first.",
+      "detached-head": `the repo root is in detached HEAD; check out the app branch (${APP_BRANCH}) first.`,
+      "wrong-app-branch":
+        `the repo root is on '${branch}', not the app branch '${APP_BRANCH}'.\n` +
+        `  Promoting would fast-forward '${branch}' and leave '${APP_BRANCH}' where it is —\n` +
+        `  which is ${appBehind} commit(s) behind develop right now, the thing you actually asked about.\n` +
+        `  The root is the APP's tree and belongs on '${APP_BRANCH}'; work branches belong in a wt-* worktree.\n` +
+        `  If '${branch}' is real work, move it: git checkout ${APP_BRANCH} (the branch ref is kept).`,
       "dirty-app-tree":
         "the repo root has uncommitted changes — refusing to promote over them:\n" +
         dirty.map((l) => `    ${l}`).join("\n"),
