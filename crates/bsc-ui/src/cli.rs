@@ -354,6 +354,35 @@ the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than
 { dir, synced, upToDate, diverged, unknown }.",
     },
     CmdDoc {
+        name: "retire",
+        summary: "delete a module whose packaged record replaces it — refusals first (#records)",
+        usage: "\
+USAGE:
+  bsc ui retire <src-relative-path> [--dry] [--repo <dir>]
+
+The recipe, executable, so a tranche cannot drift from it by hand. Rewrites every importer to the
+`@/…` specifier, rewrites any packaged seed record that reached the module relatively, sweeps the live
+store, and only then deletes the file. `--dry` prints the whole plan and writes nothing.
+
+SIX REFUSALS, and they are the point of the tool. The file STAYS when:
+  a BUILD CONFIG imports it        bundled before any plugin runs, so a record can never serve it
+  it is an ALGORITHMS SEED module  the node's `code` is generated FROM this file; deleting turns a
+                                   checked fact back into a claim
+  an APP ENTRY imports it          the dev server resolves the alias before the records plugin loads,
+                                   so it must exist as a file however good its record is
+  NO PACKAGED SEED provides it     its importers would have nothing to resolve
+  the seed is GRAPH-HOSTED         it reaches siblings by `@/components/<id>`, which only the runtime
+                                   loader resolves — it cannot be materialized as a bundle module
+  the seed DIFFERS from the file   deleting would ship the RECORD's behaviour under the file's name,
+                                   and it would still compile
+
+THE COLOCATED TEST IS KEPT, never deleted alongside the module. A record carries its tests as data but
+nothing in the default gate RUNS them, so removing the file trades executed coverage for stored
+coverage with everything green — it cost 31 assertions across two tranches. Its relative import is
+rewritten like any other's, after which it resolves to the emitted record and the gate verifies the
+module that actually ships.",
+    },
+    CmdDoc {
         name: "retirable",
         summary: "which files a packaged seed can replace — the retirement census (#records)",
         usage: "\
@@ -531,6 +560,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("diff") => cmd_diff(&args[1..]),
         Some("imports") => cmd_imports(&args[1..]),
         Some("retirable") => cmd_retirable(&args[1..]),
+        Some("retire") => cmd_retire(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -2876,6 +2906,204 @@ fn cmd_retirable(args: &[String]) -> Result<(), String> {
         bsc_util::emit_line(&format!(
             "\n({hidden} NOT-retirable candidate(s) hidden — `--all` to see them)"
         ));
+    }
+    Ok(())
+}
+
+/// How many module sources the store holds, and how many relative specifiers across how many records —
+/// the one-line summary `bsc ui imports` leads with and `bsc ui retire` reports as part of its plan.
+///
+/// ONE definition, shared by both, for the reason this whole epic exists: a retire that reported the
+/// store differently from the sweep that repairs it would be two answers to one question.
+fn relative_specifier_summary(dir: &Option<String>) -> Result<(usize, usize, usize), String> {
+    let store = bsc_component::cli::open_component_store(dir)?;
+    let mut records: Vec<(&'static str, serde_json::Value)> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|c| c.get("srcText").and_then(serde_json::Value::as_str).is_some_and(|t| !t.is_empty()))
+        .map(|c| ("component", c))
+        .collect();
+    if dir.is_none() {
+        records.extend(
+            bsc_graph::implementations()
+                .into_iter()
+                .filter(|i| {
+                    i.get("tech").and_then(serde_json::Value::as_str) == Some("typescript")
+                        && i.get("code").and_then(serde_json::Value::as_str).is_some_and(|t| !t.is_empty())
+                })
+                .map(|i| ("impl", i)),
+        );
+    }
+    let (mut findings, mut ids) = (0usize, std::collections::BTreeSet::new());
+    for (kind, r) in &records {
+        let key = if *kind == "component" { "srcText" } else { "code" };
+        let text = r.get(key).and_then(serde_json::Value::as_str).unwrap_or("");
+        let n = crate::record_source::relative_specifiers(text).len();
+        if n > 0 {
+            findings += n;
+            ids.insert(r.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string());
+        }
+    }
+    Ok((records.len(), findings, ids.len()))
+}
+
+/// `bsc ui retire <src-relative-path> [--dry]` — the deleter. Ported from `scripts/retire-module.mjs`.
+fn cmd_retire(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc ui retire <src-relative-path> [--dry]";
+    let dry = args.iter().any(|a| a == "--dry");
+    let repo = flag_after(args, "--repo")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?);
+    let repo_flag = flag_after(args, "--repo");
+    let rel = args
+        .iter()
+        .find(|a| !a.starts_with("--") && repo_flag.as_ref() != Some(*a))
+        .ok_or(USAGE)?
+        .trim_end_matches('/')
+        .to_string();
+    // The argument is a SRC-RELATIVE PATH and is spelled the way a person has it in hand: with the
+    // extension, and often with the `src/` the docs' own examples carry. Normalise both away before
+    // anything derives a specifier from it — leaving them on produced `@/src/features/x/index.ts`.
+    let rel = crate::retire::normalize_target(&rel);
+
+    // A REAL LISTING, never `exists`: that is case-insensitive on Windows and would let a case-mismatched
+    // path pass the very check meant to catch it.
+    let files: Vec<String> = crate::retirable::list_src(&repo)
+        .into_iter()
+        .filter(|f| f.ends_with(".ts") || f.ends_with(".tsx"))
+        .collect();
+    const EXT: [&str; 5] = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
+    let self_rel = EXT
+        .iter()
+        .map(|e| format!("{rel}{e}"))
+        .find(|c| files.contains(c))
+        .ok_or_else(|| format!("retire: no file at src/{rel} (tried .ts, .tsx and /index)"))?;
+    // A BARREL IS ADDRESSED BY ITS DIRECTORY. `lib/plannerCore/index.ts` answers
+    // `@/features/planner/lib/plannerCore`, never `…/plannerCore/index` — that is the specifier the
+    // record actually `provides`. Emitting the `/index` form rewrote three importers onto a specifier
+    // nothing answers, and typecheck caught it as TS2307 only after the file was already deleted.
+    let rel_specifier = rel.strip_suffix("/index").unwrap_or(&rel).to_string();
+    let spec = crate::retire::specifier_for(&rel);
+
+    let seeds = crate::retirable::collect_seeds(&repo);
+    let seed_source = seeds.get(&spec).map(|(_, _, src)| src.clone());
+    let file_source =
+        crate::record_source::file_as_record_source(&repo.join("src").join(&self_rel), &self_rel)
+            .map_err(|e| format!("cannot read src/{self_rel}: {e}"))?;
+    let read = |p: &str| std::fs::read_to_string(p).unwrap_or_default();
+    let exists = |p: &str| std::path::Path::new(p).is_file();
+    let facts = crate::retire::RetireFacts {
+        rel: &rel,
+        spec: &spec,
+        build_config_importers: crate::retire::build_config_importers(&repo, &self_rel),
+        entry_importers: crate::record_source::entries_importing_statically(
+            &repo.to_string_lossy(),
+            &rel_specifier,
+            &read,
+            &exists,
+        ),
+        seed_source: seed_source.as_deref(),
+        near_miss: crate::record_source::seed_answers_specifier(
+            &spec,
+            seeds.keys().map(|k| k.as_str()),
+        )
+        .1,
+        file_source: &file_source,
+    };
+    // REFUSALS FIRST, before a single byte is written. Every one of them is a case where the file must
+    // stay however good its record looks, and the message names the CONSEQUENCE rather than the rule.
+    if let Some(r) = crate::retire::refusal(&facts) {
+        eprintln!("{}", r.message(&rel));
+        std::process::exit(1);
+    }
+
+    let rewrote = crate::retire::rewrite_importers(&repo, &files, &self_rel, &rel, &rel_specifier, &spec, dry, |f| {
+        bsc_util::emit_line(&format!("   {}  {f}", if dry { "would rewrite" } else { "rewrote" }));
+    });
+
+    // The packaged SEED next: those are files in git, so this runs deterministically and needs no built
+    // binary. It is a fence more than a sweep — `recordImports.test.ts` keeps the seed at zero relative
+    // specifiers, so this should find nothing, and says so if it ever does.
+    let mut seed_rewrote = 0usize;
+    let seed_dir = repo.join("src-tauri/data/components/app");
+    let mut seed_files: Vec<std::path::PathBuf> = Vec::new();
+    fn walk_seed(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk_seed(&p, out);
+            } else if p.extension().and_then(|x| x.to_str()) == Some("json") {
+                out.push(p);
+            }
+        }
+    }
+    walk_seed(&seed_dir, &mut seed_files);
+    seed_files.sort();
+    for f in &seed_files {
+        let Ok(body) = std::fs::read_to_string(f) else { continue };
+        let Ok(mut rec) = serde_json::from_str::<serde_json::Value>(&body) else { continue };
+        let (Some(src_text), Some(rec_src)) = (
+            rec.get("srcText").and_then(serde_json::Value::as_str).map(str::to_string),
+            rec.get("src").and_then(serde_json::Value::as_str).map(str::to_string),
+        ) else {
+            continue;
+        };
+        let hits: Vec<crate::record_source::RelSpec> =
+            crate::record_source::relative_specifiers(&src_text)
+                .into_iter()
+                .filter(|r| crate::record_source::alias_for(&rec_src, &r.spec) == spec)
+                .collect();
+        if hits.is_empty() {
+            continue;
+        }
+        let mut text = src_text;
+        for h in hits.into_iter().rev() {
+            text.replace_range(h.at..h.at + h.spec.len(), &spec);
+        }
+        seed_rewrote += 1;
+        let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        bsc_util::emit_line(&format!(
+            "   {}  seed record {id}",
+            if dry { "would rewrite" } else { "rewrote" }
+        ));
+        if !dry {
+            rec["srcText"] = serde_json::Value::String(text);
+            if let Ok(out) = serde_json::to_string_pretty(&rec) {
+                let _ = std::fs::write(f, format!("{out}\n"));
+            }
+        }
+    }
+
+    let colocated = crate::retire::colocated_tests(&files, &rel);
+    bsc_util::emit_line(&format!("retire {rel}: {rewrote} importer(s) rewritten to {spec}"));
+    bsc_util::emit_line(&format!("   seed records: {seed_rewrote} rewritten"));
+    // The live store, reported as part of the plan rather than left to a later command. Silence here is
+    // the exact failure the sweep exists to undo, so a store that cannot be opened is REPORTED with the
+    // command to run rather than swallowed or made fatal.
+    match relative_specifier_summary(&flag_after(args, "--dir")) {
+        Ok((sources, findings, ids)) => bsc_util::emit_line(&format!(
+            "   store: {sources} module sources · {findings} relative specifier(s) across {ids} record(s)"
+        )),
+        Err(e) => bsc_util::emit_line(&format!(
+            "   store: unreadable ({e}) — run `bsc ui imports --fix` once it is"
+        )),
+    }
+    if !colocated.is_empty() {
+        bsc_util::emit_line(&format!(
+            "   KEEPING its colocated test: {} — it now tests the record",
+            colocated.join(", ")
+        ));
+    }
+    if dry {
+        bsc_util::emit_line(&format!("   would delete src/{self_rel}"));
+    } else {
+        let abs = repo.join("src").join(&self_rel);
+        if abs.is_file() {
+            std::fs::remove_file(&abs).map_err(|e| format!("cannot delete {}: {e}", abs.display()))?;
+        }
+        bsc_util::emit_line(&format!("   deleted src/{self_rel}"));
     }
     Ok(())
 }

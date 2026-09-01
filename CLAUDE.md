@@ -335,7 +335,7 @@ base-studio-code/
 > **MOST OF THE FRONTEND IS NOT FILES.** ~1,005 modules ship as RECORDS — 338 component records under
 > `src-tauri/data/components/app/**` plus 667 implementations in `data/knowledge/algorithms.json` — and
 > the files that held them are deleted (epic #3604, "the graph IS the app"). **77 non-test modules
-> remain under `src/`**. The harvest that produced that floor is finished — `retire-module --dry` was run
+> remain under `src/`**. The harvest that produced that floor is finished — `bsc ui retire --dry` was run
 > against every module and none was retirable — but the COUNT has moved since (it was 69), so the
 > per-reason breakdown below is the last one that summed and is now **stale by roughly nine modules**.
 > Re-derive it before relying on any single figure; the shape is what still holds.

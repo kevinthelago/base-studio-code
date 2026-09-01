@@ -153,7 +153,7 @@ function reachable(relPath, willEmit) {
  *  `.bsc-records/`, that resolves only if `LabelChip` is ALSO a record — and a sibling that is still an
  *  ordinary file under `src/` is unreachable from there, because nothing bridges the two trees
  *  relatively. `@/shared/ui/data/LabelChip` reaches both: the alias finds `src/` first and the record
- *  fallback answers when the file is gone. It is the same rewrite `retire-module.mjs` performs on the
+ *  fallback answers when the file is gone. It is the same rewrite `bsc ui retire` performs on the
  *  colocated copy, for the same reason, so both copies of a test resolve identically.
  *
  *  Without this, retiring a test file worked only when every sibling it touched was already a record —

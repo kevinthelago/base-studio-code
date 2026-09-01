@@ -13,7 +13,7 @@ export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
 // ── relative specifiers ───────────────────────────────────────────────────────────────────────────
 // ONE definition of "a relative specifier a record carries", shared by the guard that rejects them
 // (`platformBoundary.test.ts`), the sweep that repairs them (`bsc ui imports`), the
-// retirement that must not create new ones (`retire-module.mjs`) and the refresh that absolutizes a
+// retirement that must not create new ones (`bsc ui retire`) and the refresh that absolutizes a
 // file into record form (`absolutizeImports`, below). Four readers, one regex — for the same reason
 // this module exists at all: a guard that reads imports differently from the fix is worse than either
 // being wrong alone.
@@ -523,7 +523,7 @@ export function seedMatchesFile({ seedSrcText, fileSrc }) {
  * and `vite build` all green, because only a real boot observes it. `ConsoleGraphHost` was retired and
  * restored for exactly this, and `dev-boot-check.mjs` was the only thing that noticed.
  *
- * ONE definition, shared by the tool that DELETES (`retire-module.mjs`) and the census that GRADES
+ * ONE definition, shared by the tool that DELETES (`bsc ui retire`) and the census that GRADES
  * (`retirement-candidates.mjs`). They disagreed before this existed: the census offered four candidates
  * — `useAppBoot`, `ConsoleGraphHost`, `TerminalHost`, `features/sounds/index` — that the tool refused,
  * every one for this rule. A census that grades differently from the tool that acts is worse than either

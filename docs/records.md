@@ -123,7 +123,7 @@ had. Every one of these has cost a real failure:
   Vite bundles its own config *before* any plugin runs — so `vite/bscRecords.ts` is not installed yet,
   `.bsc-records/` cannot serve it, and there is no `@/` alias out there either (the config sits outside
   `src/` and imports by relative path). `tsc`, `lint` and all 742 vitest files went green after that
-  module was retired; only `npx vite build` failed. `retire-module.mjs` now refuses one, reading the
+  module was retired; only `npx vite build` failed. `bsc ui retire` now refuses one, reading the
   importer list from the configs rather than a hard-coded name.
 
 **`@data/*.json` used to be on that list and no longer is.** The platform registry serves those
@@ -163,7 +163,7 @@ neighbour was still a file a bundler could resolve.
 from the store, not the seed, so that is where a bad specifier is visible — and a test reading
 `~/.base-studio-code` would be vacuous on a fresh clone. Hence two runners over one scanner
 (`relativeSpecifiers` in `scripts/lib/recordSource.mjs`, shared with `emit-records.mjs` and
-`retire-module.mjs` so the guard and the tools that rewrite cannot disagree).
+`bsc ui retire` so the guard and the tools that rewrite cannot disagree).
 
 Measured the first time both ran: the seed was clean, the store held **57 relative specifiers across 24
 records**, and every gate was green. `platformBoundary.test.ts` had rejected the rule since #4232 but
@@ -218,14 +218,14 @@ record wins and you adjudicate by hand:
 node scripts/refresh-drifted-seeds.mjs --store <ui-dump> --impls <impl-dump> [--apply]
 node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .tsx → a module-shaped record
 node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
-node scripts/retire-module.mjs <src-relative-path>
+bsc ui retire <src-relative-path> [--dry]
 node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
-bsc ui imports                                 # the RECORD half — `retire-module.mjs` runs this too
+bsc ui imports                                 # the RECORD half — `bsc ui retire` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
 
 **READ THE PROMOTION'S OUTPUT BEFORE RETIRING.** A `SKIPPED (a seed already occupies that path)` line
-means the seed still holds the OLD record, and retiring anyway is unrecoverable in place: this script
+means the seed still holds the OLD record, and retiring anyway is unrecoverable in place: the sweep
 iterates FILES, so once the file is gone the module is no longer a candidate and the stale seed can never
 be adopted. Recovery is restore-from-git → re-promote with `--adopt-seed` → re-retire. `--adopt-seed`
 replaces a stale seed with the store record, and refuses when doing so would drop an export the seed
@@ -240,7 +240,7 @@ UPDATE_KITS=1    npx vitest run src/features/designs/lib/reactUiKit.gen.test.ts 
 UPDATE_RECORDS=1 npx vitest run src/features/glance/glancepageRecord.gen.test.ts         # 6  ← then this
 ```
 
-(1 and 2 — rewriting importers and keeping the colocated test — are what `retire-module.mjs` itself does.)
+(1 and 2 — rewriting importers and keeping the colocated test — are what `bsc ui retire` itself does.)
 
 **The ORDER is load-bearing.** `react-ui.json` VENDORS the transitive sources its components import, so
 any later source edit re-fires the kit regeneration — regenerating the kit and *then* fixing an importer
@@ -284,14 +284,14 @@ Two things the emitter refuses, loudly rather than silently:
   emitted, and a test that fails is reported with the import that disqualified it.
 - **An unrewritten relative import.** A carried test says `./LabelChip`; emitted into `.bsc-records/`
   that reaches nothing when `LabelChip` is still a file, because the two trees are not bridged
-  relatively. They are rewritten to `@/…` on emit — the same rewrite `retire-module.mjs` applies to the
+  relatively. They are rewritten to `@/…` on emit — the same rewrite `bsc ui retire` applies to the
   file copy, so both copies of a test resolve identically.
 
 ### Traps that cost real time
 
 - **`vi.mock("./x")` breaks silently.** A mock keys on the resolved module. While the file exists, a
   consumer's `@/a/b` and a test's `./b` are the same module; retire it and they stop agreeing, so the mock
-  stops applying and the test runs against the real module — still passing, just weaker. `retire-module.mjs`
+  stops applying and the test runs against the real module — still passing, just weaker. `bsc ui retire`
   rewrites `vi.mock`/`vi.doMock`/`vi.unmock` in the same pass as the import forms, so a retirement fixes its
   own mocks and there is no separate step to remember. (The one-off sweep that cleaned up mocks retired
   before that was true is gone — its backlog reached zero.)
@@ -307,7 +307,7 @@ Two things the emitter refuses, loudly rather than silently:
 ## Retiring a file — the PRECONDITIONS
 
 A file may be deleted only once the thing that **ships** answers what its importers ask for. Both halves
-of that are checked by `retire-module.mjs`, and each was learned by shipping the bug first:
+of that are checked by `bsc ui retire`, and each was learned by shipping the bug first:
 
 - **The packaged SEED must provide the specifier**, matched EXACTLY, case included. Five modules were
   retired while `promote-records` had printed `SKIPPED (a seed already occupies that path)` — deleted,
@@ -357,14 +357,14 @@ Author a **new** module record beside them (`scripts/lift-component-module.mjs`,
 
 ## Where this stops — and why the floor is where it is
 
-`src/` is at **69 non-test modules**, from 225. The harvest is finished: `retire-module --dry` was run
+`src/` is at **69 non-test modules**, from 225. The harvest is finished: `bsc ui retire --dry` was run
 against **every remaining module** and **none** is retirable. Each of the 69 refuses for a named
 mechanical reason, listed below.
 
 > Counts drift and a stale one is worse than none. Re-measure:
 > `git ls-files src | grep -E '\.tsx?$' | grep -vcE '\.(test|spec)\.|\.d\.ts$'`
 > And re-derive the floor rather than trusting this table — ask the tool that deletes:
-> `for f in …; do node scripts/retire-module.mjs "$f" --dry; done`
+> `for f in …; do bsc ui retire "$f" --dry; done`
 
 | count | class | why a record cannot stand for it |
 |---|---|---|
