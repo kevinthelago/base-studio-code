@@ -105,9 +105,7 @@ impl Store {
     /// busy_timeout are enabled so the desktop app and the `bsc-plan` CLI can share the db
     /// concurrently without a SQLITE_BUSY race (matches `skilldb`, #1621).
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
-        let conn = bsc_sqlite_util::open_db(path)?;
-        schema::migrate(&conn)?;
-        Ok(Store { conn })
+        Ok(Store { conn: bsc_sqlite_util::open_migrated(path, schema::migrate)? })
     }
 
     /// Open an EXISTING plan.db **read-only, without migrating it**.
@@ -185,17 +183,15 @@ impl Store {
 
     /// An ephemeral in-memory store — for tests. WAL is moot in-memory; the busy_timeout is still set.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
-        let conn = bsc_sqlite_util::open_in_memory_db()?;
-        schema::migrate(&conn)?;
-        Ok(Store { conn })
+        Ok(Store { conn: bsc_sqlite_util::open_in_memory_migrated(schema::migrate)? })
     }
 
     /// Empty the whole plan store — every issue and feature (#plan-db). Backs the "clear plan"
     /// reset: without it the cleared file/store state would be re-populated from the DB on the next
-    /// poll. Truncates rather than dropping the file, so it works even with the db open (WAL).
+    /// poll. See [`bsc_sqlite_util::clear_tables`] for why it truncates — and note it truncates the
+    /// TABLES, never the file, which this comment used to say.
     pub fn clear(&self) -> rusqlite::Result<()> {
-        let stmt = schema::ALL_TABLES.iter().map(|t| format!("DELETE FROM {t};")).collect::<String>();
-        self.conn.execute_batch(&stmt)
+        bsc_sqlite_util::clear_tables(&self.conn, schema::ALL_TABLES)
     }
 
     // ── singleton-blob helpers (#1688) — the deploy/deps/fleet_meta/blueprint/ui tables each hold ONE

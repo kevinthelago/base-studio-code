@@ -134,22 +134,17 @@ impl Store {
     /// Open (creating + migrating) the runtime.db at `path`. WAL + busy_timeout so the app's flush and
     /// a session's read never collide.
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
-        let conn = bsc_sqlite_util::open_db(path)?;
-        schema::migrate(&conn)?;
-        Ok(Store { conn })
+        Ok(Store { conn: bsc_sqlite_util::open_migrated(path, schema::migrate)? })
     }
 
     /// An ephemeral in-memory store — for tests.
     pub fn open_in_memory() -> rusqlite::Result<Store> {
-        let conn = bsc_sqlite_util::open_in_memory_db()?;
-        schema::migrate(&conn)?;
-        Ok(Store { conn })
+        Ok(Store { conn: bsc_sqlite_util::open_in_memory_migrated(schema::migrate)? })
     }
 
-    /// Empty the store. Truncates rather than dropping, so it works with the db open (WAL).
+    /// Empty the store — see [`bsc_sqlite_util::clear_tables`] for why it truncates.
     pub fn clear(&self) -> rusqlite::Result<()> {
-        let stmt = schema::ALL_TABLES.iter().map(|t| format!("DELETE FROM {t};")).collect::<String>();
-        self.conn.execute_batch(&stmt)
+        bsc_sqlite_util::clear_tables(&self.conn, schema::ALL_TABLES)
     }
 
     /// Fold one observation into the store.
