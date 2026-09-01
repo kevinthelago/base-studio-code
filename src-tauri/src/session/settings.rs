@@ -177,12 +177,18 @@ pub(crate) fn ensure_session_settings(
         allow_tool_rules,
         deny_tool_rules,
     );
-    if !tools.deny_missing.is_empty() || !tools.allow_dropped.is_empty() {
+    if !tools.deny_missing.is_empty() || !tools.allow_missing.is_empty() {
+        // Two different statements, deliberately not symmetric. A missing DENY was added — an extra
+        // deny only tightens. A missing ALLOW is only REPORTED: an allow auto-approves, so adding one
+        // the frontend did not send would grant what is not granted. And nothing is dropped from the
+        // allow list any more — it legitimately carries the profile's grants and the restricted-role
+        // surface, which Rust does not derive (`the-tool-rule-intersect-drops-every-profile-and-restricted-allow`).
         log::warn!(
-            "session settings[{cwd}]: tool rules disagreed with the derivation — added {:?} to deny, \
-             dropped {:?} from allow. Both directions TIGHTEN; a disagreement means one side is wrong.",
+            "session settings[{cwd}]: tool rules disagreed with the derivation — ADDED {:?} to deny; \
+             the frontend omitted {:?} from allow, which is reported and NOT added. A disagreement \
+             means one side is wrong.",
             tools.deny_missing,
-            tools.allow_dropped,
+            tools.allow_missing,
         );
     }
     let allow_tool_rules = tools.allow;
@@ -848,9 +854,18 @@ mod tests {
 
     /// The TOOL-rule half, driven through the real command.
     ///
-    /// Denies union and allows intersect, and both tighten. A frontend that sent an allow the
-    /// derivation does not back must not get it — an `Edit(<glob>)` allow auto-approves writes to
-    /// that glob, so keeping it would GRANT what the role does not.
+    /// Denies UNION and are added; allows PASS THROUGH and are only reported against. This test
+    /// asserted the opposite — that an allow the derivation does not back "must NOT be granted" — and
+    /// that assertion encoded a live defect: the frontend's allow list carries the profile's grants
+    /// and the restricted-role surface as well as the role's own, so "not backed by the role" never
+    /// meant "should not be there". It was discarding a designer's `Read` and every profile path.
+    ///
+    /// The premise also overstated what an allow rule can do. `settings.json` is not the containment
+    /// boundary: `bsc-confine` is an always-on PreToolUse floor that refuses an out-of-root path and
+    /// fires under BOTH permission postures, so an `Edit(/etc/**)` rule does not let a session write
+    /// `/etc`. Rust can only intersect against a set it fully derives; once it derives the PROFILE
+    /// too (`the-launch-derives-the-profile-settings-instead-of-receiving-them`) a meaningful
+    /// intersect against role ∪ profile becomes possible.
     #[test]
     fn the_launch_derives_the_tool_rules_and_tightens_both_ways() {
         let _g = crate::testutil::ENV_LOCK.lock();
@@ -887,7 +902,12 @@ mod tests {
 
         let w = std::fs::read_to_string(cwd.join(".claude/settings.json")).expect("settings.json");
         assert!(w.contains("Edit(src/**)"), "the backed allow survives:\n{w}");
-        assert!(!w.contains("Edit(/etc/**)"), "the unbacked allow must NOT be granted:\n{w}");
+        // PASS-THROUGH: what the frontend sent is what is written. Dropping this was the regression.
+        assert!(
+            w.contains("Edit(/etc/**)"),
+            "an allow the ROLE does not derive still passes through — the list is not role-only, and \
+             out-of-root containment is `bsc-confine`, not this file:\n{w}"
+        );
         for derived in ["Task", "WebFetch", "WebSearch"] {
             assert!(w.contains(derived), "`{derived}` must be derived even though the frontend omitted it:\n{w}");
         }
