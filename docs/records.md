@@ -220,7 +220,6 @@ node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .t
 node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
 node scripts/retire-module.mjs <src-relative-path>
 node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
-node scripts/fix-stale-mocks.mjs                # see below
 node scripts/check-record-imports.mjs           # the RECORD half — `retire-module.mjs` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
@@ -292,7 +291,10 @@ Two things the emitter refuses, loudly rather than silently:
 
 - **`vi.mock("./x")` breaks silently.** A mock keys on the resolved module. While the file exists, a
   consumer's `@/a/b` and a test's `./b` are the same module; retire it and they stop agreeing, so the mock
-  stops applying and the test runs against the real module — still passing, just weaker.
+  stops applying and the test runs against the real module — still passing, just weaker. `retire-module.mjs`
+  rewrites `vi.mock`/`vi.doMock`/`vi.unmock` in the same pass as the import forms, so a retirement fixes its
+  own mocks and there is no separate step to remember. (The one-off sweep that cleaned up mocks retired
+  before that was true is gone — its backlog reached zero.)
 - **The deletion gate is the BUNDLE.** `typecheck`, `lint` and `vitest` all go green with a live worker
   entry deleted. Only `vite build` sees `new URL('./x.ts', import.meta.url)`.
 - **A module id comes from the FILE STEM.** `store/types/plan.ts` and `store/slices/plan.ts` collide, and
