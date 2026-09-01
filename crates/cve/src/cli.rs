@@ -64,23 +64,22 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { db: None, pretty: false, min_severity: Severity::High, positional: Vec::new() };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
+    let a = Args { db: None, pretty: false, min_severity: Severity::High, positional: Vec::new() };
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
+            "--db" => a.db = Some(v.value("--db needs a path")?),
             "--pretty" => a.pretty = true,
             "--json" => {} // output is always JSON; accepted so callers can be explicit
             "--min-severity" | "--fail-on" => {
-                let v = it.next().ok_or("--min-severity needs a value")?;
-                a.min_severity = Severity::parse(&v)
-                    .ok_or_else(|| format!("unknown severity '{v}' (expected unknown|low|medium|high|critical)"))?;
+                let sev = v.value("--min-severity needs a value")?;
+                a.min_severity = Severity::parse(&sev)
+                    .ok_or_else(|| format!("unknown severity '{sev}' (expected unknown|low|medium|high|critical)"))?;
             }
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

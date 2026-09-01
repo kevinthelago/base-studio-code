@@ -167,7 +167,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         json: false,
         pretty: false,
         db: None,
@@ -184,10 +184,10 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         limit: None,
         positional: Vec::new(),
     };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        let mut val = |flag: &str| -> Result<String, String> { it.next().ok_or_else(|| format!("flag {flag} needs a value")) };
-        match arg.as_str() {
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        // The refusal wording is the one this CLI already produced — `flag --db needs a value`.
+        let mut val = |f: &str| -> Result<String, String> { v.value(&format!("flag {f} needs a value")) };
+        match flag {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--open" => a.open = true,
@@ -202,11 +202,11 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--from" => a.from = Some(val("--from")?),
             "--title" => a.title = Some(val("--title")?),
             "--limit" => a.limit = Some(val("--limit")?.parse().map_err(|_| "--limit needs an integer")?),
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

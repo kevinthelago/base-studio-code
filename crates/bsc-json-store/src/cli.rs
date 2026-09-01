@@ -83,22 +83,20 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { dir: None, pretty: false, full: false, graph: false, raw: false, file: None, positional: Vec::new() };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
+    let a = Args { dir: None, pretty: false, full: false, graph: false, raw: false, file: None, positional: Vec::new() };
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
+            "--dir" => a.dir = Some(v.value("--dir needs a path")?),
             "--pretty" => a.pretty = true,
             "--full" => a.full = true,
             "--graph" => a.graph = true,
             "--raw" => a.raw = true,
-            "--file" => a.file = Some(it.next().ok_or("--file needs a bare filename in $BSC_SCRATCH")?),
-            // `-h`/`--help` route to the help command (anywhere on the line).
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            "--file" => a.file = Some(v.value("--file needs a bare filename in $BSC_SCRATCH")?),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

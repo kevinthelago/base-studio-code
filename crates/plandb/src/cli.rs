@@ -715,7 +715,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         prog: String::new(), json: false, db: None, project: None, positional: Vec::new(), status: None, stream: None,
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
@@ -723,53 +723,51 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         since: None, pretty: false, force: false, clear: false, kind: None,
         dir: None, release: false,
     };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
             "--json" => a.json = true,
-            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
-            "--project" => a.project = Some(it.next().ok_or("--project needs a project key")?),
-            "--status" => a.status = Some(it.next().ok_or("--status needs a value")?),
-            "--stream" => a.stream = Some(it.next().ok_or("--stream needs a value")?),
-            "--rule" => a.rule = Some(it.next().ok_or("--rule needs a value")?),
-            "--cause" => a.cause = Some(it.next().ok_or("--cause needs a value")?),
-            "--from" => a.from = Some(it.next().ok_or("--from needs a value")?),
-            "--stage" => a.stage = Some(it.next().ok_or("--stage needs a value")?),
-            "--clause" => a.clause = Some(it.next().ok_or("--clause needs a value")?),
-            "--why" => a.why = Some(it.next().ok_or("--why needs a value")?),
-            "--note" => a.note = Some(it.next().ok_or("--note needs a value")?),
-            "--ref" => a.brief_ref = Some(it.next().ok_or("--ref needs a value")?),
-            "--to" => a.to = Some(it.next().ok_or("--to needs a value")?),
-            "--command" => a.command = Some(it.next().ok_or("--command needs a value")?),
-            "--mode" => a.mode = Some(it.next().ok_or("--mode needs a value")?),
-            "--direction" => a.direction = Some(it.next().ok_or("--direction needs a value")?),
-            "--path" => a.path = Some(it.next().ok_or("--path needs a value")?),
-            "--schedule" => a.schedule = Some(it.next().ok_or("--schedule needs a value")?),
-            "--description" => a.description = Some(it.next().ok_or("--description needs a value")?),
+            "--db" => a.db = Some(v.value("--db needs a path")?),
+            "--project" => a.project = Some(v.value("--project needs a project key")?),
+            "--status" => a.status = Some(v.value("--status needs a value")?),
+            "--stream" => a.stream = Some(v.value("--stream needs a value")?),
+            "--rule" => a.rule = Some(v.value("--rule needs a value")?),
+            "--cause" => a.cause = Some(v.value("--cause needs a value")?),
+            "--from" => a.from = Some(v.value("--from needs a value")?),
+            "--stage" => a.stage = Some(v.value("--stage needs a value")?),
+            "--clause" => a.clause = Some(v.value("--clause needs a value")?),
+            "--why" => a.why = Some(v.value("--why needs a value")?),
+            "--note" => a.note = Some(v.value("--note needs a value")?),
+            "--ref" => a.brief_ref = Some(v.value("--ref needs a value")?),
+            "--to" => a.to = Some(v.value("--to needs a value")?),
+            "--command" => a.command = Some(v.value("--command needs a value")?),
+            "--mode" => a.mode = Some(v.value("--mode needs a value")?),
+            "--direction" => a.direction = Some(v.value("--direction needs a value")?),
+            "--path" => a.path = Some(v.value("--path needs a value")?),
+            "--schedule" => a.schedule = Some(v.value("--schedule needs a value")?),
+            "--description" => a.description = Some(v.value("--description needs a value")?),
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
             "--force" | "--no-validate" => a.force = true,
             // `--clear` removes an optional field rather than setting it — the counterpart every
             // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).
             "--clear" => a.clear = true,
-            "--kind" => a.kind = Some(it.next().ok_or("--kind needs a value")?),
-            "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
+            "--kind" => a.kind = Some(v.value("--kind needs a value")?),
+            "--dir" => a.dir = Some(v.value("--dir needs a path")?),
             "--release" => a.release = true,
-            "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
+            "--fields" => a.fields = Some(v.value("--fields needs a comma-separated list")?),
             "--limit" => {
-                let v = it.next().ok_or("--limit needs a number")?;
-                a.limit = Some(v.parse().map_err(|_| format!("--limit: '{v}' is not a number"))?);
+                let raw = v.value("--limit needs a number")?;
+                a.limit = Some(raw.parse().map_err(|_| format!("--limit: '{raw}' is not a number"))?);
             }
             "--since" => {
-                let v = it.next().ok_or("--since needs an epoch-seconds value")?;
-                a.since = Some(v.parse().map_err(|_| format!("--since: '{v}' is not an integer"))?);
+                let raw = v.value("--since needs an epoch-seconds value")?;
+                a.since = Some(raw.parse().map_err(|_| format!("--since: '{raw}' is not an integer"))?);
             }
-            // `-h`/`--help` route to the help command (handled in run()).
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     // `--project <key>` becomes the resolved path, so every handler keeps reading one field. Only when
     // `--db` was NOT given: a path the caller wrote out is the most explicit thing on the line, and it
     // wins. Doing this here rather than in `resolve_db` is what keeps the ~3 `open_store` call sites —

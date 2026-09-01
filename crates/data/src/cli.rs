@@ -176,7 +176,7 @@ struct Args {
 const DEFAULT_ROW_LIMIT: usize = 20;
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args {
+    let a = Args {
         db: None,
         refined: false,
         json: false,
@@ -189,35 +189,32 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         source: None,
         positional: Vec::new(),
     };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--db" => a.db = Some(it.next().ok_or("--db needs a path")?),
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        match flag {
+            "--db" => a.db = Some(v.value("--db needs a path")?),
             "--refined" => a.refined = true,
             "--json" => a.json = true,
             "--pretty" => {
                 a.json = true;
                 a.pretty = true;
             }
-            "--base-url" => a.base_url = Some(it.next().ok_or("--base-url needs a url")?),
-            "--openapi" => a.openapi = Some(it.next().ok_or("--openapi needs a url")?),
-            "--path" => a.path = Some(it.next().ok_or("--path needs a value")?),
-            "--project" => a.project = Some(it.next().ok_or("--project needs a value")?),
-            "--source" => a.source = Some(it.next().ok_or("--source needs a value")?),
+            "--base-url" => a.base_url = Some(v.value("--base-url needs a url")?),
+            "--openapi" => a.openapi = Some(v.value("--openapi needs a url")?),
+            "--path" => a.path = Some(v.value("--path needs a value")?),
+            "--project" => a.project = Some(v.value("--project needs a value")?),
+            "--source" => a.source = Some(v.value("--source needs a value")?),
             "--limit" => {
                 a.limit = Some(
-                    it.next()
-                        .ok_or("--limit needs a number")?
+                    v.value("--limit needs a number")?
                         .parse()
                         .map_err(|_| "--limit needs a number")?,
                 );
             }
-            // `-h`/`--help` route to the help command (handled in run()).
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 

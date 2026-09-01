@@ -347,21 +347,21 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { json: false, since: None, at: None, surface: None, log: None, positional: Vec::new() };
-    let mut it = raw.into_iter();
-    while let Some(arg) = it.next() {
-        let mut take = |f: &str| it.next().ok_or_else(|| format!("{f} needs a value"));
-        match arg.as_str() {
+    let a = Args { json: false, since: None, at: None, surface: None, log: None, positional: Vec::new() };
+    let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
+        // The refusal wording is the one this CLI already produced — `--since needs a value`.
+        let mut take = |f: &str| v.value(&format!("{f} needs a value"));
+        match flag {
             "--json" => a.json = true,
-            "-h" | "--help" => a.positional.insert(0, "help".into()),
             "--since" => a.since = Some(parse_hms(&take("--since")?)?),
             "--at" => a.at = Some(parse_hms(&take("--at")?)?),
             "--surface" => a.surface = Some(take("--surface")?),
             "--log" => a.log = Some(PathBuf::from(take("--log")?)),
-            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            _ => a.positional.push(arg),
+            _ => return Ok(false),
         }
-    }
+        Ok(true)
+    })?;
+    a.positional = positional;
     Ok(a)
 }
 
