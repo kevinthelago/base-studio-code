@@ -653,7 +653,11 @@ pub(crate) async fn pty_create(
     env: Option<std::collections::HashMap<String, String>>,
     startup_prompt: Option<String>,
     continue_session: Option<bool>,
-    startup_prompt_fresh_only: Option<bool>,
+    // THE TWO FACTS the fresh-only rule is computed FROM, replacing the computed flag the renderer
+    // used to send (`the-launch-derives-its-own-fresh-only-instead-of-receiving-it`). Only the
+    // renderer knows either one; the RULE over them now lives in `session::fresh_only`.
+    restore_requested: Option<bool>,
+    startup_prompt_is_errand: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     provider_id: Option<String>,
@@ -668,12 +672,36 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, startup_prompt_fresh_only, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
     .await
     .map_err(|e| format!("pty_create task failed: {e}"))?
+}
+
+/// The launch's fresh-only decision, DERIVED from the two raw command arguments.
+///
+/// The renderer used to send this answer as `startup_prompt_fresh_only`; it now sends the two facts
+/// only it can know and the rule lives in [`crate::session::fresh_only`] — the manual-console
+/// exemption, the studio registry (read from `bsc_session::SYSTEM_SESSIONS`, not from the renderer),
+/// and the errand carve-out that used to be a ternary in `TerminalView` where no reader of the
+/// resolver could see it.
+///
+/// It is a named function rather than an inline call so the ARGUMENT HANDLING is testable: both
+/// `None`s must mean `false`, which is what reproduces the old behaviour for a caller that sends
+/// neither, and getting that backwards would suppress every launch's prompt — the failure this whole
+/// rule exists to avoid.
+fn launch_fresh_only(
+    pane_id: &str,
+    restore_requested: Option<bool>,
+    startup_prompt_is_errand: Option<bool>,
+) -> bool {
+    crate::session::fresh_only::fresh_only_for_launch(
+        pane_id,
+        restore_requested.unwrap_or(false),
+        startup_prompt_is_errand.unwrap_or(false),
+    )
 }
 
 /// The real work, off the command pool (#3989). Blocking by nature: it opens a PTY, spawns a shell,
@@ -691,8 +719,15 @@ fn pty_create_inner(
     continue_session: Option<bool>,
     // A FRESH-ONLY startup prompt (#1240): deliver `startup_prompt` only when there's no prior
     // conversation for this cwd; on a resume, drop it and fall through to `init_cmd` so a returning
-    // user isn't re-greeted. None/false ⇒ the prompt always fires (triage/fleet behavior).
-    startup_prompt_fresh_only: Option<bool>,
+    // user isn't re-greeted. The FLAG is no longer received — these two facts are, and
+    // `session::fresh_only::fresh_only_for_launch` derives it below.
+    //
+    // `restore_requested`: this launch is the crash-recovery relaunch for this pane.
+    // `startup_prompt_is_errand`: the prompt was handed to this launch rather than seeded from the
+    // pane's own identity — an errand, which is never suppressed. Both default to false, which
+    // reproduces the old `None ⇒ false` behaviour for a caller that sends neither.
+    restore_requested: Option<bool>,
+    startup_prompt_is_errand: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -1056,7 +1091,7 @@ fn pty_create_inner(
         init_cmd.as_deref(),
         has_history,
         continue_session.unwrap_or(false),
-        startup_prompt_fresh_only.unwrap_or(false),
+        launch_fresh_only(&pane_id, restore_requested, startup_prompt_is_errand),
     );
     // #2396: make the resume decision visible — an "always fresh" regression (a caller dropping the
     // resume init/flag) shows up in the logs as `resumed=false` right next to `has_history=true`.
@@ -1737,6 +1772,57 @@ mod tests {
     // the two `pty_create` orchestration helpers extracted in #2167: `resolve_session_cwd` (cwd
     // resolution) and `build_session_init_line` (sandbox/shell-kind init-line dispatch).
     use std::collections::HashMap;
+
+    /// THE CALL SITE, not the rule. `session::fresh_only`'s own tests all stay green if `pty_create`
+    /// goes back to trusting a flag from the renderer — they call the rule directly. This drives the
+    /// argument handling the launch actually performs, and composes it through `plan_launch` so the
+    /// assertion is about the OBSERVABLE consequence (is the prompt suppressed) rather than a bool.
+    #[test]
+    fn the_launch_derives_fresh_only_from_the_facts_it_is_given() {
+        use super::launch::{plan_launch, LaunchPlan};
+        const INIT: &str = "claude --continue || claude";
+        // Composed exactly as `pty_create_inner` does: derive, then plan. `has_history` is true
+        // throughout because that is the case where the decision is load-bearing — a studio's pane id
+        // is stable, so it always has history, which is why a wrong answer here suppressed EVERY
+        // errand that ever reached the backend.
+        let plan = |pane: &str, restore: Option<bool>, errand: Option<bool>| {
+            plan_launch(
+                Some("kickoff"),
+                Some(INIT),
+                true,
+                false,
+                super::launch_fresh_only(pane, restore, errand),
+            )
+        };
+
+        // A registered studio, no errand: fresh-only, so the kickoff is suppressed and it resumes.
+        assert_eq!(
+            plan("teams-studio:architect", None, None),
+            LaunchPlan::Init(INIT.to_string()),
+            "a studio resuming must not be re-greeted"
+        );
+        // The SAME pane with an errand: the errand is the only thing telling this launch what it was
+        // woken to do, so it is delivered.
+        assert_eq!(
+            plan("teams-studio:architect", None, Some(true)),
+            LaunchPlan::Prompt { resume: false },
+            "an errand must reach a studio that always has history"
+        );
+        // A per-request debug session resumes nothing — its charter must arrive. This is the bug the
+        // registry-membership rule exists for, driven through the launch rather than the predicate.
+        assert_eq!(
+            plan("debug-studio:req-4212", None, None),
+            LaunchPlan::Prompt { resume: false },
+            "a per-request debug session must receive its charter"
+        );
+        // …while the standing debugger, which does resume, is not re-greeted.
+        assert_eq!(plan("debug-studio:debugger", None, None), LaunchPlan::Init(INIT.to_string()));
+        // A crash-restore remount suppresses on any pane.
+        assert_eq!(plan("proj:stream", Some(true), None), LaunchPlan::Init(INIT.to_string()));
+        // BOTH `None`s mean false. A caller that sends neither fact gets the old ordinary-launch
+        // behaviour: the prompt fires. Defaulting either to `true` would suppress every launch.
+        assert_eq!(plan("proj:stream", None, None), LaunchPlan::Prompt { resume: false });
+    }
 
     #[test]
     fn resolve_session_cwd_empty_flags_empty_and_not_missing() {
