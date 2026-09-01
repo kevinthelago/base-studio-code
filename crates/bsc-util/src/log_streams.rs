@@ -65,6 +65,18 @@ pub const LOG_STREAMS: &[LogStream] = &[
     // pan) the touched node and re-hydrate its content. `_LOG`-suffixed env var (registry invariant)
     // even though the helper documents it as the activity stream.
     LogStream { key: "ui", env_var: "BSC_UI_ACTIVITY_LOG", filename: "ui-activity.log", reader_stream: true },
+    // Migration divergence (a-migrations-divergence-is-warned-once-and-never-counted): during a
+    // cutover Rust DERIVES a policy the frontend also computes, and the two are reconciled by union;
+    // when they disagree `bsc_util::emit_divergence` appends one
+    // `ts·pane·surface·derived_only·caller_only` line. Written by the APP, like `automation` — a
+    // reconciliation happens inside a Rust command, with no session shell to run an emitter in.
+    //
+    // IT EXISTS SO THE RECORD SURVIVES THE ROTATING APP LOG. The epic's last step is "delete the
+    // TypeScript once the disagreement log has been empty in the field", and a `log::warn!` in a
+    // rotating file cannot answer that: an absence of hits is indistinguishable from a rotation that
+    // dropped them. `bsc logs divergence` reads this stream, and reports an ABSENT file as unknown
+    // rather than as zero.
+    LogStream { key: "divergence", env_var: "BSC_DIVERGENCE_LOG", filename: "divergence.log", reader_stream: true },
     // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook appends one
     // `ts·pane·session_id·transcript_path` line; `read_token_usage` parses + prices the transcript.
     // Read via the separate cost path (`crates/logs::cost`), so NOT a unified reader stream.
@@ -113,6 +125,10 @@ mod tests {
                 ("coord", "coord.log"),
                 ("perm", "perm.log"),
                 ("ui", "ui-activity.log"),
+                // a-migrations-divergence-is-warned-once-and-never-counted. Added deliberately: this
+                // list is a SNAPSHOT, so a new reader stream is meant to fail here once and be
+                // recorded, rather than appear silently.
+                ("divergence", "divergence.log"),
             ],
         );
         // The token/cost stream is staged + written but read via the cost path, so it's excluded.

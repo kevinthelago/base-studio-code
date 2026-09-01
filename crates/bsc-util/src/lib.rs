@@ -44,7 +44,9 @@ pub const SELF_PROJECT_KEY: &str = "studio-code";
 
 /// The canonical observability log-stream registry (#1847) — ONE list shared by the app's env
 /// staging (`wire_bsc_env`) and the unified `bsc-logs` reader (`crates/logs`).
+pub mod divergence;
 pub mod log_streams;
+pub use divergence::{divergence_line, emit_divergence, emit_divergence_to, DIVERGENCE_ENV};
 pub use log_streams::{LogStream, LOG_STREAMS};
 
 /// The canonical model-tier registry — ONE list shared by the app's launch path
@@ -256,7 +258,7 @@ fn emit_ui_line(kind: &str, collection: &str, id: &str, kit: &str) {
 }
 
 /// Append `line` to `path`, creating the parent dir if needed. Best-effort (errors ignored).
-fn append_line(path: &std::path::Path, line: &str) {
+pub(crate) fn append_line(path: &std::path::Path, line: &str) {
     use std::io::Write;
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
