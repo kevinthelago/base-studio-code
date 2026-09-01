@@ -26,15 +26,22 @@
 //! would make an empty doc *look* sufficient and invite a future edit to treat this as the floor.
 //! `the_catastrophic_floor_is_not_rendered_here` asserts its absence.
 //!
-//! # A known asymmetry this module REPRODUCES rather than fixes
+//! # An asymmetry this module used to reproduce, and no longer does
 //!
-//! The surface complement is absent. `role_denied_commands` takes the catalog of deniable `bsc`
-//! surfaces and denies every one the role did not declare; the Claude path passes the real catalog,
-//! while the TypeScript this is ported from calls its equivalent with the argument DEFAULTED to empty.
-//! Measured, a `designer` is denied `bsc plan`, `bsc skill`, `bsc graph` and `bsc org` on Claude and
-//! none of them here. That is reproduced deliberately for parity and filed as
-//! `a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`; fixing it here alone would put
-//! the two harnesses back out of step in the other direction.
+//! The surface complement used to be ABSENT. `role_denied_commands` takes the catalog of deniable
+//! `bsc` surfaces and denies every one the role did not declare; the Claude path passed the real
+//! catalog, while the TypeScript this is ported from called its equivalent with the argument
+//! DEFAULTED to empty. Measured, a `designer` was denied `bsc plan`, `bsc skill`, `bsc graph` and
+//! `bsc org` on Claude and none of them here.
+//!
+//! Both sides take the catalog now (`a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`).
+//! It was fixed on BOTH rather than here alone, which is what would have put the two harnesses out of
+//! step in the other direction; the fixture was regenerated from the corrected TypeScript, so parity
+//! still means what it says.
+//!
+//! An EMPTY catalog still denies nothing extra, and that is the fail-open the launch depends on: the
+//! catalog is read from a subprocess, so "unavailable" and "no surfaces exist" cannot be told apart,
+//! and a launch that raced the read must not lose its whole CLI.
 
 use super::role_gate::{has_scoped_write_carve_out, role_denied_commands, RoleCapability, Tier};
 
@@ -63,16 +70,21 @@ const WRITE_TOOLS: &[&str] = &["write_file", "edit_file"];
 ///
 /// `granted` are the flow's push commands ([`super::denies::flow_granted_push_commands`]); `role_denied_commands`
 /// is called with an EMPTY surface catalog, reproducing the source — see the module docs.
-pub fn bsc_agent_perms(
-    cap: Option<&RoleCapability>,
-    granted: &[String],
-    extra_deny_bash: &[String],
-) -> BscAgentPerms {
+pub fn bsc_agent_perms(cap: Option<&RoleCapability>, granted: &[String], extra_deny_bash: &[String], deniable_surfaces: &[String]) -> BscAgentPerms {
     let carve_out = cap.map(has_scoped_write_carve_out).unwrap_or(false);
 
     let mut deny_bash: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    let role_denies = cap.map(|c| role_denied_commands(c, &[])).unwrap_or_default();
+    // THE SURFACE COMPLEMENT, which this used to omit by passing an empty catalog
+    // (`a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`). An empty catalog denies
+    // NOTHING extra, so a persona's undeclared `bsc` surfaces stayed reachable here while the same
+    // role on Claude had them denied — measured, a designer kept `bsc plan`, `bsc skill`, `bsc graph`
+    // and `bsc org`.
+    //
+    // Empty is still the FAIL-OPEN the launch relies on: the catalog is read from a subprocess, so
+    // "unavailable" and "no surfaces exist" are indistinguishable, and complementing against nothing
+    // denies nothing rather than bricking the session.
+    let role_denies = cap.map(|c| role_denied_commands(c, deniable_surfaces)).unwrap_or_default();
     for d in role_denies.into_iter().filter(|d| !granted.contains(d)) {
         // The `seen` set exists for the CROSS-SOURCE dedupe below, not for this loop:
         // `role_denied_commands` already returns a de-duplicated list, so the guard here changes no
@@ -154,6 +166,7 @@ pub fn reconcile_agent_perms(
     cap: Option<&RoleCapability>,
     granted: &[String],
     user_denies: &[String],
+    deniable_surfaces: &[String],
 ) -> Result<AgentPermsOutcome, String> {
     if !provider_is_bsc_agent {
         return Ok(AgentPermsOutcome::NotApplicable);
@@ -172,7 +185,8 @@ pub fn reconcile_agent_perms(
             _ => Ok(AgentPermsOutcome::NotApplicable),
         };
     };
-    let doc = serde_json::to_string(&bsc_agent_perms(Some(cap), granted, user_denies))
+    let doc =
+        serde_json::to_string(&bsc_agent_perms(Some(cap), granted, user_denies, deniable_surfaces))
         .map_err(|e| format!("could not render $BSC_AGENT_PERMS: {e}"))?;
     let differed = sent.as_deref().is_some_and(|s| s != doc);
     env.insert("BSC_AGENT_PERMS".to_string(), doc);
@@ -205,12 +219,12 @@ mod tests {
     #[test]
     fn the_carve_out_branch_denies_the_write_tools_or_scopes_them_but_never_neither() {
         let triage = cap_for("triage", Tier::None, vec![]);
-        let p = bsc_agent_perms(Some(&triage), &[], &[]);
+        let p = bsc_agent_perms(Some(&triage), &[], &[], &[]);
         assert_eq!(p.deny_tools, vec!["write_file", "edit_file"], "no globs ⇒ deny the tools outright");
         assert!(p.write_globs.is_empty());
 
         let designer = cap_for("designer", Tier::None, vec!["scratch/**".into()]);
-        let p = bsc_agent_perms(Some(&designer), &[], &[]);
+        let p = bsc_agent_perms(Some(&designer), &[], &[], &[]);
         assert!(p.deny_tools.is_empty(), "a carve-out role KEEPS its write tools");
         assert_eq!(p.write_globs, vec!["scratch/**"], "…scoped to its lane");
         // The pair is the point: an EMPTY glob list means no restriction in the runtime, so a
@@ -236,6 +250,7 @@ mod tests {
             Some(&worker),
             &[],
             &["curl".to_string(), "  ".to_string(), " nc ".to_string()],
+            &[],
         )
         .unwrap();
         let doc: BscAgentPerms = serde_json::from_str(env.get("BSC_AGENT_PERMS").unwrap()).unwrap();
@@ -258,7 +273,7 @@ mod tests {
         // The Claude path.
         let claude = crate::session::denies::session_denied_commands(&user, Some(&worker), &[], None, &[]);
         // The bsc-agent path.
-        let agent = bsc_agent_perms(Some(&worker), &[], &user);
+        let agent = bsc_agent_perms(Some(&worker), &[], &user, &[]);
 
         for u in &user {
             assert!(claude.contains(u), "the Claude path must deny `{u}`: {claude:?}");
@@ -273,7 +288,7 @@ mod tests {
     #[test]
     fn the_user_list_does_not_drag_the_catastrophic_floor_in_with_it() {
         let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
-        let doc = bsc_agent_perms(Some(&worker), &[], &["curl".to_string()]);
+        let doc = bsc_agent_perms(Some(&worker), &[], &["curl".to_string()], &[]);
         for floor in ["sudo", "rm -rf /", "mkfs"] {
             assert!(
                 !doc.deny_bash.iter().any(|d| d == floor),
@@ -288,7 +303,7 @@ mod tests {
     fn the_launch_renders_the_document_and_installs_it() {
         let designer = cap_for("designer", Tier::None, vec!["scratch/**".into()]);
         let mut env = std::collections::HashMap::new();
-        let out = reconcile_agent_perms(&mut env, true, Some(&designer), &[], &[]).unwrap();
+        let out = reconcile_agent_perms(&mut env, true, Some(&designer), &[], &[], &[]).unwrap();
         assert_eq!(out, AgentPermsOutcome::Rendered { differed: false });
         let doc: BscAgentPerms = serde_json::from_str(env.get("BSC_AGENT_PERMS").unwrap()).unwrap();
         assert_eq!(doc.write_globs, vec!["scratch/**"]);
@@ -303,13 +318,13 @@ mod tests {
             "BSC_AGENT_PERMS".to_string(),
             r#"{"deny_tools":[],"deny_bash":[],"write_globs":[]}"#.to_string(),
         )]);
-        let err = reconcile_agent_perms(&mut env, true, None, &[], &[]).unwrap_err();
+        let err = reconcile_agent_perms(&mut env, true, None, &[], &[], &[]).unwrap_err();
         assert!(err.contains("Refusing"), "the refusal must say what it is refusing and why: {err}");
         // …and a genuinely role-less console with no document is NOT refused: it is the permissive
         // ad-hoc case, and refusing it would break every bare bsc-agent shell.
         let mut bare = std::collections::HashMap::new();
         assert_eq!(
-            reconcile_agent_perms(&mut bare, true, None, &[], &[]).unwrap(),
+            reconcile_agent_perms(&mut bare, true, None, &[], &[], &[]).unwrap(),
             AgentPermsOutcome::NotApplicable
         );
         assert!(!bare.contains_key("BSC_AGENT_PERMS"));
@@ -322,7 +337,7 @@ mod tests {
         let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
         let mut env = std::collections::HashMap::new();
         assert_eq!(
-            reconcile_agent_perms(&mut env, false, Some(&worker), &[], &[]).unwrap(),
+            reconcile_agent_perms(&mut env, false, Some(&worker), &[], &[], &[]).unwrap(),
             AgentPermsOutcome::NotApplicable
         );
         assert!(env.is_empty());
@@ -334,9 +349,9 @@ mod tests {
     fn the_flow_lifts_its_two_pushes_from_the_role_denies_and_no_more() {
         let worker = cap_for("worker", Tier::Write, vec!["src/**".into()]);
         let granted = vec!["git push".to_string(), "gh pr create".to_string()];
-        let with = bsc_agent_perms(Some(&worker), &granted, &[]);
+        let with = bsc_agent_perms(Some(&worker), &granted, &[], &[]);
         assert!(!with.deny_bash.iter().any(|d| d == "gh pr create"), "an auto-pr worker opens its PR");
-        let without = bsc_agent_perms(Some(&worker), &[], &[]);
+        let without = bsc_agent_perms(Some(&worker), &[], &[], &[]);
         assert!(without.deny_bash.iter().any(|d| d == "gh pr create"), "…and only because of the flow");
         // Everything else the role denies is untouched by the grant.
         assert!(with.deny_bash.iter().any(|d| d == "gh pr merge"));
@@ -397,7 +412,9 @@ mod tests {
                 with_globs += 1;
             }
 
-            let got = bsc_agent_perms(cap.as_ref(), &strings(&case["granted"]), &strings(&case["extraDenyBash"]));
+            let got = bsc_agent_perms(cap.as_ref(), &strings(&case["granted"]), &strings(&case["extraDenyBash"]), // DRIVEN FROM THE FIXTURE, not assumed empty — assuming empty is exactly what hid the
+                // missing surface complement for as long as it was missing.
+                &strings(&case["activeSurfaces"]));
             if got != want {
                 mismatches.push(format!("  {label}\n    ts   {want:?}\n    rust {got:?}"));
             }
@@ -432,7 +449,7 @@ mod tests {
             .expect("the consumer's permissions record is missing from the graph store");
         let src = record["code"].as_str().unwrap();
 
-        let rendered = serde_json::to_value(bsc_agent_perms(None, &[], &["curl".to_string()])).unwrap();
+        let rendered = serde_json::to_value(bsc_agent_perms(None, &[], &["curl".to_string()], &[])).unwrap();
         for key in rendered.as_object().unwrap().keys() {
             assert!(
                 src.contains(&format!("pub {key}:")),
@@ -474,9 +491,9 @@ mod tests {
     /// A role-less console renders ONLY the user's denylist — it must not accidentally restrict.
     #[test]
     fn a_roleless_console_renders_only_the_user_denylist() {
-        let bare = bsc_agent_perms(None, &[], &[]);
+        let bare = bsc_agent_perms(None, &[], &[], &[]);
         assert_eq!(bare, BscAgentPerms { deny_tools: vec![], deny_bash: vec![], write_globs: vec![] });
-        let with_user = bsc_agent_perms(None, &[], &["curl".to_string(), "  wget  ".to_string()]);
+        let with_user = bsc_agent_perms(None, &[], &["curl".to_string(), "  wget  ".to_string()], &[]);
         assert_eq!(with_user.deny_bash, vec!["curl", "wget"], "trimmed");
         assert!(with_user.deny_tools.is_empty(), "no capability must never deny the write tools");
     }
@@ -484,18 +501,18 @@ mod tests {
     /// A blank denylist entry must never become a substring that matches every command.
     #[test]
     fn blank_user_denylist_entries_are_dropped_not_rendered() {
-        let p = bsc_agent_perms(None, &[], &["".into(), "   ".into(), "\t\n".into(), "curl".into()]);
+        let p = bsc_agent_perms(None, &[], &["".into(), "   ".into(), "\t\n".into(), "curl".into()], &[]);
         assert_eq!(p.deny_bash, vec!["curl"], "a blank substring would deny EVERYTHING");
     }
 
     /// `code: none` denies the write tools; a carve-out role is `code: none` and keeps them, scoped.
     #[test]
     fn the_carve_out_keeps_its_write_tools_while_a_plain_restricted_role_loses_them() {
-        let plain = bsc_agent_perms(Some(&cap("triage", "none", &[])), &[], &[]);
+        let plain = bsc_agent_perms(Some(&cap("triage", "none", &[])), &[], &[], &[]);
         assert_eq!(plain.deny_tools, vec!["write_file", "edit_file"]);
         assert!(plain.write_globs.is_empty(), "an empty glob list means NO restriction in the runtime");
 
-        let carve = bsc_agent_perms(Some(&cap("designer", "none", &["scratch/**"])), &[], &[]);
+        let carve = bsc_agent_perms(Some(&cap("designer", "none", &["scratch/**"])), &[], &[], &[]);
         assert!(carve.deny_tools.is_empty(), "a carve-out role keeps its write tools");
         assert_eq!(carve.write_globs, vec!["scratch/**"], "scoped by its globs instead");
     }
@@ -504,7 +521,7 @@ mod tests {
     /// rule the write-scope env enforces.
     #[test]
     fn globs_given_to_a_non_carve_out_restricted_role_grant_nothing() {
-        let p = bsc_agent_perms(Some(&cap("triage", "none", &["src/**"])), &[], &[]);
+        let p = bsc_agent_perms(Some(&cap("triage", "none", &["src/**"])), &[], &[], &[]);
         assert!(p.write_globs.is_empty(), "supplying a scope must narrow, never widen");
         assert_eq!(p.deny_tools, vec!["write_file", "edit_file"]);
     }
@@ -513,33 +530,60 @@ mod tests {
     #[test]
     fn a_user_deny_duplicating_a_role_deny_appears_once() {
         let c = cap("worker", "write", &[]);
-        let role_only = bsc_agent_perms(Some(&c), &[], &[]);
+        let role_only = bsc_agent_perms(Some(&c), &[], &[], &[]);
         let dup = role_only.deny_bash.first().cloned().expect("a worker denies something");
-        let with_dup = bsc_agent_perms(Some(&c), &[], std::slice::from_ref(&dup));
+        let with_dup = bsc_agent_perms(Some(&c), &[], std::slice::from_ref(&dup), &[]);
         assert_eq!(with_dup.deny_bash.len(), role_only.deny_bash.len(), "{dup:?} was rendered twice");
     }
 
-    /// The documented asymmetry, pinned so it cannot change unnoticed: this rendering passes an EMPTY
-    /// surface catalog, so no `bsc <surface>` complement denies appear. Filed as
-    /// `a-bsc-agent-session-is-denied-less-than-the-same-role-on-claude`; this test is what will go red
-    /// when that item fixes it, which is the point of writing it down rather than leaving it implicit.
+    /// THE COMPLEMENT IS PRESENT NOW, and this is the test that replaced the one predicting its
+    /// arrival. The old test asserted the absence and said "this is what will go red when that item
+    /// fixes it". It did not go red: the fix threaded the catalog through as a PARAMETER rather than
+    /// changing what the function does for the arguments that test passed, so a canary written
+    /// against a defaulted argument sat green through its own repair.
     #[test]
-    fn the_surface_complement_is_absent_reproducing_the_typescript() {
-        let c: RoleCapability = serde_json::from_value(serde_json::json!({
+    fn a_real_catalog_denies_every_surface_the_role_did_not_declare() {
+        let designer: RoleCapability = serde_json::from_value(serde_json::json!({
             "role": "designer", "git": "none", "github": "none", "net": "none", "code": "none",
             "writeGlobs": ["scratch/**"], "ui": "write", "surfaces": ["ui"]
         }))
         .unwrap();
-        let rendered = bsc_agent_perms(Some(&c), &[], &[]);
-        // With a real catalog the role gate WOULD deny the undeclared surfaces; here it denies none.
-        let with_catalog = role_denied_commands(&c, &["plan".to_string(), "skill".to_string()]);
+        let catalog = ["plan".to_string(), "skill".to_string(), "ui".to_string()];
+        let rendered = bsc_agent_perms(Some(&designer), &[], &[], &catalog);
+
+        for undeclared in ["bsc plan", "bsc skill"] {
+            assert!(
+                rendered.deny_bash.iter().any(|d| d == undeclared),
+                "an undeclared surface must be denied here as it is on Claude: {:?}",
+                rendered.deny_bash
+            );
+        }
+        // …and the one it DECLARED is not, which is what makes this a complement rather than a
+        // blanket deny — a designer that could not run `bsc ui` could not do its job at all.
         assert!(
-            with_catalog.contains(&"bsc plan".to_string()),
-            "the role gate does produce a surface complement when given a catalog"
+            !rendered.deny_bash.iter().any(|d| d == "bsc ui"),
+            "the declared surface stays reachable: {:?}",
+            rendered.deny_bash
         );
+    }
+
+    /// THE FAIL-OPEN, which survives the fix and is the half most easily lost with it. The catalog is
+    /// read from a subprocess, so "unavailable" and "no surfaces exist" cannot be told apart — and
+    /// complementing against nothing must deny nothing, or a launch that raced the read loses its
+    /// whole CLI.
+    #[test]
+    fn an_empty_catalog_still_denies_no_surface() {
+        let designer: RoleCapability = serde_json::from_value(serde_json::json!({
+            "role": "designer", "git": "none", "github": "none", "net": "none", "code": "none",
+            "writeGlobs": ["scratch/**"], "ui": "write", "surfaces": ["ui"]
+        }))
+        .unwrap();
+        let rendered = bsc_agent_perms(Some(&designer), &[], &[], &[]);
         assert!(
-            !rendered.deny_bash.contains(&"bsc plan".to_string()),
-            "and this rendering deliberately does not — see the module docs"
+            !rendered.deny_bash.iter().any(|d| d.starts_with("bsc ") && !d.contains(' ')),
+            "no complement deny may appear from an empty catalog: {:?}",
+            rendered.deny_bash
         );
+        assert!(!rendered.deny_bash.iter().any(|d| d == "bsc plan"), "{:?}", rendered.deny_bash);
     }
 }
