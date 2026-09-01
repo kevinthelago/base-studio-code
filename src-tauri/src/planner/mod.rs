@@ -1,6 +1,17 @@
 pub(crate) mod prompts;
 pub(crate) mod directives;
 pub(crate) mod workspace;
+/// The prompt-injection scanner (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) —
+/// deterministic markers of an injected instruction in a planner-authored artifact. Proved against
+/// the TypeScript it is ported from; see the module docs for the three engine differences it handles.
+//
+// NOTHING CALLS IT YET, and that is the method rather than an oversight: flipping the caller is a
+// separate item (`the-planner-provenance-gate-scans-in-rust`) so the derivation and the behaviour
+// change are revertible independently. `-D warnings` would otherwise fail a slice that is complete
+// by design. REMOVING THIS ATTRIBUTE IS PART OF THAT ITEM — it is the marker that says the
+// derivation is still orphaned, and leaving it afterwards would hide the next orphan.
+#[allow(dead_code)]
+pub(crate) mod injection_scan;
 
 #[cfg(test)]
 mod tests {

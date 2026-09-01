@@ -37,6 +37,10 @@ tauri-plugin-single-instance = "2"
 # `std` enables `set_boxed_logger` for the custom `GraphLogger` (#1389) — previously pulled in
 # transitively by `tauri-plugin-log`, which we replaced.
 log = { version = "0.4", features = ["std"] }
+# The prompt-injection scanner (`planner::injection_scan`) ports seven JavaScript regexes, and a
+# hand-rolled matcher would be exactly the second parser that port exists to remove. Already in
+# Cargo.lock via bsc-agent and llm, so this adds an edge, not a new external dependency.
+regex = "1"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
