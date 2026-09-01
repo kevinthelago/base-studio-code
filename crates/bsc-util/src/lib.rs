@@ -258,7 +258,7 @@ fn emit_ui_line(kind: &str, collection: &str, id: &str, kit: &str) {
 }
 
 /// Append `line` to `path`, creating the parent dir if needed. Best-effort (errors ignored).
-pub(crate) fn append_line(path: &std::path::Path, line: &str) {
+pub fn append_line(path: &std::path::Path, line: &str) {
     use std::io::Write;
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);

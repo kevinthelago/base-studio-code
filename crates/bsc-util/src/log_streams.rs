@@ -77,6 +77,15 @@ pub const LOG_STREAMS: &[LogStream] = &[
     // dropped them. `bsc logs divergence` reads this stream, and reports an ABSENT file as unknown
     // rather than as zero.
     LogStream { key: "divergence", env_var: "BSC_DIVERGENCE_LOG", filename: "divergence.log", reader_stream: true },
+    // Provider rate-limit headroom (a-fleets-remaining-headroom-is-readable-without-the-app): one
+    // `ts·pane·host·status·reqRemaining·reqLimit·tokRemaining·tokLimit·retryAfter` line per provider
+    // response, written by `llm::ratelimit`'s observer, which `bsc-agent` installs at startup.
+    //
+    // IT IS THE ONLY RECORD OF HOW MUCH BUDGET A FLEET HAS LEFT. `crates/llm` used to discard these
+    // headers at the socket, so "how many workers can we run" could only be answered by launching
+    // some and seeing what broke. An ABSENT value is written as `∅`, never 0 — a provider that sends
+    // no headers (Ollama, a local llama-server) must not read as exhausted.
+    LogStream { key: "ratelimit", env_var: "BSC_RATELIMIT_LOG", filename: "ratelimit.log", reader_stream: true },
     // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook appends one
     // `ts·pane·session_id·transcript_path` line; `read_token_usage` parses + prices the transcript.
     // Read via the separate cost path (`crates/logs::cost`), so NOT a unified reader stream.
@@ -129,6 +138,7 @@ mod tests {
                 // list is a SNAPSHOT, so a new reader stream is meant to fail here once and be
                 // recorded, rather than appear silently.
                 ("divergence", "divergence.log"),
+                ("ratelimit", "ratelimit.log"),
             ],
         );
         // The token/cost stream is staged + written but read via the cost path, so it's excluded.

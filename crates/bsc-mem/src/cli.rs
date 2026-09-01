@@ -59,6 +59,33 @@ DELEGATES to the same reader `bsc logs perf growth` uses rather than restating t
 slope with two front doors, not two implementations free to disagree.",
     },
     CmdDoc {
+        name: "headroom",
+        summary: "how much provider budget this fleet has left — and how fast it is spending it",
+        usage: "\
+USAGE:
+  bsc mem headroom [--since <epochMs>] [--json|--pretty]
+
+THE QUESTION \"HOW MANY WORKERS CAN WE RUN\" REDUCES TO. Per provider host: the latest remaining
+requests and tokens, the tightest of the two as a fraction of its limit, the LOW-WATER mark across the
+window, how many responses came back throttled, and the observed responses-per-minute ACROSS EVERY
+CONCURRENT SESSION -- the aggregate rate nothing in this system could produce before.
+
+WHY IT DID NOT EXIST. `crates/llm`'s send path called `response.json()`, which CONSUMES the response,
+so every `anthropic-ratelimit-*` and `retry-after` header was unreadable by construction. The capture
+landed first; this is the record and the query.
+
+AN ABSENT STREAM REPORTS UNKNOWN, NEVER PLENTY. If nothing has written the stream there is no evidence
+either way and this says so. Within a reading, a reported `0` remaining is EXHAUSTION while an
+unreported budget is ABSENT -- a provider that sends no rate-limit headers at all (Ollama, a local
+llama-server) must never render as exhausted, and an absent value never enters an average.
+
+READ THE LOW-WATER MARK, NOT ONLY THE LATEST. A fleet that ran itself to the floor and recovered looks
+healthy in the current reading; `min` and `throttled` are what show it happened.
+
+The rate is `None`, not `0`, when the window is too short to divide by -- a rate from a single sample
+is not a rate. DELEGATES to `logs::headroom` rather than restating the arithmetic.",
+    },
+    CmdDoc {
         name: "app",
         summary: "what the RUNNING app holds — JS heap, DOM nodes, listeners (needs the browser harness)",
         usage: "\
@@ -244,6 +271,50 @@ fn cmd_growth(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// `bsc mem headroom` — provider budget per host, from the ratelimit stream.
+///
+/// Three outcomes and they are printed differently on purpose: UNKNOWN (no stream has been written),
+/// a live-but-silent stream, and a reading. Collapsing the first into "0 used / plenty left" is the
+/// exact lie this surface exists to stop telling.
+fn cmd_headroom(a: &Args) -> Result<(), String> {
+    let dir = logs::log_dir();
+    match logs::headroom::read_headroom(&dir, a.since) {
+        None => {
+            let msg = "unknown: no rate-limit stream has been written — no provider headroom has been \
+recorded, which is NOT the same as having plenty";
+            bsc_cli_util::emit(a.pretty, a.json, &serde_json::json!({"known": false, "hosts": []}), || msg.to_string());
+        }
+        Some(rows) if rows.is_empty() => {
+            let msg = "the rate-limit stream is live but no provider reported a budget in this window";
+            bsc_cli_util::emit(a.pretty, a.json, &serde_json::json!({"known": true, "hosts": []}), || msg.to_string());
+        }
+        Some(rows) => {
+            bsc_cli_util::emit(a.pretty, a.json, &serde_json::json!({"known": true, "hosts": &rows}), || {
+                // ABSENT is said with a marker, never as a 0 or a dash that reads like one.
+                let n = |v: Option<u64>| v.map(|x| x.to_string()).unwrap_or_else(|| "∅".into());
+                let pct = |v: Option<f64>| v.map(|x| format!("{:.0}%", x * 100.0)).unwrap_or_else(|| "∅".into());
+                let rate = |v: Option<f64>| v.map(|x| format!("{x:.2}")).unwrap_or_else(|| "∅".into());
+                let mut lines = vec![
+                    "host\tn\theadroom\treq_left\treq_lim\ttok_left\ttok_lim\tmin_req\tmin_tok\tthrottled\treq/min\tpanes"
+                        .to_string(),
+                ];
+                lines.extend(rows.iter().map(|r| {
+                    format!(
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        r.host, r.samples, pct(r.headroom_fraction),
+                        n(r.requests_remaining), n(r.requests_limit),
+                        n(r.tokens_remaining), n(r.tokens_limit),
+                        n(r.min_requests_remaining), n(r.min_tokens_remaining),
+                        r.throttled, rate(r.requests_per_min), r.panes.len(),
+                    )
+                }));
+                lines.join("\n")
+            });
+        }
+    }
+    Ok(())
+}
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let a = parse_args(args)?;
     if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &a.positional) {
@@ -253,6 +324,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("build") => cmd_build(&a),
         Some("compare") => cmd_compare(&a),
         Some("growth") => cmd_growth(&a),
+        Some("headroom") => cmd_headroom(&a),
         Some("app") => crate::app::run(a.seconds, a.pretty, a.json),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
