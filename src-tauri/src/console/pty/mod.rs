@@ -658,6 +658,15 @@ pub(crate) async fn pty_create(
     // renderer knows either one; the RULE over them now lives in `session::fresh_only`.
     restore_requested: Option<bool>,
     startup_prompt_is_errand: Option<bool>,
+    // The RAW resume signals, so the launch can resolve its own init command and say when its answer
+    // differs from the renderer's (`the-launch-resolves-its-own-resume-command-instead-of-receiving-it`).
+    // `init_cmd` above is still what RUNS; these only feed the comparison. `was_unclean_shutdown` is
+    // absent on purpose — Rust owns it (`app::recovery`), so asking the renderer for it would be
+    // taking a backend fact back from the frontend.
+    pane_init_cmd: Option<String>,
+    pane_was_claude: Option<bool>,
+    auto_resume_claude: Option<bool>,
+    provider_is_claude: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     provider_id: Option<String>,
@@ -672,12 +681,61 @@ pub(crate) async fn pty_create(
         // `AppHandle` is 'static and re-fetches it here, where it outlives the call.
         let state = app.state::<PtyState>();
         pty_create_inner(
-            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
+            pane_id, cols, rows, cwd, init_cmd, env, startup_prompt, continue_session, restore_requested, startup_prompt_is_errand, pane_init_cmd, pane_was_claude, auto_resume_claude, provider_is_claude, checkpoint_doc, model, provider_id, wsl_distro, wsl_user, sandbox_role, sandbox_stores,
             &app, &state,
         )
     })
     .await
     .map_err(|e| format!("pty_create task failed: {e}"))?
+}
+
+/// The raw resume signals as `pty_create` receives them — every one optional, because an older
+/// frontend sends none of them and must keep working.
+///
+/// Grouped so [`launch_init_cmd`] reads by field name rather than by position: six bools in a row is
+/// exactly the shape where a transposed pair compiles and resumes the wrong thing.
+struct LaunchResumeSignals {
+    continue_session: Option<bool>,
+    restore_requested: Option<bool>,
+    pane_was_claude: Option<bool>,
+    auto_resume_claude: Option<bool>,
+    provider_is_claude: Option<bool>,
+    /// Not optional, and not from the payload — Rust owns it (`app::recovery`).
+    was_unclean_shutdown: bool,
+}
+
+/// Resolve the init command alongside the one the renderer sent, and say whether they agreed.
+///
+/// A named function rather than an inline call because the ARGUMENT HANDLING is the part worth
+/// testing, and it is the part a payload change can silently break:
+///
+/// * every resume signal defaults to `false`, which is what keeps a clean quit resuming NOTHING. The
+///   permissive failure here is not an error message — it is an app that launches agent sessions by
+///   itself at boot, the behaviour `restart-does-not-resume-sessions` deliberately removed.
+/// * `provider_is_claude` defaults to `true`, matching the renderer's own
+///   `getProvider(id) ?? getProvider("claude")` fallback. Defaulting it false would silence the
+///   comparison entirely for any caller that does not send it — a report that quietly stops reporting.
+fn launch_init_cmd(
+    pane_id: &str,
+    init_cmd: Option<&str>,
+    pane_init_cmd: Option<&str>,
+    startup_prompt: Option<&str>,
+    s: LaunchResumeSignals,
+) -> crate::session::resume_cmd::InitCmdReconciliation {
+    crate::session::resume_cmd::reconcile_init_cmd(
+        init_cmd.unwrap_or_default().to_string(),
+        s.provider_is_claude.unwrap_or(true),
+        &crate::session::resume_cmd::launch_inputs(
+            pane_id,
+            pane_init_cmd,
+            startup_prompt,
+            s.continue_session.unwrap_or(false),
+            s.pane_was_claude.unwrap_or(false),
+            s.auto_resume_claude.unwrap_or(false),
+            s.was_unclean_shutdown,
+            s.restore_requested.unwrap_or(false),
+        ),
+    )
 }
 
 /// The launch's fresh-only decision, DERIVED from the two raw command arguments.
@@ -728,6 +786,11 @@ fn pty_create_inner(
     // reproduces the old `None ⇒ false` behaviour for a caller that sends neither.
     restore_requested: Option<bool>,
     startup_prompt_is_errand: Option<bool>,
+    // See the command above: the raw resume signals, for the resolution comparison only.
+    pane_init_cmd: Option<String>,
+    pane_was_claude: Option<bool>,
+    auto_resume_claude: Option<bool>,
+    provider_is_claude: Option<bool>,
     checkpoint_doc: Option<String>,
     model: Option<String>,
     // Console provider id (e.g. "claude", "gemini") — informational; logged so traces
@@ -1086,9 +1149,42 @@ fn pty_create_inner(
             .is_some_and(|p| harness.detect_history_at(&p)),
         None => harness.detect_history(&cwd),
     };
+    // RESOLVE THE INIT COMMAND HERE TOO, and say so when the two answers differ.
+    //
+    // Report-only, deliberately: unlike every other reconciliation in this cutover, `init_cmd` is one
+    // string with three incompatible meanings (an override, empty, a resume form), so there is no
+    // union and no defined "safer" side. The frontend's value is what runs — a wrong init command is
+    // immediately visible in the pane, while a silent divergence between two copies of this rule is
+    // not — and the cutover to Rust's answer is its own slice. See `session::resume_cmd`.
+    let init = launch_init_cmd(
+        &pane_id,
+        init_cmd.as_deref(),
+        pane_init_cmd.as_deref(),
+        startup_prompt.as_deref(),
+        LaunchResumeSignals {
+            continue_session,
+            restore_requested,
+            pane_was_claude,
+            auto_resume_claude,
+            provider_is_claude,
+            // BACKEND-OWNED: the session-lock marker this process claimed at boot (`app::recovery`).
+            // The renderer reads the same value through `was_unclean_shutdown`, so taking it from the
+            // payload would be routing a Rust fact through the frontend and back.
+            was_unclean_shutdown: app.state::<crate::app::state::UncleanShutdown>().0,
+        },
+    );
+    if let Some(d) = &init.disagreement {
+        log::warn!(
+            "console[{pane_id}] init_cmd disagreed — the frontend sent {:?}, the launch resolved \
+             {:?}; the FRONTEND's value runs. Reported because {}.",
+            d.from_frontend,
+            d.derived,
+            d.because,
+        );
+    }
     let plan = plan_launch(
         startup_prompt.as_deref(),
-        init_cmd.as_deref(),
+        Some(init.effective.as_str()).filter(|s| !s.is_empty()),
         has_history,
         continue_session.unwrap_or(false),
         launch_fresh_only(&pane_id, restore_requested, startup_prompt_is_errand),
@@ -1772,6 +1868,75 @@ mod tests {
     // the two `pty_create` orchestration helpers extracted in #2167: `resolve_session_cwd` (cwd
     // resolution) and `build_session_init_line` (sandbox/shell-kind init-line dispatch).
     use std::collections::HashMap;
+
+    /// THE CALL SITE for the init command. `session::resume_cmd`'s tests stay green if `pty_create`
+    /// never calls it — they call the rule directly. This drives the argument handling the launch
+    /// performs, and composes it through `plan_launch` so the assertion is about what the pane RUNS.
+    #[test]
+    fn the_launch_resolves_its_own_init_command_and_still_runs_the_frontends() {
+        use super::launch::{plan_launch, LaunchPlan};
+        use super::LaunchResumeSignals;
+        let none = || LaunchResumeSignals {
+            continue_session: None,
+            restore_requested: None,
+            pane_was_claude: None,
+            auto_resume_claude: None,
+            provider_is_claude: None,
+            was_unclean_shutdown: false,
+        };
+
+        // THE PROPERTY THIS ITEM EXISTS TO PROTECT. A clean quit sets no signal, so nothing resumes —
+        // the permissive failure is an app that starts agent sessions at boot, which is not an error
+        // anyone sees. Asserted at the CALL SITE, per the item, not only in the module.
+        let clean = super::launch_init_cmd("proj:stream", Some("claude"), Some("claude"), None, none());
+        assert_eq!(clean.derived, "claude", "a clean quit resolves a FRESH launch, never a resume");
+        assert!(!clean.derived.contains("--continue"), "no signal was set, so nothing may resume");
+        assert!(clean.disagreement.is_none(), "and the two sides agree, so nothing is reported");
+
+        // A RESUME where the renderer sent the bare placeholder: reported, and the frontend's value is
+        // still what the plan runs. Both halves — silently preferring Rust's answer would change what
+        // a pane executes during what is supposed to be an observation phase.
+        let resuming = super::launch_init_cmd(
+            "proj:stream",
+            Some("claude"),
+            Some("claude"),
+            None,
+            LaunchResumeSignals { continue_session: Some(true), ..none() },
+        );
+        let d = resuming.disagreement.as_ref().expect("a resumed pane opening a NEW conversation must be reported");
+        assert!(d.derived.contains("--continue"));
+        assert_eq!(
+            plan_launch(None, Some(resuming.effective.as_str()).filter(|s| !s.is_empty()), true, true, false),
+            LaunchPlan::Init("claude".to_string()),
+            "the FRONTEND's command is what runs — the report does not change the launch",
+        );
+
+        // `provider_is_claude` defaults to TRUE, matching the renderer's own fallback. Defaulting it
+        // false would silence the comparison for every caller that omits it.
+        assert!(
+            resuming.disagreement.is_some(),
+            "an absent provider flag must not switch the comparison off"
+        );
+
+        // A manual console is never auto-recovered, and that rule now lives in Rust rather than in
+        // three ternaries at the renderer's call site.
+        let manual = super::launch_init_cmd(
+            "man:tab1:p0",
+            Some("claude"),
+            Some("claude"),
+            None,
+            LaunchResumeSignals {
+                continue_session: Some(true),
+                restore_requested: Some(true),
+                auto_resume_claude: Some(true),
+                pane_was_claude: Some(true),
+                was_unclean_shutdown: true,
+                ..none()
+            },
+        );
+        assert_eq!(manual.derived, "claude", "every recovery signal set, and a manual console resumes none of them");
+        assert!(manual.disagreement.is_none());
+    }
 
     /// THE CALL SITE, not the rule. `session::fresh_only`'s own tests all stay green if `pty_create`
     /// goes back to trusting a flag from the renderer — they call the rule directly. This drives the

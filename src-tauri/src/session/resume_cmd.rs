@@ -30,9 +30,6 @@
 //! A clean quit sets none of the three, so the app still starts nothing by itself. That is asserted
 //! rather than assumed: this function is one edit away from launching sessions on its own.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
-#![allow(dead_code)] // wired by `the-launch-resolves-its-own-resume-command-instead-of-receiving-it`
-
 /// The bare harness launches an agent pane stores as its `init_cmd`.
 ///
 /// An EXACT-MATCH set on purpose: a real override carries flags or a different program
@@ -106,6 +103,116 @@ pub fn resolve_init_cmd(i: &ResumeInputs) -> String {
     String::new()
 }
 
+
+/// What the launch resolved, what it was handed, and whether the two agreed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitCmdReconciliation {
+    /// The command the launch will actually run — the FRONTEND's, deliberately. See below.
+    pub effective: String,
+    /// What this module resolved from the same facts.
+    pub derived: String,
+    /// `Some` when the two differ, carrying nothing the caller cannot already see — it exists so the
+    /// caller cannot report a disagreement without having been told there was one.
+    pub disagreement: Option<InitCmdDisagreement>,
+}
+
+/// The two values, when they differ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitCmdDisagreement {
+    pub from_frontend: String,
+    pub derived: String,
+    /// Why this comparison is meaningful for this launch — the frontend takes a different branch for a
+    /// non-Claude harness, so the two disagreeing there is expected and this names the narrower reason
+    /// the disagreement was reported anyway.
+    pub because: &'static str,
+}
+
+/// Reconcile the resolved init command against what the renderer sent.
+///
+/// # THE COMMAND IS NEVER UNIONED, AND THE FRONTEND WINS
+///
+/// Every other reconciliation in this cutover merges two lists. This one cannot: `init_cmd` is a
+/// single string with three incompatible meanings — an override the caller chose, EMPTY (take the
+/// baked-prompt path, or nothing at all), and a resume form. There is no union of those, and picking
+/// the "safer" one is not defined either.
+///
+/// So the frontend's value is what runs, and a disagreement is REPORTED. That direction is chosen on
+/// visibility: a wrong init command is immediately obvious to the person watching the pane — it runs
+/// the wrong program, or nothing — while a silent divergence between two copies of this rule is
+/// exactly what nobody notices. The observation phase ends when the log has been quiet; the cutover to
+/// Rust's value is its own slice with its own revert.
+///
+/// # When a comparison means anything
+///
+/// The renderer only routes a CLAUDE pane through the rule this module ports; a non-Claude harness
+/// takes a different branch entirely (its provider's own `buildLaunchCmd`), which
+/// `session::launch_cmd` models and this one does not. Comparing there would produce a disagreement on
+/// every aider launch and teach the reader to ignore the log.
+///
+/// One check survives that gate, because it needs no model of the other branch at all: a pane that is
+/// RESUMING must not run the bare harness placeholder, whatever branch produced it. That is the
+/// original bug — an agent pane stores the bare harness name as its `init_cmd`, and running it
+/// verbatim on a resume opens a brand-new conversation beside the old one — and it is provable from
+/// the received string alone.
+pub fn reconcile_init_cmd(
+    from_frontend: String,
+    provider_is_claude: bool,
+    inputs: &ResumeInputs,
+) -> InitCmdReconciliation {
+    let derived = resolve_init_cmd(inputs);
+    let disagreement = if provider_is_claude && derived != from_frontend {
+        Some(InitCmdDisagreement {
+            from_frontend: from_frontend.clone(),
+            derived: derived.clone(),
+            because: "a Claude pane routes through exactly the rule this module ports, so the two \
+                      should agree",
+        })
+    } else if resuming(inputs) && is_harness_placeholder(&from_frontend) {
+        // Provider-independent, and the reason this arm exists. A resuming pane running the bare
+        // placeholder starts a fresh conversation; the harness's own `--continue` is what rejoins it.
+        Some(InitCmdDisagreement {
+            from_frontend: from_frontend.clone(),
+            derived: continue_or_fresh(&from_frontend),
+            because: "this launch is a RESUME and the command is the bare harness placeholder, so the \
+                      session will open a NEW conversation beside the one it meant to rejoin",
+        })
+    } else {
+        None
+    };
+    InitCmdReconciliation { effective: from_frontend, derived, disagreement }
+}
+
+/// The signals as the launch receives them, with the MANUAL-console rule applied.
+///
+/// A manual console is never auto-recovered (#1176), and in the TypeScript that is three separate
+/// `manual ? false : …` ternaries at the call site rather than anything the ported rule can see. It is
+/// a RULE, not a fact, so it belongs here: the renderer sends the raw per-pane signals and this
+/// decides which of them a manual pane is allowed to act on.
+///
+/// `pane_was_claude` is deliberately NOT forced. It is an observation about what the pane ran, not a
+/// permission to resume, and the three signals it gates are already false for a manual console.
+pub fn launch_inputs<'a>(
+    pane_id: &str,
+    explicit: Option<&'a str>,
+    startup_prompt: Option<&'a str>,
+    continue_session: bool,
+    pane_was_claude: bool,
+    auto_resume_claude: bool,
+    was_unclean_shutdown: bool,
+    restore_requested: bool,
+) -> ResumeInputs<'a> {
+    let manual = bsc_util::pane_id::is_manual_pane_id(pane_id);
+    ResumeInputs {
+        explicit,
+        startup_prompt,
+        continue_session: !manual && continue_session,
+        pane_was_claude,
+        auto_resume_claude: !manual && auto_resume_claude,
+        was_unclean_shutdown,
+        restore_requested: !manual && restore_requested,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +234,104 @@ mod tests {
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one resumeCommand.fixtures.json, got {found:?}");
         serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+
+    /// THE FRONTEND WINS, and the disagreement is reported rather than acted on. Both halves matter:
+    /// silently taking Rust's answer would change what a pane runs during an observation phase, and
+    /// reporting nothing would make the phase pointless.
+    #[test]
+    fn a_disagreement_is_reported_and_the_frontend_value_is_what_runs() {
+        // A Claude pane RESUMING, where the renderer sent the bare placeholder.
+        let inputs = ResumeInputs {
+            explicit: Some("claude"),
+            continue_session: true,
+            ..ResumeInputs::default()
+        };
+        let r = reconcile_init_cmd("claude".to_string(), true, &inputs);
+        assert_eq!(r.effective, "claude", "the frontend's value is what runs, always");
+        assert_eq!(r.derived, continue_or_fresh("claude"));
+        let d = r.disagreement.expect("a divergence this large must be reported");
+        assert_eq!(d.from_frontend, "claude");
+        assert!(d.derived.contains("--continue"));
+    }
+
+    /// Agreement is silent. A report on every launch is a report nobody reads.
+    #[test]
+    fn agreement_reports_nothing() {
+        let inputs = ResumeInputs { explicit: Some("claude --model opus"), ..ResumeInputs::default() };
+        let r = reconcile_init_cmd("claude --model opus".to_string(), true, &inputs);
+        assert_eq!(r.effective, "claude --model opus");
+        assert!(r.disagreement.is_none());
+    }
+
+    /// A non-Claude harness takes a branch this module does not model, so a plain difference there is
+    /// EXPECTED and must not be reported — otherwise every aider launch warns and the log stops being
+    /// worth reading.
+    #[test]
+    fn a_branch_this_module_does_not_model_is_not_reported_as_a_disagreement() {
+        let inputs = ResumeInputs { explicit: Some("aider --message go"), ..ResumeInputs::default() };
+        let r = reconcile_init_cmd("aider --model x --message go".to_string(), false, &inputs);
+        assert_eq!(r.effective, "aider --model x --message go");
+        assert!(
+            r.disagreement.is_none(),
+            "the provider's own buildLaunchCmd is `session::launch_cmd`'s subject, not this one's"
+        );
+    }
+
+    /// …EXCEPT the one check that needs no model of the other branch. A resuming pane running the bare
+    /// harness placeholder opens a NEW conversation beside the one it meant to rejoin — provable from
+    /// the received string alone, whatever produced it.
+    #[test]
+    fn a_resuming_pane_running_the_bare_placeholder_is_reported_on_any_harness() {
+        let inputs = ResumeInputs {
+            explicit: Some("bsc-agent"),
+            continue_session: true,
+            ..ResumeInputs::default()
+        };
+        let r = reconcile_init_cmd("bsc-agent".to_string(), false, &inputs);
+        let d = r.disagreement.expect("a resumed local worker starting cold must not be silent");
+        assert_eq!(d.derived, continue_or_fresh("bsc-agent"));
+        assert!(d.derived.starts_with("bsc-agent"), "the resume form is DERIVED from the harness, never claude's");
+        // And it does not fire when the pane is not resuming — a fresh launch of the placeholder is
+        // exactly right.
+        let fresh = ResumeInputs { explicit: Some("bsc-agent"), ..ResumeInputs::default() };
+        assert!(reconcile_init_cmd("bsc-agent".to_string(), false, &fresh).disagreement.is_none());
+    }
+
+    /// THE PROPERTY THE WHOLE MODULE PROTECTS. A clean quit sets none of the three signals, so nothing
+    /// resumes and the app starts nothing by itself. Asserted over the manual and non-manual paths
+    /// both, because the failure is not an error — it is an app that launches agent sessions at boot.
+    #[test]
+    fn a_clean_quit_resumes_nothing_on_any_pane() {
+        for pane in ["man:tab1:p0", "proj:stream", "design-studio:designer-react"] {
+            let i = launch_inputs(pane, None, None, false, true, false, false, false);
+            assert_eq!(
+                resolve_init_cmd(&i),
+                "",
+                "{pane}: a clean quit must resume nothing — `restart-does-not-resume-sessions`"
+            );
+        }
+    }
+
+    /// The manual-console rule is a RULE, so it moved. In the TypeScript it is three `manual ? false`
+    /// ternaries at the CALL SITE, invisible from the ported function — the same split that hid the
+    /// errand carve-out one item over.
+    #[test]
+    fn a_manual_console_is_never_auto_recovered_and_the_rule_lives_here() {
+        // Every recovery signal set at once, on a manual pane.
+        let manual = launch_inputs("man:tab1:p0", Some("claude"), None, true, true, true, true, true);
+        assert!(!manual.continue_session && !manual.auto_resume_claude && !manual.restore_requested);
+        assert_eq!(resolve_init_cmd(&manual), "claude", "the placeholder stays a fresh launch");
+
+        // The same signals on a fleet pane DO resume — otherwise this test would pass on a function
+        // that simply ignored them all.
+        let fleet = launch_inputs("proj:stream", Some("claude"), None, true, true, true, true, true);
+        assert!(fleet.continue_session && fleet.auto_resume_claude && fleet.restore_requested);
+        assert_eq!(resolve_init_cmd(&fleet), continue_or_fresh("claude"));
+
+        // `pane_was_claude` is an observation, not a permission, and is deliberately not forced.
+        assert!(manual.pane_was_claude, "forcing it would hide what the pane actually ran");
     }
 
     /// Reports every mismatch at once — a wrong port here is wrong in a pattern, and each pattern is a
