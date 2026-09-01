@@ -41,7 +41,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
-import { classifyGateFailure, planPromote } from "./promote-plan.mjs";
+import { classifyGateFailure, gateTreeMoved, planPromote, treeMovedMessage } from "./promote-plan.mjs";
 
 /** The MAIN worktree, not whichever worktree this script happens to be running from.
  *
@@ -203,11 +203,27 @@ function main() {
     console.log(`[promote-app] running the FULL gate on develop before promoting…`);
     const tree = integrationTree();
     const startedAt = Date.now();
+    // HEAD of the SHARED integration tree, read either side of the gate — see `gateTreeMoved`.
+    const headBefore = headOf(tree);
+    let gateFailed = false;
     try {
       // In the INTEGRATION tree, never here: `gate-tree-guard` refuses to run a second cargo over the
       // target/ that `tauri dev` owns, and after the inversion that target/ is this one.
       execFileSync("npm", ["run", "gate", "--", "--full"], { cwd: tree, stdio: "inherit" });
     } catch {
+      gateFailed = true;
+    }
+
+    // ASKED BEFORE THE VERDICT IS READ, and before a known-red declaration gets a chance to speak for
+    // it. A declaration explains a leg that genuinely failed; it cannot explain a result that is not
+    // about this tree. Order matters here, and it is the whole reason this is not folded into
+    // `classifyGateFailure`.
+    const moved = gateTreeMoved(headBefore, headOf(tree));
+    if (moved.moved) {
+      fail(treeMovedMessage(moved, tree));
+    }
+
+    if (gateFailed) {
       // A red leg somebody has ACCOUNTED FOR should not force the whole verification to be skipped —
       // see `classifyGateFailure`. Every other outcome refuses exactly as it did before.
       const verdict = classifyGateFailure(gateVerdict(tree), declaredKnownRed(), startedAt);
@@ -276,6 +292,15 @@ function integrationTree() {
     else if (line === "branch refs/heads/develop" && path) return path;
   }
   return REPO_ROOT;
+}
+
+/** HEAD of `tree`, or null when it cannot be read — which `gateTreeMoved` treats as moved. */
+function headOf(tree) {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: tree, encoding: "utf8", timeout: 10_000 }).trim();
+  } catch {
+    return null;
+  }
 }
 
 /** Why a failed gate is not promotable, said in the caller's terms. */

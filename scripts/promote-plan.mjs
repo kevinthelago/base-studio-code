@@ -150,3 +150,60 @@ export function classifyGateFailure(result, knownRed, startedAtMs) {
     unexplained,
   };
 }
+
+/**
+ * Is the gate's verdict about the tree it claims to be about?
+ *
+ * `npm run promote` gates in `wt-integrate`, which is the ONE shared tree every session merges into.
+ * `bsc plan integrate` takes a named lock so two MERGES cannot race (#185), and the full gate takes a
+ * slot so two GATES cannot exhaust memory — but neither lock is held against the other, so a merge and
+ * a gate in the same tree proceed simultaneously. The gate slot bounds memory, not tree stability.
+ *
+ * MEASURED 2026-09-01 ~10:59, which is why this exists rather than being a precaution. A promote gate
+ * compiled a transient half-merged state and reported:
+ *
+ *     nextest  FAIL (1.6s)
+ *     error: this file contains an unclosed delimiter --> crates/bsc-shot/src/lib.rs:640:49
+ *
+ * A file, a line, a syntax error — and entirely false. That file's brace balance is 0 at every commit
+ * that ever touched it, and a re-gate minutes later passed 4127 tests. A false red here is
+ * indistinguishable from a real one at the exact moment someone is deciding whether develop is safe to
+ * ship, and both honest responses are bad: believe it and refuse a good promote, or learn to discount it
+ * and eventually skip past a real break.
+ *
+ * THIS CHECKS BOTH DIRECTIONS, not only the red one the incident produced. A PASS over a half-merged
+ * tree is the more dangerous outcome, because it promotes on a verification of a state that never
+ * existed in history and nobody will ever see again. A verdict from a moved tree is not a lenient
+ * verdict or a harsh one — it is not a verdict.
+ *
+ * `null`/unknown on either side means the HEAD could not be read, and that is treated as MOVED. A check
+ * that cannot see the tree must not certify it; the cost is a re-run and the alternative is the silent
+ * false confidence this whole item is about.
+ *
+ * @param {string|null} before HEAD of the integration tree before the gate ran
+ * @param {string|null} after  HEAD of the same tree after it finished
+ */
+export function gateTreeMoved(before, after) {
+  if (!before || !after) return { moved: true, reason: "head-unreadable" };
+  if (before !== after) return { moved: true, reason: "head-moved", before, after };
+  return { moved: false, reason: "head-stable" };
+}
+
+/** What to tell the caller when the tree moved under the gate. */
+export function treeMovedMessage(state, treePath) {
+  const where = treePath ? ` in ${treePath}` : "";
+  if (state.reason === "head-unreadable") {
+    return (
+      `the gate ran, but this could not read HEAD${where} before and after it, so there is no way to\n` +
+      `  know whether the tree it compiled is the tree you are promoting. Treating that as UNTRUSTWORTHY\n` +
+      `  rather than as a pass. Nothing was moved — re-run the promote.`
+    );
+  }
+  return (
+    `the gate's verdict is UNTRUSTWORTHY: HEAD${where} moved while it ran\n` +
+    `    ${state.before} → ${state.after}\n` +
+    `  Another session merged into the shared integration tree mid-gate, so the gate compiled a\n` +
+    `  transient half-merged state that exists in no commit. Its result — pass OR fail — is about a tree\n` +
+    `  nobody has. Nothing was moved; re-run the promote now that the merge has landed.`
+  );
+}
