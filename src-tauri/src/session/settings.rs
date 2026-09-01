@@ -130,6 +130,11 @@ pub(crate) fn ensure_session_settings(
     bypass: Option<bool>,
     // JS `restrictedAllow` — Tauri renames invoke ARGS camelCase → snake_case (#2471).
     restricted_allow: Option<bool>,
+    // THE ROLE ITSELF, so Rust can derive the gate instead of only recording it
+    // (`epic-frontend-logic-over-backend-resources-belongs-in-rust`). Optional because a role-less
+    // ad-hoc console has nothing to derive, and because an older frontend must keep working.
+    role_capability: Option<crate::session::role_gate::RoleCapability>,
+    active_surfaces: Option<Vec<String>>,
 ) -> Result<(), String> {
     // Bind the unwrapped Options to locals so the borrowed spec can reference them.
     let mcp_servers = mcp_servers.unwrap_or_default();
@@ -139,6 +144,28 @@ pub(crate) fn ensure_session_settings(
     let ask_tool_rules = ask_tool_rules.unwrap_or_default();
     let skills = skills.unwrap_or_default();
     let bash_posture = bash_posture.unwrap_or_else(|| "allow".to_string());
+    // DERIVE THE ROLE DENIES HERE, rather than trusting the ones the renderer computed.
+    //
+    // Rust already ENFORCED this gate (`deny_matches`) and WROTE it; it just never computed it, so a
+    // security boundary was decided in a process that has been seen to die under memory pressure. The
+    // reconciliation UNIONS rather than replaces — see `reconcile_role_denies` — so the cutover can
+    // only strengthen the gate, never weaken it while both copies exist.
+    let recon = crate::session::role_gate::reconcile_role_denies(
+        role_capability.as_ref(),
+        &active_surfaces.unwrap_or_default(),
+        denied_commands,
+    );
+    if !recon.missing.is_empty() {
+        // The ONE direction that is a defect: Rust derived a deny the frontend omitted. Extra on the
+        // frontend side is expected (the user's own denies ride in the same list) and says nothing.
+        log::warn!(
+            "session settings[{cwd}]: the frontend's deny list was MISSING {} role deny(ies) Rust \
+             derived — added: {:?}. This is a gap in the gate, not a difference of opinion.",
+            recon.missing.len(),
+            recon.missing,
+        );
+    }
+    let denied_commands = recon.merged;
     write_session_settings(&SessionSettingsSpec {
         cwd: &cwd,
         allowed_commands: &allowed_commands,
@@ -799,6 +826,53 @@ mod tests {
     }
 
     #[test]
+    /// The launch path DERIVES the gate now, it does not just record what the renderer sent.
+    ///
+    /// A frontend that omitted a role deny — because it crashed mid-compute, because it is an older
+    /// build, or because someone called the command directly — must not produce a session that is
+    /// more permissive than the role allows. Written through the real command so the wiring is
+    /// pinned, not just `reconcile_role_denies` in isolation.
+    #[test]
+    fn the_launch_derives_role_denies_the_frontend_omitted() {
+        let _g = crate::testutil::ENV_LOCK.lock();
+        let home = crate::testutil::temp_home("role-gate-launch");
+        let cwd = home.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let cap = crate::session::role_gate::RoleCapability {
+            role: "worker".into(),
+            github: crate::session::role_gate::Tier::Read,
+            git: crate::session::role_gate::Tier::Write,
+            code: crate::session::role_gate::Tier::Write,
+            net: crate::session::role_gate::Tier::Read,
+            ui: crate::session::role_gate::Tier::Read,
+            write_globs: vec!["src/**".into()],
+            allow: vec![],
+            surfaces: None,
+        };
+        // The frontend sends NOTHING but its own user deny — every role deny omitted.
+        super::ensure_session_settings(
+            cwd.to_string_lossy().to_string(),
+            vec![],
+            vec!["curl".to_string()],
+            None, None, None, None, None, None, None, None, None, None,
+            Some(cap),
+            Some(vec![]),
+        )
+        .expect("settings written");
+
+        let written =
+            std::fs::read_to_string(cwd.join(".claude/settings.json")).expect("settings.json");
+        assert!(written.contains("curl"), "the user's own deny survives: {written}");
+        // Role denies Rust derived and the frontend never sent.
+        for expected in ["bsc request", "gh pr merge"] {
+            assert!(
+                written.contains(expected),
+                "the launch must derive `{expected}` even though the frontend omitted it:\n{written}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     fn ensure_session_settings_merges_mandatory_and_custom_commands() {
         use crate::session::settings::write_session_settings;
         let dir = std::env::temp_dir().join(format!("bsc-ess-{}", std::process::id()));
