@@ -36,10 +36,12 @@
 //     a fault to look at, not to paper over with a merge commit.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readlinkSync } from "node:fs";
+import { readFileSync, readlinkSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { planPromote } from "./promote-plan.mjs";
+import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
+import { classifyGateFailure, planPromote } from "./promote-plan.mjs";
 
 /** The MAIN worktree, not whichever worktree this script happens to be running from.
  *
@@ -199,12 +201,27 @@ function main() {
 
   if (!opts.skipGate) {
     console.log(`[promote-app] running the FULL gate on develop before promoting…`);
+    const tree = integrationTree();
+    const startedAt = Date.now();
     try {
       // In the INTEGRATION tree, never here: `gate-tree-guard` refuses to run a second cargo over the
       // target/ that `tauri dev` owns, and after the inversion that target/ is this one.
-      execFileSync("npm", ["run", "gate", "--", "--full"], { cwd: integrationTree(), stdio: "inherit" });
+      execFileSync("npm", ["run", "gate", "--", "--full"], { cwd: tree, stdio: "inherit" });
     } catch {
-      fail("the gate FAILED — develop is not promotable. Nothing was moved.");
+      // A red leg somebody has ACCOUNTED FOR should not force the whole verification to be skipped —
+      // see `classifyGateFailure`. Every other outcome refuses exactly as it did before.
+      const verdict = classifyGateFailure(gateVerdict(tree), declaredKnownRed(), startedAt);
+      if (!verdict.proceed) {
+        fail(gateRefusal(verdict));
+      }
+      console.log(`[promote-app] the gate FAILED, and every red leg is a DECLARED known-red:`);
+      for (const { key, ref } of verdict.explained) {
+        console.log(`    ${key}  — owned by ${ref}`);
+      }
+      console.log(
+        `[promote-app] 0 unexplained. Promoting on that declaration — develop WAS verified, and the\n` +
+          `  leg(s) above stay red and stay owned. This is not --skip-gate: an undeclared red still refuses.`,
+      );
     }
   } else {
     console.log(`[promote-app] --skip-gate: promoting WITHOUT verifying develop.`);
@@ -259,6 +276,64 @@ function integrationTree() {
     else if (line === "branch refs/heads/develop" && path) return path;
   }
   return REPO_ROOT;
+}
+
+/** Why a failed gate is not promotable, said in the caller's terms. */
+function gateRefusal(verdict) {
+  const base = "the gate FAILED — develop is not promotable. Nothing was moved.";
+  const why = {
+    "no-verdict":
+      "\n  The gate wrote no readable verdict at target/gate-result.json, so which legs were red is\n" +
+      "  unknown. An absent verdict reads as ABSENT, never as a pass.",
+    "stale-verdict":
+      "\n  The verdict at target/gate-result.json predates this run, so it describes a DIFFERENT gate.\n" +
+      "  A stale artifact is worse than none, because it looks authoritative.",
+    "failed-outside-the-legs":
+      "\n  The gate failed with no red leg — something failed around them (gate-tree-guard, a crash, a\n" +
+      "  lock). A known-red declaration is about a leg and cannot speak for that.",
+    "unexplained-red": `\n  Unexplained red leg(s): ${verdict.unexplained.join(", ")}.\n` +
+      "  Declare one with `bsc work known-red add <leg> --ref <plan-ref>` only if an item genuinely\n" +
+      "  owns it — a declaration explains a failure, it never launders one.",
+  }[verdict.reason];
+  return base + (why ?? "");
+}
+
+/** The gate's own verdict artifact from the tree it ran in, or null when it cannot be read. */
+function gateVerdict(tree) {
+  try {
+    return JSON.parse(readFileSync(join(tree, "target", "gate-result.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** The declared known-red legs, from the SAME store `bsc work gate` reads — never a second list here.
+ *
+ *  An unreadable store degrades to "nothing is declared", which refuses the promote. That is the safe
+ *  direction: a missing `bsc` must not become a reason to promote an unverified develop. */
+function declaredKnownRed() {
+  try {
+    const bsc = pickUsable(candidatePaths(REPO_ROOT, homedir(), join), {
+      statSize: (p) => {
+        try {
+          return statSync(p).size;
+        } catch {
+          return null;
+        }
+      },
+      run: (p) => {
+        try {
+          return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+        } catch (err) {
+          return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+        }
+      },
+    });
+    if (!bsc) return {};
+    return JSON.parse(execFileSync(bsc.path, ["work", "known-red", "list", "--json"], { encoding: "utf8", timeout: 20_000 }));
+  } catch {
+    return {};
+  }
 }
 
 main();

@@ -4052,6 +4052,166 @@ fn store_at(path: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
 
 #[cfg(test)]
 mod tests {
+
+    /// EVERY test that repoints a store env var must hold the store lock — asserted over the SOURCE,
+    /// because nothing at run time can observe the absence of a lock.
+    ///
+    /// This is the durable guard for `the-graph-store-drift-recurs-and-forces-every-promote-through-skip-gate`.
+    /// The unlocked version of these sites (fixed in `0afd02c5`) did not merely redden `cargo test`: a
+    /// write that resolved `BSC_GRAPH_STORE` after a concurrent test had removed it landed in the
+    /// DEFAULT store — `~/.base-studio-code/knowledge/algorithms.json`, the real per-user one.
+    ///
+    /// MEASURED 2026-09-01. `session-roles.ts` there held `export function sessionRoles() {}` (33
+    /// characters against the record's 3263), the name `session-roles` against `sessionRoles`, and two
+    /// stub tests — one of them carrying the literal `/* updated */` marker from
+    /// `tests_set_upserts_by_name_and_does_not_drop_sibling_tests` below. `graph-promote-check` then
+    /// went red on a DIFFERENT node every run (whichever test lost the race) and every `npm run promote`
+    /// that day was forced through `--skip-gate`, which skips verifying develop entirely.
+    ///
+    /// So the lock is not test hygiene. A reviewer re-adding one bare `set_var` restores a defect that
+    /// corrupts the user's authoring copy and blinds the promote gate, and neither symptom points back
+    /// here. That is why this is pinned in the source rather than left to review.
+    #[test]
+    fn every_store_env_mutation_is_inside_the_store_lock() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders: Vec<String> = Vec::new();
+        let mut scanned = 0usize;
+        let mut mutating = 0usize;
+        for entry in std::fs::read_dir(&root).expect("the crate has a src/ dir") {
+            let path = entry.expect("readable dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).expect("readable source");
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            scanned += 1;
+            for site in store_env_sites(&src) {
+                mutating += 1;
+                if !site.locked {
+                    offenders.push(format!("{name}:{} — fn {}", site.line, site.func));
+                }
+            }
+        }
+        assert!(scanned > 0, "the source scan found no .rs files under {}", root.display());
+        // A scan that stopped MATCHING would report zero offenders and read as a pass, which is the
+        // failure mode this whole item is about. So the population is asserted too.
+        assert!(
+            mutating >= 10,
+            "expected the crate to still hold many store-env mutators; found {mutating} — the scanner \
+             has probably stopped matching rather than the sites having gone away",
+        );
+        assert!(
+            offenders.is_empty(),
+            "these functions mutate BSC_GRAPH_STORE / BSC_DATA_DIR without holding the store lock:\n  {}\n\
+             Take the guard instead — `let _store = store_at(&p);`, `store_and_data_at(&p, &d)`, or \
+             `test_support::store_lock()` — and HOLD it for the test's lifetime. An unlocked write \
+             resolves the DEFAULT store and corrupts ~/.base-studio-code/knowledge/algorithms.json.",
+            offenders.join("\n  "),
+        );
+    }
+
+    /// One function that touches a store env var, and whether it holds the lock.
+    struct StoreEnvSite {
+        func: String,
+        line: usize,
+        locked: bool,
+    }
+
+    /// Every `fn` in `src` that mutates `BSC_GRAPH_STORE` or `BSC_DATA_DIR`, paired with whether that
+    /// same function takes the store lock.
+    ///
+    /// Bodies are delimited by INDENTATION (`fn` at indent N ends at the first later line that is
+    /// exactly N spaces then `}`), not by brace counting. This file is full of raw JSON fixtures —
+    /// `r#"{"implementations":[…]}"#` — whose braces a counter would have to strip string literals to
+    /// survive, and a scanner that silently mis-parses reports zero offenders, which reads as a pass.
+    /// rustfmt guarantees the indentation, and a closing brace of a fixture is never alone at a `fn`'s
+    /// own indent.
+    ///
+    /// `store_at` and `store_and_data_at` are excluded BY NAME: they are the lock, so requiring them to
+    /// take it is circular.
+    fn store_env_sites(src: &str) -> Vec<StoreEnvSite> {
+        const GUARDS: [&str; 2] = ["store_at", "store_and_data_at"];
+        let lines: Vec<&str> = src.lines().collect();
+        let mut out = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            let Some(name) = fn_name(line) else { continue };
+            if GUARDS.contains(&name.as_str()) {
+                continue;
+            }
+            let indent = line.len() - line.trim_start().len();
+            let closer = format!("{}}}", " ".repeat(indent));
+            let end = lines[i + 1..]
+                .iter()
+                .position(|l| *l == closer)
+                .map(|p| i + 1 + p)
+                .unwrap_or(lines.len() - 1);
+            let body = &lines[i..=end];
+            let mutates = body.iter().any(|l| {
+                (l.contains("set_var(") || l.contains("remove_var("))
+                    && (l.contains("BSC_GRAPH_STORE") || l.contains("BSC_DATA_DIR"))
+            });
+            if !mutates {
+                continue;
+            }
+            let locked = body
+                .iter()
+                .any(|l| l.contains("store_at(") || l.contains("store_and_data_at(") || l.contains("store_lock()"));
+            out.push(StoreEnvSite { func: name, line: i + 1, locked });
+        }
+        out
+    }
+
+    /// `fn <name>` on this line, at any indent and through the usual prefixes.
+    fn fn_name(line: &str) -> Option<String> {
+        let t = line.trim_start();
+        let rest = ["pub(crate) ", "pub(super) ", "pub ", ""]
+            .iter()
+            .find_map(|p| t.strip_prefix(*p))?;
+        let rest = rest.strip_prefix("async ").unwrap_or(rest);
+        let rest = rest.strip_prefix("unsafe ").unwrap_or(rest);
+        let rest = rest.strip_prefix("fn ")?;
+        let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        if name.is_empty() {
+            None
+        } else {
+            Some(name)
+        }
+    }
+
+    /// The scanner must actually SEE an unlocked site — proven against a synthetic pair rather than
+    /// trusted, because a scanner that matches nothing passes the guard above vacuously.
+    ///
+    /// The fixture spells the keyword `FUNC` and substitutes it in. That is not decoration: the guard
+    /// above scans THIS FILE, so a fixture written as literal Rust declares a `fn unlocked` that the
+    /// guard then reports as a real offender — measured, on the first run. A fixture must not
+    /// masquerade as the source it is a fixture for.
+    #[test]
+    fn the_store_env_scanner_separates_a_locked_site_from_an_unlocked_one() {
+        let src = "\
+mod tests {
+    #[test]
+    FUNC locked() {
+        let _store = store_at(&p);
+        unsafe { std::env::set_var(\"BSC_GRAPH_STORE\", &p) };
+    }
+    #[test]
+    FUNC unlocked() {
+        unsafe { std::env::set_var(\"BSC_GRAPH_STORE\", &p) };
+    }
+    #[test]
+    FUNC untouched() {
+        assert!(true);
+    }
+}
+"
+        .replace("FUNC ", "fn ");
+        let sites = store_env_sites(&src);
+        assert_eq!(sites.len(), 2, "only the two store-env functions are sites");
+        assert_eq!(sites[0].func, "locked");
+        assert!(sites[0].locked, "a body holding store_at is locked");
+        assert_eq!(sites[1].func, "unlocked");
+        assert!(!sites[1].locked, "a body with a bare set_var is the offender this must catch");
+    }
     /// The help is the thing that misled, so it is the thing under test: it must NOT present the
     /// packaged kits as the accepted set, and must still say which half is grammar-bound.
     ///
