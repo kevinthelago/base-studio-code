@@ -1,7 +1,7 @@
 // Pure decision logic for verifying build outputs (#a-corrupt-build-artifact-has-no-recovery-path).
 //
 // Split from the fs-touching runner (`verify-build-artifacts.mjs`) the same way
-// `incremental-prune-plan.mjs` is split from `prune-incremental.mjs`, so the rules can be tested
+// `gate-lock-plan.mjs` is split from `gateLock.mjs`, so the rules can be tested
 // against a table of stats instead of a filesystem. No imports; every function is pure.
 //
 // ## Why a build output needs checking at all

@@ -14,10 +14,12 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { acquireGateSlot } from "./gateLock.mjs";
 import { planGate, parsePorcelain, gateCommands, isRecordStorePath, needsGateSlot } from "./gateScope.mjs";
 import { decideGateTree, devPortFrom } from "./gate-tree-guard.mjs";
 import { classifyBuildFailure, failingPackage } from "./build-artifact-plan.mjs";
+import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -217,12 +219,41 @@ if (!plan.full) {
 // Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
 // agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
 // so the only tree ever collected was the one where the app gets launched, and no worktree had been
-// swept once (#the-gc-never-runs-where-the-garbage-is). `gc` day-stamps itself, so this is ~0ms on
+// swept once (#the-gc-never-runs-where-the-garbage-is). `gc` stamps the tree, so this is ~0ms on
 // repeat runs during iteration, and it can never fail: it swallows everything and exits 0.
+//
+// NOW A `bsc` VERB (#the-disk-and-worktree-surface-moves-into-a-rust-crate). It is resolved through
+// `bscBinary.mjs` — the build tree's own answer to "where is a usable bsc", already used by
+// `record-run.mjs` two steps below for the same reason. Existence is not enough: a ZERO-BYTE `bsc`
+// (what `target/debug/bsc` IS for the seconds it is being linked) execs through bash as an empty
+// script and exits 0 printing nothing, which is indistinguishable from a clean sweep.
+//
+// A MISSING OR UNUSABLE bsc DEGRADES TO NO SWEEP, deliberately, and this is the same trade
+// `record-run` already makes one step away: a gate that could not run without a working `bsc` would
+// be a worse deal than a tree that goes uncollected for one run. The cost is bounded — the next gate
+// with a usable binary collects everything this one skipped, because eligibility is a function of
+// mtime, not of having been offered before.
 try {
-  const gcScript = fileURLToPath(new URL("./gc.mjs", import.meta.url));
-  const gc = spawnSync(process.execPath, [gcScript, "--quiet"], { encoding: "utf8" });
-  if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
+  const bsc = pickUsable(candidatePaths(REPO, homedir(), join), {
+    statSize: (p) => {
+      try {
+        return statSync(p).size;
+      } catch {
+        return null;
+      }
+    },
+    run: (p) => {
+      try {
+        return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+      } catch (err) {
+        return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+      }
+    },
+  });
+  if (bsc) {
+    const gc = spawnSync(bsc.path, ["disk", "gc", "--quiet"], { encoding: "utf8" });
+    if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
+  }
 } catch {
   // a janitor must never redden a gate
 }

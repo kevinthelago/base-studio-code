@@ -1,7 +1,7 @@
 // Pure decision logic for promoting `develop` into the tree the app RUNS from
 // (#the-app-runs-from-its-own-tree-so-a-merge-never-restarts-it).
 //
-// Side-effect-free and import-free, like `worktree-pool-plan.mjs` beside it, so every refusal is
+// Side-effect-free and import-free, like `guard-policy.mjs` beside it, so every refusal is
 // unit-testable without git or a filesystem (`scripts/promote-plan.test.ts`).
 //
 // Each refusal below exists because the alternative is worse than stopping, and the whole point of the

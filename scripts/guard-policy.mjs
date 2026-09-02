@@ -1,7 +1,7 @@
 // Pure policy for the ref guard that protects the tree the app RUNS from
 // (#nothing-stops-an-agent-merging-into-the-running-app).
 //
-// Side-effect-free and import-free, like `promote-plan.mjs` and `worktree-pool-plan.mjs` beside it,
+// Side-effect-free and import-free, like `promote-plan.mjs` and `build-artifact-plan.mjs` beside it,
 // so every refusal is unit-testable without git (`scripts/guard-policy.test.ts`).
 //
 // ## Why a hook and not a document

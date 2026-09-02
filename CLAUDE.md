@@ -79,7 +79,7 @@ PROFILE_SECONDS=600 npm run profile:glance   # a longer window
 
 > If Vite dies at startup with `ENOSPC: System limit for number of file watchers reached`, the box is out
 > of inotify watches — 36 worktrees against a stock 65536 limit. Prefix with `CHOKIDAR_USEPOLLING=1`; the
-> real fixes are raising `fs.inotify.max_user_watches` and `npm run worktrees:cap`. `devWatchIgnore.ts` is
+> real fixes are raising `fs.inotify.max_user_watches` and `bsc worktree cap`. `devWatchIgnore.ts` is
 > NOT at fault — it already anchor-ignores `wt-*` and `.claude/worktrees/*`.
 
 > **Gotcha — gesture granularity is load-bearing.** The preview's pan engine ignores movement under a 5px
@@ -1199,9 +1199,9 @@ out-of-memory failure rather than a slow one.
 shared inputs because `-C metadata` folds package + features + profile + target.
 
 ```bash
-npm run dedupe -- --dry-run     # what would be linked
-npm run dedupe                  # hard-link verified-identical artifacts
-npm run dedupe -- --undo        # BREAK the links again, one copy per tree
+bsc disk dedupe --dry-run     # what would be linked
+bsc disk dedupe               # hard-link verified-identical artifacts
+bsc disk dedupe --undo        # BREAK the links again, one copy per tree
 ```
 
 > **THE TRADE REVERSES WITH FLEET SIZE — currently UNDONE, deliberately.** At 3 active trees the shared
@@ -1233,9 +1233,10 @@ reclaimable — the deps sweep measures 0 orphaned units on every one, because t
 have any.
 
 ```bash
-npm run worktrees:cap -- --dry-run   # what would go
-npm run worktrees:cap                # keep the 2 most recently BUILT parked trees
-npm run worktrees:cap -- --keep 4
+bsc worktree list                 # every tree, what it holds, whether it is collectable
+bsc worktree cap --dry-run        # what would go
+bsc worktree cap                  # keep the 2 most recently BUILT parked trees
+bsc worktree cap --keep 4
 ```
 
 DESTRUCTIVE, so unlike the two janitors it is **never** wired into `build:plan` — you invoke it. It
@@ -1251,14 +1252,14 @@ Measured on the first run: **86 GB reclaimed**, 5 trees removed, 1 correctly ref
 
 **`target/` is swept automatically — and ~20 GB per tree is NORMAL.** Cargo never reclaims a build
 artifact: every distinct `-C metadata` (feature set × profile × lib-vs-test × rustc version × dep
-version) mints a new one and orphans the old permanently. One entry point, `gc`, runs the sweeps; it
+version) mints a new one and orphans the old permanently. One entry point, `bsc disk gc`, runs the sweeps; it
 is called from **the gate** and from `build:plan`, and is fail-safe (it swallows every error and
 exits 0, because a janitor must never redden a gate or block a dev launch):
 
 ```bash
-npm run gc                  # force a sweep now — both directories, one report
-npm run clean:incremental   # target/*/incremental — keep newest 1 per crate, >3d
-npm run clean:target        # target/*/deps        — keep newest 3 per crate, >3d
+bsc disk gc --force         # force a sweep now — both directories, one report
+bsc disk prune              # target/*/incremental — keep newest 1 per crate, >6h
+bsc disk sweep              # target/*/deps        — keep newest 3 per crate, >6h
                             #   add --dry-run, or --root <dir> to sweep ANOTHER worktree
 ```
 
@@ -1266,11 +1267,18 @@ npm run clean:target        # target/*/deps        — keep newest 3 per crate, 
 `tauri dev` invokes — so the one tree ever collected was the tree where the app gets launched (the
 one that had accumulated two months of orphans), and **no worktree had ever been swept once**. They
 audited clean only because they were young. The gate is the single command every worktree agent runs.
-`gc` day-stamps itself in `target/`, so repeat gate runs during iteration cost ~0ms, not 1.5s.
+`bsc disk gc` stamps the tree in `target/`, so repeat gate runs during iteration cost ~0ms, not 1.5s.
+The stamp window is deliberately SHORTER than the age floor — when the floor came down to six hours a
+one-day window would have inverted the invariant, skipping the sweep for four times longer than a
+directory takes to become eligible. `gc.rs` pins that relationship in a test.
 
-> Both age defaults live in the RUNNER, not in `planPrune`: the runner always passes an explicit
-> value, so changing only the pure module's default is dead code. An earlier pass did exactly that,
-> and the sweep kept running at 14 days while the docs claimed 3.
+> **That two-defaults trap is gone by construction** (`the-disk-and-worktree-surface-moves-into-a-rust-crate`).
+> It used to be real: `planPrune` carried its own defaults AND the runner always passed an explicit
+> value, so editing the pure module's default was dead code — an earlier pass did exactly that, and
+> the sweep kept running at 14 days while the docs claimed 3. Every `plan_*` function in `bsc-disk`
+> now takes its policy as a REQUIRED argument, and the defaults are named consts the CLI reads
+> (`sweep::DEFAULT_DAYS`, `pool::DEFAULT_KEEP`), so there is one place to change and no way to change
+> the wrong one.
 
 Set expectations from the measurements, not from the total:
 
