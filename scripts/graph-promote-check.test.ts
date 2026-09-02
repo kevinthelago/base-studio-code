@@ -202,3 +202,92 @@ describe("graph-promote-check diagnosis", () => {
     expect(diagnose([], io)).toBe("");
   });
 });
+
+// ── the CLI path, which no in-process test can reach ─────────────────────────────────────────────
+//
+// Every test above imports `diagnose`/`shapeOf` and calls them AFTER the module has finished
+// evaluating. The CLI does not: its entry block runs DURING evaluation, and for a while that block
+// sat above `const STAMPS`, so every real drift died with
+// `ReferenceError: Cannot access 'STAMPS' before initialization` — with six green tests over the
+// very functions that were crashing.
+//
+// So this spawns the module as a PROCESS against a stub `bsc`. It is the only shape that can
+// observe the declaration order the CLI actually uses.
+import { execFileSync } from "node:child_process";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** A checkout-shaped temp dir: the module, its one lib import, a stub `bsc`, and a repo store. */
+function stubCheckout(): string {
+  const root = mkdtempSync(join(tmpdir(), "promote-check-cli-"));
+  mkdirSync(join(root, "scripts", "lib"), { recursive: true });
+  mkdirSync(join(root, "target", "debug"), { recursive: true });
+  mkdirSync(join(root, "graph"), { recursive: true });
+  copyFileSync(join(HERE, "graph-promote-check.mjs"), join(root, "scripts", "graph-promote-check.mjs"));
+  copyFileSync(join(HERE, "lib", "bscBinary.mjs"), join(root, "scripts", "lib", "bscBinary.mjs"));
+
+  // BOTH copies must be READABLE or `shapeOf` returns null before it ever touches `STAMPS` — the
+  // early return would make this test pass against the unfixed module, which is the whole trap.
+  const bsc = join(root, "target", "debug", "bsc");
+  writeFileSync(
+    bsc,
+    [
+      "#!/bin/sh",
+      // `inspect` demands a handshake matching /^bsc\s/ before it will trust the binary.
+      'if [ "$1" = "version" ]; then echo "bsc 0.0.0-stub"; exit 0; fi',
+      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "get" ]; then',
+      '  echo \'{"id":"stub.rs","code":"RUNTIME","tech":"rust"}\'; exit 0; fi',
+      'if [ "$1" = "graph" ] && [ "$2" = "impl" ] && [ "$3" = "history" ]; then echo "[]"; exit 0; fi',
+      // The drift itself: non-zero, with the JSON line `drifted()` parses.
+      'echo \'{"checked":1,"drifted":["stub.rs"],"ok":false}\'',
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(bsc, 0o755);
+
+  // Same id, DIFFERENT code — so both copies parse and the shape comparison actually runs.
+  writeFileSync(
+    join(root, "graph", "algorithms.json"),
+    JSON.stringify({ implementations: [{ id: "stub.rs", code: "REPO-IS-DIFFERENT", tech: "rust" }] }),
+  );
+  return root;
+}
+
+/** Run the copied module as a CLI. It exits 1 on drift by design, so the STATUS is not the signal. */
+function runCli(root: string): string {
+  try {
+    return execFileSync(process.execPath, [join(root, "scripts", "graph-promote-check.mjs")], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string };
+    return `${e.stdout ?? ""}${e.stderr ?? ""}`;
+  }
+}
+
+describe("graph-promote-check as a CLI", () => {
+  it("completes its diagnosis instead of dying in the temporal dead zone", () => {
+    const out = runCli(stubCheckout());
+    // The regression, named exactly. Asserting on the message rather than on exit status matters:
+    // the CLI exits 1 for a real drift too, so status alone cannot tell a crash from a finding.
+    expect(out).not.toContain("ReferenceError");
+    expect(out).not.toContain("before initialization");
+  });
+
+  it("still reaches the drift SHAPE, which is the half that was being lost", () => {
+    const out = runCli(stubCheckout());
+    // `attribute` always survived; `shapeOf` is what died. Assert on the half that was broken, or
+    // this passes on a module that prints the attribution and then crashes.
+    expect(out).toContain("what drifted");
+    expect(out).toContain("stub.rs");
+    // Both copies were readable and differ, so it must report the differing field rather than
+    // "one of the two copies could not be read".
+    expect(out).toContain("code");
+  });
+});
