@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn would_have_spared_a_tree_touched_inside_a_session_and_collected_one_left_overnight() {
         // 2026-09-01T18:00:00Z.
-        let now = 1_788_026_400_000.0_f64;
+        let now = 1_788_285_600_000.0_f64;
         let at = |name: &str, hours_ago: f64| Tree {
             name: format!("/repo/{name}"),
             branch: Some(format!("parked-{name}")),

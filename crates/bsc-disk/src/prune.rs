@@ -302,7 +302,7 @@ mod tests {
     // These pin the SHAPE, so a future edit cannot restore a cutoff that exempts a working day.
 
     /// 2026-09-01T18:00:00Z in epoch ms — the day the six-hour floor was measured.
-    const SESSION_NOW: f64 = 1_788_026_400_000.0;
+    const SESSION_NOW: f64 = 1_788_285_600_000.0;
 
     fn hours_ago(name: &str, hours: f64) -> Entry {
         Entry::new(name, SESSION_NOW - hours * 3_600_000.0)
