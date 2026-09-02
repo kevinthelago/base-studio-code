@@ -52,7 +52,10 @@ describe("every glance graph fold has a caller", () => {
   // demanded a component call a helper it has no business calling. A helper is covered TRANSITIVELY —
   // if the entry point has a caller and the helper has one inside the module, the helper runs. Listing
   // every exported function here would trade a real signal for noise, which is how a gate gets demoted.
-  const FOLDS: [string, string][] = [["withSurfaceNodes", "surface-nodes.ts"]];
+  const FOLDS: [string, string][] = [
+    ["withSurfaceNodes", "surface-nodes.ts"],
+    ["crateDrillGraph", "surface-nodes.ts"],
+  ];
 
   const all = sources();
 

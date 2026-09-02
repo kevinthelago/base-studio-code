@@ -5,7 +5,7 @@
 // not, `bsc-util` among the verbless ones. Every assertion here is about a decision that could
 // plausibly have gone the other way, and would have been wrong in a way the UI would not reveal.
 import { describe, it, expect } from "vitest";
-import { surfaceGraph, dependentCount, withSurfaceNodes, crateKind, CRATE_KIND_ROLE, type SurfaceRosterRow } from "@/features/glance/lib/surfaceNodes";
+import { surfaceGraph, dependentCount, withSurfaceNodes, crateKind, crateDrillGraph, CRATE_KIND_ROLE, type SurfaceRosterRow, type CrateDrillDoc } from "@/features/glance/lib/surfaceNodes";
 import { buildGlanceData, type GlanceData } from "@/features/glance/lib/glanceData";
 import { surfaceNodeId, isBandNode, isBandEdge } from "@/features/glance/lib/glanceGraph";
 
@@ -383,5 +383,71 @@ describe("a crate node says which of the three kinds it is", () => {
       expect(CRATE_KIND_ROLE[k], `${k} has no accent`).toBeTruthy();
     }
     expect(Object.keys(CRATE_KIND_ROLE).sort()).toEqual(["library", "program", "surface"]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// THE SECOND LAYER (`a-crate-node-drills-into-its-verbs`).
+//
+// MAINTAINER: a crate node should "navigate into a second layer which will present the user the
+// surface node and their related verbs". So this is a GRAPH, not an inspector panel.
+// ---------------------------------------------------------------------------------------------
+describe("a crate drills into its verbs", () => {
+  const doc = (over: Partial<CrateDrillDoc> = {}): CrateDrillDoc => ({
+    crate: "logs", path: "crates/logs", surface: true,
+    nouns: [
+      { noun: "logs", status: "active", catalog: "projected", verbs: [
+        { verb: "sessions", summary: "s", usage: "u" },
+        { verb: "summary", summary: "s", usage: "u" },
+      ] },
+      { noun: "metrics", status: "active", catalog: "unreachable", verbs: null },
+      { noun: "perf", status: "active", catalog: "projected", verbs: [{ verb: "summary", summary: "s", usage: "u" }] },
+    ],
+    dependsOn: ["bsc-util"], dependents: ["bsc-fleet"], dependentCount: 1,
+    ...over,
+  });
+
+  it("puts the crate at the centre with one node per verb", () => {
+    const g = crateDrillGraph(doc());
+    expect(g.rawNodes[0].id).toBe(surfaceNodeId("logs"));
+    // 2 logs verbs + 1 perf verb + the crate itself; `metrics` contributes nothing
+    expect(g.rawNodes).toHaveLength(4);
+    expect(g.rawEdges).toHaveLength(3);
+    expect(g.rawEdges.every((e) => e.kind === "exposes")).toBe(true);
+    expect(g.rawEdges.every((e) => e.from === surfaceNodeId("logs"))).toBe(true);
+  });
+
+  it("keys a verb on its NOUN, so two nouns' same-named verbs stay distinct", () => {
+    // `bsc logs summary` and `bsc perf summary` are different commands. Keying on the verb alone
+    // collides them into one node and silently drops the other — the same 1:N mistake that made
+    // `bsc surface verbs metrics` advertise the logs catalog.
+    const g = crateDrillGraph(doc());
+    expect(g.rawNodes.filter((n) => n.slug === "summary")).toHaveLength(2);
+    const ids = g.rawNodes.map((n) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // and the caption is what tells them apart on screen
+    const captions = g.rawNodes.filter((n) => n.slug === "summary").map((n) => n.roleLabel).sort();
+    expect(captions).toEqual(["logs", "perf"]);
+  });
+
+  it("draws NOTHING for a noun whose catalog is unreachable", () => {
+    // `bsc metrics` takes a project, not a verb. An empty cluster would assert the crate offers
+    // something it does not.
+    const g = crateDrillGraph(doc());
+    expect(g.rawNodes.some((n) => n.roleLabel === "metrics")).toBe(false);
+  });
+
+  it("still drills a crate with no verbs at all — one node, honestly empty", () => {
+    // A library or a program must not render as a failed load.
+    const g = crateDrillGraph(doc({ crate: "bsc-util", surface: false, nouns: [], dependentCount: 44 }));
+    expect(g.rawNodes).toHaveLength(1);
+    expect(g.rawNodes[0].roleLabel).toBe("library");
+    expect(g.rawEdges).toHaveLength(0);
+  });
+
+  it("labels the crate by its KIND, the same as one level up", () => {
+    expect(crateDrillGraph(doc()).rawNodes[0].roleLabel).toBe("surface");
+    const prog = crateDrillGraph(doc({ crate: "bsc-agent", surface: false, nouns: [], dependentCount: 0 }));
+    expect(prog.rawNodes[0].roleLabel).toBe("program");
   });
 });
