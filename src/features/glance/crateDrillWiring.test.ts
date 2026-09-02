@@ -82,10 +82,24 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     expect(selectAt).toBeLessThan(expandAt);
   });
 
-  it("re-frames the viewport when the LAYER changes, not only the drill", () => {
-    // The fit effect keyed on `drill` alone, so entering the crate layer never re-fitted: a three-node
-    // graph laid out at world origin while the viewport was still framed for sixty crates is simply
-    // off-screen. The layer was correct and invisible, which is indistinguishable from broken.
-    expect(src).toContain("}, [drill, crateNode, fit, page, restoreView, hasUserMoved, setGlanceView]);");
+  // THE FIT MUST KEY ON THE GRAPH SHOWN, NOT ON THE INTENT TO CHANGE IT.
+  //
+  // Keying on `drill` alone never re-fitted the crate layer at all. Keying on `drill, crateNode` fitted
+  // one render EARLY: the crate document arrives async, so entering framed the fleet world and leaving
+  // framed the crate world — each time framing the graph about to be replaced, which is an empty canvas
+  // you have to drag out of. `useGraphViewport`'s own world-change re-fit cannot rescue it, because
+  // dragging sets `userMoved`, which is precisely what disables that re-fit.
+  it("keys the fit on which graph is displayed", () => {
+    expect(src).toContain("}, [shownGraph, fit, page, restoreView, hasUserMoved, setGlanceView]);");
+    // derived from crateDATA — the graph genuinely on screen — never from crateNode, the intent
+    expect(src).toContain("const shownGraph = crateData ? `crate:${crateNode}` : drill ? `drill:${drill}` : \"network\";");
+  });
+
+  it("the crate graph clears in the SAME render the layer closes", () => {
+    // `crateDoc` is cleared by an effect, which runs AFTER the render where `crateNode` became null. For
+    // that one render the layer was closed while the model still held the crate graph, and that stale
+    // render is what the viewport was framed against on the way out.
+    expect(src).toContain("() => (crateNode && crateDoc ? crateDrillGraph(crateDoc) : null),");
+    expect(src).toContain("[crateNode, crateDoc],");
   });
 });
