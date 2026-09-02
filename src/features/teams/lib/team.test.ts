@@ -174,6 +174,57 @@ describe("built-in orgs (#2193)", () => {
     expect(node!.y!).toBeGreaterThan(lowest);
   });
 
+  // `a-request-records-where-it-actually-came-from` — the reader stopped guessing at the string.
+  it("DRAWS a shell-filed request unparented, because the STORE says its origin is an actor", () => {
+    // `lane-c4` is a real filer with a real identity that is simply not a node on any graph. Under the
+    // old rule — "the origin is non-blank, so some other drill owns it" — this was skipped everywhere,
+    // leaving a live session with no node at all. Nothing here inspects the string: the verdict is the
+    // store's `originKind`, and the value is deliberately one a colon heuristic would call a pane.
+    const g = augmentStudioNetworkForRequests(
+      studio(),
+      [{ id: 11, origin: "lane-c4: princess-bubblegum", originKind: "actor", title: "z" }],
+      host,
+    );
+    const node = g.positions.find((p) => p.nodeId === "debugger-req-11");
+    expect(node).toBeDefined();
+    expect(node!.label).toBe("debug - z");
+    // Unparented, not mis-parented: an actor is not a session, so there is nothing to point at.
+    expect(g.relationships.some((r) => r.from === "debugger-req-11")).toBe(false);
+  });
+
+  it("still SKIPS a pane-origin request that belongs to another drill", () => {
+    // The counterpart the split must not break: `pane` means a session, and a session this graph does
+    // not draw is one another drill does — so omitting it here is right, and it is the ONE case that
+    // justifies omission.
+    const g = augmentStudioNetworkForRequests(
+      studio(),
+      [{ id: 12, origin: "myproject:director", originPane: "myproject:director", originKind: "pane", title: "x" }],
+      host,
+    );
+    expect(g.positions.some((p) => p.nodeId === "debugger-req-12")).toBe(false);
+  });
+
+  it("edges a request to its filer from originPane even when the merged origin disagrees", () => {
+    // A session that also passed `--from` records BOTH; the pane is what the graph can draw from, and
+    // the merged `origin` holds the ACTOR there because `--from` wins in that field. Reading `origin`
+    // would lose the edge.
+    const g = augmentStudioNetworkForRequests(
+      studio(),
+      [{ id: 13, origin: "kevin", originPane: "design-studio:designer-react", originKind: "both", title: "q" }],
+      host,
+    );
+    expect(g.relationships.find((r) => r.from === "debugger-req-13")!.to).toBe("designer");
+  });
+
+  it("leaves a caller that passes no originKind on its previous behaviour", () => {
+    // Back-compat is load-bearing: the 39 rows already in the store carry only the merged field, and a
+    // consumer that has not been updated must not silently change shape.
+    const skipped = augmentStudioNetworkForRequests(studio(), [{ id: 14, origin: "myproject:director" }], host);
+    expect(skipped.positions.some((p) => p.nodeId === "debugger-req-14")).toBe(false);
+    const drawn = augmentStudioNetworkForRequests(studio(), [{ id: 15, origin: null }], host);
+    expect(drawn.positions.some((p) => p.nodeId === "debugger-req-15")).toBe(true);
+  });
+
   it("fans SEVERAL unparented requests apart instead of stacking them on one point", () => {
     const g = augmentStudioNetworkForRequests(studio(), [
       { id: 8, origin: null, title: "a" },

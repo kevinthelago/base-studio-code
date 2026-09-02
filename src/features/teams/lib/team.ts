@@ -299,8 +299,22 @@ export function studioNetworkForArchitect(org: Team): Team {
 export interface RequestNodeSpec {
   id: number;
   /** The pane id of the session that FILED it (`designer-studio:react`). Absent for a request filed
-   *  outside a session. */
+   *  outside a session.
+   *
+   *  On a row filed before `a-request-records-where-it-actually-came-from` this is the MERGED field,
+   *  holding either a pane id or a free-text actor with nothing to say which — see `originKind`. */
   origin?: string | null;
+  /** The pane id specifically, when the store recorded one
+   *  (`a-request-records-where-it-actually-came-from`). Preferred over `origin` because it is the only
+   *  value that is *known* to name a session. */
+  originPane?: string | null;
+  /** WHAT KIND of thing `origin` names, as the STORE classified it at filing time — `pane`, `actor`,
+   *  `both`, `unknown` or `absent`. Absent here for a caller that has not been updated to pass it.
+   *
+   *  This exists because the alternative is a heuristic, and the heuristic is wrong: the reader that
+   *  used to answer "is this a pane?" by looking for a `:` calls `lane-c4` a pane and would call
+   *  `princess-bubblegum (dev session)` one too if it ever held a colon. */
+  originKind?: string | null;
   /** The label form — always populated by the request store. */
   title?: string | null;
 }
@@ -361,11 +375,12 @@ export function augmentStudioNetworkForRequests(
   if (!requests.length || org.id !== STUDIO_NETWORK_ID) return org;
   const present = new Set(org.positions.map((p) => p.nodeId));
   const add = requests
-    .map((r) => ({ ...r, host: hostForOrigin(r.origin, present) }))
-    // `host === null` splits two unlike cases, and only one of them is a skip: an origin that named a
-    // session this graph does not draw belongs to another drill, while an ABSENT origin belongs to none.
-    // Keeping the second is what stops a live session from having no node anywhere.
-    .filter((r) => (r.host !== null || !hasOrigin(r)) && !present.has(requestNodeId(r.id)));
+    .map((r) => ({ ...r, host: hostForOrigin(r.originPane ?? r.origin, present) }))
+    // `host === null` splits two unlike cases, and only one of them is a skip: an origin that names a
+    // SESSION this graph does not draw belongs to another drill, while an origin that names no session
+    // at all belongs to none. Keeping the second is what stops a live session from having no node
+    // anywhere.
+    .filter((r) => (r.host !== null || !namesASession(r)) && !present.has(requestNodeId(r.id)));
   if (!add.length) return org;
   // Fan each host's requests in a row BENEATH that host, so the layout says the same thing the edges do.
   // Grouped per host (not one global row) — with two designers and a librarian all filing, one row would
@@ -412,11 +427,29 @@ export function augmentStudioNetworkForRequests(
  *  real host key in the per-host fan-out counter — a position's nodeId is a slug. */
 const UNPARENTED_ROW = "(unparented)";
 
-/** Whether a request names a filing session at all. Blank-or-missing is "nobody said", which is the case
- *  {@link augmentStudioNetworkForRequests} draws unparented; anything else is a claim this graph either
- *  can host or must leave to another one. */
-function hasOrigin(r: RequestNodeSpec): boolean {
-  return !!(r.origin ?? "").trim();
+/**
+ * Whether a request names a SESSION — the only thing that can justify leaving it out of this graph on
+ * the grounds that another drill will draw it.
+ *
+ * THE STORE ANSWERS THIS, NOT A GUESS ABOUT THE STRING
+ * (`a-request-records-where-it-actually-came-from`). `bsc request` classifies each origin at filing
+ * time from WHICH COLUMN it landed in, and ships the verdict as `originKind`; here it is simply read.
+ * The previous rule was "is the origin non-blank", which treated every named actor as a session
+ * belonging elsewhere — so a request filed from a shell by `lane-c4` was silently drawn on NO graph at
+ * all, the exact unwatchable state the unparented case exists to prevent.
+ *
+ * `unknown` — a row filed before the split, where nothing recorded which kind the origin was — counts
+ * as NOT a session on purpose. It is the honest reading: we may not skip a node on a maybe, and if the
+ * string does happen to name a drawn position the resolver above has already hosted it, so the only
+ * rows this reaches are ones nothing could host anyway.
+ *
+ * A caller that does not pass `originKind` at all falls back to the old presence test, so an untouched
+ * consumer keeps its previous behaviour rather than silently changing shape.
+ */
+function namesASession(r: RequestNodeSpec): boolean {
+  const kind = (r.originKind ?? "").trim();
+  if (kind) return kind === "pane" || kind === "both";
+  return !!(r.originPane ?? r.origin ?? "").trim();
 }
 
 /** The bottom of the drawn graph, so an unparented node lands below it rather than on top of a position. */

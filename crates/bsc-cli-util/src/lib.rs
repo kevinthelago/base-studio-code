@@ -237,6 +237,18 @@ fn format_stamp(t: std::time::SystemTime) -> String {
     format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02} UTC")
 }
 
+/// An epoch-millisecond instant in the SAME `YYYY-MM-DD HH:MM:SS UTC` form `bsc version` prints.
+///
+/// Exposed so a stored build time (`bsc request`'s `bsc_built_at`, the mtime of the executable that
+/// filed a request) renders identically to the `built …` line the same binary reports — one formatter,
+/// so the two cannot drift into disagreeing about the build they both describe.
+///
+/// A negative input clamps to the epoch rather than panicking: `Duration` is unsigned, and a store
+/// holding a pre-1970 timestamp is corrupt, not a reason to abort a read.
+pub fn format_epoch_ms(ms: i64) -> String {
+    format_stamp(std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms.max(0) as u64))
+}
+
 /// The running binary's identity — `bsc version` (#92). Public so each `bsc-*` entry point can answer
 /// "which build am I?" without reimplementing the stamp.
 pub fn version_line(prog: &str) -> String {
@@ -1644,6 +1656,18 @@ mod tests {
         // A leap day, because the civil-from-days conversion is the part that can be subtly wrong.
         let leap = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_709_164_800);
         assert!(format_stamp(leap).starts_with("2024-02-29"), "{}", format_stamp(leap));
+    }
+
+    /// The millisecond form agrees with the `SystemTime` one — the whole reason it is exposed is that
+    /// a stored build time and the `built …` line must describe the same instant the same way.
+    #[test]
+    fn format_epoch_ms_agrees_with_the_system_time_stamp() {
+        assert_eq!(format_epoch_ms(1_700_000_000_000), "2023-11-14 22:13:20 UTC");
+        assert_eq!(format_epoch_ms(0), "1970-01-01 00:00:00 UTC");
+        // Sub-second precision is DROPPED, not rounded up — the stamp is second-granular.
+        assert_eq!(format_epoch_ms(1_700_000_000_999), "2023-11-14 22:13:20 UTC");
+        // A corrupt pre-epoch value clamps rather than panicking on the unsigned Duration.
+        assert_eq!(format_epoch_ms(-5), "1970-01-01 00:00:00 UTC");
     }
 
     #[test]
