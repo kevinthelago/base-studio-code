@@ -22,7 +22,7 @@
 // the tree out from under every other test file being collected in parallel.
 import { describe, it, expect } from "vitest";
 import { relativeImportSpecifiers } from "@/shared/lib/runtime/shadow/pageBinding";
-import { planRecords, edgeTestPath } from "../../../scripts/emit-records.mjs";
+import { planRecords } from "../../../scripts/emit-records.mjs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -144,25 +144,10 @@ describe("a retired module keeps its tests in the gate", () => {
 // same trade with the same shape, and it shipped with a STORE and a CLI and nothing that runs a test,
 // so these assert the executing half before 51 cross-module tests are moved onto it.
 describe("an edge test is executed, not merely stored", () => {
-  it("emits an edge's tests at the mirror of the file it came from — so a lib/ test keeps `node`", () => {
-    // NOT vacuous at zero edges: this exercises the rule directly rather than iterating a set that is
-    // currently empty. A synthetic folder for every edge would be the tempting alternative and would
-    // re-classify every pure-domain integration test into jsdom, which the `node` project selects
-    // against by path (`src/**/lib/**`) and costs 488.56s of environment for 13.93s of tests.
-    expect(edgeTestPath("src/shared/lib/security/roleProfileConsistency.test.ts", 0, ".ts", "")).toBe(
-      "shared/lib/security/roleProfileConsistency.test.ts",
-    );
-    expect(edgeTestPath("src/shared/ui/overlay/modalFocus.test.tsx", 0, ".tsx", "")).toBe(
-      "shared/ui/overlay/modalFocus.test.tsx",
-    );
-    // A second test on one edge gets its own file rather than overwriting the first — `roleModel ×
-    // sessionRoles` already attracts two (funnelTiers + sessionRoles.roleTable).
-    expect(edgeTestPath("src/a/b.test.ts", 1, ".ts", "")).toBe("a/b.1.test.ts");
-    // The carried extension wins over the body guess, for the reason the node path learned it: a
-    // generic arrow named `.tsx` fails to parse and reports as a dead suite.
-    expect(edgeTestPath("src/a/b.test.ts", 0, undefined, "const f = <T>(x: T) => x;")).toBe("a/b.test.tsx");
-    expect(edgeTestPath("src/a/b.test.ts", 0, ".ts", "const f = <T>(x: T) => x;")).toBe("a/b.test.ts");
-  });
+  // THE PATH RULE ITSELF now lives in `crates/bsc-emit/src/plan.rs::edge_test_path`, with all
+  // five of the cases this block asserted carried over verbatim — including the two real
+  // provenances (`shared/lib/security/…` keeping `node`, `shared/ui/overlay/…` keeping `.tsx`).
+  // What stays here is what only the live plan can answer.
 
   it("accounts for EVERY edge that carries tests — emitted, shadowed, or declined with a reason", () => {
     const plan = planRecords();

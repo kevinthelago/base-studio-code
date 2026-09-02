@@ -10,6 +10,9 @@ description = "The `bsc ui` CLI — the ONE UI-design-surface command (#2469): t
 name = "bsc_ui"
 
 [dependencies]
+# `bsc ui emit records` is the agent-facing door onto the record emitter; the lean `bsc-emit`
+# binary is the build tree's. Same library, so the two cannot describe the same run differently.
+bsc-emit = { path = "../bsc-emit" }
 # Shared CLI scaffold (#1762): CmdDoc help catalog + help dispatch.
 bsc-cli-util = { path = "../bsc-cli-util" }
 # Base-dir resolution for the default released-kit store root (~/.base-studio-code/kits, #2465).
