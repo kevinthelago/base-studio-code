@@ -330,6 +330,20 @@ mod tests {
         assert!(decide(&FleetReport::default(), &HashSet::new()).is_empty());
     }
 
+    /// Serialises the tests that touch the PROCESS-GLOBAL report + quarantine registries.
+    ///
+    /// **This is not belt-and-braces; without it the suite is 10% flaky and THE GATE CANNOT SEE IT.**
+    /// `report_cell()` and `quarantined_cell()` are `OnceLock<Mutex<..>>`, so every test calling
+    /// `reset_for_test`/`report_fleet`/`note_quarantined` shares one registry. Under `cargo nextest`
+    /// each test gets its OWN PROCESS and they cannot collide; under `cargo test` they are parallel
+    /// threads in one process and they do. The gate runs nextest — so this raced 1 run in 10 locally
+    /// while the gate stayed green, which is precisely the "green gate that covers less than the
+    /// reader assumes" failure this repo keeps being caught by.
+    ///
+    /// Same shape and same reason as `testutil::ENV_LOCK`. Poisoning is recovered rather than
+    /// propagated: a panicking sibling must not cascade into every other test.
+    static WARDEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// A STALE REPORT YIELDS NOTHING, and the direction is the opposite of the reaper's.
     ///
     /// [`crate::console::pty::reap`]'s on-screen report fails toward ACTION: a stale one means nothing
@@ -339,6 +353,7 @@ mod tests {
     /// renderer start killing sessions.
     #[test]
     fn a_stale_report_stops_the_warden_and_that_is_the_opposite_of_the_reaper() {
+        let _guard = WARDEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_for_test();
         report_fleet(report(&["p:api"]));
         let at = now_ms();
@@ -358,6 +373,7 @@ mod tests {
     /// A completed worker's standing quarantine is LIFTED, not merely skipped.
     #[test]
     fn a_completed_workers_standing_quarantine_is_lifted() {
+        let _guard = WARDEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_for_test();
         note_quarantined("p:api");
         note_quarantined("p:web");
@@ -376,6 +392,7 @@ mod tests {
     /// hold it — and it stays here even though the DECISION moved, because it is live state.
     #[test]
     fn the_quarantine_record_is_owned_here_and_lifts_on_completion() {
+        let _guard = WARDEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_for_test();
         assert!(quarantined().is_empty());
         note_quarantined("p:api");
