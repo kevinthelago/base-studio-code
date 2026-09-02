@@ -210,6 +210,42 @@ fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
         "data" => bsc_data::cli::COMMANDS,
         "compliance" => compliance::cli::COMMANDS,
         "cve" => cve::cli::COMMANDS,
+        // The RECORD-backed CLIs (`every-record-cli-projects-its-catalog`). Their `cli.rs` compiles from
+        // the graph store rather than a file on disk, which is why they were absent here: the catalogs
+        // existed all along and were merely private. 19 of 20 needed nothing but `pub`.
+        "blueprint" => bsc_blueprint::cli::COMMANDS,
+        "debug" => bsc_debug::cli::COMMANDS,
+        "files" => bsc_files::cli::COMMANDS,
+        "loop" => bsc_loop::cli::COMMANDS,
+        "navigate" => bsc_navigate::cli::COMMANDS,
+        "network" => bsc_network::cli::COMMANDS,
+        "project" => bsc_project::cli::COMMANDS,
+        "publish" => bsc_publish::cli::COMMANDS,
+        "runtime" => bsc_runtime::cli::COMMANDS,
+        "sandbox" => bsc_sandbox::cli::COMMANDS,
+        "session" => bsc_session::cli::COMMANDS,
+        "shot" => bsc_shot::cli::COMMANDS,
+        "sound" => bsc_sound::cli::COMMANDS,
+        "studio" => bsc_studio::cli::COMMANDS,
+        // `org` is a DEPRECATED ALIAS of `teams` and shares its catalog on purpose — the one case where
+        // two surfaces advertising the same verb list is correct, and the reason
+        // `two_active_surfaces_never_advertise_the_same_verb_list` exempts deprecated ones.
+        "teams" | "org" => bsc_teams::cli::COMMANDS,
+        "errors" => errordb::cli::COMMANDS,
+        "skill" => skilldb::cli::COMMANDS,
+        "usage" => usagedb::cli::COMMANDS,
+        // CATALOG-BY-FUNCTION. These crates expose `pub fn command_docs()` rather than a const — already
+        // public, so they were reachable all along and simply had no arm. `bsc-disk` serves TWO nouns and
+        // already keeps a catalog PER NOUN (`disk_command_docs` / `worktree_command_docs`), which is the
+        // shape `logs` did not have and had to be re-keyed for.
+        "app" => bsc_app::cli::command_docs(),
+        "component" => bsc_component::cli::command_docs(),
+        "github" => bsc_github::cli::command_docs(),
+        "perms" => bsc_perms::cli::command_docs(),
+        "resolve" => bsc_resolve::cli::command_docs(),
+        "self" => bsc_self::cli::command_docs(),
+        "disk" => bsc_disk::cli::disk_command_docs(),
+        "worktree" => bsc_disk::cli::worktree_command_docs(),
         _ => return None,
     })
 }
@@ -988,6 +1024,12 @@ mod tests {
         const PROJECTED: &[&str] = &[
             "plan", "logs", "perf", "ui", "fleet", "mem", "persona", "request", "secret", "config",
             "work", "cad", "data", "compliance", "cve",
+            // the record-backed CLIs, whose catalogs were private rather than absent
+            "blueprint", "debug", "files", "loop", "navigate", "network", "project", "publish",
+            "runtime", "sandbox", "session", "shot", "sound", "studio", "teams", "org", "errors",
+            "skill", "usage",
+            // catalog-by-function rather than by const
+            "app", "component", "github", "perms", "resolve", "self", "disk", "worktree",
         ];
         for n in PROJECTED {
             let docs = surface_verbs(n).unwrap_or_else(|| panic!("{n} stopped projecting its catalog"));
