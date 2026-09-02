@@ -7,12 +7,10 @@
 /// both `api.rs` and `oauth.rs`.
 pub(crate) const USER_AGENT: &str = concat!("base-studio-code/", env!("CARGO_PKG_VERSION"));
 
-// The persisted board state's MODEL (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) —
-// the rules about a structure bsc-project already stores but, by its own doc comment, treats as
-// opaque. Nothing calls it yet: the caller flip is a separate item, so the derivation and the
-// behaviour change stay independently revertible.
-#[allow(dead_code)]
-pub(crate) mod board_state;
+// `board_state` and `repo_credentials` MOVED to `crates/bsc-github`
+// (`the-github-domains-pure-logic-lives-in-bsc-github`). Both were Tauri-free with no importers, and
+// living here meant no live session could reach them through `bsc`. Reach them as
+// `bsc_github::board_state` / `bsc_github::repo_credentials`.
 pub mod api;
 pub mod oauth;
 pub mod git_hooks;
@@ -23,6 +21,3 @@ pub(crate) use api::*;
 pub mod repos;
 pub mod readiness;
 
-/// Which GitHub credential a request or a session may use (#158) — the repo-scoped token choice,
-/// ported from `repoCredentials.ts`. A security boundary that was decided in the renderer.
-pub mod repo_credentials;

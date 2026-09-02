@@ -9,8 +9,19 @@
 //! credential a worker/triage pane is LAUNCHED with as its `GH_TOKEN` (#158), so a session bound to
 //! repo A carries a fine-grained repo-scoped token and cannot act on sibling repos through `gh`/`git`;
 //! [`resolve_github_token`] picks the one a proxied REST request carries. Rust owns both ends —
-//! `pty_create` builds the session env, and [`crate::github::api`] is the API layer — and the choice
-//! was made in the renderer.
+//! `pty_create` builds the session env, and this crate is the API layer — and the choice was made in
+//! the renderer.
+//!
+//! # Which way this fails
+//!
+//! Every path falls back to the GLOBAL token, never to no token and never to another repo's. A
+//! credential choice that failed open — handing a session a token for a repo it is not bound to —
+//! would defeat the #158 confinement this exists to enforce; falling back to the global token is the
+//! pre-#158 behaviour, which is a loss of scoping rather than a breach of it.
+//!
+//! # It moved out of `src-tauri` (`the-github-domains-pure-logic-lives-in-bsc-github`)
+//!
+//! It has no Tauri dependency and never had one, so it was in the app only by where it was written.
 //!
 //! # The input is ORDERED, and that is not incidental
 //!
@@ -76,7 +87,7 @@ mod tests {
 
     /// Resolved BY FILENAME under `src/`, the rule every generated contract here uses.
     fn fixture() -> Value {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found: Vec<std::path::PathBuf> = Vec::new();
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else { return };

@@ -729,6 +729,7 @@ dependencies = [
  "bsc-debug",
  "bsc-files",
  "bsc-fleet",
+ "bsc-github",
  "bsc-graph",
  "bsc-llm",
  "bsc-loop",
@@ -906,6 +907,8 @@ dependencies = [
 name = "bsc-github"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
+ "bsc-project",
  "bsc-util",
  "log",
  "reqwest 0.12.28",
