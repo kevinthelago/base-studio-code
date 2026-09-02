@@ -35,3 +35,13 @@ llm = { path = "../llm", package = "bsc-llm" }
 # runs (`console/pty`), so a manual repair and an automatic one cannot rewrite a file two different
 # ways. Cheap: bsc-sandbox's only deps are bsc-util + bsc-cli-util + serde_json, all already here.
 bsc-sandbox = { path = "../bsc-sandbox" }
+
+# `ledger` + `warden-sweep` probe liveness and reap a process GROUP. `setsid` makes pgid == pid, so
+# `killpg(-pid)` is the same mechanism `PtyJob::drop` and the boot reconcile already use — this crate
+# is where that one definition now lives, so a sweep run from `bsc` and a reap run from the app cannot
+# drift into two different ideas of what killing a session means.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
