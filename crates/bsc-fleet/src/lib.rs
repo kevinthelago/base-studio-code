@@ -32,6 +32,8 @@ pub mod membership;
 mod glob_parity;
 pub mod fault_triage;
 pub mod worker_auto_end;
+pub mod ledger;
+pub mod warden_sweep;
 pub mod worker_end;
 pub mod worktree_reconcile;
 pub mod warden;

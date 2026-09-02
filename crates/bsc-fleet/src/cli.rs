@@ -260,6 +260,43 @@ nothing.
 ONE READ PER BATCH: pass every stream in one call. A per-stream invocation is the shape #3908 and
 #3954 were filed to undo -- at ~39 panes it saturated the command pool and `pty_write` hit 3280ms.",
 }, CmdDoc {
+    name: "warden-sweep",
+    summary: "what a live worker has attempted from the dangerous floor — runs with the app gone",
+    usage: "\
+USAGE:
+  bsc fleet warden-sweep [--since <epochMs>] [--enforce] [--json|--pretty]
+
+The half of the warden that survives the app. Reads `pty-ledger.json` for the roster and its kill
+handle, probes each pid for liveness, and scans `audit.log` for anything matching the DANGEROUS FLOOR.
+Every input is on disk, so this needs no app, no renderer and no IPC.
+
+THE GAP IT COVERS IS NARROW AND WORTH STATING EXACTLY. On a CLEAN app exit it is vacuous: every PTY is
+dropped and `killpg`d, so nothing survives to enforce against. It is real only after an UNCLEAN death
+-- SIGKILL, OOM, panic -- where `Drop` never runs and the `setsid` shells ORPHAN and keep executing.
+The boot reconcile reaps them at the next launch, so the exposure is unclean-death to next launch.
+
+IT REPORTS. `--enforce` KILLS, and the default is load-bearing for TWO independent reasons:
+  1. `bsc-audit` records an ATTEMPT; `bsc-deny` BLOCKS one. A floor hit in the log is either a blocked
+     attempt or an escape, and this cannot tell which -- the log says the tool was reached for, not
+     what the hook then did.
+  2. The floor is a SUBSTRING match. `sudo ` matches a commit message that merely mentions it. Killing
+     on that hard-pauses a worker for writing prose.
+Read a finding as \"this is worth a human look\", not as \"this worker is compromised\".
+
+GLOB-FREE BY CONSTRUCTION. The check is the floor's `agent_substring` half, which needs no session
+context. The `Bash(<glob>)` half would need the engine blocked by
+`the-two-write-scope-glob-engines-disagree`, and per-role denies live in each worktree's own settings
+and would need a pane-to-worktree resolution -- both are deliberately out.
+
+A STALE SWEEP IS VISIBLE, NOT SILENT. Every run reports the `ruleset` it enforced, an id derived from
+the floor's own contents. An old staged binary reports an old id, so \"the warden is behind\" is a value
+you can read rather than a thing to infer. A stale warden is ACCEPTABLE -- missing a new rule is the
+safe direction for something whose action is to hard-pause a worker -- but it must not be invisible.
+
+TWO ACTORS CANNOT DOUBLE-KILL. `--enforce` claims each pane through an on-disk record guarded by an
+`O_EXCL` lock, and CONTENTION FAILS TOWARD INACTION: a caller that cannot take the lock does not act.
+The record is durable, so a restart does not forget who is already paused.",
+}, CmdDoc {
     name: "doctor",
     summary: "the claims this fleet makes about itself that do not hold",
     usage: "\
@@ -455,11 +492,17 @@ struct Args {
     /// `warden-decide --quarantined a,b`: panes this process has ALREADY hard-paused, so a trip stays
     /// a one-shot pause rather than an alert that repeats on every sweep.
     quarantined: Option<String>,
+    /// `warden-sweep --enforce`: actually hard-pause what the sweep finds. OFF by default, and that
+    /// default is load-bearing — see the verb's usage text for the two independent reasons.
+    enforce: bool,
+    /// `warden-sweep --since <epochMs>`: bound the audit window, so a sweep does not re-report the
+    /// same historical attempt on every run.
+    since: Option<i64>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, provider: None, file: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, quarantined: None, positional: Vec::new() };
+    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, provider: None, file: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, quarantined: None, enforce: false, since: None, positional: Vec::new() };
     let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
         match flag {
             "--json" => a.json = true,
@@ -467,6 +510,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--roster" => a.roster = Some(v.value("--roster needs a path")?),
             "--stream" => a.stream = Some(v.value("--stream needs a stream id")?),
             "--quarantined" => a.quarantined = Some(v.value("--quarantined needs a pane id list")?),
+            "--enforce" => a.enforce = true,
+            "--since" => a.since = v.value("--since needs an epoch-ms value")?.parse::<i64>().ok(),
             "--db" => a.db = Some(v.value("--db needs a path")?),
             "--prompt" => a.prompt = Some(v.value("--prompt needs text")?),
             "--force" => a.force = true,
@@ -539,6 +584,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "clone" => cmd_clone(&args, prog),
         "warden-decide" => cmd_warden_decide(&args),
         "launch-config" => cmd_launch_config(&args),
+        "warden-sweep" => cmd_warden_sweep(&args),
         "worker-end" => cmd_worker_end(&args),
         "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
@@ -612,6 +658,79 @@ fn cmd_launch_config(a: &Args) -> Result<(), String> {
         out.provider_command.clone().unwrap_or_else(|| {
             format!("(no launch command — the {provider} harness bakes its own prompt)")
         })
+    });
+    Ok(())
+}
+
+/// `bsc fleet warden-sweep` — the warden half that runs when the app does not.
+///
+/// Impure glue only: resolve the base dir, read the two on-disk inputs, hand them to the pure
+/// `warden_sweep` functions, and print. Enforcement is opt-in and each kill is claimed first.
+fn cmd_warden_sweep(a: &Args) -> Result<(), String> {
+    let base = bsc_util::bsc_base_dir().ok_or("no home directory — cannot locate the ledger")?;
+    let ruleset = crate::warden_sweep::ruleset_id();
+
+    let entries = crate::ledger::load(&base);
+    let panes = crate::warden_sweep::sweep_panes(&entries, &crate::ledger::OsProbe);
+    // The audit tail, oldest-first — `parse_audit_commands` filters by pane and by the `since` floor.
+    // The same tail depth the coord fold uses — one number for "how far back a sweep looks", so the
+    // two windows cannot drift into different ideas of recent.
+    let lines = logs::tail_raw(&logs::log_dir(), "tool", crate::worker_end::COORD_TAIL_LINES, true);
+    let findings = crate::warden_sweep::find_dangerous(&panes, &lines, a.since.unwrap_or(0));
+
+    let mut enforced = Vec::new();
+    if a.enforce {
+        let now = bsc_util::now_ms().max(0) as u64;
+        for f in &findings {
+            // Claim BEFORE killing. Two actors reading "not quarantined" and both killing is the
+            // failure this prevents; contention deliberately does nothing and lets the next sweep see
+            // the same evidence.
+            match crate::warden_sweep::claim_quarantine(&base, &f.pane_id, &f.matched, &ruleset, now) {
+                crate::warden_sweep::Claim::Won => {
+                    crate::ledger::tree_kill(f.pid);
+                    enforced.push(f.pane_id.clone());
+                }
+                crate::warden_sweep::Claim::AlreadyHeld | crate::warden_sweep::Claim::Contended => {}
+            }
+        }
+    }
+
+    let report = crate::warden_sweep::SweepReport {
+        ruleset,
+        panes,
+        findings,
+        enforced,
+        mode: if a.enforce { "enforce".into() } else { "report".into() },
+    };
+    bsc_cli_util::emit(a.pretty, a.json, &report, || {
+        let live = report.panes.iter().filter(|p| p.live).count();
+        let mut out = vec![format!(
+            "ruleset {} · {} pane(s), {live} live · mode {}",
+            report.ruleset,
+            report.panes.len(),
+            report.mode
+        )];
+        if report.findings.is_empty() {
+            // Said in words. An empty table reads as "the sweep did not run", and those are opposite
+            // facts for a verb whose whole job is to notice.
+            out.push("no pane attempted anything on the dangerous floor in this window".into());
+        } else {
+            out.push("pane\tpid\tmatched\tcommand".into());
+            out.extend(report.findings.iter().map(|f| {
+                format!("{}\t{}\t{}\t{}", f.pane_id, f.pid, f.matched, f.command)
+            }));
+            // The caveat rides the OUTPUT, not only the docs — a reader acting on this must see it.
+            out.push(String::new());
+            out.push(
+                "a hit is an ATTEMPT, not proof of an escape: bsc-audit records the reach, bsc-deny \
+does the blocking, and the floor is a substring match. Worth a look, not a verdict."
+                    .into(),
+            );
+        }
+        if !report.enforced.is_empty() {
+            out.push(format!("quarantined: {}", report.enforced.join(", ")));
+        }
+        out.join("\n")
     });
     Ok(())
 }

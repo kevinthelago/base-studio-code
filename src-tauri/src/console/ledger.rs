@@ -13,29 +13,20 @@
 // guard), gets tree-killed. It can ONLY ever kill pids it recorded spawning under a now-dead owner —
 // never the user's own terminals. Ties into #1041 (unclean-shutdown detection).
 
-use serde::{Deserialize, Serialize};
+// The on-disk SHAPE, the liveness probe and the group-kill live in `bsc_fleet::ledger` — a reader
+// that is not the app needs them (`bsc fleet warden-sweep` runs when the app is gone), and a second
+// copy of a kill path is exactly the duplication this epic exists to remove.
+pub(crate) use bsc_fleet::ledger::{
+    os_alive, os_start_token, project_key_of, tree_kill, LedgerEntry, OsProbe, ProcProbe,
+};
 use std::path::PathBuf;
 use std::sync::Mutex;
-
-/// One recorded shell spawn. The tuple (owner_pid alive?, pid alive?, start_token match?) decides its
-/// fate on the next boot.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub(crate) struct LedgerEntry {
-    pub pid: u32,
-    pub pane_id: String,
-    /// The app process that spawned this child. Reaped only once this owner is no longer alive, so a
-    /// second concurrent app instance never reaps the first's children.
-    pub owner_pid: u32,
-    /// Process creation-time token of `pid` at spawn — the PID-recycle guard. `0` = the platform
-    /// couldn't provide one (macOS), in which case reconcile falls back to liveness-only.
-    pub start_token: u64,
-}
 
 // Serializes concurrent ledger mutations (pty_create / pty_kill happen on different threads).
 static LEDGER_LOCK: Mutex<()> = Mutex::new(());
 
 fn ledger_path() -> PathBuf {
-    crate::bsc_base_dir().join("pty-ledger.json")
+    bsc_fleet::ledger::ledger_path(&crate::bsc_base_dir())
 }
 
 fn load_unlocked() -> Vec<LedgerEntry> {
@@ -81,19 +72,6 @@ pub(crate) fn forget_pane(pane_id: &str) {
     v.retain(|e| e.pane_id != pane_id);
     if v.len() != before {
         save_unlocked(&v);
-    }
-}
-
-/// The project key a ledger pane id belongs to: everything before the first `:` of an identity
-/// id (`<key>:<stream>` / `<key>:director` / `<key>:<repo>:triage`). `None` for a manual scratch
-/// pane (`man:…`, never project-owned) or a key-less positional id (`t<idx>p<idx>`).
-pub(crate) fn project_key_of(pane_id: &str) -> Option<&str> {
-    if pane_id.starts_with("man:") {
-        return None;
-    }
-    match pane_id.split_once(':') {
-        Some((key, _)) if !key.is_empty() => Some(key),
-        _ => None,
     }
 }
 
@@ -225,13 +203,6 @@ pub(crate) fn reconcile_on_boot() -> usize {
     .len()
 }
 
-/// Probe of OS process state — the only impurity; mocked in tests.
-pub(crate) trait ProcProbe {
-    fn alive(&self, pid: u32) -> bool;
-    /// Process creation-time token, or `None` if the process can't be opened (gone / no access).
-    fn start_token(&self, pid: u32) -> Option<u64>;
-}
-
 /// Pure reconcile decision — split entries into (pids to tree-kill, entries to keep):
 /// - owner still alive → KEEP (another instance owns it; never reap a live owner's children).
 /// - owner gone, child alive, same process (token) → KILL (a true orphan).
@@ -260,113 +231,6 @@ fn token_ok(now: Option<u64>, recorded: u64) -> bool {
         return true;
     }
     matches!(now, Some(t) if t == recorded)
-}
-
-// ── OS-native probe + tree-kill ──────────────────────────────────────────────
-
-struct OsProbe;
-
-impl ProcProbe for OsProbe {
-    fn alive(&self, pid: u32) -> bool {
-        os_alive(pid)
-    }
-    fn start_token(&self, pid: u32) -> Option<u64> {
-        if os_alive(pid) {
-            Some(os_start_token(pid))
-        } else {
-            None
-        }
-    }
-}
-
-#[cfg(windows)]
-fn os_alive(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-    const STILL_ACTIVE: u32 = 259;
-    // SAFETY: OpenProcess returns a valid handle or NULL; we close it before returning.
-    unsafe {
-        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if h.is_null() {
-            return false;
-        }
-        let mut code: u32 = 0;
-        let ok = GetExitCodeProcess(h, &mut code);
-        CloseHandle(h);
-        ok != 0 && code == STILL_ACTIVE
-    }
-}
-
-#[cfg(windows)]
-fn os_start_token(pid: u32) -> u64 {
-    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows_sys::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-    // SAFETY: handle is closed before returning; the FILETIMEs are zero-inited out-params.
-    unsafe {
-        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if h.is_null() {
-            return 0;
-        }
-        let mut c: FILETIME = std::mem::zeroed();
-        let mut e: FILETIME = std::mem::zeroed();
-        let mut k: FILETIME = std::mem::zeroed();
-        let mut u: FILETIME = std::mem::zeroed();
-        let ok = GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u);
-        CloseHandle(h);
-        if ok == 0 {
-            return 0;
-        }
-        ((c.dwHighDateTime as u64) << 32) | (c.dwLowDateTime as u64)
-    }
-}
-
-#[cfg(windows)]
-fn tree_kill(pid: u32) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    // `taskkill /T` kills the whole tree; `/F` forces. We've already verified (owner dead + same
-    // process via token) that this pid is our orphan, so a forced tree-kill is safe.
-    let _ = std::process::Command::new("taskkill")
-        .args(["/T", "/F", "/PID", &pid.to_string()])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-}
-
-#[cfg(not(windows))]
-fn os_alive(pid: u32) -> bool {
-    // SAFETY: signal 0 performs only the permission/existence check, no delivery.
-    let r = unsafe { libc::kill(pid as i32, 0) };
-    r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
-
-#[cfg(target_os = "linux")]
-fn os_start_token(pid: u32) -> u64 {
-    // /proc/<pid>/stat field 22 = starttime (jiffies since boot). The comm field (2) can contain
-    // spaces/parens, so split after its closing ')': the remainder starts at state (field 3), making
-    // starttime the 20th token (index 19).
-    let Ok(s) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else { return 0 };
-    let Some(after) = s.rfind(')').map(|i| &s[i + 1..]) else { return 0 };
-    after.split_whitespace().nth(19).and_then(|f| f.parse().ok()).unwrap_or(0)
-}
-
-#[cfg(all(unix, not(target_os = "linux")))]
-fn os_start_token(_pid: u32) -> u64 {
-    // macOS/BSD: no cheap creation-time read here → `0` sentinel; reconcile falls back to
-    // liveness-only (still gated on the owner being dead), accepting the rare boot-window recycle.
-    0
-}
-
-#[cfg(not(windows))]
-fn tree_kill(pid: u32) {
-    // The shell is a setsid group leader (pgid == pid), so signalling the group reaps the tree.
-    // SAFETY: killpg has no memory effects; ESRCH (group already gone) is a benign no-op.
-    unsafe {
-        libc::killpg(pid as i32, libc::SIGKILL);
-    }
 }
 
 #[cfg(test)]

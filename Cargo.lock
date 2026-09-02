@@ -898,10 +898,12 @@ dependencies = [
  "bsc-project",
  "bsc-sandbox",
  "bsc-util",
+ "libc",
  "logs",
  "plandb",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
