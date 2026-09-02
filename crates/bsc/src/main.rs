@@ -172,9 +172,86 @@ fn top_help() -> String {
 /// Output goes through [`bsc_cli_util::print_raw`] rather than `println!` so it stays capture-safe —
 /// the warm server (`serve.rs`) answers a request by capturing the verb's output, and a verb writing
 /// to stdout by another route would corrupt the protocol stream.
+/// A crate's own verb catalog, by package name — POINTERS, never a restatement.
+///
+/// Each arm names the `pub const COMMANDS` the crate already publishes for its own `--help`, so a verb
+/// name and its summary have exactly one author. What this table CAN drift on is coverage: a crate that
+/// gains a catalog is not added here automatically, which is why the snapshot test pins the set and has
+/// to be updated deliberately rather than silently.
+fn crate_verbs(krate: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
+    Some(match krate {
+        "plandb" => plandb::cli::COMMANDS,
+        "logs" => logs::cli::COMMANDS,
+        "bsc-ui" => bsc_ui::cli::COMMANDS,
+        "bsc-fleet" => bsc_fleet::cli::COMMANDS,
+        "bsc-mem" => bsc_mem::cli::COMMANDS,
+        "bsc-persona" => bsc_persona::cli::COMMANDS,
+        "bsc-request" => bsc_request::cli::COMMANDS,
+        "bsc-secret" => bsc_secret::cli::COMMANDS,
+        "bsc-config" => bsc_config::cli::COMMANDS,
+        "bsc-work" => bsc_work::cli::COMMANDS,
+        "bsc-cad" => bsc_cad::cli::COMMANDS,
+        "bsc-data" => bsc_data::cli::COMMANDS,
+        "compliance" => compliance::cli::COMMANDS,
+        "cve" => cve::cli::COMMANDS,
+        _ => return None,
+    })
+}
+
 fn surface_cli(rest: Vec<String>) -> Result<(), String> {
     let verb = rest.first().map(String::as_str).unwrap_or("list");
     match verb {
+        // `bsc surface verbs [<crate>] [--json]` — the SECOND LEVEL of the catalog.
+        //
+        // `list` answers "what surfaces exist"; this answers "what can this one DO", which is what a
+        // Glance surface node drills into. Every row is PROJECTED from the crate's own `CmdDoc` catalog
+        // — the same const its `--help` prints — so a verb cannot appear here and be missing from help,
+        // which is the drift `command-surface-catalog-is-one-source` exists to end.
+        //
+        // A crate with no reachable catalog reports NONE, never an empty list. That distinction is the
+        // honesty of the number: a zero meaning "we could not look" would read as "this surface has no
+        // verbs".
+        "verbs" => {
+            let want = rest.iter().skip(1).find(|a| !a.starts_with("--")).cloned();
+            let rows: Vec<serde_json::Value> = COMMANDS
+                .iter()
+                .filter(|c| match want.as_deref() { Some(w) => w == c.name || w == c.krate, None => true })
+                .map(|c| match crate_verbs(c.krate) {
+                    Some(docs) => serde_json::json!({
+                        "name": c.name, "crate": c.krate, "catalog": "projected",
+                        "verbs": docs.iter().map(|d| serde_json::json!({
+                            "verb": d.name, "summary": d.summary,
+                        })).collect::<Vec<_>>(),
+                    }),
+                    None => serde_json::json!({
+                        "name": c.name, "crate": c.krate, "catalog": "unreachable", "verbs": serde_json::Value::Null,
+                    }),
+                })
+                .collect();
+            if rest.iter().any(|a| a == "--json") {
+                let json = serde_json::to_string_pretty(&rows)
+                    .map_err(|e| format!("could not render the verb catalog: {e}"))?;
+                bsc_cli_util::print_raw(&json);
+            } else {
+                let mut out = String::new();
+                for r in &rows {
+                    let name = r["name"].as_str().unwrap_or("?");
+                    match r["verbs"].as_array() {
+                        Some(vs) => {
+                            out.push_str(&format!("{name}  ({} verbs)\n", vs.len()));
+                            let w = vs.iter().map(|v| v["verb"].as_str().unwrap_or("").len()).max().unwrap_or(0);
+                            for v in vs {
+                                let vn = v["verb"].as_str().unwrap_or("");
+                                out.push_str(&format!("  {vn:<w$}  {}\n", v["summary"].as_str().unwrap_or("")));
+                            }
+                        }
+                        None => out.push_str(&format!("{name}  (catalog not reachable from here)\n")),
+                    }
+                }
+                bsc_cli_util::print_raw(out.trim_end());
+            }
+            Ok(())
+        }
         "list" => {
             if rest.iter().any(|a| a == "--json") {
                 let rows: Vec<serde_json::Value> = COMMANDS
@@ -517,6 +594,74 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
+
+    /// COVERAGE IS THE ONE THING `crate_verbs` CAN DRIFT ON, so it is pinned here.
+    ///
+    /// The verb NAMES and summaries cannot drift — they are projected from each crate's own `COMMANDS`,
+    /// the same const its `--help` prints. What a hand-written pointer table can lose is a crate: one
+    /// that gains a catalog is not added automatically, and one whose `cli` module stops being public
+    /// silently falls back to "unreachable", which renders as *no verbs* rather than as an error.
+    ///
+    /// So this asserts the SET, and it is a snapshot: a crate joining or leaving must fail here once
+    /// and be recorded, the way `reader_subset_matches_the_unified_streams_set_and_order` works for the
+    /// log-stream registry.
+    #[test]
+    fn every_projected_crate_is_still_reachable() {
+        const PROJECTED: &[&str] = &[
+            "plandb", "logs", "bsc-ui", "bsc-fleet", "bsc-mem", "bsc-persona", "bsc-request",
+            "bsc-secret", "bsc-config", "bsc-work", "bsc-cad", "bsc-data", "compliance", "cve",
+        ];
+        for k in PROJECTED {
+            let docs = crate_verbs(k).unwrap_or_else(|| panic!("{k} stopped projecting its catalog"));
+            assert!(!docs.is_empty(), "{k} projects an EMPTY catalog — that reads as 'no verbs'");
+        }
+        assert!(crate_verbs("bsc-graph").is_none(), "bsc-graph uses cli::VERBS, not COMMANDS — see the table");
+        assert!(crate_verbs("no-such-crate").is_none());
+
+        // And every projected crate is one this binary actually serves, so the table cannot name a
+        // package that is not a surface at all.
+        for k in PROJECTED {
+            assert!(COMMANDS.iter().any(|c| c.krate == *k), "{k} is projected but serves no surface");
+        }
+    }
+
+    /// A CATALOG CHANGE MUST REACH THIS OUTPUT — the criterion that "no second list is introduced".
+    ///
+    /// `crate_verbs` names each crate's own const, so today the projection cannot differ. The guard is
+    /// for the edit that breaks that: someone replaces a pointer with a locally-written array. A copy
+    /// compares equal on the day it is written and diverges later, when the crate edits its catalog and
+    /// the copy does not — so this fires exactly when the copy becomes wrong, which is the moment that
+    /// matters.
+    ///
+    /// It compares FIELD BY FIELD IN ORDER, not as a set: `CmdDoc` derives no `PartialEq`, and a
+    /// reordered verb list is a real difference in `--help` output.
+    #[test]
+    fn a_catalog_edit_reaches_the_projection() {
+        let pairs: &[(&str, &'static [bsc_cli_util::CmdDoc])] = &[
+            ("bsc-mem", bsc_mem::cli::COMMANDS),
+            ("plandb", plandb::cli::COMMANDS),
+            ("bsc-fleet", bsc_fleet::cli::COMMANDS),
+            ("logs", logs::cli::COMMANDS),
+        ];
+        for (krate, canonical) in pairs {
+            let projected = crate_verbs(krate).unwrap_or_else(|| panic!("{krate} projects"));
+            assert_eq!(projected.len(), canonical.len(), "{krate}: verb COUNT diverged from its catalog");
+            for (i, (got, want)) in projected.iter().zip(canonical.iter()).enumerate() {
+                assert_eq!(got.name, want.name, "{krate} verb {i}: name diverged");
+                assert_eq!(got.summary, want.summary, "{krate} verb {i} ({}): summary diverged", want.name);
+                assert_eq!(got.usage, want.usage, "{krate} verb {i} ({}): usage diverged", want.name);
+            }
+        }
+    }
+
+    /// An unreachable catalog must be DISTINCT from an empty one, all the way to the wire.
+    #[test]
+    fn an_unreachable_catalog_is_null_never_an_empty_list() {
+        let reachable = crate_verbs("bsc-mem").expect("mem projects");
+        assert!(!reachable.is_empty());
+        assert!(crate_verbs("bsc-graph").is_none(), "not Some(&[]) — the caller must be able to tell");
+    }
+
     use super::*;
 
     /// The arm names `dispatch` actually handles, scraped from this file's own source.

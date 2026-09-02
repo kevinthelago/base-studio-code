@@ -16,7 +16,9 @@ const STALE_MS: i64 = 60_000;
 
 const TAGLINE: &str = "which fleet panes are ACTUALLY alive — asks the running app (#4098)";
 
-const COMMANDS: &[CmdDoc] = &[CmdDoc {
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[CmdDoc {
     name: "list",
     summary: "every worker this project has, running or not — plan.db's membership joined onto real liveness",
     usage: "\

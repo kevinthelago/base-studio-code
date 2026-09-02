@@ -23,7 +23,9 @@ const TAGLINE: &str = "query a console session's logs — tools/skills/mcp/hooks
 /// The command catalog — drives the shared help system. One detailed `usage` block per command keeps
 /// the overview tiny and the detail one-fetch-away. The event-category verbs (audit|skill|…) share
 /// one `<stream>` entry since they dispatch identically.
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "sessions",
         summary: "every console session, one line each (the default)",

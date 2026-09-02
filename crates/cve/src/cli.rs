@@ -18,7 +18,9 @@ use bsc_sqlite_util::print_json;
 
 const TAGLINE: &str = "the CVE / vulnerability data layer — OSV.dev advisories for a package or a whole lockfile (#3797)";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "scan",
         summary: "scan a lockfile/manifest for known-vulnerable packages",

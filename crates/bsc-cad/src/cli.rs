@@ -26,7 +26,9 @@ const TAGLINE: &str =
 /// spec meshed before this move yields the same mesh.
 const DEFAULT_RES: usize = 96;
 
-const COMMANDS: &[CmdDoc] = &[CmdDoc {
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[CmdDoc {
     name: "mesh",
     summary: "mesh a spec.json into an STL or glTF; prints the stats",
     usage: "\

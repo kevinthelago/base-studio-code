@@ -47,7 +47,9 @@ const TAGLINE: &str = "the project plan store — issues, features, fleet, stage
 /// The command catalog — drives the shared help system. One detailed `usage` block per top-level
 /// command keeps the overview tiny and the detail one-fetch-away; the multi-verb nouns document their
 /// subcommands in their own block. Reads are lean by default (#1562); `--json`/`--pretty` for JSON.
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "snapshot",
         summary: "EVERY artifact the planner poll needs, in ONE read (#3842)",
