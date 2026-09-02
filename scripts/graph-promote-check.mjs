@@ -29,52 +29,6 @@ import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
 
 const ROOT = join(new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), "..");
 
-if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
-  // Resolution is SHARED with `bsc-doctor` (scripts/lib/bscBinary.mjs) rather than duplicated: a second
-  // copy of "is this binary usable" is exactly how one of them ends up not knowing about the zero-byte
-  // case. `pickUsable` demands a real handshake, not mere existence.
-  const statSize = (p) => {
-    try {
-      return statSync(p).size;
-    } catch {
-      return null;
-    }
-  };
-  const run = (p) => {
-    try {
-      return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
-    } catch (err) {
-      return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
-    }
-  };
-
-  const usable = pickUsable(candidatePaths(ROOT, homedir(), join), { statSize, run });
-  if (!usable) {
-    process.stdout.write(
-      "graph: no usable `bsc` binary — repo-store drift NOT checked. " +
-        "Run `npm run bsc:doctor` to see why, then `cargo build -p bsc --bin bsc`.\n",
-    );
-    process.exit(0);
-  }
-  try {
-    const out = execFileSync(usable.path, ["graph", "promote", "--check", "--root", ROOT], { encoding: "utf8" });
-    process.stdout.write(out.trim() ? `${out.trim()}\n` : "graph: repo store is current\n");
-    process.exit(0);
-  } catch (err) {
-    process.stdout.write(String(err.stdout ?? ""));
-    process.stderr.write(String(err.stderr ?? ""));
-    const ids = drifted(String(err.stdout ?? ""));
-    process.stdout.write(attribute(ids, (id) => history(usable.path, id), Date.now()));
-    process.stdout.write(
-      diagnose(ids, {
-        runtime: (id) => impl(usable.path, id),
-        repo: (id) => repoRecord(ROOT, id),
-        blame: (id) => lastRepoCommit(id, commitsTouchingStore(ROOT), (sha) => recordAtCommit(ROOT, sha, id)),
-      }),
-    );
-    process.exit(1);
-  }
-}
 
 /** The drifted ids out of `promote --check`'s JSON line, or `[]` when it did not emit one. */
 export function drifted(stdout) {
@@ -305,4 +259,73 @@ function recordAtCommit(root, sha, id) {
 function pick(doc, id) {
   const all = Array.isArray(doc?.implementations) ? doc.implementations : [];
   return all.find((r) => r?.id === id) ?? null;
+}
+
+// ── THE CLI ENTRY POINT — DELIBERATELY LAST IN THE FILE ──────────────────────────────────────────
+//
+// It USED to sit here at line 32, directly under the imports, and that placement was a latent crash.
+// This block runs during MODULE EVALUATION, so it reached `diagnose` -> `shapeOf` 84 lines before
+// `const STAMPS` was initialized, and every real drift ended in:
+//
+//     ReferenceError: Cannot access 'STAMPS' before initialization
+//
+// SIX TESTS COVER `diagnose` AND `shapeOf` AND NONE COULD SEE IT. Under vitest `process.argv[1]` is
+// the vitest runner, so this block never executed: the module finished evaluating, `STAMPS`
+// initialized, and only then did a test call `diagnose`. The tests exercise these functions in an
+// order the CLI never uses — a green suite covering strictly less than the live path.
+//
+// What died was the SAFETY half. `attribute` (author + age) ran first and printed; `shapeOf`'s
+// `collapsed` signal did not. That signal exists because a bsc-graph test once wrote a 33-character
+// stub over a 3,263-character record through an unlocked `BSC_GRAPH_STORE`, and promoting that id —
+// exactly what the bare failure message advises — would have destroyed the record permanently. So a
+// reader hit the red, was told to promote, and was NOT told not to.
+//
+// KEEP THIS BLOCK BELOW EVERY DECLARATION IT REACHES. `scripts/graph-promote-check.test.ts` pins it
+// by SPAWNING this file as a CLI rather than importing it, because an in-process import structurally
+// cannot reproduce the failing order.
+if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
+  // Resolution is SHARED with `bsc-doctor` (scripts/lib/bscBinary.mjs) rather than duplicated: a second
+  // copy of "is this binary usable" is exactly how one of them ends up not knowing about the zero-byte
+  // case. `pickUsable` demands a real handshake, not mere existence.
+  const statSize = (p) => {
+    try {
+      return statSync(p).size;
+    } catch {
+      return null;
+    }
+  };
+  const run = (p) => {
+    try {
+      return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+    } catch (err) {
+      return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+    }
+  };
+
+  const usable = pickUsable(candidatePaths(ROOT, homedir(), join), { statSize, run });
+  if (!usable) {
+    process.stdout.write(
+      "graph: no usable `bsc` binary — repo-store drift NOT checked. " +
+        "Run `npm run bsc:doctor` to see why, then `cargo build -p bsc --bin bsc`.\n",
+    );
+    process.exit(0);
+  }
+  try {
+    const out = execFileSync(usable.path, ["graph", "promote", "--check", "--root", ROOT], { encoding: "utf8" });
+    process.stdout.write(out.trim() ? `${out.trim()}\n` : "graph: repo store is current\n");
+    process.exit(0);
+  } catch (err) {
+    process.stdout.write(String(err.stdout ?? ""));
+    process.stderr.write(String(err.stderr ?? ""));
+    const ids = drifted(String(err.stdout ?? ""));
+    process.stdout.write(attribute(ids, (id) => history(usable.path, id), Date.now()));
+    process.stdout.write(
+      diagnose(ids, {
+        runtime: (id) => impl(usable.path, id),
+        repo: (id) => repoRecord(ROOT, id),
+        blame: (id) => lastRepoCommit(id, commitsTouchingStore(ROOT), (sha) => recordAtCommit(ROOT, sha, id)),
+      }),
+    );
+    process.exit(1);
+  }
 }
