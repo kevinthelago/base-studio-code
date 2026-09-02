@@ -1,0 +1,32 @@
+[package]
+name = "bsc-emit"
+version = "0.1.0"
+edition = "2021"
+
+# `bsc-emit` — materialize retired modules from their packaged seeds into the generated tree.
+#
+# DELIBERATELY LEAN, and that is the whole reason this is its own crate rather than a module inside
+# `bsc-ui`. It runs from the BUILD TREE — seven npm entries and the vite plugin — and on CI, where the
+# frontend job is Node-only today. Linking it into `bsc` alone would mean the frontend CI job had to
+# build `bsc`, which pulls `bsc-data` and so bundled DuckDB: CLAUDE.md measures a first
+# `cargo build -p bsc --bin bsc` at 343s plus ~1.8 GB of C++ output. Paying that on every frontend PR
+# to run a file-copying step is not defensible.
+#
+# `bsc-record` is a three-dependency crate (serde_json, regex, bsc-util) with no DuckDB, no arrow and
+# no tree-sitter, so a binary over it builds in a fraction of that. Same reason `bsc-agent` and
+# `bsc-hook` are already separate binaries.
+[lib]
+name = "bsc_emit"
+path = "src/lib.rs"
+
+# The BUILD-TREE entry point. `bsc ui emit records` is the agent-facing door over the same lib; this
+# one exists so `npm run typecheck` never has to link DuckDB.
+[[bin]]
+name = "bsc-emit"
+path = "src/main.rs"
+
+[dependencies]
+# `relative_specifiers` + `alias_for_dir` — the SAME implementation every `bsc` verb reads, which is
+# the entire point of this port: it is what lets `scripts/lib/recordSource.mjs` die.
+bsc-record = { path = "../bsc-record" }
+serde_json = "1"

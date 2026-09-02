@@ -336,6 +336,14 @@ USAGE:
   bsc ui emit component <id> <dir>   # a component + its transitive composes + the _kit runtime it needs
   bsc ui emit kit <dir>              # the whole kit
   bsc ui emit sync <dir>             # re-emit MANAGED files whose kit source moved; warn on hand-edited
+  bsc ui emit records [--repo <dir>] [--plan] [--json] [--quiet]
+                                     # materialize RETIRED modules from their packaged seeds into
+                                     # `.bsc-records/` (the generated, git-ignored tree tsc/vite/vitest
+                                     # resolve through). `--plan --json` decides WITHOUT writing, which
+                                     # is what lets a guard ask whether a record's test would actually
+                                     # run without triggering an emit — an emit prunes, and a prune
+                                     # mid-suite deletes files out from under everything being
+                                     # collected in parallel.
 
 Writes REAL, compilable source into <dir> (mirroring the src/ layout), every first-party `@/…` import
 rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO network.
@@ -1063,8 +1071,30 @@ fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
             let dir = args.get(1).ok_or("usage: bsc ui emit sync <dir>")?;
             cmd_sync(dir)
         }
+        // THE AGENT-FACING DOOR onto the record emitter. The BUILD TREE reaches the same library
+        // through the lean `bsc-emit` binary instead, because `bsc` links bundled DuckDB (291
+        // dependency crates against 12) and the frontend CI job must not pay 343s to run a
+        // file-copying step. One implementation, two entry points — see `crates/bsc-emit`.
+        Some("records") => {
+            let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
+            let repo = flag("--repo")
+                .map(std::path::PathBuf::from)
+                .map(Ok)
+                .unwrap_or_else(std::env::current_dir)
+                .map_err(|e| format!("cannot resolve the repo root: {e}"))?;
+            let out = bsc_emit::cli::run(
+                &repo,
+                args.iter().any(|a| a == "--plan"),
+                args.iter().any(|a| a == "--json"),
+                args.iter().any(|a| a == "--quiet"),
+            )?;
+            if !out.is_empty() {
+                bsc_cli_util::print_raw(out.trim_end());
+            }
+            Ok(())
+        }
         Some(other) => Err(format!(
-            "unknown emit command '{other}' — want: component <id> <dir> | kit <dir> | sync <dir>"
+            "unknown emit command '{other}' — want: component <id> <dir> | kit <dir> | sync <dir> | records"
         )),
     }
 }

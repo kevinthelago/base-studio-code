@@ -50,6 +50,11 @@ jobs:
               - 'vite.config.ts'
               - 'vitest.config.ts'
               - 'eslint.config.js'
+              # The record emitter materializes `.bsc-records/`, which tsc and vitest resolve
+              # THROUGH — so a change to it changes this job's inputs even when no `src/` file moved.
+              - 'crates/bsc-emit/**'
+              - 'crates/bsc-record/**'
+              - 'scripts/emit-records.mjs'
               - '.github/workflows/ci.yml'
             rust:
               - 'src-tauri/**'
@@ -99,6 +104,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # THE RECORD TREE IS A PRECONDITION OF RESOLUTION, and it is emitted by a Rust binary now
+      # (`emit-records-moves-to-rust-and-collapses-the-last-two-implementations`). `npm run typecheck`
+      # and `npm run test:coverage` both materialize `.bsc-records/` before tsc and vitest see it, so
+      # this job needs a toolchain it did not need before.
+      #
+      # THE COST IS 12 DEPENDENCY CRATES, MEASURED — a true cold `cargo build -p bsc-emit --bin
+      # bsc-emit` with sccache off is 6.22s and 103 MB. Building `bsc` instead would be 291 crates and
+      # ~343s, because it links bundled DuckDB; that is why the emitter is its own lean binary rather
+      # than a verb reached only through `bsc`. `bsc ui emit records` is the same library for an agent.
+      #
+      # Built EXPLICITLY rather than left to the npm shim's build-on-demand, so a toolchain problem
+      # fails here with a clear name instead of inside a `tsc` step.
+      - name: Rust toolchain (for the record emitter)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          # Its own key: this job builds ONE lean binary, and sharing the `rust` job's cache would
+          # pull a DuckDB-sized artifact set in for nothing.
+          shared-key: emit-records
+          workspaces: ". -> target"
+
+      - name: Build the record emitter
+        run: cargo build --quiet -p bsc-emit --bin bsc-emit
+
       - name: Type check
         run: npm run typecheck
 
@@ -135,6 +166,19 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # `npm run test` materializes the record tree first, same as the frontend job — see the note there.
+      - name: Rust toolchain (for the record emitter)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: emit-records
+          workspaces: ". -> target"
+
+      - name: Build the record emitter
+        run: cargo build --quiet -p bsc-emit --bin bsc-emit
 
       - name: Plan contract (blueprint-driven structural validator)
         # planContract/planEval were dead-code-removed (#2134); the surviving plan-structure contracts
