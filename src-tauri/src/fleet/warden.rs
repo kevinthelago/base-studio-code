@@ -38,7 +38,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
-use bsc_fleet::warden::{live_pane_ids_of, plan_warden, warden_sweep_targets, ConformanceVerdict, TabPanes, WardenSession, WardenTrip};
+// The report SHAPE and the DECISION both live in the crate now — see the module header. Re-exported
+// so the Tauri command signature and the renderer's payload keep one definition between them.
+pub(crate) use bsc_fleet::warden::FleetReport;
+use bsc_fleet::warden::WardenTrip;
 use tauri::{AppHandle, Manager};
 
 /// How often the loop sweeps. The frontend reports on its own event-driven cadence (a tool attempt, a
@@ -50,36 +53,6 @@ pub(crate) const TICK_MS: u64 = 3_000;
 /// events, not on a timer, so a quiet fleet legitimately goes seconds without one. Past this the
 /// picture is treated as gone — see the module header on which way this fails.
 pub(crate) const REPORT_TTL_MS: u64 = 30_000;
-
-/// One pane the renderer is telling us about, with the verdict only it can compute today.
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ReportedPane {
-    pub pane_id: String,
-    pub stream_id: String,
-    /// From `checkConformance` — see the module header on why this is reported and not derived.
-    pub verdict: ConformanceVerdict,
-}
-
-/// The whole fleet picture one report carries.
-#[derive(Clone, Debug, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct FleetReport {
-    /// Every pane on the PLANNED roster, with its verdict.
-    #[serde(default)]
-    pub panes: Vec<ReportedPane>,
-    /// The tab rosters, so the live set is derived here rather than trusted from the renderer.
-    #[serde(default)]
-    pub tabs: Vec<TabPanes>,
-    #[serde(default)]
-    pub ended: Vec<String>,
-    #[serde(default)]
-    pub disabled: Vec<String>,
-    /// Workers whose owned issues are all done — in MAINTENANCE (#1957), not building, so their
-    /// post-completion activity is expected and must never quarantine them.
-    #[serde(default)]
-    pub completed: Vec<String>,
-}
 
 fn report_cell() -> &'static Mutex<(FleetReport, u64)> {
     static R: OnceLock<Mutex<(FleetReport, u64)>> = OnceLock::new();
@@ -141,40 +114,75 @@ pub(crate) fn reset_for_test() {
     }
 }
 
-/// Decide who to hard-pause from one report. PURE over its inputs, so the whole decision is testable
-/// without a PTY, a clock or a webview — which is most of the point of moving it here.
+/// Who to hard-pause from one report — DISPATCHED to the sidecar, not decided here.
 ///
-/// The sweep is bounded to panes with a RUNNING session and never includes a completed worker. Losing
-/// that bound is measured and on the record: the planned roster reached 47 panes against 3 live
-/// terminals, ~94 serial git spawns inside one synchronous command, `pty_write` at 3280ms and
-/// `pty_resize` at 8279ms.
+/// Builds an argv, spawns `bsc`, and checks the reply. It applies no rule, reads no glob and derives
+/// no verdict; `bsc_fleet::warden::decide` owns all of it, so there is ONE implementation and tuning a
+/// warden rule no longer needs a new app binary.
+///
+/// EVERY FAILURE DEGRADES TO "QUARANTINE NOBODY". That is the same direction the stale-report rule
+/// takes, and it is the safe one for this verb: a false positive hard-pauses a working agent, while a
+/// false negative loses one sweep of a loop that runs every few seconds.
 pub(crate) fn decide(report: &FleetReport, already: &HashSet<String>) -> Vec<WardenTrip> {
-    let live = live_pane_ids_of(
-        &report.tabs,
-        &report.ended.iter().cloned().collect(),
-        &report.disabled.iter().cloned().collect(),
-    );
-    let roster: Vec<String> = report.panes.iter().map(|p| p.pane_id.clone()).collect();
-    let targets: HashSet<String> = warden_sweep_targets(
-        &roster,
-        &live.into_iter().collect(),
-        &report.completed.iter().cloned().collect(),
-    )
-    .into_iter()
-    .collect();
+    if report.panes.is_empty() {
+        return Vec::new();
+    }
+    let payload = match serde_json::to_string(report) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("[warden] could not serialize the report, quarantining nobody: {e}");
+            return Vec::new();
+        }
+    };
+    let mut args = vec!["fleet".to_string(), "warden-decide".to_string(), "--json".to_string()];
+    if !already.is_empty() {
+        // Sorted so the argv is stable across sweeps — an unstable one makes the child's own logs
+        // impossible to diff when a decision changes.
+        let mut ids: Vec<&str> = already.iter().map(String::as_str).collect();
+        ids.sort_unstable();
+        args.push("--quarantined".to_string());
+        args.push(ids.join(","));
+    }
+    let out = match crate::console::bsc::bsc_blocking(None, args, Some(payload)) {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!("[warden] sidecar call failed, quarantining nobody: {e}");
+            return Vec::new();
+        }
+    };
+    parse_trips(&out, report)
+}
 
-    let sessions: Vec<WardenSession> = report
-        .panes
-        .iter()
-        .filter(|p| targets.contains(&p.pane_id))
-        .map(|p| WardenSession {
-            pane_id: p.pane_id.clone(),
-            stream_id: p.stream_id.clone(),
-            verdict: p.verdict.clone(),
-        })
-        .collect();
-
-    plan_warden(&sessions, already)
+/// Check the sidecar's reply against the report it was asked about.
+///
+/// Pure, so the failure directions are testable without a spawn — and there is one that hot-swapping
+/// newly makes possible. A DESYNCHRONISED SIDECAR (a stale staged binary answering a newer request)
+/// returns a WELL-FORMED list that names panes this report never mentioned. Acting on it would
+/// hard-pause a session the warden was not asked about, which is the same misattribution
+/// `zip_worktree_changes` is carefully guarded against on the warden's file side.
+///
+/// There is no index to align against here — the reply is a subset, not a row per input — so the
+/// check is MEMBERSHIP: every trip must name a pane on the report's roster. Anything else is refused
+/// WHOLESALE rather than filtered, because a reply that names an unknown pane is evidence the two
+/// sides disagree about the request, and the trips it does recognise are no more trustworthy than the
+/// one it does not.
+fn parse_trips(out: &str, report: &FleetReport) -> Vec<WardenTrip> {
+    let trips: Vec<WardenTrip> = match serde_json::from_str(out.trim()) {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[warden] could not parse the sidecar reply, quarantining nobody: {e}");
+            return Vec::new();
+        }
+    };
+    let roster: HashSet<&str> = report.panes.iter().map(|p| p.pane_id.as_str()).collect();
+    if let Some(stray) = trips.iter().find(|t| !roster.contains(t.pane_id.as_str())) {
+        log::warn!(
+            "[warden] sidecar named {} which is not on this report's roster — refusing the whole reply",
+            stray.pane_id
+        );
+        return Vec::new();
+    }
+    trips
 }
 
 /// Lift any quarantine standing on a worker whose owned issues are all complete.
@@ -244,198 +252,159 @@ pub(crate) fn spawn_warden(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bsc_fleet::warden::ConformanceTrip;
+    use bsc_fleet::warden::{ConformanceTrip, ConformanceVerdict, ReportedPane, TabPanes};
 
     fn verdict(on_task: bool, trips: &[(&str, &str)]) -> ConformanceVerdict {
         ConformanceVerdict {
             on_task,
-            trips: trips
-                .iter()
-                .map(|(k, d)| ConformanceTrip { kind: (*k).into(), detail: (*d).into() })
-                .collect(),
+            trips: trips.iter().map(|(k, d)| ConformanceTrip { kind: (*k).into(), detail: (*d).into() }).collect(),
         }
     }
-
-    fn pane(id: &str, stream: &str, v: ConformanceVerdict) -> ReportedPane {
-        ReportedPane { pane_id: id.into(), stream_id: stream.into(), verdict: v }
+    fn drifting(id: &str) -> ReportedPane {
+        ReportedPane {
+            pane_id: id.into(),
+            stream_id: "api".into(),
+            verdict: verdict(false, &[("out-of-glob", "src/web/app.tsx")]),
+        }
     }
-
     fn one_tab(ids: &[&str]) -> Vec<TabPanes> {
         vec![TabPanes { pane_ids: ids.iter().map(|s| s.to_string()).collect() }]
     }
-
-    fn drifting(id: &str) -> ReportedPane {
-        pane(id, "api", verdict(false, &[("out-of-glob", "src/web/app.tsx")]))
+    fn trip(pane: &str) -> WardenTrip {
+        WardenTrip { pane_id: pane.into(), stream_id: "api".into(), trips: vec![], summary: "s".into() }
     }
-
-    /// The decision runs here, and it is the whole reason this module exists.
-    #[test]
-    fn a_drifting_live_worker_is_selected_for_quarantine() {
-        let report = FleetReport {
-            panes: vec![drifting("p:api")],
-            tabs: one_tab(&["p:api"]),
+    fn report(panes: &[&str]) -> FleetReport {
+        FleetReport {
+            panes: panes.iter().map(|p| drifting(p)).collect(),
+            tabs: one_tab(panes),
             ..Default::default()
-        };
-        let trips = decide(&report, &HashSet::new());
-        assert_eq!(trips.len(), 1);
-        assert_eq!(trips[0].pane_id, "p:api");
-        assert_eq!(trips[0].summary, "edited out-of-lane src/web/app.tsx");
+        }
     }
 
-    /// THE BOUND THAT COSTS 8279ms WHEN IT IS LOST. A planned pane with no live session cannot be
-    /// drifting, and must never be swept.
+    /// The happy path: a reply about panes this report actually named is passed through.
     #[test]
-    fn the_sweep_is_bounded_to_panes_with_a_running_session() {
-        // Drifting, on the roster, but in no tab — no session exists.
-        let report =
-            FleetReport { panes: vec![drifting("p:api")], tabs: vec![], ..Default::default() };
-        assert!(decide(&report, &HashSet::new()).is_empty(), "no session ⇒ not swept");
-
-        // The same pane, once it is in a tab, IS swept — or the assertion above proves only that
-        // nothing works.
-        let live = FleetReport { tabs: one_tab(&["p:api"]), ..report.clone() };
-        assert_eq!(decide(&live, &HashSet::new()).len(), 1);
-
-        // Ended and disabled are not live either.
-        let ended = FleetReport { ended: vec!["p:api".into()], ..live.clone() };
-        assert!(decide(&ended, &HashSet::new()).is_empty(), "ended ⇒ not swept");
-        let disabled = FleetReport { disabled: vec!["p:api".into()], ..live.clone() };
-        assert!(decide(&disabled, &HashSet::new()).is_empty(), "disabled ⇒ not swept");
+    fn a_reply_about_panes_we_asked_about_is_passed_through() {
+        let r = report(&["p:api", "p:web"]);
+        let wire = serde_json::to_string(&vec![trip("p:api")]).unwrap();
+        let got = parse_trips(&wire, &r);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].pane_id, "p:api");
     }
 
-    /// A worker in maintenance has finished its issues; its activity is expected, not drift.
+    /// A DESYNCHRONISED SIDECAR is the failure hot-swapping newly makes possible: a stale staged
+    /// binary answering a newer request names a pane this report never mentioned. Acting on it would
+    /// hard-pause a session the warden was not asked about.
+    ///
+    /// Refused WHOLESALE, not filtered: a reply naming an unknown pane is evidence the two sides
+    /// disagree about the request, so the trips it does recognise are no more trustworthy than the one
+    /// it does not.
     #[test]
-    fn a_completed_worker_is_never_quarantined() {
-        let report = FleetReport {
-            panes: vec![drifting("p:api")],
-            tabs: one_tab(&["p:api"]),
-            completed: vec!["p:api".into()],
-            ..Default::default()
-        };
-        assert!(decide(&report, &HashSet::new()).is_empty());
+    fn a_reply_naming_a_pane_we_never_asked_about_is_refused_wholesale() {
+        let r = report(&["p:api"]);
+        let stray = serde_json::to_string(&vec![trip("p:api"), trip("p:ghost")]).unwrap();
+        let got = parse_trips(&stray, &r);
+        assert!(got.is_empty(), "the recognised trip goes with the stray one: {got:?}");
+
+        // And the same reply MINUS the stray is accepted — or the assertion above proves only that
+        // nothing ever passes.
+        let clean = serde_json::to_string(&vec![trip("p:api")]).unwrap();
+        assert_eq!(parse_trips(&clean, &r).len(), 1);
     }
 
-    /// A trip is a one-shot hard pause, not a repeating alert.
+    /// A missing, stale or broken sidecar must QUARANTINE NOBODY. That is the same direction the
+    /// stale-report rule takes, and the safe one here: a false positive hard-pauses a working agent.
     #[test]
-    fn an_already_quarantined_pane_is_not_re_tripped() {
-        let report = FleetReport {
-            panes: vec![drifting("p:api")],
-            tabs: one_tab(&["p:api"]),
-            ..Default::default()
-        };
-        let already: HashSet<String> = ["p:api".to_string()].into_iter().collect();
-        assert!(decide(&report, &already).is_empty());
+    fn an_unusable_reply_quarantines_nobody() {
+        let r = report(&["p:api"]);
+        for junk in ["", "not json", "{}", "null", "[1,2,3]", "bsc: command not found"] {
+            assert!(parse_trips(junk, &r).is_empty(), "{junk:?} must not quarantine anyone");
+        }
+        // An empty list is a legitimate answer and means the same thing.
+        assert!(parse_trips("[]", &r).is_empty());
     }
 
-    /// The verdict is OBEYED, not re-derived. Recomputing the file-lane arm here would move a
-    /// security boundary onto the other glob engine while `the-two-write-scope-glob-engines-disagree`
-    /// is still an open maintainer decision.
+    /// A report with no panes never spawns — the idle fleet is the common case, and a sweep every
+    /// 3s must not pay a process for it.
     #[test]
-    fn the_reported_verdict_decides_and_is_never_second_guessed() {
-        let tabs = one_tab(&["p:ok", "p:bad"]);
-
-        // on_task, despite an alarming-looking pane id and stream: obeyed.
-        let ok = FleetReport {
-            panes: vec![pane("p:ok", "api", verdict(true, &[]))],
-            tabs: tabs.clone(),
-            ..Default::default()
-        };
-        assert!(decide(&ok, &HashSet::new()).is_empty());
-
-        // on_task = false with an EMPTY trip list still quarantines: the verdict decides, not the
-        // trip list, and the summary reports exactly what it was given.
-        let bare = FleetReport {
-            panes: vec![pane("p:bad", "api", verdict(false, &[]))],
-            tabs,
-            ..Default::default()
-        };
-        let trips = decide(&bare, &HashSet::new());
-        assert_eq!(trips.len(), 1);
-        assert_eq!(trips[0].summary, "on plan");
+    fn an_empty_report_costs_no_spawn() {
+        assert!(decide(&FleetReport::default(), &HashSet::new()).is_empty());
     }
 
-    /// A STALE REPORT YIELDS NOTHING. This is the direction opposite the reaper's, and it is the one
-    /// that matters for a verb whose action is to kill a session: acting on a picture that may be
-    /// minutes old would hard-pause workers that have since gone quiet.
+    /// Serialises the tests that touch the PROCESS-GLOBAL report + quarantine registries.
+    ///
+    /// **This is not belt-and-braces; without it the suite is 10% flaky and THE GATE CANNOT SEE IT.**
+    /// `report_cell()` and `quarantined_cell()` are `OnceLock<Mutex<..>>`, so every test calling
+    /// `reset_for_test`/`report_fleet`/`note_quarantined` shares one registry. Under `cargo nextest`
+    /// each test gets its OWN PROCESS and they cannot collide; under `cargo test` they are parallel
+    /// threads in one process and they do. The gate runs nextest — so this raced 1 run in 10 locally
+    /// while the gate stayed green, which is precisely the "green gate that covers less than the
+    /// reader assumes" failure this repo keeps being caught by.
+    ///
+    /// Same shape and same reason as `testutil::ENV_LOCK`. Poisoning is recovered rather than
+    /// propagated: a panicking sibling must not cascade into every other test.
+    static WARDEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A STALE REPORT YIELDS NOTHING, and the direction is the opposite of the reaper's.
+    ///
+    /// [`crate::console::pty::reap`]'s on-screen report fails toward ACTION: a stale one means nothing
+    /// is protected, because the reaper exists to reap. This one fails toward INACTION, because its
+    /// action is to KILL a session — acting on a picture that may be minutes old would hard-pause
+    /// workers that have since gone quiet. Copying the reaper's semantics here would make a dead
+    /// renderer start killing sessions.
     #[test]
-    fn a_stale_report_stops_the_warden_rather_than_acting_on_it() {
+    fn a_stale_report_stops_the_warden_and_that_is_the_opposite_of_the_reaper() {
+        let _guard = WARDEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_for_test();
-        report_fleet(FleetReport {
-            panes: vec![drifting("p:api")],
-            tabs: one_tab(&["p:api"]),
-            ..Default::default()
-        });
+        report_fleet(report(&["p:api"]));
         let at = now_ms();
 
         let fresh = fresh_report(at).expect("a just-filed report is fresh");
-        assert_eq!(decide(&fresh, &HashSet::new()).len(), 1, "and it does decide");
+        assert_eq!(fresh.panes.len(), 1, "and it carries the pane");
 
         assert!(fresh_report(at + REPORT_TTL_MS).is_none(), "exactly at the TTL it is gone");
         assert!(fresh_report(at + REPORT_TTL_MS + 1).is_none());
+
+        // The asymmetry, named: the reaper's TTL gates a REAP, so its expiry frees a session; this
+        // TTL gates a KILL, so its expiry protects one. Same mechanism, opposite safe direction.
+        const { assert!(REPORT_TTL_MS > TICK_MS, "the TTL must outlast a sweep, or a quiet fleet expires mid-loop") };
         reset_for_test();
     }
 
     /// A completed worker's standing quarantine is LIFTED, not merely skipped.
-    ///
-    /// Found by a divergence that did not bite: the lift lives in `tick`, which needs an `AppHandle`,
-    /// so nothing reached it. Skipping and lifting look identical from `decide` — the difference is
-    /// whether the worker is still shown as quarantined once it goes into maintenance.
     #[test]
     fn a_completed_workers_standing_quarantine_is_lifted() {
+        let _guard = WARDEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_for_test();
         note_quarantined("p:api");
         note_quarantined("p:web");
         assert_eq!(quarantined().len(), 2);
 
-        let lifted = lift_completed(&FleetReport {
-            completed: vec!["p:api".into()],
-            ..Default::default()
-        });
+        let lifted = lift_completed(&FleetReport { completed: vec!["p:api".into()], ..Default::default() });
         assert_eq!(lifted, vec!["p:api".to_string()], "reports exactly who it lifted");
         assert!(!quarantined().contains("p:api"), "and actually removed it");
         assert!(quarantined().contains("p:web"), "leaving its neighbour alone");
 
-        // Lifting an unquarantined pane reports nothing rather than a phantom.
         assert!(lift_completed(&FleetReport { completed: vec!["p:api".into()], ..Default::default() }).is_empty());
         reset_for_test();
     }
 
-    /// THE WIRING, not the helper.
-    ///
-    /// The parity tests in `bsc_fleet::warden` prove `plan_warden` is correct; not one of them can say
-    /// whether anything CALLS it. This drives the whole path the loop takes — report in, decision out —
-    /// so reverting `decide` to stop consulting `plan_warden`, or `tick` to stop consulting `decide`,
-    /// turns it red. That is the difference between a pinned migration and a pinned function.
+    /// The quarantine record is this process's own, so it survives a renderer that is not there to
+    /// hold it — and it stays here even though the DECISION moved, because it is live state.
     #[test]
-    fn the_loop_actually_consults_the_ported_decision() {
+    fn the_quarantine_record_is_owned_here_and_lifts_on_completion() {
+        let _guard = WARDEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_for_test();
-        report_fleet(FleetReport {
-            panes: vec![drifting("p:api"), pane("p:ok", "web", verdict(true, &[]))],
-            tabs: one_tab(&["p:api", "p:ok"]),
-            ..Default::default()
-        });
-
-        // The report round-trips through the module's OWN storage, not a hand-built struct.
-        let report = fresh_report(now_ms()).expect("the report the loop will read");
-        let trips = decide(&report, &quarantined());
-
-        // Exactly the drifting pane, carrying the summary `summarize_trips` produced — which is only
-        // reachable through `plan_warden`.
-        assert_eq!(trips.len(), 1, "the on-task pane must not be selected");
-        assert_eq!(trips[0].pane_id, "p:api");
-        assert_eq!(trips[0].stream_id, "api");
-        assert_eq!(
-            trips[0].summary, "edited out-of-lane src/web/app.tsx",
-            "the summary comes from bsc_fleet::warden::summarize_trips, not from anything here"
-        );
+        assert!(quarantined().is_empty());
+        note_quarantined("p:api");
+        assert!(quarantined().contains("p:api"));
+        assert!(clear_quarantine("p:api"), "lifting reports that it removed something");
+        assert!(!clear_quarantine("p:api"), "and lifting twice does not");
+        assert!(quarantined().is_empty());
         reset_for_test();
     }
 
-    /// The command surface the renderer reports through exists and round-trips.
-    ///
-    /// A call-site test that only asserts the command is *invoked* is not enough — it must carry the
-    /// payload, or the argument is accepted and never sent. This deserializes the exact JSON shape
-    /// `useWarden` builds, so a rename on either side fails here rather than at runtime.
+    /// The command surface the renderer reports through round-trips exactly as `useWarden` builds it,
+    /// so a rename on either side fails here rather than at runtime.
     #[test]
     fn the_reported_payload_deserializes_exactly_as_the_renderer_sends_it() {
         let sent = serde_json::json!({
@@ -445,33 +414,19 @@ mod tests {
                 "verdict": { "onTask": false, "trips": [{ "kind": "out-of-glob", "detail": "src/web/a.tsx" }] }
             }],
             "tabs": [{ "paneIds": ["proj:api"] }],
-            "ended": [],
-            "disabled": [],
-            "completed": []
+            "ended": [], "disabled": [], "completed": []
         });
         let report: FleetReport = serde_json::from_value(sent).expect("the renderer's shape must parse");
-        assert_eq!(report.panes.len(), 1);
         assert_eq!(report.panes[0].pane_id, "proj:api");
         assert!(!report.panes[0].verdict.on_task, "camelCase `onTask` reached the Rust field");
-        assert_eq!(report.panes[0].verdict.trips[0].kind, "out-of-glob");
         assert_eq!(report.tabs[0].pane_ids, vec!["proj:api".to_string()]);
 
-        // And it decides on it — the payload is not merely parsed, it is acted on.
-        assert_eq!(decide(&report, &HashSet::new()).len(), 1);
-    }
-
-    /// The quarantine record is this process's own, so it survives a renderer that is not there to
-    /// hold it — and lifts when the worker's issues complete.
-    #[test]
-    fn the_quarantine_record_is_owned_here_and_lifts_on_completion() {
-        reset_for_test();
-        assert!(quarantined().is_empty());
-        note_quarantined("p:api");
-        assert!(quarantined().contains("p:api"));
-        assert!(clear_quarantine("p:api"), "lifting reports that it removed something");
-        assert!(!clear_quarantine("p:api"), "and lifting twice does not");
-        assert!(quarantined().is_empty());
-        reset_for_test();
+        // And it re-serializes for the sidecar without losing the shape it arrived in — the app is a
+        // pass-through for this payload, and a lossy hop would silently drop a rule.
+        let onward: FleetReport = serde_json::from_str(&serde_json::to_string(&report).unwrap()).unwrap();
+        assert_eq!(onward.panes[0].pane_id, "proj:api");
+        assert!(!onward.panes[0].verdict.on_task);
+        assert_eq!(onward.tabs[0].pane_ids, vec!["proj:api".to_string()]);
     }
 }
 
