@@ -71,16 +71,35 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     expect(src).toContain("studioPaneId(n.id) ?? fleetPaneId(drill, n.id)");
   });
 
-  it("a noun or verb click SELECTS rather than dying on a pane nothing launched", () => {
-    // Same dead-click shape one level down: `expandNode` would compute `fleetPaneId(drill, "noun:logs")`
-    // and silently fail. Until those nodes launch a persona, selecting shows the inspector — a click
-    // that does something beats a click that does nothing.
-    const crateAt = src.indexOf("else if (isSurfaceNodeId(id)) setCrateNode(id);");
-    const selectAt = src.indexOf("else if (crateNode) pickNode(id);");
-    const expandAt = src.indexOf("else expandNode(id);");
-    expect(selectAt).toBeGreaterThan(crateAt);
-    expect(selectAt).toBeLessThan(expandAt);
+  it("a noun or verb click OPENS its persona session", () => {
+    // This is what a dead click became. The node resolves to an app-owned pane, so `expandNode` takes
+    // the studio-morph path and the terminal opens in the graph.
+    expect(src).toContain("else if (crateNode && surfacePaneIdForNode(id)) void openSurfaceSession(id);");
   });
+
+  it("reads the CHARTER from the persona store, never inlining it", () => {
+    // One copy of what an operator or a maintainer is. Editing the persona changes every session
+    // started afterwards; a second description here would drift from it.
+    expect(src).toContain('["persona", "get", personaId]');
+    expect(src).toContain("surfaceCharter(assignment, persona.startPrompt as string)");
+  });
+
+  it("refuses to launch with no charter rather than starting an unbriefed agent", () => {
+    // An agent with no brief gets the whole repository and no instruction, which is worse than not
+    // starting it — and the personas are seeded, so an absence is a real fault worth surfacing.
+    expect(src).toContain("if (!persona?.startPrompt)");
+    expect(src).toContain("bsc persona reseed");
+  });
+
+  it("registers the pane BEFORE opening the morph", () => {
+    // `TerminalSlot` owns the pane; the morph re-parents that same terminal rather than spawning a
+    // second. Opening first would ask for a pane that does not exist yet.
+    const register = src.indexOf("setSurfacePanes((prev) =>");
+    const open = src.indexOf("expandNode(nodeId);");
+    expect(register).toBeGreaterThan(-1);
+    expect(open).toBeGreaterThan(register);
+  });
+
 
   // THE FIT MUST KEY ON THE GRAPH SHOWN, NOT ON THE INTENT TO CHANGE IT.
   //
