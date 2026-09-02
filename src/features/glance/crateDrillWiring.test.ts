@@ -60,6 +60,28 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     expect(src).toContain("else if (isSurfaceNodeId(id)) setCrateNode(id);");
   });
 
+  it("counts the sessions on THIS LAYER, not the whole project", () => {
+    // The "End N sessions" button named the drilled PROJECT's panes at every depth, so the crate layer
+    // — whose nodes own no pane at all — still offered to end fourteen sessions that were nowhere on
+    // screen. A control that acts on things the user cannot see is worse than a missing one, and this
+    // one KILLS.
+    expect(src).toContain("if (!crateNode) return inProject;");
+    expect(src).toContain("return inProject.filter((pane) => onScreen.has(pane));");
+    // resolved per node the same way `isLiveAgent` does, so toolbar and graph cannot disagree
+    expect(src).toContain("studioPaneId(n.id) ?? fleetPaneId(drill, n.id)");
+  });
+
+  it("a noun or verb click SELECTS rather than dying on a pane nothing launched", () => {
+    // Same dead-click shape one level down: `expandNode` would compute `fleetPaneId(drill, "noun:logs")`
+    // and silently fail. Until those nodes launch a persona, selecting shows the inspector — a click
+    // that does something beats a click that does nothing.
+    const crateAt = src.indexOf("else if (isSurfaceNodeId(id)) setCrateNode(id);");
+    const selectAt = src.indexOf("else if (crateNode) pickNode(id);");
+    const expandAt = src.indexOf("else expandNode(id);");
+    expect(selectAt).toBeGreaterThan(crateAt);
+    expect(selectAt).toBeLessThan(expandAt);
+  });
+
   it("re-frames the viewport when the LAYER changes, not only the drill", () => {
     // The fit effect keyed on `drill` alone, so entering the crate layer never re-fitted: a three-node
     // graph laid out at world origin while the viewport was still framed for sixty crates is simply
