@@ -34,6 +34,7 @@ bsc-mem = { path = "../bsc-mem" }
 # between a branch's git state and its plan record.
 bsc-work = { path = "../bsc-work" }
 bsc-self = { path = "../bsc-self" }
+bsc-resolve = { path = "../bsc-resolve" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 # `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for.

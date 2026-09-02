@@ -22,6 +22,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 bsc-sandbox = { path = "../crates/bsc-sandbox" }
+# The skills + MCP resolution, moved out of this binary so a pure decision over serde-able data
+# stops costing a rebuild and a restarted window (the-resolution-decisions-live-in-the-app-binary-not-a-crate).
+bsc-resolve = { path = "../crates/bsc-resolve" }
 # The store projections a sandboxed session reads instead of running `bsc` (which would mean
 # binding a writable database into the cage). See `project_stores_for`.
 bsc-storefs = { path = "../crates/bsc-storefs" }

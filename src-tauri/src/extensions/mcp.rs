@@ -236,6 +236,32 @@ mod relocated_tests {
     use super::*;
     use crate::testutil::prelude::*;
 
+    /// The resolved MCP payload survives the WRITER's own serialization — so the field names cannot
+    /// drift from what `write_mcp_json` and `bsc-agent` read.
+    ///
+    /// The other half of `bsc_resolve::mcp`'s
+    /// `args_split_on_whitespace_and_the_payload_is_the_consumers_own_type`, kept here when the
+    /// resolution moved into `crates/bsc-resolve`: `mcp_server_value` resolves a bundled binary via
+    /// `pty::bsc_bin_path()`, so it is app-owned and this assertion could not travel with it.
+    #[test]
+    fn the_resolved_payload_survives_the_writers_own_serialization() {
+        let mut s = bsc_resolve::mcp::McpServer {
+            id: "a".into(),
+            name: "a".into(),
+            transport: "stdio".into(),
+            command: Some("/bin/a".into()),
+            args: String::new(),
+            url: None,
+            env: Vec::new(),
+            enabled: true,
+        };
+        s.args = "  --flag   value  ".to_string();
+        let p = bsc_resolve::mcp::to_mcp_payload(&s).expect("runnable");
+        assert_eq!(p.args, vec!["--flag", "value"], "collapsed, not split into empties");
+        let json = serde_json::to_string(&mcp_server_value(&p)).unwrap();
+        assert!(json.contains("--flag"), "the payload survives the writer's own serialization: {json}");
+    }
+
     #[test]
     fn resolve_mcp_command_substitutes_research_marker(){
         use std::path::PathBuf;
