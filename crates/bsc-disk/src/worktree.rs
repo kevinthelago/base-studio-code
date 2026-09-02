@@ -67,18 +67,52 @@ pub fn parse_worktree_list(porcelain: &str) -> Vec<Listed> {
     trees
 }
 
-/// The hazard check: a symlinked/junctioned `node_modules` makes removal destructive.
+/// The hazard checks. Both make a tree a REFUSAL rather than a removal — reported, never removed.
 pub fn blocked_reason(path: &Path) -> Option<String> {
     let nm = path.join("node_modules");
-    match std::fs::symlink_metadata(&nm) {
-        Ok(meta) if meta.file_type().is_symlink() => Some(
+    if std::fs::symlink_metadata(&nm).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Some(
             "node_modules is a symlink/junction — `git worktree remove` would follow it and wipe \
              the shared install"
                 .to_string(),
-        ),
-        // Absent — the normal, zero-install case — or a real directory.
-        _ => None,
+        );
     }
+    dirty_reason(path)
+}
+
+/// UNCOMMITTED WORK, and this check is why the dry run can be believed.
+///
+/// The JavaScript this ports relied entirely on git refusing: `--force` is never passed, so a dirty
+/// tree survives, and its own header called that refusal "the safety feature". True for the REAL
+/// run — and it left the DRY run lying, which is the half people actually read before deciding what
+/// to clean up.
+///
+/// MEASURED 2026-09-02, live: `wt-cred` sat on `parked-cred` holding 56 uncommitted files belonging
+/// to another session — the exact state a fleet produces when a parked tree is claimed mid-work, which
+/// happened three times in one afternoon. `--dry-run --keep 0 --min-idle-hours 0` reported
+/// `would remove /…/wt-cred`. Nothing was at risk, because the real run would have been refused; but a
+/// reader planning a sweep would have believed that tree was disposable, and the first real run of the
+/// JavaScript kept a tree that turned out to hold 7 staged source modifications on a *parked* branch.
+///
+/// So dirtiness becomes a first-class REFUSAL, which is the outcome [`crate::pool::plan_cap`] already
+/// models for exactly this: "a candidate by policy that carries a hazard — reported, never silently
+/// skipped and never removed anyway". A caller that cannot tell "nothing to do" from "I declined to
+/// touch this" will assume the pool is capped when it is not.
+///
+/// UNREADABLE MEANS BLOCKED, not clean: if git cannot answer, the conservative direction is to refuse.
+fn dirty_reason(path: &Path) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(path)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return Some("`git status` could not read this tree, so it cannot be shown to be clean".to_string());
+    }
+    let n = String::from_utf8_lossy(&out.stdout).lines().filter(|l| !l.trim().is_empty()).count();
+    (n > 0).then(|| {
+        format!("{n} uncommitted change(s) — `git worktree remove` would refuse, and `--force` is never passed")
+    })
 }
 
 fn mtime_ms(path: &Path) -> Option<f64> {
@@ -256,20 +290,93 @@ detached
     #[test]
     fn a_junctioned_node_modules_is_a_hazard_and_a_real_directory_is_not() {
         let root = scratch("junction");
-        let plain = root.join("plain");
-        let junction = root.join("junction");
+        // CLEAN GIT REPOS, so the dirty check returns None and this test isolates the JUNCTION
+        // hazard. Before the dirty check existed these were bare directories; they passed for the
+        // wrong reason, and making them repos is what keeps this test about node_modules.
+        let repo = |name: &str| {
+            let d = root.join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            git_ok(&d, &["init", "-q", "-b", "develop"]);
+            std::fs::write(d.join("f"), b"x").unwrap();
+            git_ok(&d, &["add", "."]);
+            git_ok(&d, &["commit", "-qm", "one"]);
+            d
+        };
+        let plain = repo("plain");
+        let junction = repo("junction");
+        let absent = repo("absent");
         std::fs::create_dir_all(plain.join("node_modules")).unwrap();
-        std::fs::create_dir_all(&junction).unwrap();
         std::fs::create_dir_all(root.join("shared-install")).unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(root.join("shared-install"), junction.join("node_modules")).unwrap();
 
+        // `node_modules` is gitignored in a real checkout; here it is untracked, so exclude it from
+        // the dirty signal by committing an ignore rule — otherwise this test measures dirtiness.
+        for d in [&plain, &junction] {
+            std::fs::write(d.join(".gitignore"), "node_modules/\n").unwrap();
+            git_ok(d, &["add", ".gitignore"]);
+            git_ok(d, &["commit", "-qm", "ignore"]);
+        }
+
         assert_eq!(blocked_reason(&plain), None, "a real node_modules is the zero-install case");
-        assert_eq!(blocked_reason(&root.join("absent")), None, "no node_modules at all is normal");
+        assert_eq!(blocked_reason(&absent), None, "no node_modules at all is normal");
         #[cfg(unix)]
         assert!(
             blocked_reason(&junction).is_some_and(|w| w.contains("wipe the shared install")),
             "a symlinked node_modules MUST be refused"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_tree_with_uncommitted_work_is_refused_so_the_dry_run_can_be_believed() {
+        // MEASURED LIVE 2026-09-02: `wt-cred` sat on `parked-cred` holding 56 uncommitted files
+        // belonging to another session — the state a fleet produces when a parked tree is claimed
+        // mid-work, which happened three times in one afternoon. Before this check,
+        // `--dry-run --keep 0 --min-idle-hours 0` printed `would remove …/wt-cred`. The real run
+        // would have been refused by git, so nothing was ever at risk; but the DRY RUN is the half
+        // people read before deciding what to sweep, and it was lying.
+        let root = scratch("dirty");
+        let tree = root.join("repo");
+        std::fs::create_dir_all(&tree).unwrap();
+        git_ok(&tree, &["init", "-q", "-b", "develop"]);
+        std::fs::write(tree.join("f"), b"x").unwrap();
+        git_ok(&tree, &["add", "."]);
+        git_ok(&tree, &["commit", "-qm", "one"]);
+
+        assert_eq!(blocked_reason(&tree), None, "a clean tree carries no hazard");
+
+        // An UNTRACKED file counts: it is work git would refuse to discard, same as a modification.
+        std::fs::write(tree.join("scratch.rs"), b"someone else's in-flight work").unwrap();
+        let why = blocked_reason(&tree).expect("a dirty tree MUST be refused, not proposed");
+        assert!(why.contains("uncommitted"), "{why}");
+        assert!(why.contains('1'), "the count is what makes the refusal actionable: {why}");
+
+        // And it reaches the PLAN as a refusal rather than a removal, which is the whole point —
+        // `refused` exists so a caller can tell "nothing to do" from "I declined to touch this".
+        let trees = vec![Tree {
+            name: tree.to_string_lossy().into_owned(),
+            branch: Some("parked-x".into()),
+            blocked: blocked_reason(&tree),
+            last_built_ms: 1.0,
+            last_active_ms: 1.0,
+            ..Tree::default()
+        }];
+        let plan = plan_cap(&trees, 0, 0.0, f64::MAX);
+        assert!(plan.remove.is_empty(), "a dirty tree must never be proposed for removal");
+        assert_eq!(plan.refused.len(), 1);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_tree_git_cannot_read_is_refused_rather_than_assumed_clean() {
+        // The conservative direction: silence from git is not evidence of cleanliness.
+        let root = scratch("unreadable-tree");
+        let not_a_repo = root.join("nope");
+        std::fs::create_dir_all(&not_a_repo).unwrap();
+        assert!(
+            blocked_reason(&not_a_repo).is_some_and(|w| w.contains("cannot be shown to be clean")),
+            "a tree git cannot read must be refused"
         );
         std::fs::remove_dir_all(&root).ok();
     }
