@@ -34,8 +34,15 @@ describe("the command-surface band", () => {
     expect(bandNodeMeta({ kind })).not.toBe(SERVICE_META);
   });
 
-  it("renders in the fenced band, like the other non-project dimensions", () => {
-    expect(isBandNode({ kind: "surface" })).toBe(true);
+  // REVERSED 2026-09-02 by the maintainer: "lets treat these like normal nodes, instead of placing
+  // them in a box. they should flow within the graph." Kept as an assertion rather than deleted, so
+  // the decision is visible where the old one was — this is the second time this graph has fenced
+  // something that belonged with the work (`architect-sits-with-the-projects` was the first).
+  //
+  // The band is for a shared DEPENDENCY the projects CONSUME. A crate is not consumed by the project;
+  // it IS the project, decomposed.
+  it("does NOT render in the fenced band — a crate flows with the graph", () => {
+    expect(isBandNode({ kind: "surface" })).toBe(false);
   });
 
   it("carries a full presentation row, so the inspector has nothing to invent", () => {

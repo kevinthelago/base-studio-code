@@ -31,9 +31,10 @@ describe("the surface-node projection", () => {
     expect(nodes.map((n) => n.id)).toContain(surfaceNodeId("bsc-util"));
   });
 
-  it("marks them as band nodes so they render in the fenced band", () => {
+  it("leaves them UNBANDED so they flow with the graph", () => {
     const { nodes } = surfaceGraph(ROSTER);
-    for (const n of nodes) expect(isBandNode(n), n.id).toBe(true);
+    // REVERSED 2026-09-02 — see "crates are ordinary nodes" below; a crate flows with the graph.
+    for (const n of nodes) expect(isBandNode(n), n.id).toBe(false);
   });
 
   it("says NO SIGNAL rather than claiming healthy", () => {
@@ -49,7 +50,7 @@ describe("the surface-node projection", () => {
   it("draws one crate-dependency edge per internal dep, in the band", () => {
     const { edges } = surfaceGraph(ROSTER);
     expect(edges).toHaveLength(ROSTER.reduce((n, r) => n + r.dependsOn.length, 0));
-    for (const e of edges) expect(isBandEdge(e.kind), e.kind).toBe(true);
+    for (const e of edges) expect(isBandEdge(e.kind), e.kind).toBe(false);
     expect(edges.every((e) => e.kind === "depends-on")).toBe(true);
     expect(edges.some((e) => e.from === surfaceNodeId("plandb") && e.to === surfaceNodeId("bsc-util"))).toBe(true);
   });
@@ -153,5 +154,58 @@ describe("L0 draws no command surfaces", () => {
     expect(out.rawNodes.length).toBeGreaterThan(0);
     expect(out.rawNodes.some((n) => n.kind === "surface")).toBe(false);
     expect(out.rawEdges.some((e) => e.kind === "depends-on")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// CRATES FLOW IN THE GRAPH — they are not fenced into the band.
+//
+// MAINTAINER, 2026-09-02: "lets treat these like normal nodes, instead of placing them in a box.
+// they should flow within the graph."
+//
+// The same correction `architect-sits-with-the-projects` made, for the same reason. The band is for a
+// shared DEPENDENCY the projects consume — a kit, an algorithm, an MCP server — where lifting keeps its
+// health out of a project's roll-up. A crate is not consumed by the project; it IS the project,
+// decomposed. Fencing 60 of them renders an inventory beside the work rather than the work.
+// ---------------------------------------------------------------------------------------------
+describe("crates are ordinary nodes, not band nodes", () => {
+  it("a surface node is not banded, and its depends-on edge is not a band edge", () => {
+    const { nodes, edges } = surfaceGraph(ROSTER);
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const n of nodes) expect(isBandNode(n)).toBe(false);
+    expect(edges.length).toBeGreaterThan(0);
+    for (const e of edges) expect(isBandEdge(e.kind)).toBe(false);
+  });
+
+  it("the band still holds the kinds that DO belong in it", () => {
+    // Un-fencing crates must not un-fence the dimensions the band exists for — the failure mode the
+    // architect change had to guard too.
+    for (const kind of ["mcp", "service", "integration"] as const) {
+      expect(isBandNode({ kind })).toBe(true);
+    }
+    for (const kind of ["uses-mcp", "uses-service", "uses-integration"] as const) {
+      expect(isBandEdge(kind)).toBe(true);
+    }
+  });
+
+  it("the crate graph is ACYCLIC, which is what makes admitting it to the network safe", () => {
+    // A cycle in this graph has blanked it before (glance-planner-edge-isolation), and the architect
+    // was only safe to un-fence because it is a sink. A crate is not a sink, so the safety argument has
+    // to be the DAG — asserted here rather than assumed, over the real projection.
+    const { nodes, edges } = surfaceGraph(ROSTER);
+    const out = new Map(nodes.map((n) => [n.id, [] as string[]]));
+    for (const e of edges) out.get(e.from)?.push(e.to);
+    const state = new Map<string, number>();
+    const walk = (u: string): boolean => {
+      state.set(u, 1);
+      for (const v of out.get(u) ?? []) {
+        if (state.get(v) === 1) return true;
+        if (!state.has(v) && walk(v)) return true;
+      }
+      state.set(u, 2);
+      return false;
+    };
+    for (const n of nodes) if (!state.has(n.id) && walk(n.id)) throw new Error("cycle in the crate graph");
+    expect(state.size).toBe(nodes.length);
   });
 });
