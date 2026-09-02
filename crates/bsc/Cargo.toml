@@ -40,6 +40,7 @@ bsc-self = { path = "../bsc-self" }
 bsc-github = { path = "../bsc-github" }
 bsc-resolve = { path = "../bsc-resolve" }
 bsc-perms = { path = "../bsc-perms" }
+bsc-disk = { path = "../bsc-disk" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 # `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for.

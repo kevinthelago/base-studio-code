@@ -730,6 +730,7 @@ dependencies = [
  "bsc-config",
  "bsc-data",
  "bsc-debug",
+ "bsc-disk",
  "bsc-files",
  "bsc-fleet",
  "bsc-github",
@@ -896,6 +897,14 @@ version = "0.1.0"
 dependencies = [
  "bsc-record",
  "serde_json",
+name = "bsc-disk"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "filetime",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 // Should this gate run in THIS tree? (#a-corrupt-build-artifact-has-no-recovery-path)
 //
-// Pure decision + a thin probe, split like `incremental-prune-plan.mjs` so the rule is testable
+// Pure decision + a thin probe, split like `gate-lock-plan.mjs` so the rule is testable
 // without a filesystem, a network, or a running app.
 //
 // ## The condition being prevented

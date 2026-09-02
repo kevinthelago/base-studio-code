@@ -1,0 +1,21 @@
+[package]
+name = "bsc-disk"
+version = "0.1.0"
+edition = "2021"
+
+# `bsc-disk` — the build tree's garbage collector, and the parked-worktree pool's cap.
+#
+# A LEAN, standalone crate (like `bsc-self` and `bsc-project`): the shared CLI scaffold, a hash, and
+# a way to set mtimes. It touches no Tauri and no database, so it stays out of the DuckDB build path
+# and a scoped `cargo check -p bsc-disk` is seconds rather than minutes.
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-util = { path = "../bsc-util" }
+serde_json = "1"
+# The dedup GUARD, not an optimization: identical name and size is a hint, a hash is the proof. The
+# first real run of the JavaScript this ports found 1902 files with identical name AND size and
+# different bytes.
+sha2 = "0.11"
+# A hard link shares metadata, so the shared inode has to adopt the group's NEWEST mtime or every
+# non-canonical tree reads its artifact as stale and rebuilds it. std cannot set an mtime.
+filetime = "0.2"
