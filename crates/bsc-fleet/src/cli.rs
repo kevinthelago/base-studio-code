@@ -175,6 +175,32 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "launch-config",
+    summary: "everything a pane's launch needs from the sidecar, in ONE call",
+    usage: "\
+USAGE:
+  bsc fleet launch-config --provider <name> [--file <payload>] [--json|--pretty]
+
+Reads a ProviderLaunchConfig as JSON on stdin (or from --file) and returns the whole launch
+configuration for that provider. Today that is the provider's shell command; skills and MCP fold onto
+the SAME reply next, which is why it is an object and not a bare string.
+
+ONE CALL, NOT FOUR. A launch has four derivations to make. Behind four calls that is ~39ms of spawn
+each; behind one it is ~39ms for all of them. This is the lesson #3908 and then #3954 were filed to
+teach -- at ~39 panes a per-item command saturated the command pool and `pty_write` measured 3280ms.
+
+WHY IT IS OUT HERE AT ALL. The app's Rust half is a live process behind a webview, so a derivation
+living inside it can only change by producing a new binary -- and a new binary restarts the window with
+a fleet running in it. `bsc` is a fresh process per call, so the same change goes live by staging a
+binary, with no app downtime.
+
+A HARNESS THAT BAKES ITS OWN PROMPT (Claude, bsc-agent) gets NO providerCommand at all -- absence,
+never an empty string, because an empty command is something a caller might execute.
+
+THE QUOTING IS THE POINT. The kickoff is interpolated as `--message <quoted>` and is PLAN-AUTHORED
+text; it is POSIX single-quoted so a prompt containing an apostrophe cannot terminate the argument and
+what follows cannot become shell.",
+}, CmdDoc {
     name: "worker-end",
     summary: "the resting-state verdict for a finished worker — from plan.db, with no app running",
     usage: "\
@@ -374,6 +400,11 @@ struct Args {
     /// `doctor --fix`: repair `caged-floor` findings in place instead of only reporting them.
     fix: bool,
     timeout_ms: Option<i64>,
+    /// `launch-config`: which harness the pane launches. Its own flag rather than reusing `--source`,
+    /// so the usage text and the parser cannot disagree.
+    provider: Option<String>,
+    /// `launch-config`: read the payload from a sealed scratch file instead of stdin.
+    file: Option<String>,
     /// `clone`: the PAT for a private repo. Never echoed — a failed clone redacts it.
     token: Option<String>,
     /// `clone`: clone FROM here instead of github.com (a local path, or any git URL).
@@ -392,7 +423,7 @@ struct Args {
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
+    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, provider: None, file: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
     let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
         match flag {
             "--json" => a.json = true,
@@ -406,6 +437,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--fix" => a.fix = true,
             "--token" => a.token = Some(v.value("--token needs a value")?),
             "--source" => a.source = Some(v.value("--source needs a path or URL")?),
+            "--provider" => a.provider = Some(v.value("--provider needs a harness name")?),
+            "--file" => a.file = Some(v.value("--file needs a scratch-file name")?),
             "--repo" => a.repos.push(v.value("--repo needs an owner/name")?),
             "--local" => a.local = true,
             "--timeout" => {
@@ -467,6 +500,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "wake" => cmd_wake(&args, prog),
         "provision" => cmd_provision(&args, prog),
         "clone" => cmd_clone(&args, prog),
+        "launch-config" => cmd_launch_config(&args),
         "worker-end" => cmd_worker_end(&args),
         "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
@@ -480,6 +514,34 @@ fn plan_db_path(db_flag: Option<&str>) -> Option<std::path::PathBuf> {
     let flag = db_flag.map(str::to_string);
     let path = bsc_cli_util::resolve_store_path(&flag, "BSC_PLAN_DB", || Err("no plan store".to_string())).ok()?;
     path.is_file().then_some(path)
+}
+
+/// `bsc fleet launch-config --provider <name>` — the whole launch configuration, in one reply.
+///
+/// Derives nothing itself: `llm::launch_cmd::launch_config` owns the derivation, so the app's
+/// dispatcher and this verb cannot drift from one another.
+fn cmd_launch_config(a: &Args) -> Result<(), String> {
+    let provider = a
+        .provider
+        .as_deref()
+        .ok_or("usage: bsc fleet launch-config --provider <name> (config as JSON on stdin)")?;
+    let raw = bsc_cli_util::read_payload(a.file.as_deref())?;
+    // An EMPTY payload is a legitimate "no config" — a provider with no model, prompt or read-files
+    // still has a command. Only malformed JSON is an error.
+    let cfg: Option<llm::launch_cmd::ProviderLaunchConfig> = if raw.trim().is_empty() {
+        None
+    } else {
+        Some(serde_json::from_str(&raw).map_err(|e| format!("bsc fleet launch-config: bad config JSON: {e}"))?)
+    };
+    let out = llm::launch_cmd::launch_config(provider, cfg.as_ref());
+    bsc_cli_util::emit(a.pretty, a.json, &out, || {
+        // Absence is STATED. An empty line here would read as "an empty command", which is exactly the
+        // thing a caller must not execute.
+        out.provider_command.clone().unwrap_or_else(|| {
+            format!("(no launch command — the {provider} harness bakes its own prompt)")
+        })
+    });
+    Ok(())
 }
 
 /// `bsc fleet worker-end <projectKey> --stream a,b,c` — the verdict per stream, index-aligned.

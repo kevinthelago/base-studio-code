@@ -27,6 +27,10 @@ bsc-project = { path = "../bsc-project" }
 # `maintain` event, and this crate already owns the one parser for that file. Cheap: its heaviest dep
 # is the bundled rusqlite `plandb` already pulls in here.
 logs = { path = "../logs" }
+# `bsc fleet launch-config` derives the provider command from `llm::launch_cmd`. The derivation lives
+# there because it already used `routing::LlmConfig` and `session_env::aider_model_arg`; this crate
+# only exposes it as a verb.
+llm = { path = "../llm", package = "bsc-llm" }
 # `doctor --fix` repairs a caged hook floor through the SAME `rewrite_guest_hooks` the launch path
 # runs (`console/pty`), so a manual repair and an automatic one cannot rewrite a file two different
 # ways. Cheap: bsc-sandbox's only deps are bsc-util + bsc-cli-util + serde_json, all already here.

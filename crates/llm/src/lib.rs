@@ -5,6 +5,7 @@
 //! shape, so llm_complete's consumers (`oneShotComplete`, `gradeLLM`) are unchanged
 //! across providers. This is the same provider abstraction `bsc-agent` will reuse.
 
+pub mod launch_cmd;
 pub mod ratelimit;
 mod anthropic;
 mod gemini;

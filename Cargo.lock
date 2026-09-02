@@ -892,6 +892,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
+ "bsc-llm",
  "bsc-project",
  "bsc-sandbox",
  "bsc-util",
