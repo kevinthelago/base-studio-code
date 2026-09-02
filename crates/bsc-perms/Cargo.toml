@@ -1,0 +1,27 @@
+[package]
+name = "bsc-perms"
+version = "0.1.0"
+edition = "2021"
+
+# `bsc-perms` — the SESSION PERMISSION DERIVATION: role -> denied commands, tool rules, write scope,
+# access env, bsc-agent permissions, and the hook chain.
+#
+# TAURI-FREE BY CONSTRUCTION, and the dependency list is the proof rather than a claim. These eight
+# modules were measured before they moved: their complete non-std import surface was `serde`,
+# `bsc_util::scope`, and each other — no `tauri`, no `AppHandle`, no `State<>`, no `crate::app`, no
+# `crate::console`. Adding a dependency here that is not pure would silently re-create the problem
+# this crate exists to fix, so keep this list short and argue for anything new.
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+# `scope::DENY_ALL` and `scope_verdict` — the write-scope vocabulary, already a crate.
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The RUNTIME CONFIG OVERLAY, so `write-locks.json` is read exactly as the app reads it. Verified
+# rather than assumed: `bsc-config/build.rs` stages `../../src-tauri/data` into `$OUT_DIR/config-seed`
+# and `src-tauri/build.rs` stages the same tree, with each file's own comment saying they are pinned
+# together — so the embedded fallback here is byte-identical to `platform::config::load_str`'s.
+bsc-config = { path = "../bsc-config" }
+# One `warn!` on an unreadable write-locks.json. Kept rather than dropped in the move: losing it would
+# turn a degraded permission set into a silent one, which is the opposite of failing closed loudly.
+log = { version = "0.4", features = ["std"] }

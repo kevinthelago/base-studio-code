@@ -22,6 +22,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 bsc-sandbox = { path = "../crates/bsc-sandbox" }
+# The session PERMISSION DERIVATION, moved out of `src-tauri/src/session/` so that changing which
+# commands a role may run no longer costs a new binary and a restarted window (#the-session-permission-derivation-lives-in-a-crate-not-src-tauri).
+bsc-perms = { path = "../crates/bsc-perms" }
 # The store projections a sandboxed session reads instead of running `bsc` (which would mean
 # binding a writable database into the cage). See `project_stores_for`.
 bsc-storefs = { path = "../crates/bsc-storefs" }

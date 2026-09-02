@@ -298,6 +298,35 @@ pub fn role_denied_commands(cap: &RoleCapability, active_surfaces: &[String]) ->
 // (`the-launch-composes-its-own-denies-instead-of-receiving-them`). Its union reasoning and the three
 // tests that pinned it moved with it, so nothing was lost; `DenyReconciliation` went with them,
 // because the TOOL-RULE half below has its own `ToolRuleReconciliation` and never shared the shape.
+/// The runtime config overlay: on-disk wins, the packaged seed is the fallback.
+///
+/// Mirrors `platform::config::load_str`, which this crate used to call and which is what kept the
+/// permission derivation inside the app binary. Both halves come from `bsc_config`, whose build
+/// script stages the SAME `src-tauri/data` tree into the same `config-seed` layout — so this reads
+/// the same bytes rather than a second copy of the list.
+fn load_config_str(rel: &str) -> String {
+    load_config_from(&bsc_config::config_root(), rel, bsc_config::packaged(rel))
+}
+
+/// [`load_config_str`] against an EXPLICIT root — the testable core.
+///
+/// Split out because the wrapper is structurally untestable: `config_root()` derives from `$HOME`,
+/// and on this machine the on-disk copy of `write-locks.json` is BYTE-IDENTICAL to the packaged one
+/// (verified: same md5), so a test calling the wrapper cannot tell the two halves apart however it is
+/// written. A bite probe disabling the on-disk read broke nothing, and the reason was that missing
+/// separating input rather than the read being redundant — the on-disk half is exactly what lets a
+/// user's own `write-locks.json` override the shipped list.
+///
+/// Taking the root as an argument rather than reading an env var is deliberate: env mutation behaves
+/// differently under `cargo test` and `cargo nextest`, so a test written that way passes on the gate
+/// and races locally.
+fn load_config_from(root: &std::path::Path, rel: &str, packaged: Option<&[u8]>) -> String {
+    if let Ok(s) = std::fs::read_to_string(root.join(rel)) {
+        return s; // ON-DISK WINS — the user's override is the point of the overlay
+    }
+    packaged.and_then(|b| std::str::from_utf8(b).ok()).unwrap_or_default().to_string()
+}
+
 /// `dbOwnedPlanFiles` + `depManifestFiles`, from the one file both languages read.
 ///
 /// `@data/permissions/write-locks.json` is loaded by the TypeScript via the `@data` glob and shipped
@@ -305,8 +334,10 @@ pub fn role_denied_commands(cap: &RoleCapability, active_surfaces: &[String]) ->
 /// list. An unreadable file yields empty lists, which costs the two role-specific file denies and
 /// nothing else — the write globs and every other rule are unaffected.
 pub fn write_locks() -> (Vec<String>, Vec<String>) {
-    // `load_str` is on-disk-wins-then-embedded, the same overlay the TypeScript `@data` glob sees.
-    let text = crate::platform::config::load_str("permissions/write-locks.json");
+    // On-disk-wins-then-embedded, the same overlay the TypeScript `@data` glob sees. This USED to be
+    // `crate::platform::config::load_str`, which is what tied this crate to the app; `bsc_config`
+    // composes the same two halves from the same staged seed.
+    let text = load_config_str("permissions/write-locks.json");
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
         log::warn!("role gate: write-locks.json unreadable — the two role file-denies are omitted");
         return (Vec::new(), Vec::new());
@@ -355,7 +386,7 @@ mod tests {
     /// tunnel contract — so moving a feature slice does not break this, but RENAMING the fixture
     /// means updating this call in lockstep.
     fn fixture() -> Fixture {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found: Vec<std::path::PathBuf> = Vec::new();
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else { return };
@@ -375,8 +406,9 @@ mod tests {
 
     /// `dbOwnedPlanFiles` + `depManifestFiles`, from the one file both languages read.
     fn write_locks() -> (Vec<String>, Vec<String>) {
+        // `src-tauri/data/` is the APP's packaged data and stays there; only the derivation moved.
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("data/permissions/write-locks.json");
+            .join("../../src-tauri/data/permissions/write-locks.json");
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(p).expect("write-locks.json")).unwrap();
         let list = |k: &str| {
@@ -401,6 +433,37 @@ mod tests {
     /// THE POINT OF THIS MODULE: Rust must agree with the TypeScript that ships today, case for
     /// case, before anything is switched over to it. A security policy that is subtly different
     /// after a port is worse than one that was never ported.
+    /// The overlay's ON-DISK-WINS half, which the wrapper cannot exercise on this machine because
+    /// the two copies are byte-identical. Explicit root, no env mutation.
+    #[test]
+    fn an_on_disk_config_overrides_the_packaged_seed() {
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-perms-overlay-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("permissions")).expect("scratch");
+        std::fs::write(dir.join("permissions/x.json"), b"ON_DISK").unwrap();
+
+        assert_eq!(
+            super::load_config_from(&dir, "permissions/x.json", Some(b"PACKAGED")),
+            "ON_DISK",
+            "an on-disk config must beat the packaged seed — that override IS the overlay"
+        );
+        assert_eq!(
+            super::load_config_from(&dir, "permissions/absent.json", Some(b"PACKAGED")),
+            "PACKAGED",
+            "and the packaged seed is the fallback when nothing is on disk"
+        );
+        assert_eq!(
+            super::load_config_from(&dir, "permissions/absent.json", None),
+            "",
+            "neither on disk nor packaged is the empty string, never a panic"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn rust_derives_the_same_gate_the_typescript_does() {
         let fx = fixture();

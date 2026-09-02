@@ -25,7 +25,7 @@
 //! Nothing is de-duplicated across the three, matching the source: a pattern named by two sources
 //! appears twice, and since these are matched rather than counted that is harmless.
 
-use super::role_gate::{role_denied_commands, RoleCapability};
+use crate::role_gate::{role_denied_commands, RoleCapability};
 
 /// One row of `bsc surface list --json`, pared to what this reads. An ABSENT `status` means active —
 /// the catalog omits the field for the common case.
@@ -271,7 +271,7 @@ mod tests {
                 }
             }
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found = Vec::new();
         find(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one sessionDenies.fixtures.json, got {found:?}");
@@ -414,7 +414,7 @@ mod tests {
     /// claiming one field and the reconciliation question has to be answered deliberately.
     #[test]
     fn the_profile_contributes_no_command_denies() {
-        use super::super::profile_settings::{resolve_profile_settings, AgentProfile};
+        use crate::profile_settings::{resolve_profile_settings, AgentProfile};
         let profile: AgentProfile = serde_json::from_value(serde_json::json!({
             "id": "pf_x", "mode": "deny", "commands": ["git status"],
             "tools": { "bash": "deny", "read": "deny" },

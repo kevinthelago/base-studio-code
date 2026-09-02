@@ -525,6 +525,7 @@ dependencies = [
  "bsc-graph-layout",
  "bsc-llm",
  "bsc-navigate",
+ "bsc-perms",
  "bsc-persona",
  "bsc-project",
  "bsc-runtime",
@@ -736,6 +737,7 @@ dependencies = [
  "bsc-mem",
  "bsc-navigate",
  "bsc-network",
+ "bsc-perms",
  "bsc-persona",
  "bsc-project",
  "bsc-publish",
@@ -1020,6 +1022,18 @@ dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
  "bsc-util",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-perms"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-config",
+ "bsc-util",
+ "log",
+ "serde",
  "serde_json",
 ]
 

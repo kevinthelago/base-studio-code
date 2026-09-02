@@ -46,7 +46,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::role_gate::edit_path_rule;
+use crate::role_gate::edit_path_rule;
 
 /// A permission tier. `ask` is the absence of a rule — Claude Code prompts, which is its default.
 pub type Tier = String;
@@ -198,7 +198,7 @@ mod tests {
                 }
             }
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found = Vec::new();
         find(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one profileEnforcement.fixtures.json, got {found:?}");
