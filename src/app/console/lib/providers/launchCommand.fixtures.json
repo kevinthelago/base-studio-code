@@ -1,5 +1,5 @@
 {
-  "note": "GENERATED from @/app/console/lib/providers/providers/aider — do not hand-edit; see the .gen.test.ts",
+  "note": "GENERATED from @/app/console/lib/providers — do not hand-edit; see the .gen.test.ts. `cases` is buildAiderCommand; `providers` is every registered provider through getProvider().buildLaunchCmd(). NOTE the ollama injection subjects are recorded UNQUOTED because that is what the TypeScript emits — the Rust builder quotes them on purpose and its own test states that divergence.",
   "cases": [
     {
       "label": "no config at all — the bare fleet-safe launch",
@@ -177,6 +177,106 @@
         "startupPrompt": "ship it — don't wait"
       },
       "cmd": "aider --no-auto-commits --no-dirty-commits --model 'openai/qwen' --read 'CLAUDE.local.md' --message 'ship it — don'\\''t wait'"
+    }
+  ],
+  "providers": [
+    {
+      "id": "aider",
+      "label": "aider — through the registry, not the module",
+      "config": null,
+      "cmd": "aider --no-auto-commits --no-dirty-commits"
+    },
+    {
+      "id": "claude",
+      "label": "claude — bakes its own prompt via pty_create",
+      "config": null,
+      "cmd": "claude"
+    },
+    {
+      "id": "gemini",
+      "label": "gemini — a bare constant",
+      "config": null,
+      "cmd": "gemini"
+    },
+    {
+      "id": "codex",
+      "label": "codex — a bare constant",
+      "config": null,
+      "cmd": "codex"
+    },
+    {
+      "id": "amazonq",
+      "label": "amazonq — the id is `amazonq`, the BINARY is `q`",
+      "config": null,
+      "cmd": "q"
+    },
+    {
+      "id": "bsc-agent",
+      "label": "bsc-agent — bakes its own prompt",
+      "config": null,
+      "cmd": "bsc-agent"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — no model, so the built-in default",
+      "config": null,
+      "cmd": "ollama run llama3"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — an explicit model",
+      "config": {
+        "model": "qwen2.5-coder"
+      },
+      "cmd": "ollama run qwen2.5-coder"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — a tagged model",
+      "config": {
+        "model": "llama3:70b"
+      },
+      "cmd": "ollama run llama3:70b"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — a namespaced model",
+      "config": {
+        "model": "library/llama3"
+      },
+      "cmd": "ollama run library/llama3"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — an empty model falls back to the default",
+      "config": {
+        "model": ""
+      },
+      "cmd": "ollama run "
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — a model with a SPACE",
+      "config": {
+        "model": "my model"
+      },
+      "cmd": "ollama run my model"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — a model that tries to CHAIN a command",
+      "config": {
+        "model": "llama3; rm -rf /tmp/pwned"
+      },
+      "cmd": "ollama run llama3; rm -rf /tmp/pwned"
+    },
+    {
+      "id": "ollama",
+      "label": "ollama — a model with a backtick and a dollar",
+      "config": {
+        "model": "a`date`$HOME"
+      },
+      "cmd": "ollama run a`date`$HOME"
     }
   ]
 }
