@@ -176,7 +176,7 @@ command rather than when somebody else merged, and the script says which case yo
 
 It refuses rather than works around: a dirty root, a detached HEAD, and `main` AHEAD of `develop`,
 which means something committed straight to `main` — a fault to look at, not to paper over with a
-merge commit. Guards are pinned in `scripts/promote-plan.test.ts`. Merging `develop` into `main` needs
+merge commit. Guards are pinned in `crates/bsc-app/src/promote.rs`. Merging `develop` into `main` needs
 only the `develop` REF, so promote never has to know where `wt-integrate` is; it locates it only to
 run the gate there, because `gate-tree-guard` refuses a second cargo over the `target/` that
 `tauri dev` owns — and after the inversion that `target/` is the root's.

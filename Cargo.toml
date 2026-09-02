@@ -1,7 +1,7 @@
 [workspace]
 members = ["src-tauri", "crates/bsc", "crates/bsc-util", "crates/bsc-record", "crates/bsc-sqlite-util", "crates/data", "crates/plandb", "crates/errordb", "crates/usagedb", "crates/skilldb", "crates/llm", "crates/bsc-agent", "crates/mcp-rpc", "crates/research", "crates/compliance", "crates/logs", "crates/bsc-json-store", "crates/bsc-blueprint", "crates/bsc-persona", "crates/bsc-mcp", "crates/bsc-sound", "crates/bsc-teams", "crates/bsc-network", "crates/bsc-component", "crates/bsc-ui", "crates/bsc-project", "crates/bsc-files", "crates/bsc-cli-util", "crates/bsc-tunnel", "crates/bsc-cad", "crates/bsc-graph", "crates/bsc-graph-layout", "crates/bsc-studio", "crates/bsc-shot", "crates/bsc-appchan", "crates/bsc-navigate", "crates/bsc-fleet",
     "crates/bsc-debug", "crates/bsc-loop", "crates/bsc-request", "crates/bsc-runtime", "crates/bsc-storefs", "crates/bsc-sandbox", "crates/bsc-hook", "crates/bsc-session", "crates/channel", "crates/cve", "crates/bsc-github", "crates/bsc-publish", "crates/atlasdb", "crates/bsc-config", "crates/bsc-mem",
-    "crates/bsc-work", "crates/bsc-secret", "crates/bsc-self"]
+    "crates/bsc-work", "crates/bsc-secret", "crates/bsc-self", "crates/bsc-app"]
 resolver = "2"
 
 # Fast dev builds WITHOUT release (#3622). The default `tauri dev` compiles at opt-level 0, so the whole

@@ -720,6 +720,7 @@ name = "bsc"
 version = "0.1.0"
 dependencies = [
  "atlasdb",
+ "bsc-app",
  "bsc-blueprint",
  "bsc-cad",
  "bsc-cli-util",
@@ -781,6 +782,15 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-app"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "serde_json",
 ]
 
 [[package]]
