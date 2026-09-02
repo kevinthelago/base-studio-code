@@ -91,6 +91,23 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     expect(src).toContain("bsc persona reseed");
   });
 
+  it("puts the persona's model and provider in the store BEFORE the slot mounts", () => {
+    // Both are read AT LAUNCH, so setting them after the pane exists is too late — and the failure is
+    // silent: Claude Code drops an unknown `--model` rather than refusing it, so the session simply
+    // runs the wrong harness with no error anywhere.
+    expect(src).toContain("setPaneModel(paneId, persona.model);");
+    expect(src).toContain("const provider = providerForModel(persona.model);");
+    const set = src.indexOf("setPaneModel(paneId, persona.model);");
+    const register = src.indexOf("setSurfacePanes((prev) =>");
+    expect(set).toBeLessThan(register);
+  });
+
+  it("uses the SHARED provider rule, not a second copy", () => {
+    // `streamPaneWiring` decides the same thing for fleet panes. Two copies of "is this a tier" is
+    // exactly how the persona level and the stream level drifted in the first place.
+    expect(src).toContain('from "@/app/console/lib/models"');
+  });
+
   it("registers the pane BEFORE opening the morph", () => {
     // `TerminalSlot` owns the pane; the morph re-parents that same terminal rather than spawning a
     // second. Opening first would ask for a pane that does not exist yet.
