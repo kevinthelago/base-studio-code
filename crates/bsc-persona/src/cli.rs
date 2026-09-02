@@ -1791,6 +1791,38 @@ mod tests {
 
 #[cfg(test)]
 mod builtin_guard_tests {
+
+    /// THE DEBUG SESSION STAYS ON CLAUDE, and now that a persona CAN carry a local model that has to
+    /// be asserted rather than assumed.
+    ///
+    /// MAINTAINER 2026-09-02: "i'd like to keep claude as the debug session." It is the actor the
+    /// local operators escalate TO — the judgement calls a 35B is not the right tool for — so pointing
+    /// it at a local model would quietly remove the one stronger reader in the loop, and nothing would
+    /// report that.
+    ///
+    /// The check is on the PACKAGED persona, not a user's store: a person may point their own debugger
+    /// anywhere they like, and this guards the default we ship. It asserts ABSENCE, because unset is
+    /// the real state — it means "Claude Code's own default", which is exactly what is wanted, and is
+    /// why `providerForModel(None)` yields no bsc-agent override.
+    #[test]
+    fn the_packaged_debugger_ships_without_a_model() {
+        let raw = include_str!("../../../src-tauri/data/personas/debugger.json");
+        let v: serde_json::Value = serde_json::from_str(raw).expect("debugger.json is valid JSON");
+        assert_eq!(v.get("role").and_then(|r| r.as_str()), Some("debugger"), "guarding the wrong file");
+        match v.get("model") {
+            None => {}
+            Some(m) if m.as_str() == Some("") => {}
+            Some(m) => {
+                let name = m.as_str().unwrap_or_default();
+                assert!(
+                    bsc_util::is_model_id(name),
+                    "the packaged debugger names '{name}', which is not a Claude tier — the debug \
+                     session is what the local operators escalate to, and it must stay on Claude"
+                );
+            }
+        }
+    }
+
     use super::*;
 
     fn store_with(dir: &std::path::Path, id: &str, builtin: bool) -> bsc_json_store::Store {
