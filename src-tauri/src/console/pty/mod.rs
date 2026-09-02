@@ -1216,6 +1216,24 @@ fn pty_create_inner(
     let mut env = env;
     {
         let map = env.get_or_insert_with(Default::default);
+        // THE STARTUP PROMPT TRAVELS IN THE ENVIRONMENT, NOT ON THE COMMAND LINE.
+        //
+        // The init line is TYPED INTO AN INTERACTIVE SHELL through the pty, and a pty in canonical
+        // mode silently DISCARDS everything past 4096 bytes on one line (`N_TTY_BUF_SIZE`). Baking
+        // the prompt inline kept it on one physical line — deliberately, so a newline could never end
+        // the command early — which meant a long prompt was cut mid-token, leaving the `$'…'` quote
+        // open. bash then sat at its `>` continuation prompt and NO AGENT STARTED AT ALL.
+        //
+        // MEASURED on the session that exposed it: 577 bytes of preamble + a 4170-byte prompt + a
+        // 380-byte assignment = 5127 bytes, cut at exactly 4095. Nothing reported it: the pane looked
+        // like an ordinary shell, and the only symptom was a `>` at the bottom.
+        //
+        // The variable is set whenever a prompt EXISTS, not only when the plan turns out to be
+        // `Prompt` — that decision is made hundreds of lines later, after this env has already been
+        // handed to the child, and an unread variable costs nothing.
+        if let Some(p) = startup_prompt.as_deref().filter(|s| !s.is_empty()) {
+            map.insert("BSC_STARTUP_PROMPT".to_string(), p.to_string());
+        }
         match launch_agent_perms(
             map,
             provider_id.as_deref(),

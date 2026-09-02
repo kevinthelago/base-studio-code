@@ -171,8 +171,16 @@ impl HarnessAdapter for BscAgentAdapter {
         // nothing to name — which is exactly why the id must not be what decides. When WHETHER and
         // WHICH were one `Option`, this harness's permanently-absent id read as "do not resume" and
         // the flag never reached the command line.
+        //
+        // THE PROMPT IS REFERENCED, NOT INLINED (`the-startup-prompt-outgrew-the-tty-line-limit`).
+        // This string is typed into an interactive shell through a pty, which silently truncates any
+        // single line past 4096 bytes — and an inlined `$'…'` prompt that gets cut leaves the quote
+        // open, so bash waits at `>` and the agent never starts. `$BSC_STARTUP_PROMPT` is set by
+        // `pty_create` from the same value, so the line stays a constant few dozen bytes whatever
+        // the prompt's size. Double quotes, so newlines inside it survive as one argument.
         let flag = if resume { "--continue " } else { "" };
-        format!("bsc-agent {flag}{}", crate::bash_ansi_c_quote(prompt))
+        let _ = prompt;
+        format!("bsc-agent {flag}\"$BSC_STARTUP_PROMPT\"")
     }
 
     fn model_flag(&self, _model: &str) -> Option<String> {
@@ -298,7 +306,7 @@ mod tests {
         let a = BscAgentAdapter;
         let resumed = a.launch_command("go", true, None);
         assert!(resumed.starts_with("bsc-agent --continue "), "{resumed}");
-        assert!(resumed.contains("go"), "the prompt is still baked in: {resumed}");
+        assert!(resumed.contains("$BSC_STARTUP_PROMPT"), "the prompt is still carried: {resumed}");
 
         // An id it can never have must not change the answer either way.
         assert_eq!(a.launch_command("go", true, Some("ignored")), resumed);
@@ -401,16 +409,33 @@ mod tests {
         assert!(!a.is_harness_launch("aider --foo"));
     }
 
+    /// THE COMMAND LENGTH IS INDEPENDENT OF THE PROMPT — the property the truncation bug violated.
+    ///
+    /// A pty in canonical mode discards everything past 4096 bytes on one physical line, and this
+    /// string is typed into an interactive shell. Inlining meant a long prompt was cut mid-token and
+    /// the session silently never started. Asserting the LENGTH pins that, because it stays true no
+    /// matter how the prompt happens to be escaped.
     #[test]
-    fn bsc_agent_launch_bakes_prompt_and_has_no_model_flag() {
+    fn the_launch_line_does_not_grow_with_the_prompt() {
+        let a = BscAgentAdapter;
+        let huge = "x".repeat(64 * 1024);
+        let cmd = a.launch_command(&huge, false, None);
+        assert!(cmd.len() < 120, "a {}-byte prompt produced a {}-byte line", huge.len(), cmd.len());
+        assert_eq!(cmd, a.launch_command("tiny", false, None), "the line must not vary with the prompt");
+    }
+
+    #[test]
+    fn bsc_agent_launch_references_the_prompt_and_has_no_model_flag() {
         let a = BscAgentAdapter;
         let cmd = a.launch_command("do the thing", false, None);
-        assert!(cmd.starts_with("bsc-agent "));
-        assert_eq!(cmd, format!("bsc-agent {}", crate::bash_ansi_c_quote("do the thing")));
+        // REFERENCED, not inlined: the pty truncates any line past 4096 bytes, and a cut `$'…'`
+        // leaves the quote open so the agent never starts.
+        assert_eq!(cmd, "bsc-agent \"$BSC_STARTUP_PROMPT\"");
+        assert!(!cmd.contains("do the thing"), "the prompt must not be on the command line: {cmd}");
         assert!(!cmd.contains("--continue"));
-        // Resume prepends --continue before the baked prompt.
+        // Resume prepends --continue before the referenced prompt.
         let resumed = a.launch_command("do the thing", true, Some("bf36a25c-b331-48b0-a78c-3bf4e6b51354"));
-        assert_eq!(resumed, format!("bsc-agent --continue {}", crate::bash_ansi_c_quote("do the thing")));
+        assert_eq!(resumed, "bsc-agent --continue \"$BSC_STARTUP_PROMPT\"");
         assert_eq!(a.model_flag("gpt-5"), None);
     }
 
