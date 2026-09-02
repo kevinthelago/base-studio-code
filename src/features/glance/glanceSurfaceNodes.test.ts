@@ -5,7 +5,7 @@
 // not, `bsc-util` among the verbless ones. Every assertion here is about a decision that could
 // plausibly have gone the other way, and would have been wrong in a way the UI would not reveal.
 import { describe, it, expect } from "vitest";
-import { surfaceGraph, dependentCount, withSurfaceNodes, type SurfaceRosterRow } from "@/features/glance/lib/surfaceNodes";
+import { surfaceGraph, dependentCount, withSurfaceNodes, crateKind, CRATE_KIND_ROLE, type SurfaceRosterRow } from "@/features/glance/lib/surfaceNodes";
 import { buildGlanceData, type GlanceData } from "@/features/glance/lib/glanceData";
 import { surfaceNodeId, isBandNode, isBandEdge } from "@/features/glance/lib/glanceGraph";
 
@@ -329,5 +329,59 @@ describe("only the edges that are not already implied get drawn", () => {
     ];
     expect(() => surfaceGraph(r)).not.toThrow();
     expect(surfaceGraph(r).nodes).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// THE THREE KINDS OF CRATE (`a-crate-node-shows-which-of-the-three-kinds-it-is`).
+//
+// MAINTAINER 2026-09-02: "take a look at the crate nodes and lets create a visual distinction between
+// the 3 different kinds we have."
+//
+// The axis is HOW YOU USE IT, which is what a reader of this graph is asking: call it (`bsc <verb>`),
+// build on it, or run it. Measured on the real roster: 43 surface / 14 library / 3 program of 60.
+// ---------------------------------------------------------------------------------------------
+describe("a crate node says which of the three kinds it is", () => {
+  const row2 = (crate: string, surface: boolean, deps: string[] = []): SurfaceRosterRow => ({
+    crate, path: `crates/${crate}`, surface, verbs: surface ? ["v"] : [], dependsOn: deps,
+  });
+
+  it("classifies on VERBS then FAN-IN — never on the name", () => {
+    // The trap, stated as a test: `bsc-agent` and `bsc-hook` read as libraries and are programs;
+    // `channel` and `research` read as programs and are libraries. A name heuristic gets four of
+    // seventeen wrong, silently, which is why fan-in is the discriminator.
+    expect(crateKind(row2("plandb", true), 0)).toBe("surface");
+    expect(crateKind(row2("bsc-util", false), 44)).toBe("library");
+    expect(crateKind(row2("bsc-agent", false), 0)).toBe("program");
+    // a verb WINS over fan-in — a crate you can call is a surface however many depend on it
+    expect(crateKind(row2("logs", true), 12)).toBe("surface");
+  });
+
+  it("gives each kind its own colour AND its own word", () => {
+    // Colour alone is a cipher: it dies in greyscale, in a screenshot, and for a colour-blind reader.
+    // The caption is what makes the distinction legible without the legend.
+    const r = [row2("cli", true), row2("util", false, []), row2("app", false, [])];
+    r[0].dependsOn = ["util"]; // so `util` has a dependent and `app` does not
+    const { nodes } = surfaceGraph(r);
+    const by = (c: string) => nodes.find((n) => n.slug === c);
+    expect(by("cli")?.roleLabel).toBe("surface");
+    expect(by("util")?.roleLabel).toBe("library");
+    expect(by("app")?.roleLabel).toBe("program");
+    const roles = [by("cli")?.role, by("util")?.role, by("app")?.role];
+    expect(new Set(roles).size).toBe(3); // three kinds, three accents — none collides
+  });
+
+  it("is exhaustive and disjoint — every crate gets exactly one kind", () => {
+    const { nodes } = surfaceGraph(ROSTER);
+    const kinds = nodes.map((n) => n.roleLabel);
+    expect(kinds.every((k) => k === "surface" || k === "library" || k === "program")).toBe(true);
+    expect(kinds).toHaveLength(ROSTER.length);
+  });
+
+  it("maps every kind to a role, so the legend can never be handed an unknown one", () => {
+    for (const k of ["surface", "library", "program"] as const) {
+      expect(CRATE_KIND_ROLE[k], `${k} has no accent`).toBeTruthy();
+    }
+    expect(Object.keys(CRATE_KIND_ROLE).sort()).toEqual(["library", "program", "surface"]);
   });
 });
