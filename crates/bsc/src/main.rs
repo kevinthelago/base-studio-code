@@ -481,17 +481,66 @@ pub(crate) struct CrateRow {
 /// A staged binary outside the repo has no workspace to read, and must SAY so rather than report an
 /// empty roster — an empty list that looks like an answer is the failure this repo keeps hitting.
 fn roster_root(explicit: Option<&str>) -> Result<std::path::PathBuf, String> {
-    let root = explicit
+    let start = explicit
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var("BSC_REPO_ROOT").ok().filter(|v| !v.is_empty()).map(Into::into))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let manifest = root.join("Cargo.toml");
-    let txt = std::fs::read_to_string(&manifest)
-        .map_err(|e| format!("cannot read {}: {e}\n\npass --root <repo> or set $BSC_REPO_ROOT", manifest.display()))?;
-    if !txt.contains("[workspace]") {
-        return Err(format!("{} is not the workspace root (no [workspace])", manifest.display()));
+
+    // WALK UP, the way cargo itself does. An explicit `--root` or `$BSC_REPO_ROOT` still wins, and a
+    // caller standing AT the root is unaffected — this only rescues the case that used to be a flat
+    // error: being somewhere inside the workspace.
+    //
+    // That case is not hypothetical, it is the DESKTOP APP. `bsc` is spawned by `bsc_blocking` with no
+    // `current_dir` and no `BSC_REPO_ROOT` (which is wired for PTY sessions only), so it inherits the
+    // app's cwd — and `tauri dev` runs from `src-tauri/`, one level in. Measured before this change:
+    // the roster read 60 crates from the repo root and FAILED from `src-tauri/`, so the Glance surface
+    // band would have been empty on every launch while every test stayed green.
+    find_workspace_root(&start, explicit.is_some())
+}
+
+/// The upward search, split out so it is testable WITHOUT touching the process cwd.
+///
+/// Taking the start directory as an argument rather than reading `.` is the whole point: a test that
+/// had to `set_current_dir` would be a process-global mutation, and nextest's one-process-per-test
+/// makes that pass on the gate while racing under `cargo test` — the exact asymmetry this repo has
+/// been bitten by before.
+fn find_workspace_root(start: &std::path::Path, explicit: bool) -> Result<std::path::PathBuf, String> {
+    let mut dir = start
+        .canonicalize()
+        .map_err(|e| format!("cannot resolve {}: {e}", start.display()))?;
+    loop {
+        let manifest = dir.join("Cargo.toml");
+        if let Ok(txt) = std::fs::read_to_string(&manifest) {
+            if txt.contains("[workspace]") {
+                return Ok(dir);
+            }
+        }
+        // An explicit root is taken at its word: if the caller NAMED a directory, silently using its
+        // parent would answer a question they did not ask.
+        if explicit {
+            // BOTH original messages are preserved, and the distinction matters: "cannot read" needs
+            // to say how to fix it (`--root` / `$BSC_REPO_ROOT`), while "not a workspace" needs to name
+            // what is missing. A pre-existing test asserts each, and collapsing them into one string
+            // is what this branch got wrong the first time.
+            let manifest = dir.join("Cargo.toml");
+            return Err(match std::fs::read_to_string(&manifest) {
+                Err(e) => format!(
+                    "cannot read {}: {e}\n\npass --root <repo> or set $BSC_REPO_ROOT",
+                    manifest.display()
+                ),
+                Ok(_) => format!("{} is not the workspace root (no [workspace])", manifest.display()),
+            });
+        }
+        match dir.parent() {
+            Some(p) => dir = p.to_path_buf(),
+            None => {
+                return Err(format!(
+                    "no Cargo.toml with [workspace] at or above {}\n\npass --root <repo> or set $BSC_REPO_ROOT",
+                    start.display()
+                ))
+            }
+        }
     }
-    Ok(root)
 }
 
 /// The workspace member paths, from the root `Cargo.toml`'s explicit `members` list.
@@ -787,6 +836,60 @@ mod tests {
                 "`bsc surface {verb}` dispatches but `bsc surface help` never mentions it"
             );
         }
+    }
+
+    /// THE ROSTER MUST BE READABLE FROM INSIDE THE WORKSPACE, NOT ONLY AT ITS ROOT.
+    ///
+    /// Measured before the fix: `bsc surface crates` read 60 crates from the repo root and FAILED from
+    /// `src-tauri/` — which is where `tauri dev` runs the app, and the app spawns `bsc` with no
+    /// `current_dir` and no `BSC_REPO_ROOT` (that is wired for PTY sessions only). So the Glance
+    /// surface band would have been empty on every launch, with every test green. That is the same
+    /// shape as the bug this whole slice exists to fix, one layer down.
+    #[test]
+    fn the_workspace_root_is_found_from_any_depth() {
+        // NAMED PER TEST, not just per pid: `cargo test` runs these in ONE process, so a
+        // pid-only path is shared with the sibling test below and with the pre-existing roster test.
+        // nextest gives each test its own process and hides that entirely.
+        let tmp = std::env::temp_dir().join(format!("bsc-walkup-{}", std::process::id()));
+        let deep = tmp.join("crates").join("thing").join("src");
+        std::fs::create_dir_all(&deep).expect("temp tree");
+        std::fs::write(tmp.join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("manifest");
+        // a NESTED manifest with no [workspace] must be walked past, not mistaken for the root
+        std::fs::write(tmp.join("crates").join("thing").join("Cargo.toml"), "[package]\nname = \"thing\"\n")
+            .expect("member manifest");
+
+        let want = tmp.canonicalize().expect("canonical");
+        for from in [&tmp, &deep, &tmp.join("crates")] {
+            assert_eq!(
+                find_workspace_root(from, false).expect("walks up to the workspace"),
+                want,
+                "failed from {}",
+                from.display()
+            );
+        }
+
+        // Outside any workspace it REFUSES rather than guessing — an empty roster and a missing
+        // workspace must not look the same to the caller.
+        let orphan = tmp.join("crates").join("thing").join("src");
+        std::fs::remove_file(tmp.join("Cargo.toml")).expect("drop the workspace manifest");
+        assert!(find_workspace_root(&orphan, false).is_err(), "no workspace above ⇒ an error");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// An EXPLICIT root is taken at its word — silently using its parent answers a question the caller
+    /// did not ask, and would make a typo look like success against the wrong tree.
+    #[test]
+    fn an_explicit_root_is_never_silently_replaced_by_its_parent() {
+        let tmp = std::env::temp_dir().join(format!("bsc-explicit-{}", std::process::id()));
+        let sub = tmp.join("sub");
+        std::fs::create_dir_all(&sub).expect("temp tree");
+        std::fs::write(tmp.join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("manifest");
+
+        assert!(find_workspace_root(&sub, true).is_err(), "explicit ⇒ no walk-up");
+        assert!(find_workspace_root(&sub, false).is_ok(), "…but the implicit path still walks");
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     /// A miniature roster: a verbless util everything leans on, a multi-noun crate, and a leaf.
