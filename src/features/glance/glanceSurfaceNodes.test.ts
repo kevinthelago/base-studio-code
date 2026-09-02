@@ -392,7 +392,7 @@ describe("a crate node says which of the three kinds it is", () => {
 // MAINTAINER: a crate node should "navigate into a second layer which will present the user the
 // surface node and their related verbs". So this is a GRAPH, not an inspector panel.
 // ---------------------------------------------------------------------------------------------
-describe("a crate drills into its verbs", () => {
+describe("a crate drills into its NOUNS, each rooting its verbs", () => {
   const doc = (over: Partial<CrateDrillDoc> = {}): CrateDrillDoc => ({
     crate: "logs", path: "crates/logs", surface: true,
     nouns: [
@@ -407,47 +407,49 @@ describe("a crate drills into its verbs", () => {
     ...over,
   });
 
-  it("puts the crate at the centre with one node per verb", () => {
+  it("roots on the NOUN, not the crate — a multi-noun crate is a forest", () => {
+    // You run `bsc logs sessions`, not `bsc logs-crate sessions`. Rooting on the crate flattened three
+    // separate commands into one fan and lost the thing the reader is navigating.
     const g = crateDrillGraph(doc());
-    expect(g.rawNodes[0].id).toBe(surfaceNodeId("logs"));
-    // 2 logs verbs + 1 perf verb + the crate itself; `metrics` contributes nothing
-    expect(g.rawNodes).toHaveLength(4);
+    const roots = g.rawNodes.filter((n) => n.id.startsWith("noun:"));
+    expect(roots.map((n) => n.slug).sort()).toEqual(["logs", "metrics", "perf"]);
+    // no crate node while there are nouns — the drill is already scoped to it
+    expect(g.rawNodes.some((n) => n.id === surfaceNodeId("logs"))).toBe(false);
+    // every edge runs from a noun root to one of its verbs
+    for (const e of g.rawEdges) expect(e.from.startsWith("noun:")).toBe(true);
     expect(g.rawEdges).toHaveLength(3);
-    expect(g.rawEdges.every((e) => e.kind === "exposes")).toBe(true);
-    expect(g.rawEdges.every((e) => e.from === surfaceNodeId("logs"))).toBe(true);
+  });
+
+  it("DRAWS a noun whose catalog is unreachable, rather than hiding the command", () => {
+    // Reversed from the crate-rooted cut on purpose: `bsc metrics` EXISTS and has no verb catalog, and
+    // a reader asking "what can I run" needs to see it. Rooted on the crate it would have asserted the
+    // crate offered something it did not; rooted on the noun it states a fact.
+    const g = crateDrillGraph(doc());
+    const metrics = g.rawNodes.find((n) => n.slug === "metrics");
+    expect(metrics).toBeTruthy();
+    expect(g.rawEdges.filter((e) => e.from === metrics!.id)).toHaveLength(0);
   });
 
   it("keys a verb on its NOUN, so two nouns' same-named verbs stay distinct", () => {
-    // `bsc logs summary` and `bsc perf summary` are different commands. Keying on the verb alone
-    // collides them into one node and silently drops the other — the same 1:N mistake that made
-    // `bsc surface verbs metrics` advertise the logs catalog.
     const g = crateDrillGraph(doc());
     expect(g.rawNodes.filter((n) => n.slug === "summary")).toHaveLength(2);
     const ids = g.rawNodes.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
-    // and the caption is what tells them apart on screen
-    const captions = g.rawNodes.filter((n) => n.slug === "summary").map((n) => n.roleLabel).sort();
-    expect(captions).toEqual(["logs", "perf"]);
+    expect(g.rawNodes.filter((n) => n.slug === "summary").map((n) => n.roleLabel).sort()).toEqual(["logs", "perf"]);
   });
 
-  it("draws NOTHING for a noun whose catalog is unreachable", () => {
-    // `bsc metrics` takes a project, not a verb. An empty cluster would assert the crate offers
-    // something it does not.
+  it("captions each noun root with its CRATE, so the reader keeps that fact", () => {
     const g = crateDrillGraph(doc());
-    expect(g.rawNodes.some((n) => n.roleLabel === "metrics")).toBe(false);
+    expect(g.rawNodes.find((n) => n.slug === "logs" && n.id.startsWith("noun:"))?.roleLabel).toBe("logs");
+    expect(g.rawNodes.find((n) => n.slug === "perf")?.roleLabel).toBe("logs");
   });
 
-  it("still drills a crate with no verbs at all — one node, honestly empty", () => {
-    // A library or a program must not render as a failed load.
+  it("falls back to the crate node when there is nothing to call", () => {
+    // A library or a program must not render as a blank canvas, which reads as a failed load.
     const g = crateDrillGraph(doc({ crate: "bsc-util", surface: false, nouns: [], dependentCount: 44 }));
     expect(g.rawNodes).toHaveLength(1);
+    expect(g.rawNodes[0].id).toBe(surfaceNodeId("bsc-util"));
     expect(g.rawNodes[0].roleLabel).toBe("library");
     expect(g.rawEdges).toHaveLength(0);
-  });
-
-  it("labels the crate by its KIND, the same as one level up", () => {
-    expect(crateDrillGraph(doc()).rawNodes[0].roleLabel).toBe("surface");
-    const prog = crateDrillGraph(doc({ crate: "bsc-agent", surface: false, nouns: [], dependentCount: 0 }));
-    expect(prog.rawNodes[0].roleLabel).toBe("program");
   });
 });

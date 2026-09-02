@@ -21,7 +21,7 @@ describe("a crate node's click drills instead of trying to expand a session", ()
   });
 
   it("routes a crate to the second layer, BEFORE the expandNode fallback", () => {
-    const drillAt = src.indexOf("else if (surfaceCrateOfNode(id)) setCrateNode(id);");
+    const drillAt = src.indexOf("else if (isSurfaceNodeId(id)) setCrateNode(id);");
     const expandAt = src.indexOf("else expandNode(id);");
     expect(drillAt).toBeGreaterThan(-1);
     expect(expandAt).toBeGreaterThan(-1);
@@ -49,5 +49,21 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     // At L2 the verb nodes are also `kind: "surface"` but captioned with their NOUN. Feeding those to
     // the crate-kind colour table yields `undefined`, i.e. a legend row with no colour.
     expect(src).toContain("k in CRATE_KIND_ROLE");
+  });
+
+  // THE TWO BUGS THAT MADE THE LAYER INVISIBLE, both shipped green.
+  it("guards the click with a PREDICATE, never with the id converter", () => {
+    // `surfaceCrateOfNode` returns the id UNCHANGED when there is no prefix, so it is truthy for every
+    // node ever passed to it. As a click guard it routed every node — sessions included — into the
+    // crate layer and killed session expansion outright. A converter is not a test.
+    expect(src).not.toContain("else if (surfaceCrateOfNode(id))");
+    expect(src).toContain("else if (isSurfaceNodeId(id)) setCrateNode(id);");
+  });
+
+  it("re-frames the viewport when the LAYER changes, not only the drill", () => {
+    // The fit effect keyed on `drill` alone, so entering the crate layer never re-fitted: a three-node
+    // graph laid out at world origin while the viewport was still framed for sixty crates is simply
+    // off-screen. The layer was correct and invisible, which is indistinguishable from broken.
+    expect(src).toContain("}, [drill, crateNode, fit, page, restoreView, hasUserMoved, setGlanceView]);");
   });
 });
