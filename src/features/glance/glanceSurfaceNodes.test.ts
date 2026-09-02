@@ -47,12 +47,37 @@ describe("the surface-node projection", () => {
     }
   });
 
-  it("draws one crate-dependency edge per internal dep, in the band", () => {
+  // REPLACED 2026-09-02: the guarantee is no longer "one edge per dep" but "reachability preserved".
+  //
+  // Edges are transitively reduced now (the drill lagged at 230 of them), so `plandb -> bsc-util` is
+  // deliberately ABSENT — plandb reaches bsc-util through bsc-cli-util, and the direct line restated
+  // what the path already showed. Asserting the edge count would pin the wrong property; asserting
+  // reachability pins the one that actually matters to a reader following the graph.
+  it("preserves REACHABILITY while drawing fewer lines than there are deps", () => {
     const { edges } = surfaceGraph(ROSTER);
-    expect(edges).toHaveLength(ROSTER.reduce((n, r) => n + r.dependsOn.length, 0));
-    for (const e of edges) expect(isBandEdge(e.kind), e.kind).toBe(false);
     expect(edges.every((e) => e.kind === "depends-on")).toBe(true);
-    expect(edges.some((e) => e.from === surfaceNodeId("plandb") && e.to === surfaceNodeId("bsc-util"))).toBe(true);
+    for (const e of edges) expect(isBandEdge(e.kind), e.kind).toBe(false);
+
+    const declared = ROSTER.reduce((n, r) => n + r.dependsOn.length, 0);
+    expect(edges.length).toBeLessThan(declared);
+
+    // plandb still REACHES bsc-util, just not directly — which is the whole claim of a reduction.
+    const out = new Map<string, string[]>();
+    for (const e of edges) out.set(e.from, [...(out.get(e.from) ?? []), e.to]);
+    const reaches = (from: string, to: string): boolean => {
+      const seen = new Set<string>([from]);
+      const stack = [from];
+      while (stack.length) {
+        const u = stack.pop() as string;
+        for (const v of out.get(u) ?? []) {
+          if (v === to) return true;
+          if (!seen.has(v)) { seen.add(v); stack.push(v); }
+        }
+      }
+      return false;
+    };
+    expect(reaches(surfaceNodeId("plandb"), surfaceNodeId("bsc-util"))).toBe(true);
+    expect(edges.some((e) => e.from === surfaceNodeId("plandb") && e.to === surfaceNodeId("bsc-util"))).toBe(false);
   });
 
   /** A dangling edge is worse than a missing one — the layout would carry an id nothing renders. */
@@ -207,5 +232,102 @@ describe("crates are ordinary nodes, not band nodes", () => {
     };
     for (const n of nodes) if (!state.has(n.id) && walk(n.id)) throw new Error("cycle in the crate graph");
     expect(state.size).toBe(nodes.length);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// REPO SEPARATION + EDGE VOLUME (`crates-keep-their-repo-and-stop-drawing-implied-edges`).
+//
+// MAINTAINER, 2026-09-02, on the un-banded first cut: "we're now no longer separating between repos …
+// this really jumbled our graph. we're also drawing a ton more lines here so we're experiencing lag."
+//
+// Both were caused by un-fencing. The fence had been doing the repo separation by accident, and it had
+// also been hiding how many `depends-on` lines there are.
+// ---------------------------------------------------------------------------------------------
+describe("crates stay separated by repository", () => {
+  const withRepo = (ids: string[], repo?: string): GlanceData => ({
+    rawNodes: ids.map((id) => ({
+      id, slug: id, kind: "project" as const, role: "service" as const,
+      health: "off" as const, activity: "idle" as const, ...(repo ? { repo } : {}),
+    })),
+    rawEdges: [],
+    sample: false,
+  });
+
+  it("stamps every crate with the repo the drill's own streams carry", () => {
+    const out = withSurfaceNodes(withRepo(["design-studio", "fleet"], "acme/base-studio-code"), ROSTER);
+    const crates = out.rawNodes.filter((n) => n.kind === "surface");
+    expect(crates.length).toBeGreaterThan(0);
+    // Every one, not most — `bandNodesByRepo` leaves an unstamped node UNGROUPED, which is exactly the
+    // scattering this fixes.
+    for (const c of crates) expect(c.repo).toBe("acme/base-studio-code");
+  });
+
+  it("takes the MODAL repo, so one odd node cannot capture the whole roster", () => {
+    const data: GlanceData = {
+      rawNodes: [
+        ...withRepo(["a", "b", "c"], "acme/main").rawNodes,
+        ...withRepo(["d"], "acme/other").rawNodes,
+      ],
+      rawEdges: [], sample: false,
+    };
+    const out = withSurfaceNodes(data, ROSTER);
+    for (const c of out.rawNodes.filter((n) => n.kind === "surface")) expect(c.repo).toBe("acme/main");
+  });
+
+  it("leaves crates UNSTAMPED when no repo is knowable, rather than inventing one", () => {
+    // Ungrouped is honest; a wrong band is not.
+    const out = withSurfaceNodes(withRepo(["a", "b"]), ROSTER);
+    for (const c of out.rawNodes.filter((n) => n.kind === "surface")) expect(c.repo).toBeUndefined();
+  });
+});
+
+describe("only the edges that are not already implied get drawn", () => {
+  it("drops an edge a longer path already expresses", () => {
+    // a → b → c, plus a redundant a → c. The direct a→c must go; reachability is unchanged.
+    const r: SurfaceRosterRow[] = [
+      { crate: "a", path: "crates/a", surface: false, verbs: [], dependsOn: ["b", "c"] },
+      { crate: "b", path: "crates/b", surface: false, verbs: [], dependsOn: ["c"] },
+      { crate: "c", path: "crates/c", surface: false, verbs: [], dependsOn: [] },
+    ];
+    const { edges } = surfaceGraph(r);
+    const pairs = edges.map((e) => `${e.from}->${e.to}`).sort();
+    expect(pairs).toEqual([
+      `${surfaceNodeId("a")}->${surfaceNodeId("b")}`,
+      `${surfaceNodeId("b")}->${surfaceNodeId("c")}`,
+    ]);
+  });
+
+  it("keeps an edge that is the ONLY path — a reduction must not lose reachability", () => {
+    const r: SurfaceRosterRow[] = [
+      { crate: "a", path: "crates/a", surface: false, verbs: [], dependsOn: ["b"] },
+      { crate: "b", path: "crates/b", surface: false, verbs: [], dependsOn: [] },
+    ];
+    expect(surfaceGraph(r).edges).toHaveLength(1);
+  });
+
+  it("collapses a hub — the specific shape that caused the lag", () => {
+    // Every crate depends on `util` directly AND through `cli`. The direct lines are all implied, so a
+    // hub with N dependents draws far fewer than N. This is `bsc-util`'s 44 → 5 in miniature.
+    const r: SurfaceRosterRow[] = [
+      { crate: "util", path: "p", surface: false, verbs: [], dependsOn: [] },
+      { crate: "cli", path: "p", surface: false, verbs: [], dependsOn: ["util"] },
+      ...["x", "y", "z", "w"].map((c) => ({
+        crate: c, path: "p", surface: false, verbs: [], dependsOn: ["cli", "util"],
+      })),
+    ];
+    const { edges } = surfaceGraph(r);
+    const intoUtil = edges.filter((e) => e.to === surfaceNodeId("util"));
+    expect(intoUtil).toHaveLength(1); // only cli → util survives; the four direct lines are implied
+    expect(edges).toHaveLength(5);
+  });
+
+  it("terminates on a malformed CYCLIC roster instead of hanging the cockpit", () => {
+    const r: SurfaceRosterRow[] = [
+      { crate: "a", path: "p", surface: false, verbs: [], dependsOn: ["b"] },
+      { crate: "b", path: "p", surface: false, verbs: [], dependsOn: ["a"] },
+    ];
+    expect(() => surfaceGraph(r)).not.toThrow();
+    expect(surfaceGraph(r).nodes).toHaveLength(2);
   });
 });
