@@ -175,6 +175,39 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "warden-decide",
+    summary: "who the warden should hard-pause, from a fleet report on stdin — no app running",
+    usage: "\
+USAGE:
+  bsc fleet warden-decide [--quarantined <paneId>[,<paneId>...]] [--json|--pretty]  < report.json
+
+Reads a FLEET REPORT as JSON on stdin and prints the panes that should be quarantined. The report is
+`{panes,tabs,ended,disabled,completed}`; each pane carries `{paneId,streamId,verdict}` where the
+verdict is `checkConformance`'s `{onTask,trips}`.
+
+`--quarantined` names panes already hard-paused, so a trip is a ONE-SHOT pause rather than an alert
+that repeats on every sweep.
+
+THE VERDICT IS OBEYED, NOT RE-DERIVED. `checkConformance`'s file-lane arm compiles a stream's `owns`
+globs with the TypeScript matcher, and `the-two-write-scope-glob-engines-disagree` is an OPEN
+maintainer decision about which engine is right. Recomputing it here would silently move a security
+boundary onto the other engine while that decision is pending -- so the verdict arrives as a value and
+this command decides only WHO to pause, never WHETHER a pane drifted.
+
+THE SWEEP IS BOUNDED to panes with a RUNNING session (in a tab, not ended, not disabled) and never
+includes a completed worker. Losing that bound is measured: the planned roster reached 47 panes
+against 3 live terminals, ~94 serial git spawns in one synchronous command, `pty_write` at 3280ms.
+
+WHY THIS IS A SUBCOMMAND. The warden is what stops a hijacked worker, so its rules are exactly what a
+maintainer wants to tune WHILE a fleet is running. In the app that means rebuilding the binary and
+restarting the window -- restarting the process that owns the fleet in order to change the thing
+protecting it. Here a rule change goes live by staging a binary. The app keeps the loop, the report
+registry and the enforcement; only the decision is here.
+
+An EMPTY reply means nobody should be paused, and that is also what every failure degrades to on the
+app side: for this verb the safe direction is DO NOT QUARANTINE, because a false positive hard-pauses
+a working agent.",
+}, CmdDoc {
     name: "worker-end",
     summary: "the resting-state verdict for a finished worker — from plan.db, with no app running",
     usage: "\
@@ -388,17 +421,21 @@ struct Args {
     /// `provision`: the stream id to re-provision, combined with the projectKey positional into a
     /// pane id — the same identity `wake` takes directly.
     stream: Option<String>,
+    /// `warden-decide --quarantined a,b`: panes this process has ALREADY hard-paused, so a trip stays
+    /// a one-shot pause rather than an alert that repeats on every sweep.
+    quarantined: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, positional: Vec::new() };
+    let a = Args { json: false, pretty: false, roster: None, db: None, prompt: None, force: false, strict: false, fix: false, timeout_ms: None, token: None, source: None, repos: Vec::new(), local: false, stream: None, quarantined: None, positional: Vec::new() };
     let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
         match flag {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--roster" => a.roster = Some(v.value("--roster needs a path")?),
             "--stream" => a.stream = Some(v.value("--stream needs a stream id")?),
+            "--quarantined" => a.quarantined = Some(v.value("--quarantined needs a pane id list")?),
             "--db" => a.db = Some(v.value("--db needs a path")?),
             "--prompt" => a.prompt = Some(v.value("--prompt needs text")?),
             "--force" => a.force = true,
@@ -467,6 +504,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "wake" => cmd_wake(&args, prog),
         "provision" => cmd_provision(&args, prog),
         "clone" => cmd_clone(&args, prog),
+        "warden-decide" => cmd_warden_decide(&args),
         "worker-end" => cmd_worker_end(&args),
         "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
@@ -480,6 +518,40 @@ fn plan_db_path(db_flag: Option<&str>) -> Option<std::path::PathBuf> {
     let flag = db_flag.map(str::to_string);
     let path = bsc_cli_util::resolve_store_path(&flag, "BSC_PLAN_DB", || Err("no plan store".to_string())).ok()?;
     path.is_file().then_some(path)
+}
+
+/// `bsc fleet warden-decide` — the quarantine decision, from a report on stdin.
+///
+/// Reads and decides; it does not enforce, does not touch a PTY and holds no state. Everything it
+/// needs arrives in the report, which is what makes the whole decision reproducible from a file — and
+/// what lets it live in a process the app merely spawns.
+fn cmd_warden_decide(a: &Args) -> Result<(), String> {
+    let raw = bsc_cli_util::read_payload(None)?;
+    let report: crate::warden::FleetReport = serde_json::from_str(raw.trim())
+        .map_err(|e| format!("bsc fleet warden-decide: the report on stdin did not parse: {e}"))?;
+
+    let already: std::collections::HashSet<String> = a
+        .quarantined
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    let trips = crate::warden::decide(&report, &already);
+    bsc_cli_util::emit(a.pretty, a.json, &trips, || {
+        if trips.is_empty() {
+            // Said in words. An empty table would read as "the warden did not run", and those are
+            // opposite facts for a verb whose action is to kill a session.
+            return "no pane should be quarantined".to_string();
+        }
+        let mut lines = vec!["pane\tstream\tsummary".to_string()];
+        lines.extend(trips.iter().map(|t| format!("{}\t{}\t{}", t.pane_id, t.stream_id, t.summary)));
+        lines.join("\n")
+    });
+    Ok(())
 }
 
 /// `bsc fleet worker-end <projectKey> --stream a,b,c` — the verdict per stream, index-aligned.

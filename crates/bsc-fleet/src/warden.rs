@@ -239,7 +239,10 @@ pub fn warden_sweep_targets(
 }
 
 /// One tab's pane roster.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+///
+/// `Serialize` as well as `Deserialize` because a [`FleetReport`] now crosses a PROCESS boundary: the
+/// app writes one to `bsc fleet warden-decide`'s stdin and this side reads it back.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabPanes {
     #[serde(default)]
@@ -264,6 +267,88 @@ pub fn live_pane_ids_of(
     out.sort_unstable();
     out.dedup();
     out
+}
+
+// ── The fleet picture, and the decision over it ───────────────────────────────────────────────
+
+/// One pane the renderer is telling us about, with the verdict only it can compute today.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportedPane {
+    pub pane_id: String,
+    pub stream_id: String,
+    /// From `checkConformance` — REPORTED, never re-derived here. See [`decide`] on why.
+    pub verdict: ConformanceVerdict,
+}
+
+/// The whole fleet picture one report carries.
+///
+/// Deliberately a plain data struct with no clock and no handle: it is what the app serializes onto
+/// `bsc fleet warden-decide`'s stdin, and what makes the whole decision reproducible from a file.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetReport {
+    /// Every pane on the PLANNED roster, with its verdict.
+    #[serde(default)]
+    pub panes: Vec<ReportedPane>,
+    /// The tab rosters, so the live set is DERIVED here rather than trusted from the renderer.
+    #[serde(default)]
+    pub tabs: Vec<TabPanes>,
+    #[serde(default)]
+    pub ended: Vec<String>,
+    #[serde(default)]
+    pub disabled: Vec<String>,
+    /// Workers whose owned issues are all done — in MAINTENANCE (#1957), not building, so their
+    /// post-completion activity is expected and must never quarantine them.
+    #[serde(default)]
+    pub completed: Vec<String>,
+}
+
+/// Decide who to hard-pause from one report.
+///
+/// PURE over its inputs — no clock, no PTY, no webview — which is what lets it live on the far side of
+/// a process boundary. **This is the half a maintainer TUNES**, and it is why it belongs here rather
+/// than in the app: the app's Rust half is a live process behind a webview, so changing a rule there
+/// means a new binary and a restarted window — restarting the process that owns the fleet in order to
+/// change the thing protecting it. Reached as `bsc fleet warden-decide`, a rule change goes live by
+/// staging a binary, with the fleet still running.
+///
+/// THE SWEEP IS BOUNDED to panes with a RUNNING session, and never includes a completed worker.
+/// Losing that bound is measured and on the record: the planned roster reached 47 panes against 3 live
+/// terminals, ~94 serial git spawns inside one synchronous command, `pty_write` at 3280ms and
+/// `pty_resize` at 8279ms.
+///
+/// THE VERDICT IS OBEYED, NOT RE-DERIVED. `checkConformance`'s file-lane arm compiles a stream's
+/// `owns` globs with the TypeScript matcher, and `the-two-write-scope-glob-engines-disagree` is an
+/// OPEN maintainer decision about which engine is right. Recomputing it here would silently move a
+/// security boundary onto the other engine while that decision is pending.
+pub fn decide(report: &FleetReport, already: &HashSet<String>) -> Vec<WardenTrip> {
+    let live = live_pane_ids_of(
+        &report.tabs,
+        &report.ended.iter().cloned().collect(),
+        &report.disabled.iter().cloned().collect(),
+    );
+    let roster: Vec<String> = report.panes.iter().map(|p| p.pane_id.clone()).collect();
+    let targets: HashSet<String> = warden_sweep_targets(
+        &roster,
+        &live.into_iter().collect(),
+        &report.completed.iter().cloned().collect(),
+    )
+    .into_iter()
+    .collect();
+
+    let sessions: Vec<WardenSession> = report
+        .panes
+        .iter()
+        .filter(|p| targets.contains(&p.pane_id))
+        .map(|p| WardenSession {
+            pane_id: p.pane_id.clone(),
+            stream_id: p.stream_id.clone(),
+            verdict: p.verdict.clone(),
+        })
+        .collect();
+
+    plan_warden(&sessions, already)
 }
 
 #[cfg(test)]
@@ -580,5 +665,126 @@ mod tests {
             warden_sweep_targets(&panes, &all, &HashSet::from(["p:a".to_string(), "p:b".into()])).is_empty(),
             "a completed stream is not swept"
         );
+    }
+}
+
+#[cfg(test)]
+mod decide_tests {
+    use super::*;
+
+    fn verdict(on_task: bool, trips: &[(&str, &str)]) -> ConformanceVerdict {
+        ConformanceVerdict {
+            on_task,
+            trips: trips.iter().map(|(k, d)| ConformanceTrip { kind: (*k).into(), detail: (*d).into() }).collect(),
+        }
+    }
+    fn pane(id: &str, stream: &str, v: ConformanceVerdict) -> ReportedPane {
+        ReportedPane { pane_id: id.into(), stream_id: stream.into(), verdict: v }
+    }
+    fn drifting(id: &str) -> ReportedPane {
+        pane(id, "api", verdict(false, &[("out-of-glob", "src/web/app.tsx")]))
+    }
+    fn one_tab(ids: &[&str]) -> Vec<TabPanes> {
+        vec![TabPanes { pane_ids: ids.iter().map(|s| s.to_string()).collect() }]
+    }
+
+    /// The decision runs here now, and it is the whole reason this half moved.
+    #[test]
+    fn a_drifting_live_worker_is_selected_for_quarantine() {
+        let report =
+            FleetReport { panes: vec![drifting("p:api")], tabs: one_tab(&["p:api"]), ..Default::default() };
+        let trips = decide(&report, &HashSet::new());
+        assert_eq!(trips.len(), 1);
+        assert_eq!(trips[0].pane_id, "p:api");
+        assert_eq!(trips[0].summary, "edited out-of-lane src/web/app.tsx");
+    }
+
+    /// THE BOUND THAT COSTS 8279ms WHEN IT IS LOST. A planned pane with no live session cannot be
+    /// drifting, and must never be swept.
+    #[test]
+    fn the_sweep_is_bounded_to_panes_with_a_running_session() {
+        let report = FleetReport { panes: vec![drifting("p:api")], tabs: vec![], ..Default::default() };
+        assert!(decide(&report, &HashSet::new()).is_empty(), "no session ⇒ not swept");
+
+        // The same pane once it is in a tab IS swept — or the assertion above proves only that
+        // nothing works.
+        let live = FleetReport { tabs: one_tab(&["p:api"]), ..report.clone() };
+        assert_eq!(decide(&live, &HashSet::new()).len(), 1);
+
+        let ended = FleetReport { ended: vec!["p:api".into()], ..live.clone() };
+        assert!(decide(&ended, &HashSet::new()).is_empty(), "ended ⇒ not swept");
+        let disabled = FleetReport { disabled: vec!["p:api".into()], ..live.clone() };
+        assert!(decide(&disabled, &HashSet::new()).is_empty(), "disabled ⇒ not swept");
+    }
+
+    /// A worker in maintenance has finished its issues; its activity is expected, not drift.
+    #[test]
+    fn a_completed_worker_is_never_quarantined() {
+        let report = FleetReport {
+            panes: vec![drifting("p:api")],
+            tabs: one_tab(&["p:api"]),
+            completed: vec!["p:api".into()],
+            ..Default::default()
+        };
+        assert!(decide(&report, &HashSet::new()).is_empty());
+    }
+
+    /// A trip is a one-shot hard pause, not a repeating alert.
+    #[test]
+    fn an_already_quarantined_pane_is_not_re_tripped() {
+        let report =
+            FleetReport { panes: vec![drifting("p:api")], tabs: one_tab(&["p:api"]), ..Default::default() };
+        let already: HashSet<String> = ["p:api".to_string()].into_iter().collect();
+        assert!(decide(&report, &already).is_empty());
+    }
+
+    /// The verdict is OBEYED, not re-derived. Recomputing the file-lane arm here would move a security
+    /// boundary onto the other glob engine while `the-two-write-scope-glob-engines-disagree` is still
+    /// an open maintainer decision.
+    #[test]
+    fn the_reported_verdict_decides_and_is_never_second_guessed() {
+        let tabs = one_tab(&["p:ok", "p:bad"]);
+        let ok = FleetReport {
+            panes: vec![pane("p:ok", "api", verdict(true, &[]))],
+            tabs: tabs.clone(),
+            ..Default::default()
+        };
+        assert!(decide(&ok, &HashSet::new()).is_empty(), "on-task is obeyed");
+
+        // on_task = false with an EMPTY trip list still quarantines: the VERDICT decides, not the trip
+        // list, and the summary reports exactly what it was given.
+        let bare =
+            FleetReport { panes: vec![pane("p:bad", "api", verdict(false, &[]))], tabs, ..Default::default() };
+        let trips = decide(&bare, &HashSet::new());
+        assert_eq!(trips.len(), 1);
+        assert_eq!(trips[0].summary, "on plan");
+    }
+
+    /// THE PROCESS BOUNDARY. The app serializes this report onto the sidecar's stdin, so anything the
+    /// wire drops is a rule that silently stops applying — and every field here IS a rule: `tabs`
+    /// carries the sweep bound, `completed` the maintenance exemption, `verdict` the whole decision.
+    #[test]
+    fn the_report_survives_a_json_round_trip_with_every_rule_intact() {
+        let report = FleetReport {
+            panes: vec![drifting("p:api"), pane("p:ok", "web", verdict(true, &[]))],
+            tabs: one_tab(&["p:api", "p:ok"]),
+            ended: vec!["p:gone".into()],
+            disabled: vec!["p:off".into()],
+            completed: vec!["p:done".into()],
+        };
+        let wire = serde_json::to_string(&report).unwrap();
+        assert!(wire.contains("\"paneId\""), "camelCase on the wire, as the renderer sends it: {wire}");
+        assert!(wire.contains("\"onTask\""));
+
+        let back: FleetReport = serde_json::from_str(&wire).unwrap();
+        assert_eq!(back.panes.len(), 2);
+        assert_eq!(back.tabs[0].pane_ids, vec!["p:api".to_string(), "p:ok".into()], "the sweep bound survived");
+        assert_eq!(back.ended, vec!["p:gone".to_string()]);
+        assert_eq!(back.disabled, vec!["p:off".to_string()]);
+        assert_eq!(back.completed, vec!["p:done".to_string()], "the maintenance exemption survived");
+
+        // And the decision is the SAME on both sides of the wire — which is the property that makes
+        // the sidecar's answer usable at all.
+        assert_eq!(decide(&report, &HashSet::new()), decide(&back, &HashSet::new()));
     }
 }
