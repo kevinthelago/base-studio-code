@@ -1,274 +1,145 @@
-//! The shell command a NON-Claude session launches with.
+//! The provider launch command — DISPATCHED to the sidecar, not derived here.
 //!
-//! The PTY that runs this string is Rust; the string was assembled in the renderer. It reached the
-//! backend as an opaque `init_cmd`, so nothing here could inspect, validate or quote it.
+//! # Why this file derives nothing
 //!
-//! # The quoting is the part that matters
+//! The derivation lives in `llm::launch_cmd`, reached by SPAWNING `bsc fleet launch-config`. The app's
+//! Rust half is a live process behind a webview, so a derivation living inside it can only change by
+//! producing a new binary — and a new binary restarts the window with a fleet running in it. On the
+//! sidecar the same change goes live by staging a binary
+//! (`a-resolved-request-goes-live-without-a-restart`, staging measured at 0.16s), with no app downtime.
 //!
-//! The kickoff prompt is interpolated as `--message <quoted>`, and that prompt is PLAN-AUTHORED text —
-//! a stream kickoff the planner wrote, or a checkpoint note. [`sh_quote`] POSIX single-quotes it,
-//! rendering an embedded `'` as `'\''` (close, escaped quote, reopen), so a prompt containing an
-//! apostrophe cannot terminate the argument and what follows cannot become shell.
+//! This module used to hold the derivation. It was moved rather than duplicated: there is one
+//! `build_aider_command` and it is the sidecar's.
 //!
-//! A port that reaches for `format!("--message '{prompt}'")` is a command injection in a string built
-//! from content the planner writes. `a_prompt_cannot_close_its_own_quote` is that case, and the fixture
-//! carries apostrophes, a deliberate break-out attempt, backticks and `$HOME`.
+//! # ONE call, not four
 //!
-//! Newlines are legal inside single quotes, which is why a multi-line kickoff passes through intact
-//! rather than needing to be flattened.
+//! [`launch_config`] asks for the WHOLE configuration. A launch has four derivations to make — the
+//! provider command, the stop ledger, skills and MCP — and behind four calls that is ~39ms of spawn
+//! each. `the-in-app-launch-resolutions-move-onto-the-one-call` folds the remaining two onto this same
+//! round trip; the reply is an object with `#[serde(default)]` on both sides precisely so that can
+//! happen without a lockstep deploy.
 //!
-//! # Two rules that are not derived from anything
+//! # This one FAILS CLOSED, and that is the opposite of its sibling
 //!
-//! * FLEET-SAFE GIT ALWAYS. Every session, manual or fleet, starts `--no-auto-commits
-//!   --no-dirty-commits`, so it never makes a surprise commit on the pane's branch. Unconditional —
-//!   not a flow decision, and not something a caller may turn off.
-//! * NO MODEL MEANS NO FLAG. With neither an LLM config nor a bare model, no `--model` is emitted at
-//!   all and the tool falls back to its own default; an empty `--model ''` would be an error rather
-//!   than a default.
+//! `fleet::worker_end`'s dispatcher degrades to "I do not know", because its caller's contract for
+//! absence is BAIL — the safe direction there is to leave a pane alone. Here the safe direction is the
+//! reverse: a launch that cannot obtain its configuration must REFUSE TO START. Starting a session on
+//! a partial or stale answer would put an agent on a machine with half a gate, which is the one
+//! outcome worse than not launching. So every failure — a missing sidecar, an unparseable reply, a
+//! desynchronised one — returns `Err` and the caller does not launch.
 
-// UNWIRED BY DESIGN, and the `allow` names the item that wires it.
+// UNWIRED BY DESIGN, and the `allow` names the item that wires it. The DERIVATION has moved to the
+// sidecar; what remains open is the CALL SITE — `pty_create` still receives a renderer-composed
+// `init_cmd`, and replacing that is its own flip with its own gate and revert.
 #![allow(dead_code)] // wired by `the-launch-builds-its-own-provider-command-instead-of-receiving-it`
 
-use ::llm::routing::LlmConfig;
-use ::llm::session_env::aider_model_arg;
+use llm::launch_cmd::{LaunchConfig, ProviderLaunchConfig};
 
-/// POSIX single-quote a shell argument.
+/// Ask the sidecar for a pane's whole launch configuration.
 ///
-/// Wraps in `'…'` and renders an embedded `'` as `'\''` — close the quote, emit an escaped quote,
-/// reopen. Everything else, INCLUDING newlines, `$`, backticks and double quotes, is literal inside
-/// single quotes and needs no further treatment.
-pub fn sh_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
+/// A dispatcher: it serializes the request, spawns `bsc`, and parses. It derives nothing — see the
+/// module header for why that separation is the point, and why this one fails closed.
+pub fn launch_config(
+    project_key: Option<String>,
+    provider: &str,
+    cfg: Option<&ProviderLaunchConfig>,
+) -> Result<LaunchConfig, String> {
+    let body = serde_json::to_string(&cfg.cloned().unwrap_or_default())
+        .map_err(|e| format!("launch-config: could not serialize the request: {e}"))?;
+    let args = vec![
+        "fleet".to_string(),
+        "launch-config".to_string(),
+        "--provider".to_string(),
+        provider.to_string(),
+        "--json".to_string(),
+    ];
+    let out = crate::console::bsc::bsc_blocking(project_key, args, Some(body))
+        .map_err(|e| format!("launch-config: the sidecar call failed: {e}"))?;
+    parse_launch_config(&out)
 }
 
-/// A provider's launch inputs. Every field is optional: a provider that ignores one gets nothing.
-#[derive(Debug, Clone, Default)]
-pub struct ProviderLaunchConfig {
-    /// A bare model name, for providers that take one. Loses to `llm` when both are present.
-    pub model: Option<String>,
-    /// The pane's resolved LLM config. Mapped to the provider's own model selector.
-    pub llm: Option<LlmConfig>,
-    /// The composed kickoff. Providers whose harness BAKES the prompt (Claude, bsc-agent) do not use
-    /// this — they receive it through `pty_create`.
-    pub startup_prompt: Option<String>,
-    /// Files loaded read-only at launch. A worker's `CLAUDE.local.md` rides here because Aider does no
-    /// ancestor-`CLAUDE.md` walk and would otherwise never see the plan.
-    pub read_files: Vec<String>,
+/// Parse the sidecar's reply, refusing anything unusable.
+///
+/// Pure, so the failure directions are testable without a spawn. Every one of them is an `Err`: see
+/// the module header on why this fails closed where its sibling degrades.
+fn parse_launch_config(out: &str) -> Result<LaunchConfig, String> {
+    let trimmed = out.trim();
+    if trimmed.is_empty() {
+        return Err("launch-config: the sidecar returned nothing".into());
+    }
+    // REQUIRE AN OBJECT, and this is not belt-and-braces. serde will deserialize a struct from a JSON
+    // SEQUENCE, taking fields positionally — so a bare `[]` parses into an all-default `LaunchConfig`
+    // and reads as "this harness has no command". A desynchronised sidecar answering with some other
+    // verb's array would therefore launch a session with no gate instead of refusing. Caught by
+    // `every_unusable_reply_is_an_error_never_a_default_config`.
+    let value: serde_json::Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("launch-config: could not parse the sidecar reply: {e}"))?;
+    if !value.is_object() {
+        return Err(format!("launch-config: expected a JSON object, got {}", kind_of(&value)));
+    }
+    serde_json::from_value::<LaunchConfig>(value)
+        .map_err(|e| format!("launch-config: could not read the sidecar reply: {e}"))
 }
 
-/// Build Aider's launch command.
-pub fn build_aider_command(cfg: Option<&ProviderLaunchConfig>) -> String {
-    // Unconditional, and first — see the module docs.
-    let mut parts: Vec<String> =
-        vec!["aider".into(), "--no-auto-commits".into(), "--no-dirty-commits".into()];
-
-    // The resolved LLM config WINS over a bare model string; with neither, no flag at all.
-    let model = cfg.and_then(|c| {
-        c.llm.as_ref().map(aider_model_arg).or_else(|| c.model.clone())
-    });
-    if let Some(m) = model.as_deref().filter(|m| !m.trim().is_empty()) {
-        parts.push("--model".into());
-        parts.push(sh_quote(m));
+/// Name a JSON value's shape for an error message — a reader chasing a bad reply wants to know it got
+/// an array, not merely that something failed.
+fn kind_of(v: &serde_json::Value) -> &'static str {
+    match v {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "a boolean",
+        serde_json::Value::Number(_) => "a number",
+        serde_json::Value::String(_) => "a string",
+        serde_json::Value::Array(_) => "an array",
+        serde_json::Value::Object(_) => "an object",
     }
-
-    for f in cfg.map(|c| c.read_files.as_slice()).unwrap_or(&[]) {
-        parts.push("--read".into());
-        parts.push(sh_quote(f));
-    }
-
-    if let Some(p) = cfg.and_then(|c| c.startup_prompt.as_deref()).filter(|p| !p.trim().is_empty()) {
-        parts.push("--message".into());
-        parts.push(sh_quote(p));
-    }
-    parts.join(" ")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn fixture() -> serde_json::Value {
-        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(rd) = std::fs::read_dir(dir) else { return };
-            for e in rd.flatten() {
-                let p = e.path();
-                if p.is_dir() {
-                    walk(&p, out);
-                } else if p.file_name().and_then(|n| n.to_str()) == Some("launchCommand.fixtures.json") {
-                    out.push(p);
-                }
-            }
+    /// The happy path, and the shape the caller will read.
+    #[test]
+    fn a_well_formed_reply_is_parsed() {
+        let got = parse_launch_config(r#"{"providerCommand":"aider --no-auto-commits"}"#).unwrap();
+        assert_eq!(got.provider_command.as_deref(), Some("aider --no-auto-commits"));
+    }
+
+    /// A harness that bakes its own prompt sends an empty object — that is a VALID answer meaning
+    /// "no command", and it must parse rather than error.
+    #[test]
+    fn an_empty_object_is_a_valid_answer_not_a_failure() {
+        let got = parse_launch_config("{}").expect("an empty object is a legitimate reply");
+        assert_eq!(got.provider_command, None, "absence, not an empty command");
+    }
+
+    /// FAILS CLOSED. Every unusable reply is an `Err`, so the caller does not launch. This is the
+    /// opposite of `fleet::worker_end`, whose absence means "bail and leave the pane alone"; here
+    /// absence would mean starting a session with half a gate.
+    #[test]
+    fn every_unusable_reply_is_an_error_never_a_default_config() {
+        for junk in ["", "   ", "not json", "null", "bsc: command not found", r#"{"providerCommand":5}"#] {
+            let got = parse_launch_config(junk);
+            assert!(got.is_err(), "{junk:?} must refuse, got {got:?}");
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
-        let mut found = Vec::new();
-        walk(&root, &mut found);
-        assert_eq!(found.len(), 1, "expected one launchCommand.fixtures.json, got {found:?}");
-        serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
-    }
 
-    fn config_of(v: &serde_json::Value) -> Option<ProviderLaunchConfig> {
-        let o = v.as_object()?;
-        Some(ProviderLaunchConfig {
-            model: o.get("model").and_then(|m| m.as_str()).map(str::to_string),
-            llm: o.get("llm").and_then(|l| serde_json::from_value(l.clone()).ok()),
-            startup_prompt: o.get("startupPrompt").and_then(|p| p.as_str()).map(str::to_string),
-            read_files: o
-                .get("readFiles")
-                .and_then(|f| f.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
-                .unwrap_or_default(),
-        })
-    }
-
-    /// Reports every mismatch at once. Compares the WHOLE command string — the quoting is the point,
-    /// and a comparison of parsed arguments would hide exactly the bug this exists to prevent.
-    #[test]
-    fn the_launch_command_matches_the_typescript_case_for_case() {
-        let doc = fixture();
-        let cases = doc["cases"].as_array().expect("cases");
-        assert!(cases.len() >= 18, "fixture shrank to {} cases — regenerate it", cases.len());
-
-        let (mut quoted, mut modelled, mut prompted) = (0usize, 0usize, 0usize);
-        let mut mismatches = Vec::new();
-        for case in cases {
-            let label = case["label"].as_str().unwrap();
-            let cfg = config_of(&case["config"]);
-            let want = case["cmd"].as_str().unwrap();
-            if want.contains("'\\''") {
-                quoted += 1;
-            }
-            if want.contains("--model") {
-                modelled += 1;
-            }
-            if want.contains("--message") {
-                prompted += 1;
-            }
-            let got = build_aider_command(cfg.as_ref());
-            if got != want {
-                mismatches.push(format!("  {label}\n    ts   {want:?}\n    rust {got:?}"));
-            }
-        }
-        assert!(quoted >= 3, "only {quoted} cases needed quote escaping — the corpus is too polite");
-        assert!(modelled >= 3, "only {modelled} cases emitted a model");
-        assert!(prompted >= 4, "only {prompted} cases emitted a prompt");
-        assert!(
-            mismatches.is_empty(),
-            "the Rust builder disagrees with the live TypeScript on {} of {} cases:\n{}",
-            mismatches.len(),
-            cases.len(),
-            mismatches.join("\n")
-        );
-    }
-
-
-    /// Read a POSIX single-quoted shell word back to its value, or `None` if it is not one well-formed
-    /// word. Written here rather than pulled in so the test depends on the SHELL'S rule and not on the
-    /// same escaping logic it is checking: a bug shared by quoter and unquoter would cancel out.
-    fn posix_unquote(s: &str) -> Option<String> {
-        let mut out = String::new();
-        let mut chars = s.chars().peekable();
-        while let Some(c) = chars.next() {
-            match c {
-                // A quoted run: everything up to the next quote is literal.
-                '\'' => {
-                    loop {
-                        match chars.next() {
-                            Some('\'') => break,
-                            Some(ch) => out.push(ch),
-                            None => return None, // unterminated
-                        }
-                    }
-                }
-                // A backslash-escaped character OUTSIDE any quoted run.
-                '\\' => out.push(chars.next()?),
-                // Bare whitespace would end the word — so this is not one argument.
-                c if c.is_whitespace() => return None,
-                c => out.push(c),
-            }
-        }
-        Some(out)
-    }
-    /// THE INJECTION CASE. A prompt is plan-authored text; if it can close its own quote, everything
-    /// after it is shell.
-    #[test]
-    fn a_prompt_cannot_close_its_own_quote() {
-        let evil = "x'; rm -rf /tmp/pwned; echo '";
-        let cmd = build_aider_command(Some(&ProviderLaunchConfig {
-            startup_prompt: Some(evil.to_string()),
-            ..Default::default()
-        }));
-
-        // A SUBSTRING TEST CANNOT ANSWER THIS. The correctly-quoted form legitimately CONTAINS
-        // `'; rm -rf …` — inside quotes, where it is inert — so "does the dangerous text appear" is
-        // the wrong question. The right one is whether the shell would see ONE argument, which is what
-        // unquoting the tail and comparing it to the original prompt actually asks.
-        let tail = cmd.split(" --message ").nth(1).expect("a --message argument");
-        assert_eq!(
-            posix_unquote(tail).as_deref(),
-            Some(evil),
-            "the payload must survive as ONE argument, byte for byte: {cmd}"
-        );
-    }
-
-    /// Newlines are legal inside single quotes, so a multi-line kickoff needs no flattening.
-    #[test]
-    fn a_multi_line_prompt_survives_intact() {
-        let cmd = build_aider_command(Some(&ProviderLaunchConfig {
-            startup_prompt: Some("line one\nline two".to_string()),
-            ..Default::default()
-        }));
-        assert!(cmd.contains("line one\nline two"), "{cmd:?}");
-    }
-
-    /// A `$`, a backtick and a double quote are all literal inside single quotes — no extra escaping,
-    /// and no expansion.
-    #[test]
-    fn shell_metacharacters_are_literal_inside_single_quotes() {
-        let q = sh_quote("cost is `date` and $HOME and \"x\"");
-        assert_eq!(q, "'cost is `date` and $HOME and \"x\"'");
-        assert_eq!(sh_quote(""), "''", "an empty argument still needs to BE an argument");
-        assert_eq!(sh_quote("'"), "''\\'''", "a lone quote");
-    }
-
-    /// The fleet-safe flags are unconditional — not a flow decision, and not something a caller may
-    /// turn off by supplying a config.
-    #[test]
-    fn the_fleet_safe_git_flags_are_always_present() {
-        for cfg in [
-            None,
-            Some(ProviderLaunchConfig::default()),
-            Some(ProviderLaunchConfig { startup_prompt: Some("go".into()), ..Default::default() }),
-        ] {
-            let cmd = build_aider_command(cfg.as_ref());
-            assert!(cmd.contains("--no-auto-commits"), "a surprise commit on the pane's branch: {cmd}");
-            assert!(cmd.contains("--no-dirty-commits"));
+        // THE ONE THAT NEARLY GOT THROUGH. serde reads a struct from a JSON SEQUENCE positionally, so
+        // `[]` deserialized into an all-default LaunchConfig and read as "no command" — a
+        // desynchronised sidecar answering with another verb's array would have launched a session
+        // with no gate. Both array shapes must refuse.
+        for arr in ["[]", r#"["aider --x"]"#, "[1,2,3]"] {
+            let got = parse_launch_config(arr);
+            assert!(got.is_err(), "{arr:?} is not a config, got {got:?}");
+            assert!(got.unwrap_err().contains("an array"), "the error names the shape it got");
         }
     }
 
-    /// The LLM config wins over a bare model, and with NEITHER no flag is emitted at all.
+    /// A field added by a NEWER sidecar must not break an older app — that is what lets skills and
+    /// MCP fold onto this reply without a lockstep deploy of two independently staged binaries.
     #[test]
-    fn the_llm_config_wins_and_no_model_means_no_flag() {
-        let llm = LlmConfig {
-            provider: "ollama".into(),
-            model: "qwen".into(),
-            api_key: String::new(),
-            base_url: String::new(),
-            num_ctx: None,
-        };
-        let both = build_aider_command(Some(&ProviderLaunchConfig {
-            llm: Some(llm),
-            model: Some("ignored".into()),
-            ..Default::default()
-        }));
-        assert!(both.contains("openai/qwen"), "the llm config supplies the selector: {both}");
-        assert!(!both.contains("ignored"), "the bare model must lose");
-
-        assert!(!build_aider_command(None).contains("--model"), "no config ⇒ no flag");
-        assert!(
-            !build_aider_command(Some(&ProviderLaunchConfig { model: Some("   ".into()), ..Default::default() }))
-                .contains("--model"),
-            "an empty --model would be an error, not a default"
-        );
+    fn a_newer_sidecar_reply_is_still_readable() {
+        let got = parse_launch_config(r#"{"providerCommand":"aider","skills":["a"],"mcp":{"x":1}}"#)
+            .expect("unknown fields are tolerated");
+        assert_eq!(got.provider_command.as_deref(), Some("aider"));
     }
 }
-
