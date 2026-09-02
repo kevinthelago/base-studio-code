@@ -96,11 +96,68 @@ pub fn build_aider_command(cfg: Option<&ProviderLaunchConfig>) -> String {
     parts.join(" ")
 }
 
+/// Whether an argument is a bare, shell-safe token that needs no quoting.
+///
+/// Deliberately conservative and deliberately NARROW: the set is exactly what a real model name uses
+/// — `qwen2.5-coder`, `llama3:70b`, `library/llama3`. Anything else gets quoted. Being wrong in the
+/// "needs quoting" direction costs a pair of quotes; being wrong the other way is a shell injection.
+fn is_bare_token(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':' | b'/'))
+}
+
+/// Quote `s` only when it is not already a bare token.
+///
+/// WHY NOT ALWAYS QUOTE, which would be simpler. The TypeScript copy of this builder is still live
+/// and still answering real launches, and the reconciliation between the two is measured by
+/// `bsc logs divergence`. Quoting unconditionally would make the two answers differ on EVERY launch —
+/// `ollama run llama3` against `ollama run 'llama3'` — which turns the divergence channel into noise
+/// and hides the disagreements that actually matter. Quoting only what is unsafe keeps every ordinary
+/// launch byte-identical, so a firing divergence means something.
+fn quote_if_needed(s: &str) -> String {
+    if is_bare_token(s) {
+        s.to_string()
+    } else {
+        sh_quote(s)
+    }
+}
+
+/// The model Ollama runs when a pane names none.
+pub const OLLAMA_DEFAULT_MODEL: &str = "llama3";
+
+/// Build Ollama's launch command.
+///
+/// # TWO DELIBERATE DIVERGENCES FROM THE TYPESCRIPT, both fixes, both pinned by tests
+///
+/// The live TypeScript is ``ollama run ${config?.model ?? DEFAULT_MODEL}``. That is one line and it
+/// has two defects, and the fixture records the TypeScript's real output for both so neither can be
+/// mistaken for a porting slip:
+///
+/// 1. **UNQUOTED INTERPOLATION.** The model reaches a PTY as part of a shell command and can arrive
+///    from a store record, a persona placement or argv. The TypeScript emits
+///    `ollama run llama3; rm -rf /tmp/pwned` verbatim. This quotes anything that is not a bare token,
+///    so the payload stays one argument. The module header already called exactly this shape "a
+///    command injection in a string built from content the planner writes" — the guard existed and
+///    the one interpolating provider never got it.
+/// 2. **`??` DOES NOT CATCH AN EMPTY STRING.** `config.model = ""` is neither null nor undefined, so
+///    the TypeScript falls through to `ollama run ` — a trailing space and no model, which is not a
+///    runnable command. Found by GENERATING the fixture rather than by writing down what it ought to
+///    say; the hand-written expectation on the plan item said "falls back to the default" and was
+///    wrong. Here an absent-or-blank model means the default.
+pub fn build_ollama_command(cfg: Option<&ProviderLaunchConfig>) -> String {
+    let model = cfg
+        .and_then(|c| c.model.as_deref())
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or(OLLAMA_DEFAULT_MODEL);
+    format!("ollama run {}", quote_if_needed(model))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn fixture() -> serde_json::Value {
+    pub(super) fn fixture() -> serde_json::Value {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else { return };
             for e in rd.flatten() {
@@ -121,7 +178,7 @@ mod tests {
         serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
     }
 
-    fn config_of(v: &serde_json::Value) -> Option<ProviderLaunchConfig> {
+    pub(super) fn config_of(v: &serde_json::Value) -> Option<ProviderLaunchConfig> {
         let o = v.as_object()?;
         Some(ProviderLaunchConfig {
             model: o.get("model").and_then(|m| m.as_str()).map(str::to_string),
@@ -316,12 +373,26 @@ pub struct LaunchConfig {
 
 /// Derive the whole launch configuration for `provider`.
 ///
-/// The only provider with a command to build today is Aider. Every other harness returns `None`
-/// rather than an empty string: an empty command is something a caller might execute, whereas absence
-/// is something it must handle.
+/// EVERY provider the console registry builds a command for is built here. This used to be Aider
+/// alone, with a doc comment claiming the rest "bake their own prompt" — true of `claude` and
+/// `bsc-agent`, false of `gemini`, `codex`, `amazonq` and `ollama`, which the TypeScript builds real
+/// commands for. So the app asked the sidecar for a gemini pane, got `None`, and fell back to the
+/// renderer's copy with nothing measuring the gap.
+///
+/// A prompt-baking harness and an unknown id both return `None` rather than an empty string: an empty
+/// command is something a caller might execute, whereas absence is something it must handle.
 pub fn launch_config(provider: &str, cfg: Option<&ProviderLaunchConfig>) -> LaunchConfig {
     let provider_command = match provider.trim().to_ascii_lowercase().as_str() {
         "aider" => Some(build_aider_command(cfg)),
+        "ollama" => Some(build_ollama_command(cfg)),
+        // Constants, but NOT interchangeable with their ids: `amazonq` runs the `q` binary, and this
+        // table is the only place in Rust that records the difference.
+        "gemini" => Some("gemini".to_string()),
+        "codex" => Some("codex".to_string()),
+        "amazonq" => Some("q".to_string()),
+        // The prompt-BAKING harnesses, and an unknown id. `claude` and `bsc-agent` receive their
+        // kickoff through `pty_create`, so a command here would be a second, conflicting channel.
+        // Absence, never `""`: an empty command is something a caller might execute.
         _ => None,
     };
     LaunchConfig { provider_command }
@@ -329,7 +400,141 @@ pub fn launch_config(provider: &str, cfg: Option<&ProviderLaunchConfig>) -> Laun
 
 #[cfg(test)]
 mod launch_config_tests {
+    use super::tests::config_of;
     use super::*;
+
+    /// The `providers` half of the shared fixture: every REGISTERED console provider, captured by
+    /// calling `getProvider(id).buildLaunchCmd(...)` in the live TypeScript.
+    fn provider_cases() -> Vec<serde_json::Value> {
+        super::tests::fixture()["providers"]
+            .as_array()
+            .expect("the fixture carries a `providers` array — regenerate with UPDATE_FIXTURES=1")
+            .clone()
+    }
+
+    /// A case whose Rust answer is INTENDED to differ from the TypeScript, and what it must be
+    /// instead. Enumerated rather than skipped: a skipped case is invisible, and "we meant that one"
+    /// is exactly the sentence a real regression hides behind. Keyed on the fixture's own label.
+    ///
+    /// Both entries are FIXES, argued in `build_ollama_command`'s docs — an unquoted shell
+    /// interpolation, and `??` failing to catch an empty string.
+    const INTENDED_DIVERGENCES: &[(&str, &str)] = &[
+        ("ollama — an empty model falls back to the default", "ollama run llama3"),
+        ("ollama — a model with a SPACE", "ollama run 'my model'"),
+        ("ollama — a model that tries to CHAIN a command", "ollama run 'llama3; rm -rf /tmp/pwned'"),
+        ("ollama — a model with a backtick and a dollar", "ollama run 'a`date`$HOME'"),
+    ];
+
+    /// The harnesses that BAKE their own prompt. The TypeScript hands them a command string too, and
+    /// Rust deliberately answers `None` instead — the kickoff reaches them through `pty_create`, so a
+    /// command here would be a second, conflicting channel for the same thing. This asymmetry is the
+    /// one place Rust returns LESS than the TypeScript on purpose, so it is named rather than implied.
+    const PROMPT_BAKING: &[&str] = &["claude", "bsc-agent"];
+
+    #[test]
+    fn every_registered_provider_agrees_with_the_typescript() {
+        let cases = provider_cases();
+        assert!(cases.len() >= 14, "the provider corpus shrank to {} cases", cases.len());
+        let mut matched_divergences = 0;
+        let mut saw_baking = 0;
+
+        for case in &cases {
+            let id = case["id"].as_str().expect("id");
+            let label = case["label"].as_str().expect("label");
+            let ts = case["cmd"].as_str().expect("cmd");
+            let cfg = config_of(&case["config"]);
+
+            if PROMPT_BAKING.contains(&id) {
+                assert!(!ts.is_empty(), "{label}: the TypeScript does build one, which is the point");
+                assert_eq!(
+                    launch_config(id, cfg.as_ref()).provider_command,
+                    None,
+                    "{label}: a prompt-baking harness must get ABSENCE, not a second prompt channel"
+                );
+                saw_baking += 1;
+                continue;
+            }
+
+            let got = launch_config(id, cfg.as_ref())
+                .provider_command
+                .unwrap_or_else(|| panic!("{label}: every captured provider builds a command"));
+
+            match INTENDED_DIVERGENCES.iter().find(|(l, _)| *l == label) {
+                Some((_, want_rust)) => {
+                    assert_eq!(got, *want_rust, "{label}: the intended Rust answer");
+                    assert_ne!(
+                        got, ts,
+                        "{label}: listed as an intended divergence but it now AGREES — either the \
+                         TypeScript was fixed (drop the entry) or the fix was lost"
+                    );
+                    matched_divergences += 1;
+                }
+                // WHOLE VALUES, and the whole command string: a `contains` check would pass on a
+                // command that had grown an extra flag.
+                None => assert_eq!(got, ts, "{label}: Rust and the TypeScript must agree byte for byte"),
+            }
+        }
+        assert_eq!(saw_baking, PROMPT_BAKING.len(), "every prompt-baking harness must be in the corpus");
+        assert_eq!(
+            matched_divergences,
+            INTENDED_DIVERGENCES.len(),
+            "an intended-divergence label matched no fixture case — the label was renamed and the \
+             entry silently stopped covering anything"
+        );
+    }
+
+    #[test]
+    fn amazonq_runs_the_q_binary_and_not_its_own_id() {
+        // The one mapping nothing else in Rust records: the provider id is `amazonq`, the executable
+        // is `q`. A port that assumed id == binary would produce a command that does not exist.
+        assert_eq!(launch_config("amazonq", None).provider_command.as_deref(), Some("q"));
+    }
+
+    #[test]
+    fn a_hostile_ollama_model_cannot_break_out_of_the_command() {
+        // THE INJECTION CASE. The TypeScript emits this verbatim and unquoted; the fixture records
+        // that. Here the payload must stay inside one quoted argument.
+        let cmd = build_ollama_command(Some(&ProviderLaunchConfig {
+            model: Some("llama3; rm -rf /tmp/pwned".into()),
+            ..Default::default()
+        }));
+        assert_eq!(cmd, "ollama run 'llama3; rm -rf /tmp/pwned'");
+        assert!(!cmd.contains("run llama3; rm"), "the payload escaped its quoting: {cmd}");
+
+        // ...and a model that closes its own quote cannot reopen as shell.
+        let evil = build_ollama_command(Some(&ProviderLaunchConfig {
+            model: Some("x'; rm -rf /tmp/pwned; echo '".into()),
+            ..Default::default()
+        }));
+        assert!(evil.contains("'\\''"), "an embedded quote must be escaped, not passed through: {evil}");
+    }
+
+    #[test]
+    fn an_ordinary_model_is_emitted_bare_so_the_divergence_channel_stays_meaningful() {
+        // Quoting unconditionally would make Rust and the TypeScript differ on every launch, which
+        // would drown `bsc logs divergence` in noise. These are the shapes a real model name takes.
+        for model in ["llama3", "qwen2.5-coder", "llama3:70b", "library/llama3"] {
+            let cmd = build_ollama_command(Some(&ProviderLaunchConfig {
+                model: Some(model.into()),
+                ..Default::default()
+            }));
+            assert_eq!(cmd, format!("ollama run {model}"), "{model} needs no quoting");
+        }
+    }
+
+    #[test]
+    fn a_blank_ollama_model_is_the_default_not_a_trailing_space() {
+        // The TypeScript's `??` does not catch `""`, so it emits `ollama run ` — not runnable. Found
+        // by generating the fixture; the hand-written expectation had this wrong.
+        for blank in ["", "   "] {
+            let cmd = build_ollama_command(Some(&ProviderLaunchConfig {
+                model: Some(blank.into()),
+                ..Default::default()
+            }));
+            assert_eq!(cmd, "ollama run llama3", "a blank model must not produce a bare `ollama run `");
+        }
+        assert_eq!(build_ollama_command(None), "ollama run llama3");
+    }
 
     #[test]
     fn aider_gets_a_command_and_a_prompt_baking_harness_gets_none() {
@@ -337,6 +542,8 @@ mod launch_config_tests {
         let aider = launch_config("aider", Some(&cfg));
         assert!(aider.provider_command.as_deref().unwrap().starts_with("aider "));
 
+        // ONLY the prompt-baking harnesses and an unknown id. `gemini`, `codex`, `amazonq` and
+        // `ollama` used to be covered by this loop's `_ => None` and were the bug.
         for baked in ["claude", "bsc-agent", "", "something-else"] {
             let c = launch_config(baked, Some(&cfg));
             assert_eq!(c.provider_command, None, "{baked:?} bakes its own prompt — absence, not \"\"");
