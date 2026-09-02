@@ -77,6 +77,28 @@ Newest-first by default; --oldest keeps the file's chronological order (the coor
 desktop's per-stream log readers (#2144).",
     },
     CmdDoc {
+        name: "coord",
+        summary: "the WHOLE coordination state, folded from coord.log in one read",
+        usage: "\nUSAGE:
+  bsc logs coord [--all] [--limit N] [--json]
+
+The fleet's coordination state without a running renderer: latches, waiters, parked sessions,
+open asks, captured issues, briefs, forks, commissions and open requests — folded by the SAME
+reducer the app uses (`logs::coord`), which is proved case by case against the TypeScript.
+
+WHY THIS EXISTS: that reducer had exactly ONE caller, `src-tauri/src/fleet/wake.rs` — inside the
+app binary. So the fleet's own coordination state could only be known by the running app, which is
+the inversion `epic-non-ui-logic-lives-in-the-rust-crates` exists to end.
+
+ONE READ, WHOLE STATE. Not a per-pane query: `coord.log` is one app-wide append-only file, and a
+verb that answered one subject at a time would be re-read once per pane (the shape #3908 and #3954
+were filed to undo, which saturated the command pool at ~39 panes).
+
+NOT the same thing as `bsc logs waiting`, which answers the narrower 'who is blocked on a human'
+from an independent re-fold and additionally folds in permission prompts from activity.log. Where
+the two disagree is enumerated in the crate's parity test, not left to be discovered.",
+    },
+    CmdDoc {
         name: "waiting",
         summary: "every session BLOCKED ON A HUMAN (the queue to clear)",
         usage: "\nUSAGE:
@@ -414,6 +436,39 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             emit(a.pretty, a.json, &lines, || lines.join("\n"));
         }
         // Every session blocked on a human (#4015) — the queue the director sweeps.
+        // The WHOLE coordination state (`the-coord-fold-reaches-bsc-and-its-divergence-is-measured`).
+        // Reads the log ONCE and folds it with the shared reducer — batch by construction, because
+        // `coord.log` is one app-wide file and a per-subject verb would re-read it per pane.
+        "coord" => {
+            // `--limit` bounds the tail the way `standard_wake` does: the log is append-only and a
+            // fold must not pay its full length. Oldest-first, because a fold is order-dependent —
+            // replaying newest-first would apply every clear before the event it clears.
+            let lines = crate::tail_raw(&dir, "coord", a.limit.unwrap_or(20_000), true);
+            let out = crate::coord::ingest_coord_log(&lines, crate::coord::CoordState::default());
+            let parked = crate::coord::parked_sessions(&out.state);
+            emit(a.pretty, a.json, &out, || {
+                let s = &out.state;
+                let mut lines = vec![format!(
+                    "latches {}  waiters {}  parked {}  issues {}  briefs {}  forks {}  commissions {}  requests {}",
+                    s.latches.len(), s.waiters.len(), parked.len(), s.issues.len(),
+                    s.briefs.len(), s.forks.len(), s.commissions.len(), s.requests.len()
+                )];
+                if !parked.is_empty() {
+                    lines.push(String::new());
+                    lines.push("pane\tkind\tid\tdetail".to_string());
+                    for w in &parked {
+                        lines.push(format!("{}\t{}\t{}\t{}", w.pane, w.kind, w.id, w.detail));
+                    }
+                }
+                if !out.refused.is_empty() {
+                    lines.push(String::new());
+                    // Surfaced, never dropped: a refused answer means the sender believes it replied
+                    // and the target is still parked.
+                    lines.push(format!("{} cross-project event(s) REFUSED", out.refused.len()));
+                }
+                lines.join("\n")
+            });
+        }
         "waiting" => {
             // Scoped to the CALLER's project unless --all. `coord.log` is one app-wide file, so an
             // unscoped queue hands a director workers it has no authority over

@@ -324,6 +324,69 @@ pub struct CoordState {
     pub requests: Vec<OpenRequest>,
 }
 
+/// One session parked on a human, derived from a folded [`CoordState`].
+///
+/// The shape `bsc logs waiting` reports, so the two can be COMPARED — see
+/// `crates/logs/tests/coord_waiting_parity.rs`. It is deliberately not `waiting::WaitingSession`:
+/// that type is the CLI's row and carries a `permission` kind sourced from `activity.log`, which
+/// this fold has never seen and must not pretend to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParkedSession {
+    pub pane: String,
+    /// `wait` · `ask` · `request`.
+    pub kind: String,
+    pub detail: String,
+    pub at: i64,
+    /// The request id for `kind = "request"`; empty otherwise.
+    pub id: String,
+}
+
+/// Every session this state says is parked on a human, oldest first.
+///
+/// THE POINT OF THIS FUNCTION IS THAT THE FOLD CAN ANSWER THE DIRECTOR'S QUESTION. `bsc logs waiting`
+/// answers it today from an INDEPENDENT re-fold (`waiting::waiting_in`) that predates this module and
+/// was never re-pointed at it, so the parity work landed and the verb agents actually run did not
+/// change. Deriving the same queue here is what makes the two comparable at all; flipping the verb
+/// over to it is a separate item, because one real divergence still stands (see the crate's parity
+/// test, and `the-request-resolved-clear-is-unscoped-because-the-event-drops-its-emitter`).
+///
+/// `ask` supersedes `wait` for a session — that is already true of the state itself, because
+/// [`apply_coord_event`]'s `Ask` arm drops the session's `waiting` row, so no de-duplication is
+/// needed here.
+pub fn parked_sessions(s: &CoordState) -> Vec<ParkedSession> {
+    let mut rows: Vec<ParkedSession> = Vec::new();
+    for w in &s.waiting {
+        rows.push(ParkedSession {
+            pane: w.session.clone(),
+            kind: "wait".into(),
+            detail: w.reason.clone(),
+            at: w.at,
+            id: String::new(),
+        });
+    }
+    for a in &s.asking {
+        rows.push(ParkedSession {
+            pane: a.session.clone(),
+            kind: "ask".into(),
+            detail: a.question.clone(),
+            at: a.at,
+            id: String::new(),
+        });
+    }
+    for r in &s.requests {
+        rows.push(ParkedSession {
+            pane: r.from.clone(),
+            kind: "request".into(),
+            detail: r.text.clone(),
+            at: r.at,
+            id: r.id.clone(),
+        });
+    }
+    rows.sort_by_key(|r| r.at);
+    rows
+}
+
 /// Whether `ref` is satisfied — truly done, not merely failed.
 pub fn is_satisfied(s: &CoordState, r: &CoordRef) -> bool {
     matches!(s.latches.get(&ref_key(r)), Some(LatchStatus::Satisfied { .. }))
@@ -1154,6 +1217,198 @@ mod tests {
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected exactly one coordLog.fixtures.json, got {found:?}");
         serde_json::from_str(&std::fs::read_to_string(&found[0]).unwrap()).unwrap()
+    }
+
+    /// A unique scratch log dir. Mirrors `waiting.rs`'s helper: this crate has no tempfile
+    /// dev-dependency, and tests run as threads of one process so the pid alone is not unique.
+    fn scratch() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "bsc-coord-diff-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A comparable row: what BOTH implementations claim about one parked session.
+    type Row = (String, String, String, String);
+
+    fn from_fold(lines: &[String]) -> Vec<Row> {
+        let out = ingest_coord_log(lines, CoordState::default());
+        parked_sessions(&out.state)
+            .into_iter()
+            .map(|r| (r.pane, r.kind, r.id, r.detail))
+            .collect()
+    }
+
+    fn from_waiting(dir: &std::path::Path, lines: &[String]) -> Vec<Row> {
+        std::fs::write(dir.join("coord.log"), format!("{}\n", lines.join("\n"))).unwrap();
+        crate::waiting::waiting_in(dir, None)
+            .into_iter()
+            .map(|w| (w.pane, w.kind, w.id, w.detail))
+            .collect()
+    }
+
+    /// THE TWO RUST FOLDS OVER ONE CORPUS.
+    ///
+    /// `bsc logs waiting` is served by `waiting::waiting_in`, an independent narrow re-fold that
+    /// predates this module and was never re-pointed at it. So the parity work landed and the verb
+    /// the DIRECTOR PROTOCOL actually runs did not change — a green result covering less than the
+    /// reader assumes, which is this repo's signature failure.
+    ///
+    /// This compares them case for case over the SAME generated corpus. Divergences are ENUMERATED
+    /// below rather than absent: a parity test that quietly excludes what it cannot explain is worth
+    /// nothing.
+    #[test]
+    fn the_two_rust_folds_agree_about_who_is_parked() {
+        let fx = fixture();
+        let mut diverged: Vec<String> = Vec::new();
+        let mut compared = 0usize;
+        for c in &fx.logs {
+            if c.lines.is_empty() {
+                continue;
+            }
+            let d = scratch();
+            let fold = from_fold(&c.lines);
+            let waiting = from_waiting(&d, &c.lines);
+            compared += 1;
+            if fold != waiting {
+                diverged.push(format!("  {}\n     fold={fold:?}\n     waiting={waiting:?}", c.name));
+            }
+            let _ = std::fs::remove_dir_all(&d);
+        }
+        assert!(compared >= 20, "the corpus must actually exercise the folds, compared {compared}");
+        assert!(
+            diverged.is_empty(),
+            "{} of {compared} case(s) diverge:\n{}",
+            diverged.len(),
+            diverged.join("\n")
+        );
+    }
+
+    /// TARGETED SCENARIOS THE GENERATED CORPUS DOES NOT AIM AT.
+    ///
+    /// The fixture above is generated from the TypeScript to prove THIS module matches it. It was
+    /// never built to separate the two RUST folds, and bite probes proved that gap concretely:
+    /// reversing `parked_sessions`'s sort and deleting `Woke`'s clearing of `asking` BOTH left the
+    /// differential green. Neither was redundant code — the corpus simply had no case where the
+    /// difference could show. (The `Woke`/`asking` one matters most: that exact regression already
+    /// shipped once, when `woke` cleared only `wait` and a woken session's ask was immortal in
+    /// `bsc logs waiting`, so the director was re-handed it every sweep.)
+    ///
+    /// Each case runs through BOTH folds and asserts they agree AND that the answer is right — an
+    /// agreement test alone would pass if both were wrong in the same way.
+    #[test]
+    fn targeted_scenarios_separate_the_two_folds() {
+        // (name, lines, expected rows as (pane, kind, id, detail))
+        let cases: Vec<(&str, Vec<String>, Vec<Row>)> = vec![
+            (
+                "ordering is oldest-first across DISTINCT times",
+                vec![
+                    "2026-07-30T10:00:00Z\ta:one\twaiting\tfirst".to_string(),
+                    "2026-07-30T10:05:00Z\ta:two\twaiting\tsecond".to_string(),
+                    "2026-07-30T10:09:00Z\ta:three\twaiting\tthird".to_string(),
+                ],
+                vec![
+                    ("a:one".into(), "wait".into(), String::new(), "first".into()),
+                    ("a:two".into(), "wait".into(), String::new(), "second".into()),
+                    ("a:three".into(), "wait".into(), String::new(), "third".into()),
+                ],
+            ),
+            (
+                "a wake clears an ASK, not just a wait",
+                vec![
+                    "2026-07-30T10:00:00Z\ta:api\task\twhich pagination?".to_string(),
+                    "2026-07-30T10:01:00Z\ta:api\twoke\t".to_string(),
+                ],
+                vec![],
+            ),
+            (
+                "maintain clears an ask — a finished worker is idle-ready, not blocked",
+                vec![
+                    "2026-07-30T10:00:00Z\ta:api\task\twhich pagination?".to_string(),
+                    "2026-07-30T10:01:00Z\ta:api\tmaintain\tall done".to_string(),
+                ],
+                vec![],
+            ),
+            (
+                "an ask SUPERSEDES a plain wait for the same session",
+                vec![
+                    "2026-07-30T10:00:00Z\ta:api\twaiting\tparked".to_string(),
+                    "2026-07-30T10:01:00Z\ta:api\task\twhich pagination?".to_string(),
+                ],
+                vec![("a:api".into(), "ask".into(), String::new(), "which pagination?".into())],
+            ),
+            (
+                "a CROSS-PROJECT answer clears nothing — the real director must still see it",
+                vec![
+                    "2026-07-30T10:00:00Z\talpha:api\task\twhich pagination?".to_string(),
+                    "2026-07-30T10:01:00Z\tbeta:director\tanswer\talpha:api\tuse cursor".to_string(),
+                ],
+                vec![("alpha:api".into(), "ask".into(), String::new(), "which pagination?".into())],
+            ),
+        ];
+
+        for (name, lines, want) in cases {
+            let d = scratch();
+            let fold = from_fold(&lines);
+            let waiting = from_waiting(&d, &lines);
+            let _ = std::fs::remove_dir_all(&d);
+            assert_eq!(fold, want, "the FOLD is wrong for: {name}");
+            assert_eq!(waiting, want, "waiting_in is wrong for: {name}");
+        }
+    }
+
+    /// THE ONE REMAINING DIVERGENCE, ASSERTED RATHER THAN OMITTED.
+    ///
+    /// The generated corpus above does not separate the two folds here, and per the method that is a
+    /// CORPUS GAP, not evidence of agreement — so the separating input is supplied here.
+    ///
+    /// Request ids are PER-PROJECT SEQUENCE NUMBERS: `7` exists in every project that has had seven
+    /// requests. `waiting::waiting_in` scopes the clear to the emitter's project and has a test
+    /// pinning it (`only alpha's #7 closes`). This fold does NOT scope it — and it is being FAITHFUL
+    /// rather than careless: the TypeScript parser discards the emitter
+    /// (`return id ? { type: "request-resolved", id, at } : null`), so `CoordEvent::RequestResolved`
+    /// carries no `from` and the project check is IMPOSSIBLE here, not merely omitted.
+    ///
+    /// The root cause is therefore the EVENT SHAPE, shared by both languages, and fixing it changes
+    /// TypeScript behaviour — a separate item with its own revert
+    /// (`the-request-resolved-clear-is-unscoped-because-the-event-drops-its-emitter`).
+    ///
+    /// THIS TEST ASSERTS THE DISAGREEMENT STILL EXISTS. If someone fixes the event shape, this goes
+    /// RED and has to be updated deliberately — which is the point. A parity test that simply dropped
+    /// the case it could not explain would pass forever and measure nothing.
+    ///
+    /// It matters in the field rather than in theory: the real `coord.log` on this machine is 275
+    /// lines of which 134 are `request` and 133 `request-resolved` — by far the most exercised path
+    /// in the protocol.
+    #[test]
+    fn the_folds_still_disagree_about_a_cross_project_request_resolve() {
+        let lines: Vec<String> = vec![
+            "2026-07-30T10:00:00Z\talpha:worker\trequest\t7\tneeds a develop branch".to_string(),
+            // BETA's director resolving ITS OWN #7 — no authority over alpha's.
+            "2026-07-30T10:01:00Z\tbeta:director\trequest-resolved\t7\tdone".to_string(),
+        ];
+        let d = scratch();
+        let fold = from_fold(&lines);
+        let waiting = from_waiting(&d, &lines);
+        let _ = std::fs::remove_dir_all(&d);
+
+        assert_eq!(
+            waiting,
+            vec![("alpha:worker".to_string(), "request".to_string(), "7".to_string(), "needs a develop branch".to_string())],
+            "waiting_in must SCOPE the clear — alpha's #7 is not beta's to close"
+        );
+        assert!(
+            fold.is_empty(),
+            "the fold clears it UNSCOPED, mirroring the TypeScript; if this changed, the event shape \
+             was fixed and this test plus its plan item need updating deliberately: {fold:?}"
+        );
+        assert_ne!(fold, waiting, "the divergence is the subject of this test");
     }
 
     /// THE POINT OF THIS MODULE: Rust must agree with the TypeScript that ships today, case for case,
