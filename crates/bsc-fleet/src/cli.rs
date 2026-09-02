@@ -175,6 +175,32 @@ workers on one worktree would fight over the same branch. `--force` relaunches a
 The pane creation happens in the app (a pane is frontend state), so the desktop app must be running —
 the same requirement `bsc fleet wake` and `bsc fleet director new` have.",
 }, CmdDoc {
+    name: "worker-end",
+    summary: "the resting-state verdict for a finished worker — from plan.db, with no app running",
+    usage: "\
+USAGE:
+  bsc fleet worker-end <projectKey> --stream <id>[,<id>...] [--json|--pretty]
+
+The verdict for each stream, index-aligned with the ids given. Decided from plan.db OWNED-ISSUE STATUS
+-- the structured, recovery-durable source of truth -- not from a worker's free-text \"I'm done\". The
+`landed` count folds `coord.log` and is REPORTED in the summary, never decisive: a worker's card closes
+on worker-finished, while merged is the director's separate confirmation, and conflating them is how
+\"marked complete but the PR never merged\" stops being visible.
+
+THREE ANSWERS, AND TWO OF THEM LOOK ALIKE IF YOU ARE CARELESS. `null` means the project has NO PLAN
+STORE and the caller must BAIL rather than end the pane. A stream that owns nothing yields
+`needs-attention`, because completion cannot be confirmed from an empty set. Collapsing those would
+either end a pane on the strength of a missing file, or leave an evidence-less worker looking finished.
+
+WHY THIS IS A SUBCOMMAND AND NOT ONLY A TAURI COMMAND. The app's Rust half is a live process behind a
+webview, so changing a decision that lives inside it means a new binary and a restarted window -- with
+a fleet running in it. `bsc` is a fresh process per call, so the same decision here goes live by
+staging a binary, with no app downtime. The app keeps a dispatcher that gathers nothing and decides
+nothing.
+
+ONE READ PER BATCH: pass every stream in one call. A per-stream invocation is the shape #3908 and
+#3954 were filed to undo -- at ~39 panes it saturated the command pool and `pty_write` hit 3280ms.",
+}, CmdDoc {
     name: "doctor",
     summary: "the claims this fleet makes about itself that do not hold",
     usage: "\
@@ -441,6 +467,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "wake" => cmd_wake(&args, prog),
         "provision" => cmd_provision(&args, prog),
         "clone" => cmd_clone(&args, prog),
+        "worker-end" => cmd_worker_end(&args),
         "doctor" => cmd_doctor(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
@@ -453,6 +480,43 @@ fn plan_db_path(db_flag: Option<&str>) -> Option<std::path::PathBuf> {
     let flag = db_flag.map(str::to_string);
     let path = bsc_cli_util::resolve_store_path(&flag, "BSC_PLAN_DB", || Err("no plan store".to_string())).ok()?;
     path.is_file().then_some(path)
+}
+
+/// `bsc fleet worker-end <projectKey> --stream a,b,c` — the verdict per stream, index-aligned.
+///
+/// Resolves the two store paths and nothing else: `worker_end::worker_end_verdicts` owns both the
+/// gathering and the decision, so there is ONE implementation and the app's dispatcher cannot drift
+/// from this one.
+fn cmd_worker_end(a: &Args) -> Result<(), String> {
+    let key = a.positional.get(1).ok_or("usage: bsc fleet worker-end <projectKey> --stream <id>[,<id>...]")?;
+    // Comma-separated so ONE call carries the whole batch — see the usage text on why per-stream is
+    // the shape this repo has twice had to undo.
+    let streams: Vec<String> = a
+        .stream
+        .as_deref()
+        .ok_or("bsc fleet worker-end: --stream <id>[,<id>...] is required")?
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if streams.is_empty() {
+        return Err("bsc fleet worker-end: --stream named no streams".into());
+    }
+    let plan_db = plans_dir().ok_or("no home directory — cannot locate the plan stores")?.join(format!("{key}.db"));
+    let verdicts = crate::worker_end::worker_end_verdicts(&plan_db, &logs::log_dir(), &streams);
+
+    bsc_cli_util::emit(a.pretty, a.json, &verdicts, || {
+        let mut lines = vec!["stream\tstate\tsummary".to_string()];
+        lines.extend(streams.iter().zip(verdicts.iter()).map(|(s, v)| match v {
+            // `null` is not a verdict — it says there is no store to read. Rendered as a word rather
+            // than an empty cell, which a reader would take for "nothing wrong".
+            None => format!("{s}\tno-plan-store\tthe project has no plan.db — the caller must bail"),
+            Some(v) => format!("{s}\t{}\t{}", v.state, v.summary),
+        }));
+        lines.join("\n")
+    });
+    Ok(())
 }
 
 /// A project's key, read off its plan store's filename — plans live at `plans/<key>.db`, and the key
