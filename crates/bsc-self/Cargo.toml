@@ -1,0 +1,9 @@
+[package]
+name = "bsc-self"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-util = { path = "../bsc-util" }
+serde_json = "1"

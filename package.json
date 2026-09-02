@@ -40,7 +40,7 @@
     "emit:records": "node scripts/emit-records.mjs",
     "dev-boot-check": "node scripts/dev-boot-check.mjs",
     "retirement-candidates": "node scripts/retirement-candidates.mjs",
-    "bsc:doctor": "node scripts/bsc-doctor.mjs",
+    "bsc:doctor": "b=target/debug/bsc; [ -s \"$b\" ] || b=target/release/bsc; [ -s \"$b\" ] || b=\"$HOME/.base-studio-code/bin/bsc\"; \"$b\" self doctor --root .",
     "diagnose:build": "node scripts/diagnose-build-failure.mjs",
     "verify:artifacts": "node scripts/verify-build-artifacts.mjs"
   },

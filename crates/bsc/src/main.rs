@@ -127,6 +127,7 @@ const COMMANDS: &[Surface] = &[
     active("perf", "logs", "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)", Some("the frontend instrumentation store")),
     active("mem", "bsc-mem", "the MEMORY + COST surface — app heap, build time and build memory (read-only)", Some("the project run store + the browser harness")),
     active("work", "bsc-work", "the work loop: run the gate and RECORD what it actually did on the change record", Some("the per-project plan store — the change record's gate evidence + the known-red declarations")),
+    active("self", "bsc-self", "this binary and its siblings: is the `bsc` you are about to run trustworthy, and which one would be used", None),
     active("debug", "bsc-debug", "inspect the RUNNING app's live DOM + preview state (read-only)", None),
     active("llm", "bsc-llm", "the LOCAL model runtime: what slot count and context ollama actually GRANTED, vs what was asked", None),
     active("loop", "bsc-loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)", Some("the conversation-loop store — user")),
@@ -426,6 +427,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         // and build memory. Read-only, so no role needs a grant to reach it.
         "mem" => bsc_mem::cli::run(rest, "bsc mem"),
         "work" => bsc_work::cli::run(rest, "bsc work"),
+        "self" => bsc_self::cli::run(rest, "bsc self"),
         "metrics" => logs::metrics::run(rest, "bsc metrics"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
