@@ -52,40 +52,23 @@ pub struct WaitingSession {
 ///
 /// Every event that unblocks a pane clears both, because a pane is parked for ONE reason at a time:
 /// `bsc-ask` supersedes a plain `bsc-wait` when it arrives, so clearing only one kind leaves the
+/// THE PANE-ID PROJECT GRAMMAR HAS ONE IMPLEMENTATION, and it is not here any more.
+///
+/// This module used to carry verbatim copies of `coord_project_of` and `same_coord_project`, written
+/// when the only other implementation was TypeScript and sharing was impossible. `coord.rs` has since
+/// landed the same rules in Rust, parity-proved against the TypeScript case by case — so the copies
+/// stopped being unavoidable duplication and became exactly the silent-divergence hazard this crate
+/// has already been bitten by once (`woke` cleared only `wait` here while the reducer also cleared
+/// `asking`, so a woken session's ask was immortal in `bsc logs waiting`).
+///
+/// Re-exported rather than merely imported so `logs::waiting::coord_project_of` keeps resolving for
+/// anything outside this crate that already names it.
+pub use crate::coord::{coord_project_of, same_coord_project};
+
 /// other stranded. Factored out because the four clearing arms must not drift apart — three of them
 /// were added or corrected together after `woke` cleared only `wait` and the queue stopped emptying.
 fn parked(w: &WaitingSession) -> bool {
     w.kind == "ask" || w.kind == "wait"
-}
-
-/// The project a pane id belongs to — everything before the FIRST colon of `<projectKey>:<stream>`
-/// (`alpha:repo:triage` is alpha's). A pane id with no colon yields the whole string; see
-/// [`same_coord_project`] for how an unplaceable id is then treated.
-///
-/// Mirrors `coordProjectOf` in `coordinationLog.ts`. The two cannot share an implementation (one is
-/// TypeScript), so both are tested independently against the same rule.
-pub fn coord_project_of(pane: &str) -> &str {
-    match pane.find(':') {
-        Some(i) => &pane[..i],
-        None => pane,
-    }
-}
-
-/// May an event emitted by `from` act on `target`? REFUSES ONLY ON PROOF OF CROSSING.
-///
-/// `coord.log` is one app-wide file, so an event names its actor and its subject with no project
-/// field — the project is carried by the pane-id grammar and nowhere else. When BOTH ids are
-/// project-qualified and the projects differ, the event is crossing and is refused. When either id
-/// cannot be placed (a bare id: the retired positional ids, a hand-run emitter, `?` from an
-/// unset `BSC_AUDIT_PANE`) it is ALLOWED, because refusing what we cannot place would break
-/// single-project coordination that never used prefixed ids.
-pub fn same_coord_project(from: &str, target: &str) -> bool {
-    let a = coord_project_of(from);
-    let b = coord_project_of(target);
-    if a == from || b == target {
-        return true; // one side is unplaceable — no proof of crossing
-    }
-    a == b
 }
 
 /// Every session currently blocked on a human, oldest first.
@@ -159,6 +142,18 @@ pub fn waiting_in(dir: &Path, scope: Option<&str>) -> Vec<WaitingSession> {
             // `maintain` is the most common event in a real log (a finished worker is told to park
             // rather than end), so every finished worker sat in the queue forever.
             "maintain" if !e.session.is_empty() => open.retain(|w| !(w.pane == e.session && parked(w))),
+            // `bsc-blocked` — the session declared a real DEPENDENCY, so it is no longer parked on a
+            // human and must leave this queue. FOUND BY THE DIFFERENTIAL TEST in `coord.rs`, not by
+            // reading: this arm was simply absent, so a session that waited and then declared a dep
+            // stayed in the director's queue forever while the app's own reducer had already dropped
+            // it (`apply_coord_event`'s Blocked arm: "a session that now declares a real dependency
+            // leaves the manual-wait list").
+            //
+            // NO LIVE EMITTER since #1039 removed runtime dependency-wait, so this cannot fire on a
+            // log written today — it fires when an OLDER log is replayed, which the parser explicitly
+            // still supports. Bounded, but the queue is the director's only signal, and a stale row
+            // in it is a question it is re-handed every sweep.
+            "blocked" if !e.session.is_empty() => open.retain(|w| !(w.pane == e.session && parked(w))),
             // A worker->director change request (#4001). Keyed by ID, not session: two workers can
             // have distinct open requests, and the resolve names the id.
             "request" if !a.is_empty() => {
