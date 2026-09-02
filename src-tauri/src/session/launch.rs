@@ -25,7 +25,18 @@ pub(crate) fn claude_launch(prompt: &str, resume: bool, resume_id: Option<&str>)
         (true, None) => "--continue ".to_string(),
         (false, None) => String::new(),
     };
-    format!("claude {}{}", flag, bash_ansi_c_quote(prompt))
+    // THE PROMPT IS REFERENCED, NOT INLINED (`the-startup-prompt-outgrew-the-tty-line-limit`).
+    //
+    // This line is typed into an interactive shell through a pty, which silently DISCARDS everything
+    // past 4096 bytes on one physical line. An inlined `$'…'` prompt that gets cut leaves the quote
+    // open, so bash waits at its `>` continuation prompt and the agent never starts — no error, no
+    // log, just a shell. `$BSC_STARTUP_PROMPT` is set by `pty_create` from the same value, so this
+    // line is a constant few dozen bytes whatever the prompt's size.
+    //
+    // Double quotes rather than `$'…'`: the value is already a shell VARIABLE, so it needs no
+    // escaping, and `"$VAR"` keeps its newlines inside one argument.
+    let _ = prompt;
+    format!("claude {}\"$BSC_STARTUP_PROMPT\"", flag)
 }
 /// Map a UI model id (`sonnet-4.5`, `opus-4.5`, `haiku-4.5`) to the alias Claude
 /// Code's `--model` flag accepts. Returns `None` for anything unrecognized, so the
@@ -170,8 +181,11 @@ mod relocated_tests {
     use crate::testutil::prelude::*;
 
     #[test]
-    fn claude_launch_bakes_prompt_fresh() {
-        assert_eq!(claude_launch("triage the issues", false, None), "claude $'triage the issues'");
+    fn claude_launch_references_the_prompt_fresh() {
+        // REFERENCED, not inlined — see `claude_launch`. The pty truncates a long line and a cut
+        // `$'…'` leaves the quote open, so the agent never starts.
+        assert_eq!(claude_launch("triage the issues", false, None), "claude \"$BSC_STARTUP_PROMPT\"");
+        assert!(!claude_launch("triage the issues", false, None).contains("triage"));
     }
 
     /// A RESUME NAMES ITS SESSION. `--continue` resumes "the newest transcript in this directory" by
@@ -185,8 +199,8 @@ mod relocated_tests {
         assert!(cmd.contains("--resume"), "{cmd}");
         assert!(cmd.contains(id), "the id travels: {cmd}");
         assert!(!cmd.contains("--continue"), "and recency is not consulted: {cmd}");
-        // The flag precedes the baked prompt, or claude reads the id as the prompt.
-        assert!(cmd.find("--resume").unwrap() < cmd.find("triage").unwrap(), "{cmd}");
+        // The flag precedes the prompt REFERENCE, or claude reads the id as the prompt.
+        assert!(cmd.find("--resume").unwrap() < cmd.find("$BSC_STARTUP_PROMPT").unwrap(), "{cmd}");
     }
 
     /// The id lands on a command line, so it is quoted at the point of interpolation — local to the
