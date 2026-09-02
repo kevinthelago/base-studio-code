@@ -111,6 +111,68 @@ fn server_request() -> Requested {
     Requested::default()
 }
 
+/// What a model NAME turns out to be, when someone tries to store one.
+///
+/// Four answers rather than a boolean, because the useful error is different in each case and a
+/// `false` collapses them into "no" with nothing to act on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelVerdict {
+    /// A Claude tier from the canonical registry — becomes `claude --model <alias>`.
+    Tier,
+    /// A local model the runtime has installed — the session runs on `bsc-agent`.
+    Installed,
+    /// Not a tier, and the local runtime could not be reached to say whether it exists.
+    Unverifiable(String),
+    /// Not a tier, and the runtime is up and does NOT have it. Carries what it does have.
+    Unknown(Vec<String>),
+}
+
+/// THE ONE RULE for whether a model name may be stored, at any level (persona, placement, stream).
+///
+/// A name is acceptable if it is a Claude tier OR a model the local runtime has installed. That is
+/// the whole rule, and it exists in one place so the levels cannot drift: the persona verb used to
+/// accept only tiers while the stream verb accepted anything at all, which meant an identity could be
+/// placed everywhere and still not name a local model.
+///
+/// WHY THE CHECK IS "INSTALLED" AND NOT A PATTERN. A local name cannot be validated against a fixed
+/// list — that is the point of it — but it CAN be checked against what this machine actually has, and
+/// that catches the failure that matters: a typo (`qwen3.5:35b-a3` for `…-a3b`) stored happily and
+/// surfacing much later as a session that will not start, with nothing pointing back at the typo.
+///
+/// AN UNREACHABLE RUNTIME IS NOT A REFUSAL. Ollama being down is a normal state — it is not running
+/// on a machine that only uses Claude — and refusing to write a config because a daemon is asleep
+/// would make the verb unusable exactly when someone is setting a machine up. The caller is told it
+/// could not be verified and the write proceeds; a wrong name then fails at launch, which is where it
+/// would have failed anyway without this check.
+pub fn verify_model(name: &str, host: Option<&str>) -> ModelVerdict {
+    let name = name.trim();
+    if bsc_util::is_model_id(name) {
+        return ModelVerdict::Tier;
+    }
+    let host = host
+        .map(str::to_string)
+        .or_else(|| std::env::var("OLLAMA_HOST").ok())
+        .map(|h| if h.starts_with("http") { h } else { format!("http://{h}") })
+        .unwrap_or_else(|| "http://127.0.0.1:11434".into());
+    let body = match get(&host, "/api/tags") {
+        Ok(b) => b,
+        Err(e) => return ModelVerdict::Unverifiable(e),
+    };
+    let tags = match crate::runtime::parse_tags(&body) {
+        Ok(t) => t,
+        Err(e) => return ModelVerdict::Unverifiable(e),
+    };
+    let installed: Vec<String> = tags.keys().cloned().collect();
+    // EXACT match. Ollama's installed names carry their tag (`qwen3.5:9b`), and a bare family name is
+    // a different thing to pull — accepting `qwen3.5` because `qwen3.5:9b` exists would store a name
+    // the launch cannot resolve, which is the failure this check exists to prevent.
+    if installed.iter().any(|m| m == name) {
+        ModelVerdict::Installed
+    } else {
+        ModelVerdict::Unknown(installed)
+    }
+}
+
 /// One GET against the ollama API.
 ///
 /// BLOCKING and short-timeout on purpose. This is a CLI a person or a session runs to find out why a
@@ -441,5 +503,50 @@ mod tests {
         // Captured to a pipe would be cleaner, but the contract worth pinning is that it does not
         // error; the shape itself is covered by the pure parsers' own tests.
         assert!(status(&["--host".into(), "http://127.0.0.1:1".into(), "--json".into()]).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod verify_model_tests {
+    use super::*;
+
+    /// An address nothing listens on, so the probe FAILS rather than reaching a real runtime. Port 1 is
+    /// reserved and refuses immediately, which keeps the test fast and deterministic — no env var, and
+    /// therefore none of the process-global mutation that makes a test pass under nextest and race
+    /// under `cargo test`.
+    const DEAD: &str = "http://127.0.0.1:1";
+
+    #[test]
+    fn a_tier_never_touches_the_runtime() {
+        // The short-circuit is the property: a Claude-only machine with no ollama must still be able to
+        // set a tier. If this ever probes first, setting `sonnet-4.5` starts failing on exactly the
+        // machines that only use Claude.
+        for id in ["haiku-4.5", "sonnet-4.5", "opus-4.5"] {
+            assert_eq!(verify_model(id, Some(DEAD)), ModelVerdict::Tier, "{id}");
+        }
+        // and it trims, so a value that arrived through argv is judged on its content
+        assert_eq!(verify_model("  sonnet-4.5  ", Some(DEAD)), ModelVerdict::Tier);
+    }
+
+    #[test]
+    fn an_unreachable_runtime_is_unverifiable_not_a_refusal() {
+        // Ollama being down is a normal state. Refusing the write would break the verb exactly when
+        // someone is setting a machine up — so this must never be `Unknown`, which the caller refuses.
+        match verify_model("qwen3.5:9b", Some(DEAD)) {
+            ModelVerdict::Unverifiable(why) => assert!(!why.is_empty(), "the reason must be reportable"),
+            other => panic!("expected Unverifiable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unknown_name_carries_what_is_installed() {
+        // The refusal is only actionable because it names the alternatives, and that list is what the
+        // caller prints. An `Unknown` with an empty list is still a valid answer — a runtime that is up
+        // with nothing pulled — and the caller words that case differently.
+        let v = ModelVerdict::Unknown(vec!["qwen3.5:9b".into()]);
+        match v {
+            ModelVerdict::Unknown(list) => assert_eq!(list, vec!["qwen3.5:9b".to_string()]),
+            other => panic!("{other:?}"),
+        }
     }
 }

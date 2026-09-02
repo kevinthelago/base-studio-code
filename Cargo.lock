@@ -1081,6 +1081,7 @@ dependencies = [
  "bsc-appchan",
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-llm",
  "bsc-sqlite-util",
  "bsc-util",
  "serde",
