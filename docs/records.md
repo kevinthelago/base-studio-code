@@ -69,7 +69,7 @@ tree, which is what the compilers resolve against. So:
 - A record that exists only in your **store** cannot retire its file. It has to be **promoted** into the
   seed first, or the module vanishes for everyone else.
 - The two drift, in both directions. A designer edits the store; a merge moves the file. Never assume one
-  is authoritative — `scripts/retirement-candidates.mjs` grades the three-way (seed vs store vs file), and
+  is authoritative — `bsc ui retirable` grades the three-way (seed vs store vs file), and
   that grade is the whole safety story.
 
 `reconcileSeed` pushes a changed seed into a pristine store copy on boot, and keeps a user-edited copy with
@@ -451,7 +451,8 @@ shortened the text would corrupt every offset after the first comment.
   is nothing to disagree with. `--dir` / `--repo` point it at a fixture store, which is how it was proved
   to FIRE rather than merely to report zero.
 
-  (It supersedes `scripts/audit-store-provides.mjs`, which asked only whether a record claimed EXACTLY its
-  own file's implied specifier — that reported "store OK" while the broader class went unmeasured.)
+  (It superseded `audit-store-provides.mjs`, since deleted, which asked only whether a record claimed
+  EXACTLY its own file's implied specifier — that reported "store OK" while the broader class went
+  unmeasured. Named without a path because there is no such file to open.)
 - **`npm run test:e2e -- graphPages`** — the static gate cannot prove a page RENDERS. It is deliberately
   outside the default gate (CLAUDE.md), so a page can sit un-mountable while everything is green.
