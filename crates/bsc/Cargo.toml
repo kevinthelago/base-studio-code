@@ -33,6 +33,7 @@ bsc-mem = { path = "../bsc-mem" }
 # The WORK loop (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it) — the seam
 # between a branch's git state and its plan record.
 bsc-work = { path = "../bsc-work" }
+bsc-self = { path = "../bsc-self" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 # `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for.

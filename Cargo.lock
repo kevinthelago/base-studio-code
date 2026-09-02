@@ -743,6 +743,7 @@ dependencies = [
  "bsc-runtime",
  "bsc-sandbox",
  "bsc-secret",
+ "bsc-self",
  "bsc-session",
  "bsc-shot",
  "bsc-sound",
@@ -1109,6 +1110,15 @@ dependencies = [
  "bsc-util",
  "keyring",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-self"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
  "serde_json",
 ]
 
