@@ -18,11 +18,8 @@
 //! error rather than hang the watcher — one wedged request would stop every future one.
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 /// How long to wait for the frontend to apply + ack. Shorter than the CLI's 8s so the caller gets our
 /// real error ("the frontend did not ack") rather than a bare timeout that reads as "app not running".
@@ -79,8 +76,7 @@ pub struct NavAck {
 
 /// In-flight navigations, keyed by request id. The watcher parks on the receiver; `navigate_ack`
 /// (invoked by the frontend) delivers into the sender.
-#[derive(Default)]
-pub struct NavPending(Mutex<HashMap<String, Sender<NavAck>>>);
+pub type NavPending = crate::app::ack::AckPending<NavAck>;
 
 /// Ask the frontend to navigate, and block until it acks.
 pub fn apply(
@@ -88,7 +84,7 @@ pub fn apply(
     id: &str,
     req: &bsc_navigate::NavRequest,
 ) -> Result<bsc_navigate::NavResult, String> {
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<NavAck>(app, id);
 
     // The payload carries the id so the frontend can correlate its ack — several navigations could be
     // in flight (a loop firing while a human clicks), and an ack for the wrong one would report a view
@@ -102,10 +98,10 @@ pub fn apply(
     app.emit("bsc://navigate", payload).map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id); // don't leak the slot when nobody ever answers
+        crate::app::ack::unregister::<NavAck>(app, id); // don't leak the slot when nobody ever answers
         ack_timeout_message()
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<NavAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -147,31 +143,13 @@ fn ack_timeout_message() -> String {
     )
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<NavAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<NavPending>() {
-        if let Ok(mut map) = state.0.lock() {
-            map.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<NavPending>() {
-        if let Ok(mut map) = state.0.lock() {
-            map.remove(id);
-        }
-    }
-}
-
 /// The frontend's ack: "I applied it, and here is what landed."
 ///
 /// An ack for an id nobody is waiting on is DROPPED, not an error — the waiter may have already timed
 /// out, and failing here would surface a confusing error in the app for a request that is already dead.
 #[tauri::command]
 pub(crate) fn navigate_ack(ack: NavAck, state: tauri::State<'_, NavPending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     match tx {
         Some(tx) => {
             let _ = tx.send(ack);
@@ -236,11 +214,10 @@ mod tests {
     #[test]
     fn a_waiter_receives_its_own_ack_and_is_then_unregistered() {
         let pending = NavPending::default();
-        let (tx, rx) = channel();
-        pending.0.lock().unwrap().insert("a".into(), tx);
+        let rx = pending.register("a");
 
-        // Simulate navigate_ack's core: take the waiter out and deliver.
-        let taken = pending.0.lock().unwrap().remove("a").unwrap();
+        // navigate_ack's core: take the waiter out and deliver.
+        let taken = pending.take("a").expect("the waiter is parked");
         taken.send(NavAck {
             id: "a".into(),
             error: None,
@@ -258,7 +235,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(rx.recv().unwrap().workspace.as_deref(), Some("projects"));
-        assert!(pending.0.lock().unwrap().is_empty(), "the slot must not leak once delivered");
+        assert!(pending.is_empty(), "the slot must not leak once delivered");
     }
 
     #[test]
@@ -266,7 +243,7 @@ mod tests {
         // The waiter may have already timed out; erroring here would surface a confusing failure in the
         // app for a request that is already dead.
         let pending = NavPending::default();
-        assert!(pending.0.lock().unwrap().remove("ghost").is_none());
+        assert!(pending.take("ghost").is_none());
     }
 
     /// REGRESSION, designer request #104. The message asserted a cause — "is a window open, or was it

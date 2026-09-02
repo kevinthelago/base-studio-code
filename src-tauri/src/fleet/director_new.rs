@@ -25,9 +25,6 @@
 //! director created by someone who only wanted one to exist. The reply says which one you got.
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -49,8 +46,7 @@ pub struct DirectorAck {
 }
 
 /// In-flight director creates, keyed by request id.
-#[derive(Default)]
-pub struct DirectorPending(Mutex<HashMap<String, Sender<DirectorAck>>>);
+pub type DirectorPending = crate::app::ack::AckPending<DirectorAck>;
 
 pub fn apply(
     app: &tauri::AppHandle,
@@ -105,7 +101,7 @@ pub fn apply(
     // Seed the kickoff BEFORE the launch reads it (see the header).
     let kickoff_written = ensure_kickoff(&hub, key)?;
 
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<DirectorAck>(app, id);
     app.emit(
         "bsc://fleet-director",
         serde_json::json!({
@@ -120,14 +116,14 @@ pub fn apply(
     .map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id);
+        crate::app::ack::unregister::<DirectorAck>(app, id);
         format!(
             "the frontend did not create the director within {}ms — is a window open, or was it \
              mid-reload? (the app IS running; this is not a 'no app' timeout)",
             ACK_TIMEOUT.as_millis()
         )
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<DirectorAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -168,28 +164,10 @@ fn ensure_kickoff(hub: &std::path::Path, project_key: &str) -> Result<bool, Stri
     Ok(true)
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<DirectorAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<DirectorPending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<DirectorPending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.remove(id);
-        }
-    }
-}
-
 /// The frontend's ack — delivers into the waiter registered by [`apply`].
 #[tauri::command]
 pub(crate) fn fleet_director_ack(ack: DirectorAck, state: tauri::State<'_, DirectorPending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     match tx {
         Some(tx) => {
             let _ = tx.send(ack);
@@ -263,20 +241,15 @@ mod tests {
     #[test]
     fn an_ack_reaches_only_its_own_waiter() {
         let pending = DirectorPending::default();
-        let (tx_a, rx_a) = channel::<DirectorAck>();
-        let (tx_b, rx_b) = channel::<DirectorAck>();
-        {
-            let mut m = pending.0.lock().unwrap();
-            m.insert("a".into(), tx_a);
-            m.insert("b".into(), tx_b);
-        }
+        let rx_a = pending.register("a");
+        let rx_b = pending.register("b");
         let ack = DirectorAck { id: "b".into(), error: None, created: true };
-        let tx = pending.0.lock().unwrap().remove(&ack.id).unwrap();
-        tx.send(ack).unwrap();
+        let id = ack.id.clone();
+        assert!(pending.deliver(&id, ack), "the parked waiter must receive it");
 
         assert!(rx_b.try_recv().is_ok());
         assert!(rx_a.try_recv().is_err());
-        assert!(pending.0.lock().unwrap().contains_key("a"));
+        assert!(pending.contains("a"));
     }
 
     /// An ack that says nothing was created must not read as success — the kickoff is already on disk

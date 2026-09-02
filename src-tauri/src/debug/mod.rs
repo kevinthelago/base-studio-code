@@ -20,11 +20,8 @@
 //! running but its inspector threw" has to be distinguishable from "no app".
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 /// How long to wait for the frontend to inspect + ack. Shorter than the CLI's 8s so the caller gets the
 /// real error ("the frontend did not answer") rather than a bare timeout that reads as "app not running".
@@ -45,10 +42,13 @@ pub struct DebugAck {
     pub result: Option<serde_json::Value>,
 }
 
-/// In-flight inspections, keyed by request id. The watcher parks on the receiver; `debug_ack` (invoked
-/// by the frontend) delivers into the sender.
-#[derive(Default)]
-pub struct DebugPending(Mutex<HashMap<String, Sender<DebugAck>>>);
+/// In-flight inspections, keyed by request id. The watcher parks on the receiver; `debug_ack`
+/// (invoked by the frontend) delivers into the sender.
+///
+/// ONE generic registry now serves all eight ack surfaces (`app::ack`). A generic instantiation is
+/// already a distinct type to Tauri's by-type `try_state`, so the newtype this replaces bought
+/// nothing.
+pub type DebugPending = crate::app::ack::AckPending<DebugAck>;
 
 /// Ask the frontend to inspect, and block until it acks.
 pub fn inspect(
@@ -56,7 +56,7 @@ pub fn inspect(
     id: &str,
     req: &bsc_debug::DebugRequest,
 ) -> Result<bsc_debug::DebugResult, String> {
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<DebugAck>(app, id);
 
     // The payload carries the id so the frontend can correlate its ack — several inspections could be
     // in flight (a loop probing while a human debugs), and an ack for the wrong one would report a view
@@ -70,14 +70,14 @@ pub fn inspect(
     app.emit("bsc://debug", payload).map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id); // don't leak the slot when nobody ever answers
+        crate::app::ack::unregister::<DebugAck>(app, id); // don't leak the slot when nobody ever answers
         format!(
             "the frontend did not answer the inspection within {}ms — is a window open, or was it \
              mid-reload? (the app IS running; this is not a 'no app' timeout)",
             ACK_TIMEOUT.as_millis()
         )
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<DebugAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -86,36 +86,15 @@ pub fn inspect(
     serde_json::from_value(value).map_err(|e| format!("the frontend's result did not parse: {e}"))
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<DebugAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<DebugPending>() {
-        if let Ok(mut map) = state.0.lock() {
-            map.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<DebugPending>() {
-        if let Ok(mut map) = state.0.lock() {
-            map.remove(id);
-        }
-    }
-}
-
 /// The frontend's ack: "I inspected it, and here is what I found."
 ///
 /// An ack for an id nobody is waiting on is DROPPED, not an error — the waiter may have already timed
 /// out, and failing here would surface a confusing error in the app for a request that is already dead.
 #[tauri::command]
 pub(crate) fn debug_ack(ack: DebugAck, state: tauri::State<'_, DebugPending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
-    match tx {
-        Some(tx) => {
-            let _ = tx.send(ack);
-        }
-        None => log::debug!("debug: ack for {} had no waiter (timed out?)", ack.id),
+    let id = ack.id.clone();
+    if !state.deliver(&id, ack) {
+        log::debug!("debug: ack for {id} had no waiter (timed out?)");
     }
 }
 
@@ -146,21 +125,20 @@ mod tests {
     #[test]
     fn a_waiter_receives_its_own_ack_and_is_then_unregistered() {
         let pending = DebugPending::default();
-        let (tx, rx) = channel();
-        pending.0.lock().unwrap().insert("a".into(), tx);
+        let rx = pending.register("a");
 
-        let taken = pending.0.lock().unwrap().remove("a").unwrap();
+        let taken = pending.take("a").unwrap();
         taken
             .send(DebugAck { id: "a".into(), error: None, result: Some(serde_json::json!({"frames":{"frames":[]}})) })
             .unwrap();
 
         assert!(rx.recv().unwrap().result.is_some());
-        assert!(pending.0.lock().unwrap().is_empty(), "the slot must not leak once delivered");
+        assert!(pending.is_empty(), "the slot must not leak once delivered");
     }
 
     #[test]
     fn an_ack_for_an_unknown_id_is_dropped_not_an_error() {
         let pending = DebugPending::default();
-        assert!(pending.0.lock().unwrap().remove("ghost").is_none());
+        assert!(pending.take("ghost").is_none());
     }
 }
