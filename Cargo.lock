@@ -892,11 +892,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bsc-emit"
-version = "0.1.0"
-dependencies = [
- "bsc-record",
- "serde_json",
 name = "bsc-disk"
 version = "0.1.0"
 dependencies = [
@@ -905,6 +900,14 @@ dependencies = [
  "filetime",
  "serde_json",
  "sha2 0.11.0",
+]
+
+[[package]]
+name = "bsc-emit"
+version = "0.1.0"
+dependencies = [
+ "bsc-record",
+ "serde_json",
 ]
 
 [[package]]
