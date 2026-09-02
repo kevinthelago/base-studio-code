@@ -172,30 +172,91 @@ fn top_help() -> String {
 /// Output goes through [`bsc_cli_util::print_raw`] rather than `println!` so it stays capture-safe —
 /// the warm server (`serve.rs`) answers a request by capturing the verb's output, and a verb writing
 /// to stdout by another route would corrupt the protocol stream.
-/// A crate's own verb catalog, by package name — POINTERS, never a restatement.
+/// A SURFACE's own verb catalog, by the noun `bsc` dispatches — POINTERS, never a restatement.
 ///
-/// Each arm names the `pub const COMMANDS` the crate already publishes for its own `--help`, so a verb
-/// name and its summary have exactly one author. What this table CAN drift on is coverage: a crate that
-/// gains a catalog is not added here automatically, which is why the snapshot test pins the set and has
-/// to be updated deliberately rather than silently.
-fn crate_verbs(krate: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
-    Some(match krate {
-        "plandb" => plandb::cli::COMMANDS,
+/// **KEYED ON THE NOUN, NOT THE CRATE, and that distinction is load-bearing.** The first version of
+/// this keyed on the package and was WRONG for every crate serving more than one noun: `logs` serves
+/// `logs`, `perf` and `metrics` from three different `run` fns, so keying on the package made all
+/// three project `logs::cli::COMMANDS` — `bsc surface verbs metrics` advertised fourteen verbs that
+/// `bsc metrics` cannot run. That is the precise failure this epic exists to end, since help is what
+/// an agent reads to decide what it may call. The rule that holds: the catalog is the `COMMANDS`
+/// beside the `run` the dispatch arm names, which is why `perf` reaches into `logs::instrument`.
+///
+/// `metrics` is deliberately absent. It is `bsc metrics <project>` — a project argument, not a verb —
+/// so it HAS no catalog, and reporting none is the honest answer rather than borrowing a sibling's.
+///
+/// What this table can still drift on is coverage: a crate that gains a catalog is not added here
+/// automatically, so the snapshot test pins the set and must be updated deliberately.
+fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
+    Some(match noun {
+        "plan" => plandb::cli::COMMANDS,
         "logs" => logs::cli::COMMANDS,
-        "bsc-ui" => bsc_ui::cli::COMMANDS,
-        "bsc-fleet" => bsc_fleet::cli::COMMANDS,
-        "bsc-mem" => bsc_mem::cli::COMMANDS,
-        "bsc-persona" => bsc_persona::cli::COMMANDS,
-        "bsc-request" => bsc_request::cli::COMMANDS,
-        "bsc-secret" => bsc_secret::cli::COMMANDS,
-        "bsc-config" => bsc_config::cli::COMMANDS,
-        "bsc-work" => bsc_work::cli::COMMANDS,
-        "bsc-cad" => bsc_cad::cli::COMMANDS,
-        "bsc-data" => bsc_data::cli::COMMANDS,
+        "perf" => logs::instrument::COMMANDS,
+        "ui" => bsc_ui::cli::COMMANDS,
+        "fleet" => bsc_fleet::cli::COMMANDS,
+        "mem" => bsc_mem::cli::COMMANDS,
+        "persona" => bsc_persona::cli::COMMANDS,
+        "request" => bsc_request::cli::COMMANDS,
+        "secret" => bsc_secret::cli::COMMANDS,
+        "config" => bsc_config::cli::COMMANDS,
+        "work" => bsc_work::cli::COMMANDS,
+        "cad" => bsc_cad::cli::COMMANDS,
+        "data" => bsc_data::cli::COMMANDS,
         "compliance" => compliance::cli::COMMANDS,
         "cve" => cve::cli::COMMANDS,
         _ => return None,
     })
+}
+
+/// One surface node's whole drill, as pure data over a roster — so the projection is testable without
+/// a workspace on disk, which is the only way its edge cases get guards.
+///
+/// DEPENDENTS ARE INVERTED HERE, once, from the roster the caller already read. That is the fact a
+/// surface node exists to show and the one `bsc surface crates` cannot give without the consumer
+/// pulling all 54 rows: `bsc-util` exposes no verb and reaches 40 crates.
+///
+/// An unknown crate is an ERROR, never an empty document. A drill that renders nothing looks exactly
+/// like a crate with no surface, and the two mean opposite things.
+fn drill_doc(rows: &[CrateRow], want: &str) -> Result<serde_json::Value, String> {
+    let row = rows
+        .iter()
+        .find(|r| r.package == want)
+        .ok_or_else(|| format!("no workspace crate named '{want}' — `bsc surface crates` lists all of them"))?;
+
+    let dependents: Vec<&str> = rows
+        .iter()
+        .filter(|r| r.package != row.package && r.depends_on.iter().any(|d| d == &row.package))
+        .map(|r| r.package.as_str())
+        .collect();
+
+    // Grouped by NOUN, because a crate can serve several and they are different surfaces with
+    // different catalogs — flattening them rebuilds the bug `surface_verbs` was re-keyed to fix.
+    let nouns: Vec<serde_json::Value> = COMMANDS
+        .iter()
+        .filter(|c| c.krate == row.package)
+        .map(|c| match surface_verbs(c.name) {
+            Some(docs) => serde_json::json!({
+                "noun": c.name, "status": c.status.as_str(), "catalog": "projected",
+                "verbs": docs.iter().map(|d| serde_json::json!({
+                    "verb": d.name, "summary": d.summary, "usage": d.usage,
+                })).collect::<Vec<_>>(),
+            }),
+            None => serde_json::json!({
+                "noun": c.name, "status": c.status.as_str(), "catalog": "unreachable",
+                "verbs": serde_json::Value::Null,
+            }),
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "crate": row.package,
+        "path": row.path,
+        "surface": !nouns.is_empty(),
+        "nouns": nouns,
+        "dependsOn": row.depends_on,
+        "dependents": dependents,
+        "dependentCount": dependents.len(),
+    }))
 }
 
 fn surface_cli(rest: Vec<String>) -> Result<(), String> {
@@ -216,7 +277,7 @@ fn surface_cli(rest: Vec<String>) -> Result<(), String> {
             let rows: Vec<serde_json::Value> = COMMANDS
                 .iter()
                 .filter(|c| match want.as_deref() { Some(w) => w == c.name || w == c.krate, None => true })
-                .map(|c| match crate_verbs(c.krate) {
+                .map(|c| match surface_verbs(c.name) {
                     Some(docs) => serde_json::json!({
                         "name": c.name, "crate": c.krate, "catalog": "projected",
                         "verbs": docs.iter().map(|d| serde_json::json!({
@@ -276,6 +337,76 @@ fn surface_cli(rest: Vec<String>) -> Result<(), String> {
                     let name = c.name;
                     let store = c.store.unwrap_or("—");
                     s.push_str(&format!("{name:<w$}  {:<10}  {store}\n", c.status.as_str()));
+                }
+                bsc_cli_util::print_raw(s.trim_end());
+            }
+            Ok(())
+        }
+        // `bsc surface drill <crate> [--json]` — EVERYTHING the Glance second layer renders, in ONE
+        // call. `list` says what surfaces exist, `verbs` says what one can do; this answers both for a
+        // single node, plus the two facts a node's drill needs that neither of those carries.
+        //
+        // BATCHED BY CONSTRUCTION. The roster is read once and inverted here. A caller that wanted
+        // DEPENDENTS from `crates --json` would have to pull all 54 rows and invert them itself to draw
+        // one node — and dependents are the whole point of a surface node: `bsc-util` exposes no verb
+        // at all while its change reaches most of the workspace, which is precisely why it has a node.
+        //
+        // NOUNS, NOT ONE FLAT VERB LIST. A crate can serve several surfaces — `logs` serves `logs`,
+        // `perf` and `metrics` from three different `run` fns — and flattening them would reassemble
+        // the very bug `surface_verbs` was re-keyed to fix.
+        //
+        // It returns DOMAIN data, never graph nodes: minting `surface:<crate>` and `depends-on` ids
+        // stays in `glanceGraph.ts`, which owns that grammar. A second id vocabulary in Rust is the
+        // drift this epic exists to end.
+        "drill" => {
+            let root_flag = rest.iter().position(|a| a == "--root").and_then(|i| rest.get(i + 1)).cloned();
+            let root = roster_root(root_flag.as_deref())?;
+            let want = rest
+                .iter()
+                .skip(1)
+                .find(|a| !a.starts_with("--") && Some(a.as_str()) != root_flag.as_deref())
+                .ok_or_else(|| "name the crate to drill into: bsc surface drill <crate>".to_string())?
+                .clone();
+            let rows = crate_roster(&root)?;
+            let doc = drill_doc(&rows, &want)?;
+
+            if rest.iter().any(|a| a == "--json") {
+                let json = serde_json::to_string_pretty(&doc)
+                    .map_err(|e| format!("could not render the drill: {e}"))?;
+                bsc_cli_util::print_raw(&json);
+            } else {
+                let mut s = String::new();
+                s.push_str(&format!(
+                    "{}  ({})\n",
+                    doc["crate"].as_str().unwrap_or("?"),
+                    doc["path"].as_str().unwrap_or("?")
+                ));
+                s.push_str(&format!(
+                    "  reaches {} crate(s) · depends on {}\n",
+                    doc["dependentCount"].as_u64().unwrap_or(0),
+                    doc["dependsOn"].as_array().map(|a| a.len()).unwrap_or(0)
+                ));
+                let nouns = doc["nouns"].as_array().cloned().unwrap_or_default();
+                if nouns.is_empty() {
+                    s.push_str("  no bsc surface — a library crate\n");
+                }
+                for n in &nouns {
+                    let noun = n["noun"].as_str().unwrap_or("?");
+                    let dep = if n["status"] == "deprecated" { "  (deprecated)" } else { "" };
+                    match n["verbs"].as_array() {
+                        Some(vs) => {
+                            s.push_str(&format!("\n  bsc {noun}{dep}  ({} verbs)\n", vs.len()));
+                            let w = vs.iter().map(|v| v["verb"].as_str().unwrap_or("").len()).max().unwrap_or(0);
+                            for v in vs {
+                                s.push_str(&format!(
+                                    "    {:<w$}  {}\n",
+                                    v["verb"].as_str().unwrap_or("?"),
+                                    v["summary"].as_str().unwrap_or("")
+                                ));
+                            }
+                        }
+                        None => s.push_str(&format!("\n  bsc {noun}{dep}  (catalog not reachable from here)\n")),
+                    }
                 }
                 bsc_cli_util::print_raw(s.trim_end());
             }
@@ -444,7 +575,9 @@ fn surface_help() -> String {
          bsc surface list           # name · status · the store it touches\n  \
          bsc surface list --json    # the catalog as JSON — GENERATE from this, do not restate it\n  \
          bsc surface crates         # every workspace member: its verbs + its internal deps\n  \
-         bsc surface crates --json [--root <repo>]   # the crate-keyed node set\n\n\
+         bsc surface crates --json [--root <repo>]   # the crate-keyed node set\n  \
+         bsc surface verbs [<noun>]  # the SECOND level: what ONE surface can DO\n  \
+         bsc surface drill <crate>   # one node's whole drill: nouns, verbs, and what it reaches\n\n\
          One catalog drives `bsc help`, this command, and the drift test that pins both against the\n\
          dispatch match. `status` is active | deprecated | internal.\n\n\
          Roles are deliberately NOT here: the real role-to-surface data is `restricted_allow`, which\n\
@@ -595,61 +728,230 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
 
-    /// COVERAGE IS THE ONE THING `crate_verbs` CAN DRIFT ON, so it is pinned here.
+    /// `bsc surface help` MUST NAME EVERY VERB `surface_cli` DISPATCHES.
     ///
-    /// The verb NAMES and summaries cannot drift — they are projected from each crate's own `COMMANDS`,
-    /// the same const its `--help` prints. What a hand-written pointer table can lose is a crate: one
-    /// that gains a catalog is not added automatically, and one whose `cli` module stops being public
-    /// silently falls back to "unreachable", which renders as *no verbs* rather than as an error.
+    /// This command's whole thesis is that help and dispatch cannot disagree — it exists to project
+    /// other crates' catalogs for exactly that reason. Shipping a verb it does not advertise about
+    /// itself is the same defect one level up, and it happened: `verbs` and `drill` were both live and
+    /// undocumented until this test was written.
     ///
-    /// So this asserts the SET, and it is a snapshot: a crate joining or leaving must fail here once
-    /// and be recorded, the way `reader_subset_matches_the_unified_streams_set_and_order` works for the
-    /// log-stream registry.
+    /// Reads its own source, like `dispatched_crates` does, because the arms are a match rather than a
+    /// catalog. If `surface_cli` ever grows a real `CmdDoc` catalog, delete this and project it.
     #[test]
-    fn every_projected_crate_is_still_reachable() {
-        const PROJECTED: &[&str] = &[
-            "plandb", "logs", "bsc-ui", "bsc-fleet", "bsc-mem", "bsc-persona", "bsc-request",
-            "bsc-secret", "bsc-config", "bsc-work", "bsc-cad", "bsc-data", "compliance", "cve",
-        ];
-        for k in PROJECTED {
-            let docs = crate_verbs(k).unwrap_or_else(|| panic!("{k} stopped projecting its catalog"));
-            assert!(!docs.is_empty(), "{k} projects an EMPTY catalog — that reads as 'no verbs'");
-        }
-        assert!(crate_verbs("bsc-graph").is_none(), "bsc-graph uses cli::VERBS, not COMMANDS — see the table");
-        assert!(crate_verbs("no-such-crate").is_none());
+    fn surface_help_names_every_verb_it_dispatches() {
+        const SRC: &str = include_str!("main.rs");
+        let start = SRC.find("fn surface_cli").expect("surface_cli is still named that");
+        let end = start + SRC[start..].find("\nfn ").unwrap_or(SRC.len() - start);
+        let body = &SRC[start..end];
 
-        // And every projected crate is one this binary actually serves, so the table cannot name a
-        // package that is not a surface at all.
-        for k in PROJECTED {
-            assert!(COMMANDS.iter().any(|c| c.krate == *k), "{k} is projected but serves no surface");
+        // The help text lives in `surface_help()`, a SEPARATE fn — reading it out of `surface_cli`
+        // silently found nothing and would have made this guard vacuous.
+        let hs = SRC.find("fn surface_help").expect("surface_help is still named that");
+        let help = &SRC[hs..hs + SRC[hs..].find("\nfn ").unwrap_or(SRC.len() - hs)];
+        assert!(help.contains("bsc surface list"), "the help scan found no help — the scan is broken");
+
+        let mut arms: Vec<&str> = Vec::new();
+        for line in body.lines() {
+            let t = line.trim_start();
+            // an arm head at the match's own indent: `"name" => {` or `"a" | "b" =>`
+            if !t.starts_with('"') || !t.contains("=>") {
+                continue;
+            }
+            let head = &t[..t.find("=>").unwrap()];
+            for piece in head.split('|') {
+                let p = piece.trim().trim_matches(|c| c == '"' || c == ' ');
+                if !p.is_empty() && !p.starts_with('-') && p != "help" {
+                    arms.push(p);
+                }
+            }
         }
+        arms.sort_unstable();
+        arms.dedup();
+        assert!(arms.len() >= 4, "the arm scan found only {arms:?} — the scan is broken, not the help");
+
+        for verb in &arms {
+            assert!(
+                help.contains(&format!("bsc surface {verb}")),
+                "`bsc surface {verb}` dispatches but `bsc surface help` never mentions it"
+            );
+        }
+    }
+
+    /// A miniature roster: a verbless util everything leans on, a multi-noun crate, and a leaf.
+    fn roster() -> Vec<CrateRow> {
+        let row = |pkg: &str, deps: &[&str]| CrateRow {
+            package: pkg.to_string(),
+            path: format!("crates/{pkg}"),
+            verbs: Vec::new(),
+            depends_on: deps.iter().map(|d| d.to_string()).collect(),
+        };
+        vec![
+            row("bsc-util", &[]),
+            row("logs", &["bsc-util"]),
+            row("bsc-mem", &["bsc-util", "logs"]),
+            row("plandb", &["bsc-util"]),
+        ]
+    }
+
+    /// DEPENDENTS ARE THE INVERSION, and the reason this call exists at all — `bsc surface crates`
+    /// carries only the outbound direction, so a consumer drawing ONE node would need all 54 rows.
+    #[test]
+    fn a_drill_inverts_dependents_from_the_roster() {
+        let d = drill_doc(&roster(), "bsc-util").expect("bsc-util is in the roster");
+        let deps: Vec<&str> = d["dependents"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(deps, vec!["logs", "bsc-mem", "plandb"], "every crate that names bsc-util, in roster order");
+        assert_eq!(d["dependentCount"].as_u64(), Some(3));
+        assert_eq!(d["dependsOn"].as_array().unwrap().len(), 0, "bsc-util depends on nothing internal");
+
+        // The other direction, on the same roster, so a swapped inversion cannot pass both.
+        let m = drill_doc(&roster(), "bsc-mem").unwrap();
+        assert_eq!(m["dependentCount"].as_u64(), Some(0), "nothing depends on bsc-mem");
+        assert_eq!(m["dependsOn"].as_array().unwrap().len(), 2);
+    }
+
+    /// A crate never counts itself, even if a malformed roster says it depends on itself.
+    #[test]
+    fn a_crate_is_never_its_own_dependent() {
+        let mut r = roster();
+        r[0].depends_on.push("bsc-util".to_string());
+        let d = drill_doc(&r, "bsc-util").unwrap();
+        let deps: Vec<&str> = d["dependents"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(!deps.contains(&"bsc-util"), "self-dependency must not become a self-edge");
+        assert_eq!(d["dependentCount"].as_u64(), Some(3));
+    }
+
+    /// A MULTI-NOUN CRATE STAYS SPLIT. `logs` serves three surfaces from three `run` fns; flattening
+    /// them is the bug `surface_verbs` was re-keyed to fix, and this is where it would come back.
+    #[test]
+    fn a_multi_noun_crate_drills_into_separate_nouns() {
+        let d = drill_doc(&roster(), "logs").expect("logs is in the roster");
+        let nouns = d["nouns"].as_array().unwrap();
+        let names: Vec<&str> = nouns.iter().map(|n| n["noun"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["logs", "metrics", "perf"], "all three nouns the logs crate serves");
+
+        let by = |n: &str| nouns.iter().find(|x| x["noun"] == n).unwrap().clone();
+        assert!(by("metrics")["verbs"].is_null(), "metrics takes a PROJECT, not a verb — it has no catalog");
+        assert_eq!(by("metrics")["catalog"], "unreachable");
+
+        let (ln, pn) = (by("logs"), by("perf"));
+        let names = |v: &serde_json::Value| -> Vec<String> {
+            v["verbs"].as_array().unwrap().iter().map(|x| x["verb"].as_str().unwrap().to_string()).collect()
+        };
+        let (logs, perf) = (names(&ln), names(&pn));
+        assert_ne!(logs, perf, "logs and perf must not share one catalog");
+        assert!(by("logs")["verbs"][0]["usage"].is_string(), "the drill carries usage, not just a summary");
+    }
+
+    /// A VERBLESS CRATE STILL DRILLS — that is the 2026-09-01 decision that every crate gets a node,
+    /// and `bsc-util` is its whole argument: no verb, largest blast radius.
+    #[test]
+    fn a_verbless_crate_still_drills() {
+        let d = drill_doc(&roster(), "bsc-util").unwrap();
+        assert_eq!(d["surface"], false);
+        assert_eq!(d["nouns"].as_array().unwrap().len(), 0);
+        assert_eq!(d["dependentCount"].as_u64(), Some(3), "still reports what it reaches");
+    }
+
+    /// An unknown crate must FAIL — an empty drill is indistinguishable from a library crate, and the
+    /// two mean opposite things.
+    #[test]
+    fn an_unknown_crate_is_an_error_not_an_empty_drill() {
+        let e = drill_doc(&roster(), "no-such-crate").expect_err("must not succeed");
+        assert!(e.contains("no-such-crate"), "the message names what was asked for: {e}");
+        assert!(e.contains("bsc surface crates"), "and points at how to find the real name: {e}");
+    }
+
+    /// COVERAGE IS THE ONE THING `surface_verbs` CAN DRIFT ON, so it is pinned here.
+    ///
+    /// The verb NAMES and summaries cannot drift — they are projected from the `COMMANDS` beside the
+    /// `run` each dispatch arm names, the same const that noun's `--help` prints. What a hand-written
+    /// pointer table can lose is a surface: one that gains a catalog is not added automatically, and
+    /// one whose module stops being public silently falls back to "unreachable", which renders as
+    /// *no verbs* rather than as an error.
+    #[test]
+    fn every_projected_surface_is_still_reachable() {
+        const PROJECTED: &[&str] = &[
+            "plan", "logs", "perf", "ui", "fleet", "mem", "persona", "request", "secret", "config",
+            "work", "cad", "data", "compliance", "cve",
+        ];
+        for n in PROJECTED {
+            let docs = surface_verbs(n).unwrap_or_else(|| panic!("{n} stopped projecting its catalog"));
+            assert!(!docs.is_empty(), "{n} projects an EMPTY catalog — that reads as 'no verbs'");
+        }
+        assert!(surface_verbs("graph").is_none(), "graph uses cli::VERBS, not COMMANDS — see the table");
+        assert!(surface_verbs("no-such-noun").is_none());
+
+        // The table may only name a noun this binary actually dispatches.
+        for n in PROJECTED {
+            assert!(COMMANDS.iter().any(|c| c.name == *n), "{n} is projected but is not a surface");
+        }
+    }
+
+    /// THE BUG THIS SLICE FIXED: keying the catalog on the PACKAGE, not the noun.
+    ///
+    /// `logs` serves `logs`, `perf` and `metrics` from three different `run` fns. Keyed on the package,
+    /// all three projected `logs::cli::COMMANDS`, so `bsc surface verbs metrics` advertised fourteen
+    /// verbs `bsc metrics` cannot run — help promising what dispatch will refuse, which is the exact
+    /// drift `command-surface-catalog-is-one-source` exists to end.
+    ///
+    /// The general invariant, which catches the next one of these without naming it: two DISTINCT
+    /// ACTIVE surfaces must not advertise the same verb list. Deprecated aliases are exempt — `org` is
+    /// an alias of `teams` and shares its catalog on purpose.
+    #[test]
+    fn two_active_surfaces_never_advertise_the_same_verb_list() {
+        let mut seen: Vec<(&str, Vec<&str>)> = Vec::new();
+        for c in COMMANDS.iter().filter(|c| c.status == Status::Active) {
+            let Some(docs) = surface_verbs(c.name) else { continue };
+            let names: Vec<&str> = docs.iter().map(|d| d.name).collect();
+            if let Some((other, _)) = seen.iter().find(|(_, n)| *n == names) {
+                panic!(
+                    "'{}' and '{}' advertise an identical verb list — one of them is borrowing the \
+                     other's catalog. The catalog belongs to the NOUN, not the package.",
+                    c.name, other
+                );
+            }
+            seen.push((c.name, names));
+        }
+        assert!(seen.len() >= 15, "only {} surfaces projected — the scan is broken", seen.len());
+    }
+
+    /// `metrics` takes a PROJECT, not a verb, so it has no catalog and must say so rather than
+    /// borrowing the `logs` crate's. This is the specific case the general guard above generalises.
+    #[test]
+    fn metrics_reports_no_catalog_rather_than_borrowing_logs() {
+        assert!(surface_verbs("metrics").is_none(), "metrics has no verb catalog — `bsc metrics <project>`");
+        assert!(surface_verbs("logs").is_some());
+        assert!(surface_verbs("perf").is_some());
+        let logs: Vec<&str> = surface_verbs("logs").unwrap().iter().map(|d| d.name).collect();
+        let perf: Vec<&str> = surface_verbs("perf").unwrap().iter().map(|d| d.name).collect();
+        assert_ne!(logs, perf, "logs and perf are different nouns with different catalogs");
     }
 
     /// A CATALOG CHANGE MUST REACH THIS OUTPUT — the criterion that "no second list is introduced".
     ///
-    /// `crate_verbs` names each crate's own const, so today the projection cannot differ. The guard is
-    /// for the edit that breaks that: someone replaces a pointer with a locally-written array. A copy
-    /// compares equal on the day it is written and diverges later, when the crate edits its catalog and
-    /// the copy does not — so this fires exactly when the copy becomes wrong, which is the moment that
-    /// matters.
+    /// `surface_verbs` names each module's own const, so today the projection cannot differ. The guard
+    /// is for the edit that breaks that: someone replaces a pointer with a locally-written array. A
+    /// copy compares equal the day it is written and diverges later, when the crate edits its catalog
+    /// and the copy does not — so this fires exactly when the copy becomes wrong.
     ///
-    /// It compares FIELD BY FIELD IN ORDER, not as a set: `CmdDoc` derives no `PartialEq`, and a
-    /// reordered verb list is a real difference in `--help` output.
+    /// Compares FIELD BY FIELD IN ORDER: `CmdDoc` derives no `PartialEq`, and a reordered verb list is
+    /// a real difference in `--help` output.
     #[test]
     fn a_catalog_edit_reaches_the_projection() {
         let pairs: &[(&str, &'static [bsc_cli_util::CmdDoc])] = &[
-            ("bsc-mem", bsc_mem::cli::COMMANDS),
-            ("plandb", plandb::cli::COMMANDS),
-            ("bsc-fleet", bsc_fleet::cli::COMMANDS),
+            ("mem", bsc_mem::cli::COMMANDS),
+            ("plan", plandb::cli::COMMANDS),
+            ("fleet", bsc_fleet::cli::COMMANDS),
             ("logs", logs::cli::COMMANDS),
+            ("perf", logs::instrument::COMMANDS),
         ];
-        for (krate, canonical) in pairs {
-            let projected = crate_verbs(krate).unwrap_or_else(|| panic!("{krate} projects"));
-            assert_eq!(projected.len(), canonical.len(), "{krate}: verb COUNT diverged from its catalog");
+        for (noun, canonical) in pairs {
+            let projected = surface_verbs(noun).unwrap_or_else(|| panic!("{noun} projects"));
+            assert_eq!(projected.len(), canonical.len(), "{noun}: verb COUNT diverged from its catalog");
             for (i, (got, want)) in projected.iter().zip(canonical.iter()).enumerate() {
-                assert_eq!(got.name, want.name, "{krate} verb {i}: name diverged");
-                assert_eq!(got.summary, want.summary, "{krate} verb {i} ({}): summary diverged", want.name);
-                assert_eq!(got.usage, want.usage, "{krate} verb {i} ({}): usage diverged", want.name);
+                assert_eq!(got.name, want.name, "{noun} verb {i}: name diverged");
+                assert_eq!(got.summary, want.summary, "{noun} verb {i} ({}): summary diverged", want.name);
+                assert_eq!(got.usage, want.usage, "{noun} verb {i} ({}): usage diverged", want.name);
             }
         }
     }
@@ -657,9 +959,8 @@ mod tests {
     /// An unreachable catalog must be DISTINCT from an empty one, all the way to the wire.
     #[test]
     fn an_unreachable_catalog_is_null_never_an_empty_list() {
-        let reachable = crate_verbs("bsc-mem").expect("mem projects");
-        assert!(!reachable.is_empty());
-        assert!(crate_verbs("bsc-graph").is_none(), "not Some(&[]) — the caller must be able to tell");
+        assert!(!surface_verbs("mem").expect("mem projects").is_empty());
+        assert!(surface_verbs("graph").is_none(), "not Some(&[]) — the caller must be able to tell");
     }
 
     use super::*;

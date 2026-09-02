@@ -268,7 +268,10 @@ use bsc_cli_util::CmdDoc;
 const TAGLINE: &str =
     "the FRONTEND instrumentation — render commits, named phases, jank windows, bsc spawns (read-only)";
 
-const COMMANDS: &[CmdDoc] = &[
+/// `bsc perf`'s own verb catalog — NOT `logs::cli::COMMANDS`. The `logs` crate serves three
+/// nouns (`logs`, `perf`, `metrics`) from three different `run` fns, so the catalog belongs to the
+/// NOUN. `pub` so `bsc surface verbs` projects the right one.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "summary",
         summary: "all four readings at once — the default",
