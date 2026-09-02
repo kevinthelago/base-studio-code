@@ -1,0 +1,475 @@
+{
+  "note": "GENERATED from the live TypeScript — see projectV2.fixtures.gen.test.ts",
+  "fields": [
+    {
+      "label": "absent node",
+      "node": null,
+      "options": []
+    },
+    {
+      "label": "no fields at all",
+      "node": {
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": []
+    },
+    {
+      "label": "empty field list",
+      "node": {
+        "fields": {
+          "nodes": []
+        },
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": []
+    },
+    {
+      "label": "a Status field with options",
+      "node": {
+        "fields": {
+          "nodes": [
+            {
+              "id": "f1",
+              "name": "Status",
+              "options": [
+                {
+                  "id": "o1",
+                  "name": "Todo",
+                  "color": "GRAY"
+                },
+                {
+                  "id": "o2",
+                  "name": "Done",
+                  "color": "GREEN"
+                }
+              ]
+            }
+          ]
+        },
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": [
+        {
+          "id": "o1",
+          "name": "Todo",
+          "color": "GRAY"
+        },
+        {
+          "id": "o2",
+          "name": "Done",
+          "color": "GREEN"
+        }
+      ]
+    },
+    {
+      "label": "a Status field with NO options must not match",
+      "node": {
+        "fields": {
+          "nodes": [
+            {
+              "id": "f1",
+              "name": "Status"
+            }
+          ]
+        },
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": []
+    },
+    {
+      "label": "an optionless Status must not shadow the real one that follows it",
+      "node": {
+        "fields": {
+          "nodes": [
+            {
+              "id": "f0",
+              "name": "Status"
+            },
+            {
+              "id": "f1",
+              "name": "Status",
+              "options": [
+                {
+                  "id": "o1",
+                  "name": "Todo",
+                  "color": "GRAY"
+                }
+              ]
+            }
+          ]
+        },
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": [
+        {
+          "id": "o1",
+          "name": "Todo",
+          "color": "GRAY"
+        }
+      ]
+    },
+    {
+      "label": "a non-Status field with options is ignored",
+      "node": {
+        "fields": {
+          "nodes": [
+            {
+              "id": "f9",
+              "name": "Priority",
+              "options": [
+                {
+                  "id": "p1",
+                  "name": "High",
+                  "color": "RED"
+                }
+              ]
+            }
+          ]
+        },
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": []
+    },
+    {
+      "label": "option ORDER is board order and is preserved",
+      "node": {
+        "fields": {
+          "nodes": [
+            {
+              "id": "f1",
+              "name": "Status",
+              "options": [
+                {
+                  "id": "o3",
+                  "name": "Zeta",
+                  "color": "RED"
+                },
+                {
+                  "id": "o1",
+                  "name": "Alpha",
+                  "color": "GRAY"
+                },
+                {
+                  "id": "o2",
+                  "name": "Mid",
+                  "color": "BLUE"
+                }
+              ]
+            }
+          ]
+        },
+        "items": {
+          "nodes": []
+        }
+      },
+      "options": [
+        {
+          "id": "o3",
+          "name": "Zeta",
+          "color": "RED"
+        },
+        {
+          "id": "o1",
+          "name": "Alpha",
+          "color": "GRAY"
+        },
+        {
+          "id": "o2",
+          "name": "Mid",
+          "color": "BLUE"
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "label": "absent node",
+      "node": null,
+      "keptIds": []
+    },
+    {
+      "label": "no items",
+      "node": {
+        "items": {
+          "nodes": []
+        }
+      },
+      "keptIds": []
+    },
+    {
+      "label": "a draft item (content null) is skipped",
+      "node": {
+        "items": {
+          "nodes": [
+            {
+              "id": "i1",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": null
+            }
+          ]
+        }
+      },
+      "keptIds": []
+    },
+    {
+      "label": "a PullRequest is skipped, an Issue is kept",
+      "node": {
+        "items": {
+          "nodes": [
+            {
+              "id": "i1",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "__typename": "PullRequest",
+                "number": 1
+              }
+            },
+            {
+              "id": "i2",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 2
+              }
+            }
+          ]
+        }
+      },
+      "keptIds": [
+        "i2"
+      ]
+    },
+    {
+      "label": "a missing __typename is skipped",
+      "node": {
+        "items": {
+          "nodes": [
+            {
+              "id": "i1",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "number": 1
+              }
+            }
+          ]
+        }
+      },
+      "keptIds": []
+    },
+    {
+      "label": "casing matters — `issue` is not `Issue`",
+      "node": {
+        "items": {
+          "nodes": [
+            {
+              "id": "i1",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "__typename": "issue",
+                "number": 1
+              }
+            }
+          ]
+        }
+      },
+      "keptIds": []
+    },
+    {
+      "label": "item ORDER survives the filter",
+      "node": {
+        "items": {
+          "nodes": [
+            {
+              "id": "i1",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 1
+              }
+            },
+            {
+              "id": "i2",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "__typename": "PullRequest",
+                "number": 2
+              }
+            },
+            {
+              "id": "i3",
+              "fieldValues": {
+                "nodes": []
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 3
+              }
+            }
+          ]
+        }
+      },
+      "keptIds": [
+        "i1",
+        "i3"
+      ]
+    }
+  ],
+  "status": [
+    {
+      "label": "no field values",
+      "item": {
+        "id": "i1",
+        "fieldValues": {
+          "nodes": []
+        },
+        "content": {
+          "__typename": "Issue",
+          "number": 1
+        }
+      },
+      "value": null
+    },
+    {
+      "label": "a Status value",
+      "item": {
+        "id": "i1",
+        "fieldValues": {
+          "nodes": [
+            {
+              "name": "Todo",
+              "optionId": "o1",
+              "field": {
+                "name": "Status"
+              }
+            }
+          ]
+        },
+        "content": {
+          "__typename": "Issue",
+          "number": 1
+        }
+      },
+      "value": {
+        "name": "Todo",
+        "optionId": "o1",
+        "field": {
+          "name": "Status"
+        }
+      }
+    },
+    {
+      "label": "the FIRST Status value wins",
+      "item": {
+        "id": "i1",
+        "fieldValues": {
+          "nodes": [
+            {
+              "name": "Todo",
+              "optionId": "o1",
+              "field": {
+                "name": "Status"
+              }
+            },
+            {
+              "name": "Done",
+              "optionId": "o2",
+              "field": {
+                "name": "Status"
+              }
+            }
+          ]
+        },
+        "content": {
+          "__typename": "Issue",
+          "number": 1
+        }
+      },
+      "value": {
+        "name": "Todo",
+        "optionId": "o1",
+        "field": {
+          "name": "Status"
+        }
+      }
+    },
+    {
+      "label": "a field-value with no `field` is skipped, not thrown on",
+      "item": {
+        "id": "i1",
+        "fieldValues": {
+          "nodes": [
+            {
+              "name": "orphan"
+            },
+            {
+              "name": "Todo",
+              "optionId": "o1",
+              "field": {
+                "name": "Status"
+              }
+            }
+          ]
+        },
+        "content": {
+          "__typename": "Issue",
+          "number": 1
+        }
+      },
+      "value": {
+        "name": "Todo",
+        "optionId": "o1",
+        "field": {
+          "name": "Status"
+        }
+      }
+    },
+    {
+      "label": "a non-Status field is ignored",
+      "item": {
+        "id": "i1",
+        "fieldValues": {
+          "nodes": [
+            {
+              "name": "High",
+              "optionId": "p1",
+              "field": {
+                "name": "Priority"
+              }
+            }
+          ]
+        },
+        "content": {
+          "__typename": "Issue",
+          "number": 1
+        }
+      },
+      "value": null
+    }
+  ]
+}

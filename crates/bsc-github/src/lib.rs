@@ -27,6 +27,16 @@ use std::time::Duration;
 
 // ── User agent ─────────────────────────────────────────────────────────────────
 
+// The persisted board state's MODEL and the repo-credential choice, moved out of `src-tauri`
+// (`the-github-domains-pure-logic-lives-in-bsc-github`). Both are Tauri-free and were in the app
+// only by where they happened to be written; each carries its own fixture binding it to the
+// TypeScript it was ported from.
+pub mod board_state;
+pub mod cli;
+pub mod issue_provenance;
+pub mod project_v2;
+pub mod repo_credentials;
+
 /// The default `User-Agent`, used when the host application has not named itself.
 const DEFAULT_USER_AGENT: &str = concat!("bsc-github/", env!("CARGO_PKG_VERSION"));
 

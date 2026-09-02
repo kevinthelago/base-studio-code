@@ -292,6 +292,28 @@ pub fn project_slug(name: &str) -> String {
     }
 }
 
+/// The LEGACY, pre-#2409 project key: keep `[A-Za-z0-9-]`, map every other char to `_`, cap 80.
+///
+/// Not a second way to name a NEW project — [`project_slug`] is that, and it is frozen at creation.
+/// This is the GRANDFATHERING rule: hubs created before #2409 are keyed this way and are deliberately
+/// untouched on disk (there is no startup migration), so anything matching a persisted record against
+/// a local hub has to try both derivations or it will not find them.
+///
+/// It must stay byte-for-byte identical to the frontend's paneId sanitization
+/// (`replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 80)`) so a PTY id and its planning directory always
+/// correspond. ASCII-only on purpose — Rust's `char::is_alphanumeric` accepts Unicode letters, which
+/// the JS regex does not.
+///
+/// LIVES HERE rather than in `src-tauri` so that both key derivations are reachable from the same
+/// place. `board_state` needs both and used to be pinned into the app for exactly that reason; the
+/// app's `platform::fsx::sanitize_project_key` now delegates here, so there is ONE implementation.
+pub fn sanitize_project_key(key: &str) -> String {
+    key.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .take(80)
+        .collect()
+}
+
 /// The path of a project's `.published` marker file. `None` when no home dir is resolvable.
 pub fn published_marker(key: &str) -> Option<PathBuf> {
     project_dir(key).map(|d| d.join(".published"))

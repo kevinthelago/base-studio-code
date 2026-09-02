@@ -35,8 +35,11 @@ pub(crate) fn safe_dir_segment(name: &str, allow: impl Fn(char) -> bool) -> Resu
 /// the planning directory always correspond. ASCII-only on purpose — Rust's
 /// `char::is_alphanumeric` accepts Unicode letters, which the JS regex does not.
 pub(crate) fn sanitize_project_key(key: &str) -> String {
-    // keep [A-Za-z0-9-] → '_', cap 80 (delegates to map_slug; semantics frozen).
-    map_slug(key, |c| c.is_ascii_alphanumeric() || c == '-', '_', Some(80))
+    // DELEGATES to the crate, which is where both key derivations now live so that anything needing
+    // BOTH (`bsc_github::board_state`, matching a persisted record against a local hub) is reachable
+    // from a crate rather than pinned into the app. Semantics frozen; this is a re-export, not a
+    // reimplementation, so the two cannot drift.
+    bsc_project::sanitize_project_key(key)
 }
 
 /// Slugify a worktree/branch reference: keep `[A-Za-z0-9._-]`, every other char becomes `-`.

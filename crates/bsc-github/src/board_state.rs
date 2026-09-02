@@ -23,13 +23,29 @@
 //!
 //! ## Slug rules are REUSED, never restated
 //!
-//! Both key derivations already exist on this side and neither is re-implemented here:
+//! Both key derivations already exist and neither is re-implemented here:
 //! [`bsc_project::project_slug`] (already bound to its TypeScript twin by `projectSlug.fixtures.json`,
-//! read by both sides) and the crate-local `sanitize_project_key`. This module lives in `src-tauri`
-//! rather than in `bsc-project` precisely because that is where both are reachable — the cost being
-//! that it is not reachable from a live session via `bsc`; see the change record.
+//! read by both sides) and [`bsc_project::sanitize_project_key`], the grandfathering rule for hubs
+//! created before #2409.
+//!
+//! ## IT USED TO LIVE IN `src-tauri`, AND THAT WAS THE WHOLE PROBLEM
+//!
+//! The header this replaces said so outright: *"This module lives in `src-tauri` rather than in
+//! `bsc-project` precisely because that is where both are reachable — the cost being that it is not
+//! reachable from a live session via `bsc`."* That cost was the reason to move, not a footnote.
+//! `sanitize_project_key` now lives beside `project_slug` in `bsc-project`, so both derivations are
+//! reachable from crate-land and this module came with them. Measured elsewhere in this epic: a crate
+//! edit reaches live behaviour in ~1235 ms, while an `src-tauri` edit is a new binary and a restarted
+//! window with a fleet running in it.
+//!
+//! ## WHICH WAY THIS FAILS
+//!
+//! [`filter_records_to_local`] fails CLOSED — a record it cannot match to a local hub is DROPPED, not
+//! kept. That is the safe direction here and it is the module's entire point: the harm being prevented
+//! is a deleted project reappearing from cache, so when in doubt the answer is to show less. The
+//! opposite choice would make the don't-resurrect rule advisory.
 
-use crate::sanitize_project_key;
+use bsc_project::sanitize_project_key;
 use serde::{Deserialize, Serialize};
 
 /// One `projectsV2` item as the wire carries it. `content` is `None` for a DRAFT item.
@@ -217,7 +233,7 @@ mod tests {
     /// Resolved BY FILENAME under `src/`, the same rule the tunnel, role-gate and injection-scan
     /// contracts use. Exactly one match is required — zero or a collision is a hard failure.
     fn fixture() -> Value {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found: Vec<std::path::PathBuf> = Vec::new();
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else { return };

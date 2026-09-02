@@ -144,6 +144,7 @@ const COMMANDS: &[Surface] = &[
     internal("serve", "bsc", "internal WARM server (#4152) — one long-lived process answering many requests; the desktop spawns it", None),
     active("version", "bsc", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
     active("config", "bsc-config", "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)", Some("~/.base-studio-code/config/ — the runtime config-seed mirror")),
+    active("github", "bsc-github", "GitHub rules a session can ask about: issue provenance, REST path routing, board shape (read-only)", Some("no store - derived rules over a GitHub payload; it never reads a credential back")),
 ];
 
 fn top_help() -> String {
@@ -505,6 +506,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "mem" => bsc_mem::cli::run(rest, "bsc mem"),
         "work" => bsc_work::cli::run(rest, "bsc work"),
         "self" => bsc_self::cli::run(rest, "bsc self"),
+        "github" => bsc_github::cli::run(rest, "bsc github"),
         "metrics" => logs::metrics::run(rest, "bsc metrics"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
