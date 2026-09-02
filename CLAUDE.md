@@ -1010,6 +1010,35 @@ Two differences worth knowing before they surprise you:
   `src-tauri/src/testutil.rs` exists for. Per-test processes make env-var tests *more* isolated, not
   less, and the whole suite was verified under it (2,362 of 2,366 passing, same four reds) — but a test
   that quietly depended on a sibling having run first will now fail, and that is the test being wrong.
+
+  **THE ISOLATION CUTS BOTH WAYS, and this direction is the dangerous one.** A test that PASSES under
+  nextest can still FAIL under `cargo test`, because per-process isolation *hides* a race on
+  process-global state rather than fixing it. **The gate runs nextest, so the gate cannot see this
+  class at all.** MEASURED on `bsc-graph`, back to back on a quiet machine:
+
+  | | |
+  |---|---|
+  | `cargo nextest run -p bsc-graph` | 259 passed, 0 failed |
+  | `cargo test -p bsc-graph --lib` | 243 passed, **16 FAILED** (a second run: 242 / **17**) |
+
+  The count MOVING between runs is the signature — a race, not a broken assertion. Every failure was a
+  test pointing the CLI at a temp store with `set_var("BSC_GRAPH_STORE", …)`, so one test's `remove_var`
+  landed between a sibling's `set_var` and the call it was setting up. `src-tauri/src/fleet/warden.rs`
+  hit the same shape on 2026-09-02 (1 run in 10) with three tests sharing an in-memory registry.
+
+  **It is not merely a developer-facing annoyance.** An unlocked write resolves the DEFAULT store and
+  corrupts `~/.base-studio-code/knowledge/algorithms.json` — the real per-user authoring copy. That is
+  what made `graph-promote-check` go red on a *different node every run* and forced every
+  `npm run promote` that day through `--skip-gate`, which skips verifying develop entirely.
+
+  **So a lock is the mechanism and a SOURCE-ASSERTING TEST is the guard**, because nothing at run time
+  can observe the *absence* of a lock. `every_store_env_mutation_is_inside_the_store_lock`
+  (`crates/bsc-graph/src/cli.rs`) scans the crate's own source and names any function that mutates a
+  store env var without holding the lock. Two details there are worth copying rather than rediscovering:
+  it delimits function bodies by INDENTATION, not brace counting, because the file is full of raw JSON
+  fixtures whose braces would need string-literal stripping to survive — and a scanner that silently
+  mis-parses reports zero offenders, which reads as a pass. And it asserts the POPULATION
+  (`mutating >= 10`) so a scanner that stopped matching fails loudly instead of going quiet.
 - **It does not run doctests.** This workspace has none, and `no_rust_doctests_are_silently_skipped` in
   `src-tauri/src/tests.rs` FAILS if one is ever added, because a doctest that silently never runs is
   exactly the kind of green-gate-that-sees-less this repo keeps getting caught by. If that test fires,
