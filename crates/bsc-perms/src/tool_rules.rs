@@ -35,8 +35,8 @@
 //! The `.claude/**` confinement deny is FIRST, and that is not cosmetic — it is what stops a session
 //! rewriting its own permission file.
 
-use super::profile_settings::ProfileSessionSettings;
-use super::role_gate::{
+use crate::profile_settings::ProfileSessionSettings;
+use crate::role_gate::{
     edit_path_rule, is_restricted_role, role_denied_tools, role_write_rules, write_locks,
     RoleCapability,
 };
@@ -311,7 +311,7 @@ pub fn reconcile_session_tool_rules(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::role_gate::{RoleCapability, Tier};
+    use crate::role_gate::{RoleCapability, Tier};
 
 
     fn cap_tr(role: &str, code: Tier, globs: Vec<String>, allow: Vec<String>) -> RoleCapability {
@@ -497,7 +497,7 @@ mod tests {
     /// something it could have auto-run — visible, one click to clear, and logged.
     #[test]
     fn the_narrower_bash_posture_wins_from_either_side() {
-        let ask = crate::session::profile_settings::ProfileSessionSettings {
+        let ask = crate::profile_settings::ProfileSessionSettings {
             allowed_commands: vec![],
             denied_commands: vec![],
             allow_tool_rules: vec![],
@@ -548,7 +548,7 @@ mod tests {
                 }
             }
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found = Vec::new();
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one toolRules.fixtures.json, got {found:?}");

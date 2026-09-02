@@ -146,6 +146,7 @@ const COMMANDS: &[Surface] = &[
     active("version", "bsc", "which build this binary IS — its build time + path (#92, tells a stale sidecar from a missing verb)", None),
     active("config", "bsc-config", "runtime config-seed mirror: classify a diverged file against the packaged seed, with a diff, and adopt it (#168)", Some("~/.base-studio-code/config/ — the runtime config-seed mirror")),
     active("github", "bsc-github", "GitHub rules a session can ask about: issue provenance, REST path routing, board shape (read-only)", Some("no store - derived rules over a GitHub payload; it never reads a credential back")),
+    active("perms", "bsc-perms", "what a session role actually resolves to: capability, denies, tool rules, write scope (read-only)", Some("the frozen role-capability baseline + the packaged permission data")),
 ];
 
 fn top_help() -> String {
@@ -527,6 +528,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "cve" => cve::cli::run(rest, "bsc cve"),
         "config" => bsc_config::cli::run(rest, "bsc config"),
+        "perms" => bsc_perms::cli::run(rest, "bsc perms"),
         // The catalog, as data (`command-surface-catalog-is-one-source`) — so a consumer generates
         // the surface set instead of keeping its own copy of it.
         "surface" => surface_cli(rest),

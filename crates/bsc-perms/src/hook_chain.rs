@@ -177,7 +177,7 @@ mod tests {
                 }
             }
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found = Vec::new();
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one hookChain.fixtures.json, got {found:?}");

@@ -43,7 +43,7 @@
 //! catalog is read from a subprocess, so "unavailable" and "no surfaces exist" cannot be told apart,
 //! and a launch that raced the read must not lose its whole CLI.
 
-use super::role_gate::{has_scoped_write_carve_out, role_denied_commands, RoleCapability, Tier};
+use crate::role_gate::{has_scoped_write_carve_out, role_denied_commands, RoleCapability, Tier};
 
 /// The document `bsc-agent` deserializes from `$BSC_AGENT_PERMS`.
 ///
@@ -271,7 +271,7 @@ mod tests {
         let user = ["curl".to_string(), "nc".to_string()];
 
         // The Claude path.
-        let claude = crate::session::denies::session_denied_commands(&user, Some(&worker), &[], None, &[]);
+        let claude = crate::denies::session_denied_commands(&user, Some(&worker), &[], None, &[]);
         // The bsc-agent path.
         let agent = bsc_agent_perms(Some(&worker), &[], &user, &[]);
 
@@ -376,7 +376,7 @@ mod tests {
     }
 
     fn fixture() -> serde_json::Value {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let p = find_named("bscAgentPerms.fixtures.json", &root);
         serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
     }
@@ -438,7 +438,7 @@ mod tests {
     /// side renames a field, which a locally-declared mirror struct could never notice.
     #[test]
     fn the_field_names_match_the_consumer() {
-        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let store: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(repo.join("graph/algorithms.json")).unwrap()).unwrap();
         let record = store["implementations"]

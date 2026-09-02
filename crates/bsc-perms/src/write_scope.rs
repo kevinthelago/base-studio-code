@@ -41,7 +41,7 @@
 
 use bsc_util::scope::DENY_ALL;
 
-use super::role_gate::{has_scoped_write_carve_out, session_scopes, RoleCapability, Tier};
+use crate::role_gate::{has_scoped_write_carve_out, session_scopes, RoleCapability, Tier};
 
 /// The globs a session may write within, or empty when it has none.
 ///
@@ -276,7 +276,7 @@ mod tests {
                 }
             }
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found = Vec::new();
         find(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one writeScopeEnv.fixtures.json, got {found:?}");

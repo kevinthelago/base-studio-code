@@ -32,7 +32,7 @@
 //! it — coordinating roles need cross-stream reads. Gating on the stream alone would silently box them
 //! in, which is why the role test is separate from the stream test.
 
-use super::role_gate::{RoleCapability, Tier};
+use crate::role_gate::{RoleCapability, Tier};
 
 /// The symbolic root meaning "the base-studio-code source tree this app was built from".
 pub const HARVEST_ROOT_APP_REPO: &str = "app-repo";
@@ -210,7 +210,7 @@ mod tests {
                 }
             }
         }
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src");
         let mut found = Vec::new();
         walk(&root, &mut found);
         assert_eq!(found.len(), 1, "expected one accessEnv.fixtures.json, got {found:?}");
