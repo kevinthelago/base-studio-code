@@ -3,7 +3,8 @@
 //! # Rust owned everything around this decision and not the decision
 //!
 //! `crates/skilldb` IS the skills store and `bsc skill` its CLI;
-//! [`super::skills::write_session_skills`] writes the resolved list into `.claude/skills`, taking an
+//! `extensions::skills::write_session_skills` (still app-owned) writes the resolved list into
+//! `.claude/skills`, taking an
 //! already-chosen set. So the backend owned the store, owned the write, and could not answer "which".
 //!
 //! The cost of that split is recorded in the tree, though NARROWER than it was first written down as.
@@ -188,7 +189,7 @@ pub fn effective_session_skills<'a>(
         .collect()
 }
 
-/// The payloads [`super::skills::write_session_skills`] consumes.
+/// The payloads `extensions::skills::write_session_skills` consumes.
 ///
 /// A skill whose name slugs to EMPTY is dropped: the slug is the directory name, so there is nothing
 /// to key `.claude/skills/<slug>/SKILL.md` on. Silently skipping it matches the writer, which skips
@@ -210,7 +211,7 @@ pub fn to_skill_cfgs(defs: &[&SkillDef]) -> Vec<SkillCfg> {
 /// The library, read from the store Rust already owns.
 ///
 /// `crates/skilldb` IS the skills library — `bsc skill` is its CLI and
-/// [`super::skills::record_skill_uses`] already opens it from here — so the resolution needs no
+/// `extensions::skills::record_skill_uses` already opens it — so the resolution needs no
 /// library on the wire, only the per-session facts the renderer holds. A missing or unreadable store
 /// yields an EMPTY library, which resolves to no skills and lets the frontend's list stand; the
 /// alternative (failing the launch) would make an unreadable `skills.db` fatal to every session.
