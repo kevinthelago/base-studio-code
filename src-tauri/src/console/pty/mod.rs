@@ -775,22 +775,46 @@ fn launch_init_cmd(
 /// resolution and each reconciles its OWN shape, which is why `reconcile_mcp` is generic rather than
 /// taking one concrete entry type.
 ///
-/// The env value is only REWRITTEN when the pane already carries one: a pane with no `$BSC_AGENT_MCP`
-/// is not a bsc-agent pane, and inventing the variable for it would hand a Claude session a config it
-/// has no reader for.
+/// THE HARNESS TEST IS `provider_id == "bsc-agent"`, exactly as its sibling
+/// [`launch_agent_perms`] does — not "does the env already carry the variable".
+///
+/// That older proxy was true while only the fleet path launched local sessions: the renderer always
+/// sent a list, so its presence and the harness meant the same thing. It stopped being true the
+/// moment anything else launched a bsc-agent pane — the crate-drill persona sessions send a model and
+/// a provider and no MCP list — and the failure was total and silent: `else { return }` skipped
+/// resolution entirely, so those sessions ran with NO servers at all rather than with the ambient
+/// built-ins. A capability the agent is never told about costs nothing to spend, but it also does
+/// nothing, and nothing said so.
+///
+/// A pane that IS bsc-agent and carries no list gets the resolution outright, with no reconcile:
+/// `reconcile_mcp` INTERSECTS what the renderer sent with what the backend resolved, so reconciling
+/// against an absent list would correctly yield nothing. There is no second opinion to honour when
+/// the caller offered none — the backend's own resolution is the answer.
+///
+/// A pane that is NOT bsc-agent is still left alone. Writing this document into a Claude session's
+/// env is inert at best, and it is not the gate that would notice if it stopped being.
 fn launch_agent_mcp(
     env: &mut std::collections::HashMap<String, String>,
     library: Vec<crate::extensions::mcp_resolution::McpServer>,
     persona_mcp_ids: &[String],
     sandboxed: bool,
     pane_id: &str,
+    provider_id: Option<&str>,
 ) {
-    let Some(raw) = env.get("BSC_AGENT_MCP").cloned() else { return };
-    let Ok(sent) = serde_json::from_str::<Vec<crate::extensions::mcp_resolution::BscAgentMcpCfg>>(&raw)
-    else {
-        log::warn!("pty[{pane_id}] BSC_AGENT_MCP is unparseable — left as sent, resolving nothing");
-        return;
-    };
+    let is_agent = provider_id == Some("bsc-agent");
+    let sent: Option<Vec<crate::extensions::mcp_resolution::BscAgentMcpCfg>> =
+        match env.get("BSC_AGENT_MCP").cloned() {
+            Some(raw) => match serde_json::from_str(&raw) {
+                Ok(v) => Some(v),
+                Err(_) => {
+                    log::warn!("pty[{pane_id}] BSC_AGENT_MCP is unparseable — left as sent, resolving nothing");
+                    return;
+                }
+            },
+            // Not a bsc-agent pane and no list: nothing to do, and nothing to invent.
+            None if !is_agent => return,
+            None => None,
+        };
     let builtins = crate::extensions::mcp_resolution::builtin_mcp_servers();
     let resolved = crate::extensions::mcp_resolution::mcp_reachable_from(
         &crate::extensions::mcp_resolution::resolve_persona_mcp(&library, persona_mcp_ids, &builtins),
@@ -803,16 +827,29 @@ fn launch_agent_mcp(
         .collect();
     // THE STDIO-ONLY NARROWING, applied here and not shared with `.mcp.json`.
     let stdio = crate::extensions::mcp_resolution::to_bsc_agent_mcp(&payloads);
-    let recon = crate::extensions::mcp_resolution::reconcile_mcp(&sent, &stdio, |e| e.name.clone());
-    if !recon.dropped.is_empty() || !recon.not_added.is_empty() {
-        log::warn!(
-            "pty[{pane_id}] $BSC_AGENT_MCP disagreed — DROPPED {:?}, did NOT add {:?}. The smaller \
-             list wins: an advertised server that cannot spawn costs retries and misdiagnosis.",
-            recon.dropped,
-            recon.not_added,
-        );
-    }
-    match serde_json::to_string(&recon.merged) {
+    let merged = match &sent {
+        Some(sent) => {
+            let recon = crate::extensions::mcp_resolution::reconcile_mcp(sent, &stdio, |e| e.name.clone());
+            if !recon.dropped.is_empty() || !recon.not_added.is_empty() {
+                log::warn!(
+                    "pty[{pane_id}] $BSC_AGENT_MCP disagreed — DROPPED {:?}, did NOT add {:?}. The smaller \
+                     list wins: an advertised server that cannot spawn costs retries and misdiagnosis.",
+                    recon.dropped,
+                    recon.not_added,
+                );
+            }
+            recon.merged
+        }
+        // Nothing was sent, so there is nothing to intersect with — the resolution IS the answer.
+        None => {
+            log::info!(
+                "pty[{pane_id}] bsc-agent pane sent no $BSC_AGENT_MCP — seeding the resolved built-ins: {:?}",
+                stdio.iter().map(|e| e.name.as_str()).collect::<Vec<_>>()
+            );
+            stdio
+        }
+    };
+    match serde_json::to_string(&merged) {
         Ok(v) => {
             env.insert("BSC_AGENT_MCP".to_string(), v);
         }
@@ -1168,6 +1205,7 @@ fn pty_create_inner(
             &persona_mcp_ids.clone().unwrap_or_default(),
             namespace_hooks.unwrap_or(false),
             &pane_id,
+            provider_id.as_deref(),
         );
         Some(reconciled)
     };
@@ -6650,5 +6688,55 @@ mod caged_harness_tests {
         // accident is what splitting the private HOME out of the worktree prevented.
         assert!(AGENT_SESSION_GUEST.starts_with("/home/agent/"));
         assert!(!AGENT_SESSION_GUEST.starts_with("/repo"));
+    }
+}
+
+/// The bsc-agent MCP gate (`a-local-session-gets-the-builtin-mcp-servers`).
+#[cfg(test)]
+mod agent_mcp_gate_tests {
+    use super::*;
+
+
+    /// A BSC-AGENT PANE THAT SENT NO LIST GETS THE BUILT-INS, rather than nothing at all.
+    ///
+    /// The old gate was `env.get("BSC_AGENT_MCP") else return` — "no variable means not a bsc-agent
+    /// pane". True while only the fleet path launched local sessions, and false the moment the
+    /// crate-drill persona sessions did: they send a model and a provider and no MCP list, so the
+    /// early return skipped resolution entirely and those sessions ran with NO servers. Silent, and
+    /// total.
+    #[test]
+    fn a_bsc_agent_pane_with_no_list_is_seeded_rather_than_skipped() {
+        let mut env = std::collections::HashMap::new();
+        launch_agent_mcp(&mut env, Vec::new(), &[], false, "pane", Some("bsc-agent"));
+        // It resolved SOMETHING and wrote it. The exact set depends on the packaged built-ins, so this
+        // asserts the variable now exists and parses — the property that was missing — rather than
+        // pinning a server list this test does not own.
+        let raw = env.get("BSC_AGENT_MCP").expect("a bsc-agent pane must be given a list");
+        serde_json::from_str::<Vec<crate::extensions::mcp_resolution::BscAgentMcpCfg>>(raw)
+            .expect("the seeded value must parse as what bsc-agent reads");
+    }
+
+    /// A CLAUDE PANE IS STILL LEFT ALONE. Writing a bsc-agent document into a Claude session's env is
+    /// inert at best, and this is the gate that would stop noticing if that changed.
+    #[test]
+    fn a_claude_pane_is_never_given_an_agent_mcp_list() {
+        for provider in [None, Some("claude")] {
+            let mut env = std::collections::HashMap::new();
+            launch_agent_mcp(&mut env, Vec::new(), &[], false, "pane", provider);
+            assert!(
+                !env.contains_key("BSC_AGENT_MCP"),
+                "provider {provider:?} must not acquire an agent MCP list"
+            );
+        }
+    }
+
+    /// AN UNPARSEABLE VALUE IS LEFT EXACTLY AS SENT, on either harness. Replacing it would discard
+    /// whatever the renderer meant while reporting nothing.
+    #[test]
+    fn an_unparseable_list_is_left_as_sent() {
+        let mut env = std::collections::HashMap::new();
+        env.insert("BSC_AGENT_MCP".to_string(), "not json".to_string());
+        launch_agent_mcp(&mut env, Vec::new(), &[], false, "pane", Some("bsc-agent"));
+        assert_eq!(env.get("BSC_AGENT_MCP").map(String::as_str), Some("not json"));
     }
 }
