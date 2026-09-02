@@ -426,6 +426,13 @@ async fn main() {
     // than as plenty, so recording nothing never reads as having room.
     llm::ratelimit::install_rate_limit_log();
 
+    // Retry-After capture, installed AFTER the headroom log so the log becomes its inner and BOTH
+    // run — the observer slot holds one, and replacing it would silently stop `bsc mem headroom`
+    // recording while looking like it worked. This is what lets the retry loop obey the server's own
+    // wait instruction instead of guessing a shorter one: `LlmProvider::turn_streaming` returns a
+    // plain `Result`, so the parsed `Retry-After` cannot ride back with the error.
+    agent::install_retry_after_capture();
+
     // Resume: the app hands us the per-cwd conversation file via $BSC_AGENT_SESSION. We persist
     // the conversation there on exit (so a later launch can resume), and with `--continue` seed
     // the loop from it. Absent/empty path ⇒ no persistence and always a fresh conversation.
