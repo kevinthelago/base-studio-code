@@ -15,6 +15,9 @@ name = "bsc_persona"
 bsc-json-store = { path = "../bsc-json-store" }
 # Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# `model` validates a non-tier name against what the LOCAL RUNTIME has installed — the one rule lives
+# in `llm::cli::verify_model`, beside the blocking probe it needs, rather than being restated here.
+bsc-llm = { path = "../llm" }
 # `set` reads its own payload (stdin/`--file`) so it can carry a builtin's `proseSeal`/`replacedProse`
 # forward before writing (#172 follow-up) — already a transitive dep via bsc-json-store, so this adds
 # no new build cost.

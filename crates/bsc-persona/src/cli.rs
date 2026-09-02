@@ -627,7 +627,7 @@ fn rename(args: &[String], prog: &str) -> Result<(), String> {
 /// the ones a user wants to run cheap while testing.
 fn set_model(args: &[String], prog: &str) -> Result<(), String> {
     let usage = format!(
-        "usage: {prog} model <id> <tier> | {prog} model <id> --clear   (tiers: {})",
+        "usage: {prog} model <id> <model> | {prog} model <id> --clear   (tiers: {} — or any model installed locally)",
         bsc_util::model_id_list()
     );
     let mut clear = false;
@@ -652,13 +652,35 @@ fn set_model(args: &[String], prog: &str) -> Result<(), String> {
     if !clear && tier.is_none() {
         return Err(usage);
     }
+    // A TIER OR AN INSTALLED LOCAL MODEL — the same rule every level uses (`llm::cli::verify_model`).
+    //
+    // This verb used to accept ONLY Claude tiers while the stream verb accepted any string, so an
+    // identity that `bsc persona model` is documented to move "everywhere it is placed" could not name
+    // a local model at all — the one gap between "personas are the launch primitive" and "the platform
+    // runs on any model". The plumbing below was already there: `streamPaneWiring` derives
+    // `provider = bsc-agent` for any model outside the tier registry.
+    let mut unverified: Option<String> = None;
     if let Some(t) = tier {
-        if !bsc_util::is_model_id(t) {
-            return Err(format!(
-                "{prog} model: '{t}' is not a model tier. Pick one of: {}\n  \
-                 (or `{prog} model {id} --clear` to launch on Claude Code's own default)",
-                bsc_util::model_id_list()
-            ));
+        match llm::cli::verify_model(t, None) {
+            llm::cli::ModelVerdict::Tier | llm::cli::ModelVerdict::Installed => {}
+            // Refused with what this machine HAS, which is the actionable half — a typo is the failure
+            // this check exists to catch, and it is only catchable against the real installed list.
+            llm::cli::ModelVerdict::Unknown(installed) => {
+                let have = if installed.is_empty() {
+                    "the local runtime has no models installed".to_string()
+                } else {
+                    format!("installed locally: {}", installed.join(" | "))
+                };
+                return Err(format!(
+                    "{prog} model: '{t}' is neither a Claude tier nor a model this machine has.\n                       tiers: {}\n  {have}\n                       (or `{prog} model {id} --clear` to launch on Claude Code's own default)",
+                    bsc_util::model_id_list()
+                ));
+            }
+            // NOT a refusal. Ollama being down is a normal state on a Claude-only machine, and refusing
+            // to write a config because a daemon is asleep would break the verb exactly when someone is
+            // setting a machine up. Say so and proceed; a wrong name then fails at launch, which is
+            // where it would have failed anyway.
+            llm::cli::ModelVerdict::Unverifiable(why) => unverified = Some(why),
         }
     }
 
@@ -682,6 +704,14 @@ fn set_model(args: &[String], prog: &str) -> Result<(), String> {
     let out = serde_json::to_string(&v).map_err(|e| format!("{prog} model: {e}"))?;
     store.set(id, &out)?;
     println!("{out}");
+    if let Some(why) = unverified {
+        // To STDERR: the write succeeded, and a caller piping `--json` into something must not have a
+        // warning land in the middle of its payload.
+        eprintln!(
+            "{prog} model: stored, but could not verify '{}' against the local runtime ({why}).\n               If that name is wrong the session will fail at launch — check with `bsc llm status`.",
+            tier.unwrap_or_default()
+        );
+    }
     Ok(())
 }
 
