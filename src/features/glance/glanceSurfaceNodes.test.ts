@@ -5,7 +5,8 @@
 // not, `bsc-util` among the verbless ones. Every assertion here is about a decision that could
 // plausibly have gone the other way, and would have been wrong in a way the UI would not reveal.
 import { describe, it, expect } from "vitest";
-import { surfaceGraph, dependentCount, type SurfaceRosterRow } from "@/features/glance/lib/surfaceNodes";
+import { surfaceGraph, dependentCount, withSurfaceNodes, type SurfaceRosterRow } from "@/features/glance/lib/surfaceNodes";
+import { buildGlanceData, type GlanceData } from "@/features/glance/lib/glanceData";
 import { surfaceNodeId, isBandNode, isBandEdge } from "@/features/glance/lib/glanceGraph";
 
 const row = (crate: string, dependsOn: string[] = [], verbs: string[] = []): SurfaceRosterRow => ({
@@ -84,5 +85,73 @@ describe("the surface-node projection", () => {
     expect(dependentCount(ROSTER, "bsc")).toBe(0);
     // A crate listing itself must not inflate its own count.
     expect(dependentCount([row("a", ["a"])], "a")).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// THE DRILL FOLD (`the-surface-band-is-projected-but-never-drawn`).
+//
+// The projection above was landed by slice 1 and NOTHING CALLED IT — `surfaceGraph(` occurred exactly
+// once in the tree, its own definition — so every crate node was provably absent from the running app
+// while the item read `verified` and this file was green. These assertions are about the FOLD, which is
+// the part that makes a node appear.
+// ---------------------------------------------------------------------------------------------
+describe("folding the surface band into a drill", () => {
+  const data = (ids: string[] = []): GlanceData => ({
+    rawNodes: ids.map((id) => ({ id, slug: id, kind: "project" as const, role: "service" as const, health: "off" as const, activity: "idle" as const })),
+    rawEdges: [],
+    sample: false,
+  });
+
+  it("adds a node per crate, and the depends-on edges that give the band structure", () => {
+    const out = withSurfaceNodes(data(["studio-code"]), ROSTER);
+    const added = out.rawNodes.filter((n) => n.kind === "surface");
+    expect(added.map((n) => n.slug).sort()).toEqual(ROSTER.map((r) => r.crate).sort());
+    // The EDGES are the whole difference from the removed L0 band, which drew none and left an
+    // unconnected inventory. A fold that added nodes and dropped edges would repeat it exactly.
+    expect(out.rawEdges.length).toBeGreaterThan(0);
+    expect(out.rawEdges.every((e) => e.kind === "depends-on")).toBe(true);
+    // and the host node it was folded into survives
+    expect(out.rawNodes.some((n) => n.id === "studio-code")).toBe(true);
+  });
+
+  it("returns the graph UNCHANGED on an empty roster, rather than blanking the band", () => {
+    const before = data(["studio-code"]);
+    const after = withSurfaceNodes(before, []);
+    // Identity, not just equality: a failed read must be a no-op, and re-deriving would drop the
+    // reference the memo above it is keyed on.
+    expect(after).toBe(before);
+  });
+
+  it("never draws a second node for a crate already in the graph", () => {
+    const existing = surfaceNodeId(ROSTER[0].crate);
+    const out = withSurfaceNodes(data([existing]), ROSTER);
+    expect(out.rawNodes.filter((n) => n.id === existing)).toHaveLength(1);
+  });
+
+  it("drops an edge whose other end is not drawn, rather than dangling it", () => {
+    // A roster of one crate that depends on a crate absent from the roster: the node lands, the edge
+    // must not, or the layout carries an id nothing renders.
+    const lone: SurfaceRosterRow[] = [
+      { crate: "logs", path: "crates/logs", surface: true, verbs: ["logs"], dependsOn: ["not-in-roster"] },
+    ];
+    const out = withSurfaceNodes(data(), lone);
+    expect(out.rawNodes.filter((n) => n.kind === "surface")).toHaveLength(1);
+    expect(out.rawEdges).toHaveLength(0);
+  });
+});
+
+// L0 MUST STAY FREE OF SURFACE NODES. An L0 band was built, shipped and REMOVED — one node per `bsc`
+// subcommand with no edge, 33 unconnected marks beside the project network — and `glanceData`'s comment
+// says the `surfaces` parameter was deleted rather than kept and ignored so that a later reader would
+// not put it back. This is that guard, since a comment cannot fail a build.
+describe("L0 draws no command surfaces", () => {
+  it("buildGlanceData emits no node of kind `surface`", () => {
+    const out = buildGlanceData([{ id: "studio-code", name: "studio-code" }]);
+    // NOT VACUOUS: an empty graph would satisfy "contains no surface node" trivially, which is the
+    // shape of every green-but-blind test this repo keeps getting caught by.
+    expect(out.rawNodes.length).toBeGreaterThan(0);
+    expect(out.rawNodes.some((n) => n.kind === "surface")).toBe(false);
+    expect(out.rawEdges.some((e) => e.kind === "depends-on")).toBe(false);
   });
 });

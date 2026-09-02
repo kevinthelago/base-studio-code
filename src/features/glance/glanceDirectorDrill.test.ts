@@ -32,7 +32,12 @@ describe("the fleet-less drill", () => {
   it("re-runs the graph when a director appears or goes, not on every liveness poll", () => {
     // A boolean in the deps, never the whole `livePaneIds` set: the set churns on every poll, and the
     // base graph is deliberately separate from the liveness overlay applied downstream.
-    expect(GLANCE).toMatch(/activeDebugRequests, drill, hasDirectorPane\]\);/);
+    //
+    // `surfaceRoster` joined the list and is allowed for the SAME reason, not as an exception: its
+    // setter keeps the previous reference when the roster is unchanged, so it cannot churn either.
+    // Anything appended here must clear that bar — a value that gets a new reference per poll would
+    // rebuild the whole drill graph on a timer.
+    expect(GLANCE).toMatch(/activeDebugRequests, drill, hasDirectorPane, surfaceRoster\]\);/);
     expect(GLANCE).not.toMatch(/activeDebugRequests, drill, livePaneIds\]/);
   });
 
