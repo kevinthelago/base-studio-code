@@ -100,3 +100,6 @@ mcp-rpc = { path = "../mcp-rpc" }
 # `bsc config` — read/adopt verbs for the runtime config-seed mirror diverging from the packaged seed
 # (#168): status (classify + diff) and reset (adopt the packaged copy).
 bsc-config = { path = "../bsc-config" }
+# `bsc app` — the APP's own lifecycle: status (is the built app behind main), promote (fast-forward
+# main to develop at the repo root), rebuild, release, hooks.
+bsc-app = { path = "../bsc-app" }

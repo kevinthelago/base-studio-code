@@ -1,0 +1,17 @@
+[package]
+name = "bsc-app"
+version = "0.1.0"
+edition = "2021"
+
+# `bsc-app` — the APP's own lifecycle: is the running binary current, may develop be promoted into
+# it, rebuild it from cold, cut a release, install the hooks.
+#
+# A LEAN, standalone crate (like `bsc-self`): the shared CLI scaffold, JSON for the gate verdict, and
+# nothing else. No Tauri, no database — so it stays out of the DuckDB build path and a scoped
+# `cargo check -p bsc-app` is seconds rather than minutes.
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-util = { path = "../bsc-util" }
+# The gate writes its verdict to target/gate-result.json; `promote` reads it to decide whether every
+# red leg is a DECLARED known-red. An unreadable verdict must read as ABSENT, never as a pass.
+serde_json = "1"
