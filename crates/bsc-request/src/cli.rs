@@ -110,6 +110,43 @@ Puts a claimed request back to open (clearing the holder) so it can be reclaimed
 abandoned it or crashed. A no-op (reported) for an unknown or not-claimed id.",
     },
     CmdDoc {
+        name: "pause",
+        summary: "stop the app auto-spawning a debug session per claimed request",
+        usage: "\
+USAGE:
+  bsc request pause
+  bsc request pause --off      # same as `bsc request resume`
+
+The app starts ONE debug session per CLAIMED request, and claims every open one itself to do it — so
+there is no way to quieten it from the queue short of resolving real work as if it were fixed. This is
+the switch that used to be a Settings toggle and was removed with it.
+
+While paused the app starts nothing AND closes the debug sessions it already has; the queue is
+untouched, so every request keeps its status and its thread. Persisted in requests.db beside the queue,
+so a pause set from a shell is seen by the running app.",
+    },
+    CmdDoc {
+        name: "resume",
+        summary: "let the app auto-spawn debug sessions again",
+        usage: "\
+USAGE:
+  bsc request resume
+
+The inverse of `bsc request pause`. Sessions come back for every claimed request on the app's next
+poll — nothing was lost while paused, because pausing never touched the queue.",
+    },
+    CmdDoc {
+        name: "paused",
+        summary: "is auto-spawn paused? (the state the app reads)",
+        usage: "\
+USAGE:
+  bsc request paused [--json]
+
+Prints `paused` or `active`. `--json` emits {\"paused\": bool} — this is what the app polls, so it is a
+read verb with no side effect. An unreadable or absent setting reports ACTIVE: a pause has to have been
+asked for to be true, and a missing row must never silently stop the debug fleet.",
+    },
+    CmdDoc {
         name: "prune",
         summary: "remove resolved requests that carry no answer; prints the count",
         usage: "\
@@ -161,6 +198,8 @@ struct Args {
     open: bool,
     /// `prune --dry-run` — report what would go instead of deleting it.
     dry_run: bool,
+    /// `pause --off`, the spelling that mirrors `resume` for a caller that already built an argv.
+    off: bool,
     /// `prune --with-answers` — also drop resolved requests that carry a reply thread. Off by default:
     /// the answer is the durable half, and a routine tidy-up should not destroy it (see `add_note`).
     with_answers: bool,
@@ -172,6 +211,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let a = Args {
         json: false,
         pretty: false,
+        off: false,
         db: None,
         surface: None,
         cmd: None,
@@ -194,6 +234,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--pretty" => a.pretty = true,
             "--open" => a.open = true,
             "--dry-run" => a.dry_run = true,
+            "--off" => a.off = true,
             "--with-answers" => a.with_answers = true,
             "--db" => a.db = Some(val("--db")?),
             "--surface" => a.surface = Some(val("--surface")?),
@@ -229,6 +270,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "resolve" => cmd_resolve(&args),
         "claim" => cmd_claim(&args),
         "unclaim" => cmd_unclaim(&args),
+        "pause" => cmd_pause(&args, !args.off),
+        "resume" => cmd_pause(&args, false),
+        "paused" => cmd_paused(&args),
         "prune" => cmd_prune(&args),
         "remove" => cmd_remove(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
@@ -373,6 +417,39 @@ fn cmd_unclaim(args: &Args) -> Result<(), String> {
     let id = positional_id(args)?;
     let matched = open_store(&args.db)?.unclaim(id).map_err(|e| format!("unclaiming request: {e}"))?;
     println!("{}", if matched { format!("unclaimed request {id}") } else { format!("no claimed request {id}") });
+    Ok(())
+}
+
+/// `pause` / `resume` — the auto-spawn switch (`auto-spawn-has-no-off-switch`).
+///
+/// One fn for both directions so the two can never disagree about what "paused" means. It reports the
+/// value it READ BACK, not the one it asked for, so a write that silently did nothing cannot print
+/// success.
+fn cmd_pause(args: &Args, paused: bool) -> Result<(), String> {
+    let now = open_store(&args.db)?
+        .set_paused(paused)
+        .map_err(|e| format!("setting the pause flag: {e}"))?;
+    println!(
+        "{}",
+        if now {
+            "auto-spawn PAUSED — the app starts no debug sessions and closes the ones it has. \
+             The queue is untouched; `bsc request resume` turns it back on."
+        } else {
+            "auto-spawn ACTIVE — the app starts one debug session per claimed request."
+        }
+    );
+    Ok(())
+}
+
+/// `paused` — the read the app polls. No side effect, deliberately: a status verb that could change
+/// the thing it reports is one nobody can use to diagnose.
+fn cmd_paused(args: &Args) -> Result<(), String> {
+    let paused = open_store(&args.db)?.is_paused().map_err(|e| format!("reading the pause flag: {e}"))?;
+    if args.json {
+        println!("{}", serde_json::json!({ "paused": paused }));
+    } else {
+        println!("{}", if paused { "paused" } else { "active" });
+    }
     Ok(())
 }
 

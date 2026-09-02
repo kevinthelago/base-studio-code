@@ -8,7 +8,7 @@
 use rusqlite::Connection;
 
 /// Every table (single source of truth for `clear`).
-pub(crate) const ALL_TABLES: &[&str] = &["requests", "request_notes"];
+pub(crate) const ALL_TABLES: &[&str] = &["requests", "request_notes", "request_settings"];
 
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
@@ -47,6 +47,19 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // `title` is the short form for a node label — `text` is the full narration and is routinely a
     // paragraph. Null on legacy rows; readers derive one from `text` (see `Request::display_title`), so
     // no backfill is needed and a row filed before this column still labels correctly.
+    // QUEUE-WIDE SETTINGS (`auto-spawn-has-no-off-switch`) — a key/value side table, not a column.
+    //
+    // `paused` is a property of the QUEUE, not of any request, so putting it on `requests` would mean
+    // N copies of one fact and no place to store it while the queue is empty — which is exactly when
+    // someone wants to pause it before a launch. It lives in the same db as the queue deliberately:
+    // the app and the CLI already share this file with WAL + busy_timeout, so a pause set from a shell
+    // is visible to the running app with no second store to keep in sync.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS request_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+         );",
+    )?;
     add_column_if_missing(conn, "origin", "TEXT")?;
     add_column_if_missing(conn, "title", "TEXT")?;
     // The REPLY thread (#bsc-request-gains-a-note-verb) — its own table, not the `note` column above.

@@ -161,6 +161,31 @@ impl Store {
     }
 
     /// Empty the whole store — see [`bsc_sqlite_util::clear_tables`] for why it truncates.
+    /// Is auto-spawn PAUSED for this queue?
+    ///
+    /// Fail-safe direction, and it is the opposite of the usual one: an unreadable or missing setting
+    /// reads as NOT paused, because the safe default here is the behaviour the app already has. A
+    /// missing row must not silently stop the debug fleet — a pause is something a person asked for,
+    /// so it has to be recorded to be true.
+    pub fn is_paused(&self) -> rusqlite::Result<bool> {
+        let v: Option<String> = self
+            .conn
+            .query_row("SELECT value FROM request_settings WHERE key = 'paused'", [], |r| r.get(0))
+            .optional()?;
+        Ok(v.as_deref() == Some("1"))
+    }
+
+    /// Pause or resume auto-spawn. Returns the value actually stored, so a caller reports what IS
+    /// rather than what it asked for.
+    pub fn set_paused(&self, paused: bool) -> rusqlite::Result<bool> {
+        self.conn.execute(
+            "INSERT INTO request_settings (key, value) VALUES ('paused', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [if paused { "1" } else { "0" }],
+        )?;
+        self.is_paused()
+    }
+
     pub fn clear(&self) -> rusqlite::Result<()> {
         bsc_sqlite_util::clear_tables(&self.conn, schema::ALL_TABLES)
     }
@@ -389,6 +414,46 @@ fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
 
 #[cfg(test)]
 mod tests {
+
+    /// THE OFF SWITCH DEFAULTS TO OFF-THE-SWITCH, i.e. auto-spawn ACTIVE.
+    ///
+    /// The fail-safe direction here is the opposite of the usual one and it is worth stating: a
+    /// missing or unreadable setting must read as NOT paused. The app has always spawned; a pause is
+    /// something a person asked for, so it has to be recorded to be true. Defaulting the other way
+    /// would let a fresh db, or a failed read, silently stop the whole debug fleet with nothing to
+    /// point at.
+    #[test]
+    fn a_fresh_store_is_not_paused() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(!s.is_paused().unwrap(), "a store nobody paused is ACTIVE");
+    }
+
+    #[test]
+    fn pausing_round_trips_and_is_reversible() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.set_paused(true).unwrap(), "set_paused reports what it READ BACK");
+        assert!(s.is_paused().unwrap());
+        // Idempotent — pausing twice is not an error and does not toggle.
+        assert!(s.set_paused(true).unwrap());
+        assert!(!s.set_paused(false).unwrap());
+        assert!(!s.is_paused().unwrap());
+    }
+
+    /// The flag is a property of the QUEUE, so it survives the queue being emptied. `clear` truncates
+    /// every table in `ALL_TABLES`, which now includes the settings table — that is the correct
+    /// behaviour for a reset, and this pins which of the two it is rather than leaving it to be
+    /// discovered.
+    #[test]
+    fn a_pause_outlives_the_requests_but_not_a_clear() {
+        let s = Store::open_in_memory().unwrap();
+        s.create(&NewRequest { text: "x".into(), ..Default::default() }).unwrap();
+        s.set_paused(true).unwrap();
+        s.remove(1).unwrap();
+        assert!(s.is_paused().unwrap(), "removing every request does not un-pause the queue");
+        s.clear().unwrap();
+        assert!(!s.is_paused().unwrap(), "clear() is a full reset — settings included");
+    }
+
     use super::*;
 
     fn req(text: &str, cmd: Option<&str>, ts: i64) -> NewRequest {
