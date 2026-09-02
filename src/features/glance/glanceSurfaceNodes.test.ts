@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { surfaceGraph, dependentCount, withSurfaceNodes, crateKind, crateDrillGraph, CRATE_KIND_ROLE, type SurfaceRosterRow, type CrateDrillDoc } from "@/features/glance/lib/surfaceNodes";
 import { buildGlanceData, type GlanceData } from "@/features/glance/lib/glanceData";
+import { buildGraph } from "@/features/glance/lib/glanceGraph";
 import { surfaceNodeId, isBandNode, isBandEdge } from "@/features/glance/lib/glanceGraph";
 
 const row = (crate: string, dependsOn: string[] = [], verbs: string[] = []): SurfaceRosterRow => ({
@@ -415,9 +416,35 @@ describe("a crate drills into its NOUNS, each rooting its verbs", () => {
     expect(roots.map((n) => n.slug).sort()).toEqual(["logs", "metrics", "perf"]);
     // no crate node while there are nouns — the drill is already scoped to it
     expect(g.rawNodes.some((n) => n.id === surfaceNodeId("logs"))).toBe(false);
-    // every edge runs from a noun root to one of its verbs
-    for (const e of g.rawEdges) expect(e.from.startsWith("noun:")).toBe(true);
+    // EVERY EDGE POINTS AT THE NOUN, and that is what puts the noun on the LEFT.
+    //
+    // `layoutProjectNetwork` hands `layerDag` the edges reversed and lays layers out left→right, so an
+    // edge's TARGET lands at a lower layer — further left. Drawn `noun → verb` the verbs sat left of
+    // their own noun, which is backwards to read. This assertion is the layout, not a formality.
+    for (const e of g.rawEdges) {
+      expect(e.to.startsWith("noun:"), `${e.id} must point AT its noun`).toBe(true);
+      expect(e.from.startsWith("verb:"), `${e.id} must start at a verb`).toBe(true);
+      expect(e.kind).toBe("verb-of");
+    }
     expect(g.rawEdges).toHaveLength(3);
+  });
+
+  it("LAYS THE NOUN LEFT OF ITS VERBS — the property, not a proxy for it", () => {
+    // MAINTAINER: "information is, in the west, read from left to right! lets please place the noun on
+    // the left hand side and their verbs to the right."
+    //
+    // Asserting edge DIRECTION only pins the current layering convention ("the target sits at a lower
+    // layer"). Asserting POSITION pins what was actually asked for, and survives that convention
+    // changing underneath — which is the whole reason the direction had to be flipped in the first
+    // place. This runs the real layout engine, not a stand-in.
+    const g = crateDrillGraph(doc());
+    const m = buildGraph(g.rawNodes, g.rawEdges);
+    const at = (id: string) => m.nodes.find((n) => n.id === id)!;
+    const logsRoot = at("noun:logs");
+    for (const v of ["sessions", "summary"]) {
+      const verb = m.nodes.find((n) => n.slug === v && n.roleLabel === "logs")!;
+      expect(verb.x, `bsc logs ${v} must sit RIGHT of its noun`).toBeGreaterThan(logsRoot.x);
+    }
   });
 
   it("DRAWS a noun whose catalog is unreachable, rather than hiding the command", () => {
@@ -427,7 +454,7 @@ describe("a crate drills into its NOUNS, each rooting its verbs", () => {
     const g = crateDrillGraph(doc());
     const metrics = g.rawNodes.find((n) => n.slug === "metrics");
     expect(metrics).toBeTruthy();
-    expect(g.rawEdges.filter((e) => e.from === metrics!.id)).toHaveLength(0);
+    expect(g.rawEdges.filter((e) => e.to === metrics!.id)).toHaveLength(0);
   });
 
   it("keys a verb on its NOUN, so two nouns' same-named verbs stay distinct", () => {
