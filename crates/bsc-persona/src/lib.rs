@@ -12,6 +12,8 @@
 //! reconciled by the frontend, exactly like the user blueprint library.
 
 pub mod cli;
+/// The role capability TABLE projected from the packaged personas, and its frozen baseline.
+pub mod baseline;
 /// The permission FLOOR a persona carries, and the narrow-only clamp every write passes.
 pub mod floor;
 /// The PACKAGED persona floors — the ceiling a built-in is clamped against.
