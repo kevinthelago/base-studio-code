@@ -51,7 +51,13 @@ pub(crate) async fn bsc(
 }
 
 /// The blocking body of [`bsc`], kept as its own fn so it stays directly unit-testable.
-fn bsc_blocking(
+///
+/// `pub(crate)` so an in-process caller that is ALREADY on a blocking thread can reuse it rather than
+/// re-implementing the spawn. That matters for correctness, not tidiness: this body carries the warm-
+/// child fast path, the per-project store wiring (whose `None` arm `env_remove`s four vars so a call
+/// cannot inherit the app's own DB paths) and the child timing. A second hand-rolled `Command` would
+/// silently have none of them.
+pub(crate) fn bsc_blocking(
     project_key: Option<String>,
     args: Vec<String>,
     stdin: Option<String>,

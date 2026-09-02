@@ -53,7 +53,11 @@ pub struct OwnedIssue {
 }
 
 /// The verdict, and the sentence explaining it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+///
+/// `Deserialize` as well as `Serialize` because this now crosses a PROCESS boundary: `bsc fleet
+/// worker-end` writes it and the app's dispatcher reads it back. A type that only serializes is a
+/// one-way contract, and the round trip is what the boundary actually needs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WorkerEndVerdict {
     pub state: String,
     pub summary: String,
@@ -105,6 +109,75 @@ pub fn classify_worker_end(issues: &[OwnedIssue], coord: &CoordState) -> WorkerE
         state: "done".into(),
         summary: format!("{n}/{n} complete · {landed}/{n} landed"),
     }
+}
+
+// ── Gathering the inputs, beside the decision they feed ──────────────────────────────────────
+
+/// How much of `coord.log` the `landed` tiebreaker reads.
+///
+/// Mirrors the frontend's `readCoordState(5000)`, so moving this off the render loop cannot change
+/// which refs read as landed. `coord.log` is one app-wide append-only file and the fold is re-derived
+/// from this tail on every call, which is what makes the answer correct across a restart.
+pub const COORD_TAIL_LINES: usize = 5000;
+
+/// The resting-state verdict for each of `stream_ids`, index-aligned.
+///
+/// **This lives here, not in the app, so it can run in a process the app merely SPAWNS.** The app's
+/// Rust half is a live process behind a webview: changing a decision that lives inside it means a new
+/// binary, which means the window restarts under whoever is using it — with a fleet running in it.
+/// `bsc` is a fresh process per call, so the same decision on this side goes live by staging a binary
+/// (`a-resolved-request-goes-live-without-a-restart`, measured at 0.16s) with no app downtime.
+///
+/// `None` at a position means the project has NO PLAN STORE, and the caller must bail rather than end
+/// the pane. Every other position carries a verdict, including for a stream that owns nothing — that
+/// is `Some(needs-attention)`, because completion cannot be confirmed from an empty set. Collapsing
+/// the two would either end a pane on the strength of a missing file, or leave an evidence-less worker
+/// looking finished.
+///
+/// ONE READ FOR THE WHOLE BATCH. `stream_ids` is a list and both stores are read once, then
+/// partitioned in memory. A per-stream call is the shape #3908 and #3954 were filed to undo: at ~39
+/// panes it saturated the command pool and `pty_write` measured 3280ms.
+pub fn worker_end_verdicts(
+    plan_db: &std::path::Path,
+    log_dir: &std::path::Path,
+    stream_ids: &[String],
+) -> Vec<Option<WorkerEndVerdict>> {
+    let unknown = || vec![None; stream_ids.len()];
+
+    // Probe existence first rather than letting `open_read_only` decide: the fleet launch asks about
+    // every project, so this must never materialize an empty store as a side effect.
+    if !plan_db.exists() {
+        return unknown();
+    }
+    let Ok(store) = plandb::Store::open_read_only(plan_db) else { return unknown() };
+    let Ok(all) = store.list_summary(None, None, None, None) else { return unknown() };
+
+    let coord = coord_state(log_dir);
+    stream_ids
+        .iter()
+        .map(|sid| {
+            let issues: Vec<OwnedIssue> = all
+                .iter()
+                .filter(|i| i.stream.as_deref() == Some(sid.as_str()))
+                .map(|i| OwnedIssue {
+                    reference: i.r#ref.clone(),
+                    status: i.status.clone(),
+                    stream: i.stream.clone(),
+                })
+                .collect();
+            Some(classify_worker_end(&issues, &coord))
+        })
+        .collect()
+}
+
+/// Fold the coordination log's tail into the state the `landed` tiebreaker reads.
+///
+/// Tolerant by design: an absent or unreadable `coord.log` yields the default state, in which nothing
+/// is satisfied. That degrades `landed` to `0/n` in the SUMMARY and cannot change the verdict, because
+/// `landed` never gates it — so a missing log costs a detail, never a wrong resting state.
+fn coord_state(log_dir: &std::path::Path) -> CoordState {
+    let lines = logs::tail_raw(log_dir, "coord", COORD_TAIL_LINES, true);
+    logs::coord::ingest_coord_log(&lines, CoordState::default()).state
 }
 
 #[cfg(test)]
@@ -302,5 +375,121 @@ mod tests {
         // And it cannot rescue a blocked worker.
         let blocked = classify_worker_end(&[issue("#1", "blocked")], &coord_with(&["#1".to_string()]));
         assert_eq!(blocked.state, "blocked");
+    }
+}
+
+#[cfg(test)]
+mod gather_tests {
+    use super::*;
+
+    /// A scratch tree with a plans dir and a log dir.
+    ///
+    /// NOTE these take EXPLICIT paths rather than repointing `HOME`. The app-side versions of these
+    /// tests had to take `ENV_LOCK` because `bsc_base_dir()` resolves through the environment, and
+    /// process-global env mutation behaves differently under `cargo test` (one shared process) and
+    /// `cargo nextest` (one process per test). Passing the paths in removes the hazard entirely.
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("bsc-we-{tag}-{}", bsc_util::now_ms()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("plans")).unwrap();
+        d
+    }
+
+    fn seed(dir: &std::path::Path, key: &str, rows: &[(&str, &str, &str)]) -> std::path::PathBuf {
+        let p = dir.join("plans").join(format!("{key}.db"));
+        let store = plandb::Store::open(&p).unwrap();
+        for (r, status, stream) in rows {
+            store
+                .upsert(&plandb::PlanIssue {
+                    r#ref: (*r).into(),
+                    title: (*r).into(),
+                    status: (*status).into(),
+                    stream: Some((*stream).into()),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        p
+    }
+
+    fn ids(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// A project with NO plan store yields `None` — the caller bails rather than ending a pane on the
+    /// strength of a missing file.
+    #[test]
+    fn an_absent_plan_store_is_unknown_not_a_verdict() {
+        let d = scratch("absent");
+        let got = worker_end_verdicts(&d.join("plans").join("nope.db"), &d, &ids(&["api", "web"]));
+        assert_eq!(got.len(), 2, "still index-aligned");
+        assert!(got.iter().all(|v| v.is_none()), "no store ⇒ no verdict: {got:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A store that EXISTS but holds nothing for the stream is a verdict, and it is not `done`. This
+    /// is the line the TypeScript drew (`null` bails, `[]` classifies) and it must survive the move.
+    #[test]
+    fn an_empty_stream_in_a_live_store_is_a_verdict_and_never_done() {
+        let d = scratch("empty");
+        let db = seed(&d, "proj", &[("#1", "complete", "other")]);
+        let got = worker_end_verdicts(&db, &d, &ids(&["api"]));
+        let v = got[0].as_ref().expect("a live store always yields a verdict");
+        assert_eq!(v.state, "needs-attention", "an empty owned set cannot confirm completion");
+        assert!(v.summary.contains("can't confirm"), "got {:?}", v.summary);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The batch is INDEX-ALIGNED and each stream is judged on its OWN issues — a short, long or
+    /// misordered result would attribute one worker's state to another.
+    #[test]
+    fn each_stream_is_judged_on_its_own_issues_in_order() {
+        let d = scratch("align");
+        let db = seed(
+            &d,
+            "proj",
+            &[("#1", "complete", "api"), ("#2", "verified", "api"), ("#3", "open", "web"), ("#4", "blocked", "db")],
+        );
+        let got = worker_end_verdicts(&db, &d, &ids(&["web", "api", "db"]));
+        let states: Vec<&str> = got.iter().map(|v| v.as_ref().unwrap().state.as_str()).collect();
+        assert_eq!(
+            states,
+            vec!["needs-attention", "done", "blocked"],
+            "each verdict belongs to the stream at its own index"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A missing `coord.log` degrades `landed` to a detail, never to a wrong verdict.
+    #[test]
+    fn an_unreadable_coord_log_cannot_change_the_verdict() {
+        let d = scratch("nocoord");
+        let db = seed(&d, "proj", &[("#1", "complete", "api")]);
+        assert!(!d.join("coord.log").exists(), "precondition: no coord log");
+        let v = worker_end_verdicts(&db, &d, &ids(&["api"]))[0].clone().unwrap();
+        assert_eq!(v.state, "done", "the verdict stands without a coord log");
+        assert!(v.summary.contains("0/1 landed"), "landed degrades to zero, reported: {:?}", v.summary);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// THE PROCESS BOUNDARY. The answer is three-state, and a JSON round trip is exactly where three
+    /// states collapse into two — `null` and `needs-attention` both look "not done" to a careless
+    /// reader, but one means BAIL and the other means the store answered.
+    #[test]
+    fn the_three_state_answer_survives_a_json_round_trip() {
+        let d = scratch("wire");
+        let db = seed(&d, "proj", &[("#1", "complete", "api")]);
+        let real = worker_end_verdicts(&db, &d, &ids(&["api"]));
+        let absent = worker_end_verdicts(&d.join("plans").join("nope.db"), &d, &ids(&["api"]));
+
+        let mixed: Vec<Option<WorkerEndVerdict>> = vec![absent[0].clone(), real[0].clone()];
+        let wire = serde_json::to_string(&mixed).unwrap();
+        assert!(wire.starts_with("[null,"), "an absent store must serialize as null, got {wire}");
+
+        let back: Vec<Option<WorkerEndVerdict>> = serde_json::from_str(&wire).unwrap();
+        assert_eq!(back, mixed, "the round trip is lossless");
+        assert!(back[0].is_none(), "null stayed null — the caller still bails");
+        assert_eq!(back[1].as_ref().unwrap().state, "done", "and the verdict survived intact");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
