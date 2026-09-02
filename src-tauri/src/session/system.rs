@@ -32,9 +32,6 @@ use bsc_session::{
     SystemSessionState, SYSTEM_SESSIONS,
 };
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -155,8 +152,7 @@ pub struct LifecycleAck {
 }
 
 /// In-flight lifecycle requests, keyed by request id.
-#[derive(Default)]
-pub struct LifecyclePending(Mutex<HashMap<String, Sender<LifecycleAck>>>);
+pub type LifecyclePending = crate::app::ack::AckPending<LifecycleAck>;
 
 /// Ask the frontend to start or stop a system session, and block until it acks.
 pub fn apply(
@@ -179,7 +175,7 @@ pub fn apply(
         .and_then(|v| v.into_iter().next())
         .is_some_and(|p| p.live);
 
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<LifecycleAck>(app, id);
 
     let payload = serde_json::json!({
         "id": id,
@@ -201,7 +197,7 @@ pub fn apply(
         .map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id); // don't leak the slot when nobody ever answers
+        crate::app::ack::unregister::<LifecycleAck>(app, id); // don't leak the slot when nobody ever answers
         format!(
             "the frontend did not apply the {} within {}ms — is a window open, or was it mid-reload? \
              (the app IS running; this is not a 'no app' timeout)",
@@ -209,7 +205,7 @@ pub fn apply(
             ACK_TIMEOUT.as_millis()
         )
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<LifecycleAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -233,28 +229,10 @@ pub fn apply(
     })
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<LifecycleAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<LifecyclePending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<LifecyclePending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.remove(id);
-        }
-    }
-}
-
 /// The frontend's ack — delivers into the waiter registered by [`apply`].
 #[tauri::command]
 pub(crate) fn system_session_ack(ack: LifecycleAck, state: tauri::State<'_, LifecyclePending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     match tx {
         Some(tx) => {
             let _ = tx.send(ack);
@@ -273,21 +251,16 @@ mod tests {
     #[test]
     fn an_ack_reaches_only_its_own_waiter() {
         let pending = LifecyclePending::default();
-        let (tx_a, rx_a) = channel::<LifecycleAck>();
-        let (tx_b, rx_b) = channel::<LifecycleAck>();
-        {
-            let mut m = pending.0.lock().unwrap();
-            m.insert("a".into(), tx_a);
-            m.insert("b".into(), tx_b);
-        }
+        let rx_a = pending.register("a");
+        let rx_b = pending.register("b");
         let ack = LifecycleAck { id: "b".into(), error: None, outcome: Some(LifecycleOutcome::Started) };
-        let tx = pending.0.lock().unwrap().remove(&ack.id).unwrap();
-        tx.send(ack).unwrap();
+        let id = ack.id.clone();
+        assert!(pending.deliver(&id, ack), "the parked waiter must receive it");
 
         assert!(rx_b.try_recv().is_ok(), "b's waiter got its ack");
         assert!(rx_a.try_recv().is_err(), "a's waiter is untouched");
-        assert!(pending.0.lock().unwrap().contains_key("a"), "a is still registered");
-        assert!(!pending.0.lock().unwrap().contains_key("b"), "b was consumed");
+        assert!(pending.contains("a"), "a is still registered");
+        assert!(!pending.contains("b"), "b was consumed");
     }
 
     /// The ack's outcome is the wire enum, so the frontend's kebab-case strings must deserialize into

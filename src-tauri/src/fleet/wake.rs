@@ -20,9 +20,6 @@
 //! So `woke: false` is reported as an ERROR here, not a quiet success.
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -44,8 +41,7 @@ pub struct WakeAck {
 }
 
 /// In-flight wakes, keyed by request id.
-#[derive(Default)]
-pub struct WakePending(Mutex<HashMap<String, Sender<WakeAck>>>);
+pub type WakePending = crate::app::ack::AckPending<WakeAck>;
 
 /// Which prompt the wake payload should carry — `None` meaning "leave the caller's alone".
 ///
@@ -124,7 +120,7 @@ pub fn apply(
     // costs a file write and cannot drift.
     refresh_director_protocol(&req.pane_id);
 
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<WakeAck>(app, id);
 
     // The id rides in the payload so the frontend can correlate its ack — a director loop and a human
     // could both have a wake in flight, and an ack for the wrong one would report the wrong pane woke.
@@ -177,14 +173,14 @@ pub fn apply(
         .map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id); // don't leak the slot when nobody ever answers
+        crate::app::ack::unregister::<WakeAck>(app, id); // don't leak the slot when nobody ever answers
         format!(
             "the frontend did not apply the wake within {}ms — is a window open, or was it \
              mid-reload? (the app IS running; this is not a 'no app' timeout)",
             ACK_TIMEOUT.as_millis()
         )
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<WakeAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -362,28 +358,10 @@ fn resolve_stream(pane_id: &str) -> Result<Option<serde_json::Value>, String> {
     Ok(Some(row))
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<WakeAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<WakePending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<WakePending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.remove(id);
-        }
-    }
-}
-
 /// The frontend's ack — delivers into the waiter registered by [`apply`].
 #[tauri::command]
 pub(crate) fn fleet_wake_ack(ack: WakeAck, state: tauri::State<'_, WakePending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     match tx {
         Some(tx) => {
             let _ = tx.send(ack);
@@ -694,21 +672,16 @@ mod tests {
     #[test]
     fn an_ack_reaches_only_its_own_waiter() {
         let pending = WakePending::default();
-        let (tx_a, rx_a) = channel::<WakeAck>();
-        let (tx_b, rx_b) = channel::<WakeAck>();
-        {
-            let mut m = pending.0.lock().unwrap();
-            m.insert("a".into(), tx_a);
-            m.insert("b".into(), tx_b);
-        }
+        let rx_a = pending.register("a");
+        let rx_b = pending.register("b");
         // Simulate fleet_wake_ack's core: take the waiter out and deliver.
         let ack = WakeAck { id: "b".into(), error: None, woke: true };
-        let tx = pending.0.lock().unwrap().remove(&ack.id).unwrap();
-        tx.send(ack).unwrap();
+        let id = ack.id.clone();
+        assert!(pending.deliver(&id, ack), "the parked waiter must receive it");
 
         assert!(rx_b.try_recv().is_ok(), "b's waiter got its ack");
         assert!(rx_a.try_recv().is_err(), "a's waiter is untouched");
-        assert!(pending.0.lock().unwrap().contains_key("a"), "a is still registered");
-        assert!(!pending.0.lock().unwrap().contains_key("b"), "b was consumed");
+        assert!(pending.contains("a"), "a is still registered");
+        assert!(!pending.contains("b"), "b was consumed");
     }
 }

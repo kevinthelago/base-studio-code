@@ -28,9 +28,6 @@
 //! read the same rows, so the two cannot disagree about what the fleet is.
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -50,8 +47,7 @@ pub struct StartAck {
 }
 
 /// In-flight fleet starts, keyed by request id.
-#[derive(Default)]
-pub struct StartPending(Mutex<HashMap<String, Sender<StartAck>>>);
+pub type StartPending = crate::app::ack::AckPending<StartAck>;
 
 /// One stream as the launch needs it: **the plan's whole row**, plus the worktree just created for it.
 ///
@@ -190,7 +186,7 @@ pub fn apply(
         let _ = crate::fleet::director::ensure_director_protocol(key.to_string());
     }
 
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<StartAck>(app, id);
     app.emit(
         "bsc://fleet-start",
         serde_json::json!({
@@ -206,14 +202,14 @@ pub fn apply(
     .map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id);
+        crate::app::ack::unregister::<StartAck>(app, id);
         format!(
             "the frontend did not launch the fleet within {}ms — is a window open, or was it \
              mid-reload? (the app IS running; this is not a 'no app' timeout)",
             ACK_TIMEOUT.as_millis()
         )
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<StartAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -234,28 +230,10 @@ pub fn apply(
     })
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<StartAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<StartPending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<StartPending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.remove(id);
-        }
-    }
-}
-
 /// The frontend's reply, routed back to the waiting request.
 #[tauri::command]
 pub(crate) fn fleet_start_ack(ack: StartAck, state: tauri::State<'_, StartPending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     if let Some(tx) = tx {
         let _ = tx.send(ack);
     }

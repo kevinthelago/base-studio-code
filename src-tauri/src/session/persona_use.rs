@@ -21,9 +21,6 @@
 //! how `list` and this verb would come to disagree.
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -51,8 +48,7 @@ pub struct PersonaUseAck {
 }
 
 /// In-flight requests, keyed by request id.
-#[derive(Default)]
-pub struct PersonaUsePending(Mutex<HashMap<String, Sender<PersonaUseAck>>>);
+pub type PersonaUsePending = crate::app::ack::AckPending<PersonaUseAck>;
 
 /// Ask the frontend to change a pane's persona, and block until it acks.
 pub fn apply(
@@ -84,7 +80,7 @@ pub fn apply(
         ));
     }
 
-    let rx = register(app, id);
+    let rx = crate::app::ack::register::<PersonaUseAck>(app, id);
 
     // The id rides in the payload so the frontend can correlate its ack — two callers could each have
     // one in flight, and an ack for the wrong one would report the wrong pane changed.
@@ -98,14 +94,14 @@ pub fn apply(
         .map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
-        unregister(app, id); // don't leak the slot when nobody ever answers
+        crate::app::ack::unregister::<PersonaUseAck>(app, id); // don't leak the slot when nobody ever answers
         format!(
             "the frontend did not apply the persona within {}ms — is a window open, or was it \
              mid-reload? (the app IS running; this is not a 'no app' timeout)",
             ACK_TIMEOUT.as_millis()
         )
     })?;
-    unregister(app, id);
+    crate::app::ack::unregister::<PersonaUseAck>(app, id);
 
     if let Some(e) = ack.error {
         return Err(e);
@@ -126,28 +122,10 @@ pub fn apply(
     })
 }
 
-fn register(app: &tauri::AppHandle, id: &str) -> Receiver<PersonaUseAck> {
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<PersonaUsePending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.insert(id.to_string(), tx);
-        }
-    }
-    rx
-}
-
-fn unregister(app: &tauri::AppHandle, id: &str) {
-    if let Some(state) = app.try_state::<PersonaUsePending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.remove(id);
-        }
-    }
-}
-
 /// The frontend's answer, handed back to the blocked [`apply`].
 #[tauri::command]
 pub(crate) fn persona_use_ack(ack: PersonaUseAck, state: tauri::State<'_, PersonaUsePending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     if let Some(tx) = tx {
         let _ = tx.send(ack);
     } else {
@@ -195,8 +173,7 @@ pub struct WhatamiAck {
 }
 
 /// In-flight whatami requests, keyed by request id.
-#[derive(Default)]
-pub struct WhatamiPending(Mutex<HashMap<String, Sender<WhatamiAck>>>);
+pub type WhatamiPending = crate::app::ack::AckPending<WhatamiAck>;
 
 /// Ask the frontend what a pane is running as, and block until it answers.
 ///
@@ -211,12 +188,7 @@ pub fn whatami(
         return Err("persona whatami: no pane id".into());
     }
 
-    let (tx, rx) = channel();
-    if let Some(state) = app.try_state::<WhatamiPending>() {
-        if let Ok(mut m) = state.0.lock() {
-            m.insert(id.to_string(), tx);
-        }
-    }
+    let rx = crate::app::ack::register::<WhatamiAck>(app, id);
 
     let mut payload = serde_json::to_value(req).map_err(|e| e.to_string())?;
     payload
@@ -227,13 +199,7 @@ pub fn whatami(
     app.emit("bsc://persona-whatami", payload)
         .map_err(|e| format!("cannot reach the frontend: {e}"))?;
 
-    let drop_slot = || {
-        if let Some(state) = app.try_state::<WhatamiPending>() {
-            if let Ok(mut m) = state.0.lock() {
-                m.remove(id);
-            }
-        }
-    };
+    let drop_slot = || crate::app::ack::unregister::<WhatamiAck>(app, id);
     let ack = rx.recv_timeout(ACK_TIMEOUT).map_err(|_| {
         drop_slot();
         format!(
@@ -264,7 +230,7 @@ pub fn whatami(
 /// The frontend's answer, handed back to the blocked [`whatami`].
 #[tauri::command]
 pub(crate) fn persona_whatami_ack(ack: WhatamiAck, state: tauri::State<'_, WhatamiPending>) {
-    let tx = state.0.lock().ok().and_then(|mut m| m.remove(&ack.id));
+    let tx = state.take(&ack.id);
     if let Some(tx) = tx {
         let _ = tx.send(ack);
     } else {
