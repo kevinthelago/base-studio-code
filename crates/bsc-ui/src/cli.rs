@@ -31,7 +31,9 @@ const TAGLINE: &str =
 
 /// The contract verbs bsc-ui owns. The component-library verbs are appended from
 /// [`bsc_component::cli::command_docs`] by [`merged_commands`].
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "schema",
         summary: "print the primitive contract (every component, its props + enums)",

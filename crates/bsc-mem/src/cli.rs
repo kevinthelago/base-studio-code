@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 const TAGLINE: &str = "the MEMORY + COST surface — app heap, build time and build memory (read-only)";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "build",
         summary: "what builds COST — count, median, worst, latest (time and peak memory)",

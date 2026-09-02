@@ -23,7 +23,9 @@ const STALE_MS: i64 = 60_000;
 
 const TAGLINE: &str = "the user persona store — list/get/set/remove ~/.base-studio-code/personas (#2094)";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "list",
         summary: "every persona's {id, name, role} (JSON)",

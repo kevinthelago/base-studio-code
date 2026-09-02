@@ -14,7 +14,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TAGLINE: &str = "the improvement-request store — the designer→debug channel (#3295)";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "new",
         summary: "file an improvement request; prints its id",

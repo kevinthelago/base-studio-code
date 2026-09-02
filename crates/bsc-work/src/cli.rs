@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 const TAGLINE: &str = "the work loop: run the gate and RECORD what it actually did on the change record";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "gate",
         summary: "run the gate and record every leg's real result on this branch's change record",

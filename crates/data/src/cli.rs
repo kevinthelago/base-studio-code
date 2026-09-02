@@ -23,7 +23,9 @@ const TAGLINE: &str = "the per-project Data Model + Platform Behavior Summary + 
 /// The command catalog — drives the shared help system. One detailed `usage` block per top-level
 /// command keeps the overview tiny; the multi-verb commands (`model`/`scan`/`connector`) document
 /// their subcommands in their own usage blocks. Reading is lean TSV by default (`--json`/`--pretty`).
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "model",
         summary: "read/write the canonical Data Model",

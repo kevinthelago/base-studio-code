@@ -32,7 +32,9 @@ const TAGLINE: &str = "the compliance standards store — accessibility/privacy/
 /// The command catalog — drives the shared help system. One detailed `usage` block per top-level
 /// command keeps the overview tiny; `standards`' subcommands live in its own usage block. Output is
 /// JSON throughout (compact; `--pretty` indents).
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "standards",
         summary: "list/get the raw standards corpus",

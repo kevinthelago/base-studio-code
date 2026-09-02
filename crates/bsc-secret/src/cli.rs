@@ -20,7 +20,9 @@ use serde_json::{json, Value};
 
 const TAGLINE: &str = "the credential store — what services we are paired with, and whether those pairings still work";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "list",
         summary: "every credential + its derived status",

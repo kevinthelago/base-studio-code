@@ -8,7 +8,9 @@ use bsc_cli_util::CmdDoc;
 
 const TAGLINE: &str = "the runtime config-seed mirror: read/adopt verbs for a file diverged from the packaged seed (#168)";
 
-const COMMANDS: &[CmdDoc] = &[
+/// The crate's own verb catalog. `pub` so `bsc surface verbs` can PROJECT it rather than
+/// restate it — a generated catalog cannot drift, a second list does.
+pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "status",
         summary: "every config file NOT in sync with the packaged seed, classified",
