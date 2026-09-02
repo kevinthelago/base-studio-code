@@ -38,6 +38,7 @@ bsc-self = { path = "../bsc-self" }
 # The crate was already a transitive dependency through bsc-publish; this makes it a DIRECT one so the
 # dispatch arm can name it.
 bsc-github = { path = "../bsc-github" }
+bsc-resolve = { path = "../bsc-resolve" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
 # `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for.

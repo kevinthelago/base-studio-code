@@ -60,22 +60,13 @@ pub(crate) fn yaml_quote(s: &str) -> String {
     let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
     format!("\"{}\"", escaped)
 }
-/// Slug a skill name: lowercase, keep `[a-z0-9-]`, collapse any run of other
-/// chars to a single `-`, and trim leading/trailing `-`. May return empty.
-pub(crate) fn skill_slug(name: &str) -> String {
-    let mut out = String::new();
-    let mut pending_dash = false;
-    for c in name.to_lowercase().chars() {
-        if c.is_ascii_alphanumeric() || c == '-' {
-            if pending_dash && !out.is_empty() { out.push('-'); }
-            pending_dash = false;
-            out.push(c);
-        } else {
-            pending_dash = true;
-        }
-    }
-    out.trim_matches('-').to_string()
-}
+/// Slug a skill name — RE-EXPORTED from `crates/bsc-resolve`.
+///
+/// It moved to sit beside the RESOLUTION that uses it. This is the directory name
+/// `.claude/skills/<slug>/SKILL.md` is keyed on, and the resolution drops a skill whose name slugs
+/// to empty; two copies drifting would mean the resolution counting a skill this writer then
+/// silently dropped, which is a session quietly missing instructions it was configured to have.
+pub(crate) use bsc_resolve::skill::skill_slug;
 
 #[cfg(test)]
 mod relocated_tests {

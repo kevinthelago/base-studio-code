@@ -527,6 +527,7 @@ dependencies = [
  "bsc-navigate",
  "bsc-persona",
  "bsc-project",
+ "bsc-resolve",
  "bsc-runtime",
  "bsc-sandbox",
  "bsc-session",
@@ -741,6 +742,7 @@ dependencies = [
  "bsc-project",
  "bsc-publish",
  "bsc-request",
+ "bsc-resolve",
  "bsc-runtime",
  "bsc-sandbox",
  "bsc-secret",
@@ -1084,6 +1086,19 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-resolve"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-config",
+ "bsc-util",
+ "log",
+ "serde",
+ "serde_json",
+ "skilldb",
 ]
 
 [[package]]
