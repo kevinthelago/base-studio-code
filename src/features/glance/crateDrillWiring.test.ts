@@ -61,6 +61,18 @@ describe("a crate node's click drills instead of trying to expand a session", ()
       expect(src).toContain("if (!drill && featureNode) setFeatureNode(null);");
     });
 
+    it("a stream opens its SESSION; a required record selects", () => {
+      // A stream carries the fleet's own node id, so `expandNode` resolves the same pane whichever
+      // graph the user came through. A required record is shared library code with nothing to run.
+      expect(src).toContain('else if (featureNode && id.startsWith("freq:")) pickNode(id);');
+      expect(src).toContain("else if (featureNode) expandNode(id);");
+      const selectAt = src.indexOf('else if (featureNode && id.startsWith("freq:"))');
+      const expandAt = src.indexOf("else if (featureNode) expandNode(id);");
+      // Order matters exactly as it does for the crate branch: the catch-all must come last, or a
+      // required record would try to open a pane that cannot exist.
+      expect(selectAt).toBeLessThan(expandAt);
+    });
+
     it("names the layer you are in on the way back", () => {
       expect(src).toContain('featureNode ? "← features"');
     });
