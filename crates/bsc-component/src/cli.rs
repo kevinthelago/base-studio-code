@@ -2048,88 +2048,6 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // produced the divergence in the first place, and never overwrites a feature already set — so
         // it cannot perform a reconcile. This can.
         Some("feature") if args.get(1).map(String::as_str) == Some("rename") => cmd_feature_rename(&args[2..]),
-        Some("refolder") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
-            Ok(())
-        }
-        // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
-        // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
-        Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
-        Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
-        Some("sync-seed") if args.get(1).map(String::as_str) != Some("help") => cmd_sync_seed(&args[1..]),
-        Some("promote") if args.get(1).map(String::as_str) != Some("help") => cmd_promote(&args[1..]),
-        Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
-        Some(v @ ("export" | "import" | "sync-seed" | "promote")) => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
-            Ok(())
-        }
-        // `get --field <json-pointer>` (#3162, ONE field), `get … --out <name>` (#3713, spill to the
-        // scratch dir), OR `get … --kit <kitId>` (#3729, disambiguate) — all intercepted here (the shared
-        // store CLI rejects the extra flags), and handled by `cmd_get` (which also emits the whole-record
-        // `ui-focus` the plain path does). A plain `get <id>` (incl. the whole-record `--raw`, #3166) still
-        // delegates unchanged. A read verb.
-        Some("get") if args.iter().any(|a| a == "--field" || a == "--out" || a == "--kit") => cmd_get(&args[1..]),
-        // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
-        Some("log") => {
-            if args.get(1).map(String::as_str) == Some("help") {
-                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "log"));
-                Ok(())
-            } else {
-                cmd_log(&args[1..])
-            }
-        }
-        // `set` (#3164) is intercepted here — it stamps rev/updatedAt/updatedBy + honors --by/--if-version
-        // (the shared store CLI never stamps and its parser rejects those flags). `set help` still prints
-        // the doc. The scope gate above already refused a read-scoped session before we got here.
-        Some("set") if args.get(1).map(String::as_str) != Some("help") => {
-            cmd_set(&args[1..], open_component_store, validate_component_batch, "component")
-        }
-        Some("set") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set"));
-            Ok(())
-        }
-        // `revert` — restore `srcText` from the retained history. The recovery path a record with no
-        // packaged seed had no way to reach. The scope gate above already refused a read-scoped session.
-        Some("revert") if args.get(1).map(String::as_str) != Some("help") => cmd_revert(&args[1..]),
-        Some("revert") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "revert"));
-            Ok(())
-        }
-        // `rename` (#3576) — id-stable rename that sweeps the NAME-keyed composes/rules references across
-        // the kit + stamps history. The scope gate above already refused a read-scoped session.
-        Some("rename") if args.get(1).map(String::as_str) != Some("help") => cmd_rename(&args[1..]),
-        Some("rename") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "rename"));
-            Ok(())
-        }
-        // `merge` (#3592) — fold a duplicate INTO a survivor, repointing the NAME-keyed composes/rules
-        // references then removing it. The ACT step of the optimize loop. Scope gate above applies.
-        Some("merge") if args.get(1).map(String::as_str) != Some("help") => cmd_merge(&args[1..]),
-        Some("merge") => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "merge"));
-            Ok(())
-        }
-        // `suppress`/`unsuppress` (#3725) — permanently remove a packaged builtin component (a plain
-        // `remove` re-seeds on the next hydrate). Scope gate above applies.
-        Some("suppress") if args.get(1).map(String::as_str) != Some("help") => {
-            cmd_suppress(&args[1..], open_component_store, "component")
-        }
-        Some("unsuppress") if args.get(1).map(String::as_str) != Some("help") => {
-            cmd_unsuppress(&args[1..], open_component_store, "component")
-        }
-        Some(v @ ("suppress" | "unsuppress")) => {
-            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
-            Ok(())
-        }
-        // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
-        // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
-        Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
-        // #4158 (designer request #44): `list --kit <id>` filters to ONE kit. Intercepted here for the
-        // same reason `--shape` is — the shared store CLI rejects unknown flags — and a plain `list`
-        // still delegates unchanged. Without it, comparing two kits' membership meant a full-store dump
-        // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
-        Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
-        Some("list") if args.iter().any(|a| a == "--feature") => cmd_list_feature(&args[1..]),
         // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
@@ -9352,7 +9270,7 @@ export const P = () => <X />;"
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "promote", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "crossgraph", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "tags", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
+                "set-src", "patch", "tags", "feature", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
