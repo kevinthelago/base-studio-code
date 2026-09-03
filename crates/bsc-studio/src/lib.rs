@@ -158,6 +158,23 @@ pub fn build_snapshot(base: &Path) -> Snapshot {
         .collect()
 }
 
+/// The snapshot restricted to `keys`, for a partial save.
+///
+/// An unknown key is REFUSED rather than quietly matching nothing — a typo'd `--persona` that
+/// silently produced an empty bundle would be the same silent-empty failure this surface exists to
+/// prevent, one level up.
+pub fn build_snapshot_for(base: &Path, keys: &[String]) -> Result<Snapshot, String> {
+    if let Some(bad) = keys.iter().find(|k| !SYSTEMS.iter().any(|(key, _, _)| *key == k.as_str())) {
+        let known: Vec<&str> = SYSTEMS.iter().map(|(k, _, _)| *k).collect();
+        return Err(format!("unknown system '{bad}' (known: {})", known.join(", ")));
+    }
+    Ok(SYSTEMS
+        .iter()
+        .filter(|(key, _, _)| keys.iter().any(|k| k == key))
+        .map(|(key, segment, noun)| ((*key).to_string(), read_collection(base, segment, noun)))
+        .collect())
+}
+
 /// Slugify a studio `name` into its id: lowercase, every run of non-`[a-z0-9]` collapsed to a single
 /// `-`, trimmed of leading/trailing `-`. `Err` when nothing alphanumeric survives (an id must key a
 /// file). The result is already `safe_id`-safe, so the store writes it unchanged.
@@ -904,6 +921,72 @@ pub struct BackupOptions {
     /// Take the backup even when the source holds nothing. OFF by default, and that default is the
     /// feature: see [`backup_full`].
     pub allow_empty: bool,
+    /// Which library systems the bundle carries. `None` means every system in the roster.
+    pub systems: Option<Vec<String>>,
+    /// Capture the SQLite stores and the per-project plan stores. `false` yields a library-only
+    /// bundle, which is the shareable artifact.
+    pub databases: bool,
+}
+
+/// THE ONE ENTRY POINT for taking a backup, and the place the shape rule is enforced.
+///
+/// Selecting only library collections can still produce a single JSON file. Selecting the databases
+/// cannot: 28 MB of SQLite does not belong inside a JSON bundle, so the artifact becomes a DIRECTORY.
+/// An `--out` naming a `.json` path while a database-backed system is selected is therefore REFUSED,
+/// naming what forced the directory — silently writing a directory where a file was asked for is
+/// worse than saying no, because the caller's next step (a copy, a checksum, a sync rule) is built
+/// around the shape it asked for.
+pub fn backup(base: &Path, out: &Path, name: &str, opts: &BackupOptions) -> Result<BackupManifest, String> {
+    let looks_like_a_file = out.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("json")).unwrap_or(false);
+    if opts.databases && looks_like_a_file {
+        return Err(format!(
+            "--out {} names a .json file, but the plan stores and SQLite stores force a DIRECTORY \
+             (28 MB of SQLite cannot live in a JSON bundle). Give --out a directory path, or drop \
+             the database selection to get a single-file library bundle.",
+            out.display()
+        ));
+    }
+    if opts.databases {
+        return backup_full(base, out, name, opts);
+    }
+
+    // Library-only: one self-contained JSON file at exactly the path asked for.
+    if !opts.allow_empty {
+        if let Some(bare) = source_is_bare(base) {
+            let what = if bare.is_empty() {
+                "no stores were found there at all".to_string()
+            } else {
+                format!("every store is empty: {}", bare.join(", "))
+            };
+            return Err(format!(
+                "refusing to back up {base}: {what}. Pass --allow-empty if that is genuinely intended.",
+                base = base.display()
+            ));
+        }
+    }
+    let studio = Studio {
+        id: slug(name)?,
+        name: name.to_string(),
+        description: opts.description.clone().filter(|d| !d.trim().is_empty()),
+        version: None,
+        snapshot: match &opts.systems {
+            Some(keys) => build_snapshot_for(base, keys)?,
+            None => build_snapshot(base),
+        },
+    };
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    let json = serde_json::to_string_pretty(&studio).map_err(|e| format!("backup: {e}"))?;
+    std::fs::write(out, json).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    Ok(BackupManifest {
+        scope: Scope::Library.as_str().to_string(),
+        studio: studio.id,
+        stores: Vec::new(),
+        plans: Vec::new(),
+        absent: Vec::new(),
+        skipped: Vec::new(),
+    })
 }
 
 /// Write a FULL backup of `base` into `out`: the library bundle plus a consistent copy of every
@@ -941,7 +1024,10 @@ pub fn backup_full(base: &Path, out: &Path, name: &str, opts: &BackupOptions) ->
         name: name.to_string(),
         description: opts.description.clone().filter(|d| !d.trim().is_empty()),
         version: None,
-        snapshot: build_snapshot(base),
+        snapshot: match &opts.systems {
+            Some(keys) => build_snapshot_for(base, keys)?,
+            None => build_snapshot(base),
+        },
     };
     // The bundle self-identifies. A full-scope artifact must not be mistaken for a shareable one on
     // the strength of its filename alone.
@@ -1079,7 +1165,7 @@ mod backup_tests {
     fn a_full_bundle_identifies_itself_as_private() {
         let root = scratch("marks");
         let out = root.join("backup");
-        backup_full(&root, &out, "probe", &BackupOptions { description: Some("my notes".into()), allow_empty: true }).expect("backup");
+        backup_full(&root, &out, "probe", &BackupOptions { description: Some("my notes".into()), allow_empty: true, ..Default::default() }).expect("backup");
         let text = std::fs::read_to_string(out.join("studio.json")).expect("bundle");
         assert!(text.contains("scope: full"), "the bundle must self-identify as full-scope");
         assert!(text.contains("private project state"), "and say why that matters");
