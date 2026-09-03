@@ -304,7 +304,23 @@ uiMode (custom = the
 in-app designer preview, external = the Claude-Design drop-files intake — only meaningful when
 uiSystem is studio), appType, lifecycle, and the booleans
 needsMarket / needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
-(market / source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
+(market / source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.
+
+`model` is WHICH MODEL this project's sessions run on — a Claude tier (haiku-4.5 | sonnet-4.5 |
+opus-4.5) or a model this machine has installed (`bsc llm status` lists them), checked against both at
+set time by the same rule `bsc persona model` and `bsc teams model` apply. It is the PROJECT's level
+of the precedence chain, nearest first:
+
+    bsc plan fleet model <stream>   the stream
+      > bsc teams model <team> <node>   the NODE
+      > this                             the PROJECT, decided at Discovery
+      > bsc persona model <persona>      the shared identity
+      > the harness's own default        (no --model at all)
+
+The project sits above the persona because a persona is a global library identity placed in every
+project, and a decision taken about THIS project is nearer to it than a global default. Omit it to
+leave every session on its persona's default — that is the state of every project classified before
+the axis existed, and nothing about them changes.",
     },
     CmdDoc {
         name: "market",
