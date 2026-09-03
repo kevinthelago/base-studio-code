@@ -57,8 +57,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         // #4021 — the fleet worker Stop hook. Both directives are externalized prose, loaded the
         // same way `bsc_defer_rc` used to load the keep-going one.
         "stop-defer" => crate::defer::stop_defer(
-            &defer_prose("BSC_DEFER_DIRECTIVE", crate::defer::KEEP_GOING_DEFAULT),
-            &defer_prose("BSC_DEFER_STUCK", crate::defer::STUCK_DEFAULT),
+            &defer_prose("BSC_DEFER_DIRECTIVE", crate::defer::keep_going_default()),
+            &defer_prose("BSC_DEFER_STUCK", crate::defer::stuck_default()),
         ),
         "" | "help" | "-h" | "--help" => {
             print!(

@@ -37,6 +37,8 @@
     ],
     "resources": {
       "resources/data/components/react-ui.json": "data/components/react-ui.json",
+      "resources/data/fleet/defer-directive.md": "data/fleet/defer-directive.md",
+      "resources/data/fleet/defer-stuck-directive.md": "data/fleet/defer-stuck-directive.md",
       "resources/data/knowledge/algorithms.json": "data/knowledge/algorithms.json",
       "resources/data/personas/architect.json": "data/personas/architect.json",
       "resources/data/personas/auditor.json": "data/personas/auditor.json",
@@ -56,6 +58,9 @@
       "resources/data/personas/tester.json": "data/personas/tester.json",
       "resources/data/personas/triage.json": "data/personas/triage.json",
       "resources/data/personas/worker.json": "data/personas/worker.json",
+      "resources/data/sounds/signal.json": "data/sounds/signal.json",
+      "resources/data/ui/platform-modules.json": "data/ui/platform-modules.json",
+      "resources/data/ui/preview-importmap.json": "data/ui/preview-importmap.json",
       "resources/data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json"
     },
     "publisher": "base-studio-code",

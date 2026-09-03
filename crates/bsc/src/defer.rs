@@ -36,8 +36,14 @@ use std::io::Read;
 /// The directives, compiled in as the fallback. The session rc normally exports the CONFIG-RESOLVED
 /// copies (user-overridable, #2145) — see `defer_prose` in `hook.rs`. Same `include_str!`-from-
 /// `src-tauri/data` pattern `bsc-component` uses for the packaged kit.
-pub const KEEP_GOING_DEFAULT: &str = include_str!("../../../src-tauri/data/fleet/defer-directive.md");
-pub const STUCK_DEFAULT: &str = include_str!("../../../src-tauri/data/fleet/defer-stuck-directive.md");
+pub fn keep_going_default() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("fleet/defer-directive.md"))
+}
+pub fn stuck_default() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("fleet/defer-stuck-directive.md"))
+}
 
 /// Statuses that mean an issue is DONE. Everything else (`open`, `in_progress`, `blocked`, `failed`)
 /// is outstanding work — `failed` included, deliberately: a failed issue is not finished, and a worker
