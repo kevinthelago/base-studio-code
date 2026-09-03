@@ -698,6 +698,49 @@ pub fn impl_in_domain(im: &Value, domain: &str) -> bool {
     im.get("domain").and_then(Value::as_str) == Some(domain)
 }
 
+/// Whether `im` carries EVERY tag in `want` — the predicate behind `bsc graph impl list --tags a,b`
+/// (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+///
+/// AND, not OR, and that is the whole point of the flag. A worker reaches for a tag search to NARROW
+/// ("the sorting algorithms that are also stable"); a union would widen with each extra term, which is
+/// the opposite of what naming a second tag means. `--domain` and `--feature` compose with this the
+/// same way — every filter on the list verb intersects.
+///
+/// An EMPTY `want` matches everything, so an absent `--tags` is not a filter. That is what makes the
+/// flag additive rather than a mode: `impl list` and `impl list --tags ""` are the same read.
+///
+/// A record with no `tags` matches only when nothing was asked for — the same purely-additive rule
+/// [`impl_in_domain`] follows, so an untagged record is hidden by a tag search rather than swept in.
+pub fn impl_has_every_tag(im: &Value, want: &[&str]) -> bool {
+    if want.is_empty() {
+        return true;
+    }
+    let Some(have) = im.get("tags").and_then(Value::as_array) else {
+        return false;
+    };
+    want.iter().all(|w| have.iter().filter_map(Value::as_str).any(|h| h == *w))
+}
+
+/// Every tag in the store with the number of implementations carrying it, most-used first and ties
+/// broken alphabetically so the output is stable across runs.
+///
+/// THE SEARCH IS USELESS WITHOUT THIS. An agent cannot filter by a tag it has no way to discover, and
+/// nothing else answers "what tags exist" — `dump` returns 11 MB to find out. Ordering by count puts
+/// the vocabulary's real spine first; sorting ties by name keeps a diff between two runs meaningful.
+pub fn tag_census(impls: &[Value]) -> Vec<(String, usize)> {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for im in impls {
+        for t in im.get("tags").and_then(Value::as_array).into_iter().flatten() {
+            if let Some(t) = t.as_str().map(str::trim).filter(|t| !t.is_empty()) {
+                *counts.entry(t.to_string()).or_default() += 1;
+            }
+        }
+    }
+    let mut out: Vec<(String, usize)> = counts.into_iter().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    out
+}
+
 // ── mutators (#2853) — pure over `&mut` the graph document; the CLI does load → mutate → save ──
 
 /// The `key` array of `g`, created empty if absent/mistyped, as a mutable Vec.
@@ -2264,6 +2307,65 @@ mod tests {
         // A seed impl (no domain) is never in a domain collection; an unknown domain matches nothing.
         assert!(!impl_in_domain(&serde_json::json!({ "id": "merge.rs" }), "logistics"), "an untagged impl never matches");
         assert_eq!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "nope")).count(), 0);
+    }
+
+    // ── the SUBJECT axis (`the-graphs-cannot-be-searched-by-the-axes-they-store`) ──
+
+    #[test]
+    fn impl_has_every_tag_is_an_and_and_never_sweeps_in_the_untagged() {
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({ "id": "t-astar.rs", "tech": "rust", "role": "algorithm", "name": "t-astar", "composes": [], "code": "//", "tags": ["pathfinding", "graph"] })).unwrap();
+        set_impl(&mut g, serde_json::json!({ "id": "t-bfs.ts", "tech": "typescript", "role": "algorithm", "name": "t-bfs", "composes": [], "code": "//", "tags": ["graph"] })).unwrap();
+
+        let with = |want: &[&str]| -> Vec<String> {
+            let mut ids: Vec<String> = implementations_of(&g)
+                .into_iter()
+                .filter(|im| impl_has_every_tag(im, want))
+                .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+                .collect();
+            ids.sort();
+            ids
+        };
+
+        // One tag selects everything carrying it — across language kits, like `--domain`.
+        assert_eq!(with(&["graph"]), vec!["t-astar.rs".to_string(), "t-bfs.ts".to_string()]);
+        // A SECOND tag NARROWS. This is the assertion that separates AND from OR: under a union
+        // `["pathfinding", "graph"]` would return both, and the flag would widen as you refine.
+        assert_eq!(with(&["pathfinding", "graph"]), vec!["t-astar.rs".to_string()]);
+        // A tag the record lacks excludes it even though it carries the other one.
+        assert_eq!(with(&["pathfinding", "sorting"]), Vec::<String>::new());
+        // A tag NOTHING carries selects NOTHING. This is the defect the flag had at the CLI: `--tags`
+        // parsed and was never consumed, so an unmatched search returned the whole store with no
+        // error, and a caller could not tell that from a hit.
+        assert_eq!(with(&["totally-absent"]), Vec::<String>::new());
+        // An UNTAGGED record — every packaged impl today — is never swept into a tag search, so the
+        // filter is purely additive.
+        assert!(!impl_has_every_tag(&serde_json::json!({ "id": "merge.rs" }), &["graph"]));
+        // …but an EMPTY want matches everything, which is what makes an ABSENT `--tags` not a filter.
+        assert!(impl_has_every_tag(&serde_json::json!({ "id": "merge.rs" }), &[]));
+        assert_eq!(with(&[]).len(), implementations_of(&g).len());
+    }
+
+    #[test]
+    fn tag_census_counts_every_tag_most_used_first_with_stable_ties() {
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({ "id": "t-a.rs", "tech": "rust", "role": "algorithm", "name": "t-a", "composes": [], "code": "//", "tags": ["zeta", "shared"] })).unwrap();
+        set_impl(&mut g, serde_json::json!({ "id": "t-b.rs", "tech": "rust", "role": "algorithm", "name": "t-b", "composes": [], "code": "//", "tags": ["alpha", "shared"] })).unwrap();
+
+        let census = tag_census(&implementations_of(&g));
+        let get = |t: &str| census.iter().find(|(k, _)| k == t).map(|(_, n)| *n);
+        assert_eq!(get("shared"), Some(2), "a tag on two records counts twice");
+        assert_eq!(get("alpha"), Some(1));
+        assert_eq!(get("zeta"), Some(1));
+
+        // Most-used first — the vocabulary's spine leads.
+        assert_eq!(census.first().map(|(t, _)| t.as_str()), Some("shared"));
+        // Ties are ALPHABETICAL, not insertion order: `zeta` was written first and `alpha` must still
+        // precede it, or two runs over the same store produce diffs that mean nothing.
+        let names: Vec<&str> = census.iter().filter(|(_, n)| *n == 1).map(|(t, _)| t.as_str()).collect();
+        let a = names.iter().position(|t| *t == "alpha").expect("alpha present");
+        let z = names.iter().position(|t| *t == "zeta").expect("zeta present");
+        assert!(a < z, "ties sort by name, not by write order: {names:?}");
     }
 
     // ── #3198 seed reconcile — the writable store must not shadow packaged algorithms ──
