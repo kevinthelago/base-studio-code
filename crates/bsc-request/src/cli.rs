@@ -585,7 +585,11 @@ fn request_block(r: &Request) -> String {
     s.push_str(&format!("\nfiled by: {}", filed_by(r)));
     // WHERE, on its own line and only when something was measured. The worktree leads because it is the
     // thing that differs between two otherwise identical reports; the repository is context for it.
-    let where_bits: Vec<String> = [("repo", &r.repo), ("branch", &r.branch), ("cwd", &r.cwd)]
+    // The cwd is dropped when it IS the working tree, which is the common case — repeating the same
+    // path twice on one line trains a reader to skip the line, and the whole point of it is to be read.
+    // It survives whenever it differs (a filing from a subdirectory), which is when it says something.
+    let cwd = r.cwd.as_deref().filter(|c| Some(*c) != r.worktree.as_deref()).map(str::to_string);
+    let where_bits: Vec<String> = [("repo", &r.repo), ("branch", &r.branch), ("cwd", &cwd)]
         .into_iter()
         .filter_map(|(k, v)| v.as_deref().map(|v| format!("{k} {v}")))
         .collect();
@@ -712,6 +716,16 @@ mod tests {
     /// it in the lean list — the form a shell actually reads the queue in.
     #[test]
     fn new_stamps_the_origin_and_the_lean_list_shows_it() {
+        // The pane is forced ABSENT under the lock (the #184 pattern, one test below). It used not to
+        // matter here because `--from` won outright and the block printed only the merged value; since
+        // `a-request-records-where-it-actually-came-from` a session that ALSO passes `--from` records
+        // BOTH, so an ambient `$BSC_AUDIT_PANE` — real in a debug-studio pane, or left behind by a
+        // sibling test in the same process — changes what this asserts. Pinning it is the fix; reading
+        // whatever the environment happens to hold is what made it a coin flip.
+        let _guard = AUDIT_PANE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_pane = std::env::var("BSC_AUDIT_PANE").ok();
+        std::env::remove_var("BSC_AUDIT_PANE");
+
         let dir = std::env::temp_dir().join(format!("bsc-request-origin-cli-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("requests.db");
@@ -730,10 +744,14 @@ mod tests {
         assert_eq!(r.display_title, "impl list needs --domain");
         let line = request_line(&r);
         assert!(line.contains("librarian-studio:typescript"), "the origin rides the lean TSV: {line}");
-        // …and `get`'s human block names the filer in words, not just as a column.
-        assert!(request_block(&r).contains("filed by: librarian-studio:typescript"));
+        // …and `get`'s human block names the filer in words, not just as a column — and says WHAT KIND
+        // it is, which a bare name cannot.
+        assert!(request_block(&r).contains("filed by: librarian-studio:typescript (actor)"));
 
         let _ = std::fs::remove_dir_all(&dir);
+        if let Some(p) = prev_pane {
+            std::env::set_var("BSC_AUDIT_PANE", p);
+        }
     }
 
     /// A request filed with neither flag nor pane still lists and still labels — the unattributed path
@@ -1045,6 +1063,31 @@ mod tests {
         for present in ["/w/wt-131", "develop", "claude-code"] {
             assert!(block.contains(present), "get carries the context: {block}");
         }
+    }
+
+    /// The cwd is shown only when it ADDS something. Repeating the working tree's path twice on one
+    /// line is how a reader learns to skip the line.
+    #[test]
+    fn the_cwd_is_omitted_when_it_is_the_working_tree_and_kept_when_it_is_not() {
+        let store = Store::open_in_memory().unwrap();
+        let same = FilingContext {
+            worktree: Some("/w/wt-131".into()),
+            cwd: Some("/w/wt-131".into()),
+            repo: Some("/w".into()),
+            ..Default::default()
+        };
+        let r = store.create(&NewRequest { text: "a".into(), ts: 1, context: same, ..Default::default() }).unwrap();
+        let b = request_block(&r);
+        assert!(b.contains("filed in: /w/wt-131"), "{b}");
+        assert!(!b.contains("cwd "), "the cwd said nothing the tree had not already: {b}");
+
+        let deeper = FilingContext {
+            worktree: Some("/w/wt-131".into()),
+            cwd: Some("/w/wt-131/crates/bsc-request".into()),
+            ..Default::default()
+        };
+        let r2 = store.create(&NewRequest { text: "b".into(), ts: 2, context: deeper, ..Default::default() }).unwrap();
+        assert!(request_block(&r2).contains("cwd /w/wt-131/crates/bsc-request"), "a subdirectory DOES say something");
     }
 
     /// A filing genuinely records WHERE it happened — this test runs inside a git worktree, so the
