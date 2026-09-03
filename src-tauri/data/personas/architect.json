@@ -9,6 +9,7 @@
     "code": "none",
     "net": "none",
     "ui": "none",
+    "graph": "none",
     "writeGlobs": [
       "scratch/**"
     ],

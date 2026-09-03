@@ -42,8 +42,12 @@
 
 use serde_json::Value;
 
-/// The five access axes, in the order the role gate reasons about them (#219).
-pub const AXES: [&str; 5] = ["github", "git", "code", "net", "ui"];
+/// The six access axes, in the order the role gate reasons about them (#219).
+///
+/// `graph` is here so the CLAMP covers it: a persona write may narrow a tier but never widen one, and
+/// an axis missing from this list is an axis `bsc persona set` would let a session grant itself
+/// (`the-algorithms-graph-has-no-write-gate`).
+pub const AXES: [&str; 6] = ["github", "git", "code", "net", "ui", "graph"];
 
 /// `none` < `read` < `write`. An unknown string sorts as `none` — the safe direction: an unreadable
 /// tier can then never be the thing that lets a widening through.

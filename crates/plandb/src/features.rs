@@ -41,7 +41,17 @@ pub struct PlanFeature {
     pub depends_on: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
-    /// The fleet stream that owns it (defaults to the slug — a feature IS a stream).
+    /// SUPERSEDED by a stream's own `feature` (`a-feature-owns-many-streams`). Do not author it.
+    ///
+    /// It said "the fleet stream that owns it (defaults to the slug — a feature IS a stream)", and that
+    /// 1:1 is the thing that was wrong: studio-code has 89 streams against 44 features, so a feature
+    /// owns MANY streams and the relation only fits on the stream. Measured before inverting it, this
+    /// field was already dead — 0 of 44 features set it, and nothing read it — so nothing depended on
+    /// the 1:1 except the launch, which inferred it from the ids coinciding.
+    ///
+    /// Kept as a column rather than dropped so an existing row round-trips unchanged. It is NOT read;
+    /// authoring it would create the second copy that the inversion exists to remove, and the two would
+    /// drift the first time a feature gained a second stream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<String>,
     /// Algorithm impl ids from the GLOBAL `bsc graph` store that this capability needs (#4080) — the

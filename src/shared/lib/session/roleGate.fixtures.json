@@ -45,6 +45,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -72,6 +73,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -108,6 +110,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -122,6 +125,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -150,6 +154,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -187,6 +192,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -201,6 +207,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -266,6 +273,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -280,6 +288,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -347,6 +356,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -361,6 +371,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [
           "bsc ui",
@@ -423,6 +434,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -437,6 +449,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -502,6 +515,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -516,6 +530,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [
           "bsc ui",
@@ -582,6 +597,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -596,6 +612,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -665,6 +682,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -679,6 +697,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -727,6 +746,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -741,6 +761,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -795,6 +816,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -809,6 +831,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -857,6 +880,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -871,6 +895,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -925,6 +950,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -939,6 +965,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -1002,6 +1029,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1016,6 +1044,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1081,6 +1110,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1095,6 +1125,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -1163,6 +1194,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1177,6 +1209,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1247,6 +1280,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1261,6 +1295,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -1358,6 +1393,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1372,6 +1408,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1461,6 +1498,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1475,6 +1513,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -1574,6 +1613,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1588,6 +1628,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1679,6 +1720,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1693,6 +1735,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "**/*.md",
@@ -1772,6 +1815,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1786,6 +1830,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1859,6 +1904,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1873,6 +1919,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "**/*.md",
@@ -1952,6 +1999,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1966,6 +2014,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2039,6 +2088,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2053,6 +2103,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -2073,6 +2124,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -2111,6 +2163,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2125,6 +2178,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2146,6 +2200,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -2184,6 +2239,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2198,6 +2254,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -2261,6 +2318,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2275,6 +2333,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2339,6 +2398,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2353,6 +2413,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2409,6 +2470,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2423,6 +2485,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2482,6 +2545,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2496,6 +2560,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2552,6 +2617,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2566,6 +2632,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2625,6 +2692,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2639,6 +2707,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2728,6 +2797,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2742,6 +2812,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2834,6 +2905,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2848,6 +2920,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2937,6 +3010,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2951,6 +3025,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3043,6 +3118,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3057,6 +3133,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -3123,6 +3200,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3137,6 +3215,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3205,6 +3284,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3219,6 +3299,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -3289,6 +3370,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3303,6 +3385,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3375,6 +3458,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3389,6 +3473,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "marketing/**/*.md",
           "marketing/**/*.mdx",
@@ -3474,6 +3559,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3488,6 +3574,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3561,6 +3648,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3575,6 +3663,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "marketing/**/*.md",
           "marketing/**/*.mdx",
@@ -3660,6 +3749,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3674,6 +3764,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3747,6 +3838,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3761,6 +3853,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [
           "bsc help",
@@ -3869,6 +3962,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3883,6 +3977,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3994,6 +4089,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4008,6 +4104,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [
           "bsc help",
@@ -4121,6 +4218,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4135,6 +4233,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4251,6 +4350,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4265,6 +4365,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -4354,6 +4455,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4368,6 +4470,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4449,6 +4552,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4463,6 +4567,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -4552,6 +4657,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4566,6 +4672,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4647,6 +4754,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4661,6 +4769,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -4750,6 +4859,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4764,6 +4874,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4856,6 +4967,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4870,6 +4982,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -4959,6 +5072,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4973,6 +5087,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5065,6 +5180,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5079,6 +5195,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -5098,6 +5215,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -5137,6 +5255,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -5151,6 +5270,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5171,6 +5291,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -5211,6 +5332,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -5225,6 +5347,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -5288,6 +5411,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -5302,6 +5426,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5367,6 +5492,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -5381,6 +5507,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5470,6 +5597,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5484,6 +5612,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5576,6 +5705,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5590,6 +5720,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5679,6 +5810,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5693,6 +5825,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5785,6 +5918,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5799,6 +5933,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5846,6 +5981,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5860,6 +5996,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5910,6 +6047,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5924,6 +6062,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5971,6 +6110,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5985,6 +6125,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -6035,6 +6176,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -6049,6 +6191,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": [
@@ -6121,6 +6264,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -6135,6 +6279,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -6213,6 +6358,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -6227,6 +6373,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": [
@@ -6303,6 +6450,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -6317,6 +6465,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -6399,6 +6548,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     }

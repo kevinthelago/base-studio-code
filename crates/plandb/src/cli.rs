@@ -237,6 +237,7 @@ USAGE:
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
   bsc plan fleet get --kind <k>       # filter to streams of one lifecycle kind (see below)
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
+  bsc plan fleet stream feature <id> <feature-slug>   # which FEATURE this stream belongs to (--clear to unset)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
   bsc plan fleet model <id> <model>   # the model ONE stream launches on (--clear to unset)
   bsc plan fleet remove <stream-id>   # drop one stream
@@ -252,6 +253,16 @@ orphaned code and has nothing left to own once those paths are gone). Absent rea
 existing streams need no backfill. `fleet get --kind cleanup` filters the streams array to that one
 kind (case-insensitive) — the way a director finds every temporary/cleanup stream across a project
 without reading each one's free-text name. An unrecognized --kind is rejected, not silently empty.
+
+`fleet stream feature` places a stream UNDER a feature. A feature owns MANY streams — studio-code has
+89 streams across 44 features — so the relation lives on the stream; `PlanFeature.stream` is the old
+1:1 and is superseded. The launch resolves a worker's reference implementations through it: stream →
+its feature → that feature's `requires`. A stream that names none FALLS BACK to its own id, which is
+how the 37 streams whose id already IS a feature slug keep working with no backfill.
+
+A dangling slug is REFUSED, and that matters more than it looks: the fallback means a typo would not
+error anywhere — the launch would quietly resolve to the stream id and you would never learn the
+feature you named was not the one the worker got.
 
 `fleet model` is the DIRECTOR's level of the model precedence chain, nearest-first:
     a fleet stream's own model > a team placement's (`bsc teams model`) >

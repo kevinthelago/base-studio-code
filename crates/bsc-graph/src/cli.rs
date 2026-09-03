@@ -20,14 +20,14 @@ use serde_json::Value;
 pub const VERBS: [&str; 23] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
     "used-by", "features", "merge", "emit", "promote", "reseed", "unmaterialize", "build", "migrate-crate", "help",
-    // The tag VOCABULARY (`the-graphs-cannot-be-searched-by-the-axes-they-store`). A search is only
-    // reachable by an agent that can first discover what there is to search for.
-    "tags",
     // The duplicate surfaces (epic-a-graph-finds-its-own-duplicates). They dispatched and appeared in
     // `help` from the day they were written but were never listed HERE, so both sat outside every
     // drift guard — and the librarian charter test, which asserts the seed names only verbs the CLI
     // has, could not accept prose that taught them.
     "dupes", "similar",
+    // The tag VOCABULARY (`the-graphs-cannot-be-searched-by-the-axes-they-store`). A search is only
+    // reachable by an agent that can first discover what there is to search for.
+    "tags",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -1473,6 +1473,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let pretty = args.iter().any(|a| a == "--pretty");
     let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     let verb = positional.first().copied().unwrap_or("help");
+    // THE STORE WRITE GATE (`the-algorithms-graph-has-no-write-gate`). One check, here, rather than one
+    // per mutating arm: there are sixteen of them, a seventeenth is added regularly, and the per-arm
+    // shape is the one that silently drifts — a new verb that forgets the call is indistinguishable
+    // from a verb that is meant to be readable. Refusing at the dispatch boundary means a verb has to
+    // be named in `MUTATING` to be reachable at all, and `every_mutating_arm_is_classified` asserts
+    // that list against the dispatch.
+    //
+    // Until this existed the store had NO gate: `bsc-graph` held zero `require_write_scope` calls
+    // against `bsc-component`'s four, and `bsc` is in the mandatory permission tier, so every role on
+    // the board could write any algorithm record. A session declaring `{"graph":"none"}` created one
+    // and was told `ok: true`.
+    if is_store_mutation(&positional, &args) {
+        bsc_cli_util::require_write_scope("graph")?;
+        // …and WHICH records (`a-worker-writes-only-its-own-feature`). The gate above says whether
+        // this session writes the store at all; this says which of its 693 records — because
+        // `graph: write` alone still let a worker rewrite `core`, which 204 of them are and every
+        // feature composes.
+        require_feature_confinement(&positional, &args)?;
+    }
     let emit = |v: &Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
         // Through `bsc_util::emit_line`, NOT `println!`
@@ -3845,6 +3864,103 @@ fn set_impl_skipping_retired(
     crate::set_impl_by(g, im, writer, Some(note)).map(|_| ())
 }
 
+/// Refuse a mutation that would write a record outside this session's features.
+///
+/// THE STORED FEATURE GOVERNS, never the submitted one. A write carrying `--feature mine` against a
+/// record owned by `core` is exactly the move confinement exists to stop, and reading the submitted
+/// value would wave it through — the record would simply change hands. For a record that does not
+/// exist yet there is no stored owner, so the SUBMITTED feature is the claim: a new record must
+/// declare a lane the session may write rather than slipping in unowned.
+///
+/// SCOPED TO THE ID-BEARING VERBS. `curate --apply` and `doctor --fix` write across the whole library
+/// and are not a worker's verbs; a confined session is stopped from those by the coarse gate long
+/// before this, and inventing a per-record answer for a whole-library sweep here would be guessing.
+fn require_feature_confinement(positional: &[&str], args: &[String]) -> Result<(), String> {
+    if bsc_cli_util::session_features().is_none() {
+        return Ok(());
+    }
+    let Some(id) = flag_value(args, "--id").or_else(|| positional.get(2).map(|s| s.to_string())) else {
+        return Ok(());
+    };
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return Ok(());
+    }
+    let stored = crate::implementations()
+        .into_iter()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        .and_then(|im| im.get("feature").and_then(Value::as_str).map(str::to_string));
+    match stored {
+        Some(owner) => bsc_cli_util::require_feature_write(&id, &owner),
+        // A NEW record: the submitted feature is the claim, and an absent one is refused by
+        // `require_feature_write`'s empty-feature rule rather than silently landing unowned.
+        None => bsc_cli_util::require_feature_write(&id, flag_value(args, "--feature").unwrap_or_default().trim()),
+    }
+}
+
+/// The verbs that MUTATE the algorithms store, as `(verb, subverb)` — `None` where the verb has no
+/// subverb. The gate in [`run`] reads this; nothing else may.
+///
+/// STORE mutation, specifically. `promote`, `emit`, `unmaterialize`, `migrate-crate` and
+/// `impl sync-seed` write REPO FILES, which are governed by the session's write globs and its FS
+/// confinement — a second gate on the `graph` scope would deny a librarian its own promote while the
+/// file boundary is what actually applies. `reseed` IS here: it overwrites the runtime store from the
+/// seed, which is a store write however it is spelled.
+const MUTATING: &[(&str, Option<&str>)] = &[
+    ("impl", Some("set")),
+    ("impl", Some("remove")),
+    ("impl", Some("revert")),
+    ("impl", Some("suppress")),
+    ("impl", Some("unsuppress")),
+    ("impl", Some("refresh")),
+    ("edge", Some("set")),
+    ("edge", Some("remove")),
+    ("tests", Some("set")),
+    ("tests", Some("harvest")),
+    ("curate", None),
+    ("merge", None),
+    ("refolder", None),
+    ("relink", None),
+    ("reseed", None),
+    ("features", None),
+    ("doctor", None),
+    ("harvest", None),
+];
+
+/// Whether this invocation would WRITE the store — the predicate the gate in [`run`] applies.
+///
+/// Four of the entries in [`MUTATING`] only write when a flag says so (`curate`/`harvest` need
+/// `--apply`, `doctor` needs `--fix`, `features` needs `--apply`), and their READ form is the common
+/// one — `doctor` is how a session finds out what is wrong, and denying that to a read-only role would
+/// make the store un-inspectable. So the flag is part of the question, not an afterthought.
+fn is_store_mutation(positional: &[&str], args: &[String]) -> bool {
+    let Some(verb) = positional.first().copied() else { return false };
+    // `<verb> help` and `<verb> <sub> help` ask for documentation and write nothing.
+    if positional.contains(&"help") {
+        return false;
+    }
+    let sub = positional.get(1).copied();
+    // A `None` subverb in [`MUTATING`] means THE VERB ITSELF mutates, whatever follows it — and what
+    // follows is an ARGUMENT, not a subverb (`merge <from> <into>`, `curate <dir>`, `relink <dir>`).
+    // Matching `positional[1]` against `None` for those let every one of them through the gate: probed
+    // live, `bsc graph merge a b` under `{"graph":"none"}` reached the arm and failed on the id lookup
+    // instead of being refused. Only an entry that NAMES a subverb compares one.
+    let named = MUTATING
+        .iter()
+        .any(|(v, s)| *v == verb && (s.is_none() || *s == sub));
+    if !named {
+        return false;
+    }
+    let has = |f: &str| args.iter().any(|a| a == f);
+    match verb {
+        "curate" | "harvest" | "features" => has("--apply"),
+        "doctor" => has("--fix"),
+        "relink" => !has("--dry-run"),
+        "tests" if sub == Some("harvest") => !has("--dry-run"),
+        _ => true,
+    }
+}
+
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
 /// on `impl set` (#2863).
 fn list_flag(s: Option<&str>) -> Value {
@@ -4177,7 +4293,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] [--tags a,b]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); --tags is the SUBJECT axis and is an AND — a record must carry EVERY tag named, because a second tag is how you narrow a search and a union would widen it; an untagged record is never a match, and the tags that exist are `{prog} tags`; get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
+         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] [--tags a,b]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -5027,6 +5143,297 @@ mod tests {
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── the store WRITE GATE (`the-algorithms-graph-has-no-write-gate`) ──────────────────────────
+
+    /// Minimal argv for every entry in [`MUTATING`], in its WRITING form.
+    ///
+    /// The args are deliberately nonsense (`a`, `b`, a missing dir): the gate fires BEFORE dispatch, so
+    /// a refused call never reaches the arm that would object to them. If the gate regresses, the arm
+    /// runs and returns some OTHER error — which is exactly what the assertion below distinguishes,
+    /// and why it checks the message rather than merely `is_err()`.
+    fn mutating_argv() -> Vec<Vec<String>> {
+        let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        vec![
+            v(&["impl", "set", "--tech", "rust", "--role", "algorithm", "--id", "x.rs", "--name", "x", "--no-src"]),
+            v(&["impl", "remove", "x.rs"]),
+            v(&["impl", "revert", "x.rs"]),
+            v(&["impl", "suppress", "x.rs"]),
+            v(&["impl", "unsuppress", "x.rs"]),
+            v(&["impl", "refresh", "x.rs=src/x.rs", "--apply"]),
+            v(&["edge", "set", "--id", "e", "--members", "a,b"]),
+            v(&["edge", "remove", "e"]),
+            v(&["tests", "set", "--id", "x.rs", "--src", "t.ts"]),
+            v(&["tests", "harvest", "."]),
+            v(&["curate", ".", "--apply"]),
+            v(&["merge", "a", "b"]),
+            v(&["refolder"]),
+            v(&["relink", "."]),
+            v(&["reseed", "--all"]),
+            v(&["features", "--apply"]),
+            v(&["doctor", "--fix"]),
+            v(&["harvest", ".", "--module", "--apply"]),
+        ]
+    }
+
+    /// THE BITE. Every mutating verb refuses under a read-only `graph` scope.
+    ///
+    /// It drives `run` rather than asserting on `require_write_scope`, and that distinction IS the
+    /// item: the helper was always correct and `bsc-component` had been calling it for four verbs,
+    /// while `bsc-graph` called it nowhere. A test at the helper would have been green throughout the
+    /// entire period the store had no gate at all.
+    ///
+    /// It also covers the classifier bug the manual probe caught: `MUTATING` pairs a verb with an
+    /// optional SUBVERB, and matching `positional[1]` against `None` let every verb taking a positional
+    /// ARGUMENT through — `merge a b`, `curate <dir>`, `relink <dir>`. Six of the eighteen rows below
+    /// were reaching their arm.
+    #[test]
+    fn every_mutating_verb_refuses_under_a_read_only_graph_scope() {
+        // THE STORE GUARD IS NOT OPTIONAL HERE, even though every call below is meant to be REFUSED.
+        //
+        // Without it these argvs resolve the DEFAULT store — the real
+        // `~/.base-studio-code/knowledge/algorithms.json`. That is harmless while the gate works and
+        // catastrophic the moment someone proves the bite by removing it: `curate . --apply` and
+        // `harvest . --module --apply` then run for real against the user's authoring copy. MEASURED,
+        // because that is exactly what happened — one bite run added 125 records to the live store and
+        // they had to be removed by hand.
+        //
+        // A test whose safety depends on the code under test still working is not safe. The guard is
+        // what makes it safe when the code is broken, which is the only time this test matters.
+        let dir = crate::unique_temp("graph-gate-refuse");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        for argv in mutating_argv() {
+            let shown = argv.join(" ");
+            for doc in [r#"{"graph":"none"}"#, r#"{"graph":"read"}"#] {
+                let err = bsc_cli_util::with_scopes(Some(doc), || run(argv.clone(), "bsc graph"))
+                    .expect_err(&format!("`{shown}` must be refused under {doc}"));
+                assert!(
+                    err.contains("'graph' scope is read-only"),
+                    "`{shown}` under {doc} must be refused BY THE GATE, not by the arm it should never \
+                     have reached; got: {err}"
+                );
+            }
+        }
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A CONFINED session writes only its own feature's records — at the CLI, not at the predicate
+    /// (`a-worker-writes-only-its-own-feature`).
+    ///
+    /// It drives `run` for the same reason the scope test does: `may_write_feature` is correct in
+    /// isolation and stays correct while nothing calls it. Only a test that goes through the dispatch
+    /// can see the wiring — and the wiring is the whole change.
+    #[test]
+    fn a_confined_session_writes_only_its_own_features_records() {
+        let dir = crate::unique_temp("graph-feature-confine");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        // Two records in different lanes, authored UNCONFINED (which is how a librarian works).
+        let author = |id: &str, feature: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--feature".into(), feature.into(), "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        author("mine.rs", "glance");
+        author("theirs.rs", "planner");
+        author("shared.rs", "core");
+
+        let write = |id: &str, extra: &[&str]| -> Result<(), String> {
+            let mut argv: Vec<String> = vec![
+                "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(), "--no-src".into(),
+            ];
+            argv.extend(extra.iter().map(|s| s.to_string()));
+            bsc_cli_util::with_features(Some("glance"), || bsc_util::capture_output(|| run(argv, "bsc graph")).0)
+        };
+
+        // Its OWN lane: allowed.
+        write("mine.rs", &[]).expect("a worker writes its own feature's records");
+
+        // Another feature's, and the shared baseline: refused, BY THE CONFINEMENT rather than by the
+        // arm it should never have reached — which is what checking the message distinguishes.
+        for (id, owner) in [("theirs.rs", "planner"), ("shared.rs", "core")] {
+            let err = write(id, &[]).expect_err("{id} must be refused");
+            assert!(err.contains("writes only"), "`{id}` refused by the confinement, not the arm: {err}");
+            assert!(err.contains(owner), "…naming its real owner: {err}");
+        }
+
+        // THE MOVE THE CONFINEMENT EXISTS TO STOP: claiming another lane's record for your own. The
+        // STORED feature governs, so a payload saying `--feature glance` cannot take `core`'s record.
+        let err = write("shared.rs", &["--feature", "glance"]).expect_err("a claim must not launder a write");
+        assert!(err.contains("core"), "the STORED owner decides, not the submitted one: {err}");
+
+        // A NEW record must declare a lane this session may write, rather than landing unowned.
+        assert!(write("brand-new.rs", &[]).is_err(), "a new record with no feature is refused");
+        write("brand-new.rs", &["--feature", "glance"]).expect("…and lands when it claims a lane it may write");
+
+        // UNCONFINED is unchanged — a librarian still writes anything.
+        let (r, _) = bsc_cli_util::with_features(None, || {
+            bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), "shared.rs".into(), "--name".into(), "shared".into(),
+                        "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            })
+        });
+        r.expect("an unconfined session writes the shared baseline");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// READS are untouched by the confinement — the half the maintainer was explicit about.
+    ///
+    /// A feature's `requires` deliberately names records it does NOT own, so a confinement that
+    /// bounded reads would make a worker's own prerequisites unreadable: the precise opposite of the
+    /// point. This is the assertion that would fail if the check ever moved to the dispatch's front.
+    #[test]
+    fn confinement_never_bounds_a_read() {
+        let dir = crate::unique_temp("graph-feature-confine-reads");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+        let (r, _) = bsc_util::capture_output(|| {
+            run(
+                vec![
+                    "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                    "algorithm".into(), "--id".into(), "shared.rs".into(), "--name".into(), "shared".into(),
+                    "--feature".into(), "core".into(), "--no-src".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        r.unwrap();
+
+        bsc_cli_util::with_features(Some("glance"), || {
+            for argv in [
+                vec!["impl".to_string(), "get".into(), "shared.rs".into()],
+                vec!["impl".to_string(), "list".into()],
+                vec!["doctor".to_string()],
+                vec!["dump".to_string()],
+                vec!["used-by".to_string(), "--all".into()],
+            ] {
+                let shown = argv.join(" ");
+                let (r, _) = bsc_util::capture_output(|| run(argv, "bsc graph"));
+                if let Err(e) = r {
+                    assert!(!e.contains("writes only"), "`{shown}` is a READ and must never be confined: {e}");
+                }
+            }
+        });
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The gate must not swallow the surface it exists to protect: reads, dry runs and help still work.
+    ///
+    /// This is the half that keeps the gate honest. `doctor` is how a session finds out what is WRONG
+    /// with the library, and a gate that denied it to a read-only role would make the store
+    /// un-inspectable by every role that most needs to inspect it.
+    #[test]
+    fn reads_dry_runs_and_help_are_untouched_by_the_gate() {
+        let dir = crate::unique_temp("graph-gate-reads");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        for argv in [
+            v(&["impl", "list"]),
+            v(&["dump"]),
+            v(&["doctor"]),                     // the READ form of a verb whose --fix is gated
+            v(&["features"]),                   // …and of one whose --apply is gated
+            v(&["curate", "."]),                // a plan, not an apply
+            v(&["relink", ".", "--dry-run"]),
+            v(&["used-by", "--all"]),
+            v(&["impl", "set", "help"]),        // `help` writes nothing, whatever verb it follows
+            v(&["merge", "help"]),
+        ] {
+            let shown = argv.join(" ");
+            let r = bsc_cli_util::with_scopes(Some(r#"{"graph":"none"}"#), || {
+                bsc_util::capture_output(|| run(argv.clone(), "bsc graph")).0
+            });
+            if let Err(e) = r {
+                assert!(
+                    !e.contains("scope is read-only"),
+                    "`{shown}` is a READ and must never hit the write gate; got: {e}"
+                );
+            }
+        }
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An ABSENT scope doc still ALLOWS — an ungated pane, and every existing test, keeps working.
+    ///
+    /// The dangerous state here is the one with no name: `scope_allows_write_in(None, …)` returns
+    /// `true`, so "no scope configured" is the WIDEST value, not the narrowest. Pinning it means a
+    /// later change to that default cannot silently brick every ad-hoc `bsc graph` invocation.
+    #[test]
+    fn an_absent_scope_doc_allows_the_write() {
+        let dir = crate::unique_temp("graph-gate-absent");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let argv: Vec<String> = ["impl", "set", "--tech", "rust", "--role", "algorithm", "--id", "ungated.rs", "--name", "ungated", "--no-src"]
+            .iter().map(|s| s.to_string()).collect();
+        let (r, _) = bsc_cli_util::with_scopes(None, || bsc_util::capture_output(|| run(argv, "bsc graph")));
+        r.expect("an ungated session writes as it always did");
+
+        // And a doc that grants `write` is equally allowed — the grant is real, not merely un-refused.
+        let argv2: Vec<String> = ["impl", "set", "--tech", "rust", "--role", "algorithm", "--id", "granted.rs", "--name", "granted", "--no-src"]
+            .iter().map(|s| s.to_string()).collect();
+        let (r2, _) = bsc_cli_util::with_scopes(Some(r#"{"graph":"write"}"#), || {
+            bsc_util::capture_output(|| run(argv2, "bsc graph"))
+        });
+        r2.expect("a `write` tier writes");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every verb named in [`MUTATING`] is a verb this CLI actually has.
+    ///
+    /// A typo there does not fail loudly — it silently leaves that verb UNGATED for ever, which is the
+    /// state this whole item exists to end. Nothing at run time can observe the difference, so the
+    /// vocabulary is asserted against the dispatch's own rosters.
+    #[test]
+    fn every_mutating_entry_names_a_real_verb() {
+        for (verb, sub) in MUTATING {
+            assert!(VERBS.contains(verb), "`{verb}` is in MUTATING but is not a bsc graph verb");
+            if let Some(sub) = sub {
+                let roster: &[&str] = match *verb {
+                    "impl" => &IMPL_SUBVERBS,
+                    "edge" => &EDGE_SUBVERBS,
+                    // `tests` has no exported roster; its two subverbs are named here.
+                    "tests" => &["harvest", "set"],
+                    other => panic!("MUTATING names a subverb under `{other}`, which has no roster"),
+                };
+                assert!(roster.contains(sub), "`{verb} {sub}` is in MUTATING but not in its subverb roster");
+            }
+        }
+        // NON-VACUITY: the list is asserted to still be a real population, so a MUTATING emptied by a
+        // bad merge reports as broken rather than as trivially passing.
+        assert!(MUTATING.len() >= 15, "MUTATING has shrunk to {} — a verb lost its gate", MUTATING.len());
     }
 
     /// THE BITE for `the-graphs-cannot-be-searched-by-the-axes-they-store`.

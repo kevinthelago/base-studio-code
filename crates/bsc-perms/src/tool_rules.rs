@@ -322,6 +322,7 @@ mod tests {
             code,
             net: Tier::None,
             ui: Tier::Read,
+            graph: Tier::Read,
             write_globs: globs,
             allow,
             surfaces: None,

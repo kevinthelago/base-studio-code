@@ -33,6 +33,17 @@ export interface PersonaFloor {
   code: AccessTier;
   net: AccessTier;
   ui: AccessTier;
+  /**
+   * The `bsc graph` ALGORITHMS store — the twin of {@link PersonaFloor.ui} one store over
+   * (`the-algorithms-graph-has-no-write-gate`).
+   *
+   * OPTIONAL, unlike the five above, because every persona authored before the axis existed carries
+   * no value here — including the ones in a user's own store, which no packaged update rewrites. The
+   * readers default an absent tier to `read`, so an old persona narrows rather than silently keeping
+   * the total access it used to have: until this axis shipped, `bsc-graph` had NO write gate at all
+   * and every role on the board could write any algorithm record.
+   */
+  graph?: AccessTier;
   /** Path globs this persona may write. Absent ⇒ no write scope at all. */
   writeGlobs?: string[];
   /** SYMBOLIC read-only roots it may harvest from (`app-repo`, `projects`). Absent ⇒ its own root. */

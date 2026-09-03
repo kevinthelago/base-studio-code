@@ -2314,6 +2314,27 @@ fn set_stamped(
     for item in items {
         let id = bsc_json_store::cli::id_of(item, noun)?;
         let prior = current_record(store, &id)?;
+        // WHICH records this session may write (`a-worker-writes-only-its-own-feature`).
+        //
+        // Here rather than at the verb dispatch, because THIS is the funnel: `set` takes its records
+        // from stdin, so the id is not in argv and a dispatch-level guard could not see it. Every
+        // component write lands here, so a verb added later is confined without remembering to be.
+        //
+        // The PRIOR record's feature governs. A payload carrying `"feature": "mine"` against a
+        // component owned by `core` is the move confinement exists to stop, and reading the submitted
+        // value would wave it through — the record would simply change hands. A record that does not
+        // exist yet is judged on what it claims, so a new one cannot slip in unowned.
+        if bsc_cli_util::session_features().is_some() {
+            // A missing record reads as `Value::Null`, whose `get` is None — so the fallback to the
+            // SUBMITTED feature is the new-record case, expressed without a second existence check.
+            let owner = prior
+                .get("feature")
+                .or_else(|| item.get("feature"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            bsc_cli_util::require_feature_write(&id, &owner)?;
+        }
         let prior_rev = crate::record::read_rev(&prior);
         if let Some(n) = if_version {
             if prior_rev != n {
@@ -12398,5 +12419,77 @@ mod feature_rule_gate {
         let v = violations(&planted, ALLOWED);
         assert_eq!(v.len(), 1, "a core -> feature edge must be reported");
         assert!(v[0].describe().contains("core/planted -> glance/some-glance-thing"));
+    }
+}
+
+#[cfg(test)]
+mod feature_confinement_tests {
+    use super::*;
+
+    /// A confined session writes only its own feature's COMPONENTS
+    /// (`a-worker-writes-only-its-own-feature`).
+    ///
+    /// Driven through `set_stamped` — the funnel every component write lands in — rather than through
+    /// a verb, because that is where the guard is and why: `ui set` takes its records from stdin, so
+    /// the id is not in argv and a dispatch-level check could not see it.
+    /// A scratch component store. Its own rather than the sibling module's `tmp_component_store`,
+    /// which is private to that module — copying four lines beats making a test helper public.
+    fn scratch(tag: &str) -> bsc_json_store::Store {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-confine-{tag}-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        bsc_json_store::Store::new(dir, "component")
+    }
+
+    #[test]
+    fn a_confined_session_writes_only_its_own_features_components() {
+        let store = scratch("confine");
+        let rec = |id: &str, feature: &str| {
+            serde_json::json!({ "id": id, "name": id, "kitId": "k", "feature": feature })
+        };
+        // Authored UNCONFINED, which is how a designer or the seed reconcile works.
+        for (id, f) in [("mine", "glance"), ("theirs", "planner"), ("shared", "core")] {
+            set_stamped(&store, &[rec(id, f)], None, "seed", "component", None, WritePlan::default()).unwrap();
+        }
+
+        bsc_cli_util::with_features(Some("glance"), || {
+            // Its own lane: allowed.
+            set_stamped(&store, &[rec("mine", "glance")], None, "w", "component", None, WritePlan::default())
+                .expect("a worker writes its own feature's components");
+
+            // Another lane, and the shared baseline: refused.
+            for (id, owner) in [("theirs", "planner"), ("shared", "core")] {
+                let err = set_stamped(&store, &[rec(id, owner)], None, "w", "component", None, WritePlan::default())
+                    .expect_err("must be refused");
+                assert!(err.contains("writes only"), "`{id}`: {err}");
+                assert!(err.contains(owner), "…naming its owner: {err}");
+            }
+
+            // THE LAUNDERING MOVE: claiming another lane's record for your own. The STORED feature
+            // governs, so a payload saying `glance` cannot take `core`'s component.
+            let err = set_stamped(&store, &[rec("shared", "glance")], None, "w", "component", None, WritePlan::default())
+                .expect_err("a claim must not launder a write");
+            assert!(err.contains("core"), "the STORED owner decides: {err}");
+
+            // A NEW record must claim a lane this session may write.
+            assert!(
+                set_stamped(&store, &[serde_json::json!({ "id": "fresh", "name": "Fresh", "kitId": "k" })], None, "w", "component", None, WritePlan::default()).is_err(),
+                "a new component with no feature is refused",
+            );
+            set_stamped(&store, &[rec("fresh", "glance")], None, "w", "component", None, WritePlan::default())
+                .expect("…and lands when it claims a lane it may write");
+        });
+
+        // UNCONFINED is unchanged.
+        bsc_cli_util::with_features(None, || {
+            set_stamped(&store, &[rec("shared", "core")], None, "lib", "component", None, WritePlan::default())
+                .expect("an unconfined session writes the shared baseline");
+        });
     }
 }

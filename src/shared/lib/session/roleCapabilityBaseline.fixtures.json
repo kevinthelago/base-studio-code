@@ -20,6 +20,7 @@
       "code": "none",
       "net": "none",
       "ui": "none",
+      "graph": "none",
       "allow": [
         "bsc teams",
         "bsc persona",
@@ -46,6 +47,7 @@
       "code": "none",
       "net": "none",
       "ui": "write",
+      "graph": "write",
       "allow": [
         "bsc ui",
         "bsc graph",
@@ -59,7 +61,8 @@
       "git": "write",
       "code": "write",
       "net": "read",
-      "ui": "write"
+      "ui": "write",
+      "graph": "write"
     },
     "designer": {
       "role": "designer",
@@ -71,6 +74,7 @@
       "code": "none",
       "net": "none",
       "ui": "write",
+      "graph": "read",
       "harvestRoots": [
         "app-repo",
         "projects"
@@ -107,6 +111,7 @@
       "code": "write",
       "net": "read",
       "ui": "read",
+      "graph": "read",
       "surfaces": [
         "plan",
         "fleet",
@@ -131,7 +136,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "integrator": {
       "role": "integrator",
@@ -143,6 +149,7 @@
       "code": "none",
       "net": "read",
       "ui": "none",
+      "graph": "none",
       "allow": [
         "bsc data connector",
         "bsc project integrations",
@@ -161,7 +168,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "juror": {
       "role": "juror",
@@ -170,7 +178,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "librarian": {
       "role": "librarian",
@@ -182,6 +191,7 @@
       "code": "none",
       "net": "none",
       "ui": "read",
+      "graph": "write",
       "harvestRoots": [
         "app-repo",
         "projects"
@@ -214,7 +224,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "operator": {
       "role": "operator",
@@ -224,6 +235,7 @@
       "code": "none",
       "net": "read",
       "ui": "read",
+      "graph": "read",
       "allow": [
         "bsc help",
         "bsc surface",
@@ -254,7 +266,8 @@
       "git": "read",
       "code": "write",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "reviewer": {
       "role": "reviewer",
@@ -263,7 +276,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "sound-designer": {
       "role": "sound-designer",
@@ -275,6 +289,7 @@
       "code": "none",
       "net": "none",
       "ui": "none",
+      "graph": "none",
       "allow": [
         "bsc sound",
         "bsc request new",
@@ -292,7 +307,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "triage": {
       "role": "triage",
@@ -301,7 +317,8 @@
       "git": "none",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "worker": {
       "role": "worker",
@@ -311,6 +328,7 @@
       "code": "write",
       "net": "read",
       "ui": "read",
+      "graph": "write",
       "surfaces": [
         "plan",
         "graph",

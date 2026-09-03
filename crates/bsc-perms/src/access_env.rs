@@ -226,6 +226,7 @@ mod tests {
             code: Tier::None,
             net: Tier::None,
             ui: Tier::None,
+            graph: Tier::Read,
             write_globs: vec![],
             allow: vec![],
             surfaces: None,
