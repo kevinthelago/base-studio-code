@@ -3,8 +3,9 @@
 import { describe, it, expect } from "vitest";
 import {
   nounPaneId, verbPaneId, surfacePaneIdForNode, surfaceAssignment, surfaceCharter,
-  SURFACE_PANE_PREFIX,
+  SURFACE_PANE_PREFIX, surfaceOperatorProfile, surfaceOperatorProfileId,
 } from "@/features/glance/lib/surfaceSpawn";
+import { resolveProfileSettings } from "@/shared/lib/security/profileEnforcement";
 import type { CrateDrillDoc } from "@/features/glance/lib/surfaceNodes";
 
 const doc: CrateDrillDoc = {
@@ -77,5 +78,59 @@ describe("the charter carries the persona's own words, then the assignment", () 
     expect(c).toContain('bsc request list --surface "metrics"');
     expect(c).toContain("bsc surface verbs metrics");
     expect(c).toContain("bsc metrics cost");
+  });
+});
+
+// ── the per-pane noun grant (`surface-operator-runs-confined-to-its-own-noun`) ─────────────────────
+//
+// The operator's ROLE is confined, and `build_allow_rules` returns EARLY under `restricted_allow`
+// with only the wrapped allowedCommands — no baseline tiers, no mandatory tier, no `Bash(bsc-*)`. So
+// a confined session auto-runs exactly what its allow list names. The role carries the cross-cutting
+// half; the noun is chosen per SESSION and can only come from here.
+describe("the operator's per-pane profile", () => {
+  it("grants ITS noun — the one command the session exists to run", () => {
+    const p = surfaceOperatorProfile("studio");
+    expect(p.id).toBe(surfaceOperatorProfileId("studio"));
+    expect(resolveProfileSettings(p).allowedCommands).toContain("bsc studio");
+    // Derived from the noun, so re-opening the same one reuses its row rather than minting a
+    // duplicate per launch.
+    expect(surfaceOperatorProfileId("persona")).not.toBe(surfaceOperatorProfileId("studio"));
+  });
+
+  // THE SAFETY ARGUMENT, and the reason this profile can carry a grant at all. A tool tier of `allow`
+  // becomes a VERBATIM rule, so `bash: "allow"` emits a bare `Bash` that auto-approves everything and
+  // silently reopens the confinement. `deny` is skipped for bash specifically (a blanket Bash deny
+  // would kill the guaranteed git/gh), so it emits NO rule and shell control stays with the allow
+  // list. This is the single line that must never be "tidied" to `allow`.
+  it("never blanket-allows Bash — that would reopen everything the role closed", () => {
+    const p = surfaceOperatorProfile("studio");
+    expect(p.tools.bash).toBe("deny");
+    const s = resolveProfileSettings(p);
+    expect(s.allowToolRules).not.toContain("Bash");
+    // and `deny` emits nothing for bash either, so `git`/`gh` are not collaterally killed
+    expect(s.denyToolRules).not.toContain("Bash");
+  });
+
+  it("carries the bsc-* helpers its charter tells it to use", () => {
+    // Shell FUNCTIONS from bsc-env.sh, not the binary: `Bash(bsc *)` cannot match them (no space
+    // after `bsc`), and the blanket `Bash(bsc-*)` every unconfined posture gets is on the far side of
+    // that early return. Without an explicit grant the charter names a command it cannot run.
+    const cmds = resolveProfileSettings(surfaceOperatorProfile("studio")).allowedCommands;
+    expect(cmds).toContain("bsc-ask");
+    expect(cmds).toContain("bsc-answer");
+  });
+
+  it("denies every mutating tool — it reports on a surface, it does not fix one", () => {
+    const s = resolveProfileSettings(surfaceOperatorProfile("studio"));
+    for (const t of ["Edit", "Write", "WebFetch", "WebSearch", "Task"]) expect(s.denyToolRules).toContain(t);
+    expect(s.allowToolRules).toContain("Read");
+  });
+
+  // No build toolchain reaches the allow list — the regression that started this: the session ran
+  // `cargo run --bin bsc` in the tree the running app owns, to invoke a binary already on its PATH.
+  it("grants no build toolchain at all", () => {
+    const cmds = resolveProfileSettings(surfaceOperatorProfile("studio")).allowedCommands;
+    for (const c of cmds) expect(c.startsWith("bsc")).toBe(true);
+    for (const bad of ["cargo", "npm", "python", "python3", "node"]) expect(cmds).not.toContain(bad);
   });
 });

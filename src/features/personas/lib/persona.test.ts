@@ -18,7 +18,7 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     // librarian (#2787 — the Algorithms tab's knowledge-store session).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian", "persona-debugger",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian", "persona-surface-operator", "persona-debugger",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }

@@ -5,7 +5,8 @@
     "the-debug-session-is-for-the-whole-app-not-just-bsc-ui (2026-08-27): debugger.github write -> read. A NARROWING, and it closes a prose/permission split rather than changing policy: the debug session works base-studio-code, which is local-first (CLAUDE.md: reads are fine, `gh issue create/close/edit`, `gh pr create/merge` and `git push` are not), and its own charter now says so explicitly. Leaving the grant would repeat the architect defect — instructions forbidding what the floor permits. Nothing depended on it: no test asserted debugger github write, and `issuer`/`triage` (the genuinely GitHub-facing roles) keep theirs. Every other axis is unchanged; the debugger stays full-capability on git/code/ui, which is what the job needs.",
     "a-studios-floor-denies-what-its-charter-instructs (2026-08-28): every confined studio gains `bsc persona whatami`; every persona that can FILE a request gains `bsc request get`; and every persona whose CHARTER instructs `bsc session ask` gains that exact prefix. A WIDENING, and deliberate: it closes the same prose/permission split the architect amendment above records, with the sign flipped — a studio was told to read its request replies, to put a judgement call to a sibling studio, and could do neither. Measured across all five studios plus the curator; the grants are per-verb, never a bare noun, so `bsc session` (start/stop) and `bsc persona` (rewriting identities) stay the architect's alone. ONE CONSEQUENCE WORTH NAMING: `bsc session ask` to a STOPPED target starts it, because delivery wakes a session to hand it the request — that is inside the closed-set mitigation (the target is an id from a registry the app owns) and is strictly narrower than the architect's existing grant. The `_amendments` array reflows to multi-line here because it was hand-collapsed onto one; nothing else in the file changes shape.",
     "an-ask-is-a-loop-again-and-every-turn-is-delivered (2026-08-28): every studio instructed to reply gains `bsc session reply` — the verb that posts a turn into its ask loop AND delivers it to the other participant. It is what lets a studio PAUSE AND ASK rather than guess or stop, which is the reason the loop came back. Per-verb as before; `bsc session` start/stop stays the architect's.",
-    "4055-the-integrator-takes-the-discovery-declared-inte (2026-09-01): integrator.allow += `bsc project integrations`. DELIBERATE, and it is the item's first acceptance criterion — the Integrator studio shipped with a playbook and no QUEUE, so it knew how to build an integration and nothing about which ones anyone wanted. The declarations live per-project in each hub's plan.db while the studio is a global singleton with no project context, so the roll-up read is what bridges them; without it the studio cannot see its own work list from inside its cage. SCOPED TO THREE TOKENS ON PURPOSE: `bsc project` is NOT a read-only noun — it carries `new`, `link`, `github-state` and `db` — so a bare prefix would let a studio confined to connectors CREATE projects and rewrite their contracts. The verb itself is read-only: it opens each plan store without creating or migrating one, and a declaration carries the auth SCHEME in prose with no field able to hold a credential. No access axis moved — github/git/code/ui stay `none` and net stays `read` — and `bsc project`, `bsc plan` and bare `bsc` remain ungranted, which `the_work_list_verb_is_allowed_and_nothing_wider_is` pins in Rust."
+    "4055-the-integrator-takes-the-discovery-declared-inte (2026-09-01): integrator.allow += `bsc project integrations`. DELIBERATE, and it is the item's first acceptance criterion — the Integrator studio shipped with a playbook and no QUEUE, so it knew how to build an integration and nothing about which ones anyone wanted. The declarations live per-project in each hub's plan.db while the studio is a global singleton with no project context, so the roll-up read is what bridges them; without it the studio cannot see its own work list from inside its cage. SCOPED TO THREE TOKENS ON PURPOSE: `bsc project` is NOT a read-only noun — it carries `new`, `link`, `github-state` and `db` — so a bare prefix would let a studio confined to connectors CREATE projects and rewrite their contracts. The verb itself is read-only: it opens each plan store without creating or migrating one, and a declaration carries the auth SCHEME in prose with no field able to hold a credential. No access axis moved — github/git/code/ui stay `none` and net stays `read` — and `bsc project`, `bsc plan` and bare `bsc` remain ungranted, which `the_work_list_verb_is_allowed_and_nothing_wider_is` pins in Rust.",
+    "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added — nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves — so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers — a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role — narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier."
   ],
   "roles": {
     "architect": {
@@ -213,6 +214,29 @@
       "code": "none",
       "net": "read",
       "ui": "read"
+    },
+    "operator": {
+      "role": "operator",
+      "writeGlobs": [],
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "allow": [
+        "bsc surface",
+        "bsc request new",
+        "bsc request list",
+        "bsc request get",
+        "bsc request note",
+        "bsc errors run",
+        "bsc mem",
+        "bsc perf",
+        "bsc logs",
+        "bsc session ask",
+        "bsc session reply",
+        "bsc persona whatami"
+      ]
     },
     "planner": {
       "role": "planner",
