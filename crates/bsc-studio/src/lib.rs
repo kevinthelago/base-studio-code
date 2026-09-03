@@ -64,7 +64,7 @@ pub const SYSTEMS: &[(&str, &str, &str)] = &[
 /// The values live in the OS keychain and no verb reads them back, but WHICH services a user is
 /// paired with is itself disclosure, and a backup is not a reason to publish it.
 pub const EXCLUDED: &[(&str, &str)] = &[
-    ("secrets", "a Studio is shareable; pairing metadata must not travel in one"),
+    ("secrets", "disclosure that cannot be walked back; needs its own backup decision (deferred)"),
     ("plans", "per-project plan.db is a bespoke schema, not a json-store — needs its own reader"),
     ("knowledge", "the algorithms graph is a NODE+EDGE ontology, not records (#2889)"),
     ("skills", "SQLite-backed with its own schema (#2889)"),
@@ -704,5 +704,278 @@ mod coverage_tests {
         for (seg, why) in EXCLUDED {
             assert!(why.len() > 20, "{seg} is excluded without a real reason: {why:?}");
         }
+    }
+}
+
+// ── FULL-SCOPE BACKUP (`the-save-verb-takes-a-scope-and-backs-up-everything`) ─────────────────────
+
+/// What a save captures. The DEFAULT is [`Scope::Library`], and that is the safety property: the
+/// artifact you get without thinking is the one that is safe to hand to someone.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Scope {
+    /// The shareable library bundle — presets and design state. What `save` has always produced.
+    Library,
+    /// EVERYTHING, including private project state. NOT shareable: plan stores hold discovery,
+    /// lessons and change history (1,027 changes in one store on the machine this was written on),
+    /// and `projects` holds local filesystem paths.
+    Full,
+}
+
+impl Scope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Scope::Library => "library",
+            Scope::Full => "full",
+        }
+    }
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim() {
+            "library" => Ok(Scope::Library),
+            "full" => Ok(Scope::Full),
+            other => Err(format!("unknown --scope '{other}' (expected library|full)")),
+        }
+    }
+}
+
+/// The SQLite stores a FULL backup copies, beyond the library collections a Studio already holds.
+///
+/// These are exactly the stores [`EXCLUDED`] names as authoritative-but-uncaptured. A full backup is
+/// where they finally land — not in the shareable bundle, which is why the split is a scope rather
+/// than a widening of `SYSTEMS`.
+///
+/// `secrets` IS DELIBERATELY ABSENT. It is the one store whose disclosure cannot be walked back: the
+/// values live in the OS keychain, but WHICH services a user is paired with is itself disclosure, and
+/// a backup travelling to a NAS or a cloud is exactly where that leaks. Backing it up safely is a
+/// different problem from copying a database — it needs its own decision about encryption and about
+/// what a restore on a DIFFERENT machine should even mean, since the keychain entries it points at
+/// will not be there. Deferred on purpose, with a home:
+/// `the-credential-store-needs-its-own-backup-decision`.
+pub const FULL_STORES: &[&str] = &["projects", "requests", "loops", "entities", "skills"];
+
+/// One captured store, as the manifest records it.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct CapturedStore {
+    pub name: String,
+    pub bytes: u64,
+    /// `ok`, or SQLite's complaint. RECORDED rather than merely checked: a backup that cannot say
+    /// whether it verified is not meaningfully different from one that did not.
+    pub integrity: String,
+}
+
+/// What a full backup wrote, so the artifact can describe itself without being restored.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct BackupManifest {
+    pub scope: String,
+    pub studio: String,
+    pub stores: Vec<CapturedStore>,
+    pub plans: Vec<CapturedStore>,
+    /// Stores that were declared but absent — an empty machine is legitimate, a SILENT gap is not.
+    pub absent: Vec<String>,
+}
+
+/// Copy one SQLite database consistently, and verify it.
+///
+/// `VACUUM INTO` rather than a file copy, and this is the whole correctness argument: a live machine
+/// has `-wal` sidecars beside its stores (16 of them beside `plans/` when this was written), and
+/// copying a `.db` whose write-ahead log holds uncommitted pages yields a stale or torn file that
+/// looks exactly like a working backup until someone restores it. `VACUUM INTO` takes a read
+/// transaction, so it captures a consistent point-in-time image into ONE file with no sidecars.
+///
+/// The copy is then `integrity_check`ed and the answer is recorded. Verifying without recording
+/// would leave the manifest unable to say whether it had.
+fn vacuum_into(src: &Path, dest: &Path) -> Result<CapturedStore, String> {
+    let name = src.file_stem().and_then(|s| s.to_str()).unwrap_or("store").to_string();
+    if dest.exists() {
+        // VACUUM INTO refuses an existing target, and that refusal is right — silently overwriting a
+        // previous backup is how one bad run destroys the last good copy.
+        return Err(format!("{} already exists; refusing to overwrite a previous backup", dest.display()));
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    let conn = bsc_sqlite_util::open_db_str(src, "store")?;
+    conn.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])
+        .map_err(|e| format!("VACUUM INTO {} failed: {e}", dest.display()))?;
+
+    let copy = bsc_sqlite_util::open_db_str(dest, "store")?;
+    let integrity: String = copy
+        .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+        .unwrap_or_else(|e| format!("integrity_check could not run: {e}"));
+    let bytes = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    Ok(CapturedStore { name, bytes, integrity })
+}
+
+/// Write a FULL backup of `base` into `out`: the library bundle plus a consistent copy of every
+/// SQLite store, including every per-project plan store.
+///
+/// A directory rather than one file, because 28 MB of SQLite cannot live inside a JSON bundle
+/// without base64 inflating it by a third and making the result unreadable by anything but this
+/// tool. The bundle stays JSON; the databases stay databases.
+pub fn backup_full(base: &Path, out: &Path, name: &str, description: Option<String>) -> Result<BackupManifest, String> {
+    std::fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
+
+    let mut studio = Studio {
+        id: slug(name)?,
+        name: name.to_string(),
+        description: description.filter(|d| !d.trim().is_empty()),
+        version: None,
+        snapshot: build_snapshot(base),
+    };
+    // The bundle self-identifies. A full-scope artifact must not be mistaken for a shareable one on
+    // the strength of its filename alone.
+    studio.description = Some(match studio.description.take() {
+        Some(d) => format!("[scope: full — contains private project state] {d}"),
+        None => "[scope: full — contains private project state]".to_string(),
+    });
+    let bundle = serde_json::to_string_pretty(&studio).map_err(|e| format!("backup: {e}"))?;
+    std::fs::write(out.join("studio.json"), bundle)
+        .map_err(|e| format!("cannot write the bundle: {e}"))?;
+
+    let (mut stores, mut absent) = (Vec::new(), Vec::new());
+    for store in FULL_STORES {
+        let src = base.join(format!("{store}.db"));
+        if !src.is_file() {
+            absent.push((*store).to_string());
+            continue;
+        }
+        stores.push(vacuum_into(&src, &out.join("stores").join(format!("{store}.db")))?);
+    }
+
+    // Plan stores are per-project and their names are not knowable in advance, so they are captured
+    // by SCAN. The `-wal`/`-shm` sidecars are deliberately NOT copied — `VACUUM INTO` folds them in,
+    // and copying them beside a vacuumed file would leave a database with a log it does not match.
+    let mut plans = Vec::new();
+    let plans_dir = base.join("plans");
+    if let Ok(entries) = std::fs::read_dir(&plans_dir) {
+        let mut paths: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("db"))
+            .collect();
+        paths.sort();
+        for p in paths {
+            let file = p.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+            plans.push(vacuum_into(&p, &out.join("plans").join(file))?);
+        }
+    } else {
+        absent.push("plans".to_string());
+    }
+
+    let manifest = BackupManifest {
+        scope: Scope::Full.as_str().to_string(),
+        studio: studio.id.clone(),
+        stores,
+        plans,
+        absent,
+    };
+    let text = serde_json::to_string_pretty(&manifest).map_err(|e| format!("manifest: {e}"))?;
+    std::fs::write(out.join("manifest.json"), text)
+        .map_err(|e| format!("cannot write the manifest: {e}"))?;
+    Ok(manifest)
+}
+
+#[cfg(test)]
+mod backup_tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("studio-backup-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("scratch");
+        d
+    }
+
+    /// A store with a LIVE write-ahead log still copies consistently.
+    ///
+    /// THE WHOLE REASON `VACUUM INTO` IS USED. A file copy here would take the `.db` without the
+    /// `-wal` beside it and lose every row still in the log — a backup that restores to an older
+    /// state while reporting success. The fixture leaves rows in the WAL on purpose.
+    #[test]
+    fn a_store_with_an_open_wal_copies_every_committed_row() {
+        let root = scratch("wal");
+        let src = root.join("live.db");
+        let conn = bsc_sqlite_util::open_db_str(&src, "store").expect("open");
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE t (id TEXT PRIMARY KEY);
+             INSERT INTO t VALUES ('a'),('b'),('c');",
+        )
+        .expect("seed");
+        assert!(src.with_extension("db-wal").exists() || root.join("live.db-wal").exists(),
+            "the fixture must actually leave a WAL, or it proves nothing");
+
+        let got = vacuum_into(&src, &root.join("out/live.db")).expect("vacuum");
+        assert_eq!(got.integrity, "ok");
+        let copy = bsc_sqlite_util::open_db_str(&root.join("out/live.db"), "store").expect("open copy");
+        let n: i64 = copy.query_row("SELECT count(*) FROM t", [], |r| r.get(0)).expect("count");
+        assert_eq!(n, 3, "every committed row must survive, including those still in the WAL");
+        // And no sidecar travels with it — the copy is one self-contained file.
+        assert!(!root.join("out/live.db-wal").exists(), "a vacuumed copy needs no WAL beside it");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// An existing target is REFUSED, never overwritten. Silently clobbering the previous backup is
+    /// how one bad run destroys the last good copy.
+    #[test]
+    fn an_existing_target_is_refused_rather_than_overwritten() {
+        let root = scratch("refuse");
+        let src = root.join("s.db");
+        bsc_sqlite_util::open_db_str(&src, "store").expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT);").expect("seed");
+        let dest = root.join("out/s.db");
+        vacuum_into(&src, &dest).expect("first copy");
+        let err = vacuum_into(&src, &dest).expect_err("a second copy must be refused");
+        assert!(err.contains("refusing to overwrite"), "{err}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// An absent store is RECORDED, not skipped in silence. An empty machine is legitimate; a gap
+    /// nobody can see is the failure this whole surface exists to prevent.
+    #[test]
+    fn an_absent_store_is_recorded_rather_than_silently_skipped() {
+        let root = scratch("absent");
+        let out = root.join("backup");
+        let m = backup_full(&root, &out, "probe", None).expect("backup an empty base");
+        assert!(m.stores.is_empty());
+        assert!(m.absent.contains(&"projects".to_string()), "absent stores must be named: {:?}", m.absent);
+        assert!(m.absent.contains(&"plans".to_string()));
+        assert_eq!(m.scope, "full");
+        assert!(out.join("manifest.json").is_file(), "the manifest must exist even for an empty base");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A full-scope bundle SAYS SO in its own description, so it cannot be mistaken for a shareable
+    /// one on the strength of a filename.
+    #[test]
+    fn a_full_bundle_identifies_itself_as_private() {
+        let root = scratch("marks");
+        let out = root.join("backup");
+        backup_full(&root, &out, "probe", Some("my notes".into())).expect("backup");
+        let text = std::fs::read_to_string(out.join("studio.json")).expect("bundle");
+        assert!(text.contains("scope: full"), "the bundle must self-identify as full-scope");
+        assert!(text.contains("private project state"), "and say why that matters");
+        assert!(text.contains("my notes"), "without discarding the caller's own description");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// `secrets` is captured by NOTHING — not a scope, not a flag, not `--all`.
+    ///
+    /// Pinned rather than trusted to the roster staying right: it is the one store whose disclosure
+    /// cannot be walked back, and the interim position while
+    /// `the-credential-store-needs-its-own-backup-decision` is open is that it never travels.
+    #[test]
+    fn the_credential_store_is_captured_by_nothing() {
+        assert!(!FULL_STORES.contains(&"secrets"), "secrets must not be in the full-backup set");
+        assert!(
+            EXCLUDED.iter().any(|(seg, _)| *seg == "secrets"),
+            "and its omission must be RECORDED, not merely absent"
+        );
+    }
+
+    #[test]
+    fn scope_parses_and_rejects_anything_else() {
+        assert_eq!(Scope::parse("library").unwrap(), Scope::Library);
+        assert_eq!(Scope::parse("full").unwrap(), Scope::Full);
+        assert!(Scope::parse("everything").unwrap_err().contains("expected library|full"));
     }
 }
