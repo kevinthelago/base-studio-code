@@ -115,6 +115,35 @@ pub(crate) fn cmd_feature(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
+        // `feature issues [--apply]` — the feature -> issue projection, ONE issue per feature.
+        //
+        // The planner charter promises this ("Issues are generated from the features at GitHub publish
+        // — never authored here") and, until now, nothing implemented it: the only copy was
+        // `feature-list.ts::featuresToPlanIssues`, orphaned since the planner UI was deleted, while
+        // `crates/bsc-publish` takes `PlanIssue` rows that already exist rather than deriving them.
+        //
+        // DRY BY DEFAULT. It writes one issue per feature, keyed on the feature slug, so a careless run
+        // against a plan whose issues were hand-authored would overwrite them by ref. Printing what it
+        // WOULD write costs nothing and makes `--apply` a decision rather than a reflex.
+        "issues" => {
+            let feats = s.feature_list().map_err(|e| e.to_string())?;
+            let issues = crate::features::features_to_plan_issues(&feats);
+            if args.positional.get(2).map(String::as_str) == Some("--apply") || args.apply {
+                for iss in &issues {
+                    s.upsert(iss).map_err(|e| e.to_string())?;
+                }
+                let refs: Vec<&str> = issues.iter().map(|i| i.r#ref.as_str()).collect();
+                emit_set_result(args.json, &refs, "");
+            } else if args.json {
+                print_json(&serde_json::to_value(&issues).unwrap_or_default(), args.pretty);
+            } else {
+                for iss in &issues {
+                    println!("{:<32} {}", iss.r#ref, iss.title);
+                }
+                println!("{} issue(s) — nothing written; add --apply to write them", issues.len());
+            }
+            Ok(())
+        }
         other => Err(unknown_sub(args, "feature", other)),
     }
 }

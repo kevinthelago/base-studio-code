@@ -720,6 +720,57 @@ mod feature_rules {
         assert_eq!(feature_dependency_cycle(&[f("a", &["a"])]), vec!["a".to_string(), "a".to_string()]);
     }
 
+    /// Ported from `featuresToPlanIssues` — "maps one issue per feature: slug→ref,
+    /// acceptance/dependsOn carry over, prose→body".
+    #[test]
+    fn features_project_into_one_issue_each() {
+        let feats = vec![
+            PlanFeature {
+                slug: "kernel".into(),
+                name: "Geometry kernel".into(),
+                behavior: Some("evaluate solids".into()),
+                acceptance: vec!["booleans work".into()],
+                approach: Some("BREP".into()),
+                tools: vec!["opencascade".into()],
+                ..Default::default()
+            },
+            PlanFeature { slug: "sketcher".into(), name: "Sketcher".into(), depends_on: vec!["kernel".into()], ..Default::default() },
+        ];
+        let issues = features_to_plan_issues(&feats);
+        assert_eq!(issues.len(), 2);
+        assert_eq!(issues[0].r#ref, "kernel");
+        assert_eq!(issues[0].title, "Geometry kernel");
+        assert_eq!(issues[0].acceptance, vec!["booleans work".to_string()]);
+        assert_eq!(issues[0].stream.as_deref(), Some("kernel"));
+        let body = issues[0].body.clone().unwrap();
+        assert!(body.contains("evaluate solids"));
+        assert!(body.contains("## Approach"));
+        assert!(body.contains("## Tools"));
+        // A feature edge becomes an ISSUE edge — the whole reason the slug is the ref.
+        assert_eq!(issues[1].r#ref, "sketcher");
+        assert_eq!(issues[1].depends_on, vec!["kernel".to_string()]);
+    }
+
+    #[test]
+    fn a_title_less_feature_falls_back_to_its_slug_and_an_empty_body_is_absent() {
+        // `title: f.name || f.slug` in the TS — an issue with a blank title is unreadable on a board.
+        let issues = features_to_plan_issues(&[PlanFeature { slug: "bare".into(), ..Default::default() }]);
+        assert_eq!(issues[0].title, "bare");
+        // No prose at all ⇒ NO body, not an empty string. `renderIssueBody` adds the rest, and an
+        // empty string would render a heading with nothing under it.
+        assert!(issues[0].body.is_none());
+    }
+
+    #[test]
+    fn owns_and_labels_are_left_to_the_fleet() {
+        // Inventing them here would put a planning guess where an ownership decision goes.
+        let issues = features_to_plan_issues(&[PlanFeature {
+            slug: "a".into(), name: "A".into(), behavior: Some("b".into()), acceptance: vec!["x".into()], ..Default::default()
+        }]);
+        assert!(issues[0].owns.is_empty());
+        assert!(issues[0].labels.is_empty());
+    }
+
     #[test]
     fn an_edge_to_an_unknown_slug_is_not_a_cycle() {
         // A dangling `depends_on` is a separate problem — reporting it as a deadlock would send a
@@ -739,4 +790,63 @@ mod feature_rules {
             .collect();
         assert_eq!(feature_dependency_cycle(&feats), Vec::<String>::new());
     }
+}
+
+/// The extra prose for a feature's published issue — its behavior, approach, data and tools.
+///
+/// Beyond `acceptance`/`owns`/`dependsOn`, which the issue renderer adds itself. Ported from
+/// `feature-list.ts::featureBody`, heading text and join order intact: the body is what a worker
+/// reads, so a reflow would change every published issue for no reason.
+fn feature_body(f: &PlanFeature) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(b) = f.behavior.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        parts.push(b.to_string());
+    }
+    if let Some(a) = f.approach.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+        parts.push(format!("## Approach\n{a}"));
+    }
+    if let Some(d) = f.data.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        parts.push(format!("## Data\n{d}"));
+    }
+    if !f.tools.is_empty() {
+        let list = f.tools.iter().map(|t| format!("- {t}")).collect::<Vec<_>>().join("\n");
+        parts.push(format!("## Tools\n{list}"));
+    }
+    let joined = parts.join("\n\n").trim().to_string();
+    if joined.is_empty() { None } else { Some(joined) }
+}
+
+/// Project features into the issues published FROM them — ONE issue per feature.
+///
+/// Issues are not authored during planning; the planner charter says so in as many words ("Issues are
+/// generated from the features at GitHub publish — never authored here"), and this is what generates
+/// them. The feature's slug becomes the issue `ref`, so a `depends_on` between FEATURES is a
+/// `dependsOn` between ISSUES; acceptance carries over; the prose becomes the body.
+///
+/// `owns` and `labels` are deliberately left empty — they belong to the fleet, assigned to the stream
+/// in the Permissions stage, and inventing them here would put a planning guess where an ownership
+/// decision goes.
+///
+/// PORTED FROM `feature-list.ts::featuresToPlanIssues`, which was the only implementation and had been
+/// orphaned since the planner UI was deleted — while `crates/bsc-publish` takes `PlanIssue` rows that
+/// already exist rather than deriving them. So the charter promised a projection that nothing
+/// implemented. It lives here now because plan.db is this crate's resource.
+pub fn features_to_plan_issues(feats: &[PlanFeature]) -> Vec<crate::PlanIssue> {
+    feats
+        .iter()
+        .map(|f| crate::PlanIssue {
+            r#ref: f.slug.clone(),
+            title: if f.name.is_empty() { f.slug.clone() } else { f.name.clone() },
+            acceptance: f.acceptance.clone(),
+            owns: Vec::new(),
+            depends_on: f.depends_on.clone(),
+            labels: Vec::new(),
+            // The stream a feature's issue belongs to. `PlanFeature.stream` is SUPERSEDED and never
+            // authored, so this is the slug in practice — kept as the same fallback the TS had rather
+            // than silently changing which stream an issue lands in.
+            stream: Some(f.stream.clone().unwrap_or_else(|| f.slug.clone())),
+            body: feature_body(f),
+            ..Default::default()
+        })
+        .collect()
 }

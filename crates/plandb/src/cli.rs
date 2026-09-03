@@ -741,6 +741,11 @@ struct Args {
     since: Option<i64>,
     /// Re-expand a JSON read to indented form (the default is compact, to save agent tokens).
     pretty: bool,
+    /// `feature issues --apply` — WRITE the projected issues, rather than printing them.
+    ///
+    /// Dry by default: the projection writes one issue per feature keyed on the feature slug, so a
+    /// careless run against a plan whose issues were hand-authored would overwrite them by ref.
+    apply: bool,
     /// `feature gate --confirmed` — the USER has confirmed the feature roster.
     ///
     /// A separate axis from the roster being complete, and deliberately not inferred: the whole point
@@ -770,7 +775,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false, confirmed: false, force: false, clear: false, kind: None,
+        since: None, pretty: false, confirmed: false, apply: false, force: false, clear: false, kind: None,
         dir: None, release: false,
     };
     let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
@@ -798,6 +803,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
             "--confirmed" => a.confirmed = true,
+            "--apply" => a.apply = true,
             "--force" | "--no-validate" => a.force = true,
             // `--clear` removes an optional field rather than setting it — the counterpart every
             // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).
