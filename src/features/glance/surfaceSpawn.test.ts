@@ -46,9 +46,14 @@ describe("a surface node's pane is DERIVED from the node", () => {
 
 describe("the assignment says which persona and what it is pointed at", () => {
   it("a noun is an OPERATOR, a verb is a MAINTAINER", () => {
-    expect(surfaceAssignment("noun:logs", doc)).toEqual({ kind: "operator", crate: "logs", noun: "logs" });
+    expect(surfaceAssignment("noun:logs", doc)).toEqual({ kind: "operator", crate: "logs", path: "crates/logs", noun: "logs" });
+    // THE PATH IS THE FIX. A surface session runs HERE, not at the repo root: `ensure_session_settings`
+    // writes `<cwd>/.claude/settings.json`, so a confined session parked at the root wrote its
+    // confinement into the tree every other session inherits. It comes from the drill as data — a
+    // derived `crates/${crate}` would be a guess about a layout the doc already states.
+    expect(surfaceAssignment("noun:logs", doc)?.path).toBe(doc.path);
     expect(surfaceAssignment("verb:logs:tail", doc)).toEqual({
-      kind: "maintainer", crate: "logs", noun: "logs", verb: "tail",
+      kind: "maintainer", crate: "logs", path: "crates/logs", noun: "logs", verb: "tail",
     });
   });
 
@@ -61,20 +66,20 @@ describe("the charter carries the persona's own words, then the assignment", () 
   it("leads with the persona prompt rather than restating it", () => {
     // ONE copy of what an operator is. A charter that re-described the persona would drift from it, and
     // drift between two descriptions of the same actor is the failure this whole catalog exists to end.
-    const c = surfaceCharter({ kind: "operator", crate: "logs", noun: "logs" }, "PERSONA-PROMPT-BODY");
+    const c = surfaceCharter({ kind: "operator", crate: "logs", path: "crates/logs", noun: "logs" }, "PERSONA-PROMPT-BODY");
     expect(c.startsWith("PERSONA-PROMPT-BODY")).toBe(true);
   });
 
   it("gives the operator the EXACT --surface string its requests must carry", () => {
     // The maintainer's queue is `bsc request list --surface <noun>`. If the operator files under
     // anything else the report is filed, correct, and invisible to the only actor who can act on it.
-    const c = surfaceCharter({ kind: "operator", crate: "logs", noun: "metrics" }, "P");
+    const c = surfaceCharter({ kind: "operator", crate: "logs", path: "crates/logs", noun: "metrics" }, "P");
     expect(c).toContain('--surface "metrics"');
     expect(c).toContain("bsc request new");
   });
 
   it("points the maintainer at that same queue, and at the catalog it must keep true", () => {
-    const c = surfaceCharter({ kind: "maintainer", crate: "logs", noun: "metrics", verb: "cost" }, "P");
+    const c = surfaceCharter({ kind: "maintainer", crate: "logs", path: "crates/logs", noun: "metrics", verb: "cost" }, "P");
     expect(c).toContain('bsc request list --surface "metrics"');
     expect(c).toContain("bsc surface verbs metrics");
     expect(c).toContain("bsc metrics cost");
