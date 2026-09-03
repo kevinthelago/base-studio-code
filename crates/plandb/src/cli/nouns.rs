@@ -69,6 +69,52 @@ pub(crate) fn cmd_feature(args: &Args) -> Result<(), String> {
         // a director seeding from the plan, or a worker discovering mid-task what it actually needs.
         // Run that experiment through an unattributed list and you get one merged set and no answer.
         "requires" => cmd_feature_requires(args, &s),
+        // `feature gate [--confirmed]` — the roster's readiness, as Rust computes it.
+        //
+        // This is the READ the frontend makes instead of re-deriving the rules over a parsed
+        // `features.json`. Three predicates used to live only in `feature-list.ts` — the gate
+        // verdict, the awaiting-confirm state and the dependency-cycle check — over a rendered file
+        // rather than the store; plan.db is this crate's resource, so they are computed here and the
+        // renderer reports what it is told (`epic-frontend-logic-over-backend-resources-belongs-in-rust`).
+        "gate" => {
+            let feats = s.feature_list().map_err(|e| e.to_string())?;
+            let summary = crate::features::features_summary(&feats);
+            let confirmed = args.confirmed;
+            let cycle = crate::features::feature_dependency_cycle(&feats);
+            if args.json {
+                print_json(
+                    &serde_json::json!({
+                        "count": summary.count,
+                        "specified": summary.specified,
+                        "defined": summary.defined,
+                        "allSpecified": summary.all_specified,
+                        "userConfirmed": confirmed,
+                        "gateComplete": crate::features::features_gate_complete(&summary, confirmed),
+                        "awaitingConfirm": crate::features::features_awaiting_confirm(&summary, confirmed),
+                        // Empty means acyclic. A cycle is reported as the slugs ON it, closed by its
+                        // first — a planning deadlock is worth naming rather than counting.
+                        "dependencyCycle": cycle,
+                    }),
+                    args.pretty,
+                );
+            } else {
+                println!("{}", crate::validate::feature_readiness(&feats));
+                if !cycle.is_empty() {
+                    println!("depends-on CYCLE: {}", cycle.join(" -> "));
+                }
+                println!(
+                    "gate: {}",
+                    if crate::features::features_gate_complete(&summary, confirmed) {
+                        "complete"
+                    } else if crate::features::features_awaiting_confirm(&summary, confirmed) {
+                        "awaiting the user's confirm"
+                    } else {
+                        "not ready — some features are not yet described"
+                    }
+                );
+            }
+            Ok(())
+        }
         other => Err(unknown_sub(args, "feature", other)),
     }
 }
@@ -798,18 +844,10 @@ fn cmd_feature_add(s: &crate::Store) -> Result<Vec<String>, String> {
 /// A one-line feature entry: `invite-teammates  ✓ Invite teammates   (auth)` — ✓ = fully defined,
 /// which since #requires-names-components INCLUDES a non-empty `requires`.
 fn render_feature_line(f: &PlanFeature) -> String {
-    // A feature is not fully defined until it says WHAT IT DRAWS ON. `requires` is the plan -> library
-    // edge (algorithm implementations and UI components alike), and the worker charter renders it as the
-    // Reference implementations section — so an empty one means a worker is told to build from nothing
-    // and re-derives what the library already holds.
-    //
-    // MEASURED when this was added: 124 features across six projects, THREE with a requires list. The
-    // edge and the worker protocol were both correct; the input was empty, and nothing said so.
-    let defined = !f.name.is_empty()
-        && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false)
-        && !f.acceptance.is_empty()
-        && !f.requires.is_empty();
-    let mark = if defined { "✓" } else { "·" };
+    // The rule itself lives in `crate::features` — see the block above `feature_specified` for why
+    // there is exactly one of each and what it cost when there were three. This site used to inline
+    // its own copy, which is how the mark and the footer came to disagree in one command's output.
+    let mark = if crate::features::feature_defined(f) { "✓" } else { "·" };
     let stream = f.stream.as_deref().map(|s| format!("   ({s})")).unwrap_or_default();
     format!("{:<24} {} {}{}", f.slug, mark, f.name, stream)
 }
