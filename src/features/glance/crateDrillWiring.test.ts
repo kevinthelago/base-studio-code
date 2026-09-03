@@ -135,7 +135,13 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     // `crateDoc` is cleared by an effect, which runs AFTER the render where `crateNode` became null. For
     // that one render the layer was closed while the model still held the crate graph, and that stale
     // render is what the viewport was framed against on the way out.
-    expect(src).toContain("() => (crateNode && crateDoc ? crateDrillGraph(crateDoc) : null),");
-    expect(src).toContain("[crateNode, crateDoc],");
+    //
+    // The GUARD is what this pins, not the call. It was written against the literal
+    // `crateDrillGraph(crateDoc)` and so went red when the crate drill gained its liveness overlay
+    // (`the-crate-drill-shows-its-sessions-live`) — a green-to-red on a change that preserved the
+    // property exactly. Asserting the condition keeps the claim and stops the test owning which fold
+    // the memo calls, which is a different test's business.
+    expect(src).toContain("crateNode && crateDoc ?");
+    expect(src).toMatch(/\[crateNode, crateDoc[,\]]/);
   });
 });
