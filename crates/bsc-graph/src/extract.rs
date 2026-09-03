@@ -2731,8 +2731,12 @@ export const lbl = createStoreLabel;
         std::fs::write(
             &f,
             concat!(
-                // The real shape, reaching ABOVE the crate root — `bsc-sound` does exactly this.
-                "pub const SIGNAL: &str = include_str!(\"../../../src-tauri/data/sounds/signal.json\");\n",
+                // The real SHAPE, reaching ABOVE the crate root. The filename is deliberately not a
+                // real packaged seed: `the_high_churn_seeds_are_never_embedded_again` scans source
+                // text for seed names next to `include_str!`, and a fixture naming one reads to that
+                // guard as a genuine embed. It flagged this line the moment `sounds/signal.json`
+                // became a runtime seed.
+                "pub const SIGNAL: &str = include_str!(\"../../../src-tauri/data/sounds/fixture-cue.json\");\n",
                 "pub const RAW: &[u8] = include_bytes!( \"../data/blob.bin\" );\n",
                 // Already absolutized: must be left exactly alone, so re-harvesting is idempotent.
                 "pub const GEN: &str = include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"));\n",
@@ -2743,7 +2747,7 @@ export const lbl = createStoreLabel;
         let c = harvest_module(&f, &root).expect("harvests");
         assert!(
             c.code.contains(
-                "include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/../../../src-tauri/data/sounds/signal.json\"))"
+                "include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/../../../src-tauri/data/sounds/fixture-cue.json\"))"
             ),
             "the include is rooted at the manifest: {}",
             c.code,
