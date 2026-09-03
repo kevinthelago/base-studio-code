@@ -1026,6 +1026,28 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).\n\n`--by <tag>` names the writer (else $BSC_UI_WRITER, else \"unknown\"), stamped to `updatedBy` and the history entry. A patch landing on exactly `/srcText` also runs the #119 guards: an UNATTRIBUTED write over srcText someone else attributed to themselves is REFUSED, as is a buildable-to-unbuildable backslide. `--force` overrides both. Every OTHER pointer is unguarded, as before.",
     },
     CmdDoc {
+        name: "feature",
+        summary: "feature rename <from> <to> — move a feature's components onto another name (dry by default)",
+        usage: "\
+USAGE:
+  bsc ui feature rename <from> <to> [--under <folder-prefix>] [--apply] [--pretty]
+
+Moves every component owned by <from> onto <to>. DRY BY DEFAULT — it prints the count and a sample and
+writes nothing until you pass --apply, because it rewrites the OWNERSHIP field, and ownership decides
+which worker may write a record.
+
+It is NOT `features`. That verb DERIVES the feature from the folder and never overwrites one already
+set — which is right for a backfill and useless for a reconcile, since the folder derivation is what
+produced the name you are trying to change.
+
+`--under <folder-prefix>` narrows to components whose folder starts with the prefix. It exists because
+a graph feature is sometimes two things sharing a folder tree: `shell` held both the app chrome and
+the console pane system, and only a folder filter could send them to different features.
+
+Writes the DELTA, never the round-tripped record: `set` merges, so resubmitting a stored `null` reads
+as a CLEAR. That is how a field was lost 448 records into an earlier bulk write.",
+    },
+    CmdDoc {
         name: "features",
         summary: "report (and with --apply, backfill) which FEATURE owns each component, from its folder",
         usage: "\
@@ -1897,6 +1919,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // types the old verb is told the new one rather than left guessing.
         Some("refolder") if args.get(1).map(String::as_str) != Some("help") => cmd_refolder(&args[1..]),
         Some("features") if args.get(1).map(String::as_str) != Some("help") => cmd_features(&args[1..]),
+        // `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — the algorithms twin
+        // (`the-graph-vocabulary-is-the-plans`). `features` DERIVES from the folder, which is what
+        // produced the divergence in the first place, and never overwrites a feature already set — so
+        // it cannot perform a reconcile. This can.
+        Some("feature") if args.get(1).map(String::as_str) == Some("rename") => cmd_feature_rename(&args[2..]),
         Some("refolder") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
             Ok(())
@@ -4522,6 +4549,83 @@ fn cmd_list_feature(args: &[String]) -> Result<(), String> {
     } else {
         selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
     };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — move a feature's components onto
+/// another name (`the-graph-vocabulary-is-the-plans`).
+///
+/// DRY BY DEFAULT. It rewrites the OWNERSHIP field across many records, and ownership is what decides
+/// which worker may write them — so the report is the default and the write is the opt-in, the same
+/// way `features` and `bsc graph unmaterialize` are shaped.
+///
+/// `--under` filters by folder prefix, for the case that made it necessary: a graph feature that is
+/// really two things living in one folder tree.
+fn cmd_feature_rename(args: &[String]) -> Result<(), String> {
+    let (mut from, mut to) = (None::<String>, None::<String>);
+    let (mut under, mut dir) = (None::<String>, None::<String>);
+    let (mut apply, mut pretty) = (false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--under" => under = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if from.is_none() => from = Some(other.to_string()),
+            other if to.is_none() => to = Some(other.to_string()),
+            _ => {}
+        }
+    }
+    let usage = "usage: bsc ui feature rename <from> <to> [--under <folder-prefix>] [--apply]";
+    let (from, to) = (from.ok_or(usage)?, to.ok_or(usage)?);
+    if apply {
+        bsc_cli_util::require_write_scope("ui")?;
+    }
+    let store = open_component_store(&dir)?;
+    let rows: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+    let matched: Vec<serde_json::Value> = rows
+        .into_iter()
+        .filter(|v| v.get("feature").and_then(serde_json::Value::as_str).unwrap_or_default().trim() == from)
+        .filter(|v| match under.as_deref() {
+            None => true,
+            Some(p) => v
+                .get("folder")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| v.get("src").and_then(serde_json::Value::as_str))
+                .unwrap_or_default()
+                .starts_with(p),
+        })
+        .collect();
+    if apply {
+        // The DELTA, never the round-tripped record. `set_stamped` MERGES the submitted fields onto the
+        // stored record, so sending the whole thing back would resubmit every stored `null` — and a
+        // resubmitted `null` reads as a CLEAR. That is how `terminalhost.provides` was lost 448 records
+        // into the folder backfill; one field, silently, most of the way through a bulk write.
+        let patches: Vec<serde_json::Value> = matched
+            .iter()
+            .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str))
+            .map(|id| serde_json::json!({ "id": id, "feature": to }))
+            .collect();
+        set_stamped(
+            &store,
+            &patches,
+            None,
+            "feature-rename",
+            "component",
+            Some(&format!("feature: {from} -> {to}")),
+            WritePlan::default(),
+        )?;
+    }
+    let out = serde_json::json!({
+        "from": from, "to": to, "under": under, "applied": apply, "matched": matched.len(),
+        // A SAMPLE — the point of a dry run is that a person reads it, and 154 ids is not read.
+        "sample": matched.iter().take(8).filter_map(|v| v.get("id").cloned()).collect::<Vec<_>>(),
+    });
     let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
     Ok(())
@@ -8979,7 +9083,7 @@ export const P = () => <X />;"
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "promote", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "crossgraph", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
+                "set-src", "patch", "feature", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {

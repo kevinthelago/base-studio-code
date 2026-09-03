@@ -17,7 +17,7 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 22] = [
+pub const VERBS: [&str; 23] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
     "used-by", "features", "merge", "emit", "promote", "reseed", "unmaterialize", "build", "migrate-crate", "help",
     // The duplicate surfaces (epic-a-graph-finds-its-own-duplicates). They dispatched and appeared in
@@ -25,6 +25,8 @@ pub const VERBS: [&str; 22] = [
     // drift guard — and the librarian charter test, which asserts the seed names only verbs the CLI
     // has, could not accept prose that taught them.
     "dupes", "similar",
+    // The vocabulary reconcile (`the-graph-vocabulary-is-the-plans`) — `feature rename`.
+    "feature",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -47,7 +49,7 @@ pub const BOOL_FLAGS: [&str; 13] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 54] = [
+pub const FLAGS: [&str; 55] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
@@ -90,6 +92,8 @@ pub const FLAGS: [&str; 54] = [
     "--code-file",
     "--domain",
     "--feature",
+    // `feature rename … --under <folder-prefix>` — the split filter (the-graph-vocabulary-is-the-plans).
+    "--under",
     "--required-by",
     "--clear",
     "--tags",
@@ -3450,6 +3454,88 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `coreCandidates` is ranked by FOREIGN-DOMAIN FAN-IN — how many *different* domains compose a
         // record, not how often it is composed. Raw usage cannot tell shared infrastructure from one
         // feature's popular helper; the number of distinct callers-across-a-boundary can.
+        // `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — move a feature's records
+        // onto another name (`the-graph-vocabulary-is-the-plans`).
+        //
+        // The graph's features were backfilled from FOLDERS, so they describe where code lives; the
+        // plan's describe units of work. Reconciling them onto one namespace is a RENAME, and
+        // `features --apply` cannot do it: that verb derives from the folder (which is what produced
+        // the divergence) and never overwrites a feature already set.
+        //
+        // `--under` exists for one measured reason: graph `shell` is TWO things — 92 records under
+        // `app/**` (the chrome) and 53 under `app/console/**` (the pane system) — and only a folder
+        // filter can split them onto `shell` and `console`. Without it the reconcile would have to
+        // choose one lane for both.
+        //
+        // DRY BY DEFAULT, like `features` and `unmaterialize`: it rewrites an ownership field across
+        // many records, and ownership is what decides which worker may write them.
+        "feature" if positional.get(1).copied() == Some("rename") => {
+            let from = positional.get(2).copied().ok_or(
+                "usage: bsc graph feature rename <from> <to> [--under <folder-prefix>] [--apply]",
+            )?;
+            let to = positional.get(3).copied().ok_or(
+                "usage: bsc graph feature rename <from> <to> [--under <folder-prefix>] [--apply]",
+            )?;
+            let under = flag_value(&args, "--under");
+            let apply = args.iter().any(|a| a == "--apply");
+            let mut g = crate::load();
+            let matched: Vec<(String, String, String, String)> = crate::implementations_of(&g)
+                .iter()
+                .filter(|im| im.get("feature").and_then(Value::as_str).unwrap_or_default().trim() == from)
+                .filter(|im| match under.as_deref() {
+                    None => true,
+                    Some(p) => im
+                        .get("folder")
+                        .and_then(Value::as_str)
+                        .or_else(|| im.get("src").and_then(Value::as_str))
+                        .unwrap_or_default()
+                        .starts_with(p),
+                })
+                .filter_map(|im| {
+                    // `tech` and `role` are READ FROM THE RECORD and resubmitted because `set_impl_by`
+                    // validates identity on the submitted value. Guessing either is what renamed 21
+                    // records wrongly on the first attempt at the folder backfill.
+                    Some((
+                        im.get("id").and_then(Value::as_str)?.to_string(),
+                        im.get("tech").and_then(Value::as_str)?.to_string(),
+                        im.get("role").and_then(Value::as_str)?.to_string(),
+                        im.get("folder").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    ))
+                })
+                .collect();
+            if apply {
+                for (id, tech, role, _) in &matched {
+                    // The DELTA plus the two identity fields — never the round-tripped record. A
+                    // resubmitted stored `null` reads as a CLEAR through the merge, which is how
+                    // `terminalhost.provides` was lost 448 records into the component backfill.
+                    crate::set_impl_by(
+                        &mut g,
+                        serde_json::json!({ "id": id, "tech": tech, "role": role, "feature": to }),
+                        "feature-rename",
+                        Some(&format!("feature: {from} -> {to}")),
+                    )?;
+                }
+                if !matched.is_empty() {
+                    crate::save(&g)?;
+                }
+            }
+            emit(&serde_json::json!({
+                "from": from,
+                "to": to,
+                "under": under,
+                "applied": apply,
+                "matched": matched.len(),
+                // A SAMPLE, not the whole set: the point of the dry run is that a person reads it, and
+                // 147 ids is not read, it is scrolled past. The count is the number that matters.
+                "sample": matched.iter().take(8).map(|(id, _, _, f)| serde_json::json!({ "id": id, "folder": f })).collect::<Vec<_>>(),
+            }))
+        }
+        // A BARE `feature` (or an unknown subverb) is a USAGE error, never an unknown-command
+        // rejection — `verbs_match_the_dispatcher` asserts exactly that for every entry in VERBS, and
+        // it is the difference between "you got the arguments wrong" and "this verb does not exist".
+        "feature" => Err(
+            "usage: bsc graph feature rename <from> <to> [--under <folder-prefix>] [--apply]".to_string(),
+        ),
         "features" => {
             let mut g = crate::load();
             let owned: Vec<Value> = crate::implementations_of(&g).into_iter().collect();
@@ -4159,6 +4245,7 @@ fn help(prog: &str) -> String {
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, on THREE signals — a near-identical BODY (tokenized k-gram shingles, so formatting and wrappers do not defeat it), the same SHAPE (identical code under identifier renaming, which the shingles structurally cannot find because they contain the identifiers), and a shared NAME together with a shared src MODULE (either alone is a naming convention, not a duplicate). N duplicates report as ONE row naming every member and every signal that grouped them, confined to one tech, and it is propose-only (fold with `{prog} merge`)\n  \
+         {prog} feature rename <from> <to> [--under <folder-prefix>] [--apply]   # move a feature's records onto ANOTHER NAME — the vocabulary reconcile (the-graph-vocabulary-is-the-plans). NOT `features`, which DERIVES the feature from the folder and never overwrites one already set: that is right for a backfill and useless for a rename, since the folder derivation is what produced the name you are changing. DRY BY DEFAULT (it rewrites OWNERSHIP, which decides who may write a record) — it prints the count and a sample, and writes only on --apply. --under narrows to records whose folder starts with the prefix, for the case that made it necessary: one graph feature holding two things in one tree (`shell` held both the app chrome and the console pane system). Writes the DELTA, never the round-tripped record — a resubmitted stored `null` reads as a CLEAR through the merge\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
@@ -4992,6 +5079,123 @@ mod tests {
         assert_eq!(report["upToDate"], serde_json::json!(["sync157-a"]));
         assert_eq!(report["synced"], serde_json::json!([]));
 
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `feature rename` is DRY BY DEFAULT, splits on `--under`, and never round-trips the record
+    /// (`the-graph-vocabulary-is-the-plans`).
+    ///
+    /// The dry/apply split is the property under test, not a nicety: this rewrites the OWNERSHIP field
+    /// across many records at once, and ownership decides which worker may write them. A verb that
+    /// wrote on invocation would have moved 145 records the first time it was run to see what it
+    /// would do.
+    #[test]
+    fn feature_rename_is_dry_by_default_and_splits_on_a_folder_prefix() {
+        let dir = crate::unique_temp("graph-feature-rename");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let set = |id: &str, feature: &str, folder: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--feature".into(), feature.into(), "--folder".into(), folder.into(),
+                        "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        set("ren-chrome.rs", "shell", "app/chrome");
+        set("ren-pane.rs", "shell", "app/console/panes");
+        let report = |argv: Vec<String>| -> Value {
+            let (r, out) = bsc_util::capture_output(|| run(argv, "bsc graph"));
+            r.unwrap();
+            serde_json::from_str(out.trim()).unwrap()
+        };
+        let feature_of = |id: &str| -> String {
+            crate::implementations()
+                .iter()
+                .find(|im| im.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|im| im.get("feature").and_then(Value::as_str))
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        // DRY: it reports and writes NOTHING.
+        //
+        // KEYED ON THE SEEDED RECORDS, never on a total. `BSC_GRAPH_STORE` pointed at an empty file
+        // still yields every PACKAGED implementation, because the store reconciles its seed on load —
+        // so `matched` here is 78, not 2, and an assertion on the count would break the next time
+        // anything is added to the seed, for no reason connected to what it checks.
+        let dry = report(vec!["feature".into(), "rename".into(), "shell".into(), "console".into()]);
+        assert!(dry["matched"].as_u64().unwrap() >= 2, "our two are in the match set: {dry}");
+        assert_eq!(dry["applied"], false);
+        assert_eq!(feature_of("ren-chrome.rs"), "shell", "a dry run must not move a record");
+        assert_eq!(feature_of("ren-pane.rs"), "shell");
+
+        // `--under` SPLITS. This is the case the flag exists for: one graph feature holding two things
+        // in one folder tree, which no whole-feature rename can separate.
+        let split = report(vec![
+            "feature".into(), "rename".into(), "shell".into(), "console".into(),
+            "--under".into(), "app/console".into(), "--apply".into(),
+        ]);
+        assert!(split["matched"].as_u64().unwrap() >= 1, "the console half matched: {split}");
+        assert_eq!(feature_of("ren-pane.rs"), "console", "the matched record moved");
+        assert_eq!(feature_of("ren-chrome.rs"), "shell", "the unmatched one did NOT");
+
+        // The sample is a SAMPLE — the count is the number that matters, and 147 ids is not read.
+        assert!(split["sample"].as_array().unwrap().len() <= 8);
+
+        // A `from` nothing carries matches nothing, rather than matching everything — the property a
+        // filter has to have, and the one `impl list --tags` did not.
+        assert_eq!(report(vec!["feature".into(), "rename".into(), "nope-xyz".into(), "x".into()])["matched"], 0);
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The rename writes the DELTA, so a field the record already had survives it.
+    ///
+    /// `set_impl_by` MERGES, so a verb that round-tripped the stored record would resubmit every
+    /// stored `null` — and a resubmitted `null` reads as a CLEAR. That is not hypothetical: it cost
+    /// `terminalhost.provides`, 448 records into the component folder backfill.
+    #[test]
+    fn feature_rename_preserves_every_other_field_on_the_record() {
+        let dir = crate::unique_temp("graph-feature-rename-keep");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let (r, _) = bsc_util::capture_output(|| {
+            run(
+                vec![
+                    "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                    "algorithm".into(), "--id".into(), "keep.rs".into(), "--name".into(), "keep".into(),
+                    "--feature".into(), "old".into(), "--summary".into(), "a summary worth keeping".into(),
+                    "--domain".into(), "logistics".into(), "--tags".into(), "a,b".into(), "--no-src".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        r.unwrap();
+        let before = crate::implementations().iter().find(|i| i["id"] == "keep.rs").cloned().unwrap();
+
+        let (r, _) = bsc_util::capture_output(|| {
+            run(vec!["feature".into(), "rename".into(), "old".into(), "new".into(), "--apply".into()], "bsc graph")
+        });
+        r.unwrap();
+        let after = crate::implementations().iter().find(|i| i["id"] == "keep.rs").cloned().unwrap();
+
+        assert_eq!(after["feature"], "new", "the feature moved");
+        for k in ["summary", "domain", "tags", "name", "tech", "role"] {
+            assert_eq!(after[k], before[k], "`{k}` must survive a feature rename");
+        }
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
     }
