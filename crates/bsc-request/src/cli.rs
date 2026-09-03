@@ -138,6 +138,29 @@ untouched, so every request keeps its status and its thread. Persisted in reques
 so a pause set from a shell is seen by the running app.",
     },
     CmdDoc {
+        name: "sessions",
+        summary: "the GLOBAL off switch for debug sessions — policy, not a pause",
+        usage: "\
+USAGE:
+  bsc request sessions            # enabled | disabled
+  bsc request sessions off        # this machine runs NO debug sessions
+  bsc request sessions on
+  bsc request sessions --json     # {\"enabled\": bool}
+
+THE STRONGER SIBLING OF `pause`, and the difference matters:
+
+  pause     a STATE — \"not right now\". Temporary, and `resume` undoes it.
+  sessions  a POLICY — \"this machine does not run debug sessions\". `resume` cannot lift it.
+
+That asymmetry is the point. `resume` is reached for routinely, and a policy a routine command can
+silently undo is not a policy. With sessions OFF the app starts nothing and closes what it has, no
+matter what `pause` says; the queue is untouched either way, so every request keeps its status and
+its thread.
+
+Defaults to ENABLED — the behaviour every existing install already has. Turning it off is a
+deliberate act and stays off until someone turns it back on.",
+    },
+    CmdDoc {
         name: "resume",
         summary: "let the app auto-spawn debug sessions again",
         usage: "\
@@ -282,6 +305,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "resolve" => cmd_resolve(&args),
         "claim" => cmd_claim(&args),
         "unclaim" => cmd_unclaim(&args),
+        "sessions" => cmd_sessions(&args),
         "pause" => cmd_pause(&args, !args.off),
         "resume" => cmd_pause(&args, false),
         "paused" => cmd_paused(&args),
@@ -462,6 +486,46 @@ fn cmd_unclaim(args: &Args) -> Result<(), String> {
     let id = positional_id(args)?;
     let matched = open_store(&args.db)?.unclaim(id).map_err(|e| format!("unclaiming request: {e}"))?;
     println!("{}", if matched { format!("unclaimed request {id}") } else { format!("no claimed request {id}") });
+    Ok(())
+}
+
+/// `sessions [on|off]` — the GLOBAL off switch (`debug-sessions-have-a-global-off-switch`).
+///
+/// Reads with no argument, writes with one. A read verb that could change the thing it reports is one
+/// nobody can use to diagnose, so the write is only ever the explicit `on`/`off` token — never a flag
+/// that could be typo'd into a mutation.
+fn cmd_sessions(args: &Args) -> Result<(), String> {
+    let store = open_store(&args.db)?;
+    // positional[0] is the verb itself; the setting is the one after it.
+    let want = args.positional.get(1).cloned();
+    let enabled = match want.as_deref() {
+        None => store.sessions_enabled().map_err(|e| format!("reading the sessions flag: {e}"))?,
+        Some("on") => store.set_sessions_enabled(true).map_err(|e| format!("setting it: {e}"))?,
+        Some("off") => store.set_sessions_enabled(false).map_err(|e| format!("setting it: {e}"))?,
+        Some(other) => {
+            return Err(format!(
+                "bsc request sessions: expected `on` or `off`, got '{other}'\n  \
+                 (with no argument it REPORTS the current setting)"
+            ))
+        }
+    };
+    if args.json {
+        // ONE READ, ONE ANSWER. `allowed` is the question the app actually asks — may I start a
+        // session? — resolved HERE so the precedence (a policy outranks a pause) exists once, in
+        // Rust, rather than being restated by every caller that has to combine two booleans.
+        let paused = store.is_paused().map_err(|e| format!("reading the pause flag: {e}"))?;
+        println!(
+            "{}",
+            serde_json::json!({ "enabled": enabled, "paused": paused, "allowed": enabled && !paused })
+        );
+    } else if enabled {
+        println!("enabled — the app may start a debug session per claimed request");
+    } else {
+        println!(
+            "disabled — this machine runs NO debug sessions. The queue is untouched; \
+             `bsc request sessions on` re-enables."
+        );
+    }
     Ok(())
 }
 
