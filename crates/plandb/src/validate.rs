@@ -31,7 +31,10 @@ use serde_json::Value;
 use std::sync::OnceLock;
 
 /// The deploy vocabulary — the same file the frontend imports as `@data/deploy/taxonomy.json`.
-const DEPLOY_TAXONOMY_JSON: &str = include_str!("../../../src-tauri/data/deploy/taxonomy.json");
+fn deploy_taxonomy_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("deploy/taxonomy.json"))
+}
 
 /// The slice of the deploy taxonomy validation needs: the enum vocabularies + the default
 /// env/pipeline sizes the frontend coercion seeds when a service omits them.
@@ -51,7 +54,7 @@ struct DeployTaxonomy {
 fn taxonomy() -> &'static DeployTaxonomy {
     static TAX: OnceLock<DeployTaxonomy> = OnceLock::new();
     TAX.get_or_init(|| {
-        let v: Value = serde_json::from_str(DEPLOY_TAXONOMY_JSON).unwrap_or(Value::Null);
+        let v: Value = serde_json::from_str(deploy_taxonomy_json()).unwrap_or(Value::Null);
         let platforms = v["platforms"]
             .as_array()
             .map(|arr| {
@@ -358,13 +361,16 @@ fn service_missing_checks(s: &Value) -> Vec<&'static str> {
 /// The market-stage rubric — the same file the frontend imports as `@data/market/rubric.json`
 /// (#2430), embedded at compile time (the deploy-taxonomy pattern) so the validator and the
 /// frontend's weighted-total computation share one dimension vocabulary.
-const MARKET_RUBRIC_JSON: &str = include_str!("../../../src-tauri/data/market/rubric.json");
+fn market_rubric_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("market/rubric.json"))
+}
 
 /// The rubric's dimension ids (problemSeverity … moat), in rubric order.
 fn market_dimensions() -> &'static Vec<String> {
     static DIMS: OnceLock<Vec<String>> = OnceLock::new();
     DIMS.get_or_init(|| {
-        let v: Value = serde_json::from_str(MARKET_RUBRIC_JSON).unwrap_or(Value::Null);
+        let v: Value = serde_json::from_str(market_rubric_json()).unwrap_or(Value::Null);
         v["dimensions"]
             .as_array()
             .map(|arr| arr.iter().filter_map(|d| d["id"].as_str().map(String::from)).collect())
@@ -649,16 +655,18 @@ pub fn classify_readiness(v: &Value) -> String {
 
 /// The transformation taxonomy — the same file the frontend imports as
 /// `@data/transformations/taxonomy.json` (#2509 slice b), embedded at compile time (the
-/// `DEPLOY_TAXONOMY_JSON`/`MARKET_RUBRIC_JSON` pattern) so the verb + recipe vocabularies have one
+/// `deploy_taxonomy_json`/`market_rubric_json` pattern) so the verb + recipe vocabularies have one
 /// source of truth. Each verb carries a known recipe + verification pattern; the recipes are the
 /// composite transforms that GENERATE list entries (the codified refactor workflow + the
 /// migrate-to-kit flagship).
-const TRANSFORMATION_TAXONOMY_JSON: &str =
-    include_str!("../../../src-tauri/data/transformations/taxonomy.json");
+fn transformation_taxonomy_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("transformations/taxonomy.json"))
+}
 
 /// The `id`s of one taxonomy section (`verbs` / `recipes`), in file order.
 fn transformation_taxonomy_ids(key: &str) -> Vec<String> {
-    let v: Value = serde_json::from_str(TRANSFORMATION_TAXONOMY_JSON).unwrap_or(Value::Null);
+    let v: Value = serde_json::from_str(transformation_taxonomy_json()).unwrap_or(Value::Null);
     v[key]
         .as_array()
         .map(|arr| arr.iter().filter_map(|x| x["id"].as_str().map(String::from)).collect())
@@ -1557,7 +1565,7 @@ mod tests {
             dims.as_slice(),
             ["problemSeverity", "problemFrequency", "reachableMarket", "competitiveGap", "timing", "moat"]
         );
-        let rubric: Value = serde_json::from_str(MARKET_RUBRIC_JSON).unwrap();
+        let rubric: Value = serde_json::from_str(market_rubric_json()).unwrap();
         let weights = rubric["weights"].as_object().expect("weights map");
         for cat in ["greenfield", "transform", "harden", "maintain"] {
             let w = weights[cat].as_object().unwrap_or_else(|| panic!("weights for {cat}"));
@@ -1734,7 +1742,7 @@ mod tests {
             ["rename", "extract", "split", "merge", "move", "replace", "upgrade", "restyle", "remove", "optimize", "harden"]
         );
         assert_eq!(transformation_recipes().as_slice(), ["migrate-to-kit", "extract-and-abstract"]);
-        let v: Value = serde_json::from_str(TRANSFORMATION_TAXONOMY_JSON).unwrap();
+        let v: Value = serde_json::from_str(transformation_taxonomy_json()).unwrap();
         for verb in v["verbs"].as_array().unwrap() {
             for field in ["label", "blurb", "verification"] {
                 assert!(
@@ -2433,5 +2441,57 @@ mod taxonomy_contract {
         // stopped gating and the whole contract is decorative.
         let bogus = serde_json::json!({ "appType": "not-an-app-type" });
         assert!(super::validate_classify_config(&bogus).is_err());
+    }
+}
+
+#[cfg(test)]
+mod packaged_seed_tests {
+    //! The three taxonomies this module used to `include_str!` now arrive at RUNTIME
+    //! (`the-plandb-data-embeds-move-to-runtime-resolution`). A compile-time embed could not be
+    //! wrong about its own contents; a runtime read can.
+
+    /// Each seed reads back byte-identically to the file on disk. These drive VALIDATION — a reader
+    /// that trimmed or re-encoded would change which plans are accepted, silently.
+    #[test]
+    fn every_seed_reads_back_exactly_what_is_on_disk() {
+        let root = std::path::Path::new(bsc_util::packaged::DEV_DATA_ROOT);
+        for (rel, got) in [
+            ("deploy/taxonomy.json", super::deploy_taxonomy_json()),
+            ("market/rubric.json", super::market_rubric_json()),
+            ("transformations/taxonomy.json", super::transformation_taxonomy_json()),
+        ] {
+            let disk = std::fs::read_to_string(root.join(rel))
+                .unwrap_or_else(|e| panic!("the dev seed {rel} must exist to compare against: {e}"));
+            assert_eq!(got, disk, "{rel} did not read back verbatim");
+        }
+    }
+
+    /// Read ONCE per process. These are consulted per validated record, so a per-call read would put
+    /// the filesystem in a validation loop.
+    #[test]
+    fn each_seed_is_read_once_and_cached() {
+        assert!(std::ptr::eq(super::deploy_taxonomy_json(), super::deploy_taxonomy_json()));
+        assert!(std::ptr::eq(super::market_rubric_json(), super::market_rubric_json()));
+        assert!(std::ptr::eq(super::transformation_taxonomy_json(), super::transformation_taxonomy_json()));
+    }
+
+    /// Still valid, still non-empty. An empty taxonomy would ACCEPT EVERYTHING rather than fail
+    /// loudly — the validator would stop validating and nothing would say so.
+    #[test]
+    fn an_empty_taxonomy_would_stop_validating_so_prove_they_are_not() {
+        for (what, raw) in [
+            ("deploy", super::deploy_taxonomy_json()),
+            ("market", super::market_rubric_json()),
+            ("transformations", super::transformation_taxonomy_json()),
+        ] {
+            let v: serde_json::Value =
+                serde_json::from_str(raw).unwrap_or_else(|e| panic!("{what} taxonomy must parse: {e}"));
+            let populated = match &v {
+                serde_json::Value::Object(m) => !m.is_empty(),
+                serde_json::Value::Array(a) => !a.is_empty(),
+                _ => false,
+            };
+            assert!(populated, "{what} taxonomy is empty — the validator would accept anything");
+        }
     }
 }

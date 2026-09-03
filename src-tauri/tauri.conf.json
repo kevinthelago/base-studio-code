@@ -37,7 +37,9 @@
     ],
     "resources": {
       "resources/data/components/react-ui.json": "data/components/react-ui.json",
+      "resources/data/deploy/taxonomy.json": "data/deploy/taxonomy.json",
       "resources/data/knowledge/algorithms.json": "data/knowledge/algorithms.json",
+      "resources/data/market/rubric.json": "data/market/rubric.json",
       "resources/data/personas/architect.json": "data/personas/architect.json",
       "resources/data/personas/auditor.json": "data/personas/auditor.json",
       "resources/data/personas/curator.json": "data/personas/curator.json",
@@ -56,6 +58,7 @@
       "resources/data/personas/tester.json": "data/personas/tester.json",
       "resources/data/personas/triage.json": "data/personas/triage.json",
       "resources/data/personas/worker.json": "data/personas/worker.json",
+      "resources/data/transformations/taxonomy.json": "data/transformations/taxonomy.json",
       "resources/data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json"
     },
     "publisher": "base-studio-code",

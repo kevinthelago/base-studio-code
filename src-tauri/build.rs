@@ -11,8 +11,16 @@ fn main() {
 ///
 /// Duplicated here because a build script cannot depend on a workspace lib. A test pins the two
 /// lists together, so drift fails the gate rather than shipping a binary missing a seed.
-const BUNDLED_SEEDS: &[&str] =
-    &["components/react-ui.json", "ui/react-ui-kit.meta.json", "knowledge/algorithms.json"];
+const BUNDLED_SEEDS: &[&str] = &[
+    "components/react-ui.json",
+    "ui/react-ui-kit.meta.json",
+    "knowledge/algorithms.json",
+    // plandb's validation taxonomies, moved off `include_str!`
+    // (`the-plandb-data-embeds-move-to-runtime-resolution`).
+    "deploy/taxonomy.json",
+    "market/rubric.json",
+    "transformations/taxonomy.json",
+];
 
 /// Stage the runtime-loaded seeds into `src-tauri/resources/data/…`, which is what
 /// `bundle.resources` points at — NOT the live `data/` tree.
