@@ -17,9 +17,12 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 22] = [
+pub const VERBS: [&str; 23] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
     "used-by", "features", "merge", "emit", "promote", "reseed", "unmaterialize", "build", "migrate-crate", "help",
+    // The tag VOCABULARY (`the-graphs-cannot-be-searched-by-the-axes-they-store`). A search is only
+    // reachable by an agent that can first discover what there is to search for.
+    "tags",
     // The duplicate surfaces (epic-a-graph-finds-its-own-duplicates). They dispatched and appeared in
     // `help` from the day they were written but were never listed HERE, so both sat outside every
     // drift guard — and the librarian charter test, which asserts the seed names only verbs the CLI
@@ -2075,12 +2078,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // The domain facet filter (#3120) — a cross-language domain collection ("all logistics algorithms").
                 let domain = flag_value(&args, "--domain");
                 let feature = flag_value(&args, "--feature");
+                // The TAG filter (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+                //
+                // `--tags` was already in `VALUE_FLAGS`, so it PARSED here and nothing consumed it:
+                // `--tags sort` and `--tags totally-nonexistent-tag-xyz` both returned all 693 records,
+                // with no error. A worker asking for a subset got the whole library back and had no way
+                // to tell — which is worse than the flag not existing, and is why 0 of 693 records
+                // carry a tag. A field that cannot be queried is a field nobody fills in.
+                //
+                // Same spelling as `impl set --tags a,b`, so the write and the read name the axis
+                // identically rather than making the caller remember which is singular.
+                let tags = list_flag(flag_value(&args, "--tags").as_deref());
+                let want: Vec<&str> = tags.as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
                 let impls: Vec<Value> = crate::implementations()
                     .into_iter()
                     .filter(|im| tech.as_deref().is_none_or(|t| im.get("tech").and_then(Value::as_str) == Some(t)))
                     .filter(|im| role.as_deref().is_none_or(|r| im.get("role").and_then(Value::as_str) == Some(r)))
                     .filter(|im| domain.as_deref().is_none_or(|d| crate::impl_in_domain(im, d)))
                     .filter(|im| feature.as_deref().is_none_or(|f| im.get("feature").and_then(Value::as_str) == Some(f)))
+                    .filter(|im| crate::impl_has_every_tag(im, &want))
                     .collect();
                 emit(&Value::Array(impls))
             }
@@ -2101,7 +2117,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
-                      | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
+                      | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] [--tags a,b] \
                       | impl suppress <id> [--superseded-by <new-id>] [--seed] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>] \
                       | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] \
@@ -3531,6 +3547,22 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "coreCandidates": candidates,
             }))
         }
+        // `tags` — the tag vocabulary with a count per tag (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+        //
+        // The half that makes `impl list --tags` usable BY AN AGENT rather than by someone who already
+        // knows the answer: a tag cannot be searched for until it can be discovered, and the only other
+        // way to learn the vocabulary was `dump`, which is 11 MB.
+        //
+        // Deliberately NOT filtered by `--tech`: the point of a tag is that it crosses the language
+        // kits (`sorting` means the same thing in both), so scoping the vocabulary to one tech would
+        // teach a narrower vocabulary than the store actually holds.
+        "tags" => {
+            let rows: Vec<Value> = crate::tag_census(&crate::implementations())
+                .into_iter()
+                .map(|(tag, count)| serde_json::json!({ "tag": tag, "count": count }))
+                .collect();
+            emit(&Value::Array(rows))
+        }
         "used-by" => {
             let g = crate::load();
             let idx = crate::used_by_index(&g);
@@ -4145,7 +4177,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
+         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] [--tags a,b]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); --tags is the SUBJECT axis and is an AND — a record must carry EVERY tag named, because a second tag is how you narrow a search and a union would widen it; an untagged record is never a match, and the tags that exist are `{prog} tags`; get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -4159,6 +4191,7 @@ fn help(prog: &str) -> String {
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, on THREE signals — a near-identical BODY (tokenized k-gram shingles, so formatting and wrappers do not defeat it), the same SHAPE (identical code under identifier renaming, which the shingles structurally cannot find because they contain the identifiers), and a shared NAME together with a shared src MODULE (either alone is a naming convention, not a duplicate). N duplicates report as ONE row naming every member and every signal that grouped them, confined to one tech, and it is propose-only (fold with `{prog} merge`)\n  \
+         {prog} tags [--pretty]                            # the TAG VOCABULARY: every tag in the store with how many impls carry it, most-used first. Discover-then-search — `impl list --tags` cannot be reached by an agent that has no way to learn which tags exist, and the only other route was `dump` (11 MB). Not scoped by --tech on purpose: a tag crosses the language kits, so a per-tech vocabulary would teach a narrower one than the store holds\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
@@ -4991,6 +5024,95 @@ mod tests {
         let report: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
         assert_eq!(report["upToDate"], serde_json::json!(["sync157-a"]));
         assert_eq!(report["synced"], serde_json::json!([]));
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE BITE for `the-graphs-cannot-be-searched-by-the-axes-they-store`.
+    ///
+    /// `--tags` was already in `VALUE_FLAGS`, so it PARSED at the CLI and nothing consumed it in the
+    /// `impl list` arm: `--tags anything` returned the WHOLE store, with no error. That is the shape
+    /// this repo keeps getting caught by — a flag that looks like it worked. A caller could not tell a
+    /// filtered result from an unfiltered one, which is why 0 of 693 packaged records carry a tag.
+    ///
+    /// It asserts at the CLI rather than on the predicate on purpose: `impl_has_every_tag` is correct
+    /// in isolation and stays correct while the list arm never calls it. Only a test that goes through
+    /// `run` can observe the flag being dropped on the floor.
+    #[test]
+    fn impl_list_tags_filters_rather_than_being_silently_ignored() {
+        let dir = crate::unique_temp("impl-list-tags");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        let _store = store_at(&store_path);
+
+        let ids = |args: Vec<String>| -> Vec<String> {
+            let (r, out) = bsc_util::capture_output(|| run(args, "bsc graph"));
+            r.unwrap();
+            let mut v: Vec<String> = serde_json::from_str::<serde_json::Value>(out.trim())
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|i| i.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+                .collect();
+            v.sort();
+            v
+        };
+        let set = |id: &str, tags: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--tags".into(), tags.into(), "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        set("tagcli-a.rs", "pathfinding,graph");
+        set("tagcli-b.rs", "graph");
+
+        let all = ids(vec!["impl".into(), "list".into()]);
+        assert!(all.len() > 2, "the store carries the packaged seed plus our two: {}", all.len());
+
+        // ONE tag selects what carries it — and nothing else, which the old code could not do.
+        assert_eq!(
+            ids(vec!["impl".into(), "list".into(), "--tags".into(), "graph".into()]),
+            vec!["tagcli-a.rs".to_string(), "tagcli-b.rs".to_string()],
+        );
+        // A second tag NARROWS (AND, not OR).
+        assert_eq!(
+            ids(vec!["impl".into(), "list".into(), "--tags".into(), "pathfinding,graph".into()]),
+            vec!["tagcli-a.rs".to_string()],
+        );
+        // THE ASSERTION THAT FAILS AGAINST THE OLD CODE: a tag nothing carries returns NOTHING. Before
+        // this it returned every record in the store — the whole seed — and reported success.
+        let missing = ids(vec!["impl".into(), "list".into(), "--tags".into(), "totally-absent-xyz".into()]);
+        assert!(
+            missing.is_empty(),
+            "a tag no record carries must return an EMPTY list, not the whole store; got {} record(s)",
+            missing.len(),
+        );
+        // …and an ABSENT `--tags` is still not a filter, so adding the flag narrowed nothing by default.
+        assert_eq!(ids(vec!["impl".into(), "list".into()]), all);
+
+        // The vocabulary verb answers what there is to search for — the half that makes the filter
+        // reachable by an agent rather than by someone who already knew the tag.
+        let (r, out) = bsc_util::capture_output(|| run(vec!["tags".into()], "bsc graph"));
+        r.unwrap();
+        let census: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        let rows = census.as_array().unwrap();
+        let count_of = |t: &str| {
+            rows.iter().find(|r| r["tag"] == t).and_then(|r| r["count"].as_u64())
+        };
+        assert_eq!(count_of("graph"), Some(2), "a tag on two records counts twice: {census}");
+        assert_eq!(count_of("pathfinding"), Some(1));
+        // Most-used first, so the vocabulary's spine leads.
+        assert_eq!(rows.first().map(|r| r["tag"].clone()), Some(serde_json::json!("graph")));
 
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
