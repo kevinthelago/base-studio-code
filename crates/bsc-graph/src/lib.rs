@@ -719,7 +719,10 @@ fn ensure_array<'a>(g: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
 /// reverse would be a cycle. The duplication is of the EMBED, not of a rule: both read
 /// `src-tauri/data/ui/platform-modules.json`, so neither can drift from the source of truth — only
 /// from each other's caching, which is why this is a plain set lookup with no interpretation.
-const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
+fn platform_modules_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/platform-modules.json"))
+}
 
 /// Is `spec` bound to a LIVE platform module at runtime (`registerAppModule`)?
 ///
@@ -728,7 +731,7 @@ const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/pla
 pub fn is_registered_platform_module(spec: &str) -> bool {
     static M: std::sync::OnceLock<std::collections::BTreeSet<String>> = std::sync::OnceLock::new();
     M.get_or_init(|| {
-        serde_json::from_str::<Vec<String>>(PLATFORM_MODULES_JSON).unwrap_or_default().into_iter().collect()
+        serde_json::from_str::<Vec<String>>(platform_modules_json()).unwrap_or_default().into_iter().collect()
     })
     .contains(spec)
 }

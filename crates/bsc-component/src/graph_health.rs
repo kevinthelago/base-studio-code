@@ -378,7 +378,10 @@ fn packaged_kit_json() -> &'static str {
 /// `componentBundle` uses. Its KEYS are the specifiers the preview iframe can resolve; a bare import not
 /// among them throws "Failed to resolve module specifier" at preview time (#2934). Embedded so the
 /// static `unresolvable-import` check runs with no fs/network — the Rust twin of `graphHealth.ts`.
-const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/preview-importmap.json");
+fn preview_importmap_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/preview-importmap.json"))
+}
 
 /// The specifiers the runtime module REGISTRY resolves (#3897) — the SAME json `graphHealth.ts` imports,
 /// generated from the real registry by `platformModules.gen.test.ts`.
@@ -388,7 +391,10 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 /// (`@/shared/lib/security/consoleModel`) matched neither and read as `no-implementation` — while the app
 /// mounted it fine. The finding then pressured the next author to STUB the import to silence it, which is
 /// the corruption `reimplemented-component` exists to catch (#3892/#3895).
-const PLATFORM_MODULES_JSON: &str = include_str!("../../../src-tauri/data/ui/platform-modules.json");
+fn platform_modules_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/platform-modules.json"))
+}
 
 /// Whether `spec` is a REGISTERED platform module — one the runtime module registry resolves, so a
 /// record importing it mounts in the app without the import being vendored anywhere.
@@ -436,7 +442,7 @@ pub fn is_provided_specifier(spec: &str) -> bool {
 pub(crate) fn platform_modules() -> &'static BTreeSet<String> {
     static M: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     M.get_or_init(|| {
-        serde_json::from_str::<Vec<String>>(PLATFORM_MODULES_JSON).unwrap_or_default().into_iter().collect()
+        serde_json::from_str::<Vec<String>>(platform_modules_json()).unwrap_or_default().into_iter().collect()
     })
 }
 
@@ -448,14 +454,17 @@ pub(crate) fn platform_modules() -> &'static BTreeSet<String> {
 /// no JS source) and is NEVER flagged; a `@bsc/sounds/<missing>` is. The Rust twin of `soundNodeLookup` /
 /// `libraryModules.ts`. LOCKSTEP: if the default sound kit ever changes, update this embed — a test pins
 /// `signal` on both sides.
-const SOUND_KIT_JSON: &str = include_str!("../../../src-tauri/data/sounds/signal.json");
+fn sound_kit_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("sounds/signal.json"))
+}
 
 /// The set of specifiers the preview can resolve — the import-map's keys. Cached; a malformed map yields
 /// an empty set (so the check flags nothing — fail safe, never a false alarm).
 fn resolvable_specifiers() -> &'static BTreeSet<String> {
     static KEYS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     KEYS.get_or_init(|| {
-        serde_json::from_str::<Value>(PREVIEW_IMPORTMAP_JSON)
+        serde_json::from_str::<Value>(preview_importmap_json())
             .ok()
             .as_ref()
             .and_then(Value::as_object)
@@ -540,7 +549,7 @@ fn algo_library_names_from(implementations: &[Value]) -> BTreeSet<String> {
 /// "resolves". Mirrors the resolvable set behind `soundNodeLookup` (crossGraphAdapter.ts).
 fn sound_library_names() -> &'static BTreeSet<String> {
     static N: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
-    N.get_or_init(|| sound_library_names_from(SOUND_KIT_JSON))
+    N.get_or_init(|| sound_library_names_from(sound_kit_json()))
 }
 
 /// Pure over the kit seed JSON text (testable without the embed): the ids of every cue + voice in the kit
@@ -4876,7 +4885,7 @@ function C() {}
         // can name any kit), so what must hold in lockstep is that the embed IS the packaged seed and is
         // usable: a well-formed kit whose cues are importable. Changing which kit ships means changing the
         // include path here and `STARTER_KIT` there — that pairing is what this guards.
-        let v: Value = serde_json::from_str(SOUND_KIT_JSON).expect("the embedded sound seed parses");
+        let v: Value = serde_json::from_str(sound_kit_json()).expect("the embedded sound seed parses");
         assert!(
             v.get("id").and_then(Value::as_str).is_some_and(|id| !id.is_empty()),
             "the embedded default kit names itself",

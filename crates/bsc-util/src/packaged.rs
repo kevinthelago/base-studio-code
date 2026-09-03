@@ -75,6 +75,14 @@ pub const RUNTIME_SEEDS: &[&str] = &[
     "deploy/taxonomy.json",
     "market/rubric.json",
     "transformations/taxonomy.json",
+    // bsc-component, bsc-graph and bsc defer, moved off `include_str!` so `src-tauri/data` can
+    // eventually be deleted entirely (`epic-one-external-source-backs-up-and-seeds-the-system`).
+    // `ui/platform-modules.json` is read by TWO crates and is listed once.
+    "ui/preview-importmap.json",
+    "ui/platform-modules.json",
+    "sounds/signal.json",
+    "fleet/defer-directive.md",
+    "fleet/defer-stuck-directive.md",
 ];
 
 /// Every directory a packaged seed may live in, in resolution order.
@@ -249,5 +257,39 @@ mod tests {
         assert!(err.contains("Z:/definitely/not/here"), "must name the override it tried: {err}");
         assert!(err.contains(DEV_DATA_ROOT), "must name the dev root it tried: {err}");
         assert!(err.contains(DATA_DIR_ENV), "must say how to fix it: {err}");
+    }
+}
+
+#[cfg(test)]
+mod class_a_conversion_tests {
+    //! The seeds converted off `include_str!` so `src-tauri/data` can eventually be deleted
+    //! (`epic-one-external-source-backs-up-and-seeds-the-system`).
+    //!
+    //! The three EXISTING guards already prove a listed seed is not embedded, is staged by
+    //! `build.rs`, and ships in the bundle. What none of them proves is that the seed can actually
+    //! be READ — a path could be listed everywhere and still be misspelled.
+
+    /// Every listed seed resolves and is non-empty.
+    ///
+    /// This is the check the other three cannot make. `read_required` PANICS naming every path it
+    /// tried, so a typo in a `RUNTIME_SEEDS` entry becomes a startup crash rather than a compile
+    /// error — worth catching in a test instead of in the field.
+    #[test]
+    fn every_runtime_seed_actually_resolves_and_is_not_empty() {
+        for rel in super::RUNTIME_SEEDS {
+            let body = super::read(rel).unwrap_or_else(|why| panic!("{rel} is listed but unreadable:\n{why}"));
+            assert!(!body.trim().is_empty(), "{rel} resolved but is empty — that reads as data loss");
+        }
+    }
+
+    /// A seed is listed ONCE. `ui/platform-modules.json` is read by two crates and was the case that
+    /// made this worth pinning: a duplicate entry would stage the same file twice and make the
+    /// build-script/bundle lists disagree about their own length.
+    #[test]
+    fn no_seed_is_listed_twice() {
+        let mut seen = std::collections::BTreeSet::new();
+        for rel in super::RUNTIME_SEEDS {
+            assert!(seen.insert(*rel), "{rel} is listed twice in RUNTIME_SEEDS");
+        }
     }
 }
