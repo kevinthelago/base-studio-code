@@ -10,6 +10,7 @@
     "net": "read",
     "ui": "read",
     "allow": [
+      "bsc help",
       "bsc surface",
       "bsc request new",
       "bsc request list",
