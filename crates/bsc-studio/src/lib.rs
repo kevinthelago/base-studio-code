@@ -13,18 +13,16 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc studio …`), dispatched by the unified `bsc` binary (#1877).
 
 
-use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The packaged built-in studios, embedded from `src-tauri/data/studios/*.json` (#2894) — the same
-/// `include_dir!` pattern skilldb uses for its packaged skills. Built-ins are the shipped PRESETS
+/// The packaged built-in studios, read at RUNTIME from `data/studios/*.json` (#2894). They moved off
+/// `include_dir!` so `src-tauri/data` can be deleted once the seed is served externally. Built-ins are the shipped PRESETS
 /// (e.g. `web-app-dev`, the zero-change baseline). They're merged UNDER the user store — a same-id user
 /// studio overrides one — and are READ-ONLY (`remove` leaves them; the on-disk store holds only user
 /// studios).
-static PACKAGED_STUDIOS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../src-tauri/data/studios");
 
 /// The library systems a snapshot captures, as `(system key, on-disk dir segment, record noun)`. Each
 /// is a verbatim-JSON-per-id [`bsc_json_store`] collection under the base dir, read uniformly via
@@ -195,14 +193,9 @@ pub fn set(base: &Path, json: &str) -> Result<String, String> {
 /// a stable order (by filename). A malformed file is skipped (never poisons the set). Each carries
 /// `"builtin": true` in its JSON so the library can tag + protect it.
 pub fn builtin_studios() -> Vec<Value> {
-    let mut files: Vec<_> = PACKAGED_STUDIOS_DIR
-        .files()
-        .filter(|f| f.path().extension().is_some_and(|e| e == "json"))
-        .collect();
-    files.sort_by_key(|f| f.path().to_path_buf());
-    files
-        .iter()
-        .filter_map(|f| f.contents_utf8().and_then(|s| serde_json::from_str::<Value>(s).ok()))
+    bsc_util::packaged::read_dir_json("studios")
+        .into_iter()
+        .filter_map(|(_name, body)| serde_json::from_str::<Value>(&body).ok())
         .collect()
 }
 

@@ -157,6 +157,46 @@ pub fn read(rel: &str) -> Result<String, String> {
     ))
 }
 
+/// Every `*.json` file in a packaged seed DIRECTORY, as `(file name, contents)`, sorted by name.
+///
+/// ## Why a directory reader exists at all
+///
+/// Two crates embedded whole directories with `include_dir!` — `bsc-studio` (built-in Studio presets)
+/// and `skilldb` (packaged skills) — and both iterated them identically: take the `.json` files, sort
+/// by filename, parse, skip anything malformed. [`read`] answers for ONE known path and cannot serve
+/// that, so the directory case is the reason `src-tauri/data` could not be deleted even after every
+/// single-file embed moved off `include_str!`.
+///
+/// ## FIRST DIRECTORY WINS — it does not merge across data dirs
+///
+/// This matches [`read`]'s precedence exactly: an explicit `$BSC_DATA_DIR` fully replaces the shipped
+/// set rather than adding to it. Merging would be the surprising choice — a user pointing at their own
+/// seed directory expects to REPLACE the built-ins, and a union would silently resurrect a preset they
+/// removed. Deletion has to be expressible, and only first-wins expresses it.
+///
+/// Returns an empty vec when the directory is absent in every candidate — unlike [`read_required`],
+/// which panics. A missing DIRECTORY is a legitimate state (no built-in presets shipped); a missing
+/// named FILE that something asked for by name is not.
+pub fn read_dir_json(rel: &str) -> Vec<(String, String)> {
+    for dir in data_dirs() {
+        let path = dir.join(rel);
+        let Ok(entries) = std::fs::read_dir(&path) else { continue };
+        let mut out: Vec<(String, String)> = entries
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                std::fs::read_to_string(e.path()).ok().map(|body| (name, body))
+            })
+            .collect();
+        // Sorted by file name, which is the order `include_dir!` iteration was sorted into. Both
+        // callers relied on it: a built-in Studio list and a packaged skill set that render in order.
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        return out;
+    }
+    Vec::new()
+}
+
 /// Read a packaged seed or panic, naming every candidate.
 ///
 /// The panic replaces what used to be a compile error, and it is the right shape: these seeds are
@@ -249,5 +289,71 @@ mod tests {
         assert!(err.contains("Z:/definitely/not/here"), "must name the override it tried: {err}");
         assert!(err.contains(DEV_DATA_ROOT), "must name the dev root it tried: {err}");
         assert!(err.contains(DATA_DIR_ENV), "must say how to fix it: {err}");
+    }
+}
+
+#[cfg(test)]
+mod read_dir_json_tests {
+    use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// `BSC_DATA_DIR` is process-global, so tests that set it must not overlap. Under `cargo nextest`
+    /// each test is its own process and this is redundant; under plain `cargo test` they share one,
+    /// and without it these interleave and flake — the same reason the sibling suite has one.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    fn lock() -> MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("packaged-readdir-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("things")).expect("scratch");
+        d
+    }
+
+    #[test]
+    fn reads_json_sorted_by_name_and_ignores_everything_else() {
+        let _g = lock();
+        let root = scratch("sorted");
+        std::fs::write(root.join("things/b.json"), r#"{"id":"b"}"#).unwrap();
+        std::fs::write(root.join("things/a.json"), r#"{"id":"a"}"#).unwrap();
+        std::fs::write(root.join("things/notes.md"), "ignored").unwrap();
+        unsafe { std::env::set_var(DATA_DIR_ENV, &root) };
+        let got = read_dir_json("things");
+        unsafe { std::env::remove_var(DATA_DIR_ENV) };
+        // Sorted by file name: both callers render in order and relied on `include_dir!`'s sort.
+        assert_eq!(got.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["a.json", "b.json"]);
+        assert!(got.iter().all(|(_, body)| body.contains("\"id\"")), "non-json must be skipped");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn the_first_directory_wins_and_does_not_merge() {
+        // THE PRECEDENCE DECISION, pinned. `$BSC_DATA_DIR` REPLACES the shipped set rather than adding
+        // to it — merging would silently resurrect a built-in the user removed, so deletion would not
+        // be expressible. This matches `read`, which also stops at the first hit.
+        let _g = lock();
+        let root = scratch("first-wins");
+        std::fs::write(root.join("things/only.json"), r#"{"id":"only"}"#).unwrap();
+        unsafe { std::env::set_var(DATA_DIR_ENV, &root) };
+        let got = read_dir_json("things");
+        unsafe { std::env::remove_var(DATA_DIR_ENV) };
+        assert_eq!(got.len(), 1, "the override directory must fully replace, never union");
+        assert_eq!(got[0].0, "only.json");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_missing_directory_is_empty_rather_than_a_panic() {
+        // Unlike `read_required`. A missing DIRECTORY is legitimate — no built-in presets shipped —
+        // whereas a named file something asked for by name is not.
+        let _g = lock();
+        let root = scratch("absent");
+        unsafe { std::env::set_var(DATA_DIR_ENV, &root) };
+        let got = read_dir_json("nope");
+        unsafe { std::env::remove_var(DATA_DIR_ENV) };
+        assert!(got.is_empty());
+        std::fs::remove_dir_all(&root).ok();
     }
 }
