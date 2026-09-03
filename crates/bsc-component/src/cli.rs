@@ -1050,6 +1050,28 @@ that is 3% populated.
 says what it is ABOUT — which is the question a worker looking for what it NEEDS is asking.",
     },
     CmdDoc {
+        name: "feature",
+        summary: "feature rename <from> <to> — move a feature's components onto another name (dry by default)",
+        usage: "\
+USAGE:
+  bsc ui feature rename <from> <to> [--under <folder-prefix>] [--apply] [--pretty]
+
+Moves every component owned by <from> onto <to>. DRY BY DEFAULT — it prints the count and a sample and
+writes nothing until you pass --apply, because it rewrites the OWNERSHIP field, and ownership decides
+which worker may write a record.
+
+It is NOT `features`. That verb DERIVES the feature from the folder and never overwrites one already
+set — which is right for a backfill and useless for a reconcile, since the folder derivation is what
+produced the name you are trying to change.
+
+`--under <folder-prefix>` narrows to components whose folder starts with the prefix. It exists because
+a graph feature is sometimes two things sharing a folder tree: `shell` held both the app chrome and
+the console pane system, and only a folder filter could send them to different features.
+
+Writes the DELTA, never the round-tripped record: `set` merges, so resubmitting a stored `null` reads
+as a CLEAR. That is how a field was lost 448 records into an earlier bulk write.",
+    },
+    CmdDoc {
         name: "features",
         summary: "report (and with --apply, backfill) which FEATURE owns each component, from its folder",
         usage: "\
@@ -2011,6 +2033,103 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `tags` — the vocabulary, the same discover-then-search pair `features` already forms with
         // `list --feature`. A tag cannot be searched for until it can be seen.
         Some("tags") if args.get(1).map(String::as_str) != Some("help") => cmd_tags(&args[1..]),
+        // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
+        // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
+        // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
+        // `get --field`/`get help` fall through unchanged (the id guard excludes a flag or `help`).
+        // #doctor-reads-the-runtime: `get <id> --metrics` JOINS the runtime attestations at read time.
+        // Intercepted here for the same reason `--shape` and `--kit` are — the shared store CLI rejects
+        // unknown flags. Deliberately a JOIN and not a field ON the record: writing metrics there would
+        // make every boot a record write (filling `bsc ui revert` history with timing noise instead of
+        // authorship), vendor a second copy of a constantly-changing number — the drift #4191 forbids for
+        // algorithm bodies — and ship one machine's numbers to another inside a seed or a snapshot.
+        // `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — the algorithms twin
+        // (`the-graph-vocabulary-is-the-plans`). `features` DERIVES from the folder, which is what
+        // produced the divergence in the first place, and never overwrites a feature already set — so
+        // it cannot perform a reconcile. This can.
+        Some("feature") if args.get(1).map(String::as_str) == Some("rename") => cmd_feature_rename(&args[2..]),
+        Some("refolder") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
+            Ok(())
+        }
+        // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
+        // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
+        Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
+        Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
+        Some("sync-seed") if args.get(1).map(String::as_str) != Some("help") => cmd_sync_seed(&args[1..]),
+        Some("promote") if args.get(1).map(String::as_str) != Some("help") => cmd_promote(&args[1..]),
+        Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
+        Some(v @ ("export" | "import" | "sync-seed" | "promote")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
+            Ok(())
+        }
+        // `get --field <json-pointer>` (#3162, ONE field), `get … --out <name>` (#3713, spill to the
+        // scratch dir), OR `get … --kit <kitId>` (#3729, disambiguate) — all intercepted here (the shared
+        // store CLI rejects the extra flags), and handled by `cmd_get` (which also emits the whole-record
+        // `ui-focus` the plain path does). A plain `get <id>` (incl. the whole-record `--raw`, #3166) still
+        // delegates unchanged. A read verb.
+        Some("get") if args.iter().any(|a| a == "--field" || a == "--out" || a == "--kit") => cmd_get(&args[1..]),
+        // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
+        Some("log") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "log"));
+                Ok(())
+            } else {
+                cmd_log(&args[1..])
+            }
+        }
+        // `set` (#3164) is intercepted here — it stamps rev/updatedAt/updatedBy + honors --by/--if-version
+        // (the shared store CLI never stamps and its parser rejects those flags). `set help` still prints
+        // the doc. The scope gate above already refused a read-scoped session before we got here.
+        Some("set") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_set(&args[1..], open_component_store, validate_component_batch, "component")
+        }
+        Some("set") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set"));
+            Ok(())
+        }
+        // `revert` — restore `srcText` from the retained history. The recovery path a record with no
+        // packaged seed had no way to reach. The scope gate above already refused a read-scoped session.
+        Some("revert") if args.get(1).map(String::as_str) != Some("help") => cmd_revert(&args[1..]),
+        Some("revert") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "revert"));
+            Ok(())
+        }
+        // `rename` (#3576) — id-stable rename that sweeps the NAME-keyed composes/rules references across
+        // the kit + stamps history. The scope gate above already refused a read-scoped session.
+        Some("rename") if args.get(1).map(String::as_str) != Some("help") => cmd_rename(&args[1..]),
+        Some("rename") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "rename"));
+            Ok(())
+        }
+        // `merge` (#3592) — fold a duplicate INTO a survivor, repointing the NAME-keyed composes/rules
+        // references then removing it. The ACT step of the optimize loop. Scope gate above applies.
+        Some("merge") if args.get(1).map(String::as_str) != Some("help") => cmd_merge(&args[1..]),
+        Some("merge") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "merge"));
+            Ok(())
+        }
+        // `suppress`/`unsuppress` (#3725) — permanently remove a packaged builtin component (a plain
+        // `remove` re-seeds on the next hydrate). Scope gate above applies.
+        Some("suppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_suppress(&args[1..], open_component_store, "component")
+        }
+        Some("unsuppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_unsuppress(&args[1..], open_component_store, "component")
+        }
+        Some(v @ ("suppress" | "unsuppress")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
+            Ok(())
+        }
+        // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
+        // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
+        Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
+        // #4158 (designer request #44): `list --kit <id>` filters to ONE kit. Intercepted here for the
+        // same reason `--shape` is — the shared store CLI rejects unknown flags — and a plain `list`
+        // still delegates unchanged. Without it, comparing two kits' membership meant a full-store dump
+        // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
+        Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
+        Some("list") if args.iter().any(|a| a == "--feature") => cmd_list_feature(&args[1..]),
         // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
@@ -4699,6 +4818,83 @@ fn cmd_tags(args: &[String]) -> Result<(), String> {
     rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let out: Vec<serde_json::Value> =
         rows.into_iter().map(|(tag, count)| serde_json::json!({ "tag": tag, "count": count })).collect();
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — move a feature's components onto
+/// another name (`the-graph-vocabulary-is-the-plans`).
+///
+/// DRY BY DEFAULT. It rewrites the OWNERSHIP field across many records, and ownership is what decides
+/// which worker may write them — so the report is the default and the write is the opt-in, the same
+/// way `features` and `bsc graph unmaterialize` are shaped.
+///
+/// `--under` filters by folder prefix, for the case that made it necessary: a graph feature that is
+/// really two things living in one folder tree.
+fn cmd_feature_rename(args: &[String]) -> Result<(), String> {
+    let (mut from, mut to) = (None::<String>, None::<String>);
+    let (mut under, mut dir) = (None::<String>, None::<String>);
+    let (mut apply, mut pretty) = (false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--under" => under = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if from.is_none() => from = Some(other.to_string()),
+            other if to.is_none() => to = Some(other.to_string()),
+            _ => {}
+        }
+    }
+    let usage = "usage: bsc ui feature rename <from> <to> [--under <folder-prefix>] [--apply]";
+    let (from, to) = (from.ok_or(usage)?, to.ok_or(usage)?);
+    if apply {
+        bsc_cli_util::require_write_scope("ui")?;
+    }
+    let store = open_component_store(&dir)?;
+    let rows: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+    let matched: Vec<serde_json::Value> = rows
+        .into_iter()
+        .filter(|v| v.get("feature").and_then(serde_json::Value::as_str).unwrap_or_default().trim() == from)
+        .filter(|v| match under.as_deref() {
+            None => true,
+            Some(p) => v
+                .get("folder")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| v.get("src").and_then(serde_json::Value::as_str))
+                .unwrap_or_default()
+                .starts_with(p),
+        })
+        .collect();
+    if apply {
+        // The DELTA, never the round-tripped record. `set_stamped` MERGES the submitted fields onto the
+        // stored record, so sending the whole thing back would resubmit every stored `null` — and a
+        // resubmitted `null` reads as a CLEAR. That is how `terminalhost.provides` was lost 448 records
+        // into the folder backfill; one field, silently, most of the way through a bulk write.
+        let patches: Vec<serde_json::Value> = matched
+            .iter()
+            .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str))
+            .map(|id| serde_json::json!({ "id": id, "feature": to }))
+            .collect();
+        set_stamped(
+            &store,
+            &patches,
+            None,
+            "feature-rename",
+            "component",
+            Some(&format!("feature: {from} -> {to}")),
+            WritePlan::default(),
+        )?;
+    }
+    let out = serde_json::json!({
+        "from": from, "to": to, "under": under, "applied": apply, "matched": matched.len(),
+        // A SAMPLE — the point of a dry run is that a person reads it, and 154 ids is not read.
+        "sample": matched.iter().take(8).filter_map(|v| v.get("id").cloned()).collect::<Vec<_>>(),
+    });
     let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
     Ok(())
