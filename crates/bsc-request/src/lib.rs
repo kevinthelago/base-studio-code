@@ -296,6 +296,39 @@ impl Store {
     }
 
     /// Empty the whole store — see [`bsc_sqlite_util::clear_tables`] for why it truncates.
+    /// Are debug sessions ALLOWED AT ALL on this machine? The global off switch.
+    ///
+    /// DISTINCT FROM `paused`, and the difference is the whole reason both exist:
+    ///
+    ///  - `paused` is a STATE — "not right now" — expected to be temporary, and `resume` undoes it.
+    ///  - this is a POLICY — "this machine does not run debug sessions" — and nothing about the queue
+    ///    changes it. A resume cannot override it, which is the point: `resume` is reached for
+    ///    routinely, and a policy that a routine command can silently lift is not a policy.
+    ///
+    /// Defaults to ENABLED, because that is the behaviour every existing install already has and a
+    /// default that changes underneath someone is its own bug. An operator turns it off deliberately.
+    pub fn sessions_enabled(&self) -> rusqlite::Result<bool> {
+        let v: Option<String> = self
+            .conn
+            .query_row("SELECT value FROM request_settings WHERE key = 'sessions_enabled'", [], |r| r.get(0))
+            .optional()?;
+        // Only an explicit "0" disables. An unreadable or absent row reads as ENABLED, matching the
+        // install that never set it — the same fail-safe direction `is_paused` uses, for the same
+        // reason: a missing row must not silently change what the app does.
+        Ok(v.as_deref() != Some("0"))
+    }
+
+    /// Turn debug sessions on or off globally. Returns the value actually stored, so a caller reports
+    /// what IS rather than what it asked for.
+    pub fn set_sessions_enabled(&self, enabled: bool) -> rusqlite::Result<bool> {
+        self.conn.execute(
+            "INSERT INTO request_settings (key, value) VALUES ('sessions_enabled', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [if enabled { "1" } else { "0" }],
+        )?;
+        self.sessions_enabled()
+    }
+
     /// Is auto-spawn PAUSED for this queue?
     ///
     /// Fail-safe direction, and it is the opposite of the usual one: an unreadable or missing setting
@@ -593,6 +626,53 @@ fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A FRESH STORE ALLOWS SESSIONS. Defaulting the other way would change what every existing
+    /// install does the moment it upgrades, which is a bug wearing a safety feature's clothes.
+    #[test]
+    fn sessions_are_enabled_until_someone_disables_them() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.sessions_enabled().unwrap());
+    }
+
+    /// THE POLICY OUTRANKS THE PAUSE, AND `resume` CANNOT LIFT IT.
+    ///
+    /// That asymmetry is the whole reason this exists beside `paused` rather than replacing it:
+    /// `resume` is reached for routinely, and a policy a routine command can silently undo is not a
+    /// policy. If this ever passes with `resume` clearing the flag, the global switch is decorative.
+    #[test]
+    fn resume_cannot_lift_the_global_off_switch() {
+        let s = Store::open_in_memory().unwrap();
+        s.set_sessions_enabled(false).unwrap();
+        s.set_paused(true).unwrap();
+        s.set_paused(false).unwrap(); // a `resume`
+        assert!(!s.is_paused().unwrap(), "the pause really did clear");
+        assert!(!s.sessions_enabled().unwrap(), "…and the policy is untouched by it");
+    }
+
+    /// The two are INDEPENDENT in both directions — disabling sessions must not silently pause, or a
+    /// later `sessions on` would leave the queue quietly stopped for a reason nobody set.
+    #[test]
+    fn the_two_switches_do_not_write_each_other() {
+        let s = Store::open_in_memory().unwrap();
+        s.set_sessions_enabled(false).unwrap();
+        assert!(!s.is_paused().unwrap(), "disabling must not set the pause");
+        s.set_sessions_enabled(true).unwrap();
+        s.set_paused(true).unwrap();
+        assert!(s.sessions_enabled().unwrap(), "pausing must not disable the policy");
+    }
+
+    /// Only an explicit "0" disables — an absent or unreadable row reads as ENABLED, the same
+    /// fail-safe direction `is_paused` uses. A missing row must not change what the app does.
+    #[test]
+    fn only_an_explicit_zero_disables() {
+        let s = Store::open_in_memory().unwrap();
+        s.conn
+            .execute("INSERT INTO request_settings (key, value) VALUES ('sessions_enabled', 'garbage')", [])
+            .unwrap();
+        assert!(s.sessions_enabled().unwrap(), "an unrecognised value must not disable");
+    }
+
 
     /// THE OFF SWITCH DEFAULTS TO OFF-THE-SWITCH, i.e. auto-spawn ACTIVE.
     ///

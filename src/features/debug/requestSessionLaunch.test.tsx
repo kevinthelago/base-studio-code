@@ -24,6 +24,10 @@ const { queue } = vi.hoisted(() => ({ queue: { rows: [] as (typeof REQUEST)[] } 
 // returns it, so the mount has a definite id to bind a session to.
 vi.mock("@/shared/lib/core/bsc", () => ({
   bscJson: vi.fn(async (_cwd: unknown, args: string[]) => {
+    // The GLOBAL gate (`debug-sessions-have-a-global-off-switch`). `bsc request sessions --json`
+    // resolves the policy and the pause in Rust and returns `allowed`; a blanket return answers it
+    // with the row list, leaving `allowed` undefined — which reads as CLOSED and launches nothing.
+    if (args[1] === "sessions") return { enabled: true, paused: false, allowed: true };
     if (args[1] === "claim") {
       const next = queue.rows.find((r) => r.status === "open");
       if (!next) return null;
