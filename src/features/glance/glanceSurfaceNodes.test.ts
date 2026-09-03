@@ -5,7 +5,7 @@
 // not, `bsc-util` among the verbless ones. Every assertion here is about a decision that could
 // plausibly have gone the other way, and would have been wrong in a way the UI would not reveal.
 import { describe, it, expect } from "vitest";
-import { surfaceGraph, dependentCount, withSurfaceNodes, crateKind, crateDrillGraph, CRATE_KIND_ROLE, type SurfaceRosterRow, type CrateDrillDoc } from "@/features/glance/lib/surfaceNodes";
+import { surfaceGraph, withSurfaceNodes, crateKind, crateDrillGraph, CRATE_KIND_ROLE, type SurfaceRosterRow, type CrateDrillDoc } from "@/features/glance/lib/surfaceNodes";
 import { buildGlanceData, type GlanceData } from "@/features/glance/lib/glanceData";
 import { buildGraph } from "@/features/glance/lib/glanceGraph";
 import { surfaceNodeId, isBandNode, isBandEdge } from "@/features/glance/lib/glanceGraph";
@@ -106,13 +106,10 @@ describe("the surface-node projection", () => {
     expect(surfaceGraph([])).toEqual({ nodes: [], edges: [] });
   });
 
-  /** The number that makes the node worth drawing: what touching this crate reaches. */
-  it("counts dependents, which is what says a util crate is load-bearing", () => {
-    expect(dependentCount(ROSTER, "bsc-util")).toBe(3);
-    expect(dependentCount(ROSTER, "bsc")).toBe(0);
-    // A crate listing itself must not inflate its own count.
-    expect(dependentCount([row("a", ["a"])], "a")).toBe(0);
-  });
+  // "counts dependents" MOVED TO RUST. `bsc surface drill` computes `dependentCount` and ships it on
+  // `CrateDrillDoc`; its cases (3 for a load-bearing util, 0 for a leaf, and a self-edge not inflating
+  // the count) are asserted in `crates/bsc/src/main.rs`. The TypeScript copy answered the same question
+  // twice and had no caller but this test.
 });
 
 // ---------------------------------------------------------------------------------------------
