@@ -1089,6 +1089,212 @@ pub fn backup_full(base: &Path, out: &Path, name: &str, opts: &BackupOptions) ->
     Ok(manifest)
 }
 
+// ── VERIFY + RESTORE (`the-backup-proves-it-can-be-restored`) ────────────────────────────────────
+
+/// One file's verdict, as `verify` found it on disk.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct VerifiedFile {
+    pub name: String,
+    pub kind: String,
+    /// `ok`, SQLite's complaint, or why it could not be read at all.
+    pub integrity: String,
+    pub bytes: u64,
+}
+
+/// What a backup looks like NOW, as against what its manifest claims.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct VerifyReport {
+    pub dir: String,
+    pub scope: String,
+    pub files: Vec<VerifiedFile>,
+    /// Named in the manifest, missing from disk. The failure that matters most.
+    pub missing: Vec<String>,
+    /// On disk, absent from the manifest — the artifact and its own description disagree.
+    pub unexpected: Vec<String>,
+    /// Present and readable, but SQLite says the file is damaged.
+    pub corrupt: Vec<String>,
+    pub ok: bool,
+}
+
+fn read_manifest(dir: &Path) -> Result<BackupManifest, String> {
+    let path = dir.join("manifest.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "{} has no readable manifest.json ({e}). A full backup always writes one, so either this \
+             is a library bundle (a single .json file, not a directory) or the backup is incomplete.",
+            dir.display()
+        )
+    })?;
+    serde_json::from_str(&text).map_err(|e| format!("manifest.json is not readable as a manifest: {e}"))
+}
+
+/// Re-check a backup WITHOUT restoring it — the answer to "is last week's copy still good?".
+///
+/// Every claim is re-derived from the files rather than trusted: each database is opened and
+/// `integrity_check`ed, and the manifest is compared against the directory in BOTH directions. A file
+/// the manifest forgot is as much a disagreement as one it promised and lost — the artifact must not
+/// be able to describe itself incorrectly and still pass.
+pub fn verify_backup(dir: &Path) -> Result<VerifyReport, String> {
+    let manifest = read_manifest(dir)?;
+    let mut files = Vec::new();
+    let (mut missing, mut corrupt) = (Vec::new(), Vec::new());
+
+    for (kind, listed) in [("store", &manifest.stores), ("plan", &manifest.plans)] {
+        let sub = if kind == "store" { "stores" } else { "plans" };
+        for captured in listed {
+            let name = if kind == "store" {
+                format!("{}.db", captured.name)
+            } else {
+                format!("{}.db", captured.name)
+            };
+            let path = dir.join(sub).join(&name);
+            if !path.is_file() {
+                missing.push(format!("{sub}/{name}"));
+                continue;
+            }
+            let integrity = match bsc_sqlite_util::open_db_str(&path, "store") {
+                Ok(conn) => conn
+                    .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+                    .unwrap_or_else(|e| format!("integrity_check could not run: {e}")),
+                Err(e) => format!("could not open: {e}"),
+            };
+            if integrity != "ok" {
+                corrupt.push(format!("{sub}/{name}"));
+            }
+            let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            files.push(VerifiedFile { name: format!("{sub}/{name}"), kind: kind.to_string(), integrity, bytes });
+        }
+    }
+
+    // The other direction: a file on disk the manifest never mentioned.
+    let mut unexpected = Vec::new();
+    for sub in ["stores", "plans"] {
+        if let Ok(entries) = std::fs::read_dir(dir.join(sub)) {
+            for e in entries.flatten() {
+                let n = e.file_name().to_string_lossy().into_owned();
+                if !n.ends_with(".db") {
+                    continue;
+                }
+                let rel = format!("{sub}/{n}");
+                if !files.iter().any(|f| f.name == rel) && !missing.contains(&rel) {
+                    unexpected.push(rel);
+                }
+            }
+        }
+    }
+    missing.sort();
+    unexpected.sort();
+    corrupt.sort();
+    let ok = missing.is_empty() && unexpected.is_empty() && corrupt.is_empty();
+    Ok(VerifyReport {
+        dir: dir.display().to_string(),
+        scope: manifest.scope,
+        files,
+        missing,
+        unexpected,
+        corrupt,
+        ok,
+    })
+}
+
+/// How a restore should behave.
+#[derive(Debug, Default, Clone)]
+pub struct RestoreOptions {
+    /// Report every write and perform NONE of them. The documented posture.
+    pub dry_run: bool,
+    /// Write over stores that already exist at the destination. OFF by default — see [`restore_backup`].
+    pub force: bool,
+}
+
+/// What a restore did, or (dry) would do.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct RestoreReport {
+    pub from: String,
+    pub into: String,
+    pub dry_run: bool,
+    pub restored: Vec<String>,
+    /// Present at the destination and left alone — only possible under `force`, or in a dry run.
+    pub would_overwrite: Vec<String>,
+    /// Stated on every restore so nobody believes their pairings came back.
+    pub not_restored: Vec<SkippedStore>,
+}
+
+/// Put a full backup's stores and plan stores back under `base`.
+///
+/// REFUSES A NON-EMPTY DESTINATION unless `force`, and names what it would have overwritten. A
+/// recovery that silently writes over a live install is how restoring destroys the thing it was
+/// restoring — and the likeliest moment to run this verb wrongly is in a panic, pointed at the
+/// machine that still has data on it.
+///
+/// VERIFIES BEFORE IT WRITES. A backup with a missing or corrupt file is refused whole rather than
+/// applied in part, because a half-restored base is harder to reason about than one that was never
+/// touched: the operator cannot tell which half is which.
+pub fn restore_backup(from: &Path, base: &Path, opts: &RestoreOptions) -> Result<RestoreReport, String> {
+    let report = verify_backup(from)?;
+    if !report.ok {
+        return Err(format!(
+            "refusing to restore from {}: the backup does not verify (missing: {:?}, corrupt: {:?}, \
+             unexpected: {:?}). A partial restore is worse than none — you cannot tell afterwards \
+             which half landed. Run `bsc studio verify --from {}` for the detail.",
+            from.display(),
+            report.missing,
+            report.corrupt,
+            report.unexpected,
+            from.display()
+        ));
+    }
+    let manifest = read_manifest(from)?;
+
+    let mut planned: Vec<(PathBuf, PathBuf, String)> = Vec::new();
+    for captured in &manifest.stores {
+        let name = format!("{}.db", captured.name);
+        planned.push((from.join("stores").join(&name), base.join(&name), name));
+    }
+    for captured in &manifest.plans {
+        let name = format!("{}.db", captured.name);
+        planned.push((from.join("plans").join(&name), base.join("plans").join(&name), format!("plans/{name}")));
+    }
+
+    let occupied: Vec<String> =
+        planned.iter().filter(|(_, dest, _)| dest.exists()).map(|(_, _, n)| n.clone()).collect();
+    if !occupied.is_empty() && !opts.force && !opts.dry_run {
+        return Err(format!(
+            "refusing to restore into {}: {} store(s) already exist there and would be overwritten \
+             ({}{}). Restore into an EMPTY base, or pass --force if you genuinely mean to replace a \
+             live install. Run with --dry-run first to see every write.",
+            base.display(),
+            occupied.len(),
+            occupied.iter().take(5).cloned().collect::<Vec<_>>().join(", "),
+            if occupied.len() > 5 { ", …" } else { "" }
+        ));
+    }
+
+    let mut restored = Vec::new();
+    if !opts.dry_run {
+        for (src, dest, name) in &planned {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            std::fs::copy(src, dest).map_err(|e| format!("restoring {name}: {e}"))?;
+            restored.push(name.clone());
+        }
+    } else {
+        restored = planned.iter().map(|(_, _, n)| n.clone()).collect();
+    }
+
+    Ok(RestoreReport {
+        from: from.display().to_string(),
+        into: base.display().to_string(),
+        dry_run: opts.dry_run,
+        restored,
+        would_overwrite: occupied,
+        // Stated every time, from the artifact's own record rather than from this code's memory.
+        not_restored: manifest.skipped,
+    })
+}
+
+
 #[cfg(test)]
 mod backup_tests {
     use super::*;
@@ -1288,6 +1494,202 @@ mod backup_tests {
         let m = backup_full(&root, &out, "probe", &BackupOptions::default())
             .expect("a base with a real store must back up with no override");
         assert!(m.stores.iter().any(|c| c.name == "wildcard"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A backup with real content SAVES, VERIFIES and RESTORES onto an empty base with the rows intact.
+    ///
+    /// The round trip is the whole acceptance: a backup nobody has restored is a hope, not a backup.
+    #[test]
+    fn a_backup_round_trips_onto_an_empty_base_with_its_rows() {
+        let root = scratch("roundtrip");
+        let src = root.join("live");
+        std::fs::create_dir_all(&src).unwrap();
+        bsc_sqlite_util::open_db_str(&src.join("things.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT PRIMARY KEY); INSERT INTO t VALUES ('a'),('b'),('c');")
+            .expect("seed");
+        std::fs::create_dir_all(src.join("plans")).unwrap();
+        bsc_sqlite_util::open_db_str(&src.join("plans/proj.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE issues (ref TEXT); INSERT INTO issues VALUES ('x'),('y');")
+            .expect("seed");
+
+        let out = root.join("backup");
+        backup(&src, &out, "probe", &BackupOptions { databases: true, ..Default::default() })
+            .expect("backup");
+
+        let v = verify_backup(&out).expect("verify");
+        assert!(v.ok, "a fresh backup must verify: {v:?}");
+        assert!(v.files.iter().all(|f| f.integrity == "ok"));
+
+        let dest = root.join("recovered");
+        let r = restore_backup(&out, &dest, &RestoreOptions::default()).expect("restore");
+        assert!(!r.dry_run);
+        assert!(r.restored.iter().any(|n| n == "things.db"), "{:?}", r.restored);
+        assert!(r.restored.iter().any(|n| n == "plans/proj.db"), "{:?}", r.restored);
+
+        // THE ACCEPTANCE: the rows are actually there afterwards.
+        let got: i64 = bsc_sqlite_util::open_db_str(&dest.join("things.db"), "store")
+            .expect("open restored")
+            .query_row("SELECT count(*) FROM t", [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(got, 3, "every row must survive save -> restore");
+        let issues: i64 = bsc_sqlite_util::open_db_str(&dest.join("plans/proj.db"), "store")
+            .expect("open restored plan store")
+            .query_row("SELECT count(*) FROM issues", [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(issues, 2, "plan stores restore under plans/, not beside the others");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// RESTORING OVER A LIVE INSTALL IS REFUSED, and the refusal names what it would have destroyed.
+    ///
+    /// The likeliest moment to run this verb wrongly is in a panic, pointed at the machine that still
+    /// has the data on it.
+    #[test]
+    fn restoring_over_an_occupied_base_is_refused_and_names_the_casualties() {
+        let root = scratch("occupied");
+        let src = root.join("live");
+        std::fs::create_dir_all(&src).unwrap();
+        bsc_sqlite_util::open_db_str(&src.join("things.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('a');")
+            .expect("seed");
+        let out = root.join("backup");
+        backup(&src, &out, "probe", &BackupOptions { databases: true, ..Default::default() }).expect("backup");
+
+        // A destination that already holds a store — i.e. a live install.
+        let dest = root.join("occupied");
+        std::fs::create_dir_all(&dest).unwrap();
+        bsc_sqlite_util::open_db_str(&dest.join("things.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('PRECIOUS');")
+            .expect("seed");
+
+        let err = restore_backup(&out, &dest, &RestoreOptions::default())
+            .expect_err("an occupied base must be refused");
+        assert!(err.contains("already exist"), "{err}");
+        assert!(err.contains("things.db"), "the refusal must NAME what it would overwrite: {err}");
+        assert!(err.contains("--force"), "and say how to override it: {err}");
+
+        // And nothing was touched.
+        let still: String = bsc_sqlite_util::open_db_str(&dest.join("things.db"), "store")
+            .expect("open")
+            .query_row("SELECT id FROM t", [], |r| r.get(0))
+            .expect("row");
+        assert_eq!(still, "PRECIOUS", "a refused restore must not have written anything");
+
+        // --force goes through.
+        restore_backup(&out, &dest, &RestoreOptions { force: true, ..Default::default() })
+            .expect("--force must be able to replace a live install deliberately");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A dry run reports every write and performs NONE of them.
+    #[test]
+    fn a_dry_run_lists_the_writes_and_makes_none() {
+        let root = scratch("dry");
+        let src = root.join("live");
+        std::fs::create_dir_all(&src).unwrap();
+        bsc_sqlite_util::open_db_str(&src.join("things.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('a');")
+            .expect("seed");
+        let out = root.join("backup");
+        backup(&src, &out, "probe", &BackupOptions { databases: true, ..Default::default() }).expect("backup");
+
+        let dest = root.join("nowhere");
+        let r = restore_backup(&out, &dest, &RestoreOptions { dry_run: true, ..Default::default() })
+            .expect("a dry run always succeeds");
+        assert!(r.dry_run);
+        assert!(!r.restored.is_empty(), "it must still SAY what it would write");
+        assert!(!dest.exists(), "and create nothing at all");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A DAMAGED backup is refused WHOLE, never applied in part.
+    ///
+    /// Half a restore is worse than none: afterwards nobody can tell which half landed.
+    #[test]
+    fn a_backup_missing_a_file_is_refused_before_anything_is_written() {
+        let root = scratch("damaged");
+        let src = root.join("live");
+        std::fs::create_dir_all(&src).unwrap();
+        for n in ["a", "b"] {
+            bsc_sqlite_util::open_db_str(&src.join(format!("{n}.db")), "store")
+                .expect("open")
+                .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('x');")
+                .expect("seed");
+        }
+        let out = root.join("backup");
+        backup(&src, &out, "probe", &BackupOptions { databases: true, ..Default::default() }).expect("backup");
+
+        // Rot: one captured file disappears after the fact.
+        std::fs::remove_file(out.join("stores/a.db")).expect("simulate a lost file");
+
+        let v = verify_backup(&out).expect("verify still reports");
+        assert!(!v.ok, "verify must NOT call a backup with a lost file good");
+        assert!(v.missing.iter().any(|m| m.contains("a.db")), "{v:?}");
+
+        let dest = root.join("recovered");
+        let err = restore_backup(&out, &dest, &RestoreOptions::default())
+            .expect_err("a backup that does not verify must be refused");
+        assert!(err.contains("does not verify"), "{err}");
+        assert!(
+            !dest.join("b.db").exists(),
+            "and the GOOD file must not have landed either — the refusal is whole, not partial"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The artifact and its own description must agree in BOTH directions.
+    #[test]
+    fn a_file_the_manifest_never_mentioned_fails_verification() {
+        let root = scratch("extra");
+        let src = root.join("live");
+        std::fs::create_dir_all(&src).unwrap();
+        bsc_sqlite_util::open_db_str(&src.join("a.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('x');")
+            .expect("seed");
+        let out = root.join("backup");
+        backup(&src, &out, "probe", &BackupOptions { databases: true, ..Default::default() }).expect("backup");
+
+        // Something the manifest knows nothing about.
+        bsc_sqlite_util::open_db_str(&out.join("stores/stowaway.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT);")
+            .expect("seed");
+
+        let v = verify_backup(&out).expect("verify");
+        assert!(!v.ok, "an artifact that disagrees with its own manifest is not good");
+        assert!(v.unexpected.iter().any(|u| u.contains("stowaway")), "{v:?}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Every restore SAYS that secrets were never captured, so nobody believes pairings came back.
+    #[test]
+    fn a_restore_states_what_was_never_captured() {
+        let root = scratch("saysso");
+        let src = root.join("live");
+        std::fs::create_dir_all(&src).unwrap();
+        bsc_sqlite_util::open_db_str(&src.join("a.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('x');")
+            .expect("seed");
+        bsc_sqlite_util::open_db_str(&src.join("secrets.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE pairing (service TEXT); INSERT INTO pairing VALUES ('github');")
+            .expect("seed");
+        let out = root.join("backup");
+        backup(&src, &out, "probe", &BackupOptions { databases: true, ..Default::default() }).expect("backup");
+
+        let r = restore_backup(&out, &root.join("recovered"), &RestoreOptions::default()).expect("restore");
+        let noted = r.not_restored.iter().find(|s| s.name == "secrets")
+            .expect("a restore must SAY secrets were never in the backup");
+        assert!(noted.reason.len() > 20, "with the reason: {:?}", noted.reason);
+        assert!(!r.restored.iter().any(|n| n.contains("secrets")), "and must not have restored it");
         std::fs::remove_dir_all(&root).ok();
     }
 
