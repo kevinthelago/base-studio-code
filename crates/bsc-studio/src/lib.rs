@@ -77,6 +77,7 @@ pub const EXCLUDED: &[(&str, &str)] = &[
     // whether it BELONGS in a shareable bundle is a separate judgement per store. Both questions are
     // deferred deliberately rather than answered here on a guess:
     // `the-snapshot-needs-a-reader-for-the-stores-that-are-not-json-collections`.
+    ("atlas", "a relational feature-inventory corpus, not a json-store collection — it joins, so it needs its own reader"),
     ("projects", "project-hub list — not a json-store collection; needs its own reader"),
     ("requests", "improvement-request store with its own schema; needs its own reader"),
     ("loops", "conversation-loop store — not a json-store collection; needs its own reader"),
@@ -737,20 +738,48 @@ impl Scope {
     }
 }
 
-/// The SQLite stores a FULL backup copies, beyond the library collections a Studio already holds.
+/// Stores a FULL backup must NEVER copy, and why.
 ///
-/// These are exactly the stores [`EXCLUDED`] names as authoritative-but-uncaptured. A full backup is
-/// where they finally land — not in the shareable bundle, which is why the split is a scope rather
-/// than a widening of `SYSTEMS`.
+/// A DENY-LIST, and the direction is the whole point. The full-backup set used to be an ALLOW-list, and
+/// that is the wrong default for a backup: a crate adds a store, nobody remembers to add a row, and
+/// the backup silently omits it. That is not hypothetical — `atlas.db` shipped and was omitted, and
+/// the roster guard only caught it because this developer's machine happened to have created the
+/// file. On a fresh machine it would have stayed invisible.
 ///
-/// `secrets` IS DELIBERATELY ABSENT. It is the one store whose disclosure cannot be walked back: the
-/// values live in the OS keychain, but WHICH services a user is paired with is itself disclosure, and
-/// a backup travelling to a NAS or a cloud is exactly where that leaks. Backing it up safely is a
-/// different problem from copying a database — it needs its own decision about encryption and about
-/// what a restore on a DIFFERENT machine should even mean, since the keychain entries it points at
-/// will not be there. Deferred on purpose, with a home:
+/// So a full backup now captures EVERY `*.db` under the base dir and skips only what is named here.
+/// An unknown store is CAPTURED, which is the safe direction to fail: a backup holding something
+/// unnecessary costs disk, while a backup missing something costs the data.
+///
+/// `secrets` is the one entry that is a hard rule rather than a preference. It is the store whose
+/// disclosure cannot be walked back: the values live in the OS keychain, but WHICH services a user is
+/// paired with is itself disclosure, and a backup travelling to a NAS or a cloud is exactly where
+/// that leaks. Backing it up safely is a different problem from copying a database — it needs its own
+/// decision about encryption and about what a restore on a DIFFERENT machine should even mean, since
+/// the keychain entries it points at will not be there. Deferred on purpose, with a home:
 /// `the-credential-store-needs-its-own-backup-decision`.
-pub const FULL_STORES: &[&str] = &["projects", "requests", "loops", "entities", "skills"];
+pub const NEVER_CAPTURED: &[(&str, &str)] = &[
+    ("secrets", "disclosure that cannot be walked back; needs its own backup decision (deferred)"),
+];
+
+/// Every `*.db` directly under `base`, sorted, minus [`NEVER_CAPTURED`].
+///
+/// Discovery rather than a roster is what makes silent omission structurally impossible — there is no
+/// list to forget to update. The scan is deliberately SHALLOW: `plans/` is captured separately
+/// because its members are per-project and belong under their own key in the manifest.
+pub fn discoverable_stores(base: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(base) else { return Vec::new() };
+    let mut paths: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("db"))
+        .filter(|p| {
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+            !NEVER_CAPTURED.iter().any(|(name, _)| *name == stem)
+        })
+        .collect();
+    paths.sort();
+    paths
+}
 
 /// One captured store, as the manifest records it.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -762,6 +791,13 @@ pub struct CapturedStore {
     pub integrity: String,
 }
 
+/// A store the backup deliberately did NOT take, and why — recorded in the artifact itself.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct SkippedStore {
+    pub name: String,
+    pub reason: String,
+}
+
 /// What a full backup wrote, so the artifact can describe itself without being restored.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct BackupManifest {
@@ -771,6 +807,10 @@ pub struct BackupManifest {
     pub plans: Vec<CapturedStore>,
     /// Stores that were declared but absent — an empty machine is legitimate, a SILENT gap is not.
     pub absent: Vec<String>,
+    /// Stores present on the machine and deliberately left behind, each with its reason. A restore
+    /// reads this to know what it can NOT put back.
+    #[serde(default)]
+    pub skipped: Vec<SkippedStore>,
 }
 
 /// Copy one SQLite database consistently, and verify it.
@@ -805,19 +845,101 @@ fn vacuum_into(src: &Path, dest: &Path) -> Result<CapturedStore, String> {
     Ok(CapturedStore { name, bytes, integrity })
 }
 
+/// Total user rows in a SQLite file, or 0 if it cannot be read.
+///
+/// The caller MUST have checked the file exists — opening a path creates it, and creating the very
+/// files we are about to call empty is how the first version of this guard defeated itself.
+fn total_rows(db: &Path) -> u64 {
+    let Ok(conn) = bsc_sqlite_util::open_db_str(db, "store") else { return 0 };
+    let Ok(mut stmt) =
+        conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    else {
+        return 0;
+    };
+    let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) else { return 0 };
+    let tables: Vec<String> = rows.flatten().collect();
+    tables
+        .iter()
+        .map(|t| {
+            // The table name comes from sqlite_master, not from user input, and cannot be bound as a
+            // parameter in a FROM clause. Quoted to survive a table name needing it.
+            conn.query_row(&format!("SELECT count(*) FROM \"{}\"", t.replace('"', "\"\"")), [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap_or(0)
+            .max(0) as u64
+        })
+        .sum()
+}
+
+/// Is this base worth backing up at all? `Some(found)` when everything is bare, naming what was
+/// looked at; `None` when there is real content.
+///
+/// READS ONLY WHAT ALREADY EXISTS. It must never call [`build_snapshot`], which CREATES the
+/// json-store files it opens — the first version of this guard did, materialised nine empty stores,
+/// and then could not see that the source was empty because it had just populated it with emptiness.
+fn source_is_bare(base: &Path) -> Option<Vec<String>> {
+    // Any plan store at all means real per-project work; never refuse in that case.
+    if let Ok(entries) = std::fs::read_dir(base.join("plans")) {
+        if entries.flatten().any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("db")) {
+            return None;
+        }
+    }
+    let mut found = Vec::new();
+    for db in discoverable_stores(base) {
+        if total_rows(&db) > 0 {
+            return None;
+        }
+        found.push(db.file_stem().and_then(|n| n.to_str()).unwrap_or_default().to_string());
+    }
+    found.sort();
+    Some(found)
+}
+
+/// How a full backup should behave. A struct rather than a growing positional list — the same reason
+/// `ensure_session_settings` stopped taking 29 arguments.
+#[derive(Debug, Default, Clone)]
+pub struct BackupOptions {
+    pub description: Option<String>,
+    /// Take the backup even when the source holds nothing. OFF by default, and that default is the
+    /// feature: see [`backup_full`].
+    pub allow_empty: bool,
+}
+
 /// Write a FULL backup of `base` into `out`: the library bundle plus a consistent copy of every
 /// SQLite store, including every per-project plan store.
 ///
 /// A directory rather than one file, because 28 MB of SQLite cannot live inside a JSON bundle
 /// without base64 inflating it by a third and making the result unreadable by anything but this
 /// tool. The bundle stays JSON; the databases stay databases.
-pub fn backup_full(base: &Path, out: &Path, name: &str, description: Option<String>) -> Result<BackupManifest, String> {
+pub fn backup_full(base: &Path, out: &Path, name: &str, opts: &BackupOptions) -> Result<BackupManifest, String> {
+    // REFUSED BEFORE ANYTHING IS WRITTEN, and the order matters: `build_snapshot` CREATES the
+    // json-store files it opens, so a backup of an empty base materialises empty stores at the SOURCE
+    // and then faithfully captures them. The artifact looks populated and holds nothing — the worst
+    // possible failure for a backup, and the one probed live on this feature's originating item
+    // (`studio save --dir <empty>` produced an all-empty bundle and reported success).
+    if !opts.allow_empty {
+        if let Some(bare) = source_is_bare(base) {
+            let what = if bare.is_empty() {
+                "no stores were found there at all".to_string()
+            } else {
+                format!("every store is empty: {}", bare.join(", "))
+            };
+            return Err(format!(
+                "refusing to back up {base}: {what}. A backup that appears to succeed and contains \
+                 nothing is the worst outcome this verb has, so it is refused rather than written. \
+                 Check --dir points at the install you meant to READ (it is not where the backup \
+                 goes — that is --out); pass --allow-empty if an empty backup is genuinely intended.",
+                base = base.display()
+            ));
+        }
+    }
     std::fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
 
     let mut studio = Studio {
         id: slug(name)?,
         name: name.to_string(),
-        description: description.filter(|d| !d.trim().is_empty()),
+        description: opts.description.clone().filter(|d| !d.trim().is_empty()),
         version: None,
         snapshot: build_snapshot(base),
     };
@@ -831,15 +953,21 @@ pub fn backup_full(base: &Path, out: &Path, name: &str, description: Option<Stri
     std::fs::write(out.join("studio.json"), bundle)
         .map_err(|e| format!("cannot write the bundle: {e}"))?;
 
-    let (mut stores, mut absent) = (Vec::new(), Vec::new());
-    for store in FULL_STORES {
-        let src = base.join(format!("{store}.db"));
-        if !src.is_file() {
-            absent.push((*store).to_string());
-            continue;
-        }
-        stores.push(vacuum_into(&src, &out.join("stores").join(format!("{store}.db")))?);
+    // DISCOVERED, not enumerated. Every `*.db` under the base is captured unless NEVER_CAPTURED names
+    // it, so a store added by a future crate is backed up without anyone remembering to list it.
+    let mut stores = Vec::new();
+    for src in discoverable_stores(base) {
+        let file = src.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+        stores.push(vacuum_into(&src, &out.join("stores").join(file))?);
     }
+    // What was deliberately left behind, recorded IN the artifact. A backup that cannot say what it
+    // skipped is indistinguishable from one that skipped something by accident.
+    let skipped: Vec<SkippedStore> = NEVER_CAPTURED
+        .iter()
+        .filter(|(name, _)| base.join(format!("{name}.db")).is_file())
+        .map(|(name, why)| SkippedStore { name: (*name).to_string(), reason: (*why).to_string() })
+        .collect();
+    let mut absent: Vec<String> = Vec::new();
 
     // Plan stores are per-project and their names are not knowable in advance, so they are captured
     // by SCAN. The `-wal`/`-shm` sidecars are deliberately NOT copied — `VACUUM INTO` folds them in,
@@ -867,6 +995,7 @@ pub fn backup_full(base: &Path, out: &Path, name: &str, description: Option<Stri
         stores,
         plans,
         absent,
+        skipped,
     };
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| format!("manifest: {e}"))?;
     std::fs::write(out.join("manifest.json"), text)
@@ -935,10 +1064,10 @@ mod backup_tests {
     fn an_absent_store_is_recorded_rather_than_silently_skipped() {
         let root = scratch("absent");
         let out = root.join("backup");
-        let m = backup_full(&root, &out, "probe", None).expect("backup an empty base");
-        assert!(m.stores.is_empty());
-        assert!(m.absent.contains(&"projects".to_string()), "absent stores must be named: {:?}", m.absent);
-        assert!(m.absent.contains(&"plans".to_string()));
+        let m = backup_full(&root, &out, "probe", &BackupOptions { allow_empty: true, ..Default::default() }).expect("backup an empty base");
+        // `plans/` is the one location a full backup EXPECTS by name, so its absence is reportable
+        // where an undiscovered store's cannot be — there is no list of stores to be absent from.
+        assert!(m.absent.contains(&"plans".to_string()), "a missing plans/ must be named: {:?}", m.absent);
         assert_eq!(m.scope, "full");
         assert!(out.join("manifest.json").is_file(), "the manifest must exist even for an empty base");
         std::fs::remove_dir_all(&root).ok();
@@ -950,7 +1079,7 @@ mod backup_tests {
     fn a_full_bundle_identifies_itself_as_private() {
         let root = scratch("marks");
         let out = root.join("backup");
-        backup_full(&root, &out, "probe", Some("my notes".into())).expect("backup");
+        backup_full(&root, &out, "probe", &BackupOptions { description: Some("my notes".into()), allow_empty: true }).expect("backup");
         let text = std::fs::read_to_string(out.join("studio.json")).expect("bundle");
         assert!(text.contains("scope: full"), "the bundle must self-identify as full-scope");
         assert!(text.contains("private project state"), "and say why that matters");
@@ -965,11 +1094,124 @@ mod backup_tests {
     /// `the-credential-store-needs-its-own-backup-decision` is open is that it never travels.
     #[test]
     fn the_credential_store_is_captured_by_nothing() {
-        assert!(!FULL_STORES.contains(&"secrets"), "secrets must not be in the full-backup set");
+        // Proved by RUNNING a backup against a base that has one, not by inspecting a list. A list
+        // assertion passes even if the capture loop stops consulting the list.
+        let root = scratch("secrets");
+        bsc_sqlite_util::open_db_str(&root.join("secrets.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE pairing (service TEXT); INSERT INTO pairing VALUES ('github');")
+            .expect("seed");
+        let out = root.join("backup");
+        let m = backup_full(&root, &out, "probe", &BackupOptions { allow_empty: true, ..Default::default() }).expect("backup");
+
         assert!(
-            EXCLUDED.iter().any(|(seg, _)| *seg == "secrets"),
-            "and its omission must be RECORDED, not merely absent"
+            !out.join("stores/secrets.db").exists(),
+            "the credential store must never be written into a backup"
         );
+        assert!(
+            !m.stores.iter().any(|c| c.name == "secrets"),
+            "and it must not be claimed in the manifest either"
+        );
+        // Its omission is RECORDED, not merely silent — that is the whole difference between a
+        // deliberate exclusion and a bug.
+        let noted = m.skipped.iter().find(|s| s.name == "secrets").expect("secrets must be recorded as skipped");
+        assert!(noted.reason.len() > 20, "with a real reason: {:?}", noted.reason);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// NOTHING can be silently omitted — an unknown store is CAPTURED, not skipped.
+    ///
+    /// This is the guard the `atlas.db` miss earned. The full-backup set was an ALLOW-list, so a
+    /// store a future crate adds was omitted until somebody remembered a row; `atlas` shipped that
+    /// way and was only caught because this machine happened to have created the file. Discovery
+    /// inverts it, and this test is what stops anyone inverting it back.
+    #[test]
+    fn a_store_nobody_declared_is_still_captured() {
+        let root = scratch("unknown");
+        // A store no roster in this crate has ever heard of.
+        bsc_sqlite_util::open_db_str(&root.join("wildcard.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('kept');")
+            .expect("seed");
+        let out = root.join("backup");
+        let m = backup_full(&root, &out, "probe", &BackupOptions { allow_empty: true, ..Default::default() }).expect("backup");
+
+        assert!(
+            out.join("stores/wildcard.db").is_file(),
+            "an undeclared store must be captured, not silently dropped — that direction is the \
+             whole safety argument for a backup"
+        );
+        assert!(m.stores.iter().any(|c| c.name == "wildcard" && c.integrity == "ok"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// AN EMPTY BACKUP IS REFUSED — the worst possible outcome for this feature.
+    ///
+    /// Probed live on the originating item: `studio save --dir <empty>` created empty stores at the
+    /// destination, snapshotted THOSE, and reported success. `build_snapshot` materialises the files
+    /// it opens, so the refusal has to run BEFORE anything is written or it can never fire.
+    #[test]
+    fn an_all_empty_source_is_refused_and_names_what_it_found_bare() {
+        let root = scratch("empty");
+        let out = root.join("backup");
+        let err = backup_full(&root, &out, "probe", &BackupOptions::default())
+            .expect_err("a source holding nothing must be refused");
+        assert!(err.contains("no stores were found there at all"), "{err}");
+        assert!(err.contains("--allow-empty"), "and say how to override it: {err}");
+        assert!(err.contains("--dir"), "and point at the flag that is usually the real mistake: {err}");
+        assert!(!out.exists(), "and nothing may be written — a refused backup must leave no artifact");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The SECOND run of the same mistake is refused too, and this is the harder case.
+    ///
+    /// After one `--dir <empty>` the base is no longer empty: `build_snapshot` left nine created-but-
+    /// empty stores behind. A guard that only checks whether store FILES exist passes here and backs
+    /// up nothing, which is exactly the shape of the original bug. The stores must be read.
+    #[test]
+    fn a_base_of_created_but_empty_stores_is_still_refused() {
+        let root = scratch("emptied");
+        // Precisely what a previous run leaves behind: real store files with no rows in them.
+        for name in ["personas", "components", "orgs"] {
+            bsc_sqlite_util::open_db_str(&root.join(format!("{name}.db")), "store")
+                .expect("open")
+                .execute_batch("CREATE TABLE records (id TEXT PRIMARY KEY, json TEXT);")
+                .expect("seed schema but no rows");
+        }
+        let out = root.join("backup");
+        let err = backup_full(&root, &out, "probe", &BackupOptions::default())
+            .expect_err("stores that exist but hold nothing must still be refused");
+        assert!(err.contains("every store is empty"), "{err}");
+        assert!(
+            err.contains("personas") && err.contains("components"),
+            "the refusal must NAME what it found bare: {err}"
+        );
+        assert!(!out.exists(), "a refused backup must leave no artifact");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A source with real content is NOT refused — the guard must not block the thing it protects.
+    #[test]
+    fn a_source_with_content_backs_up_without_the_override() {
+        let root = scratch("nonempty");
+        bsc_sqlite_util::open_db_str(&root.join("wildcard.db"), "store")
+            .expect("open")
+            .execute_batch("CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('x');")
+            .expect("seed");
+        let out = root.join("backup");
+        let m = backup_full(&root, &out, "probe", &BackupOptions::default())
+            .expect("a base with a real store must back up with no override");
+        assert!(m.stores.iter().any(|c| c.name == "wildcard"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Every deny-list entry states why, so an omission cannot be parked without an argument.
+    #[test]
+    fn every_never_captured_entry_states_why() {
+        assert!(!NEVER_CAPTURED.is_empty(), "the deny-list must not quietly empty itself");
+        for (name, why) in NEVER_CAPTURED {
+            assert!(why.len() > 20, "{name} is skipped without a real reason: {why:?}");
+        }
     }
 
     #[test]
