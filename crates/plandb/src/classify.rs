@@ -83,6 +83,23 @@ pub struct ClassifyConfig {
     /// value, while this one is a question someone has to answer. Reading absent as `false` would
     /// look settled, so `bsc publish` refuses only on an explicit `false`.
     pub uses_github: Option<bool>,
+    /// WHICH MODEL this project's sessions run on — the project's own level of the model precedence
+    /// chain, settled at Discovery (`discovery-chooses-the-model`).
+    ///
+    /// Nearest first: a fleet stream's own model (`bsc plan fleet model`) > a team placement's
+    /// (`bsc teams model`, the NODE) > THIS > the persona's default (`bsc persona model`) > the
+    /// harness's own default, which is no `--model` at all.
+    ///
+    /// The project sits ABOVE the persona because a persona is a global library identity shared
+    /// across every project, and a decision taken about THIS project is nearer to it than a global
+    /// default is. It sits BELOW the node because a node is nearer still.
+    ///
+    /// Absent is the default and stays absent — never coerced to a tier. It is what makes the axis
+    /// non-regressing: every project classified before it existed launches exactly as it did. There
+    /// is deliberately no `model_of` accessor with a default for that reason; the other axes have one
+    /// because a missing value there still has to mean SOMETHING to a consumer, while a missing model
+    /// means "ask the next level down", which is not a value.
+    pub model: Option<String>,
     pub needs_market: Option<bool>,
     pub needs_source: Option<bool>,
     pub needs_mcp: Option<bool>,

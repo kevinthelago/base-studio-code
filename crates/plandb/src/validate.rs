@@ -612,6 +612,16 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             }
         }
     }
+    // `model` is checked for SHAPE here and for EXISTENCE at the CLI (`verify_classify_model`).
+    //
+    // The split is deliberate: this function is pure and every one of its tests is a `json!` literal,
+    // while deciding whether a model name is real requires asking the local runtime. Probing from
+    // here would put a network call inside a validator, and inside every test that ever calls it.
+    if let Some(m) = v.get("model") {
+        if !m.as_str().is_some_and(|s| !s.trim().is_empty()) {
+            errs.push(r#""model" must be a non-empty string when present — a Claude tier (haiku-4.5 | sonnet-4.5 | opus-4.5) or a model the local runtime has installed. Omit it entirely to fall through to the persona's default"#.into());
+        }
+    }
     if errs.is_empty() { Ok(()) } else { Err(reject(noun, errs)) }
 }
 
@@ -645,9 +655,17 @@ pub fn classify_readiness(v: &Value) -> String {
     // #4115: both system axes are echoed BEFORE `uiMode`, because they govern whether uiMode means
     // anything — for an `own` project our pipeline never renders, whichever surface the designs came
     // from — and because they are the security-relevant answer the planner must be able to re-read.
+    // The model is echoed as what it IS rather than as a default: absent means "each session falls
+    // through to its persona", which is a real and common answer, not a blank.
+    let model = v
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or("per-persona default");
     format!(
         " — {lifecycle} {app_type}; uiSystem {ui_system}; algorithmSystem {algo_system}; \
-         uiMode {ui}; GitHub: {github}; optional stages: {list}"
+         uiMode {ui}; GitHub: {github}; model: {model}; optional stages: {list}"
     )
 }
 
@@ -2094,6 +2112,40 @@ mod tests {
             "needsSkills": false, "needsAutomations": false
         }))
         .is_ok());
+    }
+
+    // ── the model axis (`discovery-chooses-the-model`) ───────────────────────────────────────
+
+    #[test]
+    fn classify_accepts_a_model_and_rejects_a_shape_that_could_never_launch() {
+        // Any non-empty string passes HERE — whether the name is real is `verify_classify_model`'s
+        // question, because answering it needs the local runtime. This half exists so a value that
+        // could never be a model name at all is refused before anything probes for it.
+        assert!(validate_classify_config(&json!({ "model": "sonnet-4.5" })).is_ok());
+        assert!(validate_classify_config(&json!({ "model": "qwen3.5:35b-a3b" })).is_ok());
+
+        // Absent is the default and must stay valid — the state of every project classified before
+        // this axis existed.
+        assert!(validate_classify_config(&json!({})).is_ok());
+
+        // A present-but-empty model is the dangerous shape: it LOOKS decided and resolves to nothing,
+        // so the fleet would silently fall through to the persona while the classification claims a
+        // choice was made. Refused rather than normalised away, and the error says how to mean
+        // "no project-level choice" properly.
+        for bad in [json!(""), json!("   "), json!(true), json!(3), json!(null), json!(["sonnet-4.5"])] {
+            let err = validate_classify_config(&json!({ "model": bad })).unwrap_err();
+            assert!(err.contains("model"), "names the field: {err}");
+            assert!(err.contains("Omit"), "says how to mean no choice: {err}");
+        }
+    }
+
+    #[test]
+    fn classify_readiness_reports_the_model_as_what_it_is_never_as_a_tier() {
+        // The echo is what the architect reads back after recording a discovery decision, so an
+        // absent model must read as the fall-through it actually is. Printing a tier here would state
+        // a choice nobody made — the same mistake `usesGithub` reports as UNDECIDED to avoid.
+        assert!(classify_readiness(&json!({})).contains("model: per-persona default"));
+        assert!(classify_readiness(&json!({ "model": "qwen3.5:9b" })).contains("model: qwen3.5:9b"));
     }
 
     #[test]
