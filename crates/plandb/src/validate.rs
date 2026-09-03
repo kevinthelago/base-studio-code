@@ -1307,19 +1307,27 @@ pub fn validate_issue(issue: &PlanIssue, lenient: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether a feature is fully defined (mirrors the frontend `featureDefined`: name + behavior +
-/// ≥1 acceptance) — the Features gate needs EVERY feature defined.
-fn feature_defined(f: &PlanFeature) -> bool {
-    !f.name.trim().is_empty()
-        && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false)
-        && !f.acceptance.is_empty()
-}
-
-/// The non-fatal readiness echo after a feature write: `N of M features fully defined` (the
-/// Features gate needs all M, plus the user's confirm).
+/// The non-fatal readiness echo after a feature write.
+///
+/// It reports BOTH rules, because reporting one while the roster listing marked rows by the other is
+/// exactly the contradiction this echo used to be half of: it counted `feature_specified` while
+/// `render_feature_line` marked `feature_defined`, so `bsc plan feature list` could print `·` on
+/// nearly every row above a footer claiming `47 of 49 features fully defined`. The rules now live
+/// once each in [`crate::features`] and both numbers are named, so neither can be mistaken for the
+/// other.
 pub fn feature_readiness(feats: &[PlanFeature]) -> String {
-    let defined = feats.iter().filter(|f| feature_defined(f)).count();
-    format!("{defined} of {} features fully defined", feats.len())
+    let s = crate::features::features_summary(feats);
+    let gap = s.specified.saturating_sub(s.defined);
+    if gap == 0 {
+        format!("{} of {} features fully defined", s.defined, s.count)
+    } else {
+        // The gap is the interesting half: a feature that is described but declares no `requires`
+        // sends a worker to build from nothing. Naming it here is the only place that says so.
+        format!(
+            "{} of {} features fully defined ({gap} described but declaring no `requires`)",
+            s.defined, s.count
+        )
+    }
 }
 
 /// Validate a `fleet session set` row: `paneId` is the primary key the console + recovery join on,
@@ -2089,11 +2097,26 @@ mod tests {
         assert!(validate_issue(&PlanIssue { title: "t".into(), ..Default::default() }, true).is_err());
     }
 
+    /// The readiness echo reports the SAME rule `bsc plan feature list` marks rows by, and names the
+    /// gap between the two notions rather than picking one silently.
+    ///
+    /// It used to count `feature_specified` while the row mark used `feature_defined`, so one command
+    /// printed `·` against nearly every row above a footer claiming `47 of 49 features fully defined`
+    /// (MEASURED 2026-09-03 on studio-code). Both halves now come from `crate::features`.
     #[test]
-    fn feature_readiness_counts_fully_defined_features() {
-        let full = PlanFeature { name: "A".into(), behavior: Some("does".into()), acceptance: vec!["ok".into()], ..Default::default() };
+    fn feature_readiness_counts_fully_defined_features_and_names_the_requires_gap() {
+        let described = PlanFeature { name: "A".into(), behavior: Some("does".into()), acceptance: vec!["ok".into()], ..Default::default() };
         let title_only = PlanFeature { name: "B".into(), ..Default::default() };
-        assert_eq!(feature_readiness(&[full, title_only]), "1 of 2 features fully defined");
+        // Described but declaring no `requires`: NOT fully defined, and the echo says why rather than
+        // counting it in and leaving the author to wonder which rule the ✓ column used.
+        assert_eq!(
+            feature_readiness(&[described.clone(), title_only.clone()]),
+            "0 of 2 features fully defined (1 described but declaring no `requires`)"
+        );
+        // With `requires`, it is fully defined and there is no gap to report.
+        let full = PlanFeature { requires: vec!["merge.rs".into()], ..described };
+        assert_eq!(feature_readiness(&[full.clone(), title_only]), "1 of 2 features fully defined");
+        assert_eq!(feature_readiness(&[full]), "1 of 1 features fully defined");
         assert_eq!(feature_readiness(&[]), "0 of 0 features fully defined");
     }
 

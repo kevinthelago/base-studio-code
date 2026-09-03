@@ -741,6 +741,12 @@ struct Args {
     since: Option<i64>,
     /// Re-expand a JSON read to indented form (the default is compact, to save agent tokens).
     pretty: bool,
+    /// `feature gate --confirmed` — the USER has confirmed the feature roster.
+    ///
+    /// A separate axis from the roster being complete, and deliberately not inferred: the whole point
+    /// of the Features gate is that a human looked at the list, so a flag the caller must pass is the
+    /// only honest way to represent it.
+    confirmed: bool,
     /// Skip set-time validation on a structured write (#2395) — the deliberate
     /// store-a-work-in-progress-blob escape hatch. Validation is otherwise strict-reject.
     force: bool,
@@ -764,7 +770,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, note: None, brief_ref: None, to: None, command: None, schedule: None, description: None,
         mode: None, path: None, direction: None, stage: None, clause: None, why: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false, force: false, clear: false, kind: None,
+        since: None, pretty: false, confirmed: false, force: false, clear: false, kind: None,
         dir: None, release: false,
     };
     let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
@@ -791,6 +797,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--description" => a.description = Some(v.value("--description needs a value")?),
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
+            "--confirmed" => a.confirmed = true,
             "--force" | "--no-validate" => a.force = true,
             // `--clear` removes an optional field rather than setting it — the counterpart every
             // `set` verb needs so a value can be UNSET, not just overwritten (`fleet model --clear`).

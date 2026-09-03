@@ -157,6 +157,157 @@ pub(crate) fn slugify(name: &str) -> String {
     s.chars().take(60).collect()
 }
 
+// ── the feature RULES — one definition each, and this module is where they live ────────────────
+//
+// These were duplicated across two languages and the copies disagreed. MEASURED 2026-09-03 on
+// studio-code: `bsc plan feature list` printed `·` (not fully defined) against nearly every row
+// while its own footer said `47 of 49 features fully defined` — one command, two rules, contradicting
+// each other on screen. There were three:
+//
+//   validate.rs::feature_defined        name + behavior + >=1 acceptance
+//   cli/nouns.rs::render_feature_line   name + behavior + acceptance + non-empty `requires`
+//   feature-list.ts::featureDefined     name + behavior + >=1 acceptance
+//
+// and `validate.rs` documented itself as MIRRORING the frontend, which had the authority backwards:
+// plan.db is this crate's resource, so the rule is this crate's. Policy lives where the owned resource
+// lives (`epic-frontend-logic-over-backend-resources-belongs-in-rust`).
+//
+// The two notions were BOTH real and the mistake was calling them the same thing. They are now named
+// apart, so a caller has to say which question it is asking and no two answers can drift.
+
+/// The capability is DESCRIBED: it has a name, a behavior, and at least one acceptance criterion.
+///
+/// This is what the Features gate has always asked, in both languages, and it stays the gate's
+/// question — tightening it to [`feature_defined`] would fail a plan that was authored before
+/// `requires` existed, which is a MAINTAINER's call and not a refactor's.
+pub fn feature_specified(f: &PlanFeature) -> bool {
+    !f.name.trim().is_empty()
+        && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false)
+        && !f.acceptance.is_empty()
+}
+
+/// [`feature_specified`] AND it says WHAT IT DRAWS ON — a non-empty `requires`.
+///
+/// `requires` is the plan → library edge, and the worker charter renders it as the Reference
+/// implementations section, so an empty one means a worker is told to build from nothing and
+/// re-derives what the library already holds. MEASURED when that rule was added: 124 features across
+/// six projects, THREE with a requires list. The edge and the worker protocol were both correct; the
+/// input was empty, and nothing said so.
+pub fn feature_defined(f: &PlanFeature) -> bool {
+    feature_specified(f) && !f.requires.is_empty()
+}
+
+/// The Features roster at a glance. Both counts ride together so a reader is never shown one number
+/// that a second rule would contradict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeaturesSummary {
+    /// How many features exist.
+    pub count: usize,
+    /// How many are DESCRIBED ([`feature_specified`]) — the gate's question.
+    pub specified: usize,
+    /// How many also declare `requires` ([`feature_defined`]).
+    pub defined: usize,
+    /// Every feature is specified, and there is at least one. The gate's precondition.
+    pub all_specified: bool,
+}
+
+/// Summarise a roster under both rules in one pass.
+pub fn features_summary(feats: &[PlanFeature]) -> FeaturesSummary {
+    let specified = feats.iter().filter(|f| feature_specified(f)).count();
+    let defined = feats.iter().filter(|f| feature_defined(f)).count();
+    FeaturesSummary {
+        count: feats.len(),
+        specified,
+        defined,
+        all_specified: !feats.is_empty() && specified == feats.len(),
+    }
+}
+
+/// The Features gate passes when every feature is specified AND the user has confirmed.
+///
+/// Ported from `feature-list.ts::featuresGateComplete` unchanged — the user's confirm is a separate
+/// axis from the data being complete, and collapsing them would let a full roster advance the stage
+/// with nobody having looked at it.
+pub fn features_gate_complete(summary: &FeaturesSummary, user_confirmed: bool) -> bool {
+    summary.all_specified && user_confirmed
+}
+
+/// The roster is complete but the user has not confirmed — the state that should PROMPT, distinct
+/// from the state that should keep authoring.
+pub fn features_awaiting_confirm(summary: &FeaturesSummary, user_confirmed: bool) -> bool {
+    summary.all_specified && !user_confirmed
+}
+
+/// The first `depends_on` cycle in the roster, as the slugs on it (first slug repeated at the end),
+/// or empty when the DAG is acyclic.
+///
+/// A cycle is a planning deadlock — nothing in it can ever be scheduled first — so it is worth
+/// naming the actual loop rather than reporting a bare boolean. Ported from
+/// `feature-list.ts::featureDependencyCycle`: an iterative three-colour DFS (white = unvisited,
+/// grey = on the current path, black = fully explored); a grey hit is a back-edge and the path from
+/// that slug onward IS the cycle. Edges to slugs the roster does not contain are skipped rather than
+/// treated as missing nodes, exactly as the TS did — a dangling `depends_on` is a separate problem.
+pub fn feature_dependency_cycle(feats: &[PlanFeature]) -> Vec<String> {
+    use std::collections::HashMap;
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Color {
+        Grey,
+        Black,
+    }
+    let by_slug: HashMap<&str, &PlanFeature> = feats.iter().map(|f| (f.slug.as_str(), f)).collect();
+    let mut color: HashMap<&str, Color> = HashMap::new();
+    let mut path: Vec<&str> = Vec::new();
+
+    // Explicit stack rather than recursion: a roster is user-authored and a deep chain must not be
+    // able to blow the stack of whatever is calling us.
+    enum Step<'a> {
+        Enter(&'a str),
+        Leave(&'a str),
+    }
+
+    for root in feats {
+        if color.get(root.slug.as_str()) == Some(&Color::Black) {
+            continue;
+        }
+        let mut stack = vec![Step::Enter(root.slug.as_str())];
+        while let Some(step) = stack.pop() {
+            match step {
+                Step::Leave(slug) => {
+                    path.pop();
+                    color.insert(slug, Color::Black);
+                }
+                Step::Enter(slug) => match color.get(slug) {
+                    Some(Color::Black) => {}
+                    Some(Color::Grey) => {
+                        // Back-edge: the cycle is the current path from `slug` on, closed by `slug`.
+                        let at = path.iter().position(|s| *s == slug).unwrap_or(0);
+                        let mut cycle: Vec<String> = path[at..].iter().map(|s| s.to_string()).collect();
+                        cycle.push(slug.to_string());
+                        return cycle;
+                    }
+                    None => {
+                        color.insert(slug, Color::Grey);
+                        path.push(slug);
+                        stack.push(Step::Leave(slug));
+                        if let Some(f) = by_slug.get(slug) {
+                            // Reversed so the first dependency is explored first, matching the TS
+                            // walk order — which decides WHICH cycle is reported when there are two.
+                            for dep in f.depends_on.iter().rev() {
+                                if by_slug.contains_key(dep.as_str()) {
+                                    stack.push(Step::Enter(dep.as_str()));
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+    Vec::new()
+}
+
 impl Store {
     // ── features (#plan-db) ──────────────────────────────────────────────────────
     // Titles-first: `feature add {name}` registers a roster entry; later `add`s carrying details
@@ -444,5 +595,148 @@ mod tests {
         // An older payload with no `requires` still parses (serde default) — no migration on the wire.
         let old: PlanFeature = serde_json::from_str(r#"{"slug":"s","name":"S"}"#).unwrap();
         assert!(old.requires.is_empty());
+    }
+}
+
+/// The feature RULES, ported from `feature-list.ts` with its assertions intact.
+///
+/// Every case here was a vitest `it()` in that module's test — carried over verbatim so the move is
+/// provably behaviour-preserving rather than merely re-implemented
+/// (`epic-frontend-logic-over-backend-resources-belongs-in-rust`, "every migration carries the tests
+/// that pinned the TS behaviour").
+#[cfg(test)]
+mod feature_rules {
+    use super::*;
+
+    fn f(slug: &str, deps: &[&str]) -> PlanFeature {
+        PlanFeature {
+            slug: slug.into(),
+            name: slug.into(),
+            depends_on: deps.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+    /// The TS fixture: `{ slug: "a", name: "A", behavior: "does a thing", acceptance: ["x"] }`.
+    fn full() -> PlanFeature {
+        PlanFeature {
+            slug: "a".into(),
+            name: "A".into(),
+            behavior: Some("does a thing".into()),
+            acceptance: vec!["x".into()],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_feature_is_specified_only_with_name_behavior_and_one_acceptance() {
+        // Ported from `featureDefined` — this is the rule the Features gate has always asked, and it
+        // keeps the TS name's meaning even though the Rust name is now narrower.
+        assert!(feature_specified(&full()));
+        assert!(!feature_specified(&PlanFeature { slug: "a".into(), name: "A".into(), ..Default::default() }));
+        assert!(!feature_specified(&PlanFeature {
+            slug: "a".into(),
+            name: "A".into(),
+            behavior: Some("b".into()),
+            ..Default::default()
+        }));
+        // behavior present, acceptance EMPTY — the case a truthiness check would have passed.
+        assert!(!feature_specified(&PlanFeature {
+            slug: "a".into(),
+            name: "A".into(),
+            behavior: Some("b".into()),
+            acceptance: vec![],
+            ..Default::default()
+        }));
+        // Whitespace is the shape a hand-edited row has; it must not read as content.
+        assert!(!feature_specified(&PlanFeature { behavior: Some("   ".into()), ..full() }));
+    }
+
+    #[test]
+    fn defined_is_specified_plus_requires_and_the_two_are_not_the_same_question() {
+        // THE contradiction this consolidation exists to remove: `full()` is specified but NOT
+        // defined, and before the split one command answered both ways about exactly this row.
+        let f = full();
+        assert!(feature_specified(&f));
+        assert!(!feature_defined(&f), "no `requires` — described, but not saying what it draws on");
+        let with = PlanFeature { requires: vec!["merge.rs".into()], ..full() };
+        assert!(feature_defined(&with));
+    }
+
+    #[test]
+    fn summary_reports_count_and_all_specified() {
+        // Ported from `featuresSummary`: [] is NOT all-confirmed (an empty roster must not pass a
+        // gate by vacuous truth), one full feature is, and one bare feature breaks it.
+        let empty = features_summary(&[]);
+        assert_eq!((empty.count, empty.all_specified), (0, false));
+        let one = features_summary(&[full()]);
+        assert_eq!((one.count, one.all_specified), (1, true));
+        let two = features_summary(&[full(), PlanFeature { slug: "b".into(), name: "B".into(), ..Default::default() }]);
+        assert_eq!((two.count, two.all_specified), (2, false));
+    }
+
+    #[test]
+    fn summary_counts_specified_and_defined_apart() {
+        let s = features_summary(&[full(), PlanFeature { requires: vec!["x.rs".into()], ..full() }]);
+        assert_eq!((s.count, s.specified, s.defined), (2, 2, 1));
+    }
+
+    #[test]
+    fn a_populated_roster_does_not_complete_the_stage_until_the_user_confirms() {
+        // Ported from `featuresGateComplete` — the auto-complete removal. Data being complete and a
+        // human having looked are two axes, and collapsing them advanced the stage with nobody
+        // having read the list.
+        let populated = features_summary(&[full()]);
+        assert!(!features_gate_complete(&populated, false));
+        assert!(features_gate_complete(&populated, true));
+    }
+
+    #[test]
+    fn the_confirm_is_offered_only_once_everything_is_populated() {
+        // Ported from `featuresAwaitingConfirm`.
+        let mid = features_summary(&[full(), PlanFeature { slug: "b".into(), name: "B".into(), ..Default::default() }]);
+        assert!(!features_awaiting_confirm(&mid, false), "still populating → no offer");
+        let done = features_summary(&[full()]);
+        assert!(features_awaiting_confirm(&done, false), "all populated → offer the confirm");
+        assert!(!features_awaiting_confirm(&done, true), "already confirmed → nothing pending");
+    }
+
+    #[test]
+    fn an_acyclic_graph_reports_no_cycle() {
+        // Ported: a foundation many depend on is not a cycle.
+        let feats = vec![f("kernel", &[]), f("sketcher", &["kernel"]), f("assembly", &["kernel", "sketcher"])];
+        assert_eq!(feature_dependency_cycle(&feats), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_direct_cycle_is_found_and_closes_on_itself() {
+        let cyc = feature_dependency_cycle(&[f("a", &["b"]), f("b", &["a"])]);
+        assert_eq!(cyc.first(), cyc.last(), "the reported path closes on itself");
+        let set: std::collections::HashSet<&str> = cyc.iter().map(|s| s.as_str()).collect();
+        assert_eq!(set, ["a", "b"].into_iter().collect());
+    }
+
+    #[test]
+    fn a_self_dependency_is_a_cycle() {
+        assert_eq!(feature_dependency_cycle(&[f("a", &["a"])]), vec!["a".to_string(), "a".to_string()]);
+    }
+
+    #[test]
+    fn an_edge_to_an_unknown_slug_is_not_a_cycle() {
+        // A dangling `depends_on` is a separate problem — reporting it as a deadlock would send a
+        // reader looking for a loop that does not exist.
+        assert_eq!(feature_dependency_cycle(&[f("a", &["ghost"])]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_deep_chain_does_not_blow_the_stack() {
+        // The TS walked this recursively; the port is an explicit stack, so the roster length a user
+        // can author is not bounded by the caller's stack. 10k deep would overflow a naive recursion.
+        let feats: Vec<PlanFeature> = (0..10_000)
+            .map(|i| {
+                let deps: Vec<String> = if i + 1 < 10_000 { vec![format!("f{}", i + 1)] } else { vec![] };
+                PlanFeature { slug: format!("f{i}"), name: format!("f{i}"), depends_on: deps, ..Default::default() }
+            })
+            .collect();
+        assert_eq!(feature_dependency_cycle(&feats), Vec::<String>::new());
     }
 }
