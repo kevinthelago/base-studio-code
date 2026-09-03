@@ -23,6 +23,11 @@ const BUNDLED_SEEDS: &[&str] = &[
     "ui/style-descriptor.json",
     "ui/node-validation.fixtures.json",
     "stages/transformations.json",
+    // plandb's validation taxonomies, moved off `include_str!`
+    // (`the-plandb-data-embeds-move-to-runtime-resolution`).
+    "deploy/taxonomy.json",
+    "market/rubric.json",
+    "transformations/taxonomy.json",
 ];
 
 /// Stage the runtime-loaded seeds into `src-tauri/resources/data/…`, which is what

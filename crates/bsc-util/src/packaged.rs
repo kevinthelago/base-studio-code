@@ -69,6 +69,12 @@ pub const RUNTIME_SEEDS: &[&str] = &[
     "ui/style-descriptor.json",
     "ui/node-validation.fixtures.json",
     "stages/transformations.json",
+    // plandb, moved off `include_str!` so `src-tauri/data` can eventually be deleted entirely
+    // (`epic-one-external-source-backs-up-and-seeds-the-system`). Listing them ARMS the two guards:
+    // one fails if any is embedded again, the other fails without a bundle.resources entry.
+    "deploy/taxonomy.json",
+    "market/rubric.json",
+    "transformations/taxonomy.json",
 ];
 
 /// Every directory a packaged seed may live in, in resolution order.
