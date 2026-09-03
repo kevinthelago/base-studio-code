@@ -219,10 +219,18 @@ describe("the `operator` role is confined and can reach its own queue", () => {
     expect(roleCapability("operator").code).toBe("none");
   });
 
-  // The noun is chosen per SESSION, so a static role cannot name it. The bare `bsc` entry is what
-  // keeps every operator able to drive whichever noun it was pointed at; narrowing that to the
-  // assigned noun needs a per-pane profile and is deliberately follow-up, not silently missing.
-  it("keeps the whole `bsc` surface, because its noun is per-session", () => {
-    expect(restrictedRoleCommands("operator")).toContain("bsc");
+  // THE NOUN IS NOT HERE, AND MUST NOT BE. A bare `bsc` entry is rejected outright by
+  // `no floor carries a command that is not a bsc store verb` — an allow list saying all-of-bsc is not
+  // a confinement. What the role carries is the CROSS-CUTTING half every operator shares: read your
+  // surface, measure what it cost, report it, ask your maintainer. The per-session noun arrives on the
+  // generated per-pane profile (`surfaceOperatorProfile`), which is the only thing that can know it.
+  it("carries the cross-cutting operator surface, and never a bare `bsc`", () => {
+    const allow = restrictedRoleCommands("operator");
+    for (const c of ["bsc surface", "bsc request new", "bsc errors run", "bsc mem", "bsc session ask"]) {
+      expect(allow).toContain(c);
+    }
+    expect(allow).not.toContain("bsc");
+    // Every entry names a verb — the shape the floor guard enforces across all personas.
+    for (const c of allow) expect(c).toMatch(/^bsc [a-z]/);
   });
 });

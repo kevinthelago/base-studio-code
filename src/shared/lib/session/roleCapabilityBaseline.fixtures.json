@@ -224,7 +224,6 @@
       "net": "read",
       "ui": "read",
       "allow": [
-        "bsc",
         "bsc surface",
         "bsc request new",
         "bsc request list",

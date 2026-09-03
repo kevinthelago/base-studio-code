@@ -733,6 +733,7 @@
   "@data/personas/planner.json",
   "@data/personas/reviewer.json",
   "@data/personas/sound-designer.json",
+  "@data/personas/surface-operator.json",
   "@data/personas/tester.json",
   "@data/personas/triage.json",
   "@data/personas/worker.json",
