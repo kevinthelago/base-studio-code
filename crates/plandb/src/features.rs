@@ -12,6 +12,71 @@ use serde::{Deserialize, Serialize};
 /// stage works titles-first: register the whole roster (name only), then fill each in one at a time.
 /// Mirrors the frontend `PlanFeature`; `serde` emits the camelCase JSON `parseFeaturesFile` reads. A
 /// feature is "defined" once it has a name, behavior, and ≥1 acceptance.
+/// One entry in a feature's `requires` — a record id, optionally carrying who added it and why.
+///
+/// UNTAGGED with the bare-string arm FIRST, so every `requires` list authored before this — and every
+/// hand-written `["merge.rs", "binary-search.ts"]` — deserializes and re-serializes unchanged. Serde
+/// tries the arms in order, so a string stays a string and only an object becomes an [`Entry`].
+///
+/// The object arm exists because the point of populating `requires` is being able to tell a
+/// DIRECTOR's seed from a WORKER's mid-task discovery, and a list of bare ids cannot. Without the
+/// provenance, running both approaches produces one merged list and no answer about which worked.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum RequiredRef {
+    /// A bare id — the legacy and hand-authored shape.
+    Id(String),
+    /// An id with provenance.
+    Entry {
+        id: String,
+        /// Who added it (`--by`). Absent rather than guessed: `resolve_origin`'s rule, and an
+        /// invented author is worse than none when the whole point is attribution.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
+        /// When, ISO-8601 UTC.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<String>,
+        /// Why this record is needed — the half a bare id loses.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    },
+}
+
+impl RequiredRef {
+    /// The record id, whichever shape the entry takes — what every reader actually wants.
+    pub fn id(&self) -> &str {
+        match self {
+            RequiredRef::Id(id) => id,
+            RequiredRef::Entry { id, .. } => id,
+        }
+    }
+
+    /// Who added it, when known.
+    pub fn by(&self) -> Option<&str> {
+        match self {
+            RequiredRef::Id(_) => None,
+            RequiredRef::Entry { by, .. } => by.as_deref(),
+        }
+    }
+}
+
+/// A bare id converts, so `vec!["merge.rs".into()]` keeps meaning what it always did.
+///
+/// Not sugar: the bare-id shape is the one every existing caller and every hand-authored plan uses,
+/// and making it awkward would push authors toward the object form for entries that carry no
+/// provenance — which is how a list of `{"id": …}` with three nulls each ends up in the store.
+impl From<&str> for RequiredRef {
+    fn from(id: &str) -> Self {
+        RequiredRef::Id(id.to_string())
+    }
+}
+
+impl From<String> for RequiredRef {
+    fn from(id: String) -> Self {
+        RequiredRef::Id(id)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanFeature {
@@ -60,7 +125,7 @@ pub struct PlanFeature {
     /// the graph may be unreachable when a plan is written, so a wrong id is a dangling reference, not a
     /// corrupt plan.
     #[serde(default)]
-    pub requires: Vec<String>,
+    pub requires: Vec<RequiredRef>,
 }
 
 /// kebab-case slug from a name (mirrors the frontend `slugify`).
@@ -114,10 +179,24 @@ impl Store {
             params![
                 slug, feature.name, feature.behavior, phase_to_db(&feature.phase), feature.approach, feature.data,
                 feature.stream, arr_to_json(&feature.acceptance), arr_to_json(&feature.tools),
-                arr_to_json(&feature.depends_on), arr_to_json(&feature.requires), pos,
+                arr_to_json(&feature.depends_on),
+                serde_json::to_string(&feature.requires).unwrap_or_else(|_| "[]".into()),
+                pos,
             ],
         )?;
         Ok(slug)
+    }
+
+    /// Empty a feature's `requires` outright.
+    ///
+    /// `feature_upsert` deliberately KEEPS the stored array when the submitted one is `[]` — the merge
+    /// rule every array field follows, so a titles-first detail pass cannot wipe a list it did not
+    /// restate. That rule makes removing the LAST entry a silent no-op through the normal path, so the
+    /// clear needs its own statement.
+    pub fn feature_requires_clear(&self, slug: &str) -> rusqlite::Result<()> {
+        self.conn
+            .execute("UPDATE features SET requires = '[]', updated_at = strftime('%s','now') WHERE slug = ?1", rusqlite::params![slug])?;
+        Ok(())
     }
 
     /// Fetch one feature by `slug`, or `None`.
@@ -164,7 +243,10 @@ fn row_to_feature(r: &rusqlite::Row) -> rusqlite::Result<PlanFeature> {
         acceptance: json_to_arr(&r.get::<_, String>(7)?),
         tools: json_to_arr(&r.get::<_, String>(8)?),
         depends_on: json_to_arr(&r.get::<_, String>(9)?),
-        requires: json_to_arr(&r.get::<_, String>(10)?),
+        // Not `json_to_arr`: an entry may be a bare id OR an object carrying provenance, and
+        // `Vec<String>` cannot hold the second. Lenient like its neighbours — a malformed column
+        // yields an empty list rather than failing the whole read.
+        requires: serde_json::from_str(&r.get::<_, String>(10)?).unwrap_or_default(),
     })
 }
 
@@ -275,13 +357,13 @@ mod tests {
 
         s.feature_upsert(&PlanFeature {
             slug: "sketcher".into(),
-            requires: vec!["merge.rs".into(), "binary-search.ts".into()],
+            requires: vec![RequiredRef::Id("merge.rs".into()), RequiredRef::Id("binary-search.ts".into())],
             ..Default::default()
         })
         .unwrap();
         assert_eq!(
-            s.feature_get("sketcher").unwrap().unwrap().requires,
-            vec!["merge.rs".to_string(), "binary-search.ts".to_string()],
+            s.feature_get("sketcher").unwrap().unwrap().requires.iter().map(RequiredRef::id).collect::<Vec<_>>(),
+            vec!["merge.rs", "binary-search.ts"],
         );
 
         // A later detail edit that omits `requires` must NOT wipe it.
@@ -289,8 +371,50 @@ mod tests {
         assert_eq!(s.feature_get("sketcher").unwrap().unwrap().requires.len(), 2, "requires survives a later edit");
 
         // …and a non-empty write DOES replace it (the planner correcting itself).
-        s.feature_upsert(&PlanFeature { slug: "sketcher".into(), requires: vec!["merge.rs".into()], ..Default::default() }).unwrap();
-        assert_eq!(s.feature_get("sketcher").unwrap().unwrap().requires, vec!["merge.rs".to_string()]);
+        s.feature_upsert(&PlanFeature { slug: "sketcher".into(), requires: vec![RequiredRef::Id("merge.rs".into())], ..Default::default() }).unwrap();
+        assert_eq!(
+            s.feature_get("sketcher").unwrap().unwrap().requires.iter().map(RequiredRef::id).collect::<Vec<_>>(),
+            vec!["merge.rs"],
+        );
+    }
+
+    /// A BARE-ID list and an ENTRY carrying provenance live in the same column, and a legacy list
+    /// round-trips byte-identically (`a-feature-declares-what-it-requires`).
+    ///
+    /// The untagged enum's arm ORDER is what makes that true — serde tries `Id(String)` first, so a
+    /// string stays a string. If the arms were swapped, every legacy `["merge.rs"]` would fail to
+    /// deserialize and a feature's whole requires list would read as empty: the lenient
+    /// `unwrap_or_default` on the column would turn a shape error into silent data loss.
+    #[test]
+    fn a_requires_entry_may_be_a_bare_id_or_carry_provenance() {
+        let s = Store::open_in_memory().unwrap();
+        s.feature_upsert(&feat("Sketcher")).unwrap();
+        s.feature_upsert(&PlanFeature {
+            slug: "sketcher".into(),
+            requires: vec![
+                RequiredRef::Id("legacy.rs".into()),
+                RequiredRef::Entry {
+                    id: "seeded.rs".into(),
+                    by: Some("director".into()),
+                    at: Some("2026-09-03T00:00:00Z".into()),
+                    note: Some("the reference sort".into()),
+                },
+            ],
+            ..Default::default()
+        })
+        .unwrap();
+
+        let got = s.feature_get("sketcher").unwrap().unwrap().requires;
+        assert_eq!(got.iter().map(RequiredRef::id).collect::<Vec<_>>(), vec!["legacy.rs", "seeded.rs"]);
+        // The bare one carries NO author — absent, never invented, which is the whole point of being
+        // able to tell a seeded entry from a discovered one.
+        assert_eq!(got[0].by(), None);
+        assert_eq!(got[1].by(), Some("director"));
+
+        // And a bare id re-serializes as a STRING, not as an object with three nulls — so a legacy
+        // list survives a read-write cycle unchanged.
+        let json = serde_json::to_string(&got).unwrap();
+        assert!(json.starts_with(r#"["legacy.rs",{"#), "a bare id stays a bare id: {json}");
     }
 
     /// It rides the camelCase wire like every sibling field, so `features.json` and the frontend model
@@ -299,14 +423,14 @@ mod tests {
     fn feature_requires_serializes_camel_case() {
         let json = serde_json::to_string(&PlanFeature {
             slug: "s".into(),
-            requires: vec!["merge.rs".into()],
+            requires: vec![RequiredRef::Id("merge.rs".into())],
             ..Default::default()
         })
         .unwrap();
         assert!(json.contains("\"requires\":[\"merge.rs\"]"), "wire shape: {json}");
         // And reads back.
         let back: PlanFeature = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.requires, vec!["merge.rs".to_string()]);
+        assert_eq!(back.requires.iter().map(RequiredRef::id).collect::<Vec<_>>(), vec!["merge.rs"]);
         // An older payload with no `requires` still parses (serde default) — no migration on the wire.
         let old: PlanFeature = serde_json::from_str(r#"{"slug":"s","name":"S"}"#).unwrap();
         assert!(old.requires.is_empty());
