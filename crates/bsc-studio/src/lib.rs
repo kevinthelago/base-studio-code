@@ -1142,11 +1142,9 @@ pub fn verify_backup(dir: &Path) -> Result<VerifyReport, String> {
     for (kind, listed) in [("store", &manifest.stores), ("plan", &manifest.plans)] {
         let sub = if kind == "store" { "stores" } else { "plans" };
         for captured in listed {
-            let name = if kind == "store" {
-                format!("{}.db", captured.name)
-            } else {
-                format!("{}.db", captured.name)
-            };
+            // Both tiers name their file the same way — `vacuum_into` records the file STEM, so the
+            // suffix is added back here for either kind.
+            let name = format!("{}.db", captured.name);
             let path = dir.join(sub).join(&name);
             if !path.is_file() {
                 missing.push(format!("{sub}/{name}"));
