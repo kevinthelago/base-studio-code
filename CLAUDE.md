@@ -253,6 +253,38 @@ A worker records its before/after on its change record with `bsc plan change per
 <before> <after>`, which renders into the change and reaches the director. **Nothing here can fail a
 gate** — that is deliberate, and it is why the reviewer is the only reader who acts on a regression.
 
+### Backing this machine up — `bsc studio save --all`
+
+Nothing here is pushed to a remote by policy, so the stores and the git environment exist on ONE
+disk. The full runbook, including restore, is [`docs/backup-and-restore.md`](docs/backup-and-restore.md).
+
+```bash
+bsc studio save "full-system" --all --out /path/to/dest   # every store + every plan.db
+bsc studio save help                                      # the per-system flags, FROM the roster
+```
+
+`--dir` is which install to **read**; `--out` is where the backup **goes**. That split is the whole
+point of the flag: `--dir <empty>` used to create empty stores at the destination and back up THOSE,
+reporting success.
+
+**Capture is by DISCOVERY, not a roster.** Every `*.db` under the base dir is taken, so a store a
+future crate adds is backed up without anyone remembering a row. That direction was chosen after the
+allow-list silently omitted `atlas.db`, and the roster guard only caught it because one developer's
+machine happened to have created the file. An unknown store is CAPTURED — a backup holding something
+unnecessary costs disk, one missing something costs the data.
+
+`secrets.db` is captured by **nothing**, and that omission is recorded rather than silent: the values
+live in the OS keychain, but which services you are paired with is itself disclosure, and restoring
+those rows on another machine would describe pairings that machine does not have.
+
+Two refusals, both because a backup must not lie: an all-empty source is refused naming what it found
+bare, and an `--out` at a `.json` path is refused when a database-backed system forces a directory.
+
+**Verify on the far end, never locally** — a local check proves the bytes you made, not the ones that
+arrived. And note `git clone --mirror` is NOT a git backup here: it keeps `refs/stash` (the top entry)
+but not its reflog, so it preserved **1 of 32** stashes when measured.
+
+
 ## Project Structure
 
 ```
@@ -476,7 +508,7 @@ and the same data is reached with `bsc plan`.
 The planning page is a split: the live Claude session (terminal, center) + the **focused project pane** (`ProjectPane.tsx`, `focus` mode). The pane shows **one phase at a time** — a navigable **stepper** (per-phase status from `sectionStatus`: complete/active/locked/upcoming, incomplete phases pulse), a phase header with a **gate pill** (`evalGate`), lock/done banners, the phase body (Context / Structure+lens / Permissions+director, else a generic card), and a **footer advance bar** (back · jump/back-to-current · approve & continue when the gate passes · publish). It auto-follows the live session (`currentSection` = active phase) while letting the user navigate; selection resets on a project switch. Pure model: `focusedPlan.ts`; shell: `FocusedShell.tsx`. (Replaced the all-sections scroll + the full-width N-bar.)
 
 ### Blueprints — the lifecycle library (#609 / #645 / #636 / #647 / #3785)
-A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`; UI: the library rail + blueprint cards in `list/ProjectsList.tsx` / `list/BlueprintCard.tsx` (each card offers *use for new projects* · *delete* for user blueprints), with import/update modals in `blueprints/`.
+A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`. **The library UI is gone** with the rest of the planner screen (`delete-the-planner-ui-keep-the-planner`) — `list/ProjectsList.tsx` and `list/BlueprintCard.tsx` no longer exist, and neither do the import/update modals. Blueprints are reached with `bsc blueprint`; the one surviving in-app surface is the `blueprintpicker` component record.
 - **Goal/domain routes, not lifecycle selectors (#645/#3785):** a blueprint is a curated planning **route for a domain**, carrying a `mode` (`create` vs `operate`, which selects the planner intro), its own `icon`/`h` for the card tile, and a curated feature list. Packaged set: **Default** (the blank/general route) + the domain routes **CRM · ERP · Helpdesk/ITSM · HR/HCM · Project Management**. The Library searches by free text (`filterBlueprints`).
   The lifecycle `category` field is **gone** (#3785) — it had degenerated to the same `greenfield` on every packaged blueprint, so it coloured every card identically and never varied a weight table. **Lifecycle is discovered per PROJECT** at discovery (`ClassifyConfig.lifecycle`, #3784) and is what Glance's project-node colouring and the Market rubric's weight table now read. `mode` (not the old category) decides whether a built-in auto-pins the packaged UI kit.
 - **Skills (#636):** a section (or the whole blueprint) can attach reusable **skills** — the Skills library (`blueprintSkills.ts`). They're resolved and written to the hub's `skills.md` for the planner, and inlined into each worker's `CLAUDE.local.md` at fleet launch (`ensure_worktree`).
@@ -574,7 +606,7 @@ Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a har
 Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for the user, #297), the worker↔director Q&A pair `bsc-ask`/`bsc-answer`, the `bsc-issue`/`bsc-assign` capture-and-route emitters, the planner→director/issuer `bsc-brief` channel (#2377 — the planner's runtime voice, pushing a mid-build plan update into the running fleet; folds into `CoordState.briefs` and the director pump surfaces it, once per pane, to reconcile + route onward via `bsc-assign`), and the completion emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) surfaces paused / blocked-on-a-question / ready sessions for the user. **Runtime dependency-wait was removed (#1039):** there is no `bsc-blocked --on` and no coordinator auto-wake — `dependsOn` is a *planning-time* sequencing hint only; at run time workers build against the planned contracts in parallel and never park on an upstream, and the director owns contracts + integration.
 
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)
-Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc.rs`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
+Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc/`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
 
 **The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`; `bsc teams model <team> <node> <tier>` overrides ONE placement's model, where `bsc persona model` moves an identity's default everywhere it is placed), `bsc project` (project-hub list/published), and `bsc files` (file tree + `read`, the root-confined file-text
 verb a session reaches for when neither harvest lifts a module — #4161). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
