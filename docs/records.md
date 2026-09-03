@@ -430,7 +430,8 @@ shortened the text would corrupt every offset after the first comment.
 
 ### The two guards that stand outside the gate
 
-- **`npm run census:claims`** — `providesMatchesItsFile.test.ts` asks the right question and structurally
+- **The `provides` claim census** (the `npm run census:claims` target is GONE; the check now lives
+  only in the test named next) — `providesMatchesItsFile.test.ts` asks the right question and structurally
   cannot answer it where it matters: it globs the packaged SEED, because a vitest run has no store. But
   `provides` is resolved at RUNTIME against the STORE, so seed-clean + store-divergent is green everywhere
   and still breaks the running app. Run this before trusting that overrides are sane.
