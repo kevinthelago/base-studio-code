@@ -208,7 +208,7 @@ impl Store {
     /// Delete a skill by `id` (no-op if absent). Note: this does NOT scrub the id from any group's
     /// `skill_ids` — `resolve` filters to existing skills, so a dangling member id is harmless.
     pub fn remove(&self, id: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM skills WHERE id = ?1", params![id])?;
+        bsc_sqlite_util::delete_by(&self.conn, "skills", "id", id)?;
         Ok(())
     }
 
@@ -266,7 +266,7 @@ impl Store {
 
     /// Delete a group by `id` (no-op if absent).
     pub fn group_remove(&self, id: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM skill_groups WHERE id = ?1", params![id])?;
+        bsc_sqlite_util::delete_by(&self.conn, "skill_groups", "id", id)?;
         Ok(())
     }
 

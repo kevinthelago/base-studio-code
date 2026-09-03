@@ -101,7 +101,7 @@ impl Store {
 
     /// Remove one stream by id (no-op if absent).
     pub fn fleet_stream_remove(&self, id: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM fleet_streams WHERE id = ?1", params![id])?;
+        bsc_sqlite_util::delete_by(&self.conn, "fleet_streams", "id", id)?;
         Ok(())
     }
 

@@ -135,7 +135,7 @@ impl Store {
 
     /// Remove one transformation by id (no-op if absent).
     pub fn transformation_remove(&self, id: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM transformations WHERE id = ?1", params![id.trim()])?;
+        bsc_sqlite_util::delete_by(&self.conn, "transformations", "id", id.trim())?;
         Ok(())
     }
 }

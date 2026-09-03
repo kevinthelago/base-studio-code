@@ -356,7 +356,7 @@ impl Store {
 
     /// Delete a change record.
     pub fn change_remove(&self, r: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM changes WHERE ref = ?1", params![r.trim()])?;
+        bsc_sqlite_util::delete_by(&self.conn, "changes", "ref", r.trim())?;
         Ok(())
     }
 }

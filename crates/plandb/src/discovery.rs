@@ -24,7 +24,7 @@ impl Store {
                 params![t, pos],
             )?;
         } else {
-            self.conn.execute("DELETE FROM discovery WHERE topic = ?1", params![t])?;
+            bsc_sqlite_util::delete_by(&self.conn, "discovery", "topic", t)?;
         }
         Ok(())
     }

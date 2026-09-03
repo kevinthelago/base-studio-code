@@ -259,7 +259,7 @@ impl Store {
 
     /// Delete an issue by `ref` (no-op if absent).
     pub fn remove(&self, r#ref: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM issues WHERE ref = ?1", params![r#ref])?;
+        bsc_sqlite_util::delete_by(&self.conn, "issues", "ref", r#ref)?;
         Ok(())
     }
 

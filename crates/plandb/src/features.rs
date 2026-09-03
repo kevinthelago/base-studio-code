@@ -139,7 +139,7 @@ impl Store {
 
     /// Delete a feature by `slug` (no-op if absent).
     pub fn feature_remove(&self, slug: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM features WHERE slug = ?1", params![slug])?;
+        bsc_sqlite_util::delete_by(&self.conn, "features", "slug", slug)?;
         Ok(())
     }
 

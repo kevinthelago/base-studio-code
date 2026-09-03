@@ -160,7 +160,7 @@ impl Store {
 
     /// Permanently delete a lesson candidate.
     pub fn lesson_remove(&self, id: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM lessons WHERE id = ?1", params![id.trim()])?;
+        bsc_sqlite_util::delete_by(&self.conn, "lessons", "id", id.trim())?;
         Ok(())
     }
 

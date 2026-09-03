@@ -105,7 +105,7 @@ impl Store {
 
     /// Drop a declared integration by `id` (no-op if absent).
     pub fn integration_remove(&self, id: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM integrations WHERE id = ?1", params![id])?;
+        bsc_sqlite_util::delete_by(&self.conn, "integrations", "id", id)?;
         Ok(())
     }
 }

@@ -31,7 +31,7 @@ impl Store {
 
     /// Unlink a repo by `full_name` (no-op if absent).
     pub fn repo_remove(&self, full_name: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM repos WHERE full_name = ?1", params![full_name])?;
+        bsc_sqlite_util::delete_by(&self.conn, "repos", "full_name", full_name)?;
         Ok(())
     }
 }

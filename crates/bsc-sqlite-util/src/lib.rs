@@ -427,3 +427,99 @@ mod conn_tests {
         clear_tables(&conn, &[]).unwrap();
     }
 }
+
+#[cfg(feature = "conn")]
+/// Delete the row whose `col` equals `key`, from `table`.
+///
+/// ## What this replaces
+///
+/// `bsc graph dupes crates` reported a 9-member and a 7-member same-shape group over THIRTEEN
+/// functions across `plandb` and `skilldb` that were one line of SQL apiece and identical modulo the
+/// table and column:
+///
+/// ```ignore
+/// pub fn feature_remove(&self, slug: &str) -> rusqlite::Result<()> {
+///     self.conn.execute("DELETE FROM features WHERE slug = ?1", params![slug])?;
+///     Ok(())
+/// }
+/// ```
+///
+/// ## `&'static str` IS THE SAFETY, and it is structural rather than a comment
+///
+/// Interpolating a table name into SQL is an injection shape — rusqlite can bind a VALUE but not an
+/// identifier, so `table` and `col` have to be formatted in. That is safe here because every call
+/// site passes a literal, but "is safe" and "cannot be unsafe" are different claims. Taking
+/// `&'static str` makes the second one true: a runtime `String` — anything read from stdin, a CLI
+/// argument, a database row — will not coerce, so the wrong thing does not compile.
+///
+/// The KEY is still a bound parameter, exactly as before. Only the identifiers are interpolated.
+///
+/// ## The per-table functions stay
+///
+/// Each `<noun>_remove` remains as a one-line delegation. They are the typed surface callers use, and
+/// replacing them with a stringly-typed `delete_by(conn, "features", "slug", k)` at every call site
+/// would trade a real type check for a smaller line count. What is removed is the repeated BODY.
+///
+/// Deleting an absent key is a no-op, not an error — every one of the thirteen relied on that.
+pub fn delete_by(
+    conn: &rusqlite::Connection,
+    table: &'static str,
+    col: &'static str,
+    key: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(&format!("DELETE FROM {table} WHERE {col} = ?1"), rusqlite::params![key])?;
+    Ok(())
+}
+
+#[cfg(all(test, feature = "conn"))]
+mod delete_by_tests {
+    use super::*;
+
+    fn db() -> rusqlite::Connection {
+        let c = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");
+        c.execute_batch(
+            "CREATE TABLE features (slug TEXT PRIMARY KEY, body TEXT);
+             INSERT INTO features VALUES ('a','one'), ('b','two');",
+        )
+        .expect("schema");
+        c
+    }
+
+    fn slugs(c: &rusqlite::Connection) -> Vec<String> {
+        let mut s = c.prepare("SELECT slug FROM features ORDER BY slug").expect("prepare");
+        let v: rusqlite::Result<Vec<String>> = s.query_map([], |r| r.get(0)).expect("query").collect();
+        v.expect("rows")
+    }
+
+    #[test]
+    fn deletes_only_the_named_row() {
+        let c = db();
+        delete_by(&c, "features", "slug", "a").expect("delete");
+        assert_eq!(slugs(&c), vec!["b"], "the sibling row must survive");
+    }
+
+    #[test]
+    fn an_absent_key_is_a_no_op_rather_than_an_error() {
+        // All thirteen folded functions relied on this: `remove` of something already gone is not a
+        // failure, and callers do not check a row count.
+        let c = db();
+        delete_by(&c, "features", "slug", "ghost").expect("an absent key must not error");
+        assert_eq!(slugs(&c), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn the_key_is_bound_not_interpolated() {
+        // The identifiers are formatted in; the KEY is a bound parameter. A key carrying SQL must be
+        // treated as a value that matches nothing, never as syntax — if this ever regressed to
+        // `format!`ing the key, the table would be dropped and `slugs` would fail to prepare.
+        let c = db();
+        delete_by(&c, "features", "slug", "a'; DROP TABLE features; --").expect("hostile key is a value");
+        assert_eq!(slugs(&c), vec!["a", "b"], "nothing matched, and the table is intact");
+    }
+
+    #[test]
+    fn a_missing_table_surfaces_as_an_error_rather_than_silence() {
+        let c = db();
+        assert!(delete_by(&c, "nope", "slug", "a").is_err(), "a bad identifier must not pass quietly");
+    }
+}

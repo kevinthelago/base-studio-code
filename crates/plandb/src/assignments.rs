@@ -77,7 +77,7 @@ impl Store {
 
     /// Unassign an automation by `name` (no-op if absent).
     pub fn automation_remove(&self, name: &str) -> rusqlite::Result<()> {
-        self.conn.execute("DELETE FROM automations WHERE name = ?1", params![name])?;
+        bsc_sqlite_util::delete_by(&self.conn, "automations", "name", name)?;
         Ok(())
     }
 
