@@ -68,6 +68,33 @@ describe("team role-actor hub launch (#3103)", () => {
     expect(useAppStore.getState().paneModels[`${KEY}:curator`]).toBeUndefined();
   });
 
+  it("launches a role-actor on a LOCAL model, and routes it to bsc-agent rather than Claude", () => {
+    // `a-node-cannot-carry-a-local-model`, at the far end. The unit half is
+    // `src/features/planner/fleet/teamFleet.test.ts` (the position → stream hop, where the value used
+    // to be dropped); this is the half that proves a carried local model actually changes which
+    // HARNESS the session runs on. Asserting only `paneModels` would pass with the session still
+    // launching Claude Code — the exact silent-no-op shape the item was filed about.
+    useAppStore.setState({
+      tabs: [], bscBaseDir: "/home/user/.base-studio-code", fleetPaneStreams: {}, paneModels: {},
+      paneProviders: {}, personas: [curatorPersona],
+    });
+    useAppStore.getState().fleetStartProject(NAME, fleet([{ ...curatorStream, model: "qwen3.5:35b-a3b" }]), KEY, { hubPath: HUB });
+    const pane = `${KEY}:curator`;
+    expect(useAppStore.getState().paneModels[pane]).toBe("qwen3.5:35b-a3b");
+    expect(useAppStore.getState().paneProviders[pane]).toBe("bsc-agent");
+  });
+
+  it("keeps a Claude TIER on the claude harness — the local routing is derived, not global", () => {
+    // The counterpart that stops the fix from over-reaching: `providerForModel` derives `bsc-agent`
+    // from a model being OUTSIDE the tier registry, so a tier must go on producing no such provider.
+    useAppStore.setState({
+      tabs: [], bscBaseDir: "/home/user/.base-studio-code", fleetPaneStreams: {}, paneModels: {},
+      paneProviders: {}, personas: [curatorPersona],
+    });
+    useAppStore.getState().fleetStartProject(NAME, fleet([{ ...curatorStream, model: "haiku-4.5" }]), KEY, { hubPath: HUB });
+    expect(useAppStore.getState().paneProviders[`${KEY}:curator`]).not.toBe("bsc-agent");
+  });
+
   it("falls back to the derived hub dir when no absolute hubPath is passed (never a worktree path)", () => {
     useAppStore.getState().fleetStartProject(NAME, fleet([curatorStream]), KEY);
     const cwd = useAppStore.getState().paneCwds[`${KEY}:curator`];
