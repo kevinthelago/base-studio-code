@@ -63,6 +63,12 @@ function build() {
           capability: {
             role: cap.role,
             github: cap.github, git: cap.git, code: cap.code, net: cap.net, ui: cap.ui,
+            // `graph` joins the projection the moment `roleDeniedCommands` starts reading it. This is
+            // the exact trap the comment above records: a derivation that reads a field the fixture
+            // does not carry cannot be reproduced from the fixture, and Rust's parity test fails
+            // pointing at the DERIVATION when the fault is in what was captured
+            // (`the-algorithms-graph-has-no-write-gate`).
+            graph: cap.graph,
             writeGlobs: cap.writeGlobs ?? [],
             allow: [...(cap.allow ?? [])],
             surfaces: cap.surfaces ? [...cap.surfaces] : null,

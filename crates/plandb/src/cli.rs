@@ -237,6 +237,7 @@ USAGE:
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
   bsc plan fleet get --kind <k>       # filter to streams of one lifecycle kind (see below)
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
+  bsc plan fleet stream feature <id> <feature-slug>   # which FEATURE this stream belongs to (--clear to unset)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
   bsc plan fleet model <id> <model>   # the model ONE stream launches on (--clear to unset)
   bsc plan fleet remove <stream-id>   # drop one stream
@@ -252,6 +253,16 @@ orphaned code and has nothing left to own once those paths are gone). Absent rea
 existing streams need no backfill. `fleet get --kind cleanup` filters the streams array to that one
 kind (case-insensitive) — the way a director finds every temporary/cleanup stream across a project
 without reading each one's free-text name. An unrecognized --kind is rejected, not silently empty.
+
+`fleet stream feature` places a stream UNDER a feature. A feature owns MANY streams — studio-code has
+89 streams across 44 features — so the relation lives on the stream; `PlanFeature.stream` is the old
+1:1 and is superseded. The launch resolves a worker's reference implementations through it: stream →
+its feature → that feature's `requires`. A stream that names none FALLS BACK to its own id, which is
+how the 37 streams whose id already IS a feature slug keep working with no backfill.
+
+A dangling slug is REFUSED, and that matters more than it looks: the fallback means a typo would not
+error anywhere — the launch would quietly resolve to the stream id and you would never learn the
+feature you named was not the one the worker got.
 
 `fleet model` is the DIRECTOR's level of the model precedence chain, nearest-first:
     a fleet stream's own model > a team placement's (`bsc teams model`) >
@@ -304,7 +315,23 @@ uiMode (custom = the
 in-app designer preview, external = the Claude-Design drop-files intake — only meaningful when
 uiSystem is studio), appType, lifecycle, and the booleans
 needsMarket / needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
-(market / source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
+(market / source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.
+
+`model` is WHICH MODEL this project's sessions run on — a Claude tier (haiku-4.5 | sonnet-4.5 |
+opus-4.5) or a model this machine has installed (`bsc llm status` lists them), checked against both at
+set time by the same rule `bsc persona model` and `bsc teams model` apply. It is the PROJECT's level
+of the precedence chain, nearest first:
+
+    bsc plan fleet model <stream>   the stream
+      > bsc teams model <team> <node>   the NODE
+      > this                             the PROJECT, decided at Discovery
+      > bsc persona model <persona>      the shared identity
+      > the harness's own default        (no --model at all)
+
+The project sits above the persona because a persona is a global library identity placed in every
+project, and a decision taken about THIS project is nearer to it than a global default. Omit it to
+leave every session on its persona's default — that is the state of every project classified before
+the axis existed, and nothing about them changes.",
     },
     CmdDoc {
         name: "market",

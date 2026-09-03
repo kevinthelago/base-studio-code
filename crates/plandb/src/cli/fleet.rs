@@ -136,10 +136,65 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
                 let v: serde_json::Value = read_stdin_json_one("stream JSON")?;
                 if !args.force {
                     crate::validate::validate_fleet_stream(id, &v)?;
+                    verify_stream_feature(&s, &v)?;
                 }
                 s.fleet_stream_set(id, &v).map_err(|e| e.to_string())?;
                 if !args.json {
                     println!("stream set {id}");
+                }
+                Ok(())
+            }
+            // `fleet stream feature <id> <slug>` / `--clear` — set ONE stream's feature without a
+            // read-modify-write over the whole stream blob (`a-feature-owns-many-streams`).
+            //
+            // Granular for the reason `bsc teams model` is: `stream set` is a whole-object upsert, so
+            // assigning a feature through it means reading the stream, hand-merging one key and writing
+            // it all back — and every field the caller forgets to restate is dropped. Across 89 streams
+            // that is 89 chances to lose a stream's `owns` globs or its flow.
+            //
+            // It is also the verb a FEATURE NODE calls to claim a stream it created, which is the shape
+            // the maintainer asked for: streams are created under their feature rather than designed
+            // centrally by the director.
+            "feature" => {
+                let id = args
+                    .positional
+                    .get(3)
+                    .ok_or("usage: bsc plan fleet stream feature <stream-id> <feature-slug> | --clear")?;
+                let clear = args.clear;
+                let slug = args.positional.get(4).map(String::as_str).map(str::trim).filter(|x| !x.is_empty());
+                if clear && slug.is_some() {
+                    return Err("fleet stream feature: --clear takes no slug — pass one or the other".into());
+                }
+                if !clear && slug.is_none() {
+                    return Err("usage: bsc plan fleet stream feature <stream-id> <feature-slug> | --clear".into());
+                }
+                let mut row = s
+                    .fleet_stream_get(id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("fleet stream feature: no stream '{id}' (list them with `bsc plan fleet get`)"))?;
+                let obj = row
+                    .as_object_mut()
+                    .ok_or_else(|| format!("fleet stream feature: stream '{id}' is not a JSON object"))?;
+                match slug {
+                    // Cleared by REMOVING the key: absence is what "falls back to the stream id" already
+                    // looks like for every stream that never set one, and an empty string would be a
+                    // second spelling of it that the launch resolver would have to know about.
+                    None => {
+                        obj.remove("feature");
+                    }
+                    Some(f) => {
+                        obj.insert("feature".into(), serde_json::Value::String(f.to_string()));
+                    }
+                }
+                if !args.force {
+                    verify_stream_feature(&s, &row)?;
+                }
+                s.fleet_stream_set(id, &row).map_err(|e| e.to_string())?;
+                if !args.json {
+                    match slug {
+                        Some(f) => println!("stream {id} → feature {f}"),
+                        None => println!("stream {id} → (no feature; falls back to its own id)"),
+                    }
                 }
                 Ok(())
             }
@@ -432,5 +487,124 @@ mod tests {
         // indistinguishable from "no streams of that kind exist"
         let err = filter_fleet_by_kind(&full, "urgent").unwrap_err();
         assert!(err.contains("--kind must be one of"), "{err}");
+    }
+}
+
+/// A stream's `feature` must name a feature that EXISTS (`a-feature-owns-many-streams`).
+///
+/// The shape check lives in `validate_fleet_stream`, which is pure; whether the slug is real needs the
+/// store, so it is asked here — the same split `bsc plan classify` makes for its `model` axis.
+///
+/// A DANGLING slug is refused rather than stored, and that is the whole value of the check. The launch
+/// resolves a stream's feature and falls back to the stream id when it finds none, so a typo would not
+/// error anywhere — it would silently resolve to the fallback and the author would never learn that the
+/// feature they named was not the one the worker got.
+fn verify_stream_feature(s: &crate::Store, v: &serde_json::Value) -> Result<(), String> {
+    let Some(slug) = v.get("feature").and_then(|f| f.as_str()).map(str::trim).filter(|f| !f.is_empty())
+    else {
+        return Ok(());
+    };
+    match s.feature_get(slug) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => {
+            let have = s
+                .feature_list()
+                .map(|fs| fs.iter().map(|f| f.slug.clone()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            Err(format!(
+                "stream: \"feature\": '{slug}' is not a feature of this project.\n  known: {}\n  \
+                 (register it first with `bsc plan feature add`, or omit \"feature\" to fall back to the stream's own id)",
+                if have.is_empty() { "(none)".to_string() } else { have.join(", ") }
+            ))
+        }
+        Err(e) => Err(format!("stream: could not read the feature roster: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod stream_feature_tests {
+    use super::*;
+
+    /// A store with one feature and two streams that will sit under it — the many:1 the item is about.
+    fn seeded(tag: &str) -> (crate::Store, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("plandb-streamfeat-{tag}-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let s = crate::Store::open(&path).unwrap();
+        s.feature_upsert(&crate::PlanFeature {
+            slug: "payments".into(),
+            name: "Payments".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        s.fleet_set(&serde_json::json!({
+            "streams": [
+                { "id": "checkout", "name": "Checkout", "repo": "o/r", "owns": ["src/checkout/**"], "flow": { "push": "auto-pr" } },
+                { "id": "refunds",  "name": "Refunds",  "repo": "o/r", "owns": ["src/refunds/**"] },
+            ]
+        }))
+        .unwrap();
+        (s, path)
+    }
+
+    /// A DANGLING slug is refused rather than stored (`a-feature-owns-many-streams`).
+    ///
+    /// This is the check that earns its keep, because a typo has no other way to surface: the launch
+    /// resolves a stream's feature and FALLS BACK to the stream id when it finds none, so a misspelled
+    /// slug would not error anywhere — it would quietly resolve to the fallback and the author would
+    /// never learn the feature they named was not the one the worker got.
+    #[test]
+    fn a_dangling_feature_slug_is_refused_and_the_error_names_the_roster() {
+        let (s, path) = seeded("dangling");
+        let row = serde_json::json!({ "id": "checkout", "repo": "o/r", "feature": "paymnets" });
+        let err = verify_stream_feature(&s, &row).unwrap_err();
+        assert!(err.contains("paymnets"), "names what was passed: {err}");
+        assert!(err.contains("payments"), "and what exists: {err}");
+        assert!(err.contains("bsc plan feature add"), "and how to make it real: {err}");
+
+        // A real slug passes, and an ABSENT one is not an error — absence IS the fallback.
+        assert!(verify_stream_feature(&s, &serde_json::json!({ "id": "checkout", "feature": "payments" })).is_ok());
+        assert!(verify_stream_feature(&s, &serde_json::json!({ "id": "checkout" })).is_ok());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// MANY streams under ONE feature, each keeping every other field it had.
+    ///
+    /// The granular verb exists because `fleet stream set` is a whole-object upsert: assigning a
+    /// feature through it means restating `owns`, `flow`, `repo` and the rest, and every field the
+    /// caller forgets is dropped. Across 89 streams that is 89 chances to lose a stream's write
+    /// boundary — so "the rest of the stream is byte-identical" is the property under test, not a
+    /// nicety.
+    #[test]
+    fn two_streams_can_share_one_feature_and_keep_every_other_field() {
+        let (s, path) = seeded("many");
+        let before = s.fleet_stream_get("checkout").unwrap().unwrap();
+
+        for id in ["checkout", "refunds"] {
+            let mut row = s.fleet_stream_get(id).unwrap().unwrap();
+            row.as_object_mut().unwrap().insert("feature".into(), serde_json::json!("payments"));
+            verify_stream_feature(&s, &row).unwrap();
+            s.fleet_stream_set(id, &row).unwrap();
+        }
+
+        let after = s.fleet_stream_get("checkout").unwrap().unwrap();
+        assert_eq!(after["feature"], "payments");
+        // A feature owns MANY streams — the relation the old `feature.stream` 1:1 could not express.
+        assert_eq!(s.fleet_stream_get("refunds").unwrap().unwrap()["feature"], "payments");
+        // …and nothing else moved.
+        for k in ["id", "name", "repo", "owns", "flow"] {
+            assert_eq!(after[k], before[k], "`{k}` must be untouched by a feature assignment");
+        }
+
+        // Clearing REMOVES the key rather than emptying it: absence is what "falls back to the stream
+        // id" already looks like, and an empty string would be a second spelling the resolver would
+        // have to know about.
+        let mut cleared = after.clone();
+        cleared.as_object_mut().unwrap().remove("feature");
+        s.fleet_stream_set("checkout", &cleared).unwrap();
+        assert!(
+            s.fleet_stream_get("checkout").unwrap().unwrap().get("feature").is_none(),
+            "cleared means ABSENT, not empty",
+        );
+        let _ = std::fs::remove_file(&path);
     }
 }

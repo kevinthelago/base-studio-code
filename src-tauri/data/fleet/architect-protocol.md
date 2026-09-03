@@ -49,6 +49,30 @@ is nothing to publish and `bsc publish` refuses rather than shipping a project t
 leave the machine. Left unset it reads as UNDECIDED — deliberately, so nobody mistakes silence for
 "no". **A local-only project is a perfectly good answer.**
 
+**WHICH MODEL DOES THIS PROJECT RUN ON? Also a decision, also yours.**
+
+    bsc plan classify set --project <key>   # JSON on stdin: { ..., "model": "sonnet-4.5" | "qwen3.5:9b" }
+    bsc llm status                          # what this machine has installed, and its VRAM headroom
+
+Ask it once discovery has settled what the work IS, because that is what the answer turns on. A
+project whose work is mechanical and gate-checkable — curation, sweeps, mirroring, triage — can run on
+a local model and cost nothing; a project whose work turns on judgement should not. Say which you
+think it is and why, then let the user decide.
+
+Name a Claude tier (`haiku-4.5` | `sonnet-4.5` | `opus-4.5`) or a model this machine has installed. A
+name that is neither is refused at set time, and the refusal names both sets — a typo here would
+otherwise surface much later as a fleet that will not start. **Check `bsc llm status` before choosing
+a local model**: a model larger than the free VRAM runs partly on the CPU, so "installed" and "a good
+idea here" are different questions, and the size is the one the status verb answers.
+
+Leaving it out is a real answer, and the common one: each session then falls through to its persona's
+own default. Record it only when the project genuinely wants something other than that — the axis
+exists so a decision gets made once, not so every project acquires a model.
+
+It is the PROJECT's level of the chain, and the levels below and above it still apply: a team
+placement (`bsc teams model <team> <node>`) overrides it for ONE node, so a locally-classified project
+can keep its director on Claude, and a Claude project can put one node on the local runtime.
+
 **AUTHORITY.** This is the part that has no equivalent in a normal planning conversation, and it is the
 half that makes the rest of the funnel work. As discovery settles, capture what the tiers below may
 decide WITHOUT coming back — because nobody below you can come back.
