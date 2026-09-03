@@ -2032,7 +2032,7 @@ pub(crate) fn pty_activity() -> Vec<(String, u64, String)> {
     let now = reap::now_ms();
     let mut v: Vec<(String, u64, String)> = reap::snapshot()
         .into_iter()
-        .map(|(id, a)| (id, now.saturating_sub(a.last_output_ms), format!("{:?}", a.status)))
+        .map(|(id, a)| (id, now.saturating_sub(a.last_output_ms), reap::state_word(a.status).to_string()))
         .collect();
     v.sort();
     v

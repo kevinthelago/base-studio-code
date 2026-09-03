@@ -54,6 +54,24 @@ pub enum RunState {
     Unknown,
 }
 
+/// The ONE spelling of a run state that leaves this process.
+///
+/// Both publishers of this fact went through `format!("{:?}", …)` and only ONE of them lowercased it:
+/// the `pty_activity` command the UI reads said `Run`, while the `pty-activity.json` the CLI reads said
+/// `run`. A reader written against either matched nothing against the other — and since nothing in the
+/// frontend read the command at all, that disagreement sat there unobserved. One function, so the two
+/// cannot drift apart again.
+///
+/// A `match` rather than a lowercased `Debug`: the wire word must not follow a variant RENAME, and an
+/// added variant should fail to compile here rather than start emitting a word no reader knows.
+pub fn state_word(s: RunState) -> &'static str {
+    match s {
+        RunState::Run => "run",
+        RunState::Idle => "idle",
+        RunState::Unknown => "unknown",
+    }
+}
+
 /// One session's liveness, as the backend observes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Activity {
@@ -780,7 +798,7 @@ pub fn publish(path: &std::path::Path, now_ms_: u64, procs: &ProcSnapshot, polic
                 serde_json::json!({
                     "paneId": id,
                     "silentMs": silent,
-                    "status": format!("{:?}", a.status).to_lowercase(),
+                    "status": state_word(a.status),
                     "onScreen": is_on_screen,
                     // Surfaced because it is what decides WHICH threshold applies — a reader seeing
                     // `reapable: false` on a silent pane needs to know it is protected for having
@@ -999,6 +1017,21 @@ mod headless_tests {
             vec!["village-animal-hospital:director".to_string()],
             "the parked director goes; the one still talking to the model stays",
         );
+    }
+
+    /// ONE WIRE WORD for a run state, shared by both publishers.
+    ///
+    /// The words are asserted LITERALLY rather than against `format!("{:?}")`, which would only
+    /// re-derive the bug: the whole point is that renaming a variant must not silently change what
+    /// every reader matches on.
+    #[test]
+    fn a_run_state_has_exactly_one_wire_word_and_it_is_lowercase() {
+        assert_eq!(state_word(RunState::Run), "run");
+        assert_eq!(state_word(RunState::Idle), "idle");
+        assert_eq!(state_word(RunState::Unknown), "unknown");
+        for s in [RunState::Run, RunState::Idle, RunState::Unknown] {
+            assert_eq!(state_word(s), state_word(s).to_lowercase(), "the wire word is lowercase");
+        }
     }
 
     /// The published file is the CONTRACT `bsc session activity` parses, so its shape is pinned here
