@@ -15,6 +15,7 @@ import {
   roleCapability,
   roleDeniedCommands,
   isRestrictedRole,
+  mayFileToolingRequest,
   restrictedRoleCommands,
   type SessionRole,
 } from "@/shared/lib/session/sessionRoles";
@@ -180,5 +181,48 @@ describe("the declared sets match what each protocol actually asks for", () => {
     // contradict the role model and close the only lane a worker's ask can be promoted through.
     expect(personaSurfaces("director")).toContain("request");
     expect(roleDeniedCommands(roleCapability("director"), CATALOG)).not.toContain("bsc request");
+  });
+});
+
+// ── the surface OPERATOR (`surface-operator-runs-confined-to-its-own-noun`) ────────────────────────
+//
+// It launched with NO role: `openSurfaceSession` sets a surface pane's model, provider and charter and
+// never `setPaneRole`, and a surface pane is not in the fixed studio registry — so it reached the
+// launch with the whole `base.json` baseline, build tier included, and ran `cargo run --bin bsc` in
+// the tree the running app owns. These are the two properties the new role has to hold, and both were
+// FALSE for `tester`, the role its persona nominally declared.
+describe("the `operator` role is confined and can reach its own queue", () => {
+  it("is CONFINED — which is what suppresses the build tier that let it run cargo", () => {
+    expect(isRestrictedRole("operator")).toBe(true);
+    // The contrast that motivated a new role rather than reusing one: `tester` is not confined, so
+    // every baseline tier (cargo, npm, python) stays auto-runnable on it.
+    expect(isRestrictedRole("tester")).toBe(false);
+  });
+
+  it("may file a TOOLING request — its entire charter is `bsc request new`", () => {
+    expect(mayFileToolingRequest("operator")).toBe(true);
+    // And the other half of why `tester` was wrong in BOTH directions: it denies the one command this
+    // actor exists to run.
+    expect(mayFileToolingRequest("tester")).toBe(false);
+    expect(roleDeniedCommands(roleCapability("tester"))).toContain("bsc request");
+    // NOT "the deny is absent" — every confined role carries the bare `bsc request` deny alongside its
+    // verb-level allows, designer and librarian included, and that shape is the established one. What
+    // separates them from `tester` is that the queue is a DECLARED surface, which is what
+    // `mayFileToolingRequest` reads and what lifts the deny for the verbs the role actually names.
+    expect(personaSurfaces("operator")).toContain("request");
+    // `tester` declares NO surfaces at all — it is unconfined, so there is no allow list to derive
+    // them from, and that is precisely why the queue stays denied for it.
+    expect(personaSurfaces("tester")).toBeNull();
+  });
+
+  it("never gains a code-write axis — it reports on a surface, it does not fix it", () => {
+    expect(roleCapability("operator").code).toBe("none");
+  });
+
+  // The noun is chosen per SESSION, so a static role cannot name it. The bare `bsc` entry is what
+  // keeps every operator able to drive whichever noun it was pointed at; narrowing that to the
+  // assigned noun needs a per-pane profile and is deliberately follow-up, not silently missing.
+  it("keeps the whole `bsc` surface, because its noun is per-session", () => {
+    expect(restrictedRoleCommands("operator")).toContain("bsc");
   });
 });
