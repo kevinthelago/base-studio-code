@@ -199,6 +199,43 @@ pub fn network_architect_slug(id: &str) -> Option<&str> {
     Some(slug)
 }
 
+/// The pane-id prefix every SURFACE session shares (`a-noun-and-its-verbs-launch-their-personas`):
+/// the OPERATOR that drives one `bsc <noun>` and the MAINTAINER that owns one of its verbs.
+pub const SURFACE_STUDIO_PREFIX: &str = "surface-studio:";
+
+/// Which surface persona a `surface-studio:` pane names, paired with the tail that identifies it —
+/// or `None` when `id` is not one.
+///
+/// A GRAMMAR, for the same reason [`network_architect_slug`] is one: the pane id is DERIVED from a
+/// graph node, so this crate cannot enumerate the set without depending on the crate drill, and the
+/// safety property that matters is that the name is one the app defines rather than one the caller
+/// invented. The tail is validated, not accepted — it becomes a pane key, so a separator or a space
+/// would reach somewhere it should not.
+///
+/// # Why this is the channel the operator uses
+///
+/// Its two alternatives do not reach a maintainer at all. `bsc request new` files onto the GLOBAL
+/// tooling queue, which a DEBUG session works on a stronger model — the right lane for a gap in the
+/// `bsc` surface itself, and the wrong one for "this verb costs too much". And `bsc-ask` is a coord
+/// emitter that carries no addressee: it tags the ASKER's pane and broadcasts into `coord.log`, which
+/// only a project's director pump reads, and a surface session belongs to no fleet. So the operator's
+/// finding either went to the debugger or went nowhere. `ask` is delivered, and `reply` routes the
+/// answer back, which is what makes noun -> verb an exchange rather than a hand-off into a log.
+pub fn surface_session_kind(id: &str) -> Option<(&'static str, &str)> {
+    let rest = id.strip_prefix(SURFACE_STUDIO_PREFIX)?;
+    let (kind, tail) = match () {
+        _ if rest.starts_with("noun-") => ("operator", &rest["noun-".len()..]),
+        _ if rest.starts_with("verb-") => ("maintainer", &rest["verb-".len()..]),
+        _ => return None,
+    };
+    if tail.is_empty()
+        || !tail.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return None;
+    }
+    Some((kind, tail))
+}
+
 /// Resolve an id to a session the write half may name.
 ///
 /// **This is the injection boundary.** Everything downstream — the pane id, the emit, the store action —
@@ -234,13 +271,29 @@ pub fn resolve(id: &str) -> Result<ResolvedSession, String> {
             stoppable: true,
         });
     }
+    if let Some((kind, tail)) = surface_session_kind(id) {
+        // id == pane_id, as with a network's architect: the pane id IS the name, derived from the
+        // graph node, so there is no second short name to keep in step.
+        return Ok(ResolvedSession {
+            id: id.to_string(),
+            pane_id: id.to_string(),
+            summary: match kind {
+                "operator" => format!("the operator driving `bsc {tail}` — it reports what the noun COSTS"),
+                _ => format!("the maintainer of `bsc {tail}` — it owns that verb's code"),
+            },
+            // STOPPABLE. A surface session is one the user opened from a node, not an orchestration
+            // conversation this verb is called from, so ending it strands nothing.
+            stoppable: true,
+        });
+    }
     Err(resolve_error(id))
 }
 
 fn resolve_error(id: &str) -> String {
     format!(
-        "'{id}' is not a system session. Valid ids: {}, or a network's architect \
-         (`network-<slug>:architect`).\n\
+        "'{id}' is not a system session. Valid ids: {}, a network's architect \
+         (`network-<slug>:architect`), or a surface session \
+         (`surface-studio:noun-<noun>` / `surface-studio:verb-<noun>-<verb>`).\n\
          This verb reaches the app-owned system sessions and the per-network architects — not fleet \
          workers, and not a project's director (a director owns a running fleet, so ending one is the \
          user's act, not the architect's).",
@@ -630,6 +683,48 @@ mod tests {
             assert!(resolve(bad).is_err(), "{bad} must not resolve");
         }
         assert!(network_architect_slug("network-kitchen:architect") == Some("kitchen"));
+    }
+
+    /// THE NOUN CAN NOW REACH THE VERB'S OWN SESSION (`the-noun-asks-the-verbs-own-session`).
+    ///
+    /// The operator had two channels and neither arrived at a maintainer. `bsc request new` files onto
+    /// the GLOBAL tooling queue, worked by a DEBUG session on a stronger model — the right lane for a
+    /// gap in the `bsc` surface, the wrong one for "this verb costs too much". And `bsc-ask` carries no
+    /// addressee at all: it tags the asker's own pane and broadcasts into `coord.log`, read only by a
+    /// project's director pump, and a surface session belongs to no fleet. So a finding went to the
+    /// debugger or went nowhere, while `ask`/`reply` — the one channel that DELIVERS — refused the ids.
+    #[test]
+    fn a_surface_session_resolves_by_grammar_so_ask_can_reach_it() {
+        let op = resolve("surface-studio:noun-studio").expect("the operator resolves");
+        assert_eq!(op.pane_id, op.id, "the pane id IS the name — nothing to keep in step");
+        assert!(op.summary.contains("bsc studio"), "the summary names its noun: {}", op.summary);
+        assert!(op.stoppable);
+
+        let mt = resolve("surface-studio:verb-logs-summary").expect("the maintainer resolves");
+        assert!(mt.summary.contains("bsc logs-summary"), "{}", mt.summary);
+        assert!(mt.stoppable);
+
+        // The two personas are told apart, because the charter each gets depends on which it is.
+        assert_eq!(surface_session_kind("surface-studio:noun-studio").map(|(k, _)| k), Some("operator"));
+        assert_eq!(surface_session_kind("surface-studio:verb-logs-summary").map(|(k, _)| k), Some("maintainer"));
+    }
+
+    /// The surface grammar admits exactly one shape. It is the injection boundary, so a tail that
+    /// could reach a directory or a second pane key must be refused, not sanitized.
+    #[test]
+    fn the_surface_grammar_widens_nothing_else() {
+        for bad in [
+            "surface-studio:", "surface-studio:noun-", "surface-studio:verb-",
+            "surface-studio:noun-Studio", "surface-studio:noun-my studio", "surface-studio:noun-../etc",
+            "surface-studio:noun-a:b", "surface-studio:other-studio", "surface-studioX:noun-studio",
+            "noun-studio", "studio",
+        ] {
+            assert!(resolve(bad).is_err(), "{bad} must not resolve");
+            assert!(surface_session_kind(bad).is_none(), "{bad} must not parse");
+        }
+        // ...and the refusal still names every space, so a caller who guessed is corrected.
+        let err = resolve("surface-studio:noun-").unwrap_err();
+        assert!(err.contains("surface-studio:noun-<noun>"), "the error teaches the grammar: {err}");
     }
 
     /// A discovered session is READ-ONLY here, and the two halves have to agree about which rows those
