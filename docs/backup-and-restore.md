@@ -117,8 +117,20 @@ A backup nobody has restored is a hope, not a backup.
 
 ## Restore
 
-> `bsc studio restore` does not exist yet — see `the-backup-proves-it-can-be-restored`. Until it
-> does, restoring is the manual sequence below, which is exactly what that verb will automate.
+> **Check the backup first, then dry-run the restore.** Both refuse rather than half-work.
+
+```bash
+bsc studio verify  --from <dest>                    # is it still good? exits non-zero if not
+bsc studio restore --from <dest> --dir <base> --dry-run   # every write, performed none
+bsc studio restore --from <dest> --dir <base>       # do it
+```
+
+`restore` REFUSES a non-empty destination, naming what it would have overwritten — restore into an
+empty base and move the files, or pass `--force` if you genuinely mean to replace a live install. It
+also refuses a backup that does not verify, whole rather than in part: after a partial restore nobody
+can tell which half landed.
+
+The git half is still the manual sequence below.
 
 ```bash
 # 1. the git environment
