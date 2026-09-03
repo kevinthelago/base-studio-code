@@ -364,15 +364,23 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** ~1,005 modules ship as RECORDS — 338 component records under
-> `src-tauri/data/components/app/**` plus 667 implementations in `data/knowledge/algorithms.json` — and
-> the files that held them are deleted (epic #3604, "the graph IS the app"). **77 non-test modules
-> remain under `src/`**. The harvest that produced that floor is finished — `bsc ui retire --dry` was run
-> against every module and none was retirable — but the COUNT has moved since (it was 69), so the
-> per-reason breakdown below is the last one that summed and is now **stale by roughly nine modules**.
-> Re-derive it before relying on any single figure; the shape is what still holds.
+> **MOST OF THE FRONTEND IS NOT FILES.** Measured 2026-09-03: **981 modules ship as RECORDS** — 308
+> component records under `src-tauri/data/components/app/**` plus 673 implementations in
+> `data/knowledge/algorithms.json` — against **91 non-test modules under `src/`**. The files that held
+> the records are deleted (epic #3604, "the graph IS the app"), and that 10:1 ratio is the claim that
+> matters and still holds.
 >
-> The floor, as last derived: 26 hold MODULE STATE on a specifier that is also REGISTERED
+> **DO NOT read the file count as a settled floor — it is rising.** This paragraph used to say the
+> harvest was finished and 77 was the floor. The sequence is 69 → 77 → **91**, and **40 non-test files
+> were added under `src/` in the three weeks to 2026-09-03**. Many are legitimate by the reasons listed
+> below (barrels, `store.ts` module state, registrars, statically-imported hooks) — but "the harvest is
+> finished" is no longer an evidenced claim, and the breakdown below **sums to ~68, not 91**, so roughly
+> twenty-three modules are unaccounted for. Treat the reasons as the SHAPE of why files survive, never
+> as a census. Whether the author-into-the-store rule below is still being applied is an open question,
+> not a settled one: `the-module-floor-claim-is-stale-and-directionally-wrong`.
+>
+> The floor reasons, as last derived (summing to ~68 against the 69 of that day, NOT to today's 91):
+> 26 hold MODULE STATE on a specifier that is also REGISTERED
 > (two live copies — `bsc graph impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
 > STATICALLY by `main.tsx`/`App.tsx`, 7 are type-only, 6 are algorithms seed modules whose node `code` is
 > generated *from* the file, and one each for the entry, test setup, a `vite.config.ts` import, a record
