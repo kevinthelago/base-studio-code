@@ -9,9 +9,19 @@ import { resolveProfileSettings } from "@/shared/lib/security/profileEnforcement
 import type { CrateDrillDoc } from "@/features/glance/lib/surfaceNodes";
 
 const doc: CrateDrillDoc = {
-  crate: "logs", path: "crates/logs", surface: true, nouns: [],
+  crate: "logs", path: "crates/logs", surface: true,
+  nouns: [{
+    noun: "logs", status: "active", catalog: "projected",
+    verbs: [
+      { verb: "sessions", summary: "every session, one line each", usage: "USAGE:\n  bsc logs sessions" },
+      { verb: "tail", summary: "newest raw lines of one stream", usage: "USAGE:\n  bsc logs tail <stream>" },
+    ],
+  }],
   dependsOn: [], dependents: [], dependentCount: 0,
 };
+
+/** The same crate with NO published catalog — distinct from an empty one. */
+const uncatalogued: CrateDrillDoc = { ...doc, nouns: [{ noun: "logs", status: "active", catalog: "unreachable", verbs: null }] };
 
 describe("a surface node's pane is DERIVED from the node", () => {
   it("resolves a noun and a verb, and nothing else", () => {
@@ -70,19 +80,26 @@ describe("the charter carries the persona's own words, then the assignment", () 
     expect(c.startsWith("PERSONA-PROMPT-BODY")).toBe(true);
   });
 
-  it("gives the operator the EXACT --surface string its requests must carry", () => {
-    // The maintainer's queue is `bsc request list --surface <noun>`. If the operator files under
-    // anything else the report is filed, correct, and invisible to the only actor who can act on it.
-    const c = surfaceCharter({ kind: "operator", crate: "logs", path: "crates/logs", noun: "metrics" }, "P");
-    expect(c).toContain('--surface "metrics"');
-    expect(c).toContain("bsc request new");
+  // WAS: "gives the operator the EXACT --surface string its requests must carry". That string was how
+  // the request QUEUE routed a finding — and the queue is worked by the debug session, not by the
+  // maintainer of the verb (`the-noun-asks-the-verbs-own-session`). The address that matters now is the
+  // maintainer's pane, and the charter hands it over already built rather than asking the operator to
+  // assemble one.
+  it("gives the operator the maintainer's address, already built", () => {
+    const c = surfaceCharter({ kind: "operator", crate: "logs", path: "crates/logs", noun: "logs" }, "P", doc);
+    expect(c).toContain("bsc session ask surface-studio:verb-logs-sessions");
+    expect(c).not.toContain("bsc request new");
   });
 
-  it("points the maintainer at that same queue, and at the catalog it must keep true", () => {
-    const c = surfaceCharter({ kind: "maintainer", crate: "logs", path: "crates/logs", noun: "metrics", verb: "cost" }, "P");
-    expect(c).toContain('bsc request list --surface "metrics"');
-    expect(c).toContain("bsc surface verbs metrics");
-    expect(c).toContain("bsc metrics cost");
+  // WAS: "points the maintainer at that same queue". It no longer reads a queue — the operator asks it
+  // directly and it answers on that loop. What survives unchanged is the catalog obligation, and it
+  // matters MORE now: the operator's charter is generated FROM that catalog, so a stale `CmdDoc`
+  // teaches a command that does not run.
+  it("points the maintainer at the loop it answers on, and at the catalog it must keep true", () => {
+    const c = surfaceCharter({ kind: "maintainer", crate: "logs", path: "crates/logs", noun: "logs", verb: "tail" }, "P", doc);
+    expect(c).toContain("bsc session reply");
+    expect(c).toContain("bsc surface verbs logs");
+    expect(c).toContain("bsc logs tail");
   });
 });
 
@@ -137,5 +154,69 @@ describe("the operator's per-pane profile", () => {
     const cmds = resolveProfileSettings(surfaceOperatorProfile("studio")).allowedCommands;
     for (const c of cmds) expect(c.startsWith("bsc")).toBe(true);
     for (const bad of ["cargo", "npm", "python", "python3", "node"]) expect(cmds).not.toContain(bad);
+  });
+});
+
+// ── the charter TEACHES the surface (`a-session-is-taught-its-surface`) ────────────────────────────
+//
+// It used to open "Read it first with `bsc <noun> help` and `bsc surface drill <crate> --json`", which
+// spent two turns of a twenty-turn budget before anything was run — and left the model inferring the
+// command SHAPE. MEASURED: a session reached for `bsc-studio-help`, generalising from the hyphenated
+// `bsc-ask`/`bsc-answer` helpers it had been granted. That is not a command at all.
+describe("the charter teaches the surface rather than sending the session to find it", () => {
+  const op = { kind: "operator", crate: "logs", path: "crates/logs", noun: "logs" } as const;
+
+  it("lists every verb as a literal command line", () => {
+    const c = surfaceCharter(op, "P", doc);
+    expect(c).toContain("bsc logs sessions");
+    expect(c).toContain("every session, one line each");
+    expect(c).toContain("bsc logs tail");
+    // ...and does NOT send it off to discover what it was just told.
+    expect(c).not.toContain("bsc surface drill");
+  });
+
+  // THE REGRESSION, named. The hyphen is not a typo the model invented from nothing — it generalised
+  // from the helper family, so the charter has to draw the line rather than assume it.
+  it("states the command shape, because a hyphenated guess is not a command", () => {
+    const c = surfaceCharter(op, "P", doc);
+    expect(c).toContain("SPACED, NEVER HYPHENATED");
+    expect(c).toContain("`bsc-logs-<verb>` is not a command");
+  });
+
+  it("gives the operator the maintainer's pane id per verb, already built", () => {
+    const c = surfaceCharter(op, "P", doc);
+    expect(c).toContain("bsc session ask surface-studio:verb-logs-sessions");
+    expect(c).toContain("bsc session ask surface-studio:verb-logs-tail");
+  });
+
+  // The two instructions the personas replaced. Leaving them here made the charter contradict the
+  // persona — and the charter is APPENDED, so its version was the last thing the session read.
+  it("no longer routes findings to the request queue or tells a maintainer to claim", () => {
+    const c = surfaceCharter(op, "P", doc);
+    expect(c).not.toContain("bsc request new");
+    const m = surfaceCharter({ ...op, kind: "maintainer", verb: "tail" }, "P", doc);
+    expect(m).not.toContain("bsc request claim");
+    expect(m).toContain("bsc session reply");
+  });
+
+  it("gives the maintainer its own verb's usage and the directory it runs in", () => {
+    const m = surfaceCharter({ ...op, kind: "maintainer", verb: "tail" }, "P", doc);
+    expect(m).toContain("bsc logs tail <stream>");
+    expect(m).toContain("crates/logs");
+  });
+
+  // ABSENT IS NOT EMPTY. A crate that serves the noun but publishes no catalog must say so, or the
+  // charter reads as "this surface has no verbs" — which describes a broken surface, not a missing doc.
+  it("says a catalog is unpublished rather than rendering an empty surface", () => {
+    const c = surfaceCharter(op, "P", uncatalogued);
+    expect(c).toContain("publishes no verb catalog");
+    expect(c).toContain("bsc logs help");
+    expect(c).toContain("surface-studio:verb-logs-<verb>");
+  });
+
+  it("still degrades to the persona prompt alone when no doc reached it", () => {
+    const c = surfaceCharter(op, "PERSONA-PROMPT-BODY", null);
+    expect(c.startsWith("PERSONA-PROMPT-BODY")).toBe(true);
+    expect(c).toContain("SPACED, NEVER HYPHENATED");
   });
 });
