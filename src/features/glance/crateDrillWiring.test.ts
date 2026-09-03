@@ -81,7 +81,10 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     // One copy of what an operator or a maintainer is. Editing the persona changes every session
     // started afterwards; a second description here would drift from it.
     expect(src).toContain('["persona", "get", personaId]');
-    expect(src).toContain("surfaceCharter(assignment, persona.startPrompt as string)");
+    // The DRILL DOC rides along too (`a-session-is-taught-its-surface`): the charter lists the noun's
+    // verbs as literal command lines rather than sending the session to discover them, and `crateDoc`
+    // is the copy already in hand at launch.
+    expect(src).toContain("surfaceCharter(assignment, persona.startPrompt as string, crateDoc)");
   });
 
   it("refuses to launch with no charter rather than starting an unbriefed agent", () => {
