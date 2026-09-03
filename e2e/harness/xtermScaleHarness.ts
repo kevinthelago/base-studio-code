@@ -20,6 +20,10 @@
 // read a click, so a green spec means Claude's "Yes" button is actually hittable.
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+// The APP's own functions, not copies. The whole point of driving the real chain is that a spec cannot
+// pass against geometry the app does not actually paint — so the harness composes exactly the two
+// transforms `useGraphViewport.applyView` writes, and a change to either is a change to this test.
+import { viewTransform, counterScaleTransform } from "@/shared/ui/layouts/useGraphViewport";
 
 /** A 1-based terminal cell, as the SGR mouse report encodes it. */
 export interface ReportedCell { col: number; row: number }
@@ -32,12 +36,19 @@ declare global {
     __xtermScaleHarness?: {
       /** Mount a terminal of exactly `cols`×`rows` at world position `(x,y)`, with mouse reporting on.
        *  Resolves once the enabling escape sequence has been parsed, so a click straight after mount is
-       *  already reported. */
-      mount(opts: { cols: number; rows: number; x?: number; y?: number }): Promise<void>;
-      /** Write the world layer's transform, in the exact shape `viewTransform()` produces. Separate from
-       *  `mount` so a spec can prove the defect is independent of whether the scale was applied BEFORE
-       *  or AFTER xterm measured itself — `offsetWidth` ignores transforms, so re-measuring cannot save
-       *  it, and a spec that only ever zoomed-then-mounted would leave that hypothesis alive. */
+       *  already reported.
+       *
+       *  `counterScale` selects which SHAPE is under the terminal: `true` is what Glance ships (the
+       *  anchor cancels the world scale, so the terminal's net CSS scale is 1), `false` is the pre-fix
+       *  shape with the terminal directly under `scale(view.scale)`. Both are exercised, because a spec
+       *  that only ever mounts the fixed shape cannot tell a working counter-scale from a browser that
+       *  never needed one. */
+      mount(opts: { cols: number; rows: number; x?: number; y?: number; counterScale?: boolean }): Promise<void>;
+      /** Paint the view: the world layer's `viewTransform()` and the anchor's `counterScaleTransform()`,
+       *  from one value in one call — the same pairing `applyView` guarantees. Separate from `mount` so a
+       *  spec can prove the result is independent of whether the scale was applied BEFORE or AFTER xterm
+       *  measured itself — `offsetWidth` ignores transforms, so re-measuring neither breaks nor saves it,
+       *  and a spec that only ever zoomed-then-mounted would leave that hypothesis alive. */
       setView(v: { tx: number; ty: number; scale: number }): void;
       /** The screen element's rect in VIEWPORT coordinates — transform-adjusted, so this is the box the
        *  user actually sees. Read live; never cached. */
@@ -55,6 +66,7 @@ declare global {
 
 const card = document.getElementById("card") as HTMLDivElement;
 const world = document.getElementById("world") as HTMLDivElement;
+const anchor = document.getElementById("anchor") as HTMLDivElement;
 
 let term: Terminal | null = null;
 let last: ReportedCell | null = null;
@@ -67,15 +79,21 @@ let last: ReportedCell | null = null;
 // eslint-disable-next-line no-control-regex
 const SGR = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 
+/** Whether the anchor cancels the world scale — i.e. whether the SHIPPED shape is mounted. */
+let counterScaled = true;
+
+/**
+ * Paint both transforms, in the same call and from the same view — which is the invariant the fix
+ * depends on, so the harness must not be able to satisfy it in some other order.
+ */
 function setView(v: { tx: number; ty: number; scale: number }): void {
-  // Byte-identical to `viewTransform()` in `@/shared/ui/layouts/useGraphViewport`. Kept as a literal
-  // rather than an import: the harness must observe the STRING the app paints, so borrowing the app's
-  // function would hide a change to it behind a passing test.
-  world.style.transform = `translate(${v.tx}px,${v.ty}px) scale(${v.scale})`;
+  world.style.transform = viewTransform(v);
+  anchor.style.transform = counterScaled ? counterScaleTransform(v) : "";
 }
 
 window.__xtermScaleHarness = {
-  async mount({ cols, rows, x = 0, y = 0 }) {
+  async mount({ cols, rows, x = 0, y = 0, counterScale = true }) {
+    counterScaled = counterScale;
     term?.dispose();
     card.innerHTML = "";
     card.style.left = `${x}px`;

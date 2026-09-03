@@ -10,18 +10,21 @@
       html, body { margin: 0; padding: 0; overflow: hidden; background: #111; }
       /* The VIEWPORT — the clipping element, exactly as `useGraphViewport`'s `setVp` element. */
       #vp { position: fixed; inset: 0; overflow: hidden; }
-      /* The WORLD LAYER. The transform is written imperatively, in the same shape `viewTransform()`
-         produces: `translate(tx,ty) scale(s)` over `transform-origin: 0 0`. This is the whole point
-         of the harness — a real CSS transform in a real engine, not a jsdom style string. */
+      /* The WORLD LAYER, carrying `viewTransform()`. */
       #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-      /* The morph CARD, a world-layer child at world coords — `GlanceStreamMorph`'s `.glance-card`. */
+      /* The morph ANCHOR — world-positioned, and carrying `counterScaleTransform()` when the
+         counter-scale is on. Zero-size on purpose, exactly as `GlanceStreamMorph` renders it. */
+      #anchor { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+      /* The CARD, in SCREEN px inside the anchor. */
       #card { position: absolute; }
     </style>
   </head>
   <body>
     <div id="vp">
       <div id="world">
-        <div id="card"></div>
+        <div id="anchor">
+          <div id="card"></div>
+        </div>
       </div>
     </div>
     <script type="module" src="./xtermScaleHarness.ts"></script>

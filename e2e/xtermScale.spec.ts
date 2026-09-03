@@ -1,25 +1,31 @@
 // xtermScale.spec.ts (`a-real-xterm-under-a-css-scale-is-only-observable-in-a-browser`)
 //
 // THE QUESTION: when the Glance graph is zoomed, does a click on an in-graph agent terminal land on the
-// cell it visually points at? A morph is a world-layer child, so xterm renders under the graph's
-// `transform: scale(view.scale)` (#2534, option A) — and xterm resolves a click by dividing a
-// TRANSFORM-ADJUSTED offset (`getBoundingClientRect`) by an UNSCALED cell width (`offsetWidth`). The two
-// only agree at scale 1.
+// cell it visually points at?
+//
+// It is a real question because of how xterm resolves a click — by dividing a TRANSFORM-ADJUSTED offset
+// (`getBoundingClientRect`) by an UNSCALED cell width (`CharSizeService.measure` reads `offsetWidth`,
+// which ignores transforms). Those two agree only at net CSS scale 1. A morph is a world-layer child, so
+// under `scale(view.scale)` every click was off by the zoom.
 //
 // THIS IS THE ONLY PLACE THE ANSWER IS OBSERVABLE. jsdom has no layout and no cascade, so the vitest
 // suite cannot distinguish a correct mapping from a broken one — which is exactly how #3524 shipped
-// green (asserting the counter-scale MECHANISM) and was reverted eight minutes after merge, its own
-// commit message conceding "NOT VERIFIED IN A RUNNING APP".
+// green (asserting a counter-scale MECHANISM) and was reverted eight minutes after merge, its own commit
+// message conceding "NOT VERIFIED IN A RUNNING APP".
 //
-// So this spec asserts the OUTCOME and nothing else: click the visual centre of a known cell, read back
-// the cell xterm itself reported over its SGR mouse channel — the same channel Claude Code's TUI reads —
-// and require them to be the same cell.
+// So this asserts the OUTCOME and nothing else: click the visual centre of a known cell, read back the
+// cell xterm itself reported over its SGR mouse channel — the same channel Claude Code's TUI reads — and
+// require them to be the same cell.
+//
+// THE FIX IT COVERS is `the-in-graph-terminal-cannot-be-clicked-accurately-under-zoom`: the card is a
+// constant SCREEN size inside a world-positioned anchor carrying `scale(1/view.scale)`, so the net scale
+// on the terminal is 1. The harness composes the app's OWN `viewTransform` + `counterScaleTransform`, so
+// this cannot pass against geometry the app does not actually paint.
 //
 // ONE LIMIT, STATED SO A GREEN RUN IS NOT OVER-READ: this is Chromium, and the app ships on WebKitGTK.
-// A remedy that leans on layout-affecting CSS (`zoom`, say) can cancel correctly in one engine and not
-// the other. The companion measurement is `bsc debug probe '.glance-card .xterm-screen'` against the
-// RUNNING app, where `rect.width ÷ the element's CSS width` IS the factor xterm is off by, read out of
-// the engine that actually ships. A pass here is necessary, not sufficient.
+// The companion measurement is `bsc debug probe '.glance-card .xterm-screen'` against the RUNNING app,
+// where the ratio of the rect to the element's CSS width is the factor xterm is off by, read out of the
+// engine that actually ships. A pass here is necessary, not sufficient.
 import { test, expect } from "@playwright/test";
 
 const HARNESS = "/e2e/harness/xterm-scale-harness.html";
@@ -27,27 +33,12 @@ const HARNESS = "/e2e/harness/xterm-scale-harness.html";
 /** Grid size. Sized so the terminal stays inside the 1000×800 viewport at the LARGEST scale tested —
  *  a target cell scrolled off-screen would fail for a reason that has nothing to do with the defect. */
 const COLS = 40, ROWS = 12;
-/** The card's world position. Non-zero on purpose: a defect in the ORIGIN and a defect in the SCALE both
- *  vanish when the world sits at (0,0), and they are different bugs. */
+/** The card's position inside the anchor, screen px. Non-zero on purpose: a defect in the ORIGIN and a
+ *  defect in the SCALE both vanish when everything sits at (0,0), and they are different bugs. */
 const CARD = { x: 40, y: 40 };
-
-/**
- * IS THE DEFECT STILL LIVE?
- *
- * Every test below asserts the CORRECT behaviour — the cell a click points at is the cell xterm
- * reports. Today they all fail except the scale-1 control, and this flag pins that: with it true they
- * are declared expected-failures, so the opt-in suite stays green while carrying an executable, exact
- * statement of a bug that is otherwise only describable in prose.
- *
- * THE POINT IS THAT IT CANNOT BE FORGOTTEN. Playwright fails a run when an expected-failure PASSES, so
- * the moment a remedy works the suite goes red and says so. Flipping this to `false` is therefore step
- * one of `the-in-graph-terminal-cannot-be-clicked-accurately-under-zoom`, not a tidy-up afterwards —
- * and a remedy that only half-works cannot quietly land, because the flip is all-or-nothing.
- *
- * Do NOT reach for `test.skip` instead. A skipped test observes nothing; this one still runs, still
- * prints its measurement, and still notices the day the behaviour changes.
- */
-const DEFECT_IS_LIVE = true;
+/** Every zoom the viewport permits. `useGraphViewport` clamps to [0.28, 2.6], so this is the whole
+ *  reachable range rather than a sample that happens to look good. */
+const ZOOMS = [0.28, 0.5, 0.85, 1, 1.5, 2, 2.6];
 
 interface Probe {
   /** The cell the click visually pointed at. */
@@ -93,91 +84,90 @@ const verdict = (p: Probe, scale: number): string =>
       + `(${p.actual.col},${p.actual.row}) — off by ×`
       + `${(p.actual.col / p.expected.col).toFixed(2)},${(p.actual.row / p.expected.row).toFixed(2)}`;
 
+const goto = async (page: import("@playwright/test").Page, counterScale: boolean) => {
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => !!window.__xtermScaleHarness);
+  await page.evaluate(
+    ([cols, rows, x, y, cs]) =>
+      window.__xtermScaleHarness!.mount({
+        cols: cols as number, rows: rows as number,
+        x: x as number, y: y as number, counterScale: cs as boolean,
+      }),
+    [COLS, ROWS, CARD.x, CARD.y, counterScale] as const,
+  );
+};
+
 test.describe("a click on an in-graph terminal lands on the cell it points at", () => {
-  test.beforeEach(async ({ page }) => {
+  test("THE GUARANTEE — every zoom in the reachable range maps a click to the right cell", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
-    await page.goto(HARNESS);
-    await page.waitForFunction(() => !!window.__xtermScaleHarness);
-    await page.evaluate(
-      ([cols, rows, x, y]) => window.__xtermScaleHarness!.mount({ cols, rows, x, y }),
-      [COLS, ROWS, CARD.x, CARD.y] as const,
-    );
-    expect(errors, "the harness must mount cleanly, or every assertion below is about the wrong thing").toEqual([]);
-  });
+    await goto(page, true);
 
-  // The CONTROL. It passes today, and it has to: a failure here means the harness itself is wrong —
-  // the wrong element measured, a stray page margin, a mouse report that never arrives — and would make
-  // every red below unreadable. Never delete it to "save a case".
-  test("scale 1 — the control, which must already pass", async ({ page }) => {
-    for (const [c, r] of [[1, 1], [6, 3], [20, 6], [COLS, ROWS]] as const) {
-      const p = await probe(page, 1, c, r);
-      expect(p.actual, verdict(p, 1)).toEqual(p.expected);
+    for (const scale of ZOOMS) {
+      for (const [c, r] of [[1, 1], [6, 3], [20, 6], [COLS, ROWS]] as const) {
+        const p = await probe(page, scale, c, r);
+        expect(p.actual, verdict(p, scale)).toEqual(p.expected);
+      }
     }
+    expect(errors).toEqual([]);
   });
 
-  // ZOOMED IN. Reports come out too HIGH — and past roughly half the width they stop varying at all,
-  // because `getMouseReportCoords` clamps the offset to `dimensions.css.canvas.width - 1`, which is the
-  // UNSCALED width. So the right-hand half of a zoomed terminal collapses onto its last column: not an
-  // off-by-a-bit, an entire region of the terminal that cannot be clicked at all.
-  test("scale 2 — every click reports a cell further right and further down than the one aimed at", async ({ page }) => {
-    test.fail(DEFECT_IS_LIVE, "clicks are off by the graph zoom until the-in-graph-terminal-cannot-be-clicked-accurately-under-zoom lands");
-    for (const [c, r] of [[6, 3], [10, 5], [20, 6]] as const) {
-      const p = await probe(page, 2, c, r);
-      expect(p.actual, verdict(p, 2)).toEqual(p.expected);
-    }
+  test("the counter-scale is LOAD-BEARING — without it the same clicks are wrong", async ({ page }) => {
+    // The justification for the anchor element existing at all, kept executable rather than written
+    // down. Mount the PRE-FIX shape — the terminal directly under the world layer's `scale()` — and the
+    // clicks miss again, by the zoom.
+    //
+    // IF THIS TEST EVER FAILS, do not "fix" it: it means xterm's cell math stopped depending on the
+    // ancestor transform, and the right response is to check whether the anchor can be removed
+    // entirely. That is a finding, not a regression.
+    await goto(page, false);
+
+    const off = await probe(page, 2, 6, 3);
+    expect(off.actual, "the pre-fix shape must still mis-map, or the anchor is dead weight").not.toEqual(off.expected);
+
+    const under = await probe(page, 0.5, 30, 9);
+    expect(under.actual, "and in the other direction too").not.toEqual(under.expected);
+
+    // At scale 1 the two shapes are indistinguishable, which is why zoom-1-only testing saw nothing.
+    const one = await probe(page, 1, 6, 3);
+    expect(one.actual, verdict(one, 1)).toEqual(one.expected);
   });
 
-  // ZOOMED OUT. The error runs the other way, which is why both directions are tested: a remedy that
-  // corrects one sign and not the other would pass a single-direction spec.
-  test("scale 0.5 — every click reports a cell further left and further up than the one aimed at", async ({ page }) => {
-    test.fail(DEFECT_IS_LIVE, "clicks are off by the graph zoom until the-in-graph-terminal-cannot-be-clicked-accurately-under-zoom lands");
-    for (const [c, r] of [[10, 4], [30, 9], [COLS, ROWS]] as const) {
-      const p = await probe(page, 0.5, c, r);
-      expect(p.actual, verdict(p, 0.5)).toEqual(p.expected);
-    }
-  });
-
-  // Kills the most attractive wrong theory — "xterm just measured itself at the old scale; re-measure
-  // and it will be fine". It will not: `CharSizeService.measure()` reads `offsetWidth`, which ignores
-  // transforms entirely, so the cell width is the same number no matter when it was taken. Mounting
-  // UNDER the scale and zooming INTO it must therefore be equally wrong — and equally right after a fix.
-  test("the error does not depend on whether the scale was applied before or after the terminal mounted", async ({ page }) => {
-    test.fail(DEFECT_IS_LIVE, "clicks are off by the graph zoom until the-in-graph-terminal-cannot-be-clicked-accurately-under-zoom lands");
+  test("the mapping does not depend on whether the scale was applied before or after mount", async ({ page }) => {
+    // Kills the most attractive wrong theory — "xterm just measured itself at the old scale". It did
+    // not: `CharSizeService.measure()` reads `offsetWidth`, which ignores transforms entirely, so the
+    // cell width is the same number no matter when it was taken. Mounting UNDER a zoom and zooming INTO
+    // one must therefore agree.
+    await goto(page, true);
     const after = await probe(page, 2, 6, 3);
 
     await page.evaluate(() => window.__xtermScaleHarness!.setView({ tx: 0, ty: 0, scale: 2 }));
-    await page.evaluate(
-      ([cols, rows, x, y]) => window.__xtermScaleHarness!.mount({ cols, rows, x, y }),
-      [COLS, ROWS, CARD.x, CARD.y] as const,
-    );
+    await goto(page, true);
+    await page.evaluate(() => window.__xtermScaleHarness!.setView({ tx: 0, ty: 0, scale: 2 }));
     const before = await probe(page, 2, 6, 3);
 
     expect(before.actual, verdict(before, 2)).toEqual(after.actual);
     expect(before.actual, verdict(before, 2)).toEqual(before.expected);
   });
 
-  // The instrument as a MEASUREMENT rather than a verdict. It prints the observed mapping across the
-  // zoom range, so a candidate remedy can be judged by how the numbers move instead of by whether one
-  // assertion flipped — which is the whole reason the previous attempt was merged on an eyeball.
   test("MEASURE — the reported-vs-aimed ratio across the zoom range", async ({ page }, testInfo) => {
-    test.fail(DEFECT_IS_LIVE, "clicks are off by the graph zoom until the-in-graph-terminal-cannot-be-clicked-accurately-under-zoom lands");
+    // The instrument as a MEASUREMENT rather than a verdict. It prints the observed mapping across the
+    // whole range on every run, so a future change to this geometry is judged by how the numbers move
+    // instead of by whether one assertion flipped — which is the reason the previous attempt was merged
+    // on an eyeball and reverted eight minutes later.
+    await goto(page, true);
     const rows: string[] = [];
     let worst = 0;
-    for (const scale of [0.28, 0.5, 0.85, 1, 1.5, 2, 2.6]) {
+    for (const scale of ZOOMS) {
       const p = await probe(page, scale, 6, 3);
       rows.push(verdict(p, scale));
-      if (p.actual) {
-        worst = Math.max(worst, Math.abs(p.actual.col - p.expected.col), Math.abs(p.actual.row - p.expected.row));
-      } else {
-        worst = Infinity;
-      }
+      worst = p.actual
+        ? Math.max(worst, Math.abs(p.actual.col - p.expected.col), Math.abs(p.actual.row - p.expected.row))
+        : Infinity;
     }
     const table = rows.join("\n");
     await testInfo.attach("cell-mapping", { body: table, contentType: "text/plain" });
     console.log(`\n${table}\n`);
-    // The zoom range is `useGraphViewport`'s own clamp [0.28, 2.6], so this covers everything a user can
-    // actually reach — not a sample that happens to look good.
     expect(worst, `the worst cell error over the whole zoom range must be zero:\n${table}`).toBe(0);
   });
 });
