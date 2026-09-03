@@ -199,11 +199,61 @@ pub(crate) fn cmd_requirement(args: &Args) -> Result<(), String> {
 pub(crate) fn cmd_classify(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "classify", "classification JSON", "(no classification)",
-        crate::validate::validate_classify_config,
+        |v| {
+            crate::validate::validate_classify_config(v)?;
+            verify_classify_model(v)
+        },
         |s, v| s.classify_set(v).map_err(|e| e.to_string()),
         |s| s.classify_get().map_err(|e| e.to_string()),
         |v| format!("classify set{}", crate::validate::classify_readiness(v)),
     )
+}
+
+/// The classification's `model` axis, checked against what can actually be launched
+/// (`discovery-chooses-the-model`).
+///
+/// THE SAME ONE RULE every other level of the precedence chain applies — `llm::cli::verify_model`,
+/// shared with `bsc persona model` and `bsc teams model` so a name one level accepts is a name the
+/// others do. A Claude tier short-circuits before any probe, so a machine with no local runtime can
+/// still classify a project onto one.
+///
+/// WHY IT IS NOT IN `validate_classify_config`. That function is pure and every one of its tests is a
+/// `json!` literal; deciding whether a model name is real requires asking the local runtime, and
+/// probing from there would put a network call inside a validator and inside every test that reaches
+/// it. The shape check stays there, the existence check lives here — the same split
+/// `bsc persona model` and `bsc teams model` already make between argument parsing and the probe.
+///
+/// An UNREACHABLE runtime is NOT a refusal, for the reason it is not one anywhere else: ollama being
+/// down is a normal state, and refusing to record a discovery decision because a daemon is asleep
+/// would block the conversation this axis exists to capture. The warning goes to stderr so a `--json`
+/// payload stays clean.
+fn verify_classify_model(v: &serde_json::Value) -> Result<(), String> {
+    let Some(model) = v.get("model").and_then(|m| m.as_str()).map(str::trim).filter(|m| !m.is_empty())
+    else {
+        return Ok(());
+    };
+    match llm::cli::verify_model(model, None) {
+        llm::cli::ModelVerdict::Tier | llm::cli::ModelVerdict::Installed => Ok(()),
+        llm::cli::ModelVerdict::Unknown(installed) => {
+            let have = if installed.is_empty() {
+                "the local runtime has no models installed".to_string()
+            } else {
+                format!("installed locally: {}", installed.join(" | "))
+            };
+            Err(format!(
+                "bsc plan classify: \"model\": '{model}' is neither a Claude tier nor a model this machine has.\n  \
+                 tiers: {}\n  {have}\n  \
+                 (omit \"model\" entirely to let each session fall through to its persona's default)",
+                bsc_util::model_id_list()
+            ))
+        }
+        llm::cli::ModelVerdict::Unverifiable(why) => {
+            eprintln!(
+                "bsc plan classify: stored, but could not verify '{model}' against the local runtime ({why}).\n                   If that name is wrong the fleet will fail at launch — check with `bsc llm status`."
+            );
+            Ok(())
+        }
+    }
 }
 
 /// `transformation` — the Transformations stage's list (#2509): the modification counterpart to
