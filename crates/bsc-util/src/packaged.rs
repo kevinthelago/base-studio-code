@@ -56,8 +56,20 @@ pub const DATA_DIR_ENV: &str = "BSC_DATA_DIR";
 /// must ship exactly these), and the guard test that fails if one is ever `include_str!`'d again. A
 /// seed added here without a matching `bundle.resources` entry would work in dev and break only in a
 /// shipped build — so the test pins the two together rather than trusting them to stay aligned.
-pub const RUNTIME_SEEDS: &[&str] =
-    &["components/react-ui.json", "ui/react-ui-kit.meta.json", "knowledge/algorithms.json"];
+pub const RUNTIME_SEEDS: &[&str] = &[
+    "components/react-ui.json",
+    "ui/react-ui-kit.meta.json",
+    "knowledge/algorithms.json",
+    // bsc-ui, moved off `include_str!` so `src-tauri/data` can eventually be deleted entirely
+    // (`epic-one-external-source-backs-up-and-seeds-the-system`). Listing them here is what ARMS the
+    // two guards: one fails if any is embedded again, the other fails without a bundle.resources entry.
+    "ui/primitives.json",
+    "ui/themes.json",
+    "ui/tokens-contract.css",
+    "ui/style-descriptor.json",
+    "ui/node-validation.fixtures.json",
+    "stages/transformations.json",
+];
 
 /// Every directory a packaged seed may live in, in resolution order.
 ///

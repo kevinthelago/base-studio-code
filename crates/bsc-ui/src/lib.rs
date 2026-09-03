@@ -51,11 +51,14 @@ use serde_json::Value;
 
 /// The kit THEME registry (#1852 Phase 3), embedded from the same source of truth the frontend reads
 /// via `@data/ui/themes.json`. A theme is a map of semantic-token overrides; `bsc ui theme` serves it.
-pub const THEMES_JSON: &str = include_str!("../../../src-tauri/data/ui/themes.json");
+pub fn themes_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/themes.json"))
+}
 
 /// Every built-in theme (the `themes` array), parsed. Empty on a malformed file (guarded by a test).
 pub fn themes() -> Vec<Value> {
-    serde_json::from_str::<Value>(THEMES_JSON)
+    serde_json::from_str::<Value>(themes_json())
         .ok()
         .and_then(|v| v.get("themes").and_then(Value::as_array).cloned())
         .unwrap_or_default()
@@ -70,7 +73,10 @@ pub fn theme_by_id(id: &str) -> Option<Value> {
 /// base palette defaults + the semantic component tokens (`--card-*`/`--btn-*`/`--field-*`/
 /// `--chip-*`) kit components consume. Embedded from the one seed
 /// (`src-tauri/data/ui/tokens-contract.css`); served by `bsc ui emit-css`.
-pub const TOKENS_CONTRACT_CSS: &str = include_str!("../../../src-tauri/data/ui/tokens-contract.css");
+pub fn tokens_contract_css() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/tokens-contract.css"))
+}
 
 /// Render one theme as the `theme.css` override block a generated app receives (#2489): a header
 /// documenting the swap contract + a `:root` block of the theme's semantic-token overrides.
@@ -115,12 +121,14 @@ pub fn theme_css(id: &str) -> Result<String, String> {
 /// (`src-tauri/data/ui/style-descriptor.json`) — the same file the frontend's `styleContract.ts`
 /// generates `tokens-contract.css` from. `bsc ui tokens`/`components` enumerate it as the addressable
 /// design surface for the designer LLM (#2568), so discovery and CSS emission share one SoT.
-pub const STYLE_DESCRIPTOR_JSON: &str =
-    include_str!("../../../src-tauri/data/ui/style-descriptor.json");
+pub fn style_descriptor_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/style-descriptor.json"))
+}
 
 /// The parsed descriptor (valid JSON, guarded by a test).
 pub fn style_descriptor() -> Value {
-    serde_json::from_str(STYLE_DESCRIPTOR_JSON).expect("embedded style-descriptor.json is valid JSON")
+    serde_json::from_str(style_descriptor_json()).expect("packaged style-descriptor.json is valid JSON")
 }
 
 /// One flat token row (base → component → per-variant), preserving descriptor order. Each row is
@@ -444,7 +452,7 @@ mod tests {
     #[test]
     fn primitive_contract_is_coherent() {
         let parsed: Value =
-            serde_json::from_str(general_node::PRIMITIVES_JSON).expect("primitives.json is valid JSON");
+            serde_json::from_str(general_node::primitives_json()).expect("primitives.json is valid JSON");
         let list = parsed.get("primitives").and_then(Value::as_array).expect("a primitives array");
         assert!(list.len() > 50, "expected the full kit, got {}", list.len());
         for p in list {
@@ -486,7 +494,7 @@ mod tests {
         // and every base token a theme's values or the semantic defaults reference, must be
         // DEFINED in the contract layer — otherwise the emitted theme.css would override (or
         // reference) a var the generated app never received a default for.
-        let defined: std::collections::HashSet<&str> = TOKENS_CONTRACT_CSS
+        let defined: std::collections::HashSet<&str> = tokens_contract_css()
             .lines()
             .filter_map(|l| {
                 let t = l.trim();
@@ -523,7 +531,7 @@ mod tests {
         assert_eq!(primary["key"], "bg");
         // Every descriptor token is DECLARED in the generated contract — the Rust parser's precondition,
         // mirrored from the frontend styleContract.gen test.
-        let defined: std::collections::HashSet<&str> = TOKENS_CONTRACT_CSS
+        let defined: std::collections::HashSet<&str> = tokens_contract_css()
             .lines()
             .filter_map(|l| {
                 let t = l.trim();
@@ -768,4 +776,62 @@ mod tests {
         );
     }
 
+}
+
+#[cfg(test)]
+mod packaged_seed_tests {
+    //! The six seeds this crate used to `include_str!` now arrive at RUNTIME
+    //! (`the-bsc-ui-data-embeds-move-to-runtime-resolution`). A compile-time embed could not be
+    //! wrong about its own contents; a runtime read can, so these pin what the embed used to
+    //! guarantee for free.
+
+    /// Every seed reads back byte-identically to the file on disk.
+    ///
+    /// This is the behaviour-preservation check: `include_str!` produced the file's exact bytes, and
+    /// a reader that normalized, trimmed or re-encoded would be a silent change to a contract other
+    /// crates hash and serve verbatim (`tokens-contract.css` is written to disk and compared for
+    /// equality elsewhere in this crate).
+    #[test]
+    fn every_seed_reads_back_exactly_what_is_on_disk() {
+        let root = std::path::Path::new(bsc_util::packaged::DEV_DATA_ROOT);
+        for (rel, got) in [
+            ("ui/themes.json", super::themes_json()),
+            ("ui/tokens-contract.css", super::tokens_contract_css()),
+            ("ui/style-descriptor.json", super::style_descriptor_json()),
+            ("ui/primitives.json", crate::general_node::primitives_json()),
+        ] {
+            let disk = std::fs::read_to_string(root.join(rel))
+                .unwrap_or_else(|e| panic!("the dev seed {rel} must exist to compare against: {e}"));
+            assert_eq!(got, disk, "{rel} did not read back verbatim");
+        }
+    }
+
+    /// Read ONCE per process, not per call. These are parsed inside loops, so a per-call read would
+    /// turn a compile-time constant into filesystem traffic — the regression a `OnceLock` exists to
+    /// prevent. Pointer identity is the only honest way to assert it.
+    #[test]
+    fn each_seed_is_read_once_and_cached() {
+        assert!(std::ptr::eq(super::themes_json(), super::themes_json()));
+        assert!(std::ptr::eq(super::tokens_contract_css(), super::tokens_contract_css()));
+        assert!(std::ptr::eq(super::style_descriptor_json(), super::style_descriptor_json()));
+        assert!(std::ptr::eq(crate::general_node::primitives_json(), crate::general_node::primitives_json()));
+    }
+
+    /// The parsed values are still valid and non-empty — a read that silently returned "" would
+    /// otherwise surface as an EMPTY contract, which is the failure `read_required` exists to avoid.
+    #[test]
+    fn the_seeds_still_parse_into_a_non_empty_contract() {
+        let themes: serde_json::Value =
+            serde_json::from_str(super::themes_json()).expect("themes.json parses");
+        assert!(themes.as_object().is_some_and(|m| !m.is_empty()), "themes must not be empty");
+
+        let prims: serde_json::Value =
+            serde_json::from_str(crate::general_node::primitives_json()).expect("primitives.json parses");
+        assert!(prims.as_object().is_some_and(|m| !m.is_empty()), "the primitive contract must not be empty");
+
+        assert!(
+            super::tokens_contract_css().contains("--"),
+            "the tokens contract must still carry custom properties"
+        );
+    }
 }

@@ -56,7 +56,13 @@
       "resources/data/personas/tester.json": "data/personas/tester.json",
       "resources/data/personas/triage.json": "data/personas/triage.json",
       "resources/data/personas/worker.json": "data/personas/worker.json",
-      "resources/data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json"
+      "resources/data/stages/transformations.json": "data/stages/transformations.json",
+      "resources/data/ui/node-validation.fixtures.json": "data/ui/node-validation.fixtures.json",
+      "resources/data/ui/primitives.json": "data/ui/primitives.json",
+      "resources/data/ui/react-ui-kit.meta.json": "data/ui/react-ui-kit.meta.json",
+      "resources/data/ui/style-descriptor.json": "data/ui/style-descriptor.json",
+      "resources/data/ui/themes.json": "data/ui/themes.json",
+      "resources/data/ui/tokens-contract.css": "data/ui/tokens-contract.css"
     },
     "publisher": "base-studio-code",
     "icon": [
