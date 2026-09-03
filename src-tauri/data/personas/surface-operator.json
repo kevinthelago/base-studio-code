@@ -9,6 +9,7 @@
     "code": "none",
     "net": "read",
     "ui": "read",
+    "graph": "read",
     "allow": [
       "bsc help",
       "bsc surface",

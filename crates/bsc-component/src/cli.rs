@@ -44,7 +44,7 @@ const COMPONENT_COMMANDS: &[CmdDoc] = &[
         summary: "every component's {id, name, kitId, role, group, shapes} (JSON; --graph for the graph projection)",
         usage: "\
 USAGE:
-  bsc ui list [--kit <id>] [--shape <shape>] [--graph] [--full] [--pretty] [--raw]
+  bsc ui list [--kit <id>] [--shape <shape>] [--feature <f>] [--tags a,b] [--graph] [--full] [--pretty] [--raw]
 
 Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
@@ -57,7 +57,15 @@ because --full is 1.72 MB over 321 components (77.6% of it `srcText`, which no n
 page blocked up to 8s on it; the graph projection is 33 KB. Reach for --full only when you need a
 component's source/variants/props — and prefer `get <id>` for ONE component over the whole library.
 --raw (#3166) drops the JSON entirely and prints ONE id per line, raw UTF-8, LF-only — byte-clean for
-`for id in $(bsc ui list --raw)` / `while read id` (no CRLF or cp1252 traps; honors --kit/--shape, ignores --full/--pretty).",
+`for id in $(bsc ui list --raw)` / `while read id` (no CRLF or cp1252 traps; honors --kit/--shape, ignores --full/--pretty).
+
+THE TWO AXES A WORKER SEARCHES BY, and they answer different questions:
+--feature <f> is OWNERSHIP — which feature owns the component, and so which worker may WRITE it
+  (`bsc ui features` reports and backfills it). It worked before this and appeared in no help text.
+--tags a,b is SUBJECT — what the component is ABOUT. An AND: a component must carry EVERY tag named,
+  because a second tag is how a search NARROWS and a union would widen it. An untagged component is
+  never a match, so the filter is purely additive. The tags that exist are `bsc ui tags` — a tag
+  cannot be searched for until it can be discovered, which is why the pair ships together.",
     },
     CmdDoc {
         name: "shapes",
@@ -1026,6 +1034,44 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).\n\n`--by <tag>` names the writer (else $BSC_UI_WRITER, else \"unknown\"), stamped to `updatedBy` and the history entry. A patch landing on exactly `/srcText` also runs the #119 guards: an UNATTRIBUTED write over srcText someone else attributed to themselves is REFUSED, as is a buildable-to-unbuildable backslide. `--force` overrides both. Every OTHER pointer is unguarded, as before.",
     },
     CmdDoc {
+        name: "tags",
+        summary: "the TAG VOCABULARY — every tag with how many components carry it (discover, then search)",
+        usage: "\
+USAGE:
+  bsc ui tags [--kit <id>] [--pretty]
+
+Every tag in the component store with the number of components carrying it, most-used first (ties
+alphabetical, so two runs stay diffable). The discover half of discover-then-search, exactly as
+`features` is for `list --feature`: `bsc ui list --tags <t>` cannot be reached by an agent that has
+no way to learn which tags exist, and the alternative was `list --full` — 1.72 MB — to read a field
+that is 3% populated.
+
+`--kit <id>` scopes the vocabulary to one kit. Where `feature` says who may WRITE a component, a tag
+says what it is ABOUT — which is the question a worker looking for what it NEEDS is asking.",
+    },
+    CmdDoc {
+        name: "feature",
+        summary: "feature rename <from> <to> — move a feature's components onto another name (dry by default)",
+        usage: "\
+USAGE:
+  bsc ui feature rename <from> <to> [--under <folder-prefix>] [--apply] [--pretty]
+
+Moves every component owned by <from> onto <to>. DRY BY DEFAULT — it prints the count and a sample and
+writes nothing until you pass --apply, because it rewrites the OWNERSHIP field, and ownership decides
+which worker may write a record.
+
+It is NOT `features`. That verb DERIVES the feature from the folder and never overwrites one already
+set — which is right for a backfill and useless for a reconcile, since the folder derivation is what
+produced the name you are trying to change.
+
+`--under <folder-prefix>` narrows to components whose folder starts with the prefix. It exists because
+a graph feature is sometimes two things sharing a folder tree: `shell` held both the app chrome and
+the console pane system, and only a folder filter could send them to different features.
+
+Writes the DELTA, never the round-tripped record: `set` merges, so resubmitting a stored `null` reads
+as a CLEAR. That is how a field was lost 448 records into an earlier bulk write.",
+    },
+    CmdDoc {
         name: "features",
         summary: "report (and with --apply, backfill) which FEATURE owns each component, from its folder",
         usage: "\
@@ -1979,6 +2025,111 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
         Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
         Some("list") if args.iter().any(|a| a == "--feature") => cmd_list_feature(&args[1..]),
+        // `list --tags a,b` (`the-graphs-cannot-be-searched-by-the-axes-they-store`) — the SUBJECT
+        // axis, intercepted for the same reason `--shape`/`--kit`/`--feature` are: the shared store
+        // CLI rejects unknown flags. `feature` says who may WRITE a record; `tags` says what it is
+        // ABOUT, and a worker looking for what it NEEDS is asking the second question.
+        Some("list") if args.iter().any(|a| a == "--tags") => cmd_list_tags(&args[1..]),
+        // `tags` — the vocabulary, the same discover-then-search pair `features` already forms with
+        // `list --feature`. A tag cannot be searched for until it can be seen.
+        Some("tags") if args.get(1).map(String::as_str) != Some("help") => cmd_tags(&args[1..]),
+        // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
+        // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
+        // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
+        // `get --field`/`get help` fall through unchanged (the id guard excludes a flag or `help`).
+        // #doctor-reads-the-runtime: `get <id> --metrics` JOINS the runtime attestations at read time.
+        // Intercepted here for the same reason `--shape` and `--kit` are — the shared store CLI rejects
+        // unknown flags. Deliberately a JOIN and not a field ON the record: writing metrics there would
+        // make every boot a record write (filling `bsc ui revert` history with timing noise instead of
+        // authorship), vendor a second copy of a constantly-changing number — the drift #4191 forbids for
+        // algorithm bodies — and ship one machine's numbers to another inside a seed or a snapshot.
+        // `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — the algorithms twin
+        // (`the-graph-vocabulary-is-the-plans`). `features` DERIVES from the folder, which is what
+        // produced the divergence in the first place, and never overwrites a feature already set — so
+        // it cannot perform a reconcile. This can.
+        Some("feature") if args.get(1).map(String::as_str) == Some("rename") => cmd_feature_rename(&args[2..]),
+        Some("refolder") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "refolder"));
+            Ok(())
+        }
+        // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
+        // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
+        Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
+        Some("parity") if args.get(1).map(String::as_str) != Some("help") => cmd_parity(&args[1..]),
+        Some("sync-seed") if args.get(1).map(String::as_str) != Some("help") => cmd_sync_seed(&args[1..]),
+        Some("promote") if args.get(1).map(String::as_str) != Some("help") => cmd_promote(&args[1..]),
+        Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
+        Some(v @ ("export" | "import" | "sync-seed" | "promote")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
+            Ok(())
+        }
+        // `get --field <json-pointer>` (#3162, ONE field), `get … --out <name>` (#3713, spill to the
+        // scratch dir), OR `get … --kit <kitId>` (#3729, disambiguate) — all intercepted here (the shared
+        // store CLI rejects the extra flags), and handled by `cmd_get` (which also emits the whole-record
+        // `ui-focus` the plain path does). A plain `get <id>` (incl. the whole-record `--raw`, #3166) still
+        // delegates unchanged. A read verb.
+        Some("get") if args.iter().any(|a| a == "--field" || a == "--out" || a == "--kit") => cmd_get(&args[1..]),
+        // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
+        Some("log") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "log"));
+                Ok(())
+            } else {
+                cmd_log(&args[1..])
+            }
+        }
+        // `set` (#3164) is intercepted here — it stamps rev/updatedAt/updatedBy + honors --by/--if-version
+        // (the shared store CLI never stamps and its parser rejects those flags). `set help` still prints
+        // the doc. The scope gate above already refused a read-scoped session before we got here.
+        Some("set") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_set(&args[1..], open_component_store, validate_component_batch, "component")
+        }
+        Some("set") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set"));
+            Ok(())
+        }
+        // `revert` — restore `srcText` from the retained history. The recovery path a record with no
+        // packaged seed had no way to reach. The scope gate above already refused a read-scoped session.
+        Some("revert") if args.get(1).map(String::as_str) != Some("help") => cmd_revert(&args[1..]),
+        Some("revert") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "revert"));
+            Ok(())
+        }
+        // `rename` (#3576) — id-stable rename that sweeps the NAME-keyed composes/rules references across
+        // the kit + stamps history. The scope gate above already refused a read-scoped session.
+        Some("rename") if args.get(1).map(String::as_str) != Some("help") => cmd_rename(&args[1..]),
+        Some("rename") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "rename"));
+            Ok(())
+        }
+        // `merge` (#3592) — fold a duplicate INTO a survivor, repointing the NAME-keyed composes/rules
+        // references then removing it. The ACT step of the optimize loop. Scope gate above applies.
+        Some("merge") if args.get(1).map(String::as_str) != Some("help") => cmd_merge(&args[1..]),
+        Some("merge") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "merge"));
+            Ok(())
+        }
+        // `suppress`/`unsuppress` (#3725) — permanently remove a packaged builtin component (a plain
+        // `remove` re-seeds on the next hydrate). Scope gate above applies.
+        Some("suppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_suppress(&args[1..], open_component_store, "component")
+        }
+        Some("unsuppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_unsuppress(&args[1..], open_component_store, "component")
+        }
+        Some(v @ ("suppress" | "unsuppress")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
+            Ok(())
+        }
+        // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
+        // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
+        Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
+        // #4158 (designer request #44): `list --kit <id>` filters to ONE kit. Intercepted here for the
+        // same reason `--shape` is — the shared store CLI rejects unknown flags — and a plain `list`
+        // still delegates unchanged. Without it, comparing two kits' membership meant a full-store dump
+        // (tens of KB) and grepping the auto-persisted tool-output file for `kitId`.
+        Some("list") if args.iter().any(|a| a == "--kit") => cmd_list_kit(&args[1..]),
+        Some("list") if args.iter().any(|a| a == "--feature") => cmd_list_feature(&args[1..]),
         // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
         // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
         // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
@@ -2282,6 +2433,27 @@ fn set_stamped(
     for item in items {
         let id = bsc_json_store::cli::id_of(item, noun)?;
         let prior = current_record(store, &id)?;
+        // WHICH records this session may write (`a-worker-writes-only-its-own-feature`).
+        //
+        // Here rather than at the verb dispatch, because THIS is the funnel: `set` takes its records
+        // from stdin, so the id is not in argv and a dispatch-level guard could not see it. Every
+        // component write lands here, so a verb added later is confined without remembering to be.
+        //
+        // The PRIOR record's feature governs. A payload carrying `"feature": "mine"` against a
+        // component owned by `core` is the move confinement exists to stop, and reading the submitted
+        // value would wave it through — the record would simply change hands. A record that does not
+        // exist yet is judged on what it claims, so a new one cannot slip in unowned.
+        if bsc_cli_util::session_features().is_some() {
+            // A missing record reads as `Value::Null`, whose `get` is None — so the fallback to the
+            // SUBMITTED feature is the new-record case, expressed without a second existence check.
+            let owner = prior
+                .get("feature")
+                .or_else(|| item.get("feature"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            bsc_cli_util::require_feature_write(&id, &owner)?;
+        }
         let prior_rev = crate::record::read_rev(&prior);
         if let Some(n) = if_version {
             if prior_rev != n {
@@ -4522,6 +4694,207 @@ fn cmd_list_feature(args: &[String]) -> Result<(), String> {
     } else {
         selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
     };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `list --tags a,b [--kit K] [--full] [--raw] [--pretty]` — the SUBJECT axis
+/// (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+///
+/// AND, not OR. A worker names a second tag to NARROW ("the chart components that are also compact");
+/// a union would widen with each term, which is the opposite of what adding one means. It composes
+/// with the other list filters the same way — every filter on this verb intersects.
+///
+/// An untagged component never matches a tag search, so the filter is purely additive — the same rule
+/// `--feature` follows for a component with no feature.
+///
+/// A tag no component carries yields an EMPTY list, and that is the behaviour worth stating: the
+/// algorithms twin of this flag used to parse and then be ignored, so a search for a tag that did not
+/// exist returned the entire store with no error. A caller cannot tell that from a real hit.
+fn cmd_list_tags(args: &[String]) -> Result<(), String> {
+    let (mut want_raw, mut dir, mut kit) = (None::<String>, None::<String>, None::<String>);
+    let (mut pretty, mut full, mut raw) = (false, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--tags" => want_raw = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--full" => full = true,
+            "--raw" => raw = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => {}
+        }
+    }
+    let want_raw = want_raw.ok_or("--tags needs a value (e.g. `chart`, or `chart,compact` for BOTH; see `bsc ui tags`)")?;
+    // A BARE `--tags` followed by another flag swallows that flag as its value: `--tags --dir <p>`
+    // parses as the tag "--dir" and then drops <p> as an unread positional, so the search runs against
+    // the DEFAULT store and returns nothing. It looks like an empty result rather than a usage error —
+    // the same silent-wrong-answer shape this whole item is about, one level up in the parser.
+    // (`cmd_list_feature` and `cmd_list_kit` share this shape and are worth the same guard; noted on
+    // the change record rather than widened into this one.)
+    if want_raw.starts_with("--") {
+        return Err(format!(
+            "--tags needs a tag, but got the flag '{want_raw}' — it would have been read as a tag name \
+             and the flags after it dropped. Pass `--tags <tag>[,<tag>]` (see `bsc ui tags`)"
+        ));
+    }
+    let want: Vec<&str> = want_raw.split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
+    if want.is_empty() {
+        return Err("--tags needs at least one non-empty tag (see `bsc ui tags`)".to_string());
+    }
+    let store = open_component_store(&dir)?;
+    let stored = store.list();
+    let selected: Vec<&String> = stored
+        .iter()
+        .filter(|j| {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(j) else { return false };
+            if let Some(k) = kit.as_deref() {
+                if v.get("kitId").and_then(serde_json::Value::as_str) != Some(k) {
+                    return false;
+                }
+            }
+            let have: Vec<&str> = v
+                .get("tags")
+                .and_then(serde_json::Value::as_array)
+                .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
+                .unwrap_or_default();
+            want.iter().all(|w| have.contains(w))
+        })
+        .collect();
+    if raw {
+        let ids: Vec<String> = selected.iter().filter_map(|j| bsc_json_store::cli::id_field(j)).collect();
+        bsc_cli_util::print_raw_lines(&ids);
+        return Ok(());
+    }
+    let out: Vec<serde_json::Value> = if full {
+        selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
+    } else {
+        selected.iter().map(|j| bsc_json_store::cli::lean_meta_aliased(j, COMPONENT_SPEC.meta_fields, COMPONENT_SPEC.field_aliases)).collect()
+    };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `tags [--kit K] [--pretty]` — the TAG VOCABULARY, every tag with how many components carry it.
+///
+/// The discover half of discover-then-search, exactly as `features` is for `list --feature`. An agent
+/// cannot filter by a tag it has no way to learn, and the alternative was `list --full` — 1.72 MB over
+/// this store — to read a field that is 3% populated.
+///
+/// Most-used first, ties alphabetical, so the vocabulary's spine leads and two runs stay diffable.
+fn cmd_tags(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--json" => {}
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => {}
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for j in store.list() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&j) else { continue };
+        if let Some(k) = kit.as_deref() {
+            if v.get("kitId").and_then(serde_json::Value::as_str) != Some(k) {
+                continue;
+            }
+        }
+        for t in v.get("tags").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            if let Some(t) = t.as_str().map(str::trim).filter(|t| !t.is_empty()) {
+                *counts.entry(t.to_string()).or_default() += 1;
+            }
+        }
+    }
+    let mut rows: Vec<(String, usize)> = counts.into_iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let out: Vec<serde_json::Value> =
+        rows.into_iter().map(|(tag, count)| serde_json::json!({ "tag": tag, "count": count })).collect();
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — move a feature's components onto
+/// another name (`the-graph-vocabulary-is-the-plans`).
+///
+/// DRY BY DEFAULT. It rewrites the OWNERSHIP field across many records, and ownership is what decides
+/// which worker may write them — so the report is the default and the write is the opt-in, the same
+/// way `features` and `bsc graph unmaterialize` are shaped.
+///
+/// `--under` filters by folder prefix, for the case that made it necessary: a graph feature that is
+/// really two things living in one folder tree.
+fn cmd_feature_rename(args: &[String]) -> Result<(), String> {
+    let (mut from, mut to) = (None::<String>, None::<String>);
+    let (mut under, mut dir) = (None::<String>, None::<String>);
+    let (mut apply, mut pretty) = (false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--under" => under = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--apply" => apply = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if from.is_none() => from = Some(other.to_string()),
+            other if to.is_none() => to = Some(other.to_string()),
+            _ => {}
+        }
+    }
+    let usage = "usage: bsc ui feature rename <from> <to> [--under <folder-prefix>] [--apply]";
+    let (from, to) = (from.ok_or(usage)?, to.ok_or(usage)?);
+    if apply {
+        bsc_cli_util::require_write_scope("ui")?;
+    }
+    let store = open_component_store(&dir)?;
+    let rows: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+    let matched: Vec<serde_json::Value> = rows
+        .into_iter()
+        .filter(|v| v.get("feature").and_then(serde_json::Value::as_str).unwrap_or_default().trim() == from)
+        .filter(|v| match under.as_deref() {
+            None => true,
+            Some(p) => v
+                .get("folder")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| v.get("src").and_then(serde_json::Value::as_str))
+                .unwrap_or_default()
+                .starts_with(p),
+        })
+        .collect();
+    if apply {
+        // The DELTA, never the round-tripped record. `set_stamped` MERGES the submitted fields onto the
+        // stored record, so sending the whole thing back would resubmit every stored `null` — and a
+        // resubmitted `null` reads as a CLEAR. That is how `terminalhost.provides` was lost 448 records
+        // into the folder backfill; one field, silently, most of the way through a bulk write.
+        let patches: Vec<serde_json::Value> = matched
+            .iter()
+            .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str))
+            .map(|id| serde_json::json!({ "id": id, "feature": to }))
+            .collect();
+        set_stamped(
+            &store,
+            &patches,
+            None,
+            "feature-rename",
+            "component",
+            Some(&format!("feature: {from} -> {to}")),
+            WritePlan::default(),
+        )?;
+    }
+    let out = serde_json::json!({
+        "from": from, "to": to, "under": under, "applied": apply, "matched": matched.len(),
+        // A SAMPLE — the point of a dry run is that a person reads it, and 154 ids is not read.
+        "sample": matched.iter().take(8).filter_map(|v| v.get("id").cloned()).collect::<Vec<_>>(),
+    });
     let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     bsc_util::emit_line(&json.map_err(|e| e.to_string())?);
     Ok(())
@@ -8979,7 +9352,7 @@ export const P = () => <X />;"
                 "list", "shapes", "get", "log", "revert", "set", "remove", "suppress", "unsuppress", "export", "parity", "sync-seed", "promote", "import",
                 "rename", "merge", "kit", "eslint-preset", "usage",
                 "backing", "library", "test", "doctor", "dupes", "similar", "usage-scan", "crossgraph", "used-by", "refs", "exports", "patterns", "pattern", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
+                "set-src", "patch", "tags", "features", "refolder", "preview-props", "scan-cache", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
@@ -11657,6 +12030,109 @@ mod list_kit_tests {
     }
 }
 
+/// The SUBJECT axis (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+///
+/// `feature` says which worker may WRITE a component; `tags` says what it is ABOUT — and a worker
+/// looking for what it NEEDS is asking the second question, which this store could not answer at all.
+#[cfg(test)]
+mod list_tags_tests {
+    use super::*;
+
+    /// Three components: two share a tag, one of those carries a second, one is UNTAGGED — the last is
+    /// what proves the filter is additive rather than sweeping.
+    fn seeded() -> (tempdir_shim::Dir, String) {
+        let dir = tempdir_shim::Dir::new("bsc-tags");
+        let store = open_component_store(&Some(dir.path())).unwrap();
+        store.set("chart-a", r#"{"id":"chart-a","name":"ChartA","kitId":"alpha","tags":["chart","compact"]}"#).unwrap();
+        store.set("chart-b", r#"{"id":"chart-b","name":"ChartB","kitId":"alpha","tags":["chart"]}"#).unwrap();
+        store.set("plain", r#"{"id":"plain","name":"Plain","kitId":"alpha"}"#).unwrap();
+        let p = dir.path();
+        (dir, p)
+    }
+
+    fn ids(dir: &str, tags: &str) -> Vec<String> {
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_list_tags(&["--tags".into(), tags.into(), "--dir".into(), dir.into()])
+        });
+        r.unwrap();
+        let mut v: Vec<String> = serde_json::from_str::<serde_json::Value>(out.trim())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|i| i.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn list_tags_is_an_and_and_never_sweeps_in_the_untagged() {
+        let (_d, path) = seeded();
+
+        // One tag selects both carriers…
+        assert_eq!(ids(&path, "chart"), vec!["chart-a".to_string(), "chart-b".to_string()]);
+        // …a SECOND tag NARROWS. This separates AND from OR: a union would return both here, so the
+        // flag would widen as a caller tried to refine — the opposite of what naming a tag means.
+        assert_eq!(ids(&path, "chart,compact"), vec!["chart-a".to_string()]);
+        // Order does not matter — it is a set intersection, not a prefix.
+        assert_eq!(ids(&path, "compact,chart"), vec!["chart-a".to_string()]);
+        // A tag NOTHING carries returns NOTHING. The algorithms twin of this flag used to return the
+        // WHOLE store here, with no error, and a caller could not tell that from a hit.
+        assert!(ids(&path, "totally-absent").is_empty());
+        // The UNTAGGED component is in the store and is never a match — the filter hides only what it
+        // was asked to hide, the same purely-additive rule `--feature` follows.
+        let store = open_component_store(&Some(path.clone())).unwrap();
+        assert_eq!(store.list().len(), 3, "the untagged record really is in the store");
+        assert!(!ids(&path, "chart").contains(&"plain".to_string()));
+        // Whitespace around a tag is the shape a shell hands over; it must not defeat the match.
+        assert_eq!(ids(&path, " chart , compact "), vec!["chart-a".to_string()]);
+    }
+
+    #[test]
+    fn list_tags_composes_with_kit_rather_than_replacing_it() {
+        let (_d, path) = seeded();
+        let store = open_component_store(&Some(path.clone())).unwrap();
+        store.set("beta-chart", r#"{"id":"beta-chart","name":"BetaChart","kitId":"beta","tags":["chart"]}"#).unwrap();
+
+        let (r, out) = bsc_util::capture_output(|| {
+            cmd_list_tags(&["--tags".into(), "chart".into(), "--kit".into(), "beta".into(), "--dir".into(), path.clone()])
+        });
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        let got: Vec<&str> = v.as_array().unwrap().iter().filter_map(|i| i["id"].as_str()).collect();
+        assert_eq!(got, vec!["beta-chart"], "every filter on the verb INTERSECTS: {v}");
+    }
+
+    #[test]
+    fn list_tags_refuses_an_empty_search_rather_than_listing_everything() {
+        let (_d, path) = seeded();
+        // A bare `--tags`, and a value that trims to nothing, are the two ways a caller ends up asking
+        // for "no tags at all". Answering with the whole store is exactly the silent-ignore this item
+        // exists to remove, so both are errors.
+        assert!(cmd_list_tags(&["--tags".into(), "--dir".into(), path.clone()]).is_err());
+        assert!(cmd_list_tags(&["--tags".into(), " , ".into(), "--dir".into(), path.clone()]).is_err());
+        assert!(cmd_list_tags(&["--tags".into(), "chart".into(), "--nope".into(), "--dir".into(), path]).is_err());
+    }
+
+    #[test]
+    fn tags_reports_the_vocabulary_most_used_first() {
+        let (_d, path) = seeded();
+        let (r, out) = bsc_util::capture_output(|| cmd_tags(&["--dir".into(), path.clone()]));
+        r.unwrap();
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        let rows = v.as_array().unwrap();
+        // Only the tags that EXIST, each with its real count — the untagged component contributes none.
+        assert_eq!(rows.len(), 2, "two distinct tags: {v}");
+        assert_eq!(rows[0], serde_json::json!({ "tag": "chart", "count": 2 }), "most-used leads");
+        assert_eq!(rows[1], serde_json::json!({ "tag": "compact", "count": 1 }));
+        // Scoped to a kit that holds nothing yields an EMPTY vocabulary, not every tag in the store.
+        let (r, out) = bsc_util::capture_output(|| cmd_tags(&["--kit".into(), "nope".into(), "--dir".into(), path]));
+        r.unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(out.trim()).unwrap(), serde_json::json!([]));
+    }
+}
+
 /// A minimal scoped temp dir for the tests above — the crate has no dev-dependency on `tempfile`.
 #[cfg(test)]
 mod preview_error_guard_tests {
@@ -12139,5 +12615,77 @@ mod feature_rule_gate {
         let v = violations(&planted, ALLOWED);
         assert_eq!(v.len(), 1, "a core -> feature edge must be reported");
         assert!(v[0].describe().contains("core/planted -> glance/some-glance-thing"));
+    }
+}
+
+#[cfg(test)]
+mod feature_confinement_tests {
+    use super::*;
+
+    /// A confined session writes only its own feature's COMPONENTS
+    /// (`a-worker-writes-only-its-own-feature`).
+    ///
+    /// Driven through `set_stamped` — the funnel every component write lands in — rather than through
+    /// a verb, because that is where the guard is and why: `ui set` takes its records from stdin, so
+    /// the id is not in argv and a dispatch-level check could not see it.
+    /// A scratch component store. Its own rather than the sibling module's `tmp_component_store`,
+    /// which is private to that module — copying four lines beats making a test helper public.
+    fn scratch(tag: &str) -> bsc_json_store::Store {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "bsc-confine-{tag}-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        bsc_json_store::Store::new(dir, "component")
+    }
+
+    #[test]
+    fn a_confined_session_writes_only_its_own_features_components() {
+        let store = scratch("confine");
+        let rec = |id: &str, feature: &str| {
+            serde_json::json!({ "id": id, "name": id, "kitId": "k", "feature": feature })
+        };
+        // Authored UNCONFINED, which is how a designer or the seed reconcile works.
+        for (id, f) in [("mine", "glance"), ("theirs", "planner"), ("shared", "core")] {
+            set_stamped(&store, &[rec(id, f)], None, "seed", "component", None, WritePlan::default()).unwrap();
+        }
+
+        bsc_cli_util::with_features(Some("glance"), || {
+            // Its own lane: allowed.
+            set_stamped(&store, &[rec("mine", "glance")], None, "w", "component", None, WritePlan::default())
+                .expect("a worker writes its own feature's components");
+
+            // Another lane, and the shared baseline: refused.
+            for (id, owner) in [("theirs", "planner"), ("shared", "core")] {
+                let err = set_stamped(&store, &[rec(id, owner)], None, "w", "component", None, WritePlan::default())
+                    .expect_err("must be refused");
+                assert!(err.contains("writes only"), "`{id}`: {err}");
+                assert!(err.contains(owner), "…naming its owner: {err}");
+            }
+
+            // THE LAUNDERING MOVE: claiming another lane's record for your own. The STORED feature
+            // governs, so a payload saying `glance` cannot take `core`'s component.
+            let err = set_stamped(&store, &[rec("shared", "glance")], None, "w", "component", None, WritePlan::default())
+                .expect_err("a claim must not launder a write");
+            assert!(err.contains("core"), "the STORED owner decides: {err}");
+
+            // A NEW record must claim a lane this session may write.
+            assert!(
+                set_stamped(&store, &[serde_json::json!({ "id": "fresh", "name": "Fresh", "kitId": "k" })], None, "w", "component", None, WritePlan::default()).is_err(),
+                "a new component with no feature is refused",
+            );
+            set_stamped(&store, &[rec("fresh", "glance")], None, "w", "component", None, WritePlan::default())
+                .expect("…and lands when it claims a lane it may write");
+        });
+
+        // UNCONFINED is unchanged.
+        bsc_cli_util::with_features(None, || {
+            set_stamped(&store, &[rec("shared", "core")], None, "lib", "component", None, WritePlan::default())
+                .expect("an unconfined session writes the shared baseline");
+        });
     }
 }

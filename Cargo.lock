@@ -1265,6 +1265,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-llm",
  "bsc-util",
  "serde_json",
 ]
@@ -4559,6 +4560,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-data",
+ "bsc-llm",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",

@@ -58,6 +58,17 @@ pub(crate) fn cmd_feature(args: &Args) -> Result<(), String> {
             }
             Ok(())
         }
+        // `feature requires add|remove|list <slug> [<id>…]` — the granular, ATTRIBUTED write
+        // (`a-feature-declares-what-it-requires`).
+        //
+        // Granular because the only other way to touch `requires` is `feature add` with a whole
+        // feature object on stdin: a read-modify-write in which every field the caller forgets to
+        // restate is dropped, and in which a worker's addition silently reverts a director's.
+        //
+        // ATTRIBUTED because the point of populating this at all is to find out WHICH approach works —
+        // a director seeding from the plan, or a worker discovering mid-task what it actually needs.
+        // Run that experiment through an unattributed list and you get one merged set and no answer.
+        "requires" => cmd_feature_requires(args, &s),
         other => Err(unknown_sub(args, "feature", other)),
     }
 }
@@ -199,11 +210,61 @@ pub(crate) fn cmd_requirement(args: &Args) -> Result<(), String> {
 pub(crate) fn cmd_classify(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "classify", "classification JSON", "(no classification)",
-        crate::validate::validate_classify_config,
+        |v| {
+            crate::validate::validate_classify_config(v)?;
+            verify_classify_model(v)
+        },
         |s, v| s.classify_set(v).map_err(|e| e.to_string()),
         |s| s.classify_get().map_err(|e| e.to_string()),
         |v| format!("classify set{}", crate::validate::classify_readiness(v)),
     )
+}
+
+/// The classification's `model` axis, checked against what can actually be launched
+/// (`discovery-chooses-the-model`).
+///
+/// THE SAME ONE RULE every other level of the precedence chain applies — `llm::cli::verify_model`,
+/// shared with `bsc persona model` and `bsc teams model` so a name one level accepts is a name the
+/// others do. A Claude tier short-circuits before any probe, so a machine with no local runtime can
+/// still classify a project onto one.
+///
+/// WHY IT IS NOT IN `validate_classify_config`. That function is pure and every one of its tests is a
+/// `json!` literal; deciding whether a model name is real requires asking the local runtime, and
+/// probing from there would put a network call inside a validator and inside every test that reaches
+/// it. The shape check stays there, the existence check lives here — the same split
+/// `bsc persona model` and `bsc teams model` already make between argument parsing and the probe.
+///
+/// An UNREACHABLE runtime is NOT a refusal, for the reason it is not one anywhere else: ollama being
+/// down is a normal state, and refusing to record a discovery decision because a daemon is asleep
+/// would block the conversation this axis exists to capture. The warning goes to stderr so a `--json`
+/// payload stays clean.
+fn verify_classify_model(v: &serde_json::Value) -> Result<(), String> {
+    let Some(model) = v.get("model").and_then(|m| m.as_str()).map(str::trim).filter(|m| !m.is_empty())
+    else {
+        return Ok(());
+    };
+    match llm::cli::verify_model(model, None) {
+        llm::cli::ModelVerdict::Tier | llm::cli::ModelVerdict::Installed => Ok(()),
+        llm::cli::ModelVerdict::Unknown(installed) => {
+            let have = if installed.is_empty() {
+                "the local runtime has no models installed".to_string()
+            } else {
+                format!("installed locally: {}", installed.join(" | "))
+            };
+            Err(format!(
+                "bsc plan classify: \"model\": '{model}' is neither a Claude tier nor a model this machine has.\n  \
+                 tiers: {}\n  {have}\n  \
+                 (omit \"model\" entirely to let each session fall through to its persona's default)",
+                bsc_util::model_id_list()
+            ))
+        }
+        llm::cli::ModelVerdict::Unverifiable(why) => {
+            eprintln!(
+                "bsc plan classify: stored, but could not verify '{model}' against the local runtime ({why}).\n                   If that name is wrong the fleet will fail at launch — check with `bsc llm status`."
+            );
+            Ok(())
+        }
+    }
 }
 
 /// `transformation` — the Transformations stage's list (#2509): the modification counterpart to
@@ -778,7 +839,18 @@ fn render_feature(f: &PlanFeature) -> String {
     // the HUMAN view — so a session or a user reading a feature could not see which library records it
     // is meant to be built from, which is the one thing `requires` exists to communicate.
     if !f.requires.is_empty() {
-        out.push_str(&format!("  requires: {}\n", f.requires.join(", ")));
+        // Each entry rendered as its id, plus `(by …)` when it carries provenance — the whole reason
+        // the richer shape exists is that a reader can see which entries a director seeded and which a
+        // worker discovered, and a bare id list hides exactly that.
+        let rendered: Vec<String> = f
+            .requires
+            .iter()
+            .map(|r| match r.by() {
+                Some(by) => format!("{} (by {by})", r.id()),
+                None => r.id().to_string(),
+            })
+            .collect();
+        out.push_str(&format!("  requires: {}\n", rendered.join(", ")));
     }
     if !f.acceptance.is_empty() {
         out.push_str("  acceptance:\n");
@@ -1075,6 +1147,8 @@ mod feature_defined_tests {
     use super::*;
 
     fn f(requires: Vec<String>) -> PlanFeature {
+        let requires: Vec<crate::features::RequiredRef> =
+            requires.into_iter().map(crate::features::RequiredRef::Id).collect();
         PlanFeature {
             slug: "invite".into(),
             name: "Invite teammates".into(),
@@ -1114,5 +1188,189 @@ mod feature_defined_tests {
     #[test]
     fn either_library_counts() {
         assert!(render_feature_line(&f(vec!["ui-button".into()])).contains('✓'), "a component id counts");
+    }
+}
+
+/// `feature requires add|remove|list <slug> [<id>…]` (`a-feature-declares-what-it-requires`).
+///
+/// ADD is a MERGE, not a replace: an id already present is left alone rather than re-stamped, so a
+/// worker adding one prerequisite cannot silently re-attribute the director's. That is the property
+/// that makes the seeded-vs-discovered comparison readable afterwards.
+///
+/// `--from <who>` is the attribution and it is recorded ABSENT rather than guessed, the same rule
+/// `bsc request` follows — an invented author is worse than none when attribution is the whole point.
+fn cmd_feature_requires(args: &Args, s: &crate::Store) -> Result<(), String> {
+    use crate::features::RequiredRef;
+    let usage = "usage: bsc plan feature requires add|remove|list <slug> [<id>…] [--from <who>] [--note <why>]";
+    let op = args.positional.get(2).map(String::as_str).unwrap_or("");
+    let slug = args.positional.get(3).map(String::as_str).ok_or(usage)?;
+    let ids: Vec<&str> = args.positional.iter().skip(4).map(String::as_str).collect();
+    let mut feature = s
+        .feature_get(slug)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("feature requires: no feature '{slug}' (list them with `bsc plan feature list`)"))?;
+
+    match op {
+        "list" => {
+            let rows: Vec<serde_json::Value> = feature
+                .requires
+                .iter()
+                .map(|r| match r {
+                    RequiredRef::Id(id) => serde_json::json!({ "id": id }),
+                    RequiredRef::Entry { id, by, at, note } => {
+                        serde_json::json!({ "id": id, "by": by, "at": at, "note": note })
+                    }
+                })
+                .collect();
+            bsc_sqlite_util::print_json(&rows, args.pretty);
+            Ok(())
+        }
+        "add" => {
+            if ids.is_empty() {
+                return Err(usage.into());
+            }
+            let at = bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms());
+            let mut added = Vec::new();
+            for id in &ids {
+                // Already present ⇒ LEAVE IT. Re-stamping would overwrite whoever actually put it
+                // there, which is exactly the attribution the experiment depends on.
+                if feature.requires.iter().any(|r| r.id() == *id) {
+                    continue;
+                }
+                feature.requires.push(RequiredRef::Entry {
+                    id: (*id).to_string(),
+                    by: args.from.clone(),
+                    at: Some(at.clone()),
+                    note: args.note.clone(),
+                });
+                added.push((*id).to_string());
+            }
+            s.feature_upsert(&feature).map_err(|e| e.to_string())?;
+            if args.json {
+                bsc_sqlite_util::print_json(
+                    &serde_json::json!({ "slug": slug, "added": added, "total": feature.requires.len() }),
+                    args.pretty,
+                );
+            } else {
+                println!(
+                    "feature {slug}: +{} required ({} total{})",
+                    added.len(),
+                    feature.requires.len(),
+                    match &args.from {
+                        Some(w) => format!("; by {w}"),
+                        None => String::new(),
+                    }
+                );
+            }
+            Ok(())
+        }
+        "remove" => {
+            if ids.is_empty() {
+                return Err(usage.into());
+            }
+            let before = feature.requires.len();
+            feature.requires.retain(|r| !ids.iter().any(|id| *id == r.id()));
+            let removed = before - feature.requires.len();
+            // An emptied list must actually EMPTY. `feature_upsert` keeps the stored value when the
+            // submitted array is `[]` (the merge rule every array field follows, so a detail-fill pass
+            // cannot wipe one), which would make removing the last entry a silent no-op.
+            if feature.requires.is_empty() {
+                s.feature_requires_clear(slug).map_err(|e| e.to_string())?;
+            } else {
+                s.feature_upsert(&feature).map_err(|e| e.to_string())?;
+            }
+            if args.json {
+                bsc_sqlite_util::print_json(
+                    &serde_json::json!({ "slug": slug, "removed": removed, "total": feature.requires.len() }),
+                    args.pretty,
+                );
+            } else {
+                println!("feature {slug}: -{removed} required ({} total)", feature.requires.len());
+            }
+            Ok(())
+        }
+        other => Err(format!("feature requires: unknown operation '{other}'\n{usage}")),
+    }
+}
+
+#[cfg(test)]
+mod feature_requires_tests {
+    use super::*;
+    use crate::features::RequiredRef;
+
+    fn seeded() -> crate::Store {
+        let s = crate::Store::open_in_memory().unwrap();
+        s.feature_upsert(&PlanFeature { name: "Glance".into(), ..Default::default() }).unwrap();
+        s
+    }
+
+    /// ADD merges and never RE-ATTRIBUTES an entry someone else put there
+    /// (`a-feature-declares-what-it-requires`).
+    ///
+    /// This is the property the whole experiment rests on. The point of populating `requires` is to
+    /// find out whether a DIRECTOR seeding from the plan or a WORKER discovering mid-task produces the
+    /// better list — and if a second add re-stamped an existing id, the answer would be "whoever ran
+    /// last", every time.
+    #[test]
+    fn add_is_a_merge_and_never_resteals_an_existing_entry() {
+        let s = seeded();
+        let mut f = s.feature_get("glance").unwrap().unwrap();
+        f.requires = vec![RequiredRef::Entry {
+            id: "safe-invoke.ts".into(),
+            by: Some("director".into()),
+            at: Some("2026-09-03T00:00:00Z".into()),
+            note: None,
+        }];
+        s.feature_upsert(&f).unwrap();
+
+        // A worker adds the SAME id plus a new one.
+        let mut f = s.feature_get("glance").unwrap().unwrap();
+        for id in ["safe-invoke.ts", "use-poll.ts"] {
+            if f.requires.iter().any(|r| r.id() == id) {
+                continue;
+            }
+            f.requires.push(RequiredRef::Entry {
+                id: id.into(),
+                by: Some("worker-A".into()),
+                at: Some("2026-09-03T01:00:00Z".into()),
+                note: None,
+            });
+        }
+        s.feature_upsert(&f).unwrap();
+
+        let got = s.feature_get("glance").unwrap().unwrap().requires;
+        assert_eq!(got.len(), 2, "the duplicate was not added twice");
+        assert_eq!(got[0].by(), Some("director"), "the director's entry keeps ITS author");
+        assert_eq!(got[1].by(), Some("worker-A"), "and the new one carries the worker's");
+    }
+
+    /// Removing the LAST entry actually empties the list.
+    ///
+    /// `feature_upsert` keeps the stored array when the submitted one is `[]` — the merge rule every
+    /// array field follows, so a titles-first detail pass cannot wipe a list it did not restate. That
+    /// rule makes removing the final entry a SILENT NO-OP through the normal path: the caller is told
+    /// "-1 required (0 total)" and the store still holds it. `feature_requires_clear` is why it does
+    /// not, and this is the test that would catch it going back.
+    #[test]
+    fn removing_the_last_entry_empties_the_list_rather_than_silently_keeping_it() {
+        let s = seeded();
+        let mut f = s.feature_get("glance").unwrap().unwrap();
+        f.requires = vec![RequiredRef::Id("only.ts".into())];
+        s.feature_upsert(&f).unwrap();
+        assert_eq!(s.feature_get("glance").unwrap().unwrap().requires.len(), 1);
+
+        // The upsert path ALONE cannot do it — proving the hazard is real rather than asserted.
+        let mut emptied = s.feature_get("glance").unwrap().unwrap();
+        emptied.requires.clear();
+        s.feature_upsert(&emptied).unwrap();
+        assert_eq!(
+            s.feature_get("glance").unwrap().unwrap().requires.len(),
+            1,
+            "the merge rule KEEPS a stored list against an empty write — this is the trap",
+        );
+
+        // …and the explicit clear is what actually empties it.
+        s.feature_requires_clear("glance").unwrap();
+        assert!(s.feature_get("glance").unwrap().unwrap().requires.is_empty());
     }
 }

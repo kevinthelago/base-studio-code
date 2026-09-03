@@ -32,11 +32,16 @@
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-/// The five access axes, copied verbatim and ALWAYS present in a projected row.
+/// The six access axes, copied verbatim and ALWAYS present in a projected row.
 ///
 /// Same order and meaning as [`crate::floor::AXES`]; restated rather than imported so that a change
 /// to the clamp's axis list cannot silently redefine what the frozen baseline is compared on.
-pub const AXES: [&str; 5] = ["github", "git", "code", "net", "ui"];
+///
+/// `graph` joined them with `the-algorithms-graph-has-no-write-gate`. It had to be taught here, and
+/// the baseline re-captured deliberately, because a floor field the projection DROPS makes the frozen
+/// baseline compare equal while guarding strictly less — which is what
+/// `no_packaged_floor_carries_a_field_the_projection_ignores` exists to catch, and did.
+pub const AXES: [&str; 6] = ["github", "git", "code", "net", "ui", "graph"];
 
 /// Always present in a projected row, defaulting to `[]` when the floor omits it.
 pub const ALWAYS_LIST: &str = "writeGlobs";

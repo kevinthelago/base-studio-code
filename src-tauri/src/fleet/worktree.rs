@@ -374,6 +374,32 @@ pub(crate) fn write_worker_context(
 /// Marker for the dropped-design section, used to keep `inject_design_context` idempotent.
 const DESIGN_CONTEXT_MARKER: &str = "## UI design (dropped by the user)";
 
+/// Marker for the no-feature notice, used to keep the block idempotent across re-launches.
+const NO_FEATURE_MARKER: &str = "This stream belongs to no feature";
+
+/// Which feature slug a stream resolves to: its own `feature` when it names one, else its id.
+///
+/// The FALLBACK is what makes this non-regressing. 37 of studio-code's 89 stream ids are already
+/// feature slugs, and the launch has always relied on that coincidence; those keep resolving with no
+/// backfill. A stream that names a feature explicitly overrides it, which is the whole point — a
+/// feature owns many streams, and only the stream can say which one it is in.
+fn stream_feature_slug(store: &plandb::Store, stream: &str) -> String {
+    store
+        .fleet_get_or_none()
+        .and_then(|f| {
+            f.get("streams")?
+                .as_array()?
+                .iter()
+                .find(|s| s.get("id").and_then(serde_json::Value::as_str) == Some(stream))?
+                .get("feature")?
+                .as_str()
+                .map(str::trim)
+                .filter(|x| !x.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| stream.to_string())
+}
+
 /// Append a CLAUDE.local.md section pointing a worker at the user's dropped Claude Design (#1373):
 /// given the screen/component file names, tell the worker to build the REAL components from them.
 /// Pure (file names → markdown), `None` when there's no dropped design.
@@ -540,7 +566,45 @@ pub(crate) fn algo_refs_block(refs: &[AlgoRef]) -> Option<String> {
 /// graph, or a stream with no matching feature adds nothing and never aborts a launch.
 pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::path::Path, stream: &str) {
     let Ok(store) = plandb::Store::open(&hub.join("plan.db")) else { return };
-    let Ok(Some(feature)) = store.feature_get(stream) else { return };
+    // WHICH FEATURE THIS STREAM BELONGS TO (`a-feature-owns-many-streams`).
+    //
+    // This used to be `feature_get(stream)` — a feature resolved BY A STREAM ID, which is only correct
+    // while a feature owns exactly one stream. It does not: studio-code has 89 streams against 44
+    // features, 37 ids coincide, and for the other 52 (every crate lane — bsc-util, cve, compliance …)
+    // `feature_get` returned None and this function returned in SILENCE. Those workers got no
+    // prerequisite block and nothing said why.
+    //
+    // The stream's own `feature` is the answer when it has one; the id is the FALLBACK, so the 37
+    // coincident streams resolve exactly as they did.
+    let slug = stream_feature_slug(&store, stream);
+    let feature = match store.feature_get(&slug) {
+        Ok(Some(f)) => f,
+        // LOUD, not silent. A stream that names no feature and whose id is not one is the common case
+        // today, and the whole defect was that it looked identical to a feature with nothing to
+        // require. The worker is told which of the two it is and how to fix it.
+        //
+        // …but ONLY when there is a roster to be absent from. A project with NO features has not
+        // reached the Features stage yet, and telling every worker on it that its stream belongs to no
+        // feature would fire on every early project and mean nothing. `Store::open` CREATES the db, so
+        // "no plan.db at the hub" arrives here as an empty store rather than an open failure — which is
+        // exactly the case the existing no-op test pins, and it caught this.
+        _ if store.feature_list().map(|f| f.is_empty()).unwrap_or(true) => return,
+        _ => {
+            let _ = crate::platform::fsx::append_block_once(
+                wt_local,
+                |cur| cur.contains(NO_FEATURE_MARKER),
+                "\n",
+                &format!(
+                    "## {NO_FEATURE_MARKER}\n\n                     This stream (`{stream}`) resolves to no feature, so no reference implementations \
+                     were listed for it.\n\n                     A stream belongs to a feature, and its feature is what declares the records this \
+                     work needs (`requires`). Without one there is nothing to point you at — which is \
+                     NOT the same as this work needing nothing.\n\n                     Fix it with `bsc plan fleet stream set {stream}` carrying a `\"feature\"`, or ask \
+                     your director which feature this lane belongs to. `bsc plan feature list` shows them.\n",
+                ),
+            );
+            return;
+        }
+    };
     if feature.requires.is_empty() {
         return;
     }
@@ -559,15 +623,19 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
     let refs: Vec<AlgoRef> = feature
         .requires
         .iter()
-        .map(|id| {
-            let by_id = |v: &&serde_json::Value| v.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str());
+        .map(|req| {
+            // A `requires` entry is a bare id OR an object carrying provenance; `id()` is the half
+            // every reader here wants. The provenance is for whoever reads the plan, not for the
+            // worker's context block — naming who asked for a record does not help it read the record.
+            let id = req.id();
+            let by_id = |v: &&serde_json::Value| v.get("id").and_then(serde_json::Value::as_str) == Some(id);
             // ALGORITHMS FIRST, then components. The order is arbitrary but must be FIXED: an id that
             // somehow existed in both would otherwise resolve differently between runs, and the worker
             // would be told to read it with whichever command won the race.
             if let Some(im) = impls.iter().find(by_id) {
                 return AlgoRef {
-                    id: id.clone(),
-                    name: field(im, "name").or_else(|| Some(id.clone())),
+                    id: id.to_string(),
+                    name: field(im, "name").or_else(|| Some(id.to_string())),
                     tech: field(im, "tech"),
                     summary: field(im, "summary"),
                     // Presence only — the body stays in the store (#4191).
@@ -577,8 +645,8 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
             }
             if let Some(c) = components.iter().find(by_id) {
                 return AlgoRef {
-                    id: id.clone(),
-                    name: field(c, "name").or_else(|| Some(id.clone())),
+                    id: id.to_string(),
+                    name: field(c, "name").or_else(|| Some(id.to_string())),
                     // A component's `role` (primitive/composite/page) sits where an impl's language
                     // does: the one-word "what kind of thing is this" the block prints.
                     tech: field(c, "role"),
@@ -589,7 +657,7 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
                     store: Some(RefStore::Components),
                 };
             }
-            AlgoRef { id: id.clone(), name: None, tech: None, summary: None, has_code: false, store: None }
+            AlgoRef { id: id.to_string(), name: None, tech: None, summary: None, has_code: false, store: None }
         })
         .collect();
     let Some(block) = algo_refs_block(&refs) else { return };
@@ -1370,10 +1438,73 @@ mod algo_ref_tests {
         let twice = std::fs::read_to_string(&wt_local).unwrap();
         assert_eq!(once, twice, "a second launch converges — the section appears exactly once");
 
-        // A stream with no matching feature adds nothing.
-        let before = twice.clone();
+        // A stream resolving to NO feature says so out loud (`a-feature-owns-many-streams`).
+        //
+        // THE BITE. This asserted the opposite — "a stream with no matching feature adds nothing" —
+        // which was the defect written down as a contract. It held while a feature owned exactly one
+        // stream; the moment a feature owns many, 52 of studio-code's 89 streams resolved to nothing
+        // and every one of those workers launched with no prerequisites and no explanation. Silence is
+        // indistinguishable from "this work needs nothing", which is the one thing it must not mean.
         inject_required_algorithms(&hub, &wt_local, "no-such-stream");
-        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), before);
+        let loud = std::fs::read_to_string(&wt_local).unwrap();
+        assert!(loud.contains(NO_FEATURE_MARKER), "the worker is TOLD, not left guessing:\n{loud}");
+        assert!(loud.contains("no-such-stream"), "…and told which stream it was");
+        assert!(loud.contains("bsc plan feature list"), "…and how to find the answer");
+        // Idempotent, like every other injection here — a relaunch must not stack the notice.
+        let loud_once = loud.clone();
+        inject_required_algorithms(&hub, &wt_local, "no-such-stream");
+        assert_eq!(std::fs::read_to_string(&wt_local).unwrap(), loud_once, "the notice appears once");
+    }
+
+    /// A stream resolves its requires through its OWN `feature`, not through its id
+    /// (`a-feature-owns-many-streams`).
+    #[test]
+    fn a_stream_resolves_requires_through_its_feature_and_falls_back_to_its_id() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("streamfeature");
+        let hub = home.join("hub");
+        std::fs::create_dir_all(&hub).unwrap();
+        let store = plandb::Store::open(&hub.join("plan.db")).unwrap();
+
+        // ONE feature, TWO streams under it — the shape the whole item exists for, and the shape the
+        // old `feature_get(stream)` could not express at all.
+        store
+            .feature_upsert(&plandb::PlanFeature {
+                slug: "payments".into(),
+                name: "Payments".into(),
+                requires: vec!["some-required-impl".into()],
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .fleet_set(&serde_json::json!({
+                "streams": [
+                    { "id": "checkout", "repo": "o/r", "feature": "payments" },
+                    { "id": "refunds",  "repo": "o/r", "feature": "payments" },
+                    // Names no feature — must fall back to its own id, which IS a feature here.
+                    { "id": "payments", "repo": "o/r" },
+                ]
+            }))
+            .unwrap();
+
+        // Both streams under the feature get its requires, even though NEITHER id is the feature slug.
+        for stream in ["checkout", "refunds"] {
+            let wt = home.join(format!("{stream}.md"));
+            std::fs::write(&wt, "# plan\n").unwrap();
+            inject_required_algorithms(&hub, &wt, stream);
+            let out = std::fs::read_to_string(&wt).unwrap();
+            assert!(out.contains(ALGO_REFS_MARKER), "`{stream}` resolves through its feature:\n{out}");
+            assert!(!out.contains(NO_FEATURE_MARKER), "…and is not reported as feature-less");
+        }
+
+        // THE FALLBACK, which is what makes this non-regressing: 37 of studio-code's 89 stream ids are
+        // already feature slugs and the launch has always leaned on that. A stream naming no feature
+        // still resolves by its id.
+        let wt = home.join("fallback.md");
+        std::fs::write(&wt, "# plan\n").unwrap();
+        inject_required_algorithms(&hub, &wt, "payments");
+        let out = std::fs::read_to_string(&wt).unwrap();
+        assert!(out.contains(ALGO_REFS_MARKER), "the id fallback still resolves:\n{out}");
     }
 
     /// A feature that requires NOTHING must add no section — the common case.
