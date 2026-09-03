@@ -1046,6 +1046,22 @@ fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
             ));
         }
     }
+    // `feature` — which FEATURE this stream belongs to (`a-feature-owns-many-streams`).
+    //
+    // SHAPE only here; that the slug names a real feature is checked at the CLI, which has the store
+    // open. The split is the same one `classify.model` makes: this validator is pure and every one of
+    // its tests is a `json!` literal, so a check needing the roster cannot live in it.
+    //
+    // A present-but-empty value is refused rather than normalised away. It is the shape that LOOKS
+    // decided and resolves to nothing — the launch would fall back to the stream id and the author
+    // would never learn the difference.
+    if let Some(f) = s.get("feature") {
+        if !f.as_str().is_some_and(|x| !x.trim().is_empty()) {
+            errs.push(format!(
+                r#"{at}: "feature" must be a non-empty feature slug when present (see `bsc plan feature list`). Omit it entirely to fall back to the stream's own id"#
+            ));
+        }
+    }
 }
 
 /// Validate one stream blob for `fleet stream set <id>`: the object floor (a pane-id-safe `id` + a
@@ -2061,6 +2077,28 @@ mod tests {
         let title_only = PlanFeature { name: "B".into(), ..Default::default() };
         assert_eq!(feature_readiness(&[full, title_only]), "1 of 2 features fully defined");
         assert_eq!(feature_readiness(&[]), "0 of 0 features fully defined");
+    }
+
+    /// A stream's `feature` is SHAPE-checked here; that it names a real feature is the CLI's question
+    /// (`a-feature-owns-many-streams`).
+    #[test]
+    fn a_stream_feature_must_be_a_non_empty_slug_when_present() {
+        let ok = |f: serde_json::Value| {
+            validate_fleet_stream("api", &json!({ "id": "api", "repo": "o/r", "feature": f })).is_ok()
+        };
+        assert!(ok(json!("payments")));
+        // ABSENT is fine and is the fallback — the stream resolves by its own id.
+        assert!(validate_fleet_stream("api", &json!({ "id": "api", "repo": "o/r" })).is_ok());
+
+        // A present-but-empty value is the dangerous shape: it LOOKS decided and resolves to nothing,
+        // so the launch would fall back to the stream id and the author would never learn the
+        // difference. Refused, with the error saying how to mean "no feature" properly.
+        for bad in [json!(""), json!("   "), json!(true), json!(7), json!(null), json!(["payments"])] {
+            let err = validate_fleet_stream("api", &json!({ "id": "api", "repo": "o/r", "feature": bad }))
+                .unwrap_err();
+            assert!(err.contains("feature"), "names the field: {err}");
+            assert!(err.contains("Omit"), "says how to mean no feature: {err}");
+        }
     }
 
     #[test]
