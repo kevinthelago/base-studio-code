@@ -28,6 +28,11 @@ const BUNDLED_SEEDS: &[&str] = &[
     "deploy/taxonomy.json",
     "market/rubric.json",
     "transformations/taxonomy.json",
+    "ui/preview-importmap.json",
+    "ui/platform-modules.json",
+    "sounds/signal.json",
+    "fleet/defer-directive.md",
+    "fleet/defer-stuck-directive.md",
 ];
 
 /// Stage the runtime-loaded seeds into `src-tauri/resources/data/…`, which is what

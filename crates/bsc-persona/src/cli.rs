@@ -1806,7 +1806,8 @@ mod builtin_guard_tests {
     /// why `providerForModel(None)` yields no bsc-agent override.
     #[test]
     fn the_packaged_debugger_ships_without_a_model() {
-        let raw = include_str!("../../../src-tauri/data/personas/debugger.json");
+        let raw = bsc_util::packaged::read_required("personas/debugger.json");
+        let raw = raw.as_str();
         let v: serde_json::Value = serde_json::from_str(raw).expect("debugger.json is valid JSON");
         assert_eq!(v.get("role").and_then(|r| r.as_str()), Some("debugger"), "guarding the wrong file");
         match v.get("model") {
