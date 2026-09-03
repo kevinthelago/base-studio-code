@@ -195,6 +195,7 @@ mod tests {
             code,
             net: Tier::None,
             ui: Tier::Read,
+            graph: Tier::Read,
             write_globs: globs,
             allow: vec![],
             surfaces: None,
@@ -433,16 +434,41 @@ mod tests {
         );
     }
 
-    /// The store tiers ride along as JSON, and all three values must survive.
+    /// The store tiers ride along as JSON, and all three values must survive — on BOTH stores.
+    ///
+    /// The doc is a BTreeMap, so its keys are alphabetical: `graph` before `ui`. That is not cosmetic
+    /// here — the assertion compares the serialized string, which is what a session actually receives.
     #[test]
     fn the_store_scopes_carry_every_tier() {
         for (tier, want) in [("none", "none"), ("read", "read"), ("write", "write")] {
             let c: RoleCapability = serde_json::from_value(serde_json::json!({
                 "role": "designer", "git": "none", "github": "none", "net": "none", "code": "none",
-                "writeGlobs": ["scratch/**"], "ui": tier
+                "writeGlobs": ["scratch/**"], "ui": tier, "graph": tier
             }))
             .unwrap();
-            assert_eq!(write_scope_env(&c).scopes, format!("{{\"ui\":\"{want}\"}}"));
+            assert_eq!(
+                write_scope_env(&c).scopes,
+                format!("{{\"graph\":\"{want}\",\"ui\":\"{want}\"}}")
+            );
         }
+    }
+
+    /// An ABSENT `graph` deserializes to `read`, never to a grant
+    /// (`the-algorithms-graph-has-no-write-gate`).
+    ///
+    /// The case that matters is a capability serialized before the axis existed — every persona in a
+    /// user's own store, which no packaged update rewrites. It must narrow to the reading tier rather
+    /// than inherit the total access every role had while `bsc-graph` had no gate at all. Pinned here
+    /// because `#[serde(default = "tier_read")]` is one attribute away from silently becoming
+    /// `Tier`'s own default, and nothing else would notice.
+    #[test]
+    fn a_capability_with_no_graph_tier_reads_as_read_not_as_a_grant() {
+        let c: RoleCapability = serde_json::from_value(serde_json::json!({
+            "role": "worker", "git": "write", "github": "read", "net": "read", "code": "write",
+            "writeGlobs": [], "ui": "read"
+        }))
+        .unwrap();
+        assert_eq!(c.graph, Tier::Read, "an absent tier is the READING one");
+        assert_eq!(write_scope_env(&c).scopes, r#"{"graph":"read","ui":"read"}"#);
     }
 }

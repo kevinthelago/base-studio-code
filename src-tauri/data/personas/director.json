@@ -9,6 +9,7 @@
     "code": "write",
     "net": "read",
     "ui": "read",
+    "graph": "read",
     "writeGlobs": [
       "*.md",
       "*.json",

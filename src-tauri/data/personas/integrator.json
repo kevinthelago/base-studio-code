@@ -10,6 +10,7 @@
     "code": "none",
     "net": "read",
     "ui": "none",
+    "graph": "none",
     "writeGlobs": [
       "scratch/**"
     ],
