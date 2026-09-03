@@ -45,6 +45,42 @@ pub const SYSTEMS: &[(&str, &str, &str)] = &[
     ("variants", "variants", "variant"),
     ("themes", "themes", "theme"),
     ("blueprints", "blueprints", "blueprint"),
+    // Added by `the-snapshot-covers-every-authoritative-store`. Both are ordinary
+    // `bsc_json_store` collections, so each costs exactly the row the doc above promised.
+    ("sounds", "sounds", "sound"),
+    ("networks", "networks", "network"),
+];
+
+/// Stores that are AUTHORITATIVE but deliberately NOT captured, and why.
+///
+/// A roster of exclusions rather than silence: the failure this whole surface guards against is a
+/// backup that appears to succeed and quietly omits something. An omission that is DELIBERATE should
+/// be as visible as one that is covered, and [`tests::every_known_store_is_captured_or_excluded`]
+/// fails when a store appears on disk that is on neither list.
+///
+/// `secrets` is the one that must never move. A Studio is a SHAREABLE bundle by construction — the
+/// module header says so and `apply` re-seeds another machine from it — so capturing the credential
+/// store would put pairing metadata into a file whose whole purpose is being handed to someone else.
+/// The values live in the OS keychain and no verb reads them back, but WHICH services a user is
+/// paired with is itself disclosure, and a backup is not a reason to publish it.
+pub const EXCLUDED: &[(&str, &str)] = &[
+    ("secrets", "a Studio is shareable; pairing metadata must not travel in one"),
+    ("plans", "per-project plan.db is a bespoke schema, not a json-store — needs its own reader"),
+    ("knowledge", "the algorithms graph is a NODE+EDGE ontology, not records (#2889)"),
+    ("skills", "SQLite-backed with its own schema (#2889)"),
+    ("runtime", "a cache — re-derived, never authored"),
+    ("perf", "telemetry — measured, never authored"),
+    ("studios", "the snapshot store itself; capturing it would nest snapshots"),
+    // Found by `every_known_store_is_captured_or_excluded` on its first run — I had not accounted
+    // for any of these four, which is precisely what the guard exists to stop. None is a flat
+    // `bsc_json_store` collection, so none can be added by a row; each needs its own reader, and
+    // whether it BELONGS in a shareable bundle is a separate judgement per store. Both questions are
+    // deferred deliberately rather than answered here on a guess:
+    // `the-snapshot-needs-a-reader-for-the-stores-that-are-not-json-collections`.
+    ("projects", "project-hub list — not a json-store collection; needs its own reader"),
+    ("requests", "improvement-request store with its own schema; needs its own reader"),
+    ("loops", "conversation-loop store — not a json-store collection; needs its own reader"),
+    ("entities", "the canonical data model has its own schema; needs its own reader"),
 ];
 
 // TODO(#2889): capture algorithms (bsc-graph) — the Algorithms knowledge graph is a curated
@@ -604,3 +640,69 @@ mod tests {
 // This header stays a file because include! refuses crate-level //! docs and #![…] inner
 // attributes (E0753 / "an inner attribute is not permitted in this context").
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));
+#[cfg(test)]
+mod coverage_tests {
+    use super::{EXCLUDED, SYSTEMS};
+
+    /// EVERY authoritative store is either captured or explicitly excluded — never merely absent.
+    ///
+    /// This is the guard the coverage gap needed. A snapshot of this machine captured 489 records and
+    /// silently omitted `sounds`, `networks`, `plans` and more; nothing failed, because nothing was
+    /// asserting the roster was complete. Adding a store to the app must now force a decision here,
+    /// and "I forgot" stops being expressible.
+    ///
+    /// It reads the DEFAULT base rather than a fixture on purpose: the thing being guarded is drift
+    /// between what the app writes and what the snapshot knows about, and only the real directory can
+    /// show that. A machine with no base dir yet has nothing to drift, so it skips.
+    #[test]
+    fn every_known_store_is_captured_or_excluded() {
+        let Some(base) = bsc_util::bsc_base_dir() else { return };
+        let Ok(entries) = std::fs::read_dir(&base) else { return };
+
+        let captured: Vec<&str> = SYSTEMS.iter().map(|(_, seg, _)| *seg).collect();
+        let excluded: Vec<&str> = EXCLUDED.iter().map(|(seg, _)| *seg).collect();
+
+        let mut unaccounted: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                // A store is `<segment>.db` beside the base dir.
+                let seg = name.strip_suffix(".db")?.to_string();
+                (!captured.contains(&seg.as_str()) && !excluded.contains(&seg.as_str())).then_some(seg)
+            })
+            .collect();
+        unaccounted.sort();
+        unaccounted.dedup();
+
+        // Scratch databases a session left behind are not app stores. Named rather than pattern-matched,
+        // so a REAL store can never hide behind a loose filter.
+        let scratch = ["clamp-live", "clamp-live2", "clamp-live3", "e2e-floor"];
+        unaccounted.retain(|s| !scratch.contains(&s.as_str()));
+
+        assert!(
+            unaccounted.is_empty(),
+            "these stores are neither captured by SYSTEMS nor listed in EXCLUDED, so a backup would \
+             silently omit them: {unaccounted:?}. Add a SYSTEMS row if they belong in a snapshot, or \
+             an EXCLUDED entry saying why they do not."
+        );
+    }
+
+    /// A store is never on both lists — that would read as covered while being skipped.
+    #[test]
+    fn no_store_is_both_captured_and_excluded() {
+        for (_, seg, _) in SYSTEMS {
+            assert!(
+                !EXCLUDED.iter().any(|(e, _)| e == seg),
+                "{seg} is in SYSTEMS and EXCLUDED — one of them is a lie"
+            );
+        }
+    }
+
+    /// Every exclusion carries a REASON. An unexplained one is how a real omission gets parked.
+    #[test]
+    fn every_exclusion_states_why() {
+        for (seg, why) in EXCLUDED {
+            assert!(why.len() > 20, "{seg} is excluded without a real reason: {why:?}");
+        }
+    }
+}
