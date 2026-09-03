@@ -9,6 +9,7 @@
 //! and any session all depend on it, so the CLI stays a tiny binary.
 
 pub mod cli;
+pub mod provenance;
 mod schema;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -56,6 +57,56 @@ pub struct Request {
     /// filed without the flag — read {@link Request::display_title} instead, which is always populated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// WHO filed it, as a RESOLVABLE PANE ID (`a-request-records-where-it-actually-came-from`) — stamped
+    /// from `$BSC_AUDIT_PANE`, never typed. This is the only field the Glance graph can draw an edge
+    /// from, because it is the only one that names a node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_pane: Option<String>,
+    /// WHO filed it, as a free-text ACTOR — what `--from` names (`claude`, `lane-c4`,
+    /// `princess-bubblegum (dev session)`). A real identity that is simply not a node, which is why it
+    /// is a separate column: one field holding either kind could only be told apart by looking for a
+    /// `:` in the string, and that heuristic calls `lane-c4` a pane.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_actor: Option<String>,
+    /// WHICH KIND of origin this row actually holds — `pane`, `actor`, `both`, `unknown` or `absent`.
+    /// ALWAYS present, computed at row-decode ([`row_to_request`]) rather than stored, so every reader
+    /// gets one answer and none of them re-derives it from the string's shape.
+    ///
+    /// `unknown` is the one that matters and is not a bug: a row filed before the split carries only
+    /// the merged `origin`, and nothing recorded which kind it was. Saying so is the honest record —
+    /// promoting it into `pane` or `actor` on a guess is exactly what this replaced.
+    pub origin_kind: OriginKind,
+    /// The directory `bsc request new` ran in. Absent when it could not be read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// The repository (the main working tree). Absent for a filing outside any repository — never the
+    /// process cwd standing in for one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// The WORKING TREE the filer was in — differs from `repo` in a linked worktree, which is the
+    /// distinction that makes a `wt-131` report and a repo-root report different observations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
+    /// The checked-out branch. Absent on a detached HEAD: a sha is not a branch name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// The `bsc` crate version that filed it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bsc_version: Option<String>,
+    /// When that binary was built (epoch ms) — the same signal `bsc version` prints. Half the queue
+    /// reports behaviour that has since changed, and this is what makes "is this still true?" askable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bsc_built_at: Option<i64>,
+    /// The agent harness driving the filer (`claude-code`, `bsc-agent`). Absent for a plain shell.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// The model, provider-namespaced when known (`local/qwen3-35b`). Absent far more often than not —
+    /// Claude Code publishes no model unless pinned — and that absence is the correct record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The harness's own session id, so a request can be read back against that session's transcript.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// The title to SHOW — the explicit `title` when there is one, else derived from `text`. ALWAYS
     /// present, so every consumer (the graph node label above all) has a non-empty label without
     /// reimplementing the fallback, and a legacy row needs no backfill.
@@ -63,6 +114,65 @@ pub struct Request {
     /// Computed at row-decode ([`row_to_request`]), never stored: freezing the derivation into the row
     /// would mean improving it later left every existing request on the old one.
     pub display_title: String,
+}
+
+/// WHAT KIND of thing a request's origin names (`a-request-records-where-it-actually-came-from`).
+///
+/// The store classifies it ONCE, from which columns are populated, so no reader has to. That is the
+/// whole point: the previous single `origin` column mixed a resolvable pane id with arbitrary free
+/// text, and every consumer that wanted to tell them apart reached for the same broken heuristic —
+/// "does it contain a colon" — which labels `lane-c4` a pane and would label a pane id typed into
+/// `--from` a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OriginKind {
+    /// A session filed it and stamped its pane id — the graph can edge this to a node.
+    Pane,
+    /// A named actor filed it from a shell. A real identity, but not a node on any graph.
+    Actor,
+    /// A session that ALSO named an actor. Strictly more information than either alone; the pane is
+    /// what the graph draws from.
+    Both,
+    /// A row filed before the split: the merged `origin` holds *something* and nothing recorded which
+    /// kind it was. Deliberately not resolved by inspecting the string — see the type doc.
+    Unknown,
+    /// Nobody said. The one state that must never be filled in with a plausible guess.
+    Absent,
+}
+
+impl OriginKind {
+    /// Classify from the three columns, in the order the store populates them.
+    pub fn of(pane: Option<&str>, actor: Option<&str>, legacy_origin: Option<&str>) -> OriginKind {
+        fn live(v: Option<&str>) -> bool {
+            v.map(str::trim).is_some_and(|s| !s.is_empty())
+        }
+        match (live(pane), live(actor)) {
+            (true, true) => OriginKind::Both,
+            (true, false) => OriginKind::Pane,
+            (false, true) => OriginKind::Actor,
+            // Only now does the merged column matter, and only to say we cannot tell.
+            (false, false) if live(legacy_origin) => OriginKind::Unknown,
+            (false, false) => OriginKind::Absent,
+        }
+    }
+
+    /// Does this origin name a node the graph could edge to? `Unknown` says yes-maybe: the legacy
+    /// string may or may not be a pane id, so a caller should TRY to resolve it and fall back to an
+    /// unparented node — never skip it on the assumption it belongs to another graph.
+    pub fn names_a_pane(self) -> bool {
+        matches!(self, OriginKind::Pane | OriginKind::Both)
+    }
+
+    /// The word `get` prints and `--json` carries.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OriginKind::Pane => "pane",
+            OriginKind::Actor => "actor",
+            OriginKind::Both => "both",
+            OriginKind::Unknown => "unknown",
+            OriginKind::Absent => "absent",
+        }
+    }
 }
 
 /// The longest derived title — long enough to carry a real phrase, short enough for a graph node label.
@@ -132,6 +242,31 @@ pub struct NewRequest {
     /// ([`Request::display_title`]) — the derivation is deliberately NOT frozen into the row, so
     /// improving it improves every existing request.
     pub title: Option<String>,
+    /// The filing context (`a-request-records-where-it-actually-came-from`) — who/where/which build.
+    /// `Default` is every field absent, which is what a caller with nothing to say should store.
+    pub context: FilingContext,
+}
+
+/// WHO, WHERE and WHICH BUILD, as `bsc request new` observed them at filing time.
+///
+/// Every field is `Option` and every `None` is written as SQL NULL. Nothing in the store or the CLI
+/// substitutes a default for one of these: a fabricated cwd or an invented repo is indistinguishable
+/// from a measured one to every later reader, and that is the failure this record exists to prevent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FilingContext {
+    /// The filing session's pane id, stamped from `$BSC_AUDIT_PANE`.
+    pub origin_pane: Option<String>,
+    /// The free-text actor `--from` named.
+    pub origin_actor: Option<String>,
+    pub cwd: Option<String>,
+    pub repo: Option<String>,
+    pub worktree: Option<String>,
+    pub branch: Option<String>,
+    pub bsc_version: Option<String>,
+    pub bsc_built_at: Option<i64>,
+    pub harness: Option<String>,
+    pub model: Option<String>,
+    pub session_id: Option<String>,
 }
 
 /// Filters for [`Store::list`]. All-default lists every request, newest first.
@@ -197,10 +332,35 @@ impl Store {
         // the empty string instead would make `display_title` and the graph's origin lookup treat "we were
         // told nothing" as "we were told it is empty".
         let blank_to_none = |s: &Option<String>| s.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+        let c = &n.context;
         self.conn.execute(
-            "INSERT INTO requests (text, surface, cmd, shot_path, status, created_at, origin, title)
-             VALUES (?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7)",
-            params![n.text, surface, n.cmd, n.shot_path, n.ts, blank_to_none(&n.origin), blank_to_none(&n.title)],
+            "INSERT INTO requests (text, surface, cmd, shot_path, status, created_at, origin, title,
+                                   origin_pane, origin_actor, cwd, repo, worktree, branch,
+                                   bsc_version, bsc_built_at, harness, model, session_id)
+             VALUES (?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            params![
+                n.text,
+                surface,
+                n.cmd,
+                n.shot_path,
+                n.ts,
+                blank_to_none(&n.origin),
+                blank_to_none(&n.title),
+                // The context is normalized through the SAME blank→NULL rule: a caller that hands over
+                // an empty cwd is saying "I could not read one", and storing "" would make that absence
+                // sort, filter and render as a value.
+                blank_to_none(&c.origin_pane),
+                blank_to_none(&c.origin_actor),
+                blank_to_none(&c.cwd),
+                blank_to_none(&c.repo),
+                blank_to_none(&c.worktree),
+                blank_to_none(&c.branch),
+                blank_to_none(&c.bsc_version),
+                c.bsc_built_at,
+                blank_to_none(&c.harness),
+                blank_to_none(&c.model),
+                blank_to_none(&c.session_id),
+            ],
         )?;
         let id = self.conn.last_insert_rowid();
         Ok(self.get(id)?.expect("request exists after insert"))
@@ -382,13 +542,18 @@ pub struct RequestNote {
 }
 
 /// The column list `row_to_request` decodes, in one place so the SELECTs can't drift from the mapper.
-const COLS: &str =
-    "id, text, surface, cmd, shot_path, status, note, created_at, resolved_at, claimed_by, claimed_at, origin, title";
+const COLS: &str = "id, text, surface, cmd, shot_path, status, note, created_at, resolved_at, claimed_by, \
+     claimed_at, origin, title, origin_pane, origin_actor, cwd, repo, worktree, branch, bsc_version, \
+     bsc_built_at, harness, model, session_id";
 
 fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
     // Read once, then move into the struct — `display_title` needs both before either is placed.
     let text: String = r.get(1)?;
     let title: Option<String> = r.get(12)?;
+    // Read before the move, for the same reason `title` is: `origin_kind` is derived from all three.
+    let origin: Option<String> = r.get(11)?;
+    let origin_pane: Option<String> = r.get(13)?;
+    let origin_actor: Option<String> = r.get(14)?;
     Ok(Request {
         id: r.get(0)?,
         surface: r.get(2)?,
@@ -400,7 +565,21 @@ fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
         resolved_at: r.get(8)?,
         claimed_by: r.get(9)?,
         claimed_at: r.get(10)?,
-        origin: r.get(11)?,
+        // Derived HERE, from which columns are populated — never from the string's shape. This is the
+        // single place the pane/actor question is answered, so no reader re-answers it differently.
+        origin_kind: OriginKind::of(origin_pane.as_deref(), origin_actor.as_deref(), origin.as_deref()),
+        origin,
+        origin_pane,
+        origin_actor,
+        cwd: r.get(15)?,
+        repo: r.get(16)?,
+        worktree: r.get(17)?,
+        branch: r.get(18)?,
+        bsc_version: r.get(19)?,
+        bsc_built_at: r.get(20)?,
+        harness: r.get(21)?,
+        model: r.get(22)?,
+        session_id: r.get(23)?,
         title: title.clone(),
         // Derived HERE so every reader — CLI, app, graph — sees one label and none of them has to know
         // the fallback rule.

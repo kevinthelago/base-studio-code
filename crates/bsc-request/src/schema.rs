@@ -62,6 +62,43 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     add_column_if_missing(conn, "origin", "TEXT")?;
     add_column_if_missing(conn, "title", "TEXT")?;
+    // THE FILING CONTEXT (`a-request-records-where-it-actually-came-from`) — every column NULLABLE and
+    // added by ALTER, the same in-place upgrade path the claim and provenance columns above took, so
+    // the 39 requests already in the live db keep reading with these simply absent.
+    //
+    // `origin` above could not answer "who filed this", because `--from` and `$BSC_AUDIT_PANE` both
+    // landed in it: it holds a resolvable PANE id on one row and arbitrary free text on the next, and
+    // the only way to tell them apart was looking for a `:` — which calls `lane-c4` a pane. So the two
+    // are SPLIT here. `origin` is left alone and still written exactly as before: 39 rows and every
+    // reader of it are evidence, not something to rewrite.
+    //
+    //   `origin_pane`  the filing session's pane id, stamped from $BSC_AUDIT_PANE — resolvable to a
+    //                  graph node, which is the only thing the Glance edge can be drawn from.
+    //   `origin_actor` the free-text actor a `--from` names. A real identity; just not a node.
+    //
+    // A row may carry BOTH (a session that also passed --from) — that is strictly more information
+    // than the single field could hold, and neither displaces the other.
+    add_column_if_missing(conn, "origin_pane", "TEXT")?;
+    add_column_if_missing(conn, "origin_actor", "TEXT")?;
+    // WHERE it was filed. `repo` and `worktree` are separate because they differ in a linked worktree,
+    // and that difference is the report: a `bsc ui` gap hit in `wt-131` and one hit at the repo root
+    // are not the same observation. Absent for a filing outside any repository — never back-filled
+    // with the process cwd, which would read as a measured repository.
+    add_column_if_missing(conn, "cwd", "TEXT")?;
+    add_column_if_missing(conn, "repo", "TEXT")?;
+    add_column_if_missing(conn, "worktree", "TEXT")?;
+    add_column_if_missing(conn, "branch", "TEXT")?;
+    // WHICH BUILD was running. Half the live queue reports behaviour that has since changed and
+    // nothing recorded what produced it, so "is this still true?" was unanswerable. `bsc_built_at` is
+    // the executable's mtime in epoch ms — the same signal `bsc version` prints, so the two agree.
+    add_column_if_missing(conn, "bsc_version", "TEXT")?;
+    add_column_if_missing(conn, "bsc_built_at", "INTEGER")?;
+    // WHO WAS DRIVING. A cost complaint from a 35B local operator and one from Claude are different
+    // reports. Absent whenever the environment does not say — Claude Code publishes no model unless
+    // pinned, and that absence is the correct record rather than a default model name.
+    add_column_if_missing(conn, "harness", "TEXT")?;
+    add_column_if_missing(conn, "model", "TEXT")?;
+    add_column_if_missing(conn, "session_id", "TEXT")?;
     // The REPLY thread (#bsc-request-gains-a-note-verb) — its own table, not the `note` column above.
     //
     // That column is the RESOLVE stamp: one TEXT, written when a request is closed. Threading replies
@@ -166,5 +203,54 @@ mod tests {
         assert_eq!(text, "filed before provenance existed", "the legacy row survived the ALTER");
         assert_eq!(origin, None, "an unattributed legacy row stays unattributed — never back-filled with a guess");
         assert_eq!(title, None, "no backfill; readers derive a title from `text`");
+    }
+
+    /// `a-request-records-where-it-actually-came-from`: the filing-context columns land on a db that
+    /// already carries the claim AND provenance ones — one migration further along the live upgrade
+    /// path. The pre-existing row keeps everything it had and gets NULL for every new field: nothing
+    /// back-fills a cwd, a repo or an actor it never observed.
+    #[test]
+    fn migrate_adds_filing_context_columns_and_never_backfills_them() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL,
+                surface TEXT NOT NULL DEFAULT 'bsc ui', cmd TEXT, shot_path TEXT,
+                status TEXT NOT NULL DEFAULT 'open', note TEXT,
+                created_at INTEGER NOT NULL DEFAULT 0, resolved_at INTEGER,
+                claimed_by TEXT, claimed_at INTEGER, origin TEXT, title TEXT);
+             INSERT INTO requests (text, origin) VALUES ('filed before the context existed', 'lane-c4');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap(); // idempotent over the third ALTER batch too
+        let has_col = |c: &str| -> bool {
+            conn.prepare("SELECT 1 FROM pragma_table_info('requests') WHERE name = ?1").unwrap().exists([c]).unwrap()
+        };
+        for c in [
+            "origin_pane",
+            "origin_actor",
+            "cwd",
+            "repo",
+            "worktree",
+            "branch",
+            "bsc_version",
+            "bsc_built_at",
+            "harness",
+            "model",
+            "session_id",
+        ] {
+            assert!(has_col(c), "filing-context column {c} added");
+        }
+        let (origin, pane, actor, cwd, built): (String, Option<String>, Option<String>, Option<String>, Option<i64>) =
+            conn.query_row("SELECT origin, origin_pane, origin_actor, cwd, bsc_built_at FROM requests", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .unwrap();
+        assert_eq!(origin, "lane-c4", "the legacy origin is EVIDENCE — untouched, not reclassified");
+        assert_eq!(pane, None, "and it is not promoted into the pane column on a guess about its shape");
+        assert_eq!(actor, None, "nor into the actor column — nobody recorded which it was");
+        assert_eq!(cwd, None);
+        assert_eq!(built, None);
     }
 }

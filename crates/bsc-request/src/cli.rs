@@ -7,7 +7,8 @@
 //! Reads are lean by default; `--json`/`--pretty` for machine-readable JSON. Help is per-command:
 //! `bsc request help` · `bsc request <cmd> help`.
 
-use crate::{Filter, NewRequest, Request, RequestNote, Store};
+use crate::provenance;
+use crate::{FilingContext, Filter, NewRequest, OriginKind, Request, RequestNote, Store};
 use bsc_cli_util::CmdDoc;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -32,10 +33,17 @@ via --cmd (a request is observed, not narrated). --surface defaults to `bsc ui`.
 one is derived from <text>, so a label is never empty; pass it when the derivation would read badly.
 
 WHO FILED IT IS STAMPED FOR YOU. The request records the filing session's pane id from $BSC_AUDIT_PANE —
-you do not pass it, cannot forget it, and should not try to set it. That origin is what hangs the debug
+you do not pass it, cannot forget it, and should not try to set it. That pane is what hangs the debug
 session that works this request off YOUR node in the graph, so a request always traces back to the
-session that hit the gap. --from overrides it for a request filed outside a session (a human at a shell);
-with neither, the origin is recorded as absent rather than guessed.",
+session that hit the gap. --from names an ACTOR instead, for a request filed outside a session (a human
+or a lane at a shell). They no longer compete: a session that also passes --from records BOTH, and with
+neither the origin is recorded as absent rather than guessed.
+
+THE FILING CONTEXT IS STAMPED TOO — the working tree, its repository and branch, the cwd, the `bsc`
+build that was running, and the agent harness/model/session when the environment says. None of it is
+typed and none of it is guessed: anything that cannot be resolved is recorded as ABSENT, because a
+plausible cwd or an invented repo reads exactly like a measured one. Read it back with
+`bsc request get <id>`; `list` stays lean.",
     },
     CmdDoc {
         name: "list",
@@ -56,7 +64,11 @@ list without the flag, which is the triage view. --surface filters by tool. Lean
 USAGE:
   bsc request get <id> [--json|--pretty]
 
-One request's full record — the failing command + the resolve note the lean list omits.",
+One request's full record — the failing command, the resolve note, and the FILING CONTEXT the lean list
+omits: who filed it (a session pane and/or a named actor, each labelled so neither is mistaken for the
+other), the working tree / repository / branch / cwd it was filed from, the `bsc` build that was
+running, and the harness / model / session driving it. Anything that could not be resolved is shown as
+absent rather than filled in.",
     },
     CmdDoc {
         name: "note",
@@ -290,6 +302,7 @@ fn cmd_new(args: &Args) -> Result<(), String> {
         ts: now_ms(),
         origin: resolve_origin(args.from.clone(), std::env::var("BSC_AUDIT_PANE").ok()),
         title: args.title.clone(),
+        context: capture_context(args.from.clone(), &|k| std::env::var(k).ok()),
     };
     let r = open_store(&args.db)?.create(&input).map_err(|e| format!("filing request: {e}"))?;
     println!("{}", r.id);
@@ -318,6 +331,38 @@ fn resolve_origin(from: Option<String>, audit_pane: Option<String>) -> Option<St
         s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty() && v != "?")
     };
     clean(from).or_else(|| clean(audit_pane))
+}
+
+/// Observe the filing context (`a-request-records-where-it-actually-came-from`) — who, where, and
+/// which build — from the environment and the working directory.
+///
+/// `--from` and `$BSC_AUDIT_PANE` NO LONGER COMPETE. They answer different questions — "which actor"
+/// and "which session" — and putting them in one field is why the live queue holds `claude`,
+/// `lane-c4` and `studio-code:director` under one name with nothing to tell them apart. Here they go
+/// to their own columns, so a session that also passes `--from` records BOTH rather than one
+/// overwriting the other. [`resolve_origin`] is unchanged and still writes the merged `origin`: 39
+/// rows and every existing reader depend on it, and rewriting evidence to fit a new schema is not a
+/// migration.
+///
+/// Everything else is STAMPED, NOT TYPED, and every unresolvable field is left absent — see the
+/// module docs on `provenance` for why a plausible default is worse than a blank here.
+fn capture_context(from: Option<String>, env: &dyn Fn(&str) -> Option<String>) -> FilingContext {
+    let tree = std::env::current_dir().map(|d| provenance::locate_tree(&d)).unwrap_or_default();
+    let f = provenance::filer(env);
+    let (bsc_version, bsc_built_at) = provenance::build_stamp(std::env::current_exe().ok().as_deref());
+    FilingContext {
+        origin_pane: provenance::clean(env("BSC_AUDIT_PANE")),
+        origin_actor: provenance::clean(from),
+        cwd: tree.cwd,
+        repo: tree.repo,
+        worktree: tree.worktree,
+        branch: tree.branch,
+        bsc_version,
+        bsc_built_at,
+        harness: f.harness,
+        model: f.model,
+        session_id: f.session_id,
+    }
 }
 
 /// `list` — the request queue.
@@ -506,11 +551,74 @@ fn request_line(r: &Request) -> String {
     )
 }
 
+/// WHO filed a request, with the KIND named rather than implied
+/// (`a-request-records-where-it-actually-came-from`).
+///
+/// The kind is printed because the two are not interchangeable and the reader cannot infer which is
+/// which: `studio-code:director` is a session the graph can edge to, `lane-c4` is a person or a lane
+/// that it cannot, and both are plausible strings for either. It comes from the STORE's classification
+/// ([`OriginKind`]), so this function never inspects the string it is printing.
+///
+/// The two absences are stated, not omitted. `absent` means nobody said, and `unknown` means the row
+/// predates the split and nothing recorded which kind its origin was — a reader who sees a bare name
+/// with no qualifier would take it for a measured one.
+fn filed_by(r: &Request) -> String {
+    match r.origin_kind {
+        OriginKind::Pane => format!("{} (session pane)", r.origin_pane.as_deref().unwrap_or("-")),
+        OriginKind::Actor => format!("{} (actor)", r.origin_actor.as_deref().unwrap_or("-")),
+        OriginKind::Both => format!(
+            "{} (session pane) · {} (actor)",
+            r.origin_pane.as_deref().unwrap_or("-"),
+            r.origin_actor.as_deref().unwrap_or("-"),
+        ),
+        OriginKind::Unknown => format!(
+            "{} (kind not recorded — filed before pane and actor were separate)",
+            r.origin.as_deref().unwrap_or("-"),
+        ),
+        OriginKind::Absent => "(not recorded — no session pane and no --from)".to_string(),
+    }
+}
+
 /// The full one-request block for `get` (human form).
 fn request_block(r: &Request) -> String {
     let mut s = format!("request {}  [{}]  ({})\n{}\n{}", r.id, r.status, r.surface, r.display_title, r.text);
-    if let Some(origin) = &r.origin {
-        s.push_str(&format!("\nfiled by: {origin}"));
+    s.push_str(&format!("\nfiled by: {}", filed_by(r)));
+    // WHERE, on its own line and only when something was measured. The worktree leads because it is the
+    // thing that differs between two otherwise identical reports; the repository is context for it.
+    // The cwd is dropped when it IS the working tree, which is the common case — repeating the same
+    // path twice on one line trains a reader to skip the line, and the whole point of it is to be read.
+    // It survives whenever it differs (a filing from a subdirectory), which is when it says something.
+    let cwd = r.cwd.as_deref().filter(|c| Some(*c) != r.worktree.as_deref()).map(str::to_string);
+    let where_bits: Vec<String> = [("repo", &r.repo), ("branch", &r.branch), ("cwd", &cwd)]
+        .into_iter()
+        .filter_map(|(k, v)| v.as_deref().map(|v| format!("{k} {v}")))
+        .collect();
+    if r.worktree.is_some() || !where_bits.is_empty() {
+        let tree = r.worktree.as_deref().unwrap_or("(no working tree)");
+        s.push_str(&format!("\nfiled in: {tree}"));
+        if !where_bits.is_empty() {
+            s.push_str(&format!("  ({})", where_bits.join(", ")));
+        }
+    }
+    // WHICH BUILD — the version alone dates nothing (it has been 0.1.0 throughout), so the build time
+    // is the half that answers "is this report still about the current behaviour?".
+    if r.bsc_version.is_some() || r.bsc_built_at.is_some() {
+        let v = r.bsc_version.as_deref().unwrap_or("(unknown version)");
+        let built = r
+            .bsc_built_at
+            .map(|ms| format!(", built {}", bsc_cli_util::format_epoch_ms(ms)))
+            .unwrap_or_default();
+        s.push_str(&format!("\nfiled by bsc: {v}{built}"));
+    }
+    // WHO WAS DRIVING. Each half is independently absent, so the line appears with whichever half was
+    // actually observed rather than being suppressed because the other was not.
+    let driver: Vec<String> = [&r.harness, &r.model]
+        .into_iter()
+        .filter_map(|v| v.as_deref().map(str::to_string))
+        .chain(r.session_id.as_deref().map(|s| format!("session {s}")))
+        .collect();
+    if !driver.is_empty() {
+        s.push_str(&format!("\ndriven by: {}", driver.join(" · ")));
     }
     if let Some(cmd) = &r.cmd {
         s.push_str(&format!("\nfailing command: {cmd}"));
@@ -608,6 +716,16 @@ mod tests {
     /// it in the lean list — the form a shell actually reads the queue in.
     #[test]
     fn new_stamps_the_origin_and_the_lean_list_shows_it() {
+        // The pane is forced ABSENT under the lock (the #184 pattern, one test below). It used not to
+        // matter here because `--from` won outright and the block printed only the merged value; since
+        // `a-request-records-where-it-actually-came-from` a session that ALSO passes `--from` records
+        // BOTH, so an ambient `$BSC_AUDIT_PANE` — real in a debug-studio pane, or left behind by a
+        // sibling test in the same process — changes what this asserts. Pinning it is the fix; reading
+        // whatever the environment happens to hold is what made it a coin flip.
+        let _guard = AUDIT_PANE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_pane = std::env::var("BSC_AUDIT_PANE").ok();
+        std::env::remove_var("BSC_AUDIT_PANE");
+
         let dir = std::env::temp_dir().join(format!("bsc-request-origin-cli-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("requests.db");
@@ -626,10 +744,14 @@ mod tests {
         assert_eq!(r.display_title, "impl list needs --domain");
         let line = request_line(&r);
         assert!(line.contains("librarian-studio:typescript"), "the origin rides the lean TSV: {line}");
-        // …and `get`'s human block names the filer in words, not just as a column.
-        assert!(request_block(&r).contains("filed by: librarian-studio:typescript"));
+        // …and `get`'s human block names the filer in words, not just as a column — and says WHAT KIND
+        // it is, which a bare name cannot.
+        assert!(request_block(&r).contains("filed by: librarian-studio:typescript (actor)"));
 
         let _ = std::fs::remove_dir_all(&dir);
+        if let Some(p) = prev_pane {
+            std::env::set_var("BSC_AUDIT_PANE", p);
+        }
     }
 
     /// A request filed with neither flag nor pane still lists and still labels — the unattributed path
@@ -656,7 +778,12 @@ mod tests {
         assert_eq!(r.origin, None);
         assert_eq!(r.display_title, "the preview cannot mount a kit component");
         assert!(request_line(&r).contains("\t-\t"), "an absent origin renders as the '-' placeholder");
-        assert!(!request_block(&r).contains("filed by:"), "and is not claimed in the human block");
+        // CHANGED by `a-request-records-where-it-actually-came-from`: the block now STATES the absence
+        // instead of omitting the line. The guard is the same in substance — nothing may be CLAIMED as
+        // the filer — but an omitted field is indistinguishable from one the reader skimmed past, and
+        // "nobody said" is precisely the answer this store now exists to be able to give out loud.
+        let block = request_block(&r);
+        assert!(block.contains("filed by: (not recorded"), "the absence is STATED, not omitted: {block}");
 
         let _ = std::fs::remove_dir_all(&dir);
         if let Some(p) = prev_pane {
@@ -808,6 +935,188 @@ mod tests {
         assert!(open_store(&db).unwrap().get(1).unwrap().unwrap().is_open(), "back to open after unclaim");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── `a-request-records-where-it-actually-came-from` ─────────────────────────────────────────────
+
+    /// THE GUARD THE ITEM ASKS FOR: an app-pane filing and a shell filing are told apart by the STORE,
+    /// not by a heuristic in the reader.
+    ///
+    /// Both requests are filed through the real `cmd_new`, one with `$BSC_AUDIT_PANE` set and no
+    /// `--from` (a session in an app pane, whose charter forbids the flag) and one with `--from` and no
+    /// pane (a dev session at a shell, which CLAUDE.md tells to pass it). The assertion is on
+    /// `origin_kind` and on which COLUMN is populated — it never looks at the strings, which is the
+    /// whole point: the old single field could only be classified by hunting for a `:`, and that
+    /// heuristic calls `lane-c4` a pane. Note the two values are deliberately chosen to DEFEAT it —
+    /// the shell actor here contains a colon and the pane id does not.
+    #[test]
+    fn the_store_tells_an_app_pane_filing_from_a_shell_filing() {
+        let _guard = AUDIT_PANE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_pane = std::env::var("BSC_AUDIT_PANE").ok();
+
+        let dir = std::env::temp_dir().join(format!("bsc-request-kind-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let dbp = path.to_string_lossy().into_owned();
+
+        // 1 — an APP PANE. The pane id is deliberately colon-free, so a shape heuristic would miss it.
+        std::env::set_var("BSC_AUDIT_PANE", "designstudio");
+        cmd_new(&args_for(vec!["new", "the preview cannot mount a kit component"], |a| a.db = Some(dbp.clone())))
+            .unwrap();
+        // 2 — a SHELL. The actor deliberately CONTAINS a colon, so a shape heuristic would call it a pane.
+        std::env::remove_var("BSC_AUDIT_PANE");
+        cmd_new(&args_for(vec!["new", "impl history errors for a committed-only record"], |a| {
+            a.db = Some(dbp.clone());
+            a.from = Some("lane-c4: princess-bubblegum".into());
+        }))
+        .unwrap();
+
+        let store = open_store(&Some(dbp.clone())).unwrap();
+        let (pane_filed, shell_filed) = (store.get(1).unwrap().unwrap(), store.get(2).unwrap().unwrap());
+
+        assert_eq!(pane_filed.origin_kind, OriginKind::Pane, "a session filing is a PANE origin");
+        assert_eq!(pane_filed.origin_pane.as_deref(), Some("designstudio"));
+        assert_eq!(pane_filed.origin_actor, None, "and it names no actor, because nobody typed one");
+
+        assert_eq!(shell_filed.origin_kind, OriginKind::Actor, "a shell filing is an ACTOR origin");
+        assert_eq!(shell_filed.origin_actor.as_deref(), Some("lane-c4: princess-bubblegum"));
+        assert_eq!(shell_filed.origin_pane, None, "no session, so no pane — even though the actor has a colon");
+
+        // The two disagree on kind, and neither test above read a character of the values to decide.
+        assert_ne!(pane_filed.origin_kind, shell_filed.origin_kind);
+        assert!(pane_filed.origin_kind.names_a_pane(), "only the pane one can be edged to a graph node");
+        assert!(!shell_filed.origin_kind.names_a_pane());
+
+        // The merged `origin` is written EXACTLY as before, so the 39 rows and every reader of it are
+        // untouched — the split is additive.
+        assert_eq!(pane_filed.origin.as_deref(), Some("designstudio"));
+        assert_eq!(shell_filed.origin.as_deref(), Some("lane-c4: princess-bubblegum"), "--from still wins there");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        match prev_pane {
+            Some(p) => std::env::set_var("BSC_AUDIT_PANE", p),
+            None => std::env::remove_var("BSC_AUDIT_PANE"),
+        }
+    }
+
+    /// A session that ALSO passes `--from` records BOTH — one no longer overwrites the other, which is
+    /// what the single field forced.
+    #[test]
+    fn a_session_that_also_names_an_actor_records_both() {
+        let _guard = AUDIT_PANE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_pane = std::env::var("BSC_AUDIT_PANE").ok();
+        std::env::set_var("BSC_AUDIT_PANE", "studio-code:director");
+
+        let dir = std::env::temp_dir().join(format!("bsc-request-both-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let dbp = path.to_string_lossy().into_owned();
+        cmd_new(&args_for(vec!["new", "bsc teams cannot rename a position"], |a| {
+            a.db = Some(dbp.clone());
+            a.from = Some("kevin".into());
+        }))
+        .unwrap();
+        let r = open_store(&Some(dbp.clone())).unwrap().get(1).unwrap().unwrap();
+        assert_eq!(r.origin_kind, OriginKind::Both);
+        assert_eq!(r.origin_pane.as_deref(), Some("studio-code:director"), "the session is still known");
+        assert_eq!(r.origin_actor.as_deref(), Some("kevin"), "and so is who was driving it");
+        let block = request_block(&r);
+        assert!(block.contains("studio-code:director (session pane)") && block.contains("kevin (actor)"), "{block}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        match prev_pane {
+            Some(p) => std::env::set_var("BSC_AUDIT_PANE", p),
+            None => std::env::remove_var("BSC_AUDIT_PANE"),
+        }
+    }
+
+    /// THE LEAN LIST STAYS LEAN. `list` is a TSV a session reads from a shell; the filing context goes
+    /// on `get`. A column added here silently breaks every `cut -f` reading the queue, so the shape is
+    /// pinned by count rather than described in a comment.
+    #[test]
+    fn the_lean_list_line_gains_no_columns() {
+        let store = Store::open_in_memory().unwrap();
+        let r = store
+            .create(&NewRequest {
+                text: "x".into(),
+                ts: 1,
+                context: FilingContext {
+                    origin_pane: Some("designstudio".into()),
+                    cwd: Some("/w/wt-131".into()),
+                    repo: Some("/w".into()),
+                    branch: Some("develop".into()),
+                    harness: Some("claude-code".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .unwrap();
+        let line = request_line(&r);
+        assert_eq!(line.split('\t').count(), 6, "still id/status/surface/origin/cmd/text: {line}");
+        for absent in ["/w/wt-131", "develop", "claude-code"] {
+            assert!(!line.contains(absent), "the context does NOT ride the lean list: {line}");
+        }
+        // …and every one of them IS on `get`, which is where the detail was moved to, not dropped.
+        let block = request_block(&r);
+        for present in ["/w/wt-131", "develop", "claude-code"] {
+            assert!(block.contains(present), "get carries the context: {block}");
+        }
+    }
+
+    /// The cwd is shown only when it ADDS something. Repeating the working tree's path twice on one
+    /// line is how a reader learns to skip the line.
+    #[test]
+    fn the_cwd_is_omitted_when_it_is_the_working_tree_and_kept_when_it_is_not() {
+        let store = Store::open_in_memory().unwrap();
+        let same = FilingContext {
+            worktree: Some("/w/wt-131".into()),
+            cwd: Some("/w/wt-131".into()),
+            repo: Some("/w".into()),
+            ..Default::default()
+        };
+        let r = store.create(&NewRequest { text: "a".into(), ts: 1, context: same, ..Default::default() }).unwrap();
+        let b = request_block(&r);
+        assert!(b.contains("filed in: /w/wt-131"), "{b}");
+        assert!(!b.contains("cwd "), "the cwd said nothing the tree had not already: {b}");
+
+        let deeper = FilingContext {
+            worktree: Some("/w/wt-131".into()),
+            cwd: Some("/w/wt-131/crates/bsc-request".into()),
+            ..Default::default()
+        };
+        let r2 = store.create(&NewRequest { text: "b".into(), ts: 2, context: deeper, ..Default::default() }).unwrap();
+        assert!(request_block(&r2).contains("cwd /w/wt-131/crates/bsc-request"), "a subdirectory DOES say something");
+    }
+
+    /// A filing genuinely records WHERE it happened — this test runs inside a git worktree, so the
+    /// discovery has a real tree to find and the assertion is that it found one rather than that it
+    /// found a particular one (which would pin the test to a machine).
+    #[test]
+    fn a_real_filing_records_the_tree_and_the_build_that_made_it() {
+        let ctx = capture_context(None, &|_| None);
+        assert!(ctx.cwd.is_some(), "the cwd is always measurable");
+        assert_eq!(ctx.repo.is_some(), ctx.branch.is_some(), "repo and branch resolve together or not at all");
+        if let (Some(repo), Some(wt)) = (&ctx.repo, &ctx.worktree) {
+            assert!(wt.starts_with(repo), "a working tree lives under its repository: {wt} / {repo}");
+        }
+        assert_eq!(ctx.bsc_version.as_deref(), Some(provenance::BSC_VERSION), "which build filed it");
+        // The env lookup said nothing, so nothing about the driver is recorded — not a default.
+        assert_eq!((ctx.harness, ctx.model, ctx.session_id), (None, None, None));
+    }
+
+    /// A row filed BEFORE the split says so, and is not reclassified by looking at its text. This is
+    /// the state all 39 live rows are in, and the one a shape heuristic gets wrong.
+    #[test]
+    fn a_legacy_merged_origin_reads_as_unknown_rather_than_being_guessed_at() {
+        for legacy in ["lane-c4", "studio-code:director", "princess-bubblegum (dev session)"] {
+            let k = OriginKind::of(None, None, Some(legacy));
+            assert_eq!(k, OriginKind::Unknown, "'{legacy}' predates the split — the kind was never recorded");
+            assert!(!k.names_a_pane(), "so it is not asserted to be a node either");
+        }
+        assert_eq!(OriginKind::of(None, None, None), OriginKind::Absent, "and nothing at all is ABSENT");
+        assert_eq!(OriginKind::of(None, None, Some("   ")), OriginKind::Absent, "blank is nothing, not something");
     }
 
     /// Build an `Args` for a handler test — the command word + positionals, then a mutator for flags.
