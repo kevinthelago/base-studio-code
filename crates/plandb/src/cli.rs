@@ -207,7 +207,22 @@ USAGE:
   bsc plan feature add             # (no names) merge details from a feature object/array on stdin
   bsc plan feature list            # list features (· = title only, ✓ = fully defined — incl. `requires`)
   bsc plan feature get <slug>      # print one feature's full spec
-  bsc plan feature remove <slug>   # delete a feature",
+  bsc plan feature remove <slug>   # delete a feature
+  bsc plan feature requires add|remove|list <slug> [<id>…] [--from <who>] [--note <why>]
+
+`requires` names the RECORDS this feature needs from the global graphs — algorithm implementations
+(`bsc graph impl get <id>`) or components (`bsc ui get <id>`). At fleet launch each worker whose
+stream belongs to this feature gets them as a block naming the id and the read command; the BODY
+stays in the store, because a quoted body is a second copy and the copy is what a worker edits while
+the record keeps the old one.
+
+`add` MERGES — an id already present is left alone, never re-stamped. That is what makes the
+attribution mean something: a director seeding from the plan and a worker discovering mid-task can
+both write the list, and `requires list` shows which entries came from which. `--from` is recorded
+ABSENT rather than guessed when omitted.
+
+An entry is a bare id or an object carrying `by`/`at`/`note`, in one column; a legacy
+list of bare ids round-trips unchanged.",
     },
     CmdDoc {
         name: "repo",

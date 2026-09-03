@@ -623,15 +623,19 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
     let refs: Vec<AlgoRef> = feature
         .requires
         .iter()
-        .map(|id| {
-            let by_id = |v: &&serde_json::Value| v.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str());
+        .map(|req| {
+            // A `requires` entry is a bare id OR an object carrying provenance; `id()` is the half
+            // every reader here wants. The provenance is for whoever reads the plan, not for the
+            // worker's context block — naming who asked for a record does not help it read the record.
+            let id = req.id();
+            let by_id = |v: &&serde_json::Value| v.get("id").and_then(serde_json::Value::as_str) == Some(id);
             // ALGORITHMS FIRST, then components. The order is arbitrary but must be FIXED: an id that
             // somehow existed in both would otherwise resolve differently between runs, and the worker
             // would be told to read it with whichever command won the race.
             if let Some(im) = impls.iter().find(by_id) {
                 return AlgoRef {
-                    id: id.clone(),
-                    name: field(im, "name").or_else(|| Some(id.clone())),
+                    id: id.to_string(),
+                    name: field(im, "name").or_else(|| Some(id.to_string())),
                     tech: field(im, "tech"),
                     summary: field(im, "summary"),
                     // Presence only — the body stays in the store (#4191).
@@ -641,8 +645,8 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
             }
             if let Some(c) = components.iter().find(by_id) {
                 return AlgoRef {
-                    id: id.clone(),
-                    name: field(c, "name").or_else(|| Some(id.clone())),
+                    id: id.to_string(),
+                    name: field(c, "name").or_else(|| Some(id.to_string())),
                     // A component's `role` (primitive/composite/page) sits where an impl's language
                     // does: the one-word "what kind of thing is this" the block prints.
                     tech: field(c, "role"),
@@ -653,7 +657,7 @@ pub(crate) fn inject_required_algorithms(hub: &std::path::Path, wt_local: &std::
                     store: Some(RefStore::Components),
                 };
             }
-            AlgoRef { id: id.clone(), name: None, tech: None, summary: None, has_code: false, store: None }
+            AlgoRef { id: id.to_string(), name: None, tech: None, summary: None, has_code: false, store: None }
         })
         .collect();
     let Some(block) = algo_refs_block(&refs) else { return };
