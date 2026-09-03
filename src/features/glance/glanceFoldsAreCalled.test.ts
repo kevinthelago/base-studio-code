@@ -55,6 +55,11 @@ describe("every glance graph fold has a caller", () => {
   const FOLDS: [string, string][] = [
     ["withSurfaceNodes", "surface-nodes.ts"],
     ["crateDrillGraph", "surface-nodes.ts"],
+    // `the-feature-band-has-no-caller` — the SECOND instance of the class this file was written for.
+    // `featureBand` shipped with three passing tests and no call site, so there was no feature node in
+    // the running app and the maintainer found it by opening Glance. It is listed here now; that this
+    // list is hand-maintained is exactly why it did not help, and the item says so.
+    ["withFeatureNodes", "feature-nodes.ts"],
   ];
 
   const all = sources();

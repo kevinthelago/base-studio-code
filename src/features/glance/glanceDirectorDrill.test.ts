@@ -37,7 +37,18 @@ describe("the fleet-less drill", () => {
     // setter keeps the previous reference when the roster is unchanged, so it cannot churn either.
     // Anything appended here must clear that bar — a value that gets a new reference per poll would
     // rebuild the whole drill graph on a timer.
-    expect(GLANCE).toMatch(/activeDebugRequests, drill, hasDirectorPane, surfaceRoster\]\);/);
+    // `planFeatures` / `planStreams` joined for the SAME reason `surfaceRoster` did, and had to clear
+    // the same bar: both setters keep the PREVIOUS reference when the plan is unchanged (comparing
+    // slugs, and stream id + feature), so neither can hand the memo a new array on a timer. A feature
+    // roster changes when someone edits the plan, so "no change" is the common case and costs nothing.
+    expect(GLANCE).toMatch(/activeDebugRequests, drill, hasDirectorPane, surfaceRoster, planFeatures, planStreams\]\);/);
+    // The bar itself, asserted rather than described: each new value's setter must return `prev` on a
+    // no-op. A setter that always built a fresh array would satisfy the deps line above and still
+    // rebuild the drill every poll — which is the failure this test exists to prevent, not the spelling.
+    for (const setter of ["setPlanFeatures", "setPlanStreams"]) {
+      const body = GLANCE.slice(GLANCE.indexOf(`${setter}((prev)`));
+      expect(body.slice(0, 400), `${setter} must keep the old reference when nothing changed`).toMatch(/\? prev\b/);
+    }
     expect(GLANCE).not.toMatch(/activeDebugRequests, drill, livePaneIds\]/);
   });
 
