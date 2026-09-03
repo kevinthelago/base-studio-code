@@ -11,6 +11,17 @@ fn main() {
 ///
 /// Duplicated here because a build script cannot depend on a workspace lib. A test pins the two
 /// lists together, so drift fails the gate rather than shipping a binary missing a seed.
+/// Seed DIRECTORIES shipped whole, every `*.json` inside them.
+///
+/// `BUNDLED_SEEDS` names individual files; these name directories whose contents vary, so a file
+/// list would be a second place to remember. `personas` was the original and stayed hardcoded in
+/// `ensure_bundled_seeds`; `studios` and `skills` joined it when they moved off `include_dir!`
+/// (`the-directory-seeds-must-actually-ship`) — until then they were compiled INTO the binary and so
+/// needed no resource entry at all. Removing the embed without adding them here shipped a build with
+/// no built-in Studio presets and no packaged skills, and every existing guard passed, because they
+/// all key on `RUNTIME_SEEDS`, which has no way to name a directory.
+const BUNDLED_SEED_DIRS: &[&str] = &["personas", "studios", "skills"];
+
 const BUNDLED_SEEDS: &[&str] = &[
     "components/react-ui.json",
     "ui/react-ui-kit.meta.json",
@@ -68,14 +79,15 @@ fn ensure_bundled_seeds() {
     // enforces), and forgetting to stage it as well would fail the build with a missing resource
     // rather than anything that names the cause.
     let mut seeds: Vec<String> = BUNDLED_SEEDS.iter().map(|s| s.to_string()).collect();
-    if let Ok(entries) = fs::read_dir(root.join("data").join("personas")) {
+    for dir in BUNDLED_SEED_DIRS {
+        let Ok(entries) = fs::read_dir(root.join("data").join(dir)) else { continue };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                seeds.push(format!("personas/{name}"));
+                seeds.push(format!("{dir}/{name}"));
             }
         }
     }

@@ -235,6 +235,61 @@
     ///
     /// It reaches outside `src-tauri/` to read `package.json`, which Rust otherwise only does for the
     /// cross-repo wire fixtures. That is the point: the drift being guarded is exactly the one that
+
+    /// EVERY seed DIRECTORY ships every file it holds.
+    ///
+    /// THE HOLE THIS CLOSES, and it shipped green. `studios` and `skills` were `include_dir!`'d —
+    /// compiled INTO the binary, so they needed no resource entry. When they moved to a runtime read
+    /// (`the-directory-seeds-load-at-runtime-and-a-studio-can-be-written-anywhere`) the embed went
+    /// away and nothing replaced it: a shipped build had no built-in Studio presets and seeded no
+    /// packaged skills, while every existing guard passed. They all key on `RUNTIME_SEEDS`, which
+    /// names FILES and cannot express a directory, so none of them could see it.
+    ///
+    /// `personas` already had a bespoke version of this check; generalising it is what makes the next
+    /// `include_dir!` conversion safe by default rather than by remembering.
+    #[test]
+    fn every_seed_directory_ships_every_file_it_holds() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json parses");
+        let shipped: std::collections::BTreeSet<String> = conf["bundle"]["resources"]
+            .as_object()
+            .expect("bundle.resources is an object")
+            .values()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+
+        // Mirrors `BUNDLED_SEED_DIRS` in build.rs. Duplicated for the same reason BUNDLED_SEEDS is:
+        // a build script cannot depend on a workspace lib, and a test is what keeps them honest.
+        let mut missing = Vec::new();
+        for dir in ["personas", "studios", "skills"] {
+            let path = manifest.join("data").join(dir);
+            let Ok(entries) = std::fs::read_dir(&path) else {
+                panic!("seed directory {} is declared but absent", path.display())
+            };
+            let mut seen = 0usize;
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                seen += 1;
+                let name = p.file_name().and_then(|n| n.to_str()).expect("file name");
+                let target = format!("data/{dir}/{name}");
+                if !shipped.contains(&target) {
+                    missing.push(target);
+                }
+            }
+            assert!(seen > 0, "seed directory {dir} is declared but holds no json — a silent empty ship");
+        }
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "these packaged seed files would NOT ship, so a shipped build serves them from nowhere: \
+             {missing:?}. Add a bundle.resources entry for each."
+        );
+    }
+
     /// crosses the boundary.
     #[test]
     fn the_self_project_key_matches_the_wired_npm_scripts() {
