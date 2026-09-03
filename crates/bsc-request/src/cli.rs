@@ -1161,13 +1161,50 @@ mod tests {
     fn a_real_filing_records_the_tree_and_the_build_that_made_it() {
         let ctx = capture_context(None, &|_| None);
         assert!(ctx.cwd.is_some(), "the cwd is always measurable");
-        assert_eq!(ctx.repo.is_some(), ctx.branch.is_some(), "repo and branch resolve together or not at all");
+        // A REPOSITORY IMPLIES ITS TREE, and nothing more. `branch` is NOT tied to `repo`: this asserted
+        // that the two "resolve together or not at all", which contradicts the module under test —
+        // `locate_tree` documents every field as independently absent, and `read_branch` returns None on
+        // a DETACHED HEAD on purpose, because a raw sha is not a branch name.
+        //
+        // The cost was paid in exactly one place: `npm run promote` gates in `.promote-gate`, a
+        // detached-HEAD worktree, where the repo resolves and the branch does not. So this passed in
+        // every ordinary worktree and failed in the only environment that ships — the inverse of this
+        // repo's usual failure, and harder to see, because the green runs are the ones you look at.
+        if ctx.repo.is_some() {
+            assert!(ctx.worktree.is_some(), "a repository was found from a working tree");
+        }
         if let (Some(repo), Some(wt)) = (&ctx.repo, &ctx.worktree) {
             assert!(wt.starts_with(repo), "a working tree lives under its repository: {wt} / {repo}");
         }
         assert_eq!(ctx.bsc_version.as_deref(), Some(provenance::BSC_VERSION), "which build filed it");
         // The env lookup said nothing, so nothing about the driver is recorded — not a default.
         assert_eq!((ctx.harness, ctx.model, ctx.session_id), (None, None, None));
+    }
+
+    /// A DETACHED HEAD resolves a repo and a tree but NO branch — the state `.promote-gate` runs in.
+    ///
+    /// Built on disk rather than by shelling out, the same constraint `locate_tree` holds itself to:
+    /// the whole value of that function is not depending on `git` being on PATH or on a process spawn
+    /// succeeding inside a cage, and a guard that needed one could not run everywhere it must.
+    #[test]
+    fn a_detached_head_resolves_a_repo_and_a_tree_but_no_branch() {
+        let dir = std::env::temp_dir().join(format!("bsc-req-detached-{}", std::process::id()));
+        let git = dir.join(".git");
+        std::fs::create_dir_all(&git).expect("mkdir");
+        // What git writes for a detached HEAD: the raw sha, with no `ref:` prefix.
+        std::fs::write(git.join("HEAD"), "9fceb02d0ae598e95dc970b74767f19372d61af8\n").expect("HEAD");
+
+        let loc = provenance::locate_tree(&dir);
+        assert!(loc.repo.is_some(), "the repository is found from the .git directory");
+        assert!(loc.worktree.is_some(), "and so is the tree it sits in");
+        assert_eq!(loc.branch, None, "a raw sha is NOT a branch — recording one would be the fabrication");
+
+        // The attached case, for contrast: the same tree with a symbolic HEAD does yield a branch, so
+        // this test cannot pass by `locate_tree` simply never resolving one.
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/some-branch\n").expect("HEAD");
+        assert_eq!(provenance::locate_tree(&dir).branch.as_deref(), Some("some-branch"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A row filed BEFORE the split says so, and is not reclassified by looking at its text. This is

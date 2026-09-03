@@ -242,7 +242,7 @@ mod tests {
         // bugs are already recorded on `RoleCapability` — `writeGlobs` casing and the dropped
         // `roots` — and both were found exactly this way.
         let caps = baseline(&repo()).expect("the capability baseline must parse");
-        assert_eq!(caps.len(), 17, "the baseline holds 17 roles; a change here is a DELIBERATE act");
+        assert_eq!(caps.len(), 18, "the baseline holds 18 roles; a change here is a DELIBERATE act");
         for c in &caps {
             assert!(!c.role.is_empty(), "a capability with no role name");
         }
