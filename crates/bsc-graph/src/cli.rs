@@ -1483,6 +1483,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     // and was told `ok: true`.
     if is_store_mutation(&positional, &args) {
         bsc_cli_util::require_write_scope("graph")?;
+        // …and WHICH records (`a-worker-writes-only-its-own-feature`). The gate above says whether
+        // this session writes the store at all; this says which of its 693 records — because
+        // `graph: write` alone still let a worker rewrite `core`, which 204 of them are and every
+        // feature composes.
+        require_feature_confinement(&positional, &args)?;
     }
     let emit = |v: &Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
@@ -3827,6 +3832,40 @@ fn set_impl_skipping_retired(
     crate::set_impl_by(g, im, writer, Some(note)).map(|_| ())
 }
 
+/// Refuse a mutation that would write a record outside this session's features.
+///
+/// THE STORED FEATURE GOVERNS, never the submitted one. A write carrying `--feature mine` against a
+/// record owned by `core` is exactly the move confinement exists to stop, and reading the submitted
+/// value would wave it through — the record would simply change hands. For a record that does not
+/// exist yet there is no stored owner, so the SUBMITTED feature is the claim: a new record must
+/// declare a lane the session may write rather than slipping in unowned.
+///
+/// SCOPED TO THE ID-BEARING VERBS. `curate --apply` and `doctor --fix` write across the whole library
+/// and are not a worker's verbs; a confined session is stopped from those by the coarse gate long
+/// before this, and inventing a per-record answer for a whole-library sweep here would be guessing.
+fn require_feature_confinement(positional: &[&str], args: &[String]) -> Result<(), String> {
+    if bsc_cli_util::session_features().is_none() {
+        return Ok(());
+    }
+    let Some(id) = flag_value(args, "--id").or_else(|| positional.get(2).map(|s| s.to_string())) else {
+        return Ok(());
+    };
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return Ok(());
+    }
+    let stored = crate::implementations()
+        .into_iter()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        .and_then(|im| im.get("feature").and_then(Value::as_str).map(str::to_string));
+    match stored {
+        Some(owner) => bsc_cli_util::require_feature_write(&id, &owner),
+        // A NEW record: the submitted feature is the claim, and an absent one is refused by
+        // `require_feature_write`'s empty-feature rule rather than silently landing unowned.
+        None => bsc_cli_util::require_feature_write(&id, flag_value(args, "--feature").unwrap_or_default().trim()),
+    }
+}
+
 /// The verbs that MUTATE the algorithms store, as `(verb, subverb)` — `None` where the verb has no
 /// subverb. The gate in [`run`] reads this; nothing else may.
 ///
@@ -5146,6 +5185,127 @@ mod tests {
                 );
             }
         }
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A CONFINED session writes only its own feature's records — at the CLI, not at the predicate
+    /// (`a-worker-writes-only-its-own-feature`).
+    ///
+    /// It drives `run` for the same reason the scope test does: `may_write_feature` is correct in
+    /// isolation and stays correct while nothing calls it. Only a test that goes through the dispatch
+    /// can see the wiring — and the wiring is the whole change.
+    #[test]
+    fn a_confined_session_writes_only_its_own_features_records() {
+        let dir = crate::unique_temp("graph-feature-confine");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        // Two records in different lanes, authored UNCONFINED (which is how a librarian works).
+        let author = |id: &str, feature: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--feature".into(), feature.into(), "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        author("mine.rs", "glance");
+        author("theirs.rs", "planner");
+        author("shared.rs", "core");
+
+        let write = |id: &str, extra: &[&str]| -> Result<(), String> {
+            let mut argv: Vec<String> = vec![
+                "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(), "--no-src".into(),
+            ];
+            argv.extend(extra.iter().map(|s| s.to_string()));
+            bsc_cli_util::with_features(Some("glance"), || bsc_util::capture_output(|| run(argv, "bsc graph")).0)
+        };
+
+        // Its OWN lane: allowed.
+        write("mine.rs", &[]).expect("a worker writes its own feature's records");
+
+        // Another feature's, and the shared baseline: refused, BY THE CONFINEMENT rather than by the
+        // arm it should never have reached — which is what checking the message distinguishes.
+        for (id, owner) in [("theirs.rs", "planner"), ("shared.rs", "core")] {
+            let err = write(id, &[]).expect_err("{id} must be refused");
+            assert!(err.contains("writes only"), "`{id}` refused by the confinement, not the arm: {err}");
+            assert!(err.contains(owner), "…naming its real owner: {err}");
+        }
+
+        // THE MOVE THE CONFINEMENT EXISTS TO STOP: claiming another lane's record for your own. The
+        // STORED feature governs, so a payload saying `--feature glance` cannot take `core`'s record.
+        let err = write("shared.rs", &["--feature", "glance"]).expect_err("a claim must not launder a write");
+        assert!(err.contains("core"), "the STORED owner decides, not the submitted one: {err}");
+
+        // A NEW record must declare a lane this session may write, rather than landing unowned.
+        assert!(write("brand-new.rs", &[]).is_err(), "a new record with no feature is refused");
+        write("brand-new.rs", &["--feature", "glance"]).expect("…and lands when it claims a lane it may write");
+
+        // UNCONFINED is unchanged — a librarian still writes anything.
+        let (r, _) = bsc_cli_util::with_features(None, || {
+            bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), "shared.rs".into(), "--name".into(), "shared".into(),
+                        "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            })
+        });
+        r.expect("an unconfined session writes the shared baseline");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// READS are untouched by the confinement — the half the maintainer was explicit about.
+    ///
+    /// A feature's `requires` deliberately names records it does NOT own, so a confinement that
+    /// bounded reads would make a worker's own prerequisites unreadable: the precise opposite of the
+    /// point. This is the assertion that would fail if the check ever moved to the dispatch's front.
+    #[test]
+    fn confinement_never_bounds_a_read() {
+        let dir = crate::unique_temp("graph-feature-confine-reads");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+        let (r, _) = bsc_util::capture_output(|| {
+            run(
+                vec![
+                    "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                    "algorithm".into(), "--id".into(), "shared.rs".into(), "--name".into(), "shared".into(),
+                    "--feature".into(), "core".into(), "--no-src".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        r.unwrap();
+
+        bsc_cli_util::with_features(Some("glance"), || {
+            for argv in [
+                vec!["impl".to_string(), "get".into(), "shared.rs".into()],
+                vec!["impl".to_string(), "list".into()],
+                vec!["doctor".to_string()],
+                vec!["dump".to_string()],
+                vec!["used-by".to_string(), "--all".into()],
+            ] {
+                let shown = argv.join(" ");
+                let (r, _) = bsc_util::capture_output(|| run(argv, "bsc graph"));
+                if let Err(e) = r {
+                    assert!(!e.contains("writes only"), "`{shown}` is a READ and must never be confined: {e}");
+                }
+            }
+        });
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
     }
