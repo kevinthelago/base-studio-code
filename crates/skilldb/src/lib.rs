@@ -21,12 +21,17 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// The packaged built-in skills (compliance & standards procedures: SOC 2, GDPR, WCAG, …) live as one
-/// JSON file per skill under `src-tauri/data/skills/` — the SINGLE source of truth, shared with the
-/// frontend (which reads the same files via `import.meta.glob`). Embedded at compile time so a fresh
-/// `skills.db` seeds the library on first open, giving the `bsc-skill` CLI + planner parity without a
-/// UI boot (#1715). The path reaches out of this crate (its manifest dir is `crates/skilldb`) to the
-/// backend-owned `src-tauri/data/skills` tree — the same dir the Vite `@data` alias points at.
+// The packaged built-in skills (compliance & standards procedures: SOC 2, GDPR, WCAG, …) live as one
+// JSON file per skill under `data/skills/` — the SINGLE source of truth, shared with the frontend
+// (which reads the same files via `import.meta.glob`). A fresh `skills.db` seeds the library on
+// first open, giving the `bsc-skill` CLI + planner parity without a UI boot (#1715).
+//
+// READ AT RUNTIME as of `the-directory-seeds-load-at-runtime-and-a-studio-can-be-written-anywhere`:
+// this used to be an `include_dir!` of `src-tauri/data/skills`, which is one of the compile-time
+// dependencies that made `src-tauri/data` undeletable. `packaged_skills` now resolves it through
+// `bsc_util::packaged::read_dir_json`. A `//` comment rather than `///`, because it documents the
+// SEED rather than any one item — a doc comment with no item under it is a hard clippy error, which
+// is exactly how removing the `static` was caught.
 
 fn default_kind() -> String {
     "workflow".into()

@@ -18,11 +18,17 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The packaged built-in studios, read at RUNTIME from `data/studios/*.json` (#2894). They moved off
-/// `include_dir!` so `src-tauri/data` can be deleted once the seed is served externally. Built-ins are the shipped PRESETS
-/// (e.g. `web-app-dev`, the zero-change baseline). They're merged UNDER the user store — a same-id user
-/// studio overrides one — and are READ-ONLY (`remove` leaves them; the on-disk store holds only user
-/// studios).
+// The packaged built-in studios are read at RUNTIME from `data/studios/*.json` (#2894), by
+// `builtin_studios` below. They moved off `include_dir!` in
+// `the-directory-seeds-load-at-runtime-and-a-studio-can-be-written-anywhere`, because embedding the
+// directory was one of the compile-time dependencies that made `src-tauri/data` undeletable.
+//
+// Built-ins are the shipped PRESETS (e.g. `web-app-dev`, the zero-change baseline). They are merged
+// UNDER the user store — a same-id user studio overrides one — and are READ-ONLY (`remove` leaves
+// them; the on-disk store holds only user studios).
+//
+// A `//` comment, not `///`: it documents the SEED rather than any one item, and a doc comment with
+// no item under it is a hard clippy error.
 
 /// The library systems a snapshot captures, as `(system key, on-disk dir segment, record noun)`. Each
 /// is a verbatim-JSON-per-id [`bsc_json_store`] collection under the base dir, read uniformly via
