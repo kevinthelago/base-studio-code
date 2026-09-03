@@ -37,7 +37,10 @@ describe("the role capability table matches its frozen baseline", () => {
     const rank = { none: 0, read: 1, write: 2 } as const;
     const widened: string[] = [];
     for (const role of roles) {
-      for (const axis of ["github", "git", "code", "net", "ui"] as const) {
+      // `graph` joins the widening check the moment the axis exists, so the store it governs cannot
+      // be handed to a new role the way it was handed to EVERY role before it had a gate at all
+      // (`the-algorithms-graph-has-no-write-gate`).
+      for (const axis of ["github", "git", "code", "net", "ui", "graph"] as const) {
         const now = rank[ROLE_DEFAULTS[role]?.[axis] as keyof typeof rank] ?? 0;
         const was = rank[frozen[role][axis] as keyof typeof rank] ?? 0;
         if (now > was) widened.push(`${role}.${axis}: ${frozen[role][axis]} → ${ROLE_DEFAULTS[role][axis]}`);

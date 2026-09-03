@@ -9,6 +9,7 @@
     "code": "none",
     "net": "read",
     "ui": "read",
+    "graph": "read",
     "writeGlobs": [
       "*.md",
       "**/*.md",

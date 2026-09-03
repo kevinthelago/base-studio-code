@@ -28,10 +28,11 @@
         "git": "read",
         "code": "write",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "*.md *.json prompts/*.md prompts/* discovery/*.md discovery/*",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role worker, no own globs",
@@ -45,6 +46,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -54,7 +56,7 @@
         ]
       },
       "scopeGlobs": null,
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
     },
     {
       "label": "role director, no own globs",
@@ -75,6 +77,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "surfaces": [
           "plan",
           "fleet",
@@ -87,7 +90,7 @@
         ]
       },
       "scopeGlobs": "*.md *.json prompts/*.md prompts/* discovery/*.md discovery/*",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role triage, no own globs",
@@ -100,10 +103,11 @@
         "git": "none",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "__bsc_deny_all__",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role tester, no own globs",
@@ -116,10 +120,11 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "__bsc_deny_all__",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role reviewer, no own globs",
@@ -132,10 +137,11 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "__bsc_deny_all__",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role issuer, no own globs",
@@ -148,10 +154,11 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "__bsc_deny_all__",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role juror, no own globs",
@@ -164,10 +171,11 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "__bsc_deny_all__",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role documentor, no own globs",
@@ -186,10 +194,11 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "*.md **/*.md README* **/README* CHANGELOG*",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "role designer, no own globs",
@@ -205,6 +214,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -227,7 +237,7 @@
         ]
       },
       "scopeGlobs": "scratch/**",
-      "scopes": "{\"ui\":\"write\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"write\"}"
     },
     {
       "label": "role architect, no own globs",
@@ -243,6 +253,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "allow": [
           "bsc teams",
           "bsc persona",
@@ -262,7 +273,7 @@
         ]
       },
       "scopeGlobs": "scratch/**",
-      "scopes": "{\"ui\":\"none\"}"
+      "scopes": "{\"graph\":\"none\",\"ui\":\"none\"}"
     },
     {
       "label": "role librarian, no own globs",
@@ -278,6 +289,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -295,7 +307,7 @@
         ]
       },
       "scopeGlobs": "scratch/**",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
     },
     {
       "label": "role sound-designer, no own globs",
@@ -311,6 +323,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "allow": [
           "bsc sound",
           "bsc request new",
@@ -322,7 +335,7 @@
         ]
       },
       "scopeGlobs": "scratch/**",
-      "scopes": "{\"ui\":\"none\"}"
+      "scopes": "{\"graph\":\"none\",\"ui\":\"none\"}"
     },
     {
       "label": "role marketer, no own globs",
@@ -344,10 +357,11 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "marketing/**/*.md marketing/**/*.mdx content/**/*.md content/**/*.mdx README* **/README* CHANGELOG* **/CHANGELOG*",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "worker with own write globs",
@@ -367,6 +381,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -376,7 +391,7 @@
         ]
       },
       "scopeGlobs": "src/** docs/**",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
     },
     {
       "label": "worker with ONE glob",
@@ -394,6 +409,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -403,7 +419,7 @@
         ]
       },
       "scopeGlobs": "src/**",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
     },
     {
       "label": "designer with own globs — a carve-out role keeps its scoped write",
@@ -421,6 +437,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -443,7 +460,7 @@
         ]
       },
       "scopeGlobs": "scratch/**",
-      "scopes": "{\"ui\":\"write\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"write\"}"
     },
     {
       "label": "triage with own globs — code:none WITHOUT a carve-out grants nothing",
@@ -460,10 +477,11 @@
         "git": "none",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "scopeGlobs": "__bsc_deny_all__",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "director with own globs — the commons carve-out",
@@ -481,6 +499,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "surfaces": [
           "plan",
           "fleet",
@@ -493,7 +512,7 @@
         ]
       },
       "scopeGlobs": "docs/**",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
     },
     {
       "label": "a glob containing a space-free path stays space-joined",
@@ -515,6 +534,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -524,7 +544,7 @@
         ]
       },
       "scopeGlobs": "a/** b/** c/**",
-      "scopes": "{\"ui\":\"read\"}"
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
     }
   ]
 }

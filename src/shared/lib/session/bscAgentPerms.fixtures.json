@@ -56,7 +56,8 @@
         "git": "read",
         "code": "write",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [],
@@ -142,6 +143,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -224,6 +226,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "surfaces": [
           "plan",
           "fleet",
@@ -317,7 +320,8 @@
         "git": "none",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -374,7 +378,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -473,7 +478,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -572,7 +578,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -638,7 +645,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -743,7 +751,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [],
@@ -830,6 +839,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -906,6 +916,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "allow": [
           "bsc teams",
           "bsc persona",
@@ -931,6 +942,7 @@
           "gh",
           "bsc ui",
           "bsc component",
+          "bsc graph",
           "tee",
           "dd",
           "truncate",
@@ -978,6 +990,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -1057,6 +1070,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "allow": [
           "bsc sound",
           "bsc request new",
@@ -1074,6 +1088,7 @@
           "gh",
           "bsc ui",
           "bsc component",
+          "bsc graph",
           "tee",
           "dd",
           "truncate",
@@ -1130,7 +1145,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [],
@@ -1221,6 +1237,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1305,6 +1322,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "surfaces": [
           "plan",
           "fleet",
@@ -1402,6 +1420,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -1479,6 +1498,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1559,6 +1579,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1640,6 +1661,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1718,6 +1740,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1798,6 +1821,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1879,6 +1903,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1959,6 +1984,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -2038,7 +2064,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [],
@@ -2122,7 +2149,8 @@
         "git": "none",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -2183,7 +2211,8 @@
         "git": "none",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "perms": {
         "deny_tools": [
@@ -2247,6 +2276,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -2325,6 +2355,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -2403,6 +2434,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
