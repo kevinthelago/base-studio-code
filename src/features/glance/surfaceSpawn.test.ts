@@ -181,6 +181,22 @@ describe("the charter teaches the surface rather than sending the session to fin
     const c = surfaceCharter(op, "P", doc);
     expect(c).toContain("SPACED, NEVER HYPHENATED");
     expect(c).toContain("`bsc-logs-<verb>` is not a command");
+    // `bsc-session` was a real attempt, so it is named rather than left to the general rule. A model
+    // that reaches for one hyphenated form reaches for the next.
+    expect(c).toContain("`bsc-session`");
+  });
+
+  // NAME THE BINARY (`a-session-knows-the-binary-is-bsc`). A session reached for `bsc-session`,
+  // apparently to file a request — it knew what it wanted and not what to type. The entry point is
+  // stated, and so is the gap between what the APP has and what THIS session may auto-run: a confined
+  // role runs exactly its allow list and stops to ask for anything else, which for an unattended
+  // session is a stall rather than a refusal it can read.
+  it("names the binary and the one command that lists everything", () => {
+    const c = surfaceCharter(op, "P", doc);
+    expect(c).toContain("THE BINARY IS `bsc`");
+    expect(c).toContain("bsc help");
+    expect(c).toContain("bsc persona whatami");
+    expect(c).toContain("YOUR GRANT IS NARROWER THAN THAT CATALOG");
   });
 
   it("gives the operator the maintainer's pane id per verb, already built", () => {

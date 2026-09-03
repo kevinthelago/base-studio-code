@@ -3763,6 +3763,7 @@
         "ui": "read",
         "writeGlobs": [],
         "allow": [
+          "bsc help",
           "bsc surface",
           "bsc request new",
           "bsc request list",
@@ -3887,6 +3888,7 @@
           "contracts/**/*.json"
         ],
         "allow": [
+          "bsc help",
           "bsc surface",
           "bsc request new",
           "bsc request list",
@@ -4008,6 +4010,7 @@
         "ui": "read",
         "writeGlobs": [],
         "allow": [
+          "bsc help",
           "bsc surface",
           "bsc request new",
           "bsc request list",
@@ -4137,6 +4140,7 @@
           "contracts/**/*.json"
         ],
         "allow": [
+          "bsc help",
           "bsc surface",
           "bsc request new",
           "bsc request list",
