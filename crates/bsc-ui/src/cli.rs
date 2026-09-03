@@ -1179,7 +1179,7 @@ fn cmd_schema(args: &[String]) -> Result<(), String> {
     // same generated contract `bsc ui validate` enforces, so what an agent reads here is exactly what
     // it will be checked against. `--name` narrows it, because the full kit is large and an agent
     // authoring one node wants one entry.
-    let contract: serde_json::Value = serde_json::from_str(crate::general_node::PRIMITIVES_JSON)
+    let contract: serde_json::Value = serde_json::from_str(crate::general_node::primitives_json())
         .map_err(|e| format!("embedded primitives.json is not valid JSON: {e}"))?;
     let mut wanted: Option<String> = None;
     let mut it = args.iter();
@@ -2263,7 +2263,7 @@ fn assemble_from_store(id: &str, version: &str, kit_id: &str) -> Result<String, 
 }
 
 /// `bsc ui emit-css` (#2489) — emit the palette pair a generated app ships: the semantic token
-/// contract layer ([`crate::TOKENS_CONTRACT_CSS`], its `tokens.css`) + the chosen theme's override
+/// contract layer ([`crate::tokens_contract_css`], its `tokens.css`) + the chosen theme's override
 /// block ([`crate::theme_css`], its `theme.css`). Stdout prints both in stylesheet order; `--out`
 /// writes them as the real two-file layout so re-theming stays a one-file (theme.css) swap.
 /// (Kept apart from the `theme` verb block on purpose — `theme` is the registry read surface.)
@@ -2288,7 +2288,7 @@ fn cmd_emit_css(args: &[String]) -> Result<(), String> {
             std::fs::create_dir_all(d).map_err(|e| format!("cannot create {dir}: {e}"))?;
             let tokens_path = d.join("tokens.css");
             let theme_path = d.join("theme.css");
-            std::fs::write(&tokens_path, crate::TOKENS_CONTRACT_CSS)
+            std::fs::write(&tokens_path, crate::tokens_contract_css())
                 .map_err(|e| format!("cannot write {}: {e}", tokens_path.display()))?;
             std::fs::write(&theme_path, &theme_block)
                 .map_err(|e| format!("cannot write {}: {e}", theme_path.display()))?;
@@ -2297,7 +2297,7 @@ fn cmd_emit_css(args: &[String]) -> Result<(), String> {
         }
         None => {
             // Stylesheet order on stdout: the contract layer, then the theme block.
-            print!("{}", crate::TOKENS_CONTRACT_CSS);
+            print!("{}", crate::tokens_contract_css());
             println!();
             print!("{theme_block}");
             Ok(())
@@ -4809,7 +4809,7 @@ mod tests {
         run(vec!["emit-css".into(), "--theme".into(), "nord".into(), "--out".into(), dir.to_string_lossy().into_owned()], "bsc ui").unwrap();
         let tokens = std::fs::read_to_string(dir.join("tokens.css")).unwrap();
         let theme = std::fs::read_to_string(dir.join("theme.css")).unwrap();
-        assert_eq!(tokens, crate::TOKENS_CONTRACT_CSS, "tokens.css is the contract layer verbatim");
+        assert_eq!(tokens, crate::tokens_contract_css(), "tokens.css is the contract layer verbatim");
         assert!(theme.contains("theme: nord") && theme.contains("--bg-canvas: #2e3440;"), "theme.css carries the chosen theme's overrides");
         // An unknown theme with --out writes NOTHING (resolve-first).
         let dir2 = dir.join("never");

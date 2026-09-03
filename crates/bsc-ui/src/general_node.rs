@@ -21,11 +21,14 @@ use serde_json::{Map, Value};
 /// The structured prop contract, embedded at compile time. GENERATED from `shared/ui/manifest.ts`
 /// (`UPDATE_KITS=1 npx vitest run primitives.gen`), which is why `react-ui.json` is no use here: it
 /// flattens each prop's type to a TypeScript type STRING, losing the structured `type` + `values`.
-pub const PRIMITIVES_JSON: &str = include_str!("../../../src-tauri/data/ui/primitives.json");
+pub fn primitives_json() -> &'static str {
+    static CELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| bsc_util::packaged::read_required("ui/primitives.json"))
+}
 
 /// The parsed primitive contract, as a name → spec map.
 fn primitives() -> Map<String, Value> {
-    let parsed: Value = serde_json::from_str(PRIMITIVES_JSON).unwrap_or(Value::Null);
+    let parsed: Value = serde_json::from_str(primitives_json()).unwrap_or(Value::Null);
     let mut by_name = Map::new();
     if let Some(list) = parsed.get("primitives").and_then(Value::as_array) {
         for p in list {
@@ -294,14 +297,16 @@ fn walk_general(node: &Value, path: &str, by_name: &Map<String, Value>, errors: 
 mod tests {
     use super::*;
 
-    const FIXTURES_JSON: &str =
-        include_str!("../../../src-tauri/data/ui/node-validation.fixtures.json");
+    fn fixtures_json() -> String {
+        bsc_util::packaged::read_required("ui/node-validation.fixtures.json")
+    }
 
     /// The planner's Transformations stage prompt — it teaches the agent to author a preview `spec`
     /// and carries a worked example. Embedded here so the crate that OWNS the validator can prove the
     /// example is valid.
-    const TRANSFORMATIONS_STAGE_JSON: &str =
-        include_str!("../../../src-tauri/data/stages/transformations.json");
+    fn transformations_stage_json() -> String {
+        bsc_util::packaged::read_required("stages/transformations.json")
+    }
 
     /// The taught example must PASS the validator it tells the agent to run (#3500).
     ///
@@ -313,7 +318,7 @@ mod tests {
     #[test]
     fn the_taught_preview_spec_validates() {
         let stage: Value =
-            serde_json::from_str(TRANSFORMATIONS_STAGE_JSON).expect("stage JSON parses");
+            serde_json::from_str(&transformations_stage_json()).expect("stage JSON parses");
         let prompt = stage.get("prompt").and_then(Value::as_str).expect("stage carries a prompt");
 
         // The worked example is a `bsc plan transformation add` batch inside single quotes.
@@ -357,7 +362,7 @@ mod tests {
     /// added to the JSON is automatically enforced on both sides.
     #[test]
     fn shared_fixtures_match_the_typescript_validator() {
-        let parsed: Value = serde_json::from_str(FIXTURES_JSON).expect("fixtures are valid JSON");
+        let parsed: Value = serde_json::from_str(&fixtures_json()).expect("fixtures are valid JSON");
         let cases = parsed.get("cases").and_then(Value::as_array).expect("cases array");
         assert!(cases.len() > 10, "a silently-empty fixture set would make this guard vacuous");
 
