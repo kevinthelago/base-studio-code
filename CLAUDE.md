@@ -394,6 +394,56 @@ base-studio-code/
 > Counts drift every tranche and a stale one is worse than none. Re-measure:
 > `find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l`
 
+### CHANGING a module that is a record — the write path, end to end
+
+`docs/records.md` tells you how to FIND a record and when you may retire one. This is the other half:
+how to change one and get the change to the compiler. It applies to Rust too — **25 crates compile FROM
+the graph** (they carry `build = "../graph-materialize/build.rs"`; count them with
+`grep -l graph-materialize/build.rs crates/*/Cargo.toml`), so `crates/bsc-studio/src/` holding only
+`lib.rs` is normal, not broken.
+
+**A record lives in up to four places, and a partial write is the failure mode.** Leave one behind and
+`graph-promote-check` goes red for every session on the box, or worse, the change is silently inert.
+
+    ~/.base-studio-code/knowledge/algorithms.json   RUNTIME store — per-user, SHARED BY EVERY SESSION
+    <repo>/graph/algorithms.json                    REPO store — what the BUILD compiles
+    src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS and what a fresh install reconciles
+    .bsc-records/                                   EMITTED — rebuilt from the seed; never hand-edited
+
+The sequence, which is the same for a Rust CLI or a frontend module:
+
+```bash
+# 1. get the current source OUT — never retype it, and never pass source on the command line
+#    (a backtick or ${…} is substituted away silently, and large modules exceed the argv limit)
+bsc graph impl get <id> --field code --raw > /tmp/x.rs
+
+# 2. edit /tmp/x.rs, then write it back. --if-version is OPTIMISTIC CONCURRENCY against the
+#    SHARED runtime store: it refuses unless the record's rev is exactly n, so you cannot clobber
+#    another session's edit that landed while you were working. Read the rev with `impl history`.
+bsc graph impl set --tech rust --id <id> --role algorithm --name <n> \
+  --code-file /tmp/x.rs --if-version <n> --by <you> --note "<why>"
+
+# 3. into the REPO store so the build sees it. --root is REQUIRED from a worktree.
+bsc graph promote --id <id> --root "$PWD"
+
+# 4. into the PACKAGED seed. BSC_DATA_DIR is REQUIRED from a worktree — without it the seed write
+#    lands in the repo ROOT, which is checked out on `main` and running the app.
+BSC_DATA_DIR="$PWD/src-tauri/data" bsc graph promote --id <id> --seed --root "$PWD"
+```
+
+Then build. `crates/graph-materialize/build.rs` reads `<repo_root>/graph/algorithms.json` and
+materializes each record into `$OUT_DIR/crate.rs`, so **step 3 is what makes your edit compile** —
+after step 2 alone, `cargo check` still sees the old code and nothing says so.
+
+**Verify you touched exactly what you meant.** A line count cannot tell you: these files are one long
+JSON line, so any edit shows as `1 +/- 1`. Diff the PARSED store instead —
+`git show HEAD:graph/algorithms.json` against the working copy, keyed by record id.
+
+**A red `graph-promote-check` is usually not yours.** The runtime store is shared, so the leg reports
+drift from whatever anyone on the box is authoring. It prints each drifted node's author and age;
+if the edit is minutes old, that is live authoring and you should leave it alone rather than promote it.
+
+
 The frontend is **feature-first vertical slices** — `app/` (shell) · `features/` (one folder per
 feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`components/`, `lib/`,
 `hooks/`, `screens/`, `data/` are gone). Rules:
@@ -975,8 +1025,17 @@ A note is worth writing WHILE the reasoning is live; reconstructed afterwards it
 that mattered.
 
 **4 · Verify — the gate. TWO TIERS: scoped while you iterate, FULL before it merges.**
+
+**Run it as `bsc work gate`, not `npm run gate`.** It streams the real gate through untouched and then
+records EACH LEG on this branch's change record from the gate's own machine-readable verdict — so the
+record is EVIDENCE the gate ran rather than a claim that it did. Recording by hand made it a claim:
+measured over five slices in one session, ~25 results were read off a terminal and retyped, and
+nothing checked them. It takes the ref from the BRANCH, which is why the 1:1 branch rule matters.
+
 ```bash
-npm run gate              # while iterating — only what this change can affect
+bsc work gate             # scoped, and records every leg
+bsc work gate --full      # what step 7 runs
+npm run gate              # the same gate, recording nothing
 npm run gate -- --full    # what step 7 runs; also `npm run gate:full`
 ```
 
@@ -993,6 +1052,13 @@ orphaned ten stylesheets with every gate green; twelve pages rendering records t
 from their files; a vitest config change that dropped 8 test files and reported all-passing. Narrowing
 the per-commit gate is defensible **only** because step 7 still runs the unscoped one before anything
 lands — and because the narrowing is printed rather than silent.
+
+**A SCOPED GATE THAT RESOLVES TO ZERO LEGS STILL PRINTS `gate passed`.** Measured 2026-09-03 on a
+markdown-only change: `rust crates: (none), frontend files: 0`, 0 legs recorded, exit green — while
+three of the changed docs ARE read by tests (`docLinks.test.ts`, `architectDocs.test.ts`,
+`plannerOrphans.test.ts`). So a doc edit that breaks a doc-reading test lands green. Until
+`an-e2e-only-change-gets-a-gate-that-runs-nothing` is fixed, read the printed scope: if it says it
+ran nothing, it verified nothing, and you should name the affected tests yourself.
 
 **Do not expect a uniform speedup — the scope is the honest answer, not a discount.** Measured
 transitive dependents: `crates/bsc-ui` reaches 2 crates, `crates/data` 11, `src-tauri` 1, and
@@ -1152,6 +1218,21 @@ now prints each drifted node's author and age, and warns off a promote when the 
 That turned an unowned standing red into a line you can act on in seconds. **Whether a gate should stop
 failing the build is a MAINTAINER decision, not a branch's** — record the case on the item and leave the
 leg alone.
+
+#### Four sharp edges that are not obvious and cost real time
+
+- **Never `cargo fmt`.** There is no `rustfmt.toml`, no fmt gate leg, and lines run to 142 chars. It
+  reformats hundreds of files you did not touch and buries your change.
+- **Never hand-merge `develop` into `main`.** A `--no-ff` merge commit on `main` breaks EVERY future
+  `npm run promote`, permanently — promote fast-forwards, and refuses once `main` has a commit
+  `develop` does not. Use `npm run promote`; if it refuses, that refusal is the signal, not the obstacle.
+- **Single-quote the text of a `bsc plan change note`.** Backticks in a double-quoted shell string are
+  command substitution, so the shell eats them before `bsc` sees them — and notes are APPEND-ONLY, so
+  the loss cannot be repaired. Check the exit status too: a failed `note` writes nothing while the
+  commit still lands, so the slice looks finished and the record is simply absent.
+- **`node --check <file>` to see whether a script parses — never `import()` it.** An `import()`
+  EXECUTES the module. Doing that to a script with top-level side effects once moved `main` by 66
+  commits.
 
 **5 · Commit** on the branch — **never push**. End the message with the agreed `Co-Authored-By:` trailer.
 
