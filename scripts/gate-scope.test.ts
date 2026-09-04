@@ -150,7 +150,9 @@ describe("gate scope", () => {
 
   it("builds the scoped frontend commands against the base", () => {
     const cmds = gateCommands(plan(["src/features/x/lib/y.ts"]), "develop");
-    expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["typecheck", "lint", "vitest"]);
+    // `records` leads because the claim census is unconditional — it is not scoped by what changed, so
+    // it is present for every plan. The three that follow ARE the scoped frontend set this test is about.
+    expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["records", "typecheck", "lint", "vitest"]);
     expect(cmds.find((c) => c.label.startsWith("vitest"))?.args).toEqual([
       "vitest", "run", "--changed", "develop",
     ]);
@@ -340,6 +342,27 @@ describe("graph step", () => {
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
     expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
+  });
+
+  // THE CLAIM CENSUS IS NOT SCOPED, and that is deliberate — see the comment on it in gateScope.mjs.
+  // Every other leg asks "could what I changed have broken this?"; this one catches a record re-claiming
+  // a specifier from a store no branch touches, so scoping it by changed files would make it blind to
+  // its own reason for existing. `detachedwindow` was re-claimed with zero repo files changed.
+  it("runs the claim census in BOTH tiers, whatever changed", () => {
+    const scoped = gateCommands(plan(["README.md"]), "develop");
+    const full = gateCommands({ ...plan(["README.md"]), full: true }, "develop");
+    for (const [name, cmds] of [["scoped", scoped], ["full", full]] as const) {
+      const leg = cmds.find((c) => c.key === "graph-claim-census");
+      expect(leg, `the claim census must run in the ${name} tier`).toBeDefined();
+      expect(leg!.cmd).toBe("bsc");
+      expect(leg!.args).toEqual(["ui", "census"]);
+    }
+  });
+
+  // It is NOT one of the graph legs — those are scoped by `runGraph`, which is the scoping this one
+  // must not inherit. Pinned so a future tidy-up does not fold it back in.
+  it("is not folded into the scoped graph legs", () => {
+    expect(graphCommands().some((c) => c.key === "graph-claim-census")).toBe(false);
   });
 
   // Adding a case to the contract must re-run the check that reads it, or the vector grows while
