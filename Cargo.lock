@@ -748,6 +748,7 @@ dependencies = [
  "bsc-publish",
  "bsc-request",
  "bsc-resolve",
+ "bsc-rf",
  "bsc-runtime",
  "bsc-sandbox",
  "bsc-secret",
@@ -1157,6 +1158,15 @@ dependencies = [
  "serde",
  "serde_json",
  "skilldb",
+]
+
+[[package]]
+name = "bsc-rf"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
