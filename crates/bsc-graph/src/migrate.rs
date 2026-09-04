@@ -168,8 +168,16 @@ pub struct CrateShape<'a> {
     pub lib_src: &'a str,
     /// The `*.rs` file names directly under `src/`.
     pub top_files: &'a [String],
-    /// How many DIRECTORIES sit under `src/` — each one is a nested module tree.
+    /// How many directories under `src/` are NESTED MODULE TREES — see [`is_nested_module_dir`], which
+    /// is what decides. A directory holding no Rust at all is not one, and neither is a dot-dir.
     pub nested_count: usize,
+    /// The crate's OWN build script, when it already has one: the path as a human would type it, and
+    /// the file's source. `None` when the package root holds no `build.rs`.
+    ///
+    /// Both halves are needed because the refusal has to be actionable: cargo AUTO-DETECTS `build.rs`,
+    /// so nothing in `Cargo.toml` names the script that is about to be replaced, and the reader has no
+    /// way to know what they would lose unless the message says.
+    pub build_rs: Option<(&'a str, &'a str)>,
     /// `lib.rs` or `main.rs`, whichever this crate has.
     pub root_name: &'a str,
     /// Each declared module's source, by module name. Empty is allowed — the include check simply
@@ -206,6 +214,90 @@ fn include_str_targets(src: &str) -> Vec<String> {
     out
 }
 
+/// Whether a directory under `src/` is a NESTED MODULE TREE — the shape `build.rs` cannot materialize,
+/// because it emits direct children of `src/` only.
+///
+/// A bare `is_dir()` was the whole test, and it refused crates over directories that hold no Rust at
+/// all. REAL: `crates/bsc-graph/src/.claude` holds one file (`.cc-writes`, a session's own bookkeeping)
+/// and ZERO `.rs`, and it refused this crate's 18,052 lines. That is the worst kind of refusal — it is
+/// about a file the crate's author never wrote, it cannot be fixed by changing the crate, and the
+/// message ("has 1 NESTED module director(y/ies)") names a module tree that does not exist.
+///
+/// Two rules, in order:
+/// * a DOT-DIRECTORY is never a module tree — Rust cannot name one (`mod .claude;` does not parse), so
+///   whatever it holds, it is tooling state and not source;
+/// * a directory holding no `.rs` ANYWHERE beneath it is not one either — a nested module is a `.rs`
+///   file by definition, so a `fixtures/` of JSON is data the migration never touches.
+pub fn is_nested_module_dir(dir: &Path) -> bool {
+    match dir.file_name().and_then(|n| n.to_str()) {
+        Some(n) if n.starts_with('.') => false,
+        Some(_) => contains_rs(dir),
+        // A path with no final component cannot be reasoned about; refuse rather than wave it through.
+        None => true,
+    }
+}
+
+/// Whether any `.rs` file lives under `dir`, at any depth (dot-directories excepted).
+///
+/// An UNREADABLE directory answers `true`. That direction is deliberate: this function only ever feeds
+/// a refusal, and "I could not look" must not read as "there is nothing there".
+fn contains_rs(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return true };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with('.')) {
+                continue;
+            }
+            if contains_rs(&p) {
+                return true;
+            }
+        } else if p.extension().and_then(|x| x.to_str()) == Some("rs") {
+            return true;
+        }
+    }
+    false
+}
+
+/// The distinct `cargo:` directives a build script emits, first-seen order.
+///
+/// A build script's whole observable output IS its `cargo:` lines, so this answers "what does the one
+/// you are about to replace actually do" without pretending to understand its code. It is what makes
+/// `crates/data` legible: its single directive is `cargo:rustc-link-lib`, a LINK instruction guarded by
+/// `CARGO_CFG_TARGET_OS == "windows"` — so losing it is invisible on Linux and breaks the Windows link.
+///
+/// A text scan, matching [`include_str_targets`]: a directive inside a comment is counted, which
+/// over-reports into a message a human reads and never into a verdict.
+pub fn build_script_effects(src: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (at, _) in src.match_indices("cargo:") {
+        let key: String = src[at..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_'))
+            .collect();
+        let key = key.trim_end_matches([':', '-', '_']).to_string();
+        if !key.is_empty() && !out.contains(&key) {
+            out.push(key);
+        }
+    }
+    out
+}
+
+/// The `build = "…"` path a `Cargo.toml` declares, when it declares one.
+fn declared_build_script(cargo_toml: &str) -> Option<String> {
+    for line in cargo_toml.lines() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix("build") else { continue };
+        let Some(v) = rest.trim_start().strip_prefix('=') else { continue };
+        if let Some(inner) = v.trim().strip_prefix('"').and_then(|s| s.split('"').next()) {
+            if !inner.is_empty() {
+                return Some(inner.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Why this crate cannot be migrated by this tool, or `None` when it can.
 ///
 /// Every refusal here was a real failure first. Refusing UP FRONT is the feature: reached late, a
@@ -214,6 +306,44 @@ fn include_str_targets(src: &str) -> Vec<String> {
 pub fn refuse_reason(shape: &CrateShape<'_>) -> Option<String> {
     if shape.cargo_toml.contains(MARKER) {
         return Some(format!("already migrated — its Cargo.toml carries {MARKER}"));
+    }
+    // A CRATE GETS EXACTLY ONE BUILD SCRIPT, and `opt_in` adds ours without looking for the crate's own.
+    // Checked FIRST because it is the only refusal here whose damage is silent.
+    //
+    // REAL, both found green by `migrate-crate` on 2026-09-04:
+    //   crates/bsc-config/build.rs stages $OUT_DIR/config-seed for an `include_dir!` in lib.rs —
+    //     replacing it is an immediate, loud compile failure.
+    //   crates/data/build.rs emits `cargo:rustc-link-lib=dylib=rstrtmgr` on WINDOWS ONLY, for DuckDB's
+    //     Restart Manager references — replacing it changes NOTHING observable on Linux and breaks the
+    //     Windows link. That is the dangerous one, and it is why the message quotes the directives.
+    //
+    // Neither crate DECLARES `build =`: cargo auto-detects `build.rs`, so nothing in the manifest names
+    // the script, and a reader diffing the Cargo.toml afterwards sees only a line being added.
+    if let Some((path, src)) = shape.build_rs {
+        let effects = build_script_effects(src);
+        let does = if effects.is_empty() {
+            "emits no cargo: directives".to_string()
+        } else {
+            format!("emits {}", effects.join(", "))
+        };
+        return Some(format!(
+            "{path} already exists ({} lines, {does}) and this crate gets exactly ONE build script — \
+             cargo AUTO-DETECTS build.rs, so nothing in Cargo.toml names it and adding {MARKER} would \
+             SILENTLY REPLACE it. Fold what it does into crates/graph-materialize/build.rs first, or \
+             migrate this crate by hand",
+            src.lines().count()
+        ));
+    }
+    // The same collision, declared rather than auto-detected. `opt_in` inserts MARKER after the edition
+    // line without removing anything, so a second `build =` key makes the manifest unparseable — and it
+    // would do so AFTER the records were written, which is the late failure this function exists to
+    // prevent.
+    if let Some(declared) = declared_build_script(shape.cargo_toml) {
+        return Some(format!(
+            "its Cargo.toml already declares `build = \"{declared}\"` and a crate gets exactly ONE build \
+             script — adding {MARKER} would leave two `build` keys in one manifest. Fold that script into \
+             crates/graph-materialize/build.rs first, or migrate this crate by hand"
+        ));
     }
     if shape.nested_count > 0 {
         return Some(format!(
@@ -473,12 +603,20 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
     let lib_src = std::fs::read_to_string(&root_path)
         .map_err(|e| format!("cannot read {}: {e}", root_path.display()))?;
 
+    // The crate's OWN build script, if it has one. Read here rather than merely probed, because the
+    // refusal quotes what it does — see `refuse_reason`.
+    let build_path = dir.join("build.rs");
+    let build_rel = format!("crates/{krate}/build.rs");
+    let build_src = std::fs::read_to_string(&build_path).ok();
+
     let mut top_files: Vec<String> = Vec::new();
     let mut nested_count = 0usize;
     for e in std::fs::read_dir(&src_dir).map_err(|e| format!("cannot list {}: {e}", src_dir.display()))? {
         let e = e.map_err(|e| e.to_string())?;
         if e.path().is_dir() {
-            nested_count += 1;
+            if is_nested_module_dir(&e.path()) {
+                nested_count += 1;
+            }
         } else if e.file_name().to_string_lossy().ends_with(".rs") {
             top_files.push(e.file_name().to_string_lossy().to_string());
         }
@@ -499,6 +637,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         lib_src: &lib_src,
         top_files: &top_files,
         nested_count,
+        build_rs: build_src.as_deref().map(|s| (build_rel.as_str(), s)),
         root_name: &root_name,
         module_sources: &module_sources,
     };
@@ -805,7 +944,7 @@ mod tests {
 
     fn shape<'a>(cargo: &'a str, lib: &'a str, files: &'a [String], nested: usize) -> CrateShape<'a> {
         CrateShape {
-            cargo_toml: cargo, lib_src: lib, top_files: files, nested_count: nested,
+            cargo_toml: cargo, lib_src: lib, top_files: files, nested_count: nested, build_rs: None,
             root_name: "lib.rs", module_sources: &[],
         }
     }
@@ -853,7 +992,7 @@ mod tests {
         let sources = vec![("cli".to_string(), "fn t() { let s = include_str!(\"cli.rs\"); }".to_string())];
         let shape = CrateShape {
             cargo_toml: plain, lib_src: "pub mod cli;\n", top_files: &files,
-            nested_count: 0, root_name: "lib.rs", module_sources: &sources,
+            nested_count: 0, build_rs: None, root_name: "lib.rs", module_sources: &sources,
         };
         let why = refuse_reason(&shape).expect("a self-read must be refused");
         assert!(why.contains("include_str!"), "names the mechanism: {why}");
@@ -868,7 +1007,7 @@ mod tests {
         let ok = CrateShape {
             cargo_toml: plain, lib_src: "pub mod agent;\n",
             top_files: &["lib.rs".to_string(), "agent.rs".to_string()],
-            nested_count: 0, root_name: "lib.rs", module_sources: &survives,
+            nested_count: 0, build_rs: None, root_name: "lib.rs", module_sources: &survives,
         };
         assert!(refuse_reason(&ok).is_none(), "a data file that survives is not a refusal");
     }
@@ -892,5 +1031,118 @@ mod tests {
         let twice = opt_in(&once);
         assert_eq!(twice.matches(MARKER).count(), 1, "{twice}");
         assert_eq!(twice.matches("[build-dependencies]").count(), 1, "{twice}");
+    }
+
+    /// REGRESSION. A crate gets exactly ONE build script, and `opt_in` adds ours without ever looking
+    /// for the crate's own. Cargo AUTO-DETECTS `build.rs`, so neither offender declares `build =` and
+    /// the manifest diff shows only a line being ADDED — nothing says a script was replaced.
+    #[test]
+    fn refuses_a_crate_that_already_has_its_own_build_script() {
+        let plain = "[package]\nedition = \"2021\"\n";
+        let files = vec!["lib.rs".to_string(), "cli.rs".to_string()];
+        let lib = "pub mod cli;\n";
+
+        // `crates/data`'s script, verbatim in shape: a WINDOWS-ONLY link directive. Replacing it is
+        // invisible on Linux — the whole reason this refusal has to be up front rather than caught by a
+        // build. The message must name the file AND what it does, or the reader cannot judge the loss.
+        let windows_link = "fn main() {\n    if std::env::var(\"CARGO_CFG_TARGET_OS\").as_deref() == Ok(\"windows\") {\n        println!(\"cargo:rustc-link-lib=dylib=rstrtmgr\");\n    }\n}\n";
+        let mut s = shape(plain, lib, &files, 0);
+        s.build_rs = Some(("crates/data/build.rs", windows_link));
+        let why = refuse_reason(&s).expect("an existing build.rs must be refused");
+        assert!(why.contains("crates/data/build.rs"), "names the file: {why}");
+        assert!(why.contains("cargo:rustc-link-lib"), "names what it does: {why}");
+        assert!(why.contains("5 lines"), "names how much there is to lose: {why}");
+        assert!(why.contains(MARKER), "names what would replace it: {why}");
+
+        // A script emitting nothing still refuses, and says so rather than printing an empty list.
+        let mut quiet = shape(plain, lib, &files, 0);
+        quiet.build_rs = Some(("crates/x/build.rs", "fn main() {}\n"));
+        let why = refuse_reason(&quiet).expect("a silent build.rs is still a build.rs");
+        assert!(why.contains("emits no cargo: directives"), "{why}");
+
+        // The DECLARED twin: `opt_in` would leave two `build` keys in one manifest, and only after the
+        // records had been written.
+        let declared = "[package]\nedition = \"2021\"\nbuild = \"gen.rs\"\n";
+        let why = refuse_reason(&shape(declared, lib, &files, 0)).expect("a declared build script too");
+        assert!(why.contains("gen.rs") && why.contains("ONE build"), "{why}");
+
+        // …and a crate with no build script of its own is still not refused.
+        assert!(refuse_reason(&shape(plain, lib, &files, 0)).is_none());
+    }
+
+    /// The two crates the audit found GREEN on 2026-09-04, driven through the REAL `run` against this
+    /// repo. Both are flat, both declare only files that exist, so every other refusal passes them.
+    ///
+    /// `crates/data` is checked by the EXISTENCE of its `build.rs`, never by building it: its directive
+    /// fires only on Windows, so on this box a replacement compiles, links and tests clean while the
+    /// Windows link is broken. A test that tried to observe the breakage would observe nothing.
+    #[test]
+    fn the_two_crates_with_their_own_build_script_are_refused_by_the_real_run() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        for krate in ["bsc-config", "data"] {
+            let dir = repo.join("crates").join(krate);
+            assert!(dir.join("build.rs").is_file(), "crates/{krate}/build.rs is the premise of this test");
+            let cargo = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap();
+            assert!(!cargo.contains(MARKER), "crates/{krate} is not migrated yet");
+            assert!(
+                declared_build_script(&cargo).is_none(),
+                "crates/{krate} does NOT declare build = — cargo auto-detects it, which is what makes the \
+                 replacement silent"
+            );
+
+            let mut out: Vec<u8> = Vec::new();
+            let err = run(&[krate.into(), "--root".into(), repo.to_string_lossy().to_string()], &mut out)
+                .expect_err("a crate with its own build.rs must be refused");
+            assert!(err.contains(&format!("REFUSED {krate}")), "{err}");
+            assert!(err.contains(&format!("crates/{krate}/build.rs")), "names the file: {err}");
+            assert!(out.is_empty(), "a refusal prints no migration plan: {}", String::from_utf8_lossy(&out));
+        }
+    }
+
+    /// REGRESSION. `nested_count` was a bare `is_dir()`, so ANY directory refused the crate.
+    /// `crates/bsc-graph/src/.claude` holds one file (`.cc-writes`) and ZERO `.rs`, and it refused this
+    /// crate's 18,052 lines with "has 1 NESTED module director(y/ies)" — naming a module tree that does
+    /// not exist, over a directory the crate's author never wrote.
+    #[test]
+    fn a_dot_dir_and_a_rust_free_dir_are_not_nested_modules() {
+        let root = std::env::temp_dir().join(format!("bsc-migrate-nested-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src = root.join("crates").join("demo").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "//! demo\npub mod cli;\n").unwrap();
+        std::fs::write(src.join("cli.rs"), "pub fn run() {}\n").unwrap();
+        std::fs::write(root.join("crates/demo/Cargo.toml"), "[package]\nname = \"demo\"\nedition = \"2021\"\n").unwrap();
+
+        // The exact shape that refused bsc-graph: a dot-dir holding one non-Rust file.
+        std::fs::create_dir_all(src.join(".claude")).unwrap();
+        std::fs::write(src.join(".claude").join(".cc-writes"), "{}\n").unwrap();
+        // …and a plain directory of data, nested, with no Rust anywhere beneath it.
+        std::fs::create_dir_all(src.join("fixtures").join("deep")).unwrap();
+        std::fs::write(src.join("fixtures").join("deep").join("a.json"), "{}\n").unwrap();
+        // …against a REAL nested module tree, which must still refuse.
+        std::fs::create_dir_all(src.join("real")).unwrap();
+        std::fs::write(src.join("real").join("mod.rs"), "pub fn f() {}\n").unwrap();
+
+        assert!(!is_nested_module_dir(&src.join(".claude")), "a dot-dir is tooling state, not a module");
+        assert!(!is_nested_module_dir(&src.join("fixtures")), "no .rs anywhere beneath it");
+        assert!(is_nested_module_dir(&src.join("real")), "a directory holding Rust IS a module tree");
+
+        // End to end: with only the two non-module directories present, the crate migrates.
+        std::fs::remove_dir_all(src.join("real")).unwrap();
+        let mut out: Vec<u8> = Vec::new();
+        run(&["demo".into(), "--root".into(), root.to_string_lossy().to_string()], &mut out)
+            .expect("src/.claude and src/fixtures must not refuse the crate");
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("would migrate demo"), "{text}");
+        assert!(!text.contains("NESTED"), "{text}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn build_script_effects_names_the_directives_and_dedupes_them() {
+        let src = "println!(\"cargo:rerun-if-changed={}\", p);\nprintln!(\"cargo:rerun-if-changed={}\", q);\nprintln!(\"cargo:rustc-link-lib=dylib=rstrtmgr\");\n";
+        assert_eq!(build_script_effects(src), vec!["cargo:rerun-if-changed", "cargo:rustc-link-lib"]);
+        assert!(build_script_effects("fn main() {}").is_empty());
     }
 }
