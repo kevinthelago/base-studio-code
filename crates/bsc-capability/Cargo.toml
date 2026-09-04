@@ -1,0 +1,12 @@
+[package]
+name = "bsc-capability"
+version = "0.1.0"
+edition = "2021"
+
+# `bsc-capability` — the USE layer's data: what a network can DO right now.
+#
+# LEAN and pure, like `bsc-app` and `bsc-deploy`. No database, no HTTP client, no Tauri — the
+# aggregation reads are injected, so the rules are testable without four machines and a running app.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
