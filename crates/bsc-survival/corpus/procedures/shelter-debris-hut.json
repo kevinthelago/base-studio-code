@@ -1,0 +1,36 @@
+{
+  "id": "shelter-debris-hut",
+  "category": "shelter",
+  "name": "Debris hut",
+  "summary": "A one-person A-frame packed with a metre of leaf litter — a shelter that keeps you alive overnight with no tools and no fire.",
+  "time": "2-4 hours",
+  "materials": [
+    { "item": "ridgepole about 1.5x your height", "substitutes": ["long branch", "sapling", "fallen limb"] },
+    { "item": "two supports or a stump", "substitutes": ["forked branch", "stump", "rock", "fallen tree"] },
+    { "item": "ribbing sticks", "substitutes": ["branches", "sticks", "deadfall"] },
+    { "item": "leaf litter", "substitutes": ["leaves", "ferns", "grass", "pine needles", "duff"] }
+  ],
+  "steps": [
+    { "text": "Pick high, dry ground away from dead standing trees, drainage lines and the base of slopes where cold air pools." },
+    { "text": "Prop one end of the ridgepole at chest height on a stump or fork; the other end rests on the ground." },
+    { "text": "Lean ribbing sticks along both sides at a steep angle, close enough that leaves will not fall through. Keep the interior JUST big enough to lie in.", "why": "The shelter is heated by your body alone. Every extra litre of interior is volume you have to warm all night." },
+    { "text": "Pile leaf litter over the whole frame to a depth of at least an arm's length — deeper than feels sensible. Compress it and add more." },
+    { "text": "Stuff the inside with dry litter until you have to burrow in. That bedding is what insulates you from the ground, which steals more heat than the air does." },
+    { "text": "Plug the entrance behind you with a bundle of debris." }
+  ],
+  "verify": [
+    "Inside, in daylight, you should see no pinholes of light through the roof — a hole that passes light passes rain.",
+    "You should have to WORM into it. If you can sit up comfortably, it is too big to stay warm."
+  ],
+  "limits": [
+    "It is a heat trap, not a heat source. In deep cold it extends your survival time; it does not make the night comfortable.",
+    "It takes hours of daylight and a lot of energy. Started at dusk, it is worse than an existing hollow or a tarp.",
+    "It sheds rain poorly compared to any real waterproof layer."
+  ],
+  "cautions": [
+    "Never build under a dead tree or a hanging limb.",
+    "No fire inside or at the mouth — dry leaf litter is exactly the wrong material to have around a flame.",
+    "Ground contact is the main heat loss. A great roof over bare earth will still leave you hypothermic."
+  ],
+  "tags": ["shelter", "hypothermia", "insulation", "debris hut"]
+}

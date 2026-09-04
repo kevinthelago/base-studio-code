@@ -1,0 +1,32 @@
+{
+  "id": "signal-ground-symbols",
+  "category": "signal",
+  "name": "Ground-to-air signals",
+  "summary": "Huge, straight, high-contrast symbols in an open place — the international codes an aircrew is trained to read.",
+  "time": "30-60 minutes",
+  "materials": [
+    { "item": "contrasting material", "substitutes": ["rocks", "logs", "branches", "trampled snow", "seaweed", "cloth", "gear"] },
+    { "item": "an open area", "substitutes": ["clearing", "beach", "ridge", "snowfield", "meadow"] }
+  ],
+  "steps": [
+    { "text": "Choose the biggest open, flat area you can reach that is visible from above." },
+    { "text": "Make each symbol at least 3 m of stroke length and 6 m if you can — bigger than feels necessary. Make the strokes wide as well as long.", "why": "An aircraft searching at altitude and speed has seconds over you. Small or thin marks vanish into ground texture." },
+    { "text": "Use whatever contrasts most with the ground: dark branches on snow, stones on grass, trampled and shadowed trenches in snow." },
+    { "text": "Lay the code you need: V = assistance required. X = require medical assistance. -> = proceeding this way. Y = yes. N = no. SOS also works." },
+    { "text": "Keep the strokes straight and the angles sharp — nature does not make straight lines, and that is exactly what makes it read as human." },
+    { "text": "If you have colour or reflective gear, lay it out too, and stand clear of the symbol waving something bright when an aircraft comes over." }
+  ],
+  "verify": [
+    "Walk 50 m away and look back. If you cannot instantly read it from there, it will not read from 300 m up.",
+    "In snow, dig the trenches deep enough to cast a shadow — shadow reads better from the air than colour does."
+  ],
+  "limits": [
+    "It only works if someone is looking, in daylight, in weather they can fly in. It is one signal among several, not a plan on its own.",
+    "It cannot tell anyone where you are going once you leave it."
+  ],
+  "cautions": [
+    "Do not walk all over the symbol afterwards — footprints blur the edges that make it legible.",
+    "If you move on, leave a marker showing the direction of travel, and the date."
+  ],
+  "tags": ["signal", "rescue", "ground-to-air", "sos"]
+}

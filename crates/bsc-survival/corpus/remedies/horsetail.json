@@ -1,0 +1,35 @@
+{
+  "id": "horsetail",
+  "name": "Horsetail",
+  "latin": "Equisetum arvense",
+  "functions": ["hemostatic", "astringent"],
+  "regions": ["north-america", "europe", "asia", "boreal"],
+  "habitat": "Wet ground — ditches, stream banks, damp railway embankments, sandy wet waste ground.",
+  "parts": ["sterile green stem"],
+  "identify": [
+    "Jointed, hollow, ridged green stems with whorls of thin needle-like branches at each joint — like a bottle brush or a horse's tail.",
+    "The joints pull apart cleanly with an audible pop and slot back together.",
+    "Gritty to the touch and it will actually scour a pot — the tissue is loaded with silica, which is where the old name 'scouring rush' comes from.",
+    "In spring a separate pale unbranched fertile stem appears with a cone at the tip, before the green ones."
+  ],
+  "lookalikes": [
+    {
+      "name": "Marsh horsetail",
+      "latin": "Equisetum palustre",
+      "danger": "Contains the alkaloid palustrine and is toxic to livestock; not one to use.",
+      "tell": "Marsh horsetail has FEWER, coarser branches and a much larger central hollow relative to stem width; it grows in wetter ground. If you cannot tell them apart, do not use either internally."
+    }
+  ],
+  "preparations": [
+    { "form": "poultice", "method": "Crush the fresh green stems and apply to the wound.", "for_use": "A styptic and astringent for shallow bleeding." },
+    { "form": "decoction", "method": "Simmer chopped stems 15-20 minutes.", "for_use": "A wash for wounds and skin. Also the traditional internal use as a diuretic, which is the use with the most caution attached." },
+    { "form": "abrasive", "method": "Use dried stems as a scourer or fine sandpaper.", "for_use": "Cleaning a pot or smoothing a bow-drill spindle." }
+  ],
+  "cautions": [
+    "Horsetail contains THIAMINASE, which destroys vitamin B1. Sustained internal use causes thiamine deficiency; it has poisoned livestock this way. Do not drink it regularly.",
+    "Also a strong diuretic — a bad idea when you are already short of water.",
+    "Some populations concentrate selenium and other minerals from the soil.",
+    "Avoid internally in pregnancy, in kidney disease, and with alcohol."
+  ],
+  "evidence": "The silica and astringency are real and the topical styptic use is traditional and widespread. The internal safety concerns are documented and are the reason this entry leans topical."
+}

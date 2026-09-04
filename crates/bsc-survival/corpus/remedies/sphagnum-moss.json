@@ -1,0 +1,33 @@
+{
+  "id": "sphagnum-moss",
+  "name": "Sphagnum moss",
+  "latin": "Sphagnum spp.",
+  "functions": ["antiseptic", "astringent"],
+  "regions": ["north-america", "europe", "asia", "boreal", "south-america"],
+  "habitat": "Bogs, fens, wet acidic ground, the wet margins of conifer forest. It forms deep spongy hummocks.",
+  "parts": ["whole plant"],
+  "identify": [
+    "Pale green to rust-red, forming dense soft carpets or hummocks in wet ground.",
+    "Each shoot has a tight head of branches at the top like a tiny star or mop.",
+    "Holds a startling amount of water — a handful squeezes out like a sponge, and rebounds.",
+    "The ground it grows on is acidic and usually squelching."
+  ],
+  "lookalikes": [
+    {
+      "name": "Other mosses",
+      "latin": null,
+      "danger": "Low — but other mosses lack the absorbency and the acidity that make sphagnum useful, so a substitute performs much worse than expected.",
+      "tell": "Sphagnum is exceptionally absorbent and grows in standing-wet acidic ground; feather mosses and cushion mosses in drier woodland do not squeeze out water the same way."
+    }
+  ],
+  "preparations": [
+    { "form": "dressing", "method": "Gather clean living moss away from animal traffic, squeeze out the water, boil or steam it if you have fuel, and dry it. Pack it into a cloth pouch or wrap it in clean fabric before it touches the wound.", "for_use": "An absorbent wound dressing — it takes up several times its weight in fluid and its acidity discourages bacterial growth. Used at scale for exactly this in the First World War." }
+  ],
+  "cautions": [
+    "It is NOT sterile. Sporotrichosis ('rose gardener's disease') and other fungal infections are associated with sphagnum handling; boil or dry it if you can, and use it inside a cloth barrier rather than packed raw into tissue.",
+    "Never take it from ground fouled by livestock or from a stagnant pool downstream of anything.",
+    "It is an absorbent, not an antibiotic. It buys cleanliness, not treatment.",
+    "Peat bogs are slow-growing and often protected; take sparingly."
+  ],
+  "evidence": "Historically documented at industrial scale as a surgical dressing; the absorbency and low pH are measurable. Modern clinical use is essentially nil."
+}

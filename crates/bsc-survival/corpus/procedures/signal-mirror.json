@@ -1,0 +1,31 @@
+{
+  "id": "signal-mirror",
+  "category": "signal",
+  "name": "Signal mirror",
+  "summary": "A flash of aimed sunlight visible for tens of kilometres — the highest-reach signal you can carry in a pocket.",
+  "time": "seconds, whenever the sun is out",
+  "materials": [
+    { "item": "reflective surface", "substitutes": ["signal mirror", "mirror", "phone screen", "CD", "polished tin lid", "foil on card"] },
+    { "item": "sunlight", "substitutes": ["sun"] }
+  ],
+  "steps": [
+    { "text": "Hold the mirror close to your face and sight the target — aircraft, boat, ridge, vehicle — just over the top edge." },
+    { "text": "Hold your other hand out at arm's length with the target framed in a V between two fingers." },
+    { "text": "Flash the reflected spot of light onto your own outstretched hand first, then walk the spot into the V.", "why": "You cannot see where a reflected beam is going. Bouncing it onto something you CAN see is the only way to aim it." },
+    { "text": "With a purpose-made mirror, use the aiming hole: the bright dot you see through it IS where the beam is landing." },
+    { "text": "Sweep slowly across the horizon when you have no specific target — a searcher may see you before you see them." }
+  ],
+  "verify": [
+    "You can see the spot of light land on your own hand. Until you can, you are not aiming, you are hoping.",
+    "An aircrew that has seen you usually changes course or rocks its wings."
+  ],
+  "limits": [
+    "No sun, no signal. It is useless at night, under overcast, and in fog.",
+    "It signals presence and direction. It carries no information beyond 'a person is here'."
+  ],
+  "cautions": [
+    "Do not flash a pilot continuously once they have clearly seen you — sustained glare in the cockpit is dangerous. Signal, then stop.",
+    "The same is true for a vehicle driver on a road below you."
+  ],
+  "tags": ["signal", "mirror", "heliograph", "rescue"]
+}

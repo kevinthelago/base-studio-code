@@ -1,0 +1,30 @@
+{
+  "id": "fire-ferro-rod",
+  "category": "fire",
+  "name": "Ferrocerium rod",
+  "summary": "Scraped metal sparks at around 3,000 C — the ignition source that works wet, cold, at altitude, and thousands of times.",
+  "time": "seconds, given prepared tinder",
+  "materials": [
+    { "item": "ferrocerium rod", "substitutes": ["ferro rod", "firesteel", "flint and steel scraper"] },
+    { "item": "hard square-edged striker", "substitutes": ["knife spine", "hacksaw blade", "broken glass", "sharp stone"] },
+    { "item": "fine dry tinder", "substitutes": ["char cloth", "cotton", "birch bark", "fatwood", "dry grass"] }
+  ],
+  "steps": [
+    { "text": "Prepare the tinder bundle first and put it where the sparks will fall. Never strike before the tinder is ready." },
+    { "text": "Scrape the rod hard with a 90-degree edge — the spine of a knife, not the blade.", "why": "A sharp edge slices the rod instead of shaving off the burning swarf, and dulls your blade for nothing." },
+    { "text": "Hold the rod tip almost touching the tinder and pull the ROD back under a stationary striker, rather than pushing the striker at the tinder.", "why": "Pushing the striker scatters the sparks and knocks the nest apart with the follow-through." },
+    { "text": "Once it catches, close the bundle loosely and blow it to flame." }
+  ],
+  "verify": [
+    "Fat orange sparks that stay burning after they land mean you are scraping hard enough. Thin white flashes mean too light a touch.",
+    "A rod that will not spark usually has its factory lacquer still on — scrape that off first."
+  ],
+  "limits": [
+    "A ferro rod throws sparks, not flame. It cannot light wood, paper towel, or anything coarser than fine fibre.",
+    "It is a manufactured item. When it is gone, `fire-bow-drill` is the fallback, which is why the fallback is worth practising while you still have the rod."
+  ],
+  "cautions": [
+    "The swarf burns hot enough to melt synthetic clothing. Do not strike over a jacket you are wearing."
+  ],
+  "tags": ["fire", "ferro rod", "sparks", "ignition"]
+}

@@ -145,6 +145,7 @@ const COMMANDS: &[Surface] = &[
     active("capability", "bsc-capability", "the USE layer: what a network can DO right now, and how fresh each answer is", Some("derived — reads `bsc project network` + `bsc deploy`")),
     active("data", "bsc-data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
     active("cve", "cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
+    active("survival", "bsc-survival", "the caveman network's OFFLINE survival corpus: procedures ranked by the materials in your hands · natural remedies by function and location · compile the lot into one field manual", Some("the survival corpus — packaged + user-owned, $BSC_SURVIVAL_STORE")),
     active("news", "bsc-news", "low-trust news layer: poll outlets · brief an event (corroboration · framing · agency deletion). NOT `research` — an article is a claim, a paper is a source", Some("the news store — every fetched article version, $BSC_NEWS_DB")),
     active("surface", "bsc", "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks", Some("the command-surface catalog, compiled into this binary")),
     active("mcp", "bsc", "MCP: the server store (`server`) + the bundled stdio servers (research/compliance/cve)", None),
@@ -224,6 +225,7 @@ fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
         "compliance" => compliance::cli::COMMANDS,
         "cve" => cve::cli::COMMANDS,
         "news" => bsc_news::cli::COMMANDS,
+        "survival" => bsc_survival::cli::COMMANDS,
         // The RECORD-backed CLIs (`every-record-cli-projects-its-catalog`). Their `cli.rs` compiles from
         // the graph store rather than a file on disk, which is why they were absent here: the catalogs
         // existed all along and were merely private. 19 of 20 needed nothing but `pub`.
@@ -772,6 +774,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "cve" => cve::cli::run(rest, "bsc cve"),
         "news" => bsc_news::cli::run(rest, "bsc news"),
+        "survival" => bsc_survival::cli::run(rest, "bsc survival"),
         "config" => bsc_config::cli::run(rest, "bsc config"),
         "perms" => bsc_perms::cli::run(rest, "bsc perms"),
         "app" => bsc_app::cli::run(rest, "bsc app"),
@@ -1045,7 +1048,7 @@ mod tests {
     fn every_projected_surface_is_still_reachable() {
         const PROJECTED: &[&str] = &[
             "plan", "logs", "perf", "ui", "fleet", "mem", "persona", "request", "secret", "config",
-            "work", "cad", "data", "compliance", "cve", "news",
+            "work", "cad", "data", "compliance", "cve", "news", "survival",
             // the record-backed CLIs, whose catalogs were private rather than absent
             "blueprint", "debug", "files", "loop", "navigate", "network", "project", "publish",
             "runtime", "sandbox", "session", "shot", "sound", "studio", "teams", "org", "errors",

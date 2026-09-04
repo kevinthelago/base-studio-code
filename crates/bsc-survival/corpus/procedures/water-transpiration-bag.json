@@ -1,0 +1,33 @@
+{
+  "id": "water-transpiration-bag",
+  "category": "water",
+  "name": "Transpiration bag",
+  "summary": "A clear bag tied over a leafy living branch collects the water the tree is already pumping — far more yield than a solar still, for far less work.",
+  "time": "set at dawn, collect at dusk",
+  "materials": [
+    { "item": "clear plastic bag", "substitutes": ["bin liner", "bread bag", "plastic sheet"] },
+    { "item": "cordage", "substitutes": ["string", "cord", "wire", "strips of cloth"] },
+    { "item": "a leafy branch of a non-toxic tree", "substitutes": ["branch", "shrub", "leafy limb"] },
+    { "item": "a small stone", "substitutes": ["pebble", "stone"], "optional": true }
+  ],
+  "steps": [
+    { "text": "Pick a healthy, leafy, sun-exposed branch of a tree you have positively identified as non-toxic." },
+    { "text": "Slip the bag over as much foliage as it will hold and tie the mouth tight around the branch." },
+    { "text": "Put a small stone in one low corner and arrange the bag so that corner is the lowest point.", "why": "Condensate has to run somewhere. Without a deliberate low corner it beads on the whole surface and drips back onto the leaves." },
+    { "text": "Leave it through the hot part of the day and drain the corner in the evening." },
+    { "text": "Move the bag to a fresh branch each day." }
+  ],
+  "verify": [
+    "Water is pooling in the low corner by mid-afternoon. Nothing by then means too little sun, too few leaves, or a leaking tie."
+  ],
+  "limits": [
+    "The yield is water the plant transpired — typically a few hundred millilitres per bag per day, and less in dry or cool conditions. It is a supplement, not a supply.",
+    "It cannot work at night, in shade, or on a dormant plant.",
+    "The water is distilled but not sterile: it picks up whatever is on the leaves and inside the bag."
+  ],
+  "cautions": [
+    "Never bag a toxic species — oleander, yew, poison ivy/oak/sumac and their relatives put their toxin into the condensate. If you cannot identify the tree, do not use it.",
+    "A solar ground still is the famous alternative and is usually a net LOSS: in most conditions you sweat out more digging it than it returns."
+  ],
+  "tags": ["water", "transpiration", "still", "desert"]
+}

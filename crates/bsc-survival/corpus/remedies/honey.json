@@ -1,0 +1,25 @@
+{
+  "id": "honey",
+  "name": "Honey",
+  "latin": null,
+  "functions": ["antiseptic", "burn", "nutrition"],
+  "regions": ["worldwide"],
+  "habitat": "Not foraged so much as kept, traded, or robbed from a wild colony. Included because it is the strongest wound antiseptic in this corpus that a person plausibly has.",
+  "parts": ["honey"],
+  "identify": [
+    "Raw, unpasteurised honey is the useful kind; heat and filtration reduce the activity.",
+    "Medical-grade and manuka honeys are the standardised versions of the same thing."
+  ],
+  "lookalikes": [],
+  "preparations": [
+    { "form": "wound dressing", "method": "Spread a layer of honey on a clean dressing rather than pouring it into the wound, and apply. Change when it has been diluted by wound fluid — often daily at first.", "for_use": "Burns, ulcers, and slow-healing or infected wounds. It draws fluid out osmotically, produces hydrogen peroxide slowly, is too sugar-dense for bacteria to grow in, and keeps the dressing from sticking." },
+    { "form": "food", "method": "Eaten.", "for_use": "Fast calories." }
+  ],
+  "cautions": [
+    "NEVER give honey to an infant under one year old — botulism spores that an adult gut handles can germinate in an infant's, and it is fatal.",
+    "Wild honey from rhododendron, azalea or mountain laurel nectar can be 'mad honey' carrying grayanotoxin, which causes dizziness, vomiting, low heart rate and collapse.",
+    "It is a dressing, not a substitute for irrigation and for medical care in a serious wound.",
+    "Robbing a wild colony is dangerous in its own right and destroys the colony."
+  ],
+  "evidence": "The best-evidenced entry here: honey dressings for burns and wounds are supported by clinical trials and Cochrane review, and medical-grade honey is in routine hospital use."
+}

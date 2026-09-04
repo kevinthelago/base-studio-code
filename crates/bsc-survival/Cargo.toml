@@ -1,0 +1,27 @@
+[package]
+name = "bsc-survival"
+version = "0.1.0"
+edition = "2021"
+description = "The caveman network's offline survival corpus for base-studio-code — PROCEDURES (water, fire, shelter, signalling, navigation, bleeding control) and natural REMEDIES (antiseptics, hemostatics, analgesics) as structured rows, queryable by the materials in hand, by function, and by location, and compilable into one offline field manual. LOCAL: the corpus is packaged, the store is on this machine, and no verb here reaches the network."
+
+# The core lib (no Tauri, no async runtime) so the corpus + queries stay unit-testable with no I/O
+# beyond SQLite. The hyphenated package name maps to the `bsc_survival` crate name.
+[lib]
+name = "bsc_survival"
+
+[dependencies]
+# Shared leaf utilities (#1646): the one epoch clock (`now_secs`).
+bsc-util = { path = "../bsc-util" }
+# Shared SQLite-CLI helpers: `print_json` / `read_stdin_json` for the house JSON-on-stdout style, and
+# `conn` for the `:memory:`-aware open + default-path + JSON-blob row plumbing the store rides (#1863).
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold (#1762): `CmdDoc` + the help dispatch + `resolve_store_path`.
+bsc-cli-util = { path = "../bsc-cli-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Embed the packaged corpus (`corpus/**/*.json`) at compile time (#1614), so the field knowledge is
+# versioned, reviewable DATA rather than Rust literals — the same pattern `crates/compliance` uses.
+include_dir = "0.7"
+# The user-owned store the packaged corpus seeds into, so a person can add what they learned on their
+# own ground without waiting for a release. `bundled` matches plandb/compliance.
+rusqlite = { version = "0.40", features = ["bundled"] }
