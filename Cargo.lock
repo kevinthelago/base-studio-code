@@ -1028,6 +1028,7 @@ dependencies = [
  "bsc-lan-stream",
  "ed25519-dalek",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
