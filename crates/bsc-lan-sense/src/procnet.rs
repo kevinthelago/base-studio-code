@@ -116,11 +116,20 @@ fn decode_addr(hex: &str) -> Result<(String, Reach), ProcNetError> {
             let all_zero = bytes.iter().all(|b| *b == 0);
             // ::1 -- fifteen zero bytes then 1.
             let loopback = bytes[..15].iter().all(|b| *b == 0) && bytes[15] == 1;
-            let text = bytes
-                .chunks(2)
-                .map(|c| format!("{:02x}{:02x}", c[0], c[1]))
-                .collect::<Vec<_>>()
-                .join(":");
+            // The two cases that actually show up are the ones an operator most
+            // needs to recognise instantly, and they are the least readable
+            // fully expanded: a wildcard bind and loopback.
+            let text = if all_zero {
+                "::".to_string()
+            } else if loopback {
+                "::1".to_string()
+            } else {
+                bytes
+                    .chunks(2)
+                    .map(|c| format!("{:02x}{:02x}", c[0], c[1]))
+                    .collect::<Vec<_>>()
+                    .join(":")
+            };
             let reach = if all_zero {
                 Reach::Wildcard
             } else if loopback {

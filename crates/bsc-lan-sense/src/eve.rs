@@ -159,6 +159,51 @@ pub fn parse_line(line: &str) -> Result<Parsed, EveError> {
     }
 }
 
+/// Milliseconds since the epoch for one EVE timestamp.
+///
+/// Suricata writes `2026-09-04T12:54:16.318316-0400`: fractional seconds and a
+/// numeric offset with no colon. `bsc_util::iso8601_to_epoch_ms` handles
+/// neither and returns `None`, so the Suricata-specific normalisation lives
+/// here, next to the rest of the EVE knowledge, and delegates the civil-date
+/// arithmetic rather than reimplementing it.
+///
+/// The offset IS applied rather than ignored. Within one file it usually
+/// cancels out, but a log spanning a DST change carries two different offsets,
+/// and treating those as equal would make an hour of events appear to arrive
+/// at once — which is precisely the misreading this function exists to prevent.
+pub fn parse_timestamp_ms(ts: &str) -> Option<i64> {
+    let ts = ts.trim();
+    let (datetime, offset_ms) = split_offset(ts)?;
+    // Drop fractional seconds: millisecond resolution is far finer than any
+    // cadence decision made from it.
+    let base = match datetime.split_once('.') {
+        Some((whole, _frac)) => whole,
+        None => datetime,
+    };
+    let epoch = bsc_util::iso8601_to_epoch_ms(&format!("{base}Z"))?;
+    Some(epoch - offset_ms)
+}
+
+/// Split a timestamp into its offset-free part and the offset in milliseconds.
+fn split_offset(ts: &str) -> Option<(&str, i64)> {
+    if let Some(stripped) = ts.strip_suffix('Z') {
+        return Some((stripped, 0));
+    }
+    // The offset sign is the last `+`/`-` AFTER the date, so the date's own
+    // hyphens are not mistaken for it.
+    let t = ts.find('T')?;
+    let sign_at = ts[t..].rfind(['+', '-']).map(|i| i + t)?;
+    let (head, tail) = ts.split_at(sign_at);
+    let sign = if tail.starts_with('-') { -1 } else { 1 };
+    let digits: String = tail[1..].chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() < 4 {
+        return None;
+    }
+    let h: i64 = digits[0..2].parse().ok()?;
+    let m: i64 = digits[2..4].parse().ok()?;
+    Some((head, sign * (h * 3_600 + m * 60) * 1_000))
+}
+
 /// Whether an event, once framed, fits inside one datagram's plaintext budget.
 ///
 /// The bound that makes "no packet can silence the sensor" true. Called by the
@@ -190,6 +235,31 @@ mod tests {
     const FLOW: &str = r#"{"timestamp":"2026-09-04T10:00:00.000000+0000","event_type":"flow","src_ip":"10.99.3.20","src_port":443,"dest_ip":"10.99.2.118","dest_port":51000,"proto":"TCP","flow":{"pkts_toserver":10,"pkts_toclient":8,"bytes_toserver":1000,"bytes_toclient":2000,"state":"closed","reason":"timeout"}}"#;
     const DNS: &str = r#"{"timestamp":"2026-09-04T10:00:00.000000+0000","event_type":"dns","src_ip":"10.99.4.66","dest_ip":"10.99.2.1","dns":{"type":"query","id":1,"rrname":"telemetry.example.com","rrtype":"A"}}"#;
     const STATS: &str = r#"{"timestamp":"2026-09-04T10:00:00.000000+0000","event_type":"stats","stats":{"uptime":91}}"#;
+
+    #[test]
+    fn a_real_eve_timestamp_parses_with_its_offset() {
+        // The exact shape Suricata writes, taken from the live monitor Pi.
+        let a = parse_timestamp_ms("2026-09-04T12:54:16.318316-0400").unwrap();
+        let b = parse_timestamp_ms("2026-09-04T13:07:13.873067-0400").unwrap();
+        assert_eq!(b - a, 777_000, "the sample really does span 777 seconds");
+
+        // bsc_util alone cannot read this shape, which is why the wrapper exists.
+        assert!(bsc_util::iso8601_to_epoch_ms("2026-09-04T12:54:16.318316-0400").is_none());
+    }
+
+    #[test]
+    fn the_offset_is_applied_not_ignored() {
+        // Same wall-clock reading, two offsets: one hour apart in real time.
+        let east = parse_timestamp_ms("2026-09-04T12:00:00.000000-0400").unwrap();
+        let west = parse_timestamp_ms("2026-09-04T12:00:00.000000-0500").unwrap();
+        assert_eq!(west - east, 3_600_000, "a DST change must not collapse an hour of events");
+    }
+
+    #[test]
+    fn a_z_suffixed_and_an_offset_free_timestamp_both_parse() {
+        assert!(parse_timestamp_ms("2026-09-04T12:00:00Z").is_some());
+        assert!(parse_timestamp_ms("nonsense").is_none());
+    }
 
     #[test]
     fn a_real_alert_line_parses() {
