@@ -8,9 +8,6 @@
 //! Tauri-free on purpose (like `plandb`/`errordb`/`bsc-loop`): the umbrella `bsc` binary, the desktop app,
 //! and any session all depend on it, so the CLI stays a tiny binary.
 
-pub mod cli;
-pub mod provenance;
-mod schema;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -1095,3 +1092,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/provenance.rs, src/schema.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-request--<module>.rs
+//     bsc graph impl set --id bsc-request--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-request--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
