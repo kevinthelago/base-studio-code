@@ -18,6 +18,8 @@
 
 pub mod cli;
 pub mod engine;
+pub mod entities;
+pub mod gazetteer;
 pub mod http;
 pub mod outlets;
 pub mod signals;
