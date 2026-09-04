@@ -1,0 +1,15 @@
+# NEXTEST WRITES WHICH TESTS FAILED, SO THE GATE CAN TELL THEM APART.
+#
+# `bsc work gate` excuses a red leg when a known-red declaration names it — and the declaration was
+# keyed on the LEG (`nextest`), so ANY failure in that leg was absorbed by whatever item owned the
+# one known failure. MEASURED 2026-09-03: the gate printed `1 red, 1 known-red → 0 unexplained`
+# while the actual failure was a test that commit had just broken, unrelated to the declaration.
+#
+# The gate cannot read the failures off stdout: `run()` inherits stdio on purpose, so cargo's live
+# progress and colours survive being measured, and piping to capture them would cost that. A JUnit
+# report is written to disk instead, which changes nothing about what the terminal shows.
+#
+# On the DEFAULT profile rather than a `ci` one, so every nextest run writes it and the gate needs no
+# extra flag — a flag the gate forgets to pass is a silent return to excusing everything.
+[profile.default.junit]
+path = "junit.xml"
