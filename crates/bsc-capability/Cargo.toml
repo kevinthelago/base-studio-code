@@ -2,6 +2,7 @@
 name = "bsc-capability"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 # `bsc-capability` — the USE layer's data: what a network can DO right now.
 #
@@ -11,3 +12,7 @@ edition = "2021"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bsc-cli-util = { path = "../bsc-cli-util" }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

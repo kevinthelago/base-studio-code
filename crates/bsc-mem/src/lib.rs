@@ -32,6 +32,14 @@
 //! Nothing here takes a write scope. `bsc mem` only ever reports what something else already recorded,
 //! which is what lets it be given to every role without a grant.
 
-pub mod app;
-pub mod cli;
-pub mod stats;
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/app.rs, src/cli.rs, src/stats.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-mem--<module>.rs
+//     bsc graph impl set --id bsc-mem--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-mem--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
