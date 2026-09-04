@@ -315,6 +315,11 @@ base-studio-code/
 │   ├── skilldb/             #   global skills + task-groups store (SQLite) + bsc skill CLI
 │   ├── logs/                #   unified log/perf/cost engine + bsc logs CLI (#1607)
 │   ├── compliance/          #   compliance-standards store + bsc compliance CLI & bsc mcp compliance server
+│   ├── bsc-security/        #   the SECURITY surface (bsc security), widened from `cve`: vulnerable dependencies
+│   │                        #   (OSV.dev) + leaked credentials (working tree AND git history), emitted as ONE
+│   │                        #   normalized Finding so detectors rank against each other. A secret is redacted at
+│   │                        #   construction and NEVER stored raw — findings reach append-only plan notes. `bsc cve`
+│   │                        #   is a deprecated alias whose exit-code contract still gates CI and the install hook.
 │   ├── research/            #   literature research + bsc mcp research server
 │   ├── bsc-news/            #   LOW-TRUST news layer (bsc news): poll a fixed outlet roster over RSS/news-sitemaps,
 │   │                        #   retain EVERY fetched version (so a stealth edit stays observable), compute the framing

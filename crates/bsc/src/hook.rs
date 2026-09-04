@@ -120,11 +120,11 @@ fn bash_deny() -> Result<(), String> {
 /// ALLOWS the command (the #3795 scripts-off floor is the always-on protection); a fail-open is logged.
 fn bash_supply() -> Result<(), String> {
     let cmd = stdin_command();
-    let adds = cve::install::parse_install_command(&cmd);
+    let adds = bsc_security::install::parse_install_command(&cmd);
     if adds.is_empty() {
         return Ok(()); // fast path: not a dependency add — the overwhelming majority of commands
     }
-    let engine = match cve::Engine::from_env() {
+    let engine = match bsc_security::Engine::from_env() {
         Ok(e) => e,
         Err(e) => {
             log_supply(&cmd, "failopen", &format!("cve engine unavailable: {e}"));
@@ -168,7 +168,7 @@ fn stdin_command() -> String {
 /// version carries a vulnerability at/above `min` is blocked (OSV's versioned query already scoped the
 /// advisories to that version, so every advisory here affects it); (3) a versionless non-malicious add
 /// is ALLOWED (the resolved version is unknown pre-install — `bsc cve scan` covers it after). `None` ⇒ allow.
-fn supply_block_reason(report: &cve::PackageReport, min: cve::Severity) -> Option<String> {
+fn supply_block_reason(report: &bsc_security::PackageReport, min: bsc_security::Severity) -> Option<String> {
     let name = &report.package.name;
     if let Some(mal) = report.advisories.iter().find(|a| a.is_malicious()) {
         return Some(format!("{name} is a known-MALICIOUS package ({})", mal.id));
@@ -182,13 +182,13 @@ fn supply_block_reason(report: &cve::PackageReport, min: cve::Severity) -> Optio
 }
 
 /// The version-pinned vulnerability gate: `$BSC_SUPPLY_MIN` (default `high`), matching `bsc cve scan`.
-fn supply_min_severity() -> cve::Severity {
+fn supply_min_severity() -> bsc_security::Severity {
     supply_min_from(&std::env::var("BSC_SUPPLY_MIN").unwrap_or_default())
 }
 
 /// Pure: parse the min-severity token, defaulting to `high` (empty/unknown → high).
-fn supply_min_from(s: &str) -> cve::Severity {
-    cve::Severity::parse(s).unwrap_or(cve::Severity::High)
+fn supply_min_from(s: &str) -> bsc_security::Severity {
+    bsc_security::Severity::parse(s).unwrap_or(bsc_security::Severity::High)
 }
 
 /// Append a `supply`-gate row (`ts·pane·supply·verdict·target·reason`) to `$BSC_PERM_LOG` — verdict
@@ -314,7 +314,7 @@ mod tests {
         deny_log_line, deny_reason, perm_log_line, supply_block_reason, supply_fault_title, supply_min_from,
         write_supply_fault,
     };
-    use cve::{Advisory, Ecosystem, Package, PackageReport, Severity};
+    use bsc_security::{Advisory, Ecosystem, Package, PackageReport, Severity};
 
     fn adv(id: &str, sev: Severity) -> Advisory {
         Advisory { id: id.into(), summary: String::new(), severity: sev, aliases: vec![], references: vec![] }
