@@ -49,6 +49,8 @@ atlasdb = { path = "../atlasdb" }
 llm = { path = "../llm", package = "bsc-llm" }
 bsc-mcp = { path = "../bsc-mcp" }
 bsc-sound = { path = "../bsc-sound" }
+# `bsc say` — speech as a command surface, so an agent/hook/automation can speak and not only the UI.
+bsc-say = { path = "../bsc-say" }
 bsc-teams = { path = "../bsc-teams" }
 bsc-network = { path = "../bsc-network" }
 # `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state.

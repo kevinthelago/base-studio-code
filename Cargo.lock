@@ -761,6 +761,7 @@ dependencies = [
  "bsc-rf",
  "bsc-runtime",
  "bsc-sandbox",
+ "bsc-say",
  "bsc-secret",
  "bsc-security",
  "bsc-self",
@@ -1275,6 +1276,16 @@ dependencies = [
  "bsc-util",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-say"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
