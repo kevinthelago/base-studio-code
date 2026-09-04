@@ -108,6 +108,57 @@ pub struct SensorConfig {
     pub sensor_key: String,
     /// The group key, hex. **SECRET**.
     pub group_key: String,
+    /// The radio to put into monitor mode before sensing, if any.
+    ///
+    /// Optional because a sensor with no radio is a legitimate configuration —
+    /// it still attests its posture — and because the interface name is
+    /// device-specific in a way nothing else here is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radio: Option<RadioConfig>,
+}
+
+/// Which interface to tune, and to what.
+///
+/// MEASURED, and this is why it is configuration rather than an afterthought:
+/// with the USB adapter left `type managed` and unassociated after a reboot,
+/// the sensor produced **5 spectrum records in 30 seconds**; with the same
+/// adapter in monitor mode on channel 6, **30 in 30 seconds** — one per window,
+/// which is the design rate. Monitor mode does not survive a reboot, so
+/// without this the analyzer is sparse after every power cycle and nothing
+/// says why.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RadioConfig {
+    /// Interface name, e.g. `wlan1`.
+    pub iface: String,
+    /// Channel to park on.
+    pub channel: u16,
+}
+
+impl RadioConfig {
+    /// Reject an interface name that is not one.
+    ///
+    /// This value is rendered into a systemd unit's `ExecStart`, so a name
+    /// carrying a newline would append directives of the attacker's choosing
+    /// to a file that runs as root. The kernel's own limit is `IFNAMSIZ` (16
+    /// including the terminator) and the character set is deliberately
+    /// narrower than what Linux would technically accept: nothing here needs
+    /// an interface called `eth 0`.
+    pub fn validate(&self) -> Result<(), String> {
+        let n = &self.iface;
+        if n.is_empty() || n.len() > 15 {
+            return Err(format!("radio.iface must be 1..=15 characters, got {n:?}"));
+        }
+        if !n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+            return Err(format!(
+                "radio.iface may only contain letters, digits, '_', '-' and '.', got {n:?} —                  this value is rendered into a unit file that runs as root"
+            ));
+        }
+        if self.channel == 0 || self.channel > 196 {
+            return Err(format!("radio.channel must be 1..=196, got {}", self.channel));
+        }
+        Ok(())
+    }
 }
 
 /// A document together with where it came from, so a command can say which
@@ -193,6 +244,9 @@ pub fn parse_sensor(text: &str) -> Result<SensorConfig, String> {
     c.iface_addr()?;
     c.sensor_key_bytes()?;
     c.group_key_bytes()?;
+    if let Some(r) = &c.radio {
+        r.validate()?;
+    }
     Ok(c)
 }
 
@@ -291,6 +345,10 @@ impl SensorConfig {
             "iface": self.iface,
             "sensorKey": REDACTED,
             "groupKey": REDACTED,
+            "radio": self.radio.as_ref().map(|r| serde_json::json!({
+                "iface": r.iface,
+                "channel": r.channel,
+            })),
         })
     }
 }
@@ -451,6 +509,56 @@ mod tests {
             }
         }
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_interface_name_that_could_inject_unit_directives_is_refused() {
+        use super::RadioConfig;
+        // This value lands in a systemd ExecStart line in a file that runs as
+        // root. A newline in it appends directives of the writer's choosing.
+        for bad in [
+            "wlan1\nExecStart=/bin/sh -c evil",
+            "wlan 1",
+            "",
+            "abcdefghijklmnopq",
+            "wlan1;reboot",
+            "../../etc/passwd",
+        ] {
+            let r = RadioConfig { iface: bad.into(), channel: 6 };
+            assert!(r.validate().is_err(), "accepted {bad:?} as an interface name");
+        }
+        for good in ["wlan1", "wlp2s0", "mon.0", "en-1"] {
+            RadioConfig { iface: good.into(), channel: 6 }
+                .validate()
+                .unwrap_or_else(|e| panic!("rejected the ordinary name {good:?}: {e}"));
+        }
+        assert!(RadioConfig { iface: "wlan1".into(), channel: 0 }.validate().is_err());
+        assert!(RadioConfig { iface: "wlan1".into(), channel: 300 }.validate().is_err());
+    }
+
+    #[test]
+    fn a_radio_is_optional_and_survives_the_round_trip() {
+        // A sensor with no radio is legitimate: it still attests its posture.
+        let none = parse_sensor(&sensor_doc()).unwrap();
+        assert!(none.radio.is_none());
+        let with = format!(
+            r#"{{"destination":"1.2.3.4:5","sensorKey":"{SIGN}","groupKey":"{GROUP}","radio":{{"iface":"wlan1","channel":6}}}}"#
+        );
+        let c = parse_sensor(&with).expect("parses");
+        let r = c.radio.as_ref().expect("the radio survived");
+        assert_eq!((r.iface.as_str(), r.channel), ("wlan1", 6));
+        // And it is still not a place a key could hide.
+        let out = serde_json::to_string(&c.redacted()).unwrap();
+        assert!(!out.contains(SIGN) && !out.contains(GROUP), "{out}");
+        assert!(out.contains("wlan1"), "the radio is not a secret and should be shown: {out}");
+    }
+
+    #[test]
+    fn a_bad_radio_is_caught_when_the_config_is_read() {
+        let bad = format!(
+            r#"{{"destination":"1.2.3.4:5","sensorKey":"{SIGN}","groupKey":"{GROUP}","radio":{{"iface":"wlan 1","channel":6}}}}"#
+        );
+        assert!(parse_sensor(&bad).unwrap_err().contains("radio.iface"));
     }
 
     #[test]
