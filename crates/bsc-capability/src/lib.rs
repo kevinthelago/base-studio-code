@@ -28,10 +28,18 @@
 //! invents a shape, and the session then gets a second copy of it, and the two drift. There is a test
 //! pinning that the two views come from one value.
 
-pub mod cli;
-pub mod freshness;
-pub mod model;
-pub mod read;
 
 pub use freshness::{Freshness, Observation};
 pub use model::{Capability, CapabilityKind, NetworkCapabilities, ProjectCapabilities};
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/freshness.rs, src/model.rs, src/read.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-capability--<module>.rs
+//     bsc graph impl set --id bsc-capability--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-capability--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
