@@ -1,0 +1,28 @@
+[package]
+name = "bsc-lan-stream"
+version = "0.1.0"
+edition = "2021"
+description = "`bsc lan` one-way multicast wire contract: the datagram every emit-only sensor sends and every subscriber verifies. Pure codec — no sockets, no filesystem, no async runtime."
+
+[lib]
+name = "bsc_lan_stream"
+
+# NO I/O. This crate is the contract, not the transport (the same split
+# crates/bsc-tunnel draws between its protocol and its channel), which is what
+# lets every property below be tested on a laptop with no sensor hardware.
+# tests/no_io.rs pins it against this crate's own resolved dependency closure.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Confidentiality: a GROUP key, so one emission serves N subscribers.
+chacha20poly1305 = "0.10"
+# Authenticity: the sensor signs. A subscriber holding the group key can READ
+# the stream but must never be able to FORGE into it -- with a shared key
+# alone, every subscriber could fabricate alerts, and that gets worse with
+# every device added. Reuses curve25519-dalek, which snow already pulls in.
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+
+[lints.clippy]
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"
