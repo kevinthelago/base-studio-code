@@ -18,6 +18,7 @@ pub mod posture;
 pub mod receive;
 pub mod rf;
 pub mod run;
+pub mod spectrum;
 pub mod procnet;
 pub mod transport;
 
