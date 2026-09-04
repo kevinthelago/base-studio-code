@@ -210,7 +210,6 @@ pub fn mtime_ms(p: &Path) -> Option<i64> {
     Some(d.as_millis() as i64)
 }
 
-pub mod cli;
 
 #[cfg(test)]
 mod tests {
@@ -330,3 +329,15 @@ mod tests {
         assert!(pick_usable(&paths, &sizes(&[("/a/bsc", 0)]), &says("bsc 0.1.0")).is_none());
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-self--<module>.rs
+//     bsc graph impl set --id bsc-self--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-self--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
