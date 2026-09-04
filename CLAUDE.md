@@ -320,7 +320,10 @@ base-studio-code/
 │   │                        #   retain EVERY fetched version (so a stealth edit stays observable), compute the framing
 │   │                        #   signals. Deliberately NOT `research`: an article is a CLAIM to be corroborated, a paper is
 │   │                        #   a citable source, and no verb converts one into the other. Every number is computed and
-│   │                        #   carries the span that produced it — no model runs in this crate.
+│   │                        #   carries the span that produced it — no model runs in this crate. `find` filters by
+│   │                        #   PERSON / PLACE / CIRCUMSTANCE (gazetteer places match demonyms + cities; a circumstance
+│   │                        #   FAMILY expands to its members), and `entities` ranks what is in the store so a filter is
+│   │                        #   reachable without already knowing the name.
 │   ├── llm/                 #   model-agnostic LlmProvider abstraction (pkg bsc-llm)
 │   ├── bsc-agent/           #   model-agnostic agent runtime
 │   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI

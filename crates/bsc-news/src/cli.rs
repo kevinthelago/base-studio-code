@@ -75,6 +75,45 @@ spans behind every number. Selection is a KEYWORD FILTER, not cross-lingual even
 is deliberately deferred until the digest has proven worth reading.",
     },
     CmdDoc {
+        name: "find",
+        summary: "articles about a person, a place or a circumstance",
+        usage: "\
+USAGE:
+  bsc news find [--person <name>] [--place <key>] [--circumstance <key|family>]
+                [--outlet <id>] [--bloc <US|UK|RU|CN>] [--since <secs>] [<query…>]
+
+Every filter is AND-ed; repeat one to widen it. They are distinct kinds on purpose — a bare keyword
+cannot tell the person Putin from a coincidence, and matches nothing you cannot already name.
+
+  --person        matched against EXTRACTED names, not raw text. Substring on the canonical key, so
+                  `putin` finds `Putin’s`. Covers both cue-confirmed people and unconfirmed
+                  proper-noun runs (organisations, events), because you want the article either way.
+  --place         a gazetteer KEY, which also matches the demonym and major cities: `--place russia`
+                  hits `Russian`, `Moscow` and `Russia`. Demonyms outnumber country names in
+                  headlines, so this is most of the value.
+  --circumstance  a key (`flood`) OR a family (`disaster`), which expands to every member — so
+                  `what disasters is anyone covering` is answerable without naming one.
+
+Run `bsc news entities` first if you do not know what to filter on. Each hit prints the mentions
+that put it there.",
+    },
+    CmdDoc {
+        name: "entities",
+        summary: "what is IN the corpus: people, places and circumstances, ranked",
+        usage: "\
+USAGE:
+  bsc news entities [--kind person|place|circumstance] [--since <secs>] [--limit <n>]
+
+The discovery half of `find`. A filter you can only use once you already know the answer is not a
+filter, so this ranks what the store actually holds — most-covered first, ties broken by how many
+distinct OUTLETS mention it, because a thing five outlets name is a better handle than one an outlet
+repeated five times.
+
+A `person` row marked `cue` was confirmed by a role, an attribution verb or a wire byline; an
+unmarked one is a proper-noun run, which may be an organisation or an event rather than a person.
+That distinction is reported rather than guessed at.",
+    },
+    CmdDoc {
         name: "history",
         summary: "every stored version of one article URL — the stealth-edit view",
         usage: "\
@@ -97,6 +136,12 @@ struct Args {
     evidence: bool,
     bloc: Option<String>,
     since: i64,
+    kind: Option<String>,
+    limit: usize,
+    person: Vec<String>,
+    place: Vec<String>,
+    circumstance: Vec<String>,
+    outlet: Vec<String>,
     positional: Vec<String>,
 }
 
@@ -108,6 +153,12 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         evidence: false,
         bloc: None,
         since: DEFAULT_WINDOW_SECS,
+        kind: None,
+        limit: 40,
+        person: Vec::new(),
+        place: Vec::new(),
+        circumstance: Vec::new(),
+        outlet: Vec::new(),
         positional: Vec::new(),
     };
     let (mut a, positional) = bsc_cli_util::args::walk(raw, a, |flag, a: &mut Args, v| {
@@ -117,6 +168,15 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--json" => a.json = true,
             "--evidence" => a.evidence = true,
             "--bloc" => a.bloc = Some(v.value("--bloc needs a code (US|UK|RU|CN)")?),
+            "--kind" => a.kind = Some(v.value("--kind needs person|place|circumstance")?),
+            "--person" => a.person.push(v.value("--person needs a name")?),
+            "--place" => a.place.push(v.value("--place needs a gazetteer key (try `bsc news entities --kind place`)")?),
+            "--circumstance" => a.circumstance.push(v.value("--circumstance needs a key or family")?),
+            "--outlet" => a.outlet.push(v.value("--outlet needs an outlet id")?),
+            "--limit" => {
+                let l = v.value("--limit needs a number")?;
+                a.limit = l.parse::<usize>().map_err(|_| format!("--limit expects a number, got '{l}'"))?;
+            }
             "--since" => {
                 let s = v.value("--since needs a number of seconds")?;
                 a.since = s.parse::<i64>().map_err(|_| format!("--since expects seconds, got '{s}'"))?;
@@ -148,6 +208,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "outlets" => cmd_outlets(&args),
         "poll" => cmd_poll(&args, &rest),
         "brief" => cmd_brief(&args, &rest),
+        "find" => cmd_find(&args, &rest),
+        "entities" => cmd_entities(&args),
         "history" => cmd_history(&args, &rest),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
@@ -221,12 +283,24 @@ fn cmd_poll(args: &Args, only: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn filter_from(args: &Args, terms: &[String]) -> engine::Filter {
+    engine::Filter {
+        query: terms.join(" "),
+        person: args.person.clone(),
+        place: args.place.clone(),
+        circumstance: args.circumstance.clone(),
+        outlet: args.outlet.clone(),
+        bloc: args.bloc.iter().cloned().collect(),
+    }
+}
+
 fn cmd_brief(args: &Args, terms: &[String]) -> Result<(), String> {
-    if terms.is_empty() {
-        return Err("brief needs a query (e.g. `bsc news brief port strike`)".into());
+    let filter = filter_from(args, terms);
+    if filter.is_empty() {
+        return Err("brief needs a query or a filter (e.g. `bsc news brief port strike`, or `--place nepal`)".into());
     }
     let store = open(args)?;
-    let b = engine::brief(&store, &terms.join(" "), now_secs() - args.since)?;
+    let b = engine::brief(&store, &filter, now_secs() - args.since)?;
     let evidence = args.evidence;
     bsc_cli_util::emit(args.pretty, args.json, &b, || render_brief(&b, evidence));
     Ok(())
@@ -296,6 +370,71 @@ fn render_brief(b: &engine::Brief, evidence: bool) -> String {
     s
 }
 
+fn cmd_find(args: &Args, terms: &[String]) -> Result<(), String> {
+    let filter = filter_from(args, terms);
+    if filter.is_empty() {
+        return Err(
+            "find needs at least one filter — try `--place nepal`, `--person putin`, `--circumstance disaster`, \
+             or `bsc news entities` to see what is in the store"
+                .into(),
+        );
+    }
+    let store = open(args)?;
+    let hits = engine::find(&store, &filter, now_secs() - args.since)?;
+    bsc_cli_util::emit(args.pretty, args.json, &hits, || {
+        if hits.is_empty() {
+            return format!(
+                "no articles match {} in the last {}s\ntry `bsc news entities` to see what IS in the store\n",
+                engine::describe(&filter),
+                args.since
+            );
+        }
+        let mut s = format!("{} — {} article(s)\n\n", engine::describe(&filter), hits.len());
+        for h in &hits {
+            s.push_str(&format!("{:<12} {:<3} {}\n", h.outlet_id, h.bloc, h.title));
+            if args.evidence {
+                let why: Vec<String> =
+                    h.matched.iter().map(|m| format!("{:?}:{}", m.kind, m.surface)).collect();
+                s.push_str(&format!("             {}\n             {}\n", why.join(", "), h.url));
+            }
+        }
+        s
+    });
+    Ok(())
+}
+
+fn cmd_entities(args: &Args) -> Result<(), String> {
+    let kind = match args.kind.as_deref() {
+        None => None,
+        Some("person") | Some("people") => Some(crate::entities::Kind::Person),
+        Some("place") | Some("places") => Some(crate::entities::Kind::Place),
+        Some("circumstance") | Some("circumstances") => Some(crate::entities::Kind::Circumstance),
+        Some(other) => return Err(format!("unknown kind '{other}' (expected person|place|circumstance)")),
+    };
+    let store = open(args)?;
+    let rows: Vec<_> =
+        engine::entity_index(&store, now_secs() - args.since, kind)?.into_iter().take(args.limit).collect();
+    bsc_cli_util::emit(args.pretty, args.json, &rows, || {
+        if rows.is_empty() {
+            return "the store holds nothing in that window — run `bsc news poll` first\n".to_string();
+        }
+        let mut s = String::new();
+        for r in &rows {
+            let cue = if r.confirmed { " cue" } else { "" };
+            s.push_str(&format!(
+                "{:<14} {:<28} articles={:<4} outlets={}{}\n",
+                format!("{:?}", r.kind).to_lowercase(),
+                r.key,
+                r.articles,
+                r.outlets,
+                cue
+            ));
+        }
+        s
+    });
+    Ok(())
+}
+
 fn cmd_history(args: &Args, rest: &[String]) -> Result<(), String> {
     let url = rest.first().ok_or("history needs a url")?;
     let store = open(args)?;
@@ -325,6 +464,10 @@ fn cmd_history(args: &Args, rest: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn q(query: &str) -> engine::Filter {
+        engine::Filter { query: query.into(), ..Default::default() }
+    }
 
     #[test]
     fn help_lists_every_verb() {
@@ -386,7 +529,7 @@ mod tests {
         };
         store.record("ap", &it("ap/1", "Strike on port kills two"), 100).unwrap();
         store.record("bbc", &it("bbc/1", "Two killed in port strike"), 140).unwrap();
-        let b = engine::brief(&store, "port", 0).unwrap();
+        let b = engine::brief(&store, &q("port"), 0).unwrap();
         let text = render_brief(&b, true);
         assert!(text.contains("1 independent source"), "the headline number is sources, not articles");
         assert!(text.contains("NOT 2 reports"), "and it says plainly what the raw count would have claimed");
