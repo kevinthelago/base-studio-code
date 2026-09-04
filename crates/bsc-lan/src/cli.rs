@@ -248,6 +248,53 @@ signing key render as <redacted>. The sensor's PUBLIC key is shown, because it
 is not a secret and it is the one value an operator needs to copy between
 machines.",
     },
+    CmdDoc {
+        name: "unit",
+        summary: "the systemd unit that makes the sensor a service, printed",
+        usage: "\
+bsc lan unit [--radio] [--binary <path>] [--interval <ms>] [--snapshot-ms <ms>]
+
+Prints the systemd unit for the sensor, rendered against THIS host's sensor
+config. Redirect it into /etc/systemd/system/bsc-lan-sense.service.
+
+WHY IT IS GENERATED. Two of its lines have to agree with the config or the
+sensor runs and sends nothing: IPAddressAllow names the collector and the
+config names the destination. A static unit file drifts from the config the
+first time a collector moves, and the symptom is a healthy-looking service
+whose datagrams the kernel drops before they reach a wire. So the destination
+is read from sensor.json and rendered in, and a test asserts the two agree.
+
+THE UNIT IS WHERE 'EMIT-ONLY' STOPS BEING A CLAIM. Everything else in this
+project is our own code vouching for itself, and a compromised sensor controls
+every word of it. Two directives move the boundary into the kernel:
+SocketBindDeny=any means the unit cannot bind a listening socket at all --
+which still holds if the binary is replaced -- and IPAddressDeny=any with one
+IPAddressAllow confines egress to the collector and nothing else.
+
+NO KEY REACHES THE FILE. The unit sets BSC_LAN_DIR and the sensor reads
+sensor.json from it. `systemctl show` hands ExecStart to anyone who asks, and
+a unit file is normally mode 644, so a key on that line has the same
+disclosure a key on argv has.
+
+ONE DIRECTIVE IS DELIBERATELY MISSING and it looks like an oversight:
+ProtectKernelTunables=yes remounts /sys/kernel read-only, and the spectral
+scan is armed by writing spectral_scan_ctl under /sys/kernel/debug. Adding it
+gives a sensor that starts cleanly, reports nothing wrong, and emits barren
+windows forever.
+
+--radio PRINTS THE COMPANION ONESHOT instead. Tuning an interface needs
+CAP_NET_ADMIN and the sensor's own unit drops every capability, so the tuning
+is a oneshot that exits rather than a capability the long-running process
+holds forever. It matters more than it sounds: MEASURED, an adapter left
+`type managed` after a reboot produced 5 spectrum records in 30 seconds
+against 30 for the same adapter in monitor mode -- and monitor mode does not
+survive a reboot, so without this the analyzer is sparse after every power
+cycle and nothing says why.
+
+IT PRINTS RATHER THAN INSTALLS, for the same reason keygen prints rather than
+writes: putting a file into /etc/systemd/system and enabling it is a change to
+a machine, and that is the operator's to make.",
+    },
 ];
 
 #[derive(Default)]
@@ -273,6 +320,14 @@ struct Args {
     trigger: bool,
     to: Option<String>,
     interval_ms: Option<u64>,
+    /// How often the sensor restates everything. A subscriber that joins an
+    /// already-running stream is Degraded until the first snapshot reaches it,
+    /// and for an unattended sensor every subscriber joins late.
+    snapshot_ms: Option<u64>,
+    /// Absolute path to the sensor binary ON THE DEVICE, for the unit file.
+    binary: Option<String>,
+    /// Render the radio oneshot instead of the sensor unit.
+    radio: bool,
     count: Option<u64>,
     source: Option<String>,
     positional: Vec<String>,
@@ -295,6 +350,15 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--segment" => a.segment = Some(rest.value("--segment needs a /24 prefix, e.g. 10.99.2.")?),
             "--expect" => a.expect = Some(rest.value("--expect needs a comma-separated address list")?),
             "--iface" => a.iface = Some(rest.value("--iface needs an interface IP")?),
+            "--radio" => a.radio = true,
+            "--binary" => a.binary = Some(rest.value("--binary needs an absolute path on the device")?),
+            "--snapshot-ms" => {
+                a.snapshot_ms = Some(
+                    rest.value("--snapshot-ms needs a whole number of milliseconds")?
+                        .parse()
+                        .map_err(|_| "--snapshot-ms needs a whole number of milliseconds".to_string())?,
+                );
+            }
             "--sensor-key" => a.sensor_key = Some(rest.value("--sensor-key needs 64 hex characters (the sensor's PRIVATE signing key)")?),
             "--sensor-public-key" => {
                 a.sensor_public_key = Some(rest.value("--sensor-public-key needs 64 hex characters")?)
@@ -716,10 +780,13 @@ pub fn render_finding(f: &Finding) -> String {
 
 
 fn cmd_sense(a: &Args) -> Result<(), String> {
-    use bsc_lan_sense::emitloop::{events_for, SPECTRUM_KIND};
+    use bsc_lan_sense::emit::{Emitter, SnapshotPolicy};
+    use bsc_lan_sense::emitloop::{events_for, fits_one_datagram, SendLog};
     use bsc_lan_sense::spectrum::{discover, read_samples, trigger, Mode};
+    use bsc_lan_sense::transport::UdpMulticast;
     use bsc_lan_stream::crypto::{GroupKey, Sensor};
-    use bsc_lan_stream::frame::Frame;
+    use bsc_lan_stream::frame::{AttestedPosture, SensorState};
+    use std::collections::BTreeMap;
 
     let r = resolve_sensor(a)?;
     let to = r.destination;
@@ -733,36 +800,184 @@ fn cmd_sense(a: &Args) -> Result<(), String> {
     getrandom::fill(&mut boot).map_err(|e| format!("no OS randomness for the boot id: {e}"))?;
     let sensor = Sensor::new(signing, group, boot);
 
-    let path = discover().map_err(|e| e.to_string())?;
-    let sock = std::net::UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind failed: {e}"))?;
-    sock.set_multicast_ttl_v4(1).ok();
-    sock.connect(to).map_err(|e| format!("connect to {to} failed: {e}"))?;
+    // DISCOVERY IS NOT A PRECONDITION, and making it one was a real defect.
+    // The radio is a USB device: it can enumerate seconds after the unit
+    // starts, be reset by the hub, or be unplugged and returned. A `?` here
+    // exits 1, and Restart=always turns that into a crash loop that burns a
+    // fresh boot id every five seconds and tells a subscriber nothing.
+    //
+    // Worse, it conflates two states a subscriber must be able to tell apart:
+    // a sensor that is gone, and a sensor that is alive with no radio. The
+    // posture snapshots below are the answer to the second, and they only
+    // exist if the loop is allowed to run without a spectral path.
+    let mut path = discover().ok();
+    if path.is_none() {
+        println!(
+            "no spectral path yet — continuing without one. Posture snapshots still go out, \
+             so a subscriber can tell a sensor with no radio from a sensor that is gone."
+        );
+    }
+    // Through the emitter's own transport rather than a hand-rolled socket:
+    // that type has no receive path AT ALL, which is a property the sensor
+    // should not be re-deciding at each call site. It serves a unicast
+    // collector as well as a multicast group — the multicast TTL of 1 simply
+    // does not apply to a unicast destination.
+    //
+    // OPENING IT IS RETRIED, NOT REQUIRED, and the reboot is what proved why.
+    // `After=network-online.target` did not hold long enough on this box:
+    // connect() returned `Network is unreachable` for the first seventy
+    // seconds of boot, and because a failure here was fatal the unit exited 1
+    // fourteen times before the interface came up. That is the same defect as
+    // treating a missing radio as fatal, one layer over — a transient
+    // condition at start turned into a crash loop by Restart=always, each
+    // cycle burning a fresh boot id and a journal entry.
+    //
+    // Retrying in-process is quieter and keeps one boot id. Forever, and
+    // deliberately: a permanently unroutable destination and a network that
+    // is thirty seconds late look identical from here, and only one of them
+    // is worth giving up on — but giving up is not available to a device
+    // nobody can log into.
+    let transport = {
+        let mut attempts = 0u64;
+        loop {
+            match UdpMulticast::bind(Ipv4Addr::UNSPECIFIED, to) {
+                Ok(t) => {
+                    if attempts > 0 {
+                        println!("socket to {to} opened after {attempts} failed attempt(s)");
+                    }
+                    break t;
+                }
+                Err(e) => {
+                    attempts += 1;
+                    if SendLog::should_report(attempts) {
+                        println!(
+                            "cannot open a socket to {to} yet ({e}) — attempt {attempts}, retrying. \
+                             The network is often not up when this unit starts."
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        a.interval_ms.unwrap_or(1000),
+                    ));
+                }
+            }
+        }
+    };
+
+    // SNAPSHOTS ARE WHY THIS RUNS THROUGH THE EMITTER. A subscriber that joins
+    // an already-running stream sees deltas with no prior state and stays
+    // Degraded forever; the snapshot is what makes it whole, and the sensor's
+    // posture rides on it. An unattended sensor is precisely the case where
+    // every subscriber joins late, so a delta-only loop would leave all of
+    // them permanently incomplete.
+    let snapshot_ms = a.snapshot_ms.unwrap_or(10_000);
+    let mut em = Emitter::new(sensor, transport, SnapshotPolicy { interval_ms: snapshot_ms });
 
     let interval = std::time::Duration::from_millis(a.interval_ms.unwrap_or(1000));
     let windows = a.count.unwrap_or(0);
-    let (mut seq, mut sent, mut barren, mut w) = (0u64, 0u64, 0u64, 0u64);
+    let started = std::time::Instant::now();
+    let (mut barren, mut w, mut snapshots, mut oversized) = (0u64, 0u64, 0u64, 0u64);
+    let mut log = SendLog::default();
 
     loop {
+        let now_ms = started.elapsed().as_millis() as u64;
+        if em.snapshot_due(now_ms) {
+            // The /proc sweep is paid on the SNAPSHOT cadence, not per window:
+            // this box is thermally saturated, and reading four tables at 1 Hz
+            // to restate a verdict that changes in minutes is work for nothing.
+            let posture = bsc_lan_sense::assess_host();
+            let mut counters = BTreeMap::new();
+            counters.insert("windows".to_string(), w);
+            counters.insert("datagrams".to_string(), log.sent);
+            counters.insert("barren_windows".to_string(), barren);
+            counters.insert("send_failures".to_string(), log.failures);
+            counters.insert("oversized_events".to_string(), oversized);
+            let state = SensorState {
+                counters,
+                active_alerts: Vec::new(),
+                // Overwritten from the live verdict inside emit_snapshot; a
+                // default here would be a fresh timestamp on no claim at all.
+                posture: AttestedPosture::default(),
+                monotonic_us: started.elapsed().as_micros() as u64,
+            };
+            match em.emit_snapshot(state, &posture, now_ms) {
+                Ok(_) => {
+                    snapshots += 1;
+                    log.record(Ok(()));
+                }
+                Err(e) => {
+                    if let Some(line) = log.record(Err(std::io::Error::other(e.to_string()))) {
+                        println!("{line}");
+                    }
+                }
+            }
+        }
+
+        // Re-looked-for every window while absent, so a radio plugged in an
+        // hour after boot is picked up without anyone restarting anything.
+        if path.is_none() {
+            path = discover().ok();
+            if path.is_some() {
+                println!("spectral path appeared — the radio is now being read");
+            }
+        }
+        let Some(p) = path.as_ref() else {
+            // No radio: still a live sensor, and the snapshot above said so.
+            std::thread::sleep(interval);
+            barren += 1;
+            w += 1;
+            if windows > 0 && w >= windows {
+                break;
+            }
+            continue;
+        };
         if a.trigger {
-            let _ = trigger(&path, Mode::Background);
-            let _ = trigger(&path, Mode::Trigger);
+            let _ = trigger(p, Mode::Background);
+            let _ = trigger(p, Mode::Trigger);
         }
         std::thread::sleep(interval);
-        let read = read_samples(&path).map_err(|e| e.to_string())?;
+        // A read failure is NOT fatal either: the radio can be re-enumerated
+        // by a USB reset or the driver reloaded under a running sensor, and
+        // dying for it would take the posture stream down with the spectrum.
+        let read = match read_samples(p) {
+            Ok(r) => r,
+            Err(e) => {
+                println!("spectral read failed ({e}) — continuing; the next window may succeed");
+                // Forget the path so the next window rediscovers it: a USB
+                // reset renumbers the phy, and holding the old path would fail
+                // forever against a radio that is present under a new name.
+                path = None;
+                w += 1;
+                if windows > 0 && w >= windows {
+                    break;
+                }
+                continue;
+            }
+        };
         let events = events_for(&read);
         if events.is_empty() {
             // Deliberate: silence is the subscriber's to report.
             barren += 1;
         }
         for e in events {
-            let mut nonce = [0u8; 12];
-            nonce[0..4].copy_from_slice(&boot[0..4]);
-            nonce[4..12].copy_from_slice(&seq.to_be_bytes());
-            let plain = Frame::Delta(e).encode().map_err(|x| x.to_string())?;
-            let dg = sensor.seal(SPECTRUM_KIND, seq, nonce, &plain).map_err(|x| x.to_string())?;
-            sock.send(&dg).map_err(|x| format!("send failed: {x}"))?;
-            seq += 1;
-            sent += 1;
+            // Checked BEFORE sealing, so an event that cannot fit is dropped
+            // and counted rather than turned into a send error once per window
+            // forever. A datagram over the budget is fragmented or discarded by
+            // the network, and either way the subscriber sees a gap it would
+            // read as loss.
+            if !fits_one_datagram(&e) {
+                oversized += 1;
+                continue;
+            }
+            match em.emit_event(e) {
+                Ok(_) => {
+                    log.record(Ok(()));
+                }
+                Err(err) => {
+                    if let Some(line) = log.record(Err(std::io::Error::other(err.to_string()))) {
+                        println!("{line}");
+                    }
+                }
+            }
         }
         w += 1;
         if windows > 0 && w >= windows {
@@ -770,11 +985,25 @@ fn cmd_sense(a: &Args) -> Result<(), String> {
         }
     }
     if a.trigger {
-        let _ = trigger(&path, Mode::Disable);
+        if let Some(p) = path.as_ref() {
+            let _ = trigger(p, Mode::Disable);
+        }
     }
-    let out = json!({ "windows": w, "datagrams_sent": sent, "barren_windows": barren, "to": to.to_string() });
+    let out = json!({
+        "windows": w,
+        "datagrams_sent": log.sent,
+        "send_failures": log.failures,
+        "snapshots": snapshots,
+        "barren_windows": barren,
+        "oversized_events": oversized,
+        "snapshot_interval_ms": snapshot_ms,
+        "to": to.to_string(),
+    });
     bsc_cli_util::emit(a.pretty, a.json, &out, || {
-        format!("{w} window(s) → {sent} datagram(s) to {to}\n  {barren} window(s) produced no samples and sent NOTHING (silence is the subscriber's to report)")
+        format!(
+            "{w} window(s) → {} datagram(s) to {to}\n  {snapshots} snapshot(s) every {snapshot_ms} ms, carrying this host's attested posture\n  {barren} window(s) produced no samples and sent NOTHING (silence is the subscriber's to report)\n  {} send(s) failed — an absent collector is not a fault, and never stops the sensor",
+            log.sent, log.failures
+        )
     });
     Ok(())
 }
@@ -1169,6 +1398,65 @@ pub fn render_config(v: &serde_json::Value) -> String {
     s
 }
 
+/// The kernel's live `net.ipv4.ip_local_port_range`, or the documented default.
+///
+/// Read rather than assumed because the unit's `SocketBindAllow` has to permit
+/// exactly the range the kernel will pick from; a box that has narrowed or
+/// moved its range would otherwise get a unit that refuses the sensor's own
+/// outbound socket. A box that cannot be read falls back to the kernel default,
+/// and the failure that produces is loud — an EPERM the journal names.
+fn ephemeral_port_range() -> (u16, u16) {
+    let parse = |t: &str| -> Option<(u16, u16)> {
+        let mut it = t.split_whitespace();
+        Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+    };
+    std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
+        .ok()
+        .and_then(|t| parse(&t))
+        .unwrap_or(crate::unit::DEFAULT_EPHEMERAL_PORTS)
+}
+
+/// Print the unit, rendered against this host's own sensor config.
+fn cmd_unit(a: &Args) -> Result<(), String> {
+    let cfg = bsc_lan_sense::config::load_sensor()?;
+    let spec = crate::unit::UnitSpec {
+        // Defaults to where `bsc deploy` stages it, because that is where it
+        // actually is on the one device this runs on today.
+        binary: a
+            .binary
+            .clone()
+            .unwrap_or_else(|| "/home/lan/.bsc-deploy/bsc-lan.current".to_string()),
+        config_dir: cfg
+            .path
+            .parent()
+            .map(|p| p.display().to_string())
+            .ok_or("the sensor config has no parent directory")?,
+        interval_ms: a.interval_ms.unwrap_or(1000),
+        snapshot_ms: a.snapshot_ms.unwrap_or(10_000),
+        ephemeral_ports: ephemeral_port_range(),
+    };
+    let text = if a.radio {
+        crate::unit::render_radio(&cfg.value)?.ok_or_else(|| {
+            format!(
+                "this sensor config names no radio, so there is no radio unit to render.\n                   Add a \"radio\" object to {} — {{\"iface\": \"wlan1\", \"channel\": 6}} — \n                   and note that monitor mode does NOT survive a reboot: measured, an untuned \n                   adapter gave 5 spectrum records in 30 seconds against 30 for a tuned one.",
+                cfg.path.display()
+            )
+        })?
+    } else {
+        crate::unit::render(&cfg.value, &spec)?
+    };
+    if a.json {
+        // The unit as a string, so a caller can place it without reparsing
+        // the human rendering.
+        let name = if a.radio { crate::unit::RADIO_UNIT_NAME } else { crate::unit::UNIT_NAME };
+        let out = json!({ "name": name, "unit": text });
+        println!("{}", serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?);
+    } else {
+        print!("{text}");
+    }
+    Ok(())
+}
+
 pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     let a = parse_args(argv)?;
     if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &a.positional) {
@@ -1183,6 +1471,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("estate") => cmd_estate(&a),
         Some("dry-run") => cmd_dry_run(&a),
         Some("config") => cmd_config(&a),
+        Some("unit") => cmd_unit(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -1199,7 +1488,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "spectrum", "sense", "dry-run", "config"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "spectrum", "sense", "dry-run", "config", "unit"]);
     }
 
     #[test]
@@ -1520,6 +1809,7 @@ mod tests {
             iface: None,
             sensor_key: SK.into(),
             group_key: GK.into(),
+            radio: None,
         };
         let v = json!({
             "dir": "/etc/bsc-lan",
@@ -1550,6 +1840,46 @@ mod tests {
             Err("/etc/bsc-lan/sensor.json is mode 0644 — it holds a key".into());
         assert_eq!(config_state(&absent, "no sensor config at").0, "absent");
         assert_eq!(config_state(&broken, "no sensor config at").0, "error");
+    }
+
+    #[test]
+    fn every_flag_the_unit_writes_is_a_flag_this_parser_accepts() {
+        // THE BUG THIS EXISTS FOR, caught only on the device: the generator
+        // wrote `--interval-ms` and the parser takes `--interval`, so the
+        // service installed cleanly, started, exited 1, and Restart=always
+        // turned it into a crash loop. Nothing between the generator and the
+        // Pi could see it, because the unit is text on one side and argv on
+        // the other and the two were never introduced.
+        use bsc_lan_sense::config::SensorConfig;
+        let cfg = SensorConfig {
+            destination: "10.99.2.118:45142".into(),
+            iface: None,
+            sensor_key: SK.into(),
+            group_key: GK.into(),
+            radio: None,
+        };
+        let spec = crate::unit::UnitSpec {
+            binary: "/opt/bsc-lan".into(),
+            config_dir: "/etc/bsc-lan".into(),
+            interval_ms: 1000,
+            snapshot_ms: 10_000,
+            ephemeral_ports: crate::unit::DEFAULT_EPHEMERAL_PORTS,
+        };
+        let unit = crate::unit::render(&cfg, &spec).expect("renders");
+        let args = crate::unit::tests::exec_args(&unit);
+        assert!(!args.is_empty(), "the unit has no ExecStart arguments:\n{unit}");
+        let parsed = parse_args(args.clone())
+            .unwrap_or_else(|e| panic!("the unit's ExecStart does not parse: {e}\n  args: {args:?}"));
+        assert_eq!(
+            parsed.positional.first().map(String::as_str),
+            Some("sense"),
+            "the unit does not run the sense verb: {args:?}"
+        );
+        // And the values survive, not just the flag names — a flag that parsed
+        // into the wrong field would be just as silent.
+        assert_eq!(parsed.interval_ms, Some(1000), "{args:?}");
+        assert_eq!(parsed.snapshot_ms, Some(10_000), "{args:?}");
+        assert!(parsed.trigger, "the unit must arm the radio: {args:?}");
     }
 
     #[test]
