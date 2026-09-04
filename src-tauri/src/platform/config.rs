@@ -758,6 +758,33 @@ mod tests {
     /// `""` and the feature would read as empty rather than broken, at runtime, with a green build.
     /// That is the same silent-narrowing failure this repo keeps paying for, and the reason the
     /// exclusion list lives in `build.rs` where it can be checked rather than inferred.
+    /// The build script must watch the data ROOT, or a newly added top-level dir never triggers a
+    /// rebuild — cargo re-runs on a watched directory's entries changing, and the per-dir watches only
+    /// cover dirs that already existed.
+    ///
+    /// A SOURCE ASSERTION because nothing at run time can observe a MISSING `rerun-if-changed`: the
+    /// symptom is a seed that reads back empty on a CLEAN checkout while the authoring worktree, which
+    /// stumbled into a rebuild, stays green. That asymmetry is what let it reach the promote gate.
+    #[test]
+    fn the_build_script_watches_the_data_root_not_only_its_subdirs() {
+        let build_rs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("build.rs");
+        let src = std::fs::read_to_string(&build_rs).expect("build.rs is readable");
+        let staging = match src.split_once("fn stage_config_seed") {
+            Some((_, rest)) => rest,
+            None => panic!("build.rs no longer has `stage_config_seed` — this guard needs re-pointing"),
+        };
+        // Both watches must be present, and they cover different things: the ROOT catches a NEW
+        // top-level dir, the per-dir ones catch an edit inside a dir that already existed.
+        let root_watch = staging
+            .lines()
+            .any(|l| l.contains("rerun-if-changed") && l.contains("src.display()"));
+        let per_dir_watch = staging
+            .lines()
+            .any(|l| l.contains("rerun-if-changed") && l.contains("path.display()"));
+        assert!(root_watch, "build.rs must watch the data ROOT, or a new top-level dir is never seen");
+        assert!(per_dir_watch, "the per-dir watches must stay — the root watch misses edits inside a dir");
+    }
+
     #[test]
     fn every_data_dir_is_either_embedded_or_classified_non_config() {
         // Kept in sync with `NON_CONFIG_DIRS` in build.rs by the assertion below.
