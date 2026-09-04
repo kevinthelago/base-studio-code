@@ -28,11 +28,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         return Ok(());
     };
     let rest: Vec<String> = args[1..].to_vec();
+    // Handles BOTH `bsc deploy help` and `bsc deploy <command> help`. The
+    // overview advertises the second form for every command, but only the
+    // first was implemented, so `bsc deploy push help` was passed through to
+    // `push` and read as a DEVICE NAME — reporting "no device named 'help'"
+    // for a request that was asking how to use the command.
+    if bsc_cli_util::handle_help(
+        prog,
+        "ship a binary to a device, and be able to take it back",
+        docs,
+        &args,
+    ) {
+        return Ok(());
+    }
     match verb {
-        "help" | "--help" | "-h" => {
-            println!("{}", bsc_cli_util::help_overview(prog, "ship a binary to a device, and be able to take it back", docs));
-            Ok(())
-        }
         "devices" => devices(&rest),
         "status" => status(&rest),
         "push" => push(&rest),
@@ -204,6 +213,34 @@ fn rollback(args: &[String]) -> Result<(), String> {
     }
     println!("{} rolled back", d.name);
     Ok(())
+}
+
+#[cfg(test)]
+mod help_tests {
+    use super::*;
+
+    /// `bsc deploy <command> help` is advertised in the overview for every
+    /// command, but only the top-level `help` was implemented — so
+    /// `bsc deploy push help` reached `push` and was read as a DEVICE NAME,
+    /// answering "no device named 'help'" to a request asking how to use the
+    /// command. Every verb is checked, not just the one that was reported.
+    #[test]
+    fn every_command_answers_its_own_help_rather_than_treating_it_as_an_argument() {
+        for verb in ["devices", "status", "push", "rollback"] {
+            let r = run(vec![verb.to_string(), "help".to_string()], "bsc deploy");
+            assert!(
+                r.is_ok(),
+                "`bsc deploy {verb} help` returned an error instead of rendering help: {r:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_overview_still_answers_and_an_unknown_verb_is_still_refused() {
+        assert!(run(vec!["help".into()], "bsc deploy").is_ok());
+        assert!(run(vec![], "bsc deploy").is_ok());
+        assert!(run(vec!["nope".into()], "bsc deploy").is_err());
+    }
 }
 
 #[cfg(test)]
