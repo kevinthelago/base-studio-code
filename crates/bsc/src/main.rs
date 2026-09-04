@@ -101,6 +101,7 @@ const COMMANDS: &[Surface] = &[
     active("compliance", "compliance", "compliance standards corpus", Some("the packaged compliance corpus")),
     active("atlas", "atlasdb", "product feature inventories: domains · products · capabilities (relational)", Some("atlas.db — global")),
     active("blueprint", "bsc-blueprint", "user blueprint store", Some("blueprints/ — user")),
+    active("fin", "bsc-fin", "personal finance: statement ingest + position. LOCAL — reads the files you name and sends nothing anywhere", Some("finance.db — user")),
     active("persona", "bsc-persona", "user persona store: agent identities (prompt + skills + model over a role)", Some("personas/ — user")),
     active("sound", "bsc-sound", "user sound-kit store: synthesized cues (primitives + voices + cues)", Some("sounds/ — user")),
     active("teams", "bsc-teams", "user teams store: persona-relationship graph (positions + relationships)", Some("orgs/ — user; the on-disk dir keeps its pre-rename name")),
@@ -214,6 +215,7 @@ fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
         // the graph store rather than a file on disk, which is why they were absent here: the catalogs
         // existed all along and were merely private. 19 of 20 needed nothing but `pub`.
         "blueprint" => bsc_blueprint::cli::COMMANDS,
+        "fin" => bsc_fin::cli::COMMANDS,
         "debug" => bsc_debug::cli::COMMANDS,
         "files" => bsc_files::cli::COMMANDS,
         "loop" => bsc_loop::cli::COMMANDS,
@@ -688,6 +690,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "skill" => skilldb::cli::run(rest, "bsc skill"),
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
+        "fin" => bsc_fin::cli::run(rest, "bsc fin"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
         // The CREDENTIAL store: what services we are paired with and whether those pairings still
         // work. The secret VALUE is not in it — that stays in the OS keychain, and no verb here can

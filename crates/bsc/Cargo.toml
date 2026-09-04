@@ -27,6 +27,7 @@ bsc-project = { path = "../bsc-project" }
 skilldb = { path = "../skilldb" }
 compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
+bsc-fin = { path = "../bsc-fin" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-secret = { path = "../bsc-secret" }
 bsc-mem = { path = "../bsc-mem" }
