@@ -18,7 +18,7 @@ pub fn command_docs() -> &'static [CmdDoc] { COMMANDS }
 
 const PROG: &str = "bsc deploy";
 
-/// The deployed artifact's name on the device. Defaults to `bsc`; `bsc net` will ship as `bsc-net`.
+/// The deployed artifact's name on the device when nothing else determines it.
 const DEFAULT_NAME: &str = "bsc";
 
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
@@ -56,8 +56,31 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 fn has(args: &[String], name: &str) -> bool {
     args.iter().any(|a| a == name)
 }
+/// What the artifact is called on the device.
+///
+/// `--name` wins; otherwise the ARTIFACT'S OWN FILENAME, and only then the
+/// default. Deriving it from the artifact removes a trap that bites the person
+/// who just deployed: pushing `--artifact …/bsc-lan` wrote `bsc-lan.current`
+/// on the device, while `status --artifact …/bsc-lan` looked for `bsc.current`
+/// and reported the device as BEHIND with nothing installed — seconds after
+/// push said it was running. Both commands were individually correct and the
+/// pair was useless, which is the worst kind of wrong for a tool whose job is
+/// to answer "what is this device running".
+///
+/// The unified `bsc` is unaffected: its artifact is called `bsc`, so the
+/// derived name is the same value the default produced.
 fn artifact_name(args: &[String]) -> String {
-    flag(args, "--name").unwrap_or_else(|| DEFAULT_NAME.to_string())
+    if let Some(n) = flag(args, "--name") {
+        return n;
+    }
+    flag(args, "--artifact")
+        .and_then(|p| {
+            std::path::Path::new(&p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_NAME.to_string())
 }
 
 fn devices(args: &[String]) -> Result<(), String> {
@@ -265,6 +288,29 @@ mod tests {
     fn an_unknown_verb_is_refused_and_names_the_help() {
         let e = run(vec!["nope".into()], PROG).unwrap_err();
         assert!(e.contains("unknown command") && e.contains("help"), "got: {e}");
+    }
+
+    #[test]
+    fn the_name_is_derived_from_the_artifact_so_push_and_status_agree() {
+        // The trap: push wrote `bsc-lan.current`, status looked for
+        // `bsc.current`, and reported the device BEHIND seconds after push
+        // said it was running. Both individually correct, the pair useless.
+        let args = vec!["--artifact".to_string(), "/tmp/out/bsc-lan".to_string()];
+        assert_eq!(artifact_name(&args), "bsc-lan");
+
+        // An explicit --name still wins.
+        let mut with_name = args.clone();
+        with_name.extend(["--name".to_string(), "other".to_string()]);
+        assert_eq!(artifact_name(&with_name), "other");
+
+        // The unified binary is unaffected: its artifact IS called bsc.
+        assert_eq!(
+            artifact_name(&["--artifact".to_string(), "/x/target/debug/bsc".to_string()]),
+            "bsc"
+        );
+
+        // And with no artifact at all the default still stands.
+        assert_eq!(artifact_name(&[]), DEFAULT_NAME);
     }
 
     #[test]
