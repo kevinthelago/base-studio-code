@@ -744,12 +744,14 @@ dependencies = [
  "bsc-fleet",
  "bsc-github",
  "bsc-graph",
+ "bsc-lan",
  "bsc-llm",
  "bsc-loop",
  "bsc-mcp",
  "bsc-mem",
  "bsc-navigate",
  "bsc-network",
+ "bsc-news",
  "bsc-perms",
  "bsc-persona",
  "bsc-project",
@@ -1034,6 +1036,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-lan"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-lan-sense",
+ "bsc-lan-stream",
+ "ed25519-dalek",
+ "getrandom 0.4.2",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-lan-core"
 version = "0.1.0"
 dependencies = [
@@ -1047,6 +1061,7 @@ name = "bsc-lan-sense"
 version = "0.1.0"
 dependencies = [
  "bsc-lan-stream",
+ "bsc-util",
  "ed25519-dalek",
  "serde",
  "serde_json",
@@ -1131,6 +1146,20 @@ dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
  "bsc-util",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-news"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "reqwest 0.12.28",
+ "roxmltree",
+ "rusqlite",
+ "serde",
  "serde_json",
 ]
 

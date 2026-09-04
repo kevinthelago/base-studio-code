@@ -9,6 +9,8 @@ name = "bsc_lan_sense"
 
 [dependencies]
 bsc-lan-stream = { path = "../bsc-lan-stream" }
+# Reused for civil-date arithmetic; the EVE-specific normalisation is ours.
+bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

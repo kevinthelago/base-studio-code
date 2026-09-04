@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+	<url>
+		<lastmod>2026-09-04T11:20:18-04:00</lastmod>
+		<loc>https://example.org/wire-one</loc>
+		<news:news>
+			<news:publication>
+				<news:name>Associated Press</news:name>
+				<news:language>eng</news:language>
+			</news:publication>
+			<news:publication_date>2026-09-04T06:30:00-04:00</news:publication_date>
+			<news:title>Two killed in strike on port, officials say</news:title>
+		</news:news>
+	</url>
+	<url>
+		<lastmod>2026-09-04T12:00:00-04:00</lastmod>
+		<loc>https://example.org/no-news-block</loc>
+	</url>
+</urlset>
