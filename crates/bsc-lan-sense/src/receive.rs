@@ -81,6 +81,20 @@ impl MulticastReceiver {
         }
     }
 
+    /// Bind a plain UDP port with no multicast join.
+    ///
+    /// Needed because MULTICAST DOES NOT CROSS A VLAN without a multicast
+    /// router, and this network has none — so a subscriber on another segment
+    /// can never receive the group however correctly it joins. Such a
+    /// subscriber is fed by unicast instead, and this is the socket that
+    /// receives it. Same read timeout, for the same reason: a blocking loop
+    /// cannot report silence.
+    pub fn bind_unicast(port: u16, read_timeout: Duration) -> io::Result<Self> {
+        let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port))?;
+        socket.set_read_timeout(Some(read_timeout))?;
+        Ok(Self { socket })
+    }
+
     pub fn local_addr(&self) -> io::Result<std::net::SocketAddr> {
         self.socket.local_addr()
     }
@@ -122,6 +136,15 @@ mod tests {
             cadence(),
             now,
         )
+    }
+
+    #[test]
+    fn a_unicast_bind_also_carries_the_read_timeout() {
+        // A cross-VLAN subscriber uses this socket, and it needs to notice
+        // silence exactly as much as a multicast one does.
+        let rx = MulticastReceiver::bind_unicast(45141, Duration::from_millis(40)).expect("bind");
+        assert_eq!(rx.read_timeout().unwrap(), Some(Duration::from_millis(40)));
+        assert!(matches!(rx.next_tick().expect("quiet is not an error"), Tick::Quiet));
     }
 
     /// The line the whole module turns on, asserted directly.

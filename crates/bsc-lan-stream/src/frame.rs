@@ -117,6 +117,25 @@ pub enum Event {
         rssi_max_dbm: i16,
         rssi_mean_dbm: i16,
     },
+    /// Aggregated spectral FFT bins for one channel — the only event that
+    /// carries ENERGY rather than frames, and so the only one that can show a
+    /// microwave, a cordless phone, or a jammer that radiates without
+    /// transmitting valid 802.11.
+    ///
+    /// `bin_max` is the per-bin MAXIMUM across the window, never a mean: the
+    /// sensor folds ~666 sweeps/sec down to one record, and a brief burst is
+    /// exactly what this tier exists to catch. Averaging it against quiet
+    /// sweeps is how it hides.
+    RfSpectrum {
+        freq_mhz: u16,
+        /// Sweeps folded in. A spectrum from 2 sweeps and one from 2000 are
+        /// different claims and must not render alike.
+        sweeps: u32,
+        noise_dbm: i8,
+        peak_magnitude: u16,
+        peak_bin: u8,
+        bin_max: Vec<u8>,
+    },
     /// The sensor's reachability changed. Emitted as its own event rather than
     /// waiting for the next snapshot, because a box that just became reachable
     /// is the one thing worth interrupting for.
@@ -213,6 +232,28 @@ mod tests {
             rssi_mean_dbm: -67,
         });
         assert_eq!(Frame::decode(&f.encode().unwrap()).unwrap(), f);
+    }
+
+    #[test]
+    fn a_spectrum_round_trips_and_fits_one_datagram() {
+        let f = Frame::Delta(Event::RfSpectrum {
+            freq_mhz: 2437,
+            sweeps: 3328,
+            noise_dbm: -95,
+            peak_magnitude: 1514,
+            peak_bin: 54,
+            bin_max: (0..56).map(|i| (i * 4) as u8).collect(),
+        });
+        let encoded = f.encode().unwrap();
+        assert_eq!(Frame::decode(&encoded).unwrap(), f);
+        // 56 bins plus a header must leave room inside one datagram, or the
+        // sensor could never emit a full sweep.
+        assert!(
+            encoded.len() <= crate::envelope::MAX_PLAINTEXT_BYTES,
+            "a 56-bin spectrum is {} bytes, over the {} budget",
+            encoded.len(),
+            crate::envelope::MAX_PLAINTEXT_BYTES
+        );
     }
 
     #[test]
