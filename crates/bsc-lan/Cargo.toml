@@ -7,6 +7,13 @@ description = "`bsc lan` — the command surface for the emit-only LAN sensor: w
 [lib]
 name = "bsc_lan"
 
+# The sensor ships as its own binary rather than as part of the unified `bsc`,
+# which carries bundled DuckDB. See src/main.rs, and tests/lean.rs, which fails
+# the build if that ever stops being true.
+[[bin]]
+name = "bsc-lan"
+path = "src/main.rs"
+
 [dependencies]
 bsc-cli-util = { path = "../bsc-cli-util" }
 bsc-lan-sense = { path = "../bsc-lan-sense" }
