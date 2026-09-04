@@ -11,6 +11,15 @@
 //!
 //! Amounts are integer MINOR UNITS end to end ([`money`]). The parse never constructs a float, so a
 //! figure in the store is the figure on the statement.
-pub mod cli;
-pub mod money;
-pub mod statement;
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/money.rs, src/statement.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-fin--<module>.rs
+//     bsc graph impl set --id bsc-fin--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-fin--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

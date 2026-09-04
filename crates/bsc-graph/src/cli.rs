@@ -52,7 +52,7 @@ pub const BOOL_FLAGS: [&str; 13] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 55] = [
+pub const FLAGS: [&str; 56] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
@@ -94,6 +94,7 @@ pub const FLAGS: [&str; 55] = [
     // #76 — the same value, READ FROM DISK instead of pushed through argv.
     "--code-file",
     "--domain",
+    "--feature",
     "--feature",
     // `feature rename … --under <folder-prefix>` — the split filter (the-graph-vocabulary-is-the-plans).
     "--under",
@@ -1642,6 +1643,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(code) = source_flag(&args, "--code")? { im["code"] = Value::String(code); }
                 // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
                 if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
+                // `--feature` — HAND PLACEMENT on the ownership axis.
+                //
+                // `features --apply` derives it from `folder`, and that derivation covers the frontend
+                // layout only: `shared`/`app`/`store`/`features/<x>`. It has NO arm for `crates/<x>`,
+                // so not one of the 25 crates that compile from the graph can be placed automatically
+                // — every module migrated by `migrate-crate` lands featureless and fails the ownership
+                // gate. `features --apply` already documents that it "never overwrites a feature
+                // already set, so hand placement survives every re-run"; this is the verb that
+                // placement was missing.
+                //
+                // Deliberately NOT another arm in the derivation: a crate's feature is not mechanical
+                // from its path (`crates/bsc-fin` is the `finance` capability), and a rule that
+                // guessed would place records confidently and wrongly.
+                if let Some(f) = flag_value(&args, "--feature") { im["feature"] = Value::String(f); }
                 // The OWNERSHIP axis — which feature owns this record, so which worker may write it.
                 // Distinct from `--domain` (the curated collection facet) and from a plan feature's
                 // `requires` (the many-to-many USAGE relation, per project, so the library never learns
@@ -8340,4 +8355,34 @@ mod reseed_tests {
         assert!(VERBS.contains(&"reseed"));
     }
 
+}
+
+#[cfg(test)]
+mod hand_placement {
+    //! `impl set --feature` — the ownership axis, set by hand.
+    //!
+    //! The folder derivation covers the FRONTEND layout only (`shared`/`app`/`store`/`features/<x>`)
+    //! and has no arm for `crates/<x>`, so not one of the 25 crates that compile from the graph can be
+    //! placed automatically: every module `migrate-crate` lifts lands featureless and fails the
+    //! ownership gate. `features --apply` already promised that hand placement survives a re-run; this
+    //! is the verb it was promising about.
+
+    #[test]
+    fn the_folder_derivation_genuinely_cannot_place_a_crate_module() {
+        // The reason this flag exists, asserted rather than described — if a `crates` arm is added
+        // later this fails, and tells whoever added it to reconsider whether the flag is still needed.
+        assert_eq!(bsc_util::feature_from_folder("crates/bsc-fin/src"), None);
+        assert_eq!(bsc_util::feature_from_folder("crates/plandb/src/cli"), None);
+        // …while the frontend layout it WAS written for still resolves.
+        assert_eq!(bsc_util::feature_from_folder("src/features/glance/lib").as_deref(), Some("glance"));
+        assert_eq!(bsc_util::feature_from_folder("src/shared/lib/core").as_deref(), Some("core"));
+    }
+
+    #[test]
+    fn the_flag_is_accepted_and_the_count_kept_up() {
+        // A flag missing from FLAGS is rejected as unknown before it reaches the set arm, and the
+        // length is a const that has to be bumped with it — both easy to forget, both silent to miss.
+        assert!(super::FLAGS.contains(&"--feature"), "--feature must be an accepted flag");
+        assert_eq!(super::FLAGS.len(), 56);
+    }
 }
