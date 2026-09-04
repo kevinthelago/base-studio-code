@@ -35,9 +35,11 @@ pub mod error;
 pub mod frame;
 pub mod liveness;
 pub mod sequence;
+pub mod subscription;
 
 pub use envelope::{Envelope, Kind, MAX_DATAGRAM_BYTES, MAX_PLAINTEXT_BYTES};
 pub use error::{SequenceError, WireError};
 pub use frame::{AttestedPosture, Event, ExposedSocket, Frame, SensorState};
-pub use liveness::{Cadence, Liveliness, Watch};
+pub use liveness::{Cadence, Liveliness, LivelinessKind, Watch};
 pub use sequence::{Completeness, Reception, Tracker};
+pub use subscription::{Finding, Rejections, Subscription};
