@@ -7,7 +7,7 @@ import type { AppStore } from "@/store/types";
 // the `/bsc-hook` guest paths that only exist inside a cage. When they disagreed, every launch of
 // these panes wrote hooks Rust then had to repair — 13 repairs in one app run, the notice printed in
 // the pane each time, because the writer kept regenerating what the repair had just fixed.
-const RUST_UNCAGED = ["designer", "architect", "librarian", "director", "integrator", "operator"];
+const RUST_UNCAGED = ["designer", "architect", "librarian", "director", "integrator", "operator", "steward"];
 
 const state = (role: string | undefined) =>
   ({ paneRoles: role ? { p: role } : {}, sandboxConsoles: false, paneWslDistro: {} } as unknown as AppStore);

@@ -16,6 +16,7 @@
     "planner",
     "reviewer",
     "sound-designer",
+    "steward",
     "tester",
     "triage",
     "worker"
@@ -5490,6 +5491,372 @@
           "Edit(contracts/**/*.json)"
         ],
         "deny": []
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "none",
+      "globs": "none",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "git",
+        "gh",
+        "bsc ui",
+        "bsc component",
+        "bsc graph",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "none",
+      "globs": "owned",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "src/**/*.ts",
+          "contracts/**/*.json"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "git",
+        "gh",
+        "bsc ui",
+        "bsc component",
+        "bsc graph",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "catalog",
+      "globs": "none",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "bsc ui",
+        "bsc graph",
+        "bsc persona",
+        "bsc teams",
+        "git",
+        "gh",
+        "bsc component",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "catalog",
+      "globs": "owned",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "src/**/*.ts",
+          "contracts/**/*.json"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "bsc ui",
+        "bsc graph",
+        "bsc persona",
+        "bsc teams",
+        "git",
+        "gh",
+        "bsc component",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
       },
       "scopes": {
         "graph": "none",
