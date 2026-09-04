@@ -19,9 +19,20 @@ import {
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "logs":          return <LogsWorkspace pageOverride={section} />;
-    // The analyzer window (`bsc lan analyzer open`). A literal case like every
-    // other, so the no-user-controlled-dispatch property of this switch holds.
-    case "analyzer":      return <SpectrumAnalyzer />;
+    // Widget windows (`bsc widget open <id>`). The id arrives from a command
+    // line, so it is matched against LITERAL cases here rather than looked up:
+    // the no-user-controlled-dispatch property of this switch is the reason a
+    // CLI-supplied id is safe to act on at all.
+    case "widget":
+      switch (section) {
+        case "spectrum":  return <SpectrumAnalyzer />;
+        default:
+          return (
+            <Text as="div" mono tone="dim" style={{ padding: 24 }}>
+              Unknown widget: {section}
+            </Text>
+          );
+      }
     default:
       return (
         <Text as="div" mono tone="dim" style={{ padding: 24 }}>

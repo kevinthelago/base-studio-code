@@ -12,7 +12,6 @@ use bsc_lan_sense::emit::{Emitter, SnapshotPolicy};
 use bsc_lan_sense::posture::Posture;
 use bsc_lan_sense::run::{RateLimit, SensorRun};
 use bsc_lan_sense::transport::Transport;
-use crate::analyzer::{Action, AnalyzerRequest, AnalyzerResult, KIND as ANALYZER_KIND};
 use bsc_lan_sense::receive::{MulticastReceiver, Tick};
 use bsc_lan_stream::crypto::{GroupKey, Sensor, Subscriber};
 use bsc_lan_stream::liveness::{Cadence, Liveliness};
@@ -135,29 +134,6 @@ this segment\" is distinguishable from \"nothing was parsed at all\".
 Read-only. Observation comes before anything that changes a device — see
 docs/llm-operator/guardrails.md, which is explicit that DNS and the firewall are
 single points of failure on this network.",
-    },
-    CmdDoc {
-        name: "analyzer",
-        summary: "open or close the spectrum-analyzer window in the running desktop app",
-        usage: "\
-bsc lan analyzer <open|close|toggle> [--timeout <ms>] [--json|--pretty]
-
-Asks the RUNNING desktop app to put the analyzer on screen, or take it away. Its own
-window: the spectrum above, what the assistant can say about it below.
-
-IT REPORTS WHICH THING HAPPENED, not merely that something did — opened, closed,
-already-open (the existing window is focused rather than a second one created), or
-already-closed. Those are four states a person and a script act on differently, and a
-bare success collapses them.
-
-THE APP NOT RUNNING IS ITS OWN ANSWER. This talks to a live app over the shared
-request channel, so if nothing is listening the command says exactly that rather than
-reporting a failure to open a window — the two send you to debug different things.
-
-The window is built by the app's Rust side rather than by its web view, deliberately:
-the analyzer exists partly so it survives the main surface being wedged, and routing
-the request to open it through that surface would make the escape hatch depend on the
-thing it is escaping.",
     },
     CmdDoc {
         name: "spectrum",
@@ -463,11 +439,6 @@ pub fn render_finding(f: &Finding) -> String {
     }
 }
 
-/// How long to wait for the app before saying it is not there.
-const ANALYZER_TIMEOUT_MS: i64 = 4_000;
-const POLL_INTERVAL_MS: u64 = 40;
-/// Requests older than this are swept, so a dead run cannot wedge the channel.
-const STALE_MS: i64 = 60_000;
 
 fn cmd_spectrum(a: &Args) -> Result<(), String> {
     use bsc_lan_sense::spectrum::{discover, from_bytes, read_samples, trigger, Mode};
@@ -538,51 +509,6 @@ fn cmd_spectrum(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_analyzer(a: &Args) -> Result<(), String> {
-    let verb = a
-        .positional
-        .get(1)
-        .ok_or("analyzer needs one of: open, close, toggle")?;
-    let action = Action::parse(verb)
-        .ok_or_else(|| format!("unknown analyzer action {verb:?} — expected open, close or toggle"))?;
-
-    let chan = bsc_appchan::chan_dir()?;
-    let now = bsc_util_now_ms();
-    let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS);
-    let id = bsc_appchan::new_id(now);
-    bsc_appchan::write_request(&chan, &id, ANALYZER_KIND, now, &AnalyzerRequest { action })?;
-
-    let timeout = a.timeout_ms.unwrap_or(ANALYZER_TIMEOUT_MS);
-    let reply = bsc_appchan::poll_reply(&chan, &id, timeout, POLL_INTERVAL_MS, || {
-        // Not "failed to open a window" — the two send you somewhere different.
-        format!(
-            "the desktop app did not answer within {timeout}ms.\n\
-             The request is at {}.\n\
-             Is the app running? `bsc lan analyzer` asks a LIVE app to open a window; \
-             it cannot open one on its own.",
-            bsc_appchan::request_path(&chan, &id).display()
-        )
-    })?;
-    let res: AnalyzerResult = bsc_appchan::take_payload(reply)?;
-
-    bsc_cli_util::emit(a.pretty, a.json, &res, || {
-        let mut s = res.outcome.describe().to_string();
-        if !res.outcome.changed() {
-            s.push_str("  (nothing changed)");
-        }
-        s
-    });
-    Ok(())
-}
-
-/// Wall-clock milliseconds. Kept behind a name so the appchan calls read the
-/// same as every other verb crate's.
-fn bsc_util_now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
 
 fn cmd_watch(a: &Args) -> Result<(), String> {
     let group: SocketAddrV4 = a
@@ -819,7 +745,6 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("posture") => cmd_posture(&a),
         Some("keygen") => cmd_keygen(&a),
         Some("spectrum") => cmd_spectrum(&a),
-        Some("analyzer") => cmd_analyzer(&a),
         Some("watch") => cmd_watch(&a),
         Some("estate") => cmd_estate(&a),
         Some("dry-run") => cmd_dry_run(&a),
@@ -839,7 +764,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "analyzer", "spectrum", "dry-run"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "spectrum", "dry-run"]);
     }
 
     #[test]

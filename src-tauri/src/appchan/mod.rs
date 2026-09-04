@@ -85,9 +85,9 @@ use tauri::Manager;
 
 fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_json::Value, String> {
     match env.kind.as_str() {
-        bsc_lan::analyzer::KIND => {
-            let req: bsc_lan::analyzer::AnalyzerRequest = serde_json::from_value(env.payload.clone())
-                .map_err(|e| format!("malformed analyzer request: {e}"))?;
+        bsc_widget::KIND => {
+            let req: bsc_widget::WidgetRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed widget request: {e}"))?;
             let res = crate::lan::apply(app, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
         }

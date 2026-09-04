@@ -82,6 +82,7 @@ bsc-cad = { path = "../bsc-cad" }
 bsc-deploy = { path = "../bsc-deploy" }
 bsc-capability = { path = "../bsc-capability" }
 bsc-lan = { path = "../bsc-lan" }
+bsc-widget = { path = "../bsc-widget" }
 plandb = { path = "../plandb" }
 # `bsc publish` — push a plan's GitHub structure with no frontend involved
 # (`headless-publish-so-the-ui-is-not-the-only-publisher`). It sits ABOVE plandb + bsc-github rather
