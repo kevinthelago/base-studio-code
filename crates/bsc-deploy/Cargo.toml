@@ -2,6 +2,7 @@
 name = "bsc-deploy"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 # `bsc-deploy` — ship a binary to a device, and be able to take it back.
 #
@@ -13,4 +14,8 @@ edition = "2021"
 bsc-cli-util = { path = "../bsc-cli-util" }
 bsc-util = { path = "../bsc-util" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
 serde_json = "1"

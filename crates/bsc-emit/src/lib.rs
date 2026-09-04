@@ -37,9 +37,18 @@
 //! the walk, so two runs on one machine and two runs on different machines agree — and the parity
 //! test compares sorted whole values, which is the only comparison that could ever have been honest.
 
-pub mod cli;
-pub mod emit;
-pub mod plan;
 
 pub use emit::{emit_records, prune_empty_dirs, stale_emitted, write_if_changed, EmitReport};
 pub use plan::{edge_test_path, ext_for, plan_records, EdgeTest, Plan, PlannedModule, PlannedTest, Unresolvable};
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/emit.rs, src/plan.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-emit--<module>.rs
+//     bsc graph impl set --id bsc-emit--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-emit--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
