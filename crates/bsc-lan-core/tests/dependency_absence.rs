@@ -62,20 +62,24 @@ fn own_manifest_declares_none_of_the_forbidden_crates() {
 /// guarantee while leaving every other test in this crate green, so the
 /// declaration is asserted here rather than trusted.
 #[test]
-fn the_wildcard_deny_lint_is_still_declared() {
-    let declared = OWN_MANIFEST
-        .lines()
-        .map(str::trim)
-        .any(|l| l.starts_with("wildcard_enum_match_arm") && l.contains("deny"));
-    assert!(
-        declared,
-        "crates/bsc-lan-core/Cargo.toml no longer declares \
-         `wildcard_enum_match_arm = \"deny\"`. Without it a `_ =>` arm silently \
-         satisfies every exhaustive dispatch over Action, and adding a catalog \
-         variant stops being a compile error -- which is the whole guarantee \
-         this crate exists to provide."
-    );
+fn the_wildcard_deny_lints_are_still_declared() {
+    for lint in ["wildcard_enum_match_arm", "match_wildcard_for_single_variants"] {
+        let declared = OWN_MANIFEST
+            .lines()
+            .map(str::trim)
+            .any(|l| l.starts_with(lint) && l.contains("deny"));
+        assert!(
+            declared,
+            "crates/bsc-lan-core/Cargo.toml no longer declares `{lint} = \"deny\"`. \
+             Both lints are required and neither is redundant: wildcard_enum_match_arm \
+             fires only when a `_` arm covers TWO OR MORE variants, so adding exactly one \
+             catalog action and silencing E0004 with `_ =>` slips past it -- \
+             match_wildcard_for_single_variants is what catches that case. Measured \
+             2026-09-04; see the manifest comment."
+        );
+    }
 }
+
 
 /// Parse `Cargo.lock` into `name -> [dependency names]`.
 ///
