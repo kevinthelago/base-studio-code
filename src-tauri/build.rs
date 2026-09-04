@@ -159,6 +159,20 @@ fn stage_config_seed() {
         panic!("could not create the staged config seed at {}: {e}", dest.display());
     }
 
+    // WATCH THE DATA ROOT ITSELF, not only the dirs inside it.
+    //
+    // The per-dir watches below are emitted for each directory THIS RUN SAW, so a directory that did
+    // not exist on the previous run is in nobody's watch list: cargo does not re-run this script, the
+    // staged tree keeps its old contents, and `EMBEDDED` has no entry for the new dir. Cargo re-runs
+    // when a watched DIRECTORY's entries change, so watching the root is what makes a newly added
+    // subdir visible the first time.
+    //
+    // MEASURED on `data/steward/`: `load_str("steward/claude.md")` returned empty for a file plainly on
+    // disk, and the error read "seed is missing or empty" — a missing FILE, not a stale build. The
+    // author usually stumbles into a rebuild and never sees it; a CLEAN checkout does not, which is how
+    // this reached `.promote-gate` and blocked a promote while the authoring worktree stayed green.
+    println!("cargo:rerun-if-changed={}", src.display());
+
     let entries = match fs::read_dir(&src) {
         Ok(e) => e,
         Err(e) => panic!("could not read the packaged data tree at {}: {e}", src.display()),
