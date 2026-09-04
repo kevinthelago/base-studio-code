@@ -2,7 +2,12 @@
 name = "bsc-record"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The record STAMP shared by every bsc store (#72) — rev, author, timestamp, per-write history, and the retained rungs `revert` reads. Lifted out of bsc-component so the algorithms graph stamps writes the SAME way rather than growing a second implementation that drifts."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_record"
