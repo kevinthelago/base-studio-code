@@ -15,21 +15,6 @@
 //! The agent-facing CLI lives in [`cli`] (`bsc logs …`), dispatched by the unified `bsc` binary
 //! (#1877) and by the legacy `bsc-logs` shim.
 
-pub mod divergence;
-pub mod headroom;
-pub mod instrument;
-pub mod cli;
-pub mod scope;
-pub mod waiting;
-/// The `coord.log` ingest (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) — parse a
-/// line, fold it into the coordination state, replay a whole log. Proved case by case against the
-/// TypeScript reducer it is ported from; see the module docs.
-pub mod coord;
-pub mod deadlock;
-pub mod wakes;
-/// What awaits the DIRECTOR (issues to route, briefs to reconcile) — the sibling of [`waiting`],
-/// which is about a session blocked on a person. The header argues why they are two verbs.
-pub mod pending;
 // Re-exported so a consumer says `logs::waiting(..) -> logs::WaitingSession` without naming the
 // module twice — matching `usage`/`Usage` and `PerfSample` below. The Tauri command's return type
 // is part of the frontend contract, so it is worth being a short, stable path.
@@ -37,16 +22,10 @@ pub use waiting::{waiting, waiting_by_pane, waiting_in, WaitingSession};
 
 use std::path::{Path, PathBuf};
 
-pub mod cost;
-pub mod metrics;
 pub use cost::{usage, Cost, Usage};
 
-pub mod perf;
 pub use perf::PerfSample;
 
-/// System-wide PSS-by-process-category sampling (`bsc logs pss`, #182) — Linux-only, reads
-/// `/proc/*/smaps_rollup` directly rather than the app's own per-session `perf.db`.
-pub mod pss;
 
 /// One normalized event from any stream. `ts_ms` is epoch milliseconds (normalized from the
 /// stream's native ISO-8601 or epoch-ms timestamp); `session` is the pane id (or `"?"` for a legacy
@@ -736,3 +715,14 @@ mod tests {
 
 }
 
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/divergence.rs, src/headroom.rs, src/instrument.rs, src/cli.rs, src/scope.rs, src/waiting.rs, src/coord.rs, src/deadlock.rs, src/wakes.rs, src/pending.rs, src/cost.rs, src/metrics.rs, src/perf.rs, src/pss.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get logs--<module>.rs
+//     bsc graph impl set --id logs--<module>.rs --code-file <f>
+//     bsc graph promote --id logs--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
