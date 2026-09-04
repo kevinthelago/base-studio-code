@@ -11,13 +11,6 @@
 //! way it mints a skill. Packaged (built-in) personas are seeded into this store on first hydrate + kept
 //! reconciled by the frontend, exactly like the user blueprint library.
 
-pub mod cli;
-/// The role capability TABLE projected from the packaged personas, and its frozen baseline.
-pub mod baseline;
-/// The permission FLOOR a persona carries, and the narrow-only clamp every write passes.
-pub mod floor;
-/// The PACKAGED persona floors — the ceiling a built-in is clamped against.
-pub mod packaged;
 
 #[cfg(test)]
 mod tests {
@@ -226,3 +219,15 @@ mod view_tests {
         assert_eq!(res.viewing.as_deref(), Some("Components — React"));
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/baseline.rs, src/floor.rs, src/packaged.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-persona--<module>.rs
+//     bsc graph impl set --id bsc-persona--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-persona--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

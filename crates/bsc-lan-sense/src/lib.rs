@@ -9,20 +9,6 @@
 //! conclude anything it cannot justify from rows it actually understood.
 #![forbid(unsafe_code)]
 
-pub mod attest;
-pub mod config;
-pub mod emit;
-pub mod emitloop;
-pub mod error;
-pub mod estate;
-pub mod eve;
-pub mod posture;
-pub mod receive;
-pub mod rf;
-pub mod run;
-pub mod spectrum;
-pub mod procnet;
-pub mod transport;
 
 pub use attest::attest;
 pub use emit::{nonce_for, Emitter, SnapshotPolicy};
@@ -60,3 +46,15 @@ pub fn assess_host() -> Posture {
         .collect();
     assess(&tables)
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/attest.rs, src/config.rs, src/emit.rs, src/emitloop.rs, src/error.rs, src/estate.rs, src/eve.rs, src/posture.rs, src/receive.rs, src/rf.rs, src/run.rs, src/spectrum.rs, src/procnet.rs, src/transport.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-lan-sense--<module>.rs
+//     bsc graph impl set --id bsc-lan-sense--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-lan-sense--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

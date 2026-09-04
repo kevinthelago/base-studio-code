@@ -2,6 +2,7 @@
 name = "bsc-github"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 # The GitHub REST/GraphQL transport, Tauri-free (`extract-a-tauri-free-github-transport-crate`).
 #
@@ -32,3 +33,7 @@ bsc-project = { path = "../bsc-project" }
 # A current-thread runtime for the BLOCKING wrappers a sync CLI calls. The async fns above are
 # what the app uses directly; the wrappers exist so `bsc` does not need its own runtime story.
 tokio = { version = "1", features = ["rt"] }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

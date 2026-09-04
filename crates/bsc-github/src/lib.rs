@@ -31,11 +31,6 @@ use std::time::Duration;
 // (`the-github-domains-pure-logic-lives-in-bsc-github`). Both are Tauri-free and were in the app
 // only by where they happened to be written; each carries its own fixture binding it to the
 // TypeScript it was ported from.
-pub mod board_state;
-pub mod cli;
-pub mod issue_provenance;
-pub mod project_v2;
-pub mod repo_credentials;
 
 /// The default `User-Agent`, used when the host application has not named itself.
 const DEFAULT_USER_AGENT: &str = concat!("bsc-github/", env!("CARGO_PKG_VERSION"));
@@ -955,3 +950,15 @@ mod tests {
         );
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/board_state.rs, src/cli.rs, src/issue_provenance.rs, src/project_v2.rs, src/repo_credentials.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-github--<module>.rs
+//     bsc graph impl set --id bsc-github--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-github--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

@@ -54,12 +54,14 @@
 //! makes the move safe: at the new crate depth the root is `../../src` rather than `../src`, and a
 //! wrong path yields zero matches and a loud failure, never a silent read of nothing.
 
-pub mod access_env;
-pub mod agent_perms;
-pub mod cli;
-pub mod denies;
-pub mod hook_chain;
-pub mod profile_settings;
-pub mod role_gate;
-pub mod tool_rules;
-pub mod write_scope;
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/access_env.rs, src/agent_perms.rs, src/cli.rs, src/denies.rs, src/hook_chain.rs, src/profile_settings.rs, src/role_gate.rs, src/tool_rules.rs, src/write_scope.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-perms--<module>.rs
+//     bsc graph impl set --id bsc-perms--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-perms--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

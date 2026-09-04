@@ -2,7 +2,12 @@
 name = "bsc-lan-sense"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "`bsc lan` sensor-side observation: what the emit-only monitor Pi can see about itself. Its /proc parsing is pure text-to-verdict, so the security posture of a box nobody can log into is testable from fixtures."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_lan_sense"

@@ -13,13 +13,6 @@
 //! Tauri-free and dependency-light so the same crate powers the `bsc cad` subcommand ([`cli`], #3387)
 //! and a WASM/web build. Trade-offs vs OCCT/B-rep (no true STEP, no named topology, …) are
 //! tracked on #2621; the icebox split into a standalone package is #2620.
-pub mod cli;
-pub mod gltf;
-pub mod math;
-pub mod mesh;
-pub mod node;
-pub mod qef;
-pub mod stl;
 
 pub use gltf::{to_glb, to_gltf_json};
 pub use math::{Aabb, Vec3};
@@ -27,3 +20,15 @@ pub use mesh::{polygonize, polygonize_with, Mesh, Method};
 pub use node::Node;
 pub use qef::Qef;
 pub use stl::to_binary_stl;
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/gltf.rs, src/math.rs, src/mesh.rs, src/node.rs, src/qef.rs, src/stl.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-cad--<module>.rs
+//     bsc graph impl set --id bsc-cad--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-cad--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

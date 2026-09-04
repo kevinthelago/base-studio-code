@@ -29,13 +29,6 @@
 //! [`bsc-tunnel`]: https://example.invalid
 #![forbid(unsafe_code)]
 
-pub mod crypto;
-pub mod envelope;
-pub mod error;
-pub mod frame;
-pub mod liveness;
-pub mod sequence;
-pub mod subscription;
 
 pub use envelope::{Envelope, Kind, MAX_DATAGRAM_BYTES, MAX_PLAINTEXT_BYTES};
 pub use error::{SequenceError, WireError};
@@ -43,3 +36,15 @@ pub use frame::{AttestedPosture, Event, ExposedSocket, Frame, SensorState};
 pub use liveness::{Cadence, Liveliness, LivelinessKind, Watch};
 pub use sequence::{Completeness, Reception, Tracker};
 pub use subscription::{Finding, Rejections, Subscription};
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/crypto.rs, src/envelope.rs, src/error.rs, src/frame.rs, src/liveness.rs, src/sequence.rs, src/subscription.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-lan-stream--<module>.rs
+//     bsc graph impl set --id bsc-lan-stream--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-lan-stream--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
