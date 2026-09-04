@@ -17,35 +17,10 @@
 //! (`~/.base-studio-code/kits/<id>/<version>/`) blueprints PIN by `{ id, version, hash }`, with the
 //! packaged `bsc/react-ui` kit resolving as an embedded fallback entry. Surfaced as `bsc ui kit`.
 
-pub mod cli;
-pub mod emit;
-/// The GENERAL node validator (#3485) — `{ type, props, children }` over the full primitive registry,
-/// the Rust face of `src/shared/ui/spec/generalNode.ts`. Both read the same generated contract.
-pub mod general_node;
-pub mod harvest;
-pub mod import_scan;
-pub mod kit;
-/// Surgical single-field JSON patch for on-disk SEED files (#109) — the write half of
-/// `bsc ui tests adopt`, kept separate from [`tests_harvest`] since it is a generic byte-level editor
-/// with no test-harvesting knowledge of its own.
-pub mod claim_census;
 /// Moved to `bsc-record` so the GRAPH side can reach it too (`bsc-ui` depends on `bsc-graph`, so it
 /// could not live here and be shared). Re-exported under its original path: every `crate::record_source::…`
 /// call site in this crate is unchanged, which is what keeps the move reviewable as a move.
 pub use bsc_record::record_source;
-pub mod retirable;
-pub mod backing_reconcile;
-pub mod body_diff;
-pub mod graph_closure;
-pub mod lift;
-pub mod promote;
-pub mod refresh_seed;
-pub mod retire;
-pub mod shadow;
-#[cfg(test)]
-pub mod test_store;
-pub mod seed_patch;
-pub mod tests_harvest;
 
 use serde_json::Value;
 
@@ -835,3 +810,15 @@ mod packaged_seed_tests {
         );
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/emit.rs, src/general_node.rs, src/harvest.rs, src/import_scan.rs, src/kit.rs, src/claim_census.rs, src/retirable.rs, src/backing_reconcile.rs, src/body_diff.rs, src/graph_closure.rs, src/lift.rs, src/promote.rs, src/refresh_seed.rs, src/retire.rs, src/shadow.rs, src/test_store.rs, src/seed_patch.rs, src/tests_harvest.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-ui--<module>.rs
+//     bsc graph impl set --id bsc-ui--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-ui--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

@@ -2,10 +2,15 @@
 name = "bsc-secret"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Credential store for base-studio-code — the METADATA half of a paired service credential (what it is, how it last behaved) at ~/.base-studio-code/secrets.db, over the shared bsc-json-store. The secret VALUE never enters this store: it stays in the OS keychain, and this crate only ever asks whether one is present."
 
 # Tauri-free, like every other `bsc <noun>` store crate: the desktop app reaches it through the generic
 # `bsc` bridge (console/bsc.rs) and a live session reaches the same store through the CLI.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "bsc_secret"
 
