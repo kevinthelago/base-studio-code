@@ -7,6 +7,65 @@
 use crate::error::WireError;
 use std::collections::BTreeMap;
 
+/// One socket the sensor can see is reachable from the network. Rendered as
+/// text rather than typed addresses: this is a wire format read by many
+/// subscribers, and a stable string outlives an address type.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ExposedSocket {
+    pub transport: String,
+    pub addr: String,
+    pub port: u16,
+}
+
+/// What the sensor says about its own reachability.
+///
+/// The monitor Pi accepts nothing inbound and is updated by swapping its SD
+/// card, so nobody can log in to check whether it is still sealed. This is how
+/// that fact travels: attested by the sensor, in every snapshot, over the only
+/// channel it has.
+///
+/// [`Unknown`](AttestedPosture::Unknown) is the `Default` DELIBERATELY. A
+/// `SensorState` that nobody populated must never claim to be sealed -- an
+/// unset field and a verified-clean box would otherwise be identical on the
+/// wire, which is the same silent-pass failure the parser guards against.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AttestedPosture {
+    /// Nothing on the sensor is reachable from the network.
+    Sealed {
+        /// Listeners bound only to loopback: visible, but not a way in.
+        loopback_listeners: u32,
+        /// How many socket rows justified the verdict. A `Sealed` from zero
+        /// rows is a broken parser, not a clean box, and carrying the count is
+        /// what lets a subscriber tell those two apart.
+        rows_examined: u32,
+    },
+    /// At least one socket is reachable. The state the design exists to prevent.
+    Exposed {
+        reachable: Vec<ExposedSocket>,
+        rows_examined: u32,
+    },
+    /// The sensor could not determine its posture. NOT a pass -- on a box that
+    /// cannot be inspected any other way, "I cannot tell" is alertable.
+    Unknown { reason: String },
+}
+
+impl Default for AttestedPosture {
+    fn default() -> Self {
+        AttestedPosture::Unknown {
+            reason: "no attestation recorded".to_string(),
+        }
+    }
+}
+
+impl AttestedPosture {
+    pub fn is_sealed(&self) -> bool {
+        match self {
+            AttestedPosture::Sealed { .. } => true,
+            AttestedPosture::Exposed { .. } | AttestedPosture::Unknown { .. } => false,
+        }
+    }
+}
+
 /// One observation from the sensor.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Event {
@@ -19,6 +78,10 @@ pub enum Event {
     /// emit-only device this is the ONLY way its health is ever observable,
     /// since nothing can poll it.
     Health { uptime_s: u64, soc_temp_c: f32, capture_drops: u64 },
+    /// The sensor's reachability changed. Emitted as its own event rather than
+    /// waiting for the next snapshot, because a box that just became reachable
+    /// is the one thing worth interrupting for.
+    PostureChanged { from: AttestedPosture, to: AttestedPosture },
 }
 
 /// The sensor's complete state, restated periodically so a subscriber that
@@ -29,6 +92,10 @@ pub struct SensorState {
     pub counters: BTreeMap<String, u64>,
     /// Alerts the sensor still considers active.
     pub active_alerts: Vec<Event>,
+    /// What the sensor can currently say about its own reachability. Present
+    /// in every snapshot so the claim is continuously re-made rather than
+    /// asserted once at boot and assumed forever after.
+    pub posture: AttestedPosture,
     /// Monotonic microseconds since boot. NOT wall clock: an emit-only sensor
     /// can never run NTP, because NTP needs a reply. Subscribers anchor this
     /// to wall clock on receipt using their own good time.
@@ -75,7 +142,33 @@ mod tests {
         let f = Frame::Snapshot(SensorState {
             counters,
             active_alerts: vec![Event::Health { uptime_s: 91, soc_temp_c: 89.6, capture_drops: 0 }],
+            posture: AttestedPosture::Sealed { loopback_listeners: 1, rows_examined: 37 },
             monotonic_us: 91_000_000,
+        });
+        assert_eq!(Frame::decode(&f.encode().unwrap()).unwrap(), f);
+    }
+
+    #[test]
+    fn an_unpopulated_sensor_state_never_claims_to_be_sealed() {
+        // The default must be the SAFE answer, not the convenient one: an
+        // unset field and a verified-clean box would otherwise look identical.
+        let s = SensorState::default();
+        assert!(!s.posture.is_sealed());
+        assert!(matches!(s.posture, AttestedPosture::Unknown { .. }));
+    }
+
+    #[test]
+    fn a_posture_change_round_trips_on_the_wire() {
+        let f = Frame::Delta(Event::PostureChanged {
+            from: AttestedPosture::Sealed { loopback_listeners: 1, rows_examined: 42 },
+            to: AttestedPosture::Exposed {
+                reachable: vec![ExposedSocket {
+                    transport: "tcp".into(),
+                    addr: "0.0.0.0".into(),
+                    port: 22,
+                }],
+                rows_examined: 43,
+            },
         });
         assert_eq!(Frame::decode(&f.encode().unwrap()).unwrap(), f);
     }
