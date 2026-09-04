@@ -1,0 +1,29 @@
+[package]
+name = "bsc-lan-core"
+version = "0.1.0"
+edition = "2021"
+description = "`bsc lan` domain vocabulary and adapter traits for the LAN control plane. Pure types and traits; no I/O. Folded from the networkmonitor repo's bsc-lan-core (2026-09-04) when the stack collapsed onto suricata + one native process."
+
+[lib]
+name = "bsc_lan_core"
+
+# This crate performs no I/O. It must never depend on an async runtime, an
+# HTTP client, an SSH library, an embedded database or the app shell -- see
+# tests/dependency_absence.rs, which pins that guarantee against this crate's
+# OWN resolved dependency closure (not merely the workspace lockfile, which in
+# a monorepo necessarily contains all of them for its other members).
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[lints.clippy]
+# Adding an `Action` variant must fail to compile until every exhaustive
+# dispatch (tier, target, render, inverse_kind, requires_ttl) grows an arm.
+# A `_ =>` wildcard arm would silently defeat that guarantee, so it is denied
+# crate-wide rather than merely discouraged.
+#
+# THIS DECLARATION IS ITSELF GUARDED. Deleting these two lines is the one edit
+# that would dissolve the exhaustiveness guarantee without breaking a single
+# test, so tests/dependency_absence.rs asserts the declaration is still here.
+wildcard_enum_match_arm = "deny"
