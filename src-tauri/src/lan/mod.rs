@@ -17,6 +17,8 @@
 //! title-bar button, and then `open` reports `AlreadyOpen` about a window that
 //! is not there.
 
+pub mod subscribe;
+
 use bsc_widget::{decide, Outcome, WidgetRequest, WidgetResult};
 use tauri::Manager;
 
