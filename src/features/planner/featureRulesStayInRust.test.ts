@@ -45,7 +45,10 @@ describe("the feature rules stay in Rust", () => {
   // POPULATION so the guard fails loudly if it is ever pointed at nothing.
   it("is actually looking at the TypeScript records", () => {
     expect(impls.length).toBeGreaterThan(400);
-    expect(impls.some((i) => i.id === "feature-list.ts")).toBe(true);
+    // Anchored on a record that is STILL THERE. It used to name `feature-list.ts`, which this suite
+    // now asserts is retired — a non-vacuity check that fails when the thing it guards succeeds is
+    // worse than none, because it reads as the guard breaking rather than as the work landing.
+    expect(impls.some((i) => i.id === "feature-nodes.ts")).toBe(true);
   });
 
   it.each(RUST_OWNED)("no TypeScript record DEFINES %s", (sym) => {
@@ -57,12 +60,21 @@ describe("the feature rules stay in Rust", () => {
     expect(offenders, `${sym} is Rust's — read it with \`bsc plan feature gate --json\``).toEqual([]);
   });
 
-  it("feature-list.ts keeps only the decode + the publish projection", () => {
-    // What legitimately remains here: decoding the wire shape, and projecting features into issues.
-    // Neither is a RULE about the roster — they are a parser and a mapping.
-    const fl = impls.find((i) => i.id === "feature-list.ts");
-    expect(fl).toBeDefined();
-    const exports = [...(fl!.code ?? "").matchAll(/export (?:function|type|interface) (\w+)/g)].map((m) => m[1]);
-    expect(exports.sort()).toEqual(["PlanFeature", "RequiredRef", "featuresToPlanIssues", "parseFeaturesFile", "requiredId"]);
+  it("feature-list.ts is RETIRED — nothing decodes features from a file any more", () => {
+    // It kept a parser and a projection after the rules moved to Rust. Both were then found to have
+    // no caller at all — the modules that used them were planner-UI residue, and `bsc-publish` takes
+    // `PlanIssue` rows rather than deriving them. The projection lives in `crates/plandb` and is read
+    // with `bsc plan feature issues`; the decoder went with the cluster
+    // (`retire-the-planner-ui-cluster-that-parses-features`).
+    expect(impls.some((i) => i.id === "feature-list.ts"), "feature-list.ts is back").toBe(false);
+  });
+
+  it("no TypeScript record decodes a features FILE", () => {
+    // The whole point of the retirement: one source, and it is plan.db.
+    const offenders = impls.filter((i) => /function\s+parseFeaturesFile|featuresToPlanIssues\s*\(/.test(i.code ?? ""));
+    expect(
+      offenders.map((i) => i.id),
+      "features come from plan.db — `bsc plan feature list --json`, and `bsc plan feature issues` for the projection",
+    ).toEqual([]);
   });
 });

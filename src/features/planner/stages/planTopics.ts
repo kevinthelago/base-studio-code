@@ -18,7 +18,11 @@ export const SKIPPED_KEY = "_skipped";
 /** The feature list file (JSON: `features.json` — an array of feature objects). The
  *  authoritative artifact of the Features stage (#…): each entry is a user-facing capability
  *  and a fleet stream. Surfaced by the poll like `fleet.json`; not rendered as a plan section —
- *  it drives the Features board. See {@link parseFeaturesFile} in featureList. */
+ *  it drives the Features board.
+ *
+ *  The features themselves live in plan.db and are read with `bsc plan feature list --json`; the
+ *  `parseFeaturesFile` decoder this used to point at was retired with the planner-UI cluster
+ *  (`retire-the-planner-ui-cluster-that-parses-features`), because nothing called it. */
 export const FEATURES_KEY = "features";
 
 /**
