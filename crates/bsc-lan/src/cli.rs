@@ -162,6 +162,34 @@ display that does not distinguish them.
 exercised anywhere.",
     },
     CmdDoc {
+        name: "sense",
+        summary: "read the spectrum on a cadence and emit it, sealed, to a configured destination",
+        usage: "\
+bsc lan sense --to <addr:port> --sensor-key <hex> --group-key <hex>
+              [--interval <ms>] [--count <n>] [--trigger] [--iface <ip>] [--json]
+
+Reads the radio's spectrum, aggregates it, seals it, and sends it.
+
+THE DESTINATION IS CONFIGURED, NEVER DISCOVERED, and that is what keeps this sensor
+emit-only. Multicast does NOT cross a VLAN boundary without a multicast router, which
+this network's firewall does not provide — so a multicast group serves subscribers on
+the sensor's own segment, and a unicast collector is how the stream crosses a VLAN.
+Either way the sensor holds no subscriber list: it sends where it was told when the SD
+card was written, because it has no inbound channel through which a list could ever be
+managed.
+
+A BARREN WINDOW EMITS NOTHING. If the radio produced no samples, no datagram is sent —
+a spectrum of zeroes is indistinguishable from a clear channel on any display, and only
+one of them is good news. The subscriber's silence detection is what reports the gap;
+inventing an empty record here would defeat it.
+
+Aggregation happens before emission: raw spectral output runs at roughly 666 sweeps per
+second against a wire capped at 20 datagrams per second.
+
+NEEDS ROOT for the radio (debugfs is root-only). --trigger additionally writes to the
+control file; without it this only sends what the driver already buffered.",
+    },
+    CmdDoc {
         name: "dry-run",
         summary: "what the sensor WOULD emit for a real EVE file, without a socket",
         usage: "\
@@ -196,10 +224,18 @@ struct Args {
     expect: Option<String>,
     iface: Option<String>,
     sensor_public_key: Option<String>,
+    /// The sensor's PRIVATE signing key. Deliberately a different field and a
+    /// different flag from the public one: only the sensor should ever hold
+    /// this, and a flag that accepted either would make handing out the wrong
+    /// half a typo rather than an impossibility.
+    sensor_key: Option<String>,
     group_key: Option<String>,
     for_seconds: Option<u64>,
     timeout_ms: Option<i64>,
     trigger: bool,
+    to: Option<String>,
+    interval_ms: Option<u64>,
+    count: Option<u64>,
     source: Option<String>,
     positional: Vec<String>,
 }
@@ -221,11 +257,25 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--segment" => a.segment = Some(rest.value("--segment needs a /24 prefix, e.g. 10.99.2.")?),
             "--expect" => a.expect = Some(rest.value("--expect needs a comma-separated address list")?),
             "--iface" => a.iface = Some(rest.value("--iface needs an interface IP")?),
+            "--sensor-key" => a.sensor_key = Some(rest.value("--sensor-key needs 64 hex characters (the sensor's PRIVATE signing key)")?),
             "--sensor-public-key" => {
                 a.sensor_public_key = Some(rest.value("--sensor-public-key needs 64 hex characters")?)
             }
             "--group-key" => a.group_key = Some(rest.value("--group-key needs 64 hex characters")?),
             "--trigger" => a.trigger = true,
+            "--to" => a.to = Some(rest.value("--to needs <addr:port>")?),
+            "--interval" => {
+                a.interval_ms = Some(
+                    rest.value("--interval needs a whole number of milliseconds")?
+                        .parse().map_err(|_| "--interval needs a whole number".to_string())?,
+                );
+            }
+            "--count" => {
+                a.count = Some(
+                    rest.value("--count needs a whole number of windows")?
+                        .parse().map_err(|_| "--count needs a whole number".to_string())?,
+                );
+            }
             "--source" => a.source = Some(rest.value("--source needs a path to a sample file")?),
             "--timeout" => {
                 a.timeout_ms = Some(
@@ -440,6 +490,77 @@ pub fn render_finding(f: &Finding) -> String {
 }
 
 
+fn cmd_sense(a: &Args) -> Result<(), String> {
+    use bsc_lan_sense::emitloop::{events_for, SPECTRUM_KIND};
+    use bsc_lan_sense::spectrum::{discover, read_samples, trigger, Mode};
+    use bsc_lan_stream::crypto::{GroupKey, Sensor};
+    use bsc_lan_stream::frame::Frame;
+
+    let to: std::net::SocketAddrV4 = a
+        .to
+        .as_deref()
+        .ok_or("sense needs --to <addr:port>: a multicast group for this segment, or a unicast collector to cross a VLAN")?
+        .parse()
+        .map_err(|_| "--to must be <ipv4-addr>:<port>".to_string())?;
+    let signing = SigningKey::from_bytes(&unhex32(
+        a.sensor_key.as_deref().ok_or("sense needs --sensor-key <hex> (the sensor's PRIVATE signing key — NOT the public half)")?,
+        "--sensor-key",
+    )?);
+    let group = GroupKey::from_bytes(unhex32(
+        a.group_key.as_deref().ok_or("sense needs --group-key <hex>")?,
+        "--group-key",
+    )?);
+
+    let mut boot = [0u8; 16];
+    getrandom::fill(&mut boot).map_err(|e| format!("no OS randomness for the boot id: {e}"))?;
+    let sensor = Sensor::new(signing, group, boot);
+
+    let path = discover().map_err(|e| e.to_string())?;
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind failed: {e}"))?;
+    sock.set_multicast_ttl_v4(1).ok();
+    sock.connect(to).map_err(|e| format!("connect to {to} failed: {e}"))?;
+
+    let interval = std::time::Duration::from_millis(a.interval_ms.unwrap_or(1000));
+    let windows = a.count.unwrap_or(0);
+    let (mut seq, mut sent, mut barren, mut w) = (0u64, 0u64, 0u64, 0u64);
+
+    loop {
+        if a.trigger {
+            let _ = trigger(&path, Mode::Background);
+            let _ = trigger(&path, Mode::Trigger);
+        }
+        std::thread::sleep(interval);
+        let read = read_samples(&path).map_err(|e| e.to_string())?;
+        let events = events_for(&read);
+        if events.is_empty() {
+            // Deliberate: silence is the subscriber's to report.
+            barren += 1;
+        }
+        for e in events {
+            let mut nonce = [0u8; 12];
+            nonce[0..4].copy_from_slice(&boot[0..4]);
+            nonce[4..12].copy_from_slice(&seq.to_be_bytes());
+            let plain = Frame::Delta(e).encode().map_err(|x| x.to_string())?;
+            let dg = sensor.seal(SPECTRUM_KIND, seq, nonce, &plain).map_err(|x| x.to_string())?;
+            sock.send(&dg).map_err(|x| format!("send failed: {x}"))?;
+            seq += 1;
+            sent += 1;
+        }
+        w += 1;
+        if windows > 0 && w >= windows {
+            break;
+        }
+    }
+    if a.trigger {
+        let _ = trigger(&path, Mode::Disable);
+    }
+    let out = json!({ "windows": w, "datagrams_sent": sent, "barren_windows": barren, "to": to.to_string() });
+    bsc_cli_util::emit(a.pretty, a.json, &out, || {
+        format!("{w} window(s) → {sent} datagram(s) to {to}\n  {barren} window(s) produced no samples and sent NOTHING (silence is the subscriber's to report)")
+    });
+    Ok(())
+}
+
 fn cmd_spectrum(a: &Args) -> Result<(), String> {
     use bsc_lan_sense::spectrum::{discover, from_bytes, read_samples, trigger, Mode};
 
@@ -535,8 +656,16 @@ fn cmd_watch(a: &Args) -> Result<(), String> {
     let group_key = GroupKey::from_bytes(unhex32(group_hex, "--group-key")?);
 
     let timeout = Duration::from_millis(500);
-    let rx = MulticastReceiver::join(iface, group, timeout)
-        .map_err(|e| format!("could not join {group} on {iface}: {e}"))?;
+    // A group address joins the group; a plain port binds unicast. Multicast
+    // does NOT cross a VLAN without a multicast router, so a subscriber on
+    // another segment is fed by unicast and must be able to listen for it.
+    let rx = if group.ip().is_multicast() {
+        MulticastReceiver::join(iface, group, timeout)
+            .map_err(|e| format!("could not join {group} on {iface}: {e}"))?
+    } else {
+        MulticastReceiver::bind_unicast(group.port(), timeout)
+            .map_err(|e| format!("could not bind {}: {e}", group.port()))?
+    };
 
     let cadence = Cadence {
         snapshot_interval_ms: 10_000,
@@ -744,6 +873,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     match a.positional.first().map(String::as_str) {
         Some("posture") => cmd_posture(&a),
         Some("keygen") => cmd_keygen(&a),
+        Some("sense") => cmd_sense(&a),
         Some("spectrum") => cmd_spectrum(&a),
         Some("watch") => cmd_watch(&a),
         Some("estate") => cmd_estate(&a),
@@ -764,7 +894,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "spectrum", "dry-run"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "spectrum", "sense", "dry-run"]);
     }
 
     #[test]
@@ -918,6 +1048,28 @@ mod tests {
     fn an_ipv6_endpoint_is_bracketed_so_the_colons_are_unambiguous() {
         assert_eq!(endpoint("::", 41719), "[::]:41719");
         assert_eq!(endpoint("0.0.0.0", 22), "0.0.0.0:22");
+    }
+
+    /// The private and public halves take DIFFERENT flags. A single flag that
+    /// accepted either would make handing out the signing key a typo instead of
+    /// an impossibility — and a subscriber holding it could forge the stream,
+    /// which is the one thing the signature exists to prevent.
+    #[test]
+    fn the_private_signing_key_and_the_public_key_are_separate_flags() {
+        let a = parse_args(vec![
+            "sense".into(), "--sensor-key".into(), "a".repeat(64),
+            "--sensor-public-key".into(), "b".repeat(64),
+        ]).unwrap();
+        assert_eq!(a.sensor_key.as_deref(), Some("a".repeat(64).as_str()));
+        assert_eq!(a.sensor_public_key.as_deref(), Some("b".repeat(64).as_str()));
+        assert_ne!(a.sensor_key, a.sensor_public_key, "the halves must not be interchangeable");
+    }
+
+    #[test]
+    fn sense_refuses_without_a_destination_and_says_what_a_destination_is_for() {
+        let e = run(vec!["sense".into()], "bsc lan").unwrap_err();
+        assert!(e.contains("--to"), "{e}");
+        assert!(e.contains("VLAN"), "the error should say why a unicast collector exists: {e}");
     }
 
     #[test]

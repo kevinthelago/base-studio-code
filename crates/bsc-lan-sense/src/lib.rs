@@ -11,6 +11,7 @@
 
 pub mod attest;
 pub mod emit;
+pub mod emitloop;
 pub mod error;
 pub mod estate;
 pub mod eve;

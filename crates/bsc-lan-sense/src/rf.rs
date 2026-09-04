@@ -116,6 +116,7 @@ mod tests {
             | Event::Flow { .. }
             | Event::Health { .. }
             | Event::RfChannelActivity { .. }
+            | Event::RfSpectrum { .. }
             | Event::PostureChanged { .. } => panic!("expected an RfDeauthFlood event"),
         }
     }
@@ -189,6 +190,7 @@ mod tests {
             | Event::Flow { .. }
             | Event::Health { .. }
             | Event::RfChannelActivity { .. }
+            | Event::RfSpectrum { .. }
             | Event::PostureChanged { .. } => panic!("expected an RfDeauthFlood event"),
         }
     }
