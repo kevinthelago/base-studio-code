@@ -736,6 +736,7 @@ dependencies = [
  "bsc-config",
  "bsc-data",
  "bsc-debug",
+ "bsc-deploy",
  "bsc-disk",
  "bsc-files",
  "bsc-fin",
@@ -837,6 +838,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-capability"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-cli-util"
 version = "0.1.0"
 dependencies = [
@@ -898,6 +907,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-deploy"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1027,7 +1046,9 @@ name = "bsc-lan-sense"
 version = "0.1.0"
 dependencies = [
  "bsc-lan-stream",
+ "ed25519-dalek",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 

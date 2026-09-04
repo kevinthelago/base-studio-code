@@ -24,7 +24,7 @@ const TCP_LISTEN: &str = "0A";
 const UDP_UNCONNECTED: &str = "07";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Transport {
+pub enum Protocol {
     Tcp,
     Udp,
 }
@@ -53,7 +53,7 @@ pub enum Reach {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Socket {
-    pub transport: Transport,
+    pub transport: Protocol,
     pub role: Role,
     pub reach: Reach,
     pub local_port: u16,
@@ -147,7 +147,7 @@ fn split_addr(field: &str) -> Result<(&str, u16), ProcNetError> {
 /// Never returns `Ok` with a silently-empty result for input it did not
 /// understand: a row it cannot parse increments `rows_seen` without
 /// incrementing `rows_parsed`, and the caller compares the two.
-pub fn parse_table(text: &str, transport: Transport) -> Result<Table, ProcNetError> {
+pub fn parse_table(text: &str, transport: Protocol) -> Result<Table, ProcNetError> {
     let mut lines = text.lines();
     let header = lines.next().ok_or(ProcNetError::Empty)?;
     // The header is the one thing every kernel version has kept stable, so it
@@ -190,7 +190,7 @@ pub fn parse_table(text: &str, transport: Transport) -> Result<Table, ProcNetErr
         let has_peer = rem_port != 0;
 
         let role = match transport {
-            Transport::Tcp => {
+            Protocol::Tcp => {
                 if state == TCP_LISTEN {
                     Role::Inbound
                 } else {
@@ -199,7 +199,7 @@ pub fn parse_table(text: &str, transport: Transport) -> Result<Table, ProcNetErr
                     Role::ConnectedOutbound
                 }
             }
-            Transport::Udp => {
+            Protocol::Udp => {
                 if state == UDP_UNCONNECTED && !has_peer {
                     Role::Inbound
                 } else {

@@ -84,11 +84,29 @@ pub fn apply(
     // merge, both would answer a worker, and each would be working from a different picture. Measured
     // from `PtyState` — the same authority `bsc fleet directors` reports from, so the read a caller
     // ran a moment ago cannot disagree with this.
+    //
+    // IT ASKS ABOUT THE AGENT, NOT THE TERMINAL, and that distinction is the whole bug this replaced.
+    // It used to read `p.live`, which means only "a PTY session exists". A pane whose shell is up with
+    // no agent in it — the state `bsc fleet list` calls `idle` and tells you to WAKE — therefore
+    // presented as a running director, and `director new` refused to replace it. Since
+    // `bsc fleet director stop` deliberately does not exist, the project could never be started again:
+    // the one verb that could repair the session was the one declining to.
+    //
+    // OBSERVED on village-animal-hospital, whose director pane held a bare `/bin/bash` with no child
+    // while a healthy sibling showed `claude … --resume` under its own shell. Two reads of ONE struct
+    // disagreed about the word "running": the table said `idle → wake it`, the create verb said
+    // "already has a running director — nothing created".
+    //
+    // `PaneLive::agent` is the field that answers the question actually being asked, and its own doc
+    // says so: "An AGENT process is running for this pane — claude, bsc-agent, or a wrapper hosting
+    // one. This is what makes `bsc fleet list` say `running` rather than `idle`." It is
+    // `#[serde(default)]`, so an older app answering a newer CLI degrades to "no agent seen" — which
+    // is the safe direction here too: it permits a create rather than blocking one forever.
     let already_live = app
         .try_state::<crate::console::pty::PtyState>()
         .map(|st| crate::console::pty::pane_liveness(vec![pane_id.clone()], &st))
         .and_then(|v| v.into_iter().next())
-        .is_some_and(|p| p.live);
+        .is_some_and(director_is_running);
     if already_live {
         return Ok(bsc_fleet::DirectorNewResult {
             project_key: key.to_string(),
@@ -258,5 +276,56 @@ mod tests {
     fn an_ack_defaults_to_not_created_rather_than_to_success() {
         let ack: DirectorAck = serde_json::from_str("{\"id\":\"x\"}").unwrap();
         assert!(!ack.created, "absent `created` is FALSE, so a malformed ack fails loudly");
+    }
+}
+
+/// Is there a director ALREADY COORDINATING this fleet?
+///
+/// Pure and separated from the Tauri read so the rule is testable: the IO half needs a running app and
+/// a real PTY, and this is the half that decides. See the call site for why it is `agent` and not
+/// `live` — an idle pane blocked its own replacement forever.
+pub(crate) fn director_is_running(p: bsc_fleet::PaneLive) -> bool {
+    p.agent
+}
+
+#[cfg(test)]
+mod director_running_tests {
+    use super::director_is_running;
+
+    fn pane(live: bool, agent: bool, working: bool) -> bsc_fleet::PaneLive {
+        bsc_fleet::PaneLive {
+            pane_id: "village-animal-hospital:director".into(),
+            live,
+            busy: live,
+            working,
+            agent,
+            pid: None,
+        }
+    }
+
+    #[test]
+    fn an_agentless_pane_is_not_a_running_director() {
+        // The measured bug. A shell with nothing in it is what `bsc fleet list` calls `idle` and tells
+        // you to wake; it must not block `director new`, because nothing else can clear it.
+        assert!(!director_is_running(pane(true, false, false)));
+    }
+
+    #[test]
+    fn a_pane_with_an_agent_is_a_running_director() {
+        // The guard's real purpose, intact: two coordinators on one fleet each answer workers from a
+        // different picture.
+        assert!(director_is_running(pane(true, true, false)));
+    }
+
+    #[test]
+    fn an_idle_agent_still_counts_as_running() {
+        // `working` is "has spawned a child right now" — an agent waiting at its prompt, or on a model
+        // response, has none. Reading that as "no director" would spawn a second one mid-conversation.
+        assert!(director_is_running(pane(true, true, false)));
+    }
+
+    #[test]
+    fn a_dead_pane_is_not_a_running_director() {
+        assert!(!director_is_running(pane(false, false, false)));
     }
 }
