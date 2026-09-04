@@ -2,7 +2,12 @@
 name = "bsc-widget"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "`bsc widget` — a widget is a NODE: one toggleable UI surface, the stream it subscribes to, and the verb that turns it on or off."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_widget"
