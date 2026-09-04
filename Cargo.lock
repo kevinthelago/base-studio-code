@@ -1022,6 +1022,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-lan-sense"
+version = "0.1.0"
+dependencies = [
+ "bsc-lan-stream",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "bsc-lan-stream"
 version = "0.1.0"
 dependencies = [

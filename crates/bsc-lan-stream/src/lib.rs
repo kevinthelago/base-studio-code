@@ -37,5 +37,5 @@ pub mod sequence;
 
 pub use envelope::{Envelope, Kind, MAX_DATAGRAM_BYTES, MAX_PLAINTEXT_BYTES};
 pub use error::{SequenceError, WireError};
-pub use frame::{Event, Frame, SensorState};
+pub use frame::{AttestedPosture, Event, ExposedSocket, Frame, SensorState};
 pub use sequence::{Completeness, Reception, Tracker};
