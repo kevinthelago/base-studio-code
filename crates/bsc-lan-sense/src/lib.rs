@@ -12,6 +12,7 @@
 pub mod attest;
 pub mod emit;
 pub mod error;
+pub mod estate;
 pub mod eve;
 pub mod posture;
 pub mod receive;
@@ -23,6 +24,7 @@ pub use attest::attest;
 pub use emit::{nonce_for, Emitter, SnapshotPolicy};
 pub use transport::{Transport, UdpMulticast};
 pub use error::ProcNetError;
+pub use estate::{assess as assess_estate, Estate, SeenHost};
 pub use eve::{parse_line, EveCounters, EveError, Parsed};
 pub use receive::{MulticastReceiver, Tick};
 pub use run::{RateLimit, RunCounters, SensorRun};
