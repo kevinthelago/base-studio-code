@@ -77,6 +77,95 @@ pub fn tracked_ids(store: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The edges a store carries, in file order.
+///
+/// READ-ONLY like [`crate::edges_of`]: it never inserts the key, so looking at a store with no edges
+/// cannot add `"edges": []` to it and churn every committed file that has none.
+pub fn edges_of(store: &Value) -> Vec<Value> {
+    store.get("edges").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// The EDGE ids a repo store tracks — the second half of [`tracked_ids`].
+///
+/// Kept separate rather than folded in, because the two tiers live in different arrays and a caller
+/// that mixed them would promote an edge into `implementations` and vice versa.
+pub fn tracked_edge_ids(store: &Value) -> Vec<String> {
+    edges_of(store)
+        .iter()
+        .filter_map(|e| e.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect()
+}
+
+/// The fields a `GraphEdge` declares — see `crate::GraphEdge`.
+///
+/// An edge is projected through its OWN field list and never through [`seed_content_of`]: that one
+/// keeps [`SEED_FIELDS`], which has no `members`, so projecting an edge through it silently produces
+/// an edge that spans nothing. That is worse than refusing, because `set_edge`'s two-member rule only
+/// guards the WRITE and a store loaded from such a file would read as a covered relationship over an
+/// empty member list.
+pub const EDGE_FIELDS: &[&str] = &["id", "members", "src", "tests"];
+
+/// Project an edge down to what a committed store carries.
+///
+/// Same projection for both targets. An edge has no build facet, no revision bookkeeping and no
+/// `tech`/`role`/`composes` to normalise, so the repo store and the packaged seed want exactly the
+/// same four fields — unlike an implementation, where they legitimately differ.
+pub fn edge_content_of(rec: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    for k in EDGE_FIELDS {
+        if let Some(v) = rec.get(*k) {
+            if !v.is_null() {
+                out.insert((*k).to_string(), v.clone());
+            }
+        }
+    }
+    Value::Object(out)
+}
+
+/// Apply an EDGE promotion: return the store with each named edge id replaced by the runtime version.
+///
+/// The same contract as [`promote_into_with`] — ids absent upstream are reported rather than dropped,
+/// and a write that would DELETE a field the committed copy carries is refused rather than performed.
+pub fn promote_edges_into(
+    repo: &Value,
+    runtime: &[Value],
+    ids: &[String],
+) -> (Value, Vec<String>, Vec<String>) {
+    let mut out = repo.clone();
+    let mut missing = Vec::new();
+    let mut refused = Vec::new();
+    let mut list = edges_of(repo);
+    let mut touched = false;
+    for id in ids {
+        let Some(up) = runtime.iter().find(|e| e.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        else {
+            missing.push(id.clone());
+            continue;
+        };
+        let fresh = edge_content_of(up);
+        match list.iter().position(|e| e.get("id").and_then(Value::as_str) == Some(id.as_str())) {
+            Some(at) => {
+                if loses_fields(&fresh, &edge_content_of(&list[at])) {
+                    refused.push(id.clone());
+                    continue;
+                }
+                list[at] = fresh;
+            }
+            None => list.push(fresh),
+        }
+        touched = true;
+    }
+    // ADDITIVE, exactly as `edges_of` is: a promote that names no edge must not insert an empty
+    // `edges` array into a store that has none. That is what keeps `graph/algorithms.json` and the
+    // packaged seed byte-stable for every session that never touches the tier.
+    if touched || out.get("edges").is_some() {
+        if let Some(o) = out.as_object_mut() {
+            o.insert("edges".into(), Value::Array(list));
+        }
+    }
+    (out, missing, refused)
+}
+
 /// An empty store document — what `promote` creates on first use.
 pub fn empty() -> Value {
     serde_json::json!({
@@ -723,5 +812,81 @@ mod tests {
             verdict_for(std::slice::from_ref(&thin), std::slice::from_ref(&rich), "x.rs"),
             Verdict::RuntimeBehind,
         );
+    }
+
+    fn an_edge() -> Value {
+        json!({
+            "id": "a--b", "members": ["a.rs", "b.rs"], "src": "crates/k/tests/t.rs",
+            "tests": [{ "name": "t.rs", "src": "#[test]\nfn t() {}\n" }],
+        })
+    }
+
+    /// THE ONE THAT MUST FAIL AGAINST THE OBVIOUS IMPLEMENTATION.
+    ///
+    /// `promote` already had a projection per target and the tempting move was to reuse it for edges.
+    /// [`seed_content_of`] keeps [`SEED_FIELDS`], which has no `members` — so an edge promoted through
+    /// it arrives spanning NOTHING. `set_edge` refuses fewer than two members, but that guard is on the
+    /// WRITE; a store loaded from such a file reads as a covered relationship over an empty list, which
+    /// is the dangling-edge failure the tier exists to make visible.
+    #[test]
+    fn the_edge_projection_keeps_members_where_the_seed_projection_would_drop_them() {
+        let e = an_edge();
+        assert!(
+            seed_content_of(&e).get("members").is_none(),
+            "if the seed projection ever gains `members` this guard is inert — check SEED_FIELDS",
+        );
+        let got = edge_content_of(&e);
+        for k in EDGE_FIELDS {
+            assert!(got.get(*k).is_some(), "the edge projection dropped `{k}`");
+        }
+        assert_eq!(got.get("members").and_then(Value::as_array).map(Vec::len), Some(2));
+        // And nothing beyond the declared four rides along.
+        assert_eq!(got.as_object().map(serde_json::Map::len), Some(EDGE_FIELDS.len()));
+    }
+
+    #[test]
+    fn promote_adopts_a_new_edge_into_a_store_that_had_none() {
+        let repo = empty();
+        assert!(repo.get("edges").is_none(), "the empty store carries no edges key");
+        let (next, missing, refused) =
+            promote_edges_into(&repo, std::slice::from_ref(&an_edge()), &["a--b".to_string()]);
+        assert!(missing.is_empty() && refused.is_empty());
+        assert_eq!(tracked_edge_ids(&next), vec!["a--b".to_string()]);
+        let got = &edges_of(&next)[0];
+        assert_eq!(got.get("members").and_then(Value::as_array).map(Vec::len), Some(2));
+        assert!(got.get("tests").is_some(), "the carried test travels with the edge");
+    }
+
+    /// ADDITIVE, exactly as `set_edge` and `edges_of` are. A promote that names no edge must leave a
+    /// store WITHOUT an `edges` key — otherwise every committed store gains `"edges": []` the first
+    /// time anyone promotes anything, which is a diff on a file nobody meant to change.
+    #[test]
+    fn a_promote_naming_no_edge_does_not_insert_an_empty_edges_array() {
+        let (next, _, _) = promote_edges_into(&empty(), &[], &[]);
+        assert!(next.get("edges").is_none(), "an edgeless promote invented an `edges` key");
+        // But a store that ALREADY has the key keeps it, empty or not.
+        let with = json!({ "implementations": [], "edges": [] });
+        let (kept, _, _) = promote_edges_into(&with, &[], &[]);
+        assert!(kept.get("edges").is_some());
+    }
+
+    #[test]
+    fn promoting_an_edge_never_drops_a_field_the_committed_copy_carries() {
+        let repo = json!({ "implementations": [], "edges": [an_edge()] });
+        let mut thin = an_edge();
+        thin.as_object_mut().unwrap().remove("tests");
+        let (next, missing, refused) =
+            promote_edges_into(&repo, std::slice::from_ref(&thin), &["a--b".to_string()]);
+        assert!(missing.is_empty());
+        assert_eq!(refused, vec!["a--b".to_string()], "a regressed upstream edge is refused, not written");
+        assert!(edges_of(&next)[0].get("tests").is_some(), "the committed test survived the refusal");
+    }
+
+    #[test]
+    fn an_edge_absent_upstream_is_reported_rather_than_dropped() {
+        let repo = json!({ "implementations": [], "edges": [an_edge()] });
+        let (next, missing, _) = promote_edges_into(&repo, &[], &["a--b".to_string()]);
+        assert_eq!(missing, vec!["a--b".to_string()]);
+        assert_eq!(tracked_edge_ids(&next), vec!["a--b".to_string()], "the committed edge is left alone");
     }
 }
