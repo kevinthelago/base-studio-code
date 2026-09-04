@@ -10,22 +10,26 @@
 #![forbid(unsafe_code)]
 
 pub mod attest;
+pub mod emit;
 pub mod error;
 pub mod posture;
 pub mod procnet;
+pub mod transport;
 
 pub use attest::attest;
+pub use emit::{nonce_for, Emitter, SnapshotPolicy};
+pub use transport::{Transport, UdpMulticast};
 pub use error::ProcNetError;
 pub use posture::{assess, Posture};
-pub use procnet::{parse_table, Reach, Role, Socket, Table, Transport};
+pub use procnet::{parse_table, Protocol, Reach, Role, Socket, Table};
 
 /// The four tables a Linux host exposes. Read together, because a listener in
 /// any one of them is a way in.
-pub const PROC_NET_TABLES: [(&str, Transport); 4] = [
-    ("/proc/net/tcp", Transport::Tcp),
-    ("/proc/net/tcp6", Transport::Tcp),
-    ("/proc/net/udp", Transport::Udp),
-    ("/proc/net/udp6", Transport::Udp),
+pub const PROC_NET_TABLES: [(&str, Protocol); 4] = [
+    ("/proc/net/tcp", Protocol::Tcp),
+    ("/proc/net/tcp6", Protocol::Tcp),
+    ("/proc/net/udp", Protocol::Udp),
+    ("/proc/net/udp6", Protocol::Udp),
 ];
 
 /// Read and assess the live host. The only function here that touches the

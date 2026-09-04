@@ -7,7 +7,7 @@
 
 use bsc_lan_sense::error::ProcNetError;
 use bsc_lan_sense::posture::{assess, Posture};
-use bsc_lan_sense::procnet::{parse_table, Reach, Role, Transport};
+use bsc_lan_sense::procnet::{parse_table, Protocol, Reach, Role};
 
 const TCP_HEADER: &str = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode";
 const UDP_HEADER: &str = "   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops";
@@ -35,7 +35,7 @@ fn table(header: &str, rows: &[&str]) -> String {
 
 #[test]
 fn a_loopback_tcp_listener_is_decoded_with_its_real_address() {
-    let t = parse_table(&table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER]), Transport::Tcp).unwrap();
+    let t = parse_table(&table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER]), Protocol::Tcp).unwrap();
     assert_eq!(t.rows_seen, 1);
     assert_eq!(t.rows_parsed, 1);
     let s = &t.sockets[0];
@@ -49,7 +49,7 @@ fn a_loopback_tcp_listener_is_decoded_with_its_real_address() {
 
 #[test]
 fn a_wildcard_tcp_listener_is_a_way_in() {
-    let t = parse_table(&table(TCP_HEADER, &[TCP_WILDCARD_LISTENER]), Transport::Tcp).unwrap();
+    let t = parse_table(&table(TCP_HEADER, &[TCP_WILDCARD_LISTENER]), Protocol::Tcp).unwrap();
     let s = &t.sockets[0];
     assert_eq!(s.local_addr, "0.0.0.0");
     assert_eq!(s.local_port, 8080);
@@ -61,7 +61,7 @@ fn a_wildcard_tcp_listener_is_a_way_in() {
 /// its job: the outbound multicast emitter is a CONNECTED udp socket.
 #[test]
 fn a_connected_udp_socket_is_outbound_and_never_an_inbound_surface() {
-    let t = parse_table(&table(UDP_HEADER, &[UDP_CONNECTED]), Transport::Udp).unwrap();
+    let t = parse_table(&table(UDP_HEADER, &[UDP_CONNECTED]), Protocol::Udp).unwrap();
     let s = &t.sockets[0];
     assert_eq!(s.local_addr, "10.99.2.118");
     assert_eq!(s.role, Role::ConnectedOutbound);
@@ -73,7 +73,7 @@ fn a_connected_udp_socket_is_outbound_and_never_an_inbound_surface() {
 
 #[test]
 fn a_bound_udp_socket_with_no_peer_is_inbound_capability() {
-    let t = parse_table(&table(UDP_HEADER, &[UDP_WILDCARD_BOUND]), Transport::Udp).unwrap();
+    let t = parse_table(&table(UDP_HEADER, &[UDP_WILDCARD_BOUND]), Protocol::Udp).unwrap();
     let s = &t.sockets[0];
     assert_eq!(s.role, Role::Inbound);
     assert_eq!(s.reach, Reach::Wildcard);
@@ -82,7 +82,7 @@ fn a_bound_udp_socket_with_no_peer_is_inbound_capability() {
 
 #[test]
 fn the_ipv6_loopback_word_order_is_decoded_correctly() {
-    let t = parse_table(&table(TCP6_HEADER, &[TCP6_LOOPBACK_LISTENER]), Transport::Tcp).unwrap();
+    let t = parse_table(&table(TCP6_HEADER, &[TCP6_LOOPBACK_LISTENER]), Protocol::Tcp).unwrap();
     let s = &t.sockets[0];
     assert_eq!(s.reach, Reach::Loopback, "::1 must not read as routable");
     assert!(!s.is_network_reachable_inbound());
@@ -90,8 +90,8 @@ fn the_ipv6_loopback_word_order_is_decoded_correctly() {
 
 #[test]
 fn a_sealed_verdict_records_how_many_rows_justified_it() {
-    let tcp = parse_table(&table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER]), Transport::Tcp);
-    let udp = parse_table(&table(UDP_HEADER, &[UDP_CONNECTED]), Transport::Udp);
+    let tcp = parse_table(&table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER]), Protocol::Tcp);
+    let udp = parse_table(&table(UDP_HEADER, &[UDP_CONNECTED]), Protocol::Udp);
     match assess(&[tcp, udp]) {
         Posture::Sealed { loopback_listeners, rows_examined } => {
             assert_eq!(rows_examined, 2);
@@ -106,7 +106,7 @@ fn a_sealed_verdict_records_how_many_rows_justified_it() {
 fn one_reachable_listener_anywhere_makes_the_whole_box_exposed() {
     let tcp = parse_table(
         &table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER, TCP_WILDCARD_LISTENER]),
-        Transport::Tcp,
+        Protocol::Tcp,
     );
     let p = assess(&[tcp]);
     match &p {
@@ -129,14 +129,14 @@ fn one_reachable_listener_anywhere_makes_the_whole_box_exposed() {
 
 #[test]
 fn an_empty_table_is_unknown_not_sealed() {
-    let r = parse_table("", Transport::Tcp);
+    let r = parse_table("", Protocol::Tcp);
     assert_eq!(r, Err(ProcNetError::Empty));
     assert!(!assess(&[r]).is_sealed());
 }
 
 #[test]
 fn an_unrecognised_header_is_unknown_not_sealed() {
-    let r = parse_table("total garbage that is not a proc table\n1 2 3", Transport::Tcp);
+    let r = parse_table("total garbage that is not a proc table\n1 2 3", Protocol::Tcp);
     assert!(matches!(r, Err(ProcNetError::UnrecognisedHeader(_))));
     let p = assess(&[r]);
     assert!(!p.is_sealed(), "a kernel format change must never read as a hardened box");
@@ -148,7 +148,7 @@ fn a_header_only_table_with_no_rows_does_not_by_itself_prove_anything() {
     // A real possibility: the file exists and parses, but every row vanished.
     // That IS legitimately zero sockets, so it is Sealed -- but the row count
     // is what lets a reader tell it from a rich, healthy table.
-    let p = assess(&[parse_table(TCP_HEADER, Transport::Tcp)]);
+    let p = assess(&[parse_table(TCP_HEADER, Protocol::Tcp)]);
     match p {
         Posture::Sealed { rows_examined, .. } => assert_eq!(
             rows_examined, 0,
@@ -165,7 +165,7 @@ fn rows_the_parser_could_not_understand_make_the_verdict_unknown() {
     // shaped as this parser expects. Assessing only the subset that parsed
     // would be a conclusion about the wrong population.
     let text = format!("{TCP_HEADER}\n   0: NOTHEX:ZZZZ 00000000:0000 0A rest\n   1: ALSOBAD 00000000:0000 0A rest");
-    let t = parse_table(&text, Transport::Tcp).unwrap();
+    let t = parse_table(&text, Protocol::Tcp).unwrap();
     assert_eq!(t.rows_seen, 2);
     assert_eq!(t.rows_parsed, 0);
 
@@ -191,9 +191,9 @@ fn an_unreadable_file_is_unknown_not_sealed() {
 fn one_failed_table_poisons_the_whole_verdict() {
     // Three clean tables and one failure must NOT average out to a pass: the
     // unread table is exactly where a listener would be hiding.
-    let ok1 = parse_table(&table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER]), Transport::Tcp);
-    let ok2 = parse_table(&table(UDP_HEADER, &[UDP_CONNECTED]), Transport::Udp);
-    let ok3 = parse_table(&table(TCP6_HEADER, &[TCP6_LOOPBACK_LISTENER]), Transport::Tcp);
+    let ok1 = parse_table(&table(TCP_HEADER, &[TCP_LOOPBACK_LISTENER]), Protocol::Tcp);
+    let ok2 = parse_table(&table(UDP_HEADER, &[UDP_CONNECTED]), Protocol::Udp);
+    let ok3 = parse_table(&table(TCP6_HEADER, &[TCP6_LOOPBACK_LISTENER]), Protocol::Tcp);
     let bad = Err(ProcNetError::Unreadable { path: "/proc/net/udp6".into(), reason: "ENOENT".into() });
 
     assert!(
