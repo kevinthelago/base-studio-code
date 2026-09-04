@@ -7,6 +7,13 @@ description = "`bsc rf` — DEFENSIVE RF monitoring: detect radio jamming and RF
 [lib]
 name = "bsc_rf"
 
+# The radio is plugged into the monitor Pi, so the tool must run THERE — and the
+# unified `bsc` carries bundled DuckDB against a device with 1.1 GB free on its
+# SD card. Same precedent as bsc-lan; tests/lean.rs keeps it honest.
+[[bin]]
+name = "bsc-rf"
+path = "src/main.rs"
+
 [dependencies]
 # The shared CLI scaffold (#1762): CmdDoc help catalog + the emit/absent-marker conventions every
 # other `bsc` noun renders through.
