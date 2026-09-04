@@ -165,6 +165,12 @@ pub const NETWORK_PREFIX: &str = "network-";
 /// The tail every network's architect pane carries. One colon, per the pane grammar: the key is read as
 /// `pane_id.split(':')[0]`, so a per-network id takes a HYPHEN in the key and never a second colon.
 pub const NETWORK_ARCHITECT_TAIL: &str = ":architect";
+/// The tail every network's STEWARD pane carries (`a-steward-can-actually-be-started`).
+///
+/// A network holds up to two root sessions and they are different jobs: the ARCHITECT plans what the
+/// network will build next, the STEWARD operates what it has already built. Both may run at once, so
+/// this is a second tail rather than a mode on the first.
+pub const NETWORK_STEWARD_TAIL: &str = ":steward";
 
 /// A session the WRITE half may name, resolved — and OWNED, because not every one is a compile-time
 /// registry row any more.
@@ -191,8 +197,25 @@ pub struct ResolvedSession {
 /// The slug is validated rather than accepted: it becomes a pane key and a directory name, so a
 /// separator or a space would reach somewhere it should not.
 pub fn network_architect_slug(id: &str) -> Option<&str> {
+    network_slug_with_tail(id, NETWORK_ARCHITECT_TAIL)
+}
+
+/// The network slug in `network-<slug>:steward`, or `None` when `id` is not one.
+///
+/// The steward's half of the same grammar — see [`network_architect_slug`] for why this is a grammar
+/// and not a lookup. Sharing [`network_slug_with_tail`] rather than copying the parse is deliberate:
+/// the VALIDATION is the safety property (a slug becomes a pane key and a directory name), and two
+/// copies of a validation is how one of them ends up weaker than the other.
+pub fn network_steward_slug(id: &str) -> Option<&str> {
+    network_slug_with_tail(id, NETWORK_STEWARD_TAIL)
+}
+
+/// The shared parse behind both network-session grammars.
+fn network_slug_with_tail<'a>(id: &'a str, tail: &str) -> Option<&'a str> {
     let rest = id.strip_prefix(NETWORK_PREFIX)?;
-    let slug = rest.strip_suffix(NETWORK_ARCHITECT_TAIL)?;
+    let slug = rest.strip_suffix(tail)?;
+    // VALIDATED, not accepted: this becomes a pane key and a directory name, so a separator or a space
+    // would reach somewhere it should not.
     if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
         return None;
     }
@@ -268,6 +291,21 @@ pub fn resolve(id: &str) -> Result<ResolvedSession, String> {
             // STOPPABLE, unlike the Teams Studio architect. That one holds the orchestration
             // conversation this verb is called from; a network's architect is an ordinary session the
             // user created, and a network deleted while its architect runs must not strand it.
+            stoppable: true,
+        });
+    }
+    if let Some(slug) = network_steward_slug(id) {
+        // id == pane_id, exactly as the architect above: the network's store id IS the pane key, so
+        // there is no second short name to keep in step.
+        return Ok(ResolvedSession {
+            id: id.to_string(),
+            pane_id: id.to_string(),
+            summary: format!(
+                "the steward for the '{slug}' network — it USES what the network has already built, \
+                 read-only unless you say otherwise"
+            ),
+            // Stoppable for the architect's reason: a network deleted while its steward runs must not
+            // strand the session.
             stoppable: true,
         });
     }
@@ -416,7 +454,9 @@ pub fn discovered(pane_id: &str) -> Option<(String, String)> {
     // there is no short name to keep in step. Unlike a debug session it IS nameable by the write half,
     // and `list` derives `managed` by asking `resolve` rather than asserting it here, so the two halves
     // cannot disagree about which rows those are.
-    if network_architect_slug(pane_id).is_some() {
+    // …and its STEWARD alongside it, for the same reason. Both, or `list` would show one of a
+    // network's two root sessions and silently omit the other.
+    if network_architect_slug(pane_id).is_some() || network_steward_slug(pane_id).is_some() {
         let (id, summary) = (
             pane_id.to_string(),
             resolve(pane_id).ok()?.summary,
@@ -1128,5 +1168,57 @@ pub mod deliver {
             // Not mangled: the request is prose the receiving agent has to read.
             assert_eq!(submission("use `bsc ui set` — and check --coverage"), "use `bsc ui set` — and check --coverage");
         }
+    }
+}
+
+#[cfg(test)]
+mod steward_grammar_tests {
+    use super::*;
+
+    #[test]
+    fn a_network_steward_resolves_from_its_pane_id_alone() {
+        // The gap this closes: the role, its persona and its floor all shipped, and NOTHING could name
+        // a steward — so none could be started, listed or stopped.
+        let r = resolve("network-finance:steward").expect("a steward resolves");
+        assert_eq!(r.pane_id, "network-finance:steward");
+        assert_eq!(r.id, r.pane_id, "id IS the pane id — no second name to keep in step");
+        assert!(r.summary.contains("finance"), "the summary names the network: {}", r.summary);
+        assert!(r.stoppable, "a network deleted while its steward runs must not strand it");
+    }
+
+    #[test]
+    fn a_network_may_hold_both_an_architect_and_a_steward() {
+        // They are different jobs — one plans what comes next, one operates what exists — so the tails
+        // are siblings rather than modes of one session.
+        let a = resolve("network-finance:architect").expect("architect");
+        let s = resolve("network-finance:steward").expect("steward");
+        assert_ne!(a.pane_id, s.pane_id);
+        assert_ne!(a.summary, s.summary);
+    }
+
+    #[test]
+    fn the_slug_is_validated_because_it_becomes_a_pane_key() {
+        // Same rule the architect's grammar enforces: this reaches a pane key AND a directory name.
+        assert!(network_steward_slug("network-:steward").is_none(), "empty slug");
+        assert!(network_steward_slug("network-a/b:steward").is_none(), "a separator");
+        assert!(network_steward_slug("network-a b:steward").is_none(), "a space");
+        assert!(network_steward_slug("network-Finance:steward").is_none(), "uppercase");
+        assert_eq!(network_steward_slug("network-a-b2:steward"), Some("a-b2"));
+    }
+
+    #[test]
+    fn the_two_grammars_do_not_answer_for_each_other() {
+        assert!(network_steward_slug("network-finance:architect").is_none());
+        assert!(network_architect_slug("network-finance:steward").is_none());
+    }
+
+    #[test]
+    fn a_steward_is_listable_so_it_cannot_run_unnamed() {
+        // `discovered` is what `bsc session list` reports a live pane through. Without the steward arm
+        // a running steward would appear as an unmanaged mystery row, which is the exact complaint
+        // `discovered`'s own doc says the summary exists to prevent.
+        let (id, summary) = discovered("network-kitchen:steward").expect("a live steward is listable");
+        assert_eq!(id, "network-kitchen:steward");
+        assert!(summary.contains("steward"), "got: {summary}");
     }
 }
