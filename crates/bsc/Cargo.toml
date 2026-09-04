@@ -101,7 +101,7 @@ research = { path = "../research" }
 channel = { path = "../channel" }
 # `bsc cve` + `bsc mcp cve` — the OSV.dev vulnerability data layer (#3797, supply-chain #2433): scan a
 # lockfile / check a package / advisory detail, the data layer the install-time `bsc-supply` hook builds on.
-cve = { path = "../cve" }
+bsc-security = { path = "../bsc-security" }
 # `bsc news` — the LOW-TRUST news layer. Deliberately separate from `research`: that crate holds
 # citable sources, this one holds claims, and no verb converts between them.
 bsc-news = { path = "../bsc-news" }

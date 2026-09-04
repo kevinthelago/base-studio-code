@@ -12,6 +12,9 @@
 //! cache-first query logic; [`cli`] + [`mcp`] are the two session-facing surfaces over it.
 
 pub mod cache;
+pub mod finding;
+pub mod secrets;
+pub mod security_cli;
 pub mod cli;
 pub mod engine;
 pub mod install;
@@ -21,4 +24,5 @@ pub mod osv;
 pub mod types;
 
 pub use engine::Engine;
+pub use finding::{Finding, Kind, Locator};
 pub use types::{Advisory, Ecosystem, Package, PackageReport, ScanReport, Severity};

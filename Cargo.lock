@@ -762,6 +762,7 @@ dependencies = [
  "bsc-runtime",
  "bsc-sandbox",
  "bsc-secret",
+ "bsc-security",
  "bsc-self",
  "bsc-session",
  "bsc-shot",
@@ -773,7 +774,6 @@ dependencies = [
  "bsc-work",
  "channel",
  "compliance",
- "cve",
  "errordb",
  "logs",
  "mcp-rpc",
@@ -1287,6 +1287,21 @@ dependencies = [
  "keyring",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-security"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "mcp-rpc",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -2011,20 +2026,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "cve"
-version = "0.1.0"
-dependencies = [
- "bsc-cli-util",
- "bsc-sqlite-util",
- "bsc-util",
- "mcp-rpc",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
 ]
 
 [[package]]

@@ -144,7 +144,8 @@ const COMMANDS: &[Surface] = &[
     active("deploy", "bsc-deploy", "ship a binary to a device and take it back: status · push · rollback (push-only; LAB has no egress)", Some("the device roster — deploy/devices.json")),
     active("capability", "bsc-capability", "the USE layer: what a network can DO right now, and how fresh each answer is", Some("derived — reads `bsc project network` + `bsc deploy`")),
     active("data", "bsc-data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
-    active("cve", "cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
+    active("security", "bsc-security", "the security surface: scan a repo for vulnerable dependencies AND leaked credentials (tree + git history), as one ranked finding list", Some("the OSV.dev advisory cache")),
+    deprecated("cve", "bsc-security", "→ `bsc security deps`. The vulnerability half of the security surface; kept because its exit-code contract gates CI and the install hook", Some("the OSV.dev advisory cache")),
     active("news", "bsc-news", "low-trust news layer: poll outlets · brief an event (corroboration · framing · agency deletion). NOT `research` — an article is a claim, a paper is a source", Some("the news store — every fetched article version, $BSC_NEWS_DB")),
     active("surface", "bsc", "THIS catalog: every bsc command surface as data (list · --json) — one source for help, the node set and drift checks", Some("the command-surface catalog, compiled into this binary")),
     active("mcp", "bsc", "MCP: the server store (`server`) + the bundled stdio servers (research/compliance/cve)", None),
@@ -222,7 +223,8 @@ fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::COMMANDS,
         "compliance" => compliance::cli::COMMANDS,
-        "cve" => cve::cli::COMMANDS,
+        "cve" => bsc_security::cli::COMMANDS,
+        "security" => bsc_security::security_cli::COMMANDS,
         "news" => bsc_news::cli::COMMANDS,
         // The RECORD-backed CLIs (`every-record-cli-projects-its-catalog`). Their `cli.rs` compiles from
         // the graph store rather than a file on disk, which is why they were absent here: the catalogs
@@ -770,7 +772,8 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "capability" => bsc_capability::cli::run(rest, "bsc capability"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
-        "cve" => cve::cli::run(rest, "bsc cve"),
+        "cve" => bsc_security::cli::run(rest, "bsc cve"),
+        "security" => bsc_security::security_cli::run(rest, "bsc security"),
         "news" => bsc_news::cli::run(rest, "bsc news"),
         "config" => bsc_config::cli::run(rest, "bsc config"),
         "perms" => bsc_perms::cli::run(rest, "bsc perms"),
@@ -810,7 +813,7 @@ fn run_mcp(rest: Vec<String>) -> Result<(), String> {
     match server {
         "research" => mcp_rpc::run_stdio_server(&research::mcp::Server::from_env()?),
         "compliance" => mcp_rpc::run_stdio_server(&compliance::mcp::Server::from_env()?),
-        "cve" => mcp_rpc::run_stdio_server(&cve::mcp::Server::from_env()?),
+        "cve" => mcp_rpc::run_stdio_server(&bsc_security::mcp::Server::from_env()?),
         "channel-mock" => mcp_rpc::run_stdio_server(&channel::mock::Server::from_env()?),
         "" | "help" | "-h" | "--help" => {
             print!("{}", mcp_help());
@@ -1045,7 +1048,7 @@ mod tests {
     fn every_projected_surface_is_still_reachable() {
         const PROJECTED: &[&str] = &[
             "plan", "logs", "perf", "ui", "fleet", "mem", "persona", "request", "secret", "config",
-            "work", "cad", "data", "compliance", "cve", "news",
+            "work", "cad", "data", "compliance", "cve", "news", "security",
             // the record-backed CLIs, whose catalogs were private rather than absent
             "blueprint", "debug", "files", "loop", "navigate", "network", "project", "publish",
             "runtime", "sandbox", "session", "shot", "sound", "studio", "teams", "org", "errors",
@@ -1565,12 +1568,27 @@ mod tests {
     }
 
     #[test]
-    fn cve_dispatches_and_appears_in_the_overview() {
-        // #3797: the OSV.dev vulnerability data layer is mounted + listed, and its MCP server is
-        // reachable via `bsc mcp cve`. Help paths — no cache/network required.
-        assert!(dispatch("cve", vec!["help".into()]).is_ok());
-        assert!(top_help().contains("vulnerability data"), "the cve row describes the data layer");
-        assert!(mcp_help().contains("cve"), "bsc mcp cve is listed as a bundled server");
+    fn security_dispatches_and_the_cve_alias_still_works() {
+        // #3797 widened: `cve` became the vulnerability HALF of `bsc security`, which also carries the
+        // secrets detector. The alias is kept because its exit-code contract gates CI and the install
+        // hook — so BOTH must dispatch. Help paths only; no cache or network required.
+        assert!(dispatch("security", vec!["help".into()]).is_ok());
+        assert!(dispatch("cve", vec!["help".into()]).is_ok(), "the alias must keep working");
+        let h = top_help();
+        assert!(h.contains("leaked credentials"), "the security row describes what the widening added");
+        assert!(h.contains("`bsc security deps`"), "the cve row points at its replacement");
+        assert!(mcp_help().contains("cve"), "bsc mcp cve is still listed as a bundled server");
+    }
+
+    #[test]
+    fn the_cve_row_is_marked_deprecated_like_component_was() {
+        // Same precedent as `bsc component` -> `bsc ui`: a superseded noun stays reachable and is
+        // LABELLED, so a reader is not left guessing which of two surfaces is current.
+        let row = COMMANDS.iter().find(|c| c.name == "cve").expect("a cve row");
+        assert_eq!(row.status, Status::Deprecated);
+        assert_eq!(row.krate, "bsc-security", "and it points at the crate that absorbed it");
+        let sec = COMMANDS.iter().find(|c| c.name == "security").expect("a security row");
+        assert_eq!(sec.status, Status::Active);
     }
 
     #[test]
