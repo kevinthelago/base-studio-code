@@ -5,7 +5,19 @@
 // counts); this function owns the section categorization.
 
 import { buildPlanStageState, type PlanStageState } from "@/features/planner/stages/planStages";
-import type { SectionState } from "@/features/planner/github/ghStructure";
+/**
+ * How far a plan SECTION has got. Defined here because this is its only consumer.
+ *
+ * It lived in `ghStructure`, which was retired with the rest of the planner-UI cluster
+ * (`retire-the-planner-ui-cluster-that-parses-features`) — a type-only import was the module's last
+ * reference, and an importer is not a caller.
+ *
+ * NOT to be confused with two neighbours that share the name: `plannerCore`'s
+ * `CanonicalSectionState` adds `surfaced`/`skipped`, and `confirmReconcile`'s `SectionState` is an
+ * INTERFACE, not a union. Three different things wearing one name is a trap worth stating rather
+ * than tidying blind.
+ */
+export type SectionState = "pending" | "drafted" | "confirmed";
 import type { PlanSignals } from "@/features/planner/stages/stageGate";
 
 // Single-sourced from the Discovery stage data (`src-tauri/data/stages/discovery.json`, its
