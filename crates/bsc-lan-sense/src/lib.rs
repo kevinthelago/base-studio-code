@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod attest;
+pub mod config;
 pub mod emit;
 pub mod emitloop;
 pub mod error;
