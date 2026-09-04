@@ -5,27 +5,10 @@
 //! shape, so llm_complete's consumers (`oneShotComplete`, `gradeLLM`) are unchanged
 //! across providers. This is the same provider abstraction `bsc-agent` will reuse.
 
-pub mod launch_cmd;
-pub mod ratelimit;
-mod anthropic;
-mod gemini;
-mod local;
-mod ollama;
-mod openai;
-/// What the local runtime is actually doing — the GRANT, not the request (`bsc llm status`).
-pub mod runtime;
-/// `bsc llm` — the CLI over [`runtime`], for a live session that needs to know why it is serializing.
-pub mod cli;
-mod toolparse;
-mod turn;
 
-#[cfg(test)]
-mod http_it;
 
 pub use anthropic::AnthropicProvider;
 pub use gemini::GeminiProvider;
-pub mod routing;
-pub mod session_env;
 pub use local::{LocalProvider, DEFAULT_LOCAL_BASE_URL};
 pub use ollama::{
     detect_ollama_profile, list_models, model_is_installed, model_not_installed_error, OllamaProfile,
@@ -552,3 +535,15 @@ mod tests {
         assert_eq!(usage_u64(&u, "missing"), 0); // absent -> 0
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/launch_cmd.rs, src/ratelimit.rs, src/anthropic.rs, src/gemini.rs, src/local.rs, src/ollama.rs, src/openai.rs, src/runtime.rs, src/cli.rs, src/toolparse.rs, src/turn.rs, src/http_it.rs, src/routing.rs, src/session_env.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get llm--<module>.rs
+//     bsc graph impl set --id llm--<module>.rs --code-file <f>
+//     bsc graph promote --id llm--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
