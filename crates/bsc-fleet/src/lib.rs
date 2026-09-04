@@ -23,24 +23,6 @@
 
 use serde::{Deserialize, Serialize};
 
-pub mod cli;
-/// Who the fleet IS — plan.db's membership, kept separate from the app's liveness (see the module docs).
-pub mod membership;
-/// The dependency gate (#the-director-can-see-which-streams-are-held) — which streams may start, which
-/// are waiting on an upstream, and which sit in a cycle. Shares one CONTRACT FIXTURE with the app's
-/// `streamGate.ts`, so the reporter and the launcher cannot answer differently.
-mod glob_parity;
-pub mod fault_triage;
-pub mod worker_auto_end;
-pub mod ledger;
-pub mod warden_sweep;
-pub mod worker_end;
-pub mod worktree_reconcile;
-pub mod warden;
-pub mod gate;
-/// The claims a fleet makes about itself that do not hold (`bsc fleet doctor`) — the divergence
-/// detector for this domain, alongside `bsc graph doctor` and `bsc ui parity`. App-free.
-pub mod doctor;
 
 /// This verb's routing key in the shared channel.
 pub const KIND: &str = "fleet";
@@ -438,3 +420,15 @@ mod tests {
         assert_ne!(KIND, WAKE_KIND);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/membership.rs, src/glob_parity.rs, src/fault_triage.rs, src/worker_auto_end.rs, src/ledger.rs, src/warden_sweep.rs, src/worker_end.rs, src/worktree_reconcile.rs, src/warden.rs, src/gate.rs, src/doctor.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-fleet--<module>.rs
+//     bsc graph impl set --id bsc-fleet--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-fleet--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
