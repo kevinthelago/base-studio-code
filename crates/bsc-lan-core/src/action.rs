@@ -360,7 +360,6 @@ pub struct FirewallRuleSpec {
 /// ```
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Action {
-    ProbeNewAction,
     // ---- Tier 0: flow-and-session-telemetry-tools -------------------
     Flows {
         target: Option<Target>,
@@ -614,7 +613,6 @@ impl Action {
             | Action::RebootHost { .. }
             | Action::RestoreConfig { .. }
             | Action::PurgeDevice { .. } => Tier::Two,
-            _ => Tier::Zero,
         }
     }
 
@@ -715,7 +713,6 @@ impl Action {
             Action::RebootHost { host } => Some(Target::Host(host.clone())),
             Action::RestoreConfig { .. } => None,
             Action::PurgeDevice { target } => Some(target.clone()),
-            _ => None,
         }
     }
 }
@@ -784,7 +781,6 @@ impl Action {
             Action::RebootHost { .. } => "reboot_host",
             Action::RestoreConfig { .. } => "restore_config",
             Action::PurgeDevice { .. } => "purge_device",
-            _ => "probe",
         }
     }
 
@@ -898,7 +894,6 @@ impl Action {
             Action::RebootHost { .. } => InverseKind::Irreversible,
             Action::RestoreConfig { .. } => InverseKind::RestoresPriorState,
             Action::PurgeDevice { .. } => InverseKind::Irreversible,
-            _ => InverseKind::RestoresPriorState,
         }
     }
 }

@@ -27,3 +27,12 @@ thiserror = "2"
 # that would dissolve the exhaustiveness guarantee without breaking a single
 # test, so tests/dependency_absence.rs asserts the declaration is still here.
 wildcard_enum_match_arm = "deny"
+# ...and its blind spot, MEASURED 2026-09-04 during the fold. `wildcard_enum_match_arm`
+# only fires when the wildcard covers TWO OR MORE remaining variants. Adding exactly one
+# catalog action and silencing the resulting E0004 with `_ =>` -- by far the likeliest way
+# this guarantee actually gets defeated -- passed clippy completely with only the lint
+# above. `match_wildcard_for_single_variants` is the one that catches that case ("wildcard
+# matches only a single variant and will also match any future added variants"); it lives
+# in the pedantic group, so it is off unless named here. The pair is the guarantee; either
+# alone has a hole. tests/dependency_absence.rs asserts BOTH are still declared.
+match_wildcard_for_single_variants = "deny"
