@@ -316,6 +316,11 @@ base-studio-code/
 │   ├── logs/                #   unified log/perf/cost engine + bsc logs CLI (#1607)
 │   ├── compliance/          #   compliance-standards store + bsc compliance CLI & bsc mcp compliance server
 │   ├── research/            #   literature research + bsc mcp research server
+│   ├── bsc-news/            #   LOW-TRUST news layer (bsc news): poll a fixed outlet roster over RSS/news-sitemaps,
+│   │                        #   retain EVERY fetched version (so a stealth edit stays observable), compute the framing
+│   │                        #   signals. Deliberately NOT `research`: an article is a CLAIM to be corroborated, a paper is
+│   │                        #   a citable source, and no verb converts one into the other. Every number is computed and
+│   │                        #   carries the span that produced it — no model runs in this crate.
 │   ├── llm/                 #   model-agnostic LlmProvider abstraction (pkg bsc-llm)
 │   ├── bsc-agent/           #   model-agnostic agent runtime
 │   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI

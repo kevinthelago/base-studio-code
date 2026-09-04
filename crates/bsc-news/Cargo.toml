@@ -1,0 +1,24 @@
+[package]
+name = "bsc-news"
+version = "0.1.0"
+edition = "2021"
+description = "Low-trust news ingestion for base-studio-code — poll a fixed roster of outlets over RSS/news-sitemaps, retain every fetched version, and derive the framing signals (corroboration with wire ancestry, term-choice matrix, agency deletion) mechanically. Deliberately NOT `research`: an Article is a claim to be corroborated, a Paper is a citable source, and no verb converts one into the other."
+
+[lib]
+name = "bsc_news"
+
+[dependencies]
+# Shared leaf utilities: the one epoch clock (`now_secs`).
+bsc-util = { path = "../bsc-util" }
+# Shared SQLite plumbing: the `:memory:`-aware open + default-store-path resolver.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# The shared CLI scaffold: help dispatch + the unknown-command renderer.
+bsc-cli-util = { path = "../bsc-cli-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Blocking HTTP for the feed clients — the poller is a synchronous loop, no tokio.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+# Read-only XML DOM for RSS 2.0 / Atom / Google News sitemaps — pure Rust, no codegen.
+roxmltree = "0.21"
+# The article store. `bundled` matches plandb/research.
+rusqlite = { version = "0.40", features = ["bundled"] }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom</title>
+  <entry>
+    <title>Forces detained three men</title>
+    <link rel="self" href="https://example.org/feed"/>
+    <link rel="alternate" href="https://example.org/atom-story"/>
+    <summary>Three men were detained by soldiers near the border.</summary>
+    <published>2026-09-04T16:05:07Z</published>
+  </entry>
+</feed>
