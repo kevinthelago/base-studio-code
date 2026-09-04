@@ -1,0 +1,22 @@
+[package]
+name = "bsc-lan"
+version = "0.1.0"
+edition = "2021"
+description = "`bsc lan` — the command surface for the emit-only LAN sensor: what this host exposes, the keys the stream needs, and a socket-free dry run over real Suricata output."
+
+[lib]
+name = "bsc_lan"
+
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-lan-sense = { path = "../bsc-lan-sense" }
+bsc-lan-stream = { path = "../bsc-lan-stream" }
+serde_json = "1"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+# Key material must come from the OS CSPRNG. Nothing else is acceptable here and
+# a test pins that two runs differ.
+getrandom = "0.4"
+
+[lints.clippy]
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"

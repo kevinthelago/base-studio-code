@@ -743,6 +743,7 @@ dependencies = [
  "bsc-fleet",
  "bsc-github",
  "bsc-graph",
+ "bsc-lan",
  "bsc-llm",
  "bsc-loop",
  "bsc-mcp",
@@ -1032,6 +1033,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-lan"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-lan-sense",
+ "bsc-lan-stream",
+ "ed25519-dalek",
+ "getrandom 0.4.2",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-lan-core"
 version = "0.1.0"
 dependencies = [
@@ -1045,6 +1058,7 @@ name = "bsc-lan-sense"
 version = "0.1.0"
 dependencies = [
  "bsc-lan-stream",
+ "bsc-util",
  "ed25519-dalek",
  "serde",
  "serde_json",
