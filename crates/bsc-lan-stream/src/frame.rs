@@ -78,6 +78,45 @@ pub enum Event {
     /// emit-only device this is the ONLY way its health is ever observable,
     /// since nothing can poll it.
     Health { uptime_s: u64, soc_temp_c: f32, capture_drops: u64 },
+    /// A deauthentication or disassociation flood.
+    ///
+    /// Carries everything a reaction needs, because the sensor is emit-only
+    /// and there is NO back channel on which a subscriber could ask a
+    /// follow-up question. Which client, which claimed BSSID, the rate, and
+    /// the window it was measured over.
+    ///
+    /// Every string here is bounded at construction: a MAC is 17 characters,
+    /// and `reasons` is capped. That is not tidiness — the addresses come from
+    /// frames the ATTACKER transmits, so an unbounded field would let a crafted
+    /// frame produce an event too large to emit, silencing the sensor for
+    /// exactly the attack it is reporting. The same shape as the EVE bounds.
+    RfDeauthFlood {
+        /// `true` for a flood, `false` for merely elevated — a subscriber may
+        /// reasonably act on one and only log the other.
+        flood: bool,
+        frames: u32,
+        broadcast_frames: u32,
+        window_ms: u64,
+        /// Frames per second scaled by 100, so the wire carries no float.
+        rate_centi_per_s: u64,
+        /// Spoofable, and named so in the field docs rather than implied.
+        claimed_bssid: String,
+        top_target: String,
+        distinct_targets: u32,
+        reasons: Vec<u16>,
+    },
+    /// What the radio heard on one channel, for a band view rendered
+    /// elsewhere. Derived from frames, so it sees WiFi activity and not
+    /// non-WiFi energy — a microwave or a jammer that radiates without
+    /// emitting valid frames is invisible here, and that needs spectral FFT.
+    RfChannelActivity {
+        freq_mhz: u32,
+        frames: u32,
+        /// Signal strength in dBm, as radiotap reports it (negative).
+        rssi_min_dbm: i16,
+        rssi_max_dbm: i16,
+        rssi_mean_dbm: i16,
+    },
     /// The sensor's reachability changed. Emitted as its own event rather than
     /// waiting for the next snapshot, because a box that just became reachable
     /// is the one thing worth interrupting for.
@@ -144,6 +183,34 @@ mod tests {
             active_alerts: vec![Event::Health { uptime_s: 91, soc_temp_c: 89.6, capture_drops: 0 }],
             posture: AttestedPosture::Sealed { loopback_listeners: 1, rows_examined: 37 },
             monotonic_us: 91_000_000,
+        });
+        assert_eq!(Frame::decode(&f.encode().unwrap()).unwrap(), f);
+    }
+
+    #[test]
+    fn an_rf_deauth_flood_round_trips_on_the_wire() {
+        let f = Frame::Delta(Event::RfDeauthFlood {
+            flood: true,
+            frames: 40,
+            broadcast_frames: 40,
+            window_ms: 10_000,
+            rate_centi_per_s: 400,
+            claimed_bssid: "aa:bb:cc:dd:ee:ff".into(),
+            top_target: "ff:ff:ff:ff:ff:ff".into(),
+            distinct_targets: 1,
+            reasons: vec![7, 1],
+        });
+        assert_eq!(Frame::decode(&f.encode().unwrap()).unwrap(), f);
+    }
+
+    #[test]
+    fn rf_channel_activity_round_trips_on_the_wire() {
+        let f = Frame::Delta(Event::RfChannelActivity {
+            freq_mhz: 2437,
+            frames: 812,
+            rssi_min_dbm: -91,
+            rssi_max_dbm: -34,
+            rssi_mean_dbm: -67,
         });
         assert_eq!(Frame::decode(&f.encode().unwrap()).unwrap(), f);
     }
