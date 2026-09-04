@@ -35,6 +35,26 @@
 /// existing fault taxonomy rather than inventing a "gate" stage for it.
 export function gateCommands(plan, base) {
   const c = [];
+  // A RECORD MUST NOT CLAIM A MODULE IT IS NOT — and this leg is UNCONDITIONAL, in both tiers, which
+  // is the whole point of it.
+  //
+  // Every other leg is scoped by what THIS branch changed. That is exactly wrong here, because the
+  // drift this catches is not caused by a changed file: `detachedwindow` was re-claimed by a designer
+  // session writing to ~/.base-studio-code/components.db, touching nothing in the repo. It stubbed
+  // `@/store`, `TerminalHost` and the `lazyWorkspaces` barrel to make the preview build (rev 10), then
+  // republished the specifier "so App and other composers can import" it (rev 12) — re-breaking what
+  // revs 3 and 7 had each already fixed. No changed-file scope would ever have selected it, and there
+  // is no record of it in the packaged seed to diff against, so a seed-only check is blind too.
+  // docs/records.md names this as the case no gate observes.
+  //
+  // `bsc ui census` is REUSED rather than reimplemented: it already classifies WHY a pair disagrees
+  // (`preview-derivative` vs `newer-truth`), already reads the runtime stores, and already honours a
+  // record's `srcDivergence` note, so an adjudicated multi-component module like `ui-charts` is not
+  // reported as drift. A hand-rolled path-matching script gets all three wrong — mine did, and called
+  // four divergences where there are two. It exits non-zero on disagreement, so it gates as-is.
+  //
+  // Affordable unconditionally: MEASURED 0.15-0.18s and ~90 MB, cheaper than deciding whether to run it.
+  c.push({ label: "records (no record claims a module it is not)", key: "graph-claim-census", stage: "test", cmd: "bsc", args: ["ui", "census"] });
   if (plan.full) {
     c.push({ label: "typecheck", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
     c.push({ label: "lint", key: "lint", stage: "lint", cmd: "npm", args: ["run", "lint"] });
