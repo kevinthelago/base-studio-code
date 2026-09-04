@@ -121,6 +121,22 @@ fn rect_from_css([x, y, w, h]: [f64; 4], component: &str) -> Result<Rect, String
     })
 }
 
+/// Resolve a request's window label to a live webview, or refuse NAMING what does exist.
+///
+/// Every capture path used to call `get_webview_window("main")` directly, which made the app's other
+/// windows — the widget tear-offs — structurally unphotographable. This is the one place that
+/// translation happens now, so the crop-scale read and the capture cannot disagree about which window
+/// they are talking about; a scale factor taken from `main` while the pixels came from a widget would
+/// crop the wrong region and report success.
+#[cfg(any(windows, target_os = "linux"))]
+fn resolve_window(app: &tauri::AppHandle, label: &str) -> Result<tauri::WebviewWindow, String> {
+    use tauri::Manager;
+    app.get_webview_window(label).ok_or_else(|| {
+        let have: Vec<String> = app.webview_windows().keys().cloned().collect();
+        bsc_shot::unknown_window_error(label, &have)
+    })
+}
+
 /// How long to wait for a capture's completion callback — `CapturePreview`'s on Windows, the WebKitGTK
 /// snapshot's on Linux. Shorter than the CLI's timeout so the caller gets our real error rather than a
 /// bare timeout.
@@ -141,9 +157,11 @@ const CAPTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5_
 /// Falls back to 1.0 on anything implausible (no window, a failed query, a ratio outside a sane
 /// range). A wrong-but-sane crop beats failing a capture mid-loop, and 1.0 is exactly today's
 /// behaviour — so the fallback can never be worse than the bug this fixes.
-fn capture_scale(app: &tauri::AppHandle, img_w: u32) -> f64 {
+fn capture_scale(app: &tauri::AppHandle, label: &str, img_w: u32) -> f64 {
     use tauri::Manager;
-    let Some(win) = app.get_webview_window("main") else { return 1.0 };
+    // The window the pixels CAME from, not `main`: a scale read off a different window would crop the
+    // wrong region of a correct capture and report success about it.
+    let Some(win) = app.get_webview_window(label) else { return 1.0 };
     let size = match win.inner_size() {
         Ok(s) => s,
         Err(_) => return 1.0,
@@ -192,7 +210,10 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
         (None, None) => None,
     };
 
-    let png = capture_webview_png(app)?;
+    // Resolved once, here, so an unknown label fails before a snapshot is attempted and the error names
+    // the windows that do exist rather than a bare miss.
+    let window = req.window.as_deref().unwrap_or(bsc_shot::DEFAULT_WINDOW);
+    let png = capture_webview_png(app, window)?;
     if !is_png(&png) {
         return Err(format!("the webview returned {} bytes that are not a PNG", png.len()));
     }
@@ -201,7 +222,7 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
             // The rect is CSS px; the capture is DEVICE px. Derive the ratio from the capture itself
             // (never from the caller) so every crop path is corrected in one place (#3467).
             let (img_w, _) = crop::png_dimensions(&png)?;
-            crop::crop_png(&png, rect, capture_scale(app, img_w))?
+            crop::crop_png(&png, rect, capture_scale(app, window, img_w))?
         }
         None => {
             let (w, h) = crop::png_dimensions(&png)?;
@@ -243,15 +264,14 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
 /// read as one that did. Their siblings (`WKWebView.takeSnapshot`, `webkit_web_view_get_snapshot`) are
 /// the same shape when needed.
 #[cfg(windows)]
-fn capture_webview_png(app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
-    use tauri::Manager;
+fn capture_webview_png(app: &tauri::AppHandle, label: &str) -> Result<Vec<u8>, String> {
     use webview2_com::CapturePreviewCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG;
     use windows::Win32::Foundation::HGLOBAL;
     use windows::Win32::System::Com::IStream;
     use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
 
-    let window = app.get_webview_window("main").ok_or("no `main` webview window — cannot capture")?;
+    let window = resolve_window(app, label)?;
 
     // The capture completes on the WEBVIEW thread; we wait here. Blocking inside `with_webview` would
     // stall the pump that delivers the completion.
@@ -348,12 +368,11 @@ fn read_stream(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>,
 /// The wait therefore happens on the CALLER's thread, which is an appchan watcher thread, never the main
 /// one.
 #[cfg(target_os = "linux")]
-fn capture_webview_png(app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
-    use tauri::Manager;
+fn capture_webview_png(app: &tauri::AppHandle, label: &str) -> Result<Vec<u8>, String> {
     use webkit2gtk::gio::Cancellable;
     use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
-    let window = app.get_webview_window("main").ok_or("no `main` webview window — cannot capture")?;
+    let window = resolve_window(app, label)?;
 
     // The snapshot completes on the WEBVIEW thread; we wait here. See the threading note above.
     let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<u8>, String>>();
@@ -419,7 +438,7 @@ fn unsupported_platform_error(os: &str) -> String {
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-fn capture_webview_png(_app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
+fn capture_webview_png(_app: &tauri::AppHandle, _label: &str) -> Result<Vec<u8>, String> {
     // Stated, not silent. A black PNG that reads as success is worse than no capture: the loop would
     // reason confidently about nothing. macOS's `WKWebView.takeSnapshot` is the equivalent when needed.
     Err(unsupported_platform_error(std::env::consts::OS))
@@ -427,6 +446,111 @@ fn capture_webview_png(_app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
 
 // Clamping lives in `crop::crop_png` (where the image's real dimensions are known) and is tested there.
 // Nothing here duplicates it: a second clamp would be a second source of truth for the same rule.
+
+#[cfg(test)]
+mod window_source_tests {
+    //! A SOURCE-ASSERTING guard, because nothing at run time can observe the absence of a hard-coded
+    //! window. The bug this replaces was silent in the worst way: the app ACCEPTED `--window` (the
+    //! field deserialized fine), ignored it, captured `main`, and reported success — so a session
+    //! could record a pixel verdict about a window it never photographed. Verified live on the
+    //! pre-fix binary, which answered a `--window bsc-widget-spectrum` request with a 1920x1048
+    //! capture of the main surface.
+
+    /// This module's own source, up to the first test module and with comments stripped.
+    ///
+    /// BOTH TRIMS ARE LOAD-BEARING and both were found by the scanner reporting itself. Without the
+    /// test cut, this file's own assertion strings contain `fn capture_webview_png` and inflate the
+    /// arm count to five; without the comment strip, the doc paragraph explaining why the hard-coded
+    /// lookup was removed is itself flagged as a hard-coded lookup. A scanner that cannot tell its
+    /// subject from its own text is not evidence about the subject.
+    ///
+    /// Read from disk rather than `include_str!` so a moved file fails loudly instead of silently
+    /// scanning a stale embedded copy.
+    fn source() -> String {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shot/mod.rs");
+        let text = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()));
+        let code = match text.find("#[cfg(test)]") {
+            Some(i) => &text[..i],
+            None => panic!("no test module found — the trim is silently scanning the whole file"),
+        };
+        code.lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn no_capture_path_resolves_a_hard_coded_window() {
+        let src = source();
+        // A scanner that silently stops matching reports zero offenders, which reads as a pass — so
+        // assert the population it is scanning is the one expected first.
+        assert!(
+            src.contains("fn capture_webview_png"),
+            "the scanner is looking at the wrong file — no capture function found"
+        );
+        let offenders: Vec<(usize, &str)> = src
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.contains("get_webview_window(\"main\")"))
+            .map(|(i, l)| (i + 1, l.trim()))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "a window is hard-coded, so `--window` would be accepted and ignored:\n{}",
+            offenders
+                .iter()
+                .map(|(n, l)| format!("  line {n}: {l}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    #[test]
+    fn the_default_window_is_named_once_and_never_written_as_a_literal() {
+        // THE BUG SHAPE, and the reason the two tests below are not enough: the
+        // hard-coded lookup can be removed while `capture` still pins the label
+        // to "main" one line up — the request's `window` deserializes fine, is
+        // ignored, and a widget capture reports success about the main surface.
+        // A bite proved the earlier guards passed against exactly that edit.
+        //
+        // So: no `"main"` literal anywhere in this module's real code. The
+        // default has ONE home, `bsc_shot::DEFAULT_WINDOW`, and a call site that
+        // wants it says so by name.
+        let src = source();
+        let offenders: Vec<(usize, &str)> = src
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.contains('"') && l.contains("main"))
+            .filter(|(_, l)| l.split('"').skip(1).step_by(2).any(|lit| lit == "main"))
+            .map(|(i, l)| (i + 1, l.trim()))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "the default window is written as a literal instead of DEFAULT_WINDOW:\n{}",
+            offenders.iter().map(|(n, l)| format!("  line {n}: {l}")).collect::<Vec<_>>().join("\n")
+        );
+        // And the request's field is what decides, rather than being read and dropped.
+        assert!(
+            src.contains("req.window.as_deref().unwrap_or(bsc_shot::DEFAULT_WINDOW)"),
+            "`capture` no longer resolves the window from the REQUEST"
+        );
+    }
+
+    #[test]
+    fn every_capture_arm_takes_the_label_so_none_can_quietly_keep_its_own_default() {
+        let src = source();
+        let arms = src.matches("fn capture_webview_png").count();
+        // Three: windows, linux, and the no-capture arm. If one is added or removed this count is
+        // what says so, rather than the new arm silently going unchecked.
+        assert_eq!(arms, 3, "the number of capture arms changed — recheck each takes a label");
+        assert_eq!(
+            src.matches("fn capture_webview_png(app: &tauri::AppHandle, label: &str)").count()
+                + src.matches("fn capture_webview_png(_app: &tauri::AppHandle, _label: &str)").count(),
+            arms,
+            "a capture arm does not take a window label"
+        );
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -442,7 +566,7 @@ mod tests {
     #[test]
     fn no_request_can_steer_a_capture_outside_the_shots_dir() {
         let shots = std::path::Path::new(if cfg!(windows) { "C:\\ws\\shots" } else { "/ws/shots" });
-        let req = |out: Option<&str>| ShotRequest { rect: None, out: out.map(str::to_string), target: None };
+        let req = |out: Option<&str>| ShotRequest { out: out.map(str::to_string), ..Default::default() };
 
         // The two shapes that actually leaked: a bare relative file, and a relative SUBPATH.
         assert_eq!(destination(&req(Some("flat.png")), shots, "abc"), shots.join("flat.png"));

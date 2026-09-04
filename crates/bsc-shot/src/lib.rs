@@ -34,7 +34,12 @@ pub struct Rect {
 }
 
 /// What `bsc shot take` / `bsc shot preview` ask for.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Default` is derived so a call site names only the fields it means: this
+/// struct grows, and a literal that must spell out every field turns each new
+/// field into a mechanical edit across every caller — which is how a field ends
+/// up copied wrongly rather than defaulted correctly.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShotRequest {
     /// Crop region; `None` ⇒ the whole webview (or the `target`'s resolved rect).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,6 +52,40 @@ pub struct ShotRequest {
     /// not know the pixel coordinates. Ignored when `rect` is set (an explicit rect wins). #3308.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// WHICH webview window to capture. `None` ⇒ `main`.
+    ///
+    /// The app is not one window. A widget is a separate webview with its own label
+    /// (`bsc-widget-<id>`), and while this field did not exist every capture path resolved
+    /// `get_webview_window("main")` — so the surfaces most needing to be looked at, the tear-offs, were
+    /// the ones this tool structurally could not reach. MEASURED: a spectrum-analyzer widget shipped
+    /// with a fully green gate and rendered nothing, and no capture could have shown that.
+    ///
+    /// `None` rather than a default of `"main"` in the struct, so an older app that does not know the
+    /// field behaves exactly as it did rather than failing to deserialize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+}
+
+/// The window a request names, or `main`.
+pub const DEFAULT_WINDOW: &str = "main";
+
+/// The error for a label that names no window, LISTING the labels that do.
+///
+/// Discovery through the REFUSAL: a caller that guessed wrong is told what exists, so finding a window
+/// needs no second request kind and no round trip. Pure over the label set so it is testable on every
+/// platform, including the ones with no capture arm at all.
+pub fn unknown_window_error(label: &str, available: &[String]) -> String {
+    if available.is_empty() {
+        return format!(
+            "no webview window named {label:?}, and the app reports no windows at all — it may still be starting"
+        );
+    }
+    let mut names: Vec<&str> = available.iter().map(String::as_str).collect();
+    names.sort_unstable();
+    format!(
+        "no webview window named {label:?} — the app has: {}",
+        names.join(", ")
+    )
 }
 
 /// What the app answers with on success.
@@ -582,7 +621,11 @@ mod tests {
     #[test]
     fn the_request_round_trips_through_the_shared_envelope() {
         let dir = tempfile::tempdir().unwrap();
-        let req = ShotRequest { rect: Some(Rect { x: 1, y: 2, w: 3, h: 4 }), out: Some("C:/x.png".into()), target: None };
+        let req = ShotRequest {
+            rect: Some(Rect { x: 1, y: 2, w: 3, h: 4 }),
+            out: Some("C:/x.png".into()),
+            ..Default::default()
+        };
         bsc_appchan::write_request(dir.path(), "a", KIND, 1, &req).unwrap();
 
         let env = bsc_appchan::pending(dir.path()).unwrap().pop().unwrap();
@@ -636,3 +679,56 @@ mod tests {
 // This header stays a file because include! refuses crate-level //! docs and #![…] inner
 // attributes (E0753 / "an inner attribute is not permitted in this context").
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    #[test]
+    fn an_unknown_label_names_what_does_exist() {
+        // Discovery through the refusal. Without this a caller who guessed the
+        // label wrong learns only that they guessed wrong, and there is no
+        // other verb that would tell them — which is how a widget window stays
+        // unreachable in practice even after it is reachable in principle.
+        let have = vec!["main".to_string(), "bsc-widget-spectrum".to_string()];
+        let e = unknown_window_error("widget", &have);
+        assert!(e.contains("\"widget\""), "the error does not quote what was asked for: {e}");
+        assert!(e.contains("bsc-widget-spectrum"), "the error hides the real label: {e}");
+        assert!(e.contains("main"), "{e}");
+    }
+
+    #[test]
+    fn no_windows_at_all_reads_as_a_starting_app_not_a_bad_label() {
+        // These are different problems and send a reader in different
+        // directions: one is a typo, the other is "wait a second and retry".
+        let e = unknown_window_error("main", &[]);
+        assert!(e.contains("still be starting"), "{e}");
+    }
+
+    #[test]
+    fn the_label_list_is_ordered_so_the_message_does_not_shuffle() {
+        // A message that reorders between runs reads as a changing situation.
+        let a = unknown_window_error("x", &["b".into(), "a".into()]);
+        let b = unknown_window_error("x", &["a".into(), "b".into()]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn a_request_without_a_window_still_parses_and_means_main() {
+        // The field is Option, not a defaulted String, so a request written by
+        // an OLDER cli against a newer app — and the reverse — both behave as
+        // they did before it existed.
+        let r: ShotRequest = serde_json::from_str("{}").expect("an empty request is still a request");
+        assert_eq!(r.window, None);
+        assert_eq!(r.window.as_deref().unwrap_or(DEFAULT_WINDOW), "main");
+    }
+
+    #[test]
+    fn a_window_survives_the_round_trip_and_is_omitted_when_absent() {
+        let mut r = ShotRequest::default();
+        assert!(!serde_json::to_string(&r).unwrap().contains("window"), "an absent window is written out");
+        r.window = Some("bsc-widget-spectrum".into());
+        let json = serde_json::to_string(&r).unwrap();
+        let back: ShotRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.window.as_deref(), Some("bsc-widget-spectrum"));
+    }
+}
