@@ -32,15 +32,11 @@
 //! There is no injection path, no deauthentication path, and no active probing. The surface is
 //! read-only with respect to the radio: it observes a medium it never contributes to. This is not
 //! merely a convention — [`tests::the_crate_has_no_transmit_path`] asserts it against the source, so
-//! a send primitive cannot be added quietly.
+//! a send primitive cannot be added quietly. This crate's modules are RECORDS in
+//! `graph/algorithms.json`, so that guard reads what rustc reads — the materialized
+//! `$OUT_DIR/crate.rs` plus the files that survive under `src/` — and names an offender by its
+//! record id. Adding a module to the graph therefore does not escape it.
 
-pub mod cli;
-pub mod deauth;
-pub mod detect;
-pub mod device;
-pub mod probe;
-pub mod spectral;
-pub mod survey;
 
 #[cfg(test)]
 mod tests {
@@ -58,18 +54,56 @@ mod tests {
         concat!("\"--in", "ject\""),
     ];
 
-    /// Every `.rs` file in this crate, as `(name, text)`.
+    /// Every unit of source the compiler actually reads for this crate, as `(name, text)`.
+    ///
+    /// TWO PLACES, because this crate compiles FROM THE GRAPH. Its modules are RECORDS in
+    /// `graph/algorithms.json`, materialized by `crates/graph-materialize/build.rs` into
+    /// `$OUT_DIR/crate.rs`; only `lib.rs` (the crate root) and `main.rs` (the binary) survive as
+    /// files under `src/`. Reading the materialized output is strictly BETTER evidence than the
+    /// `src/` walk this replaced: it is what rustc compiles rather than a parallel copy, and an
+    /// offender is named by its RECORD id — the thing an author can actually go and edit.
+    ///
+    /// `src/` is still WALKED rather than listed, so a module added back as a real file is scanned
+    /// too. `option_env!` rather than `env!` so the guard compiles both before and after the crate
+    /// gains its build script; the caller's population floor is what catches an `$OUT_DIR` that has
+    /// silently stopped being produced, and is the reason this may return an incomplete list
+    /// without the silence reading as a pass.
     fn sources() -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        std::fs::read_dir(&dir)
-            .expect("the crate's own src/ must be readable")
-            .flatten()
-            .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
-            .map(|e| {
+        for e in std::fs::read_dir(&dir).expect("the crate's own src/ must be readable").flatten() {
+            if e.path().extension().is_some_and(|x| x == "rs") {
                 let name = e.file_name().to_string_lossy().into_owned();
-                (name, std::fs::read_to_string(e.path()).expect("a source file must be readable"))
-            })
-            .collect()
+                let text = std::fs::read_to_string(e.path()).expect("a source file must be readable");
+                out.push((name, text));
+            }
+        }
+
+        if let Some(out_dir) = option_env!("OUT_DIR") {
+            let materialized = std::path::Path::new(out_dir).join("crate.rs");
+            if let Ok(text) = std::fs::read_to_string(&materialized) {
+                out.extend(split_records(&text));
+            }
+        }
+        out
+    }
+
+    /// Split the materialized crate into per-record sections on the marker `graph-materialize`
+    /// emits at the head of every module, so an offender is reported as its record id rather than
+    /// as a filename that no longer exists.
+    fn split_records(text: &str) -> Vec<(String, String)> {
+        let mut sections: Vec<(String, String)> = Vec::new();
+        for line in text.lines() {
+            let head = line.trim_start().strip_prefix("// record `").and_then(|r| r.split('`').next());
+            if let Some(id) = head {
+                sections.push((id.to_string(), String::new()));
+            } else if let Some(last) = sections.last_mut() {
+                last.1.push_str(line);
+                last.1.push('\n');
+            }
+        }
+        sections
     }
 
     /// The scan itself, as a PURE function over `(name, text)` pairs — so the guard can be run
@@ -98,12 +132,18 @@ mod tests {
     #[test]
     fn the_crate_has_no_transmit_path() {
         let sources = sources();
-        // Assert the POPULATION first. A scanner that stopped finding files would report zero
-        // offenders, which reads exactly like a pass.
+        // Assert the POPULATION first. A scanner that stopped finding source would report zero
+        // offenders, which reads exactly like a pass. The floor is unchanged from when the modules
+        // were files: the units are now `src/lib.rs` + `src/main.rs` + one section per RECORD, so
+        // the count is the same 9 and a materialization that stopped producing `$OUT_DIR/crate.rs`
+        // drops it to 2 and fails here rather than passing on an empty scan.
         assert!(
             sources.len() >= 5,
-            "expected the crate's 5+ modules; found {} — the scanner is broken, not the crate clean",
-            sources.len()
+            "expected the crate's 5+ modules; found {} ({:?}) — the scanner is broken, not the crate \
+             clean. The modules are RECORDS in graph/algorithms.json, materialized into \
+             $OUT_DIR/crate.rs by crates/graph-materialize/build.rs",
+            sources.len(),
+            sources.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
         );
         let offences = scan_for_transmit(&sources);
         assert!(
@@ -134,3 +174,15 @@ mod tests {
         assert!(scan_for_transmit(&clean).is_empty());
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/deauth.rs, src/detect.rs, src/device.rs, src/probe.rs, src/spectral.rs, src/survey.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-rf--<module>.rs
+//     bsc graph impl set --id bsc-rf--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-rf--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

@@ -6,9 +6,6 @@
 
 use std::process::ExitCode;
 
-mod defer;
-mod hook;
-mod superseded;
 
 /// How a catalog row should be PRESENTED. Carried as data so a consumer (the `bsc help` overview, a
 /// Glance node, a future dispatch table) can render or hide a row without keeping its own list of
@@ -696,7 +693,6 @@ fn surface_help() -> String {
     )
 }
 
-mod serve;
 
 pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
@@ -853,6 +849,68 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
 
+    /// EVERYTHING THE COMPILER READS FOR THIS CRATE, as one text.
+    ///
+    /// This crate compiles FROM THE GRAPH: `defer`, `hook`, `serve` and `superseded` are RECORDS in
+    /// `graph/algorithms.json` that `crates/graph-materialize/build.rs` writes into
+    /// `$OUT_DIR/crate.rs`. `main.rs` stays a real file — `include!` refuses crate-level `//!` docs,
+    /// and it is where `dispatch`, `surface_cli` and `surface_help` live — so the three source scans
+    /// below still find what they are looking for. They read BOTH anyway, because the alternative is
+    /// a scan whose coverage silently depends on which modules happen not to be records yet: move one
+    /// scanned `fn` into the graph and an `include_str!("main.rs")` scan stops seeing it, and the only
+    /// signal would be a `.expect()` on a `find` that no longer matches.
+    ///
+    /// `option_env!` rather than `env!` so this compiles both before and after the crate gains its
+    /// build script. `record_count` below is what stops that Option reading as a pass.
+    fn crate_source() -> String {
+        let mut text = String::from(include_str!("main.rs"));
+        if let Some(out_dir) = option_env!("OUT_DIR") {
+            let materialized = std::path::Path::new(out_dir).join("crate.rs");
+            if let Ok(records) = std::fs::read_to_string(&materialized) {
+                text.push('\n');
+                text.push_str(&records);
+            }
+        }
+        text
+    }
+
+    /// How many RECORD sections `crate_source` picked up, counted on the marker `graph-materialize`
+    /// emits at the head of every module it materializes.
+    fn record_count(src: &str) -> usize {
+        src.lines().filter(|l| l.trim_start().starts_with("// record `")).count()
+    }
+
+    /// THE SOURCE SCAN READS THE WHOLE CRATE, not whichever half is still files.
+    ///
+    /// `bsc` has exactly one `.rs` file left under `src/`; every other module is a record. A scanner
+    /// that read only `main.rs` would report a confident answer about a crate it had mostly not read,
+    /// and this repo's signature failure is a check that passes while covering less than the reader
+    /// assumes. So the population is asserted over the two sources TOGETHER, which holds both before
+    /// the migration (modules are files, no `$OUT_DIR`) and after it (one file, N records) — and
+    /// fails loudly in the one state that must never pass silently: neither.
+    #[test]
+    fn the_source_scan_reads_the_whole_crate() {
+        let src = crate_source();
+        let module_files = std::fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"))
+            .expect("the crate's own src/ is readable")
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
+            .filter(|e| e.file_name() != "main.rs")
+            .count();
+        let records = record_count(&src);
+        assert!(
+            module_files + records >= 4,
+            "found {module_files} module file(s) and {records} materialized record(s) — the scan is \
+             reading neither, so the three source scans below prove nothing. The modules are records \
+             in graph/algorithms.json, materialized into $OUT_DIR/crate.rs"
+        );
+        // And the concatenation actually happened when there is something to concatenate.
+        assert!(
+            records == 0 || src.len() > include_str!("main.rs").len(),
+            "records were counted but the materialized text is not in the scanned source"
+        );
+    }
+
     /// `bsc surface help` MUST NAME EVERY VERB `surface_cli` DISPATCHES.
     ///
     /// This command's whole thesis is that help and dispatch cannot disagree — it exists to project
@@ -864,15 +922,16 @@ mod tests {
     /// catalog. If `surface_cli` ever grows a real `CmdDoc` catalog, delete this and project it.
     #[test]
     fn surface_help_names_every_verb_it_dispatches() {
-        const SRC: &str = include_str!("main.rs");
-        let start = SRC.find("fn surface_cli").expect("surface_cli is still named that");
-        let end = start + SRC[start..].find("\nfn ").unwrap_or(SRC.len() - start);
-        let body = &SRC[start..end];
+        let src = crate_source();
+        let src = src.as_str();
+        let start = src.find("fn surface_cli").expect("surface_cli is still named that");
+        let end = start + src[start..].find("\nfn ").unwrap_or(src.len() - start);
+        let body = &src[start..end];
 
         // The help text lives in `surface_help()`, a SEPARATE fn — reading it out of `surface_cli`
         // silently found nothing and would have made this guard vacuous.
-        let hs = SRC.find("fn surface_help").expect("surface_help is still named that");
-        let help = &SRC[hs..hs + SRC[hs..].find("\nfn ").unwrap_or(SRC.len() - hs)];
+        let hs = src.find("fn surface_help").expect("surface_help is still named that");
+        let help = &src[hs..hs + src[hs..].find("\nfn ").unwrap_or(src.len() - hs)];
         assert!(help.contains("bsc surface list"), "the help scan found no help — the scan is broken");
 
         let mut arms: Vec<&str> = Vec::new();
@@ -1163,11 +1222,11 @@ mod tests {
     /// for an arm name. The region is bounded to `dispatch` so `run_mcp`'s own match — whose arms are
     /// MCP servers, not top-level commands — cannot leak in.
     fn dispatched_names() -> Vec<String> {
-        const SRC: &str = include_str!("main.rs");
-        let start = SRC.find("pub(crate) fn dispatch").expect("dispatch is still named `dispatch`");
-        let end = start + SRC[start..].find("fn run_mcp").expect("run_mcp still follows dispatch");
+        let src = crate_source();
+        let start = src.find("pub(crate) fn dispatch").expect("dispatch is still named `dispatch`");
+        let end = start + src[start..].find("fn run_mcp").expect("run_mcp still follows dispatch");
         let mut names = Vec::new();
-        for line in SRC[start..end].lines() {
+        for line in src[start..end].lines() {
             let t = line.trim_start();
             if !t.starts_with('"') {
                 continue;
@@ -1233,15 +1292,15 @@ mod tests {
     /// resolved 43 of 44 and dropped `version`, whose block calls `bsc_cli_util::version_line`
     /// rather than any `cli::run`; a count mismatch was the only signal that anything was wrong.
     fn dispatched_crates() -> Vec<(String, String)> {
-        const SRC: &str = include_str!("main.rs");
+        let src = crate_source();
         const NOT_A_SURFACE: &[&str] = &["", "help", "-h", "--help", "--version", "-V"];
         let lib2pkg = lib_target_to_package();
-        let start = SRC.find("pub(crate) fn dispatch").expect("dispatch is still named `dispatch`");
-        let end = start + SRC[start..].find("fn run_mcp").expect("run_mcp still follows dispatch");
+        let start = src.find("pub(crate) fn dispatch").expect("dispatch is still named `dispatch`");
+        let end = start + src[start..].find("fn run_mcp").expect("run_mcp still follows dispatch");
 
         let mut out: Vec<(String, String)> = Vec::new();
         let mut pending: Vec<String> = Vec::new();
-        for line in SRC[start..end].lines() {
+        for line in src[start..end].lines() {
             let t = line.trim_start();
             if t.starts_with('"') {
                 let Some(arrow) = t.find("=>") else { continue };
@@ -1619,3 +1678,15 @@ mod tests {
         assert!(dispatch("org", vec!["help".into()]).is_ok());
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/defer.rs, src/hook.rs, src/superseded.rs, src/serve.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc--<module>.rs
+//     bsc graph impl set --id bsc--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

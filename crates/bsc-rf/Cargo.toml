@@ -2,7 +2,12 @@
 name = "bsc-rf"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "`bsc rf` — DEFENSIVE RF monitoring: detect radio jamming and RF denial-of-service against 2.4/5 GHz WiFi from a commodity adapter. Reads the radio's own telemetry (nl80211 survey occupancy, monitor-mode radiotap frame statistics) and fuses several weak signals into a verdict that carries its evidence. Nothing here transmits — there is no injection, no deauth and no active probing path, and a test asserts it."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_rf"
