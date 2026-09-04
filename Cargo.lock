@@ -537,6 +537,7 @@ dependencies = [
  "bsc-storefs",
  "bsc-tunnel",
  "bsc-util",
+ "bsc-widget",
  "cairo-rs",
  "errordb",
  "futures-util",
@@ -772,6 +773,7 @@ dependencies = [
  "bsc-teams",
  "bsc-ui",
  "bsc-util",
+ "bsc-widget",
  "bsc-work",
  "channel",
  "compliance",
@@ -1431,6 +1433,16 @@ dependencies = [
 name = "bsc-util"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-widget"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "serde",
  "serde_json",
 ]
 
