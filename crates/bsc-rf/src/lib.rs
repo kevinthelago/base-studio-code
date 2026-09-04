@@ -35,6 +35,7 @@
 //! a send primitive cannot be added quietly.
 
 pub mod cli;
+pub mod deauth;
 pub mod detect;
 pub mod device;
 pub mod probe;

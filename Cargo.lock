@@ -1061,6 +1061,7 @@ name = "bsc-lan-sense"
 version = "0.1.0"
 dependencies = [
  "bsc-lan-stream",
+ "bsc-rf",
  "bsc-util",
  "ed25519-dalek",
  "serde",
