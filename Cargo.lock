@@ -748,6 +748,7 @@ dependencies = [
  "bsc-mem",
  "bsc-navigate",
  "bsc-network",
+ "bsc-news",
  "bsc-perms",
  "bsc-persona",
  "bsc-project",
@@ -1108,6 +1109,20 @@ dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
  "bsc-util",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-news"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "reqwest 0.12.28",
+ "roxmltree",
+ "rusqlite",
+ "serde",
  "serde_json",
 ]
 
