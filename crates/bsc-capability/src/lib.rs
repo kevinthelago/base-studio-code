@@ -28,8 +28,10 @@
 //! invents a shape, and the session then gets a second copy of it, and the two drift. There is a test
 //! pinning that the two views come from one value.
 
+pub mod cli;
 pub mod freshness;
 pub mod model;
+pub mod read;
 
 pub use freshness::{Freshness, Observation};
 pub use model::{Capability, CapabilityKind, NetworkCapabilities, ProjectCapabilities};

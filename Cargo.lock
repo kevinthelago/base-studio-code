@@ -731,6 +731,7 @@ dependencies = [
  "bsc-app",
  "bsc-blueprint",
  "bsc-cad",
+ "bsc-capability",
  "bsc-cli-util",
  "bsc-component",
  "bsc-config",
@@ -842,6 +843,7 @@ dependencies = [
 name = "bsc-capability"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "serde",
  "serde_json",
 ]

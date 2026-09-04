@@ -142,6 +142,7 @@ const COMMANDS: &[Surface] = &[
     active("cad", "bsc-cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL", None),
     active("lan", "bsc-lan", "the emit-only LAN sensor: what a host exposes · its keys · what it would send (NOT `network`, which is the user domain store)", Some("no store yet — keys are printed, never written")),
     active("deploy", "bsc-deploy", "ship a binary to a device and take it back: status · push · rollback (push-only; LAB has no egress)", Some("the device roster — deploy/devices.json")),
+    active("capability", "bsc-capability", "the USE layer: what a network can DO right now, and how fresh each answer is", Some("derived — reads `bsc project network` + `bsc deploy`")),
     active("data", "bsc-data", "canonical data model (DuckDB): model · scan · tables · connector", Some("the canonical data model — DuckDB")),
     active("cve", "cve", "vulnerability data (OSV.dev): scan a lockfile · check a package · advisory detail (supply-chain #2433)", Some("the OSV.dev advisory cache")),
     active("news", "bsc-news", "low-trust news layer: poll outlets · brief an event (corroboration · framing · agency deletion). NOT `research` — an article is a claim, a paper is a source", Some("the news store — every fetched article version, $BSC_NEWS_DB")),
@@ -214,6 +215,7 @@ fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
         "cad" => bsc_cad::cli::COMMANDS,
         "lan" => bsc_lan::cli::COMMANDS,
         "deploy" => bsc_deploy::cli::COMMANDS,
+        "capability" => bsc_capability::cli::COMMANDS,
         // Gated exactly like the dispatch arm below. Without this, `--no-default-features` — the lean,
         // DuckDB-free build #1877 documents and every cross-compiled device build needs — fails to
         // compile on an unresolved `bsc_data`. The feature existed; this arm was simply never gated.
@@ -765,6 +767,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "cad" => bsc_cad::cli::run(rest, "bsc cad"),
         "lan" => bsc_lan::cli::run(rest, "bsc lan"),
         "deploy" => bsc_deploy::cli::run(rest, "bsc deploy"),
+        "capability" => bsc_capability::cli::run(rest, "bsc capability"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "cve" => cve::cli::run(rest, "bsc cve"),
