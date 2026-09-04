@@ -51,7 +51,7 @@ import {
   SettingsWorkspace,
   LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
   ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
-  CredentialsWorkspace,
+  CredentialsWorkspace, UseWorkspace,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -238,6 +238,7 @@ export default function App() {
                 store is edited from OUTSIDE the app (a session running `bsc secret`), so a kept-mounted
                 copy would show a stale answer to the one question this screen exists to answer. */}
             {activeWorkspace === "credentials" && <CredentialsWorkspace />}
+            {activeWorkspace === "use"         && <UseWorkspace />}
           </Suspense>
           </ErrorBoundary>
           </Box>
