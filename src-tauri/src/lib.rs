@@ -20,6 +20,7 @@ mod extensions;
 mod shot;
 mod appchan;
 mod navigate;
+mod lan;
 mod debug;
 mod prelude;
 

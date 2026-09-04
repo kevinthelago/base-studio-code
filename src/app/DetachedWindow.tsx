@@ -6,6 +6,7 @@ import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
 import { StudioSessionHosts } from "@/features/studio-sessions";
+import { SpectrumAnalyzer } from "@/features/lan";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -18,6 +19,9 @@ import {
 function renderDetachedSection(page: string, section: string): React.ReactNode {
   switch (page) {
     case "logs":          return <LogsWorkspace pageOverride={section} />;
+    // The analyzer window (`bsc lan analyzer open`). A literal case like every
+    // other, so the no-user-controlled-dispatch property of this switch holds.
+    case "analyzer":      return <SpectrumAnalyzer />;
     default:
       return (
         <Text as="div" mono tone="dim" style={{ padding: 24 }}>
