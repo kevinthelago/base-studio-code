@@ -92,6 +92,45 @@ pub(crate) fn setup_network_architect_workspace_inner(
     )
 }
 
+/// A network's STEWARD workspace — `<base>/stewards/<slug>/`.
+///
+/// A SIBLING of the architect's `networks/<slug>/`, deliberately not a child of it. Claude Code loads
+/// `CLAUDE.md` from the cwd and every parent, so nesting the steward under the architect would make the
+/// architect's spec an ancestor of the steward's session and pull it toward planning — the exact leak
+/// `CLAUDE.md` records for the planner hub, where a `READ FIRST` scope guard is still the band-aid.
+///
+/// Its own directory rather than a shared one for the architect's reason: each gets its own
+/// `claude --continue` history, so a network's two root sessions are two conversations.
+pub(crate) fn setup_network_steward_workspace_inner(
+    base: &std::path::Path,
+    pane_id: &str,
+    context: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    let slug = bsc_session::network_steward_slug(pane_id).ok_or_else(|| {
+        format!("'{pane_id}' is not a network steward pane (expected `network-<slug>:steward`)")
+    })?;
+    super::studio_ws::setup_studio_workspace(
+        base,
+        &format!("stewards/{slug}"),
+        None,
+        "steward/claude.md",
+        context,
+    )
+}
+
+#[tauri::command]
+pub(crate) fn setup_network_steward_workspace(
+    pane_id: String,
+    context: Option<String>,
+) -> Result<NetworkArchitectWorkspacePaths, String> {
+    let dir = setup_network_steward_workspace_inner(
+        &crate::platform::paths::bsc_base_dir(),
+        &pane_id,
+        context.as_deref(),
+    )?;
+    Ok(NetworkArchitectWorkspacePaths { network_dir: dir.to_string_lossy().into_owned() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +305,74 @@ mod tests {
         ] {
             assert!(seed.contains(needle), "architect seed must teach the reading term `{needle}`");
         }
+    }
+}
+
+#[cfg(test)]
+mod steward_workspace_tests {
+    use super::*;
+
+    fn scratch() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "bsc-steward-ws-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ))
+    }
+
+    #[test]
+    fn a_steward_gets_its_own_dir_beside_the_architects_not_inside_it() {
+        // THE LOAD-BEARING PROPERTY. Claude Code reads CLAUDE.md from the cwd and every PARENT, so a
+        // steward nested under `networks/<slug>/` would inherit the architect's spec and be pulled
+        // toward planning — the leak CLAUDE.md documents for the planner hub.
+        let base = scratch();
+        let arch = setup_network_architect_workspace_inner(&base, "network-finance:architect", None)
+            .expect("architect ws");
+        let stew = setup_network_steward_workspace_inner(&base, "network-finance:steward", None)
+            .expect("steward ws");
+        assert_ne!(arch, stew);
+        assert!(!stew.starts_with(&arch), "the steward must not sit under the architect: {stew:?}");
+        assert!(stew.ends_with("stewards/finance"), "got {stew:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn it_refuses_a_pane_id_that_is_not_a_steward() {
+        // One validator. Passing the PANE ID rather than a bare slug means the directory can only be
+        // derived from a string that already parsed.
+        let base = scratch();
+        for bad in ["network-finance:architect", "network-:steward", "not-a-pane", "network-a/b:steward"] {
+            assert!(
+                setup_network_steward_workspace_inner(&base, bad, None).is_err(),
+                "'{bad}' must not yield a steward workspace"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_generated_context_lands_in_the_workspace() {
+        // The whole reason the capability read shipped BEFORE the session: its opening context is
+        // GENERATED at launch, so it cannot drift the way a hand-maintained context file did.
+        let base = scratch();
+        let dir = setup_network_steward_workspace_inner(
+            &base,
+            "network-kitchen:steward",
+            Some("# What `network-kitchen` can do right now\n\n3 capability(ies)."),
+        )
+        .expect("steward ws");
+        let found = std::fs::read_dir(&dir)
+            .expect("readable")
+            .flatten()
+            .any(|e| {
+                std::fs::read_to_string(e.path())
+                    .map(|t| t.contains("3 capability(ies)"))
+                    .unwrap_or(false)
+            });
+        assert!(found, "the generated context is not in {dir:?}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

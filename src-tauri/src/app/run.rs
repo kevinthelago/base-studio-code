@@ -389,6 +389,7 @@ pub fn run() {
             session::designer::setup_designer_workspace,
             session::architect::setup_architect_workspace,
             session::architect::setup_network_architect_workspace,
+            session::architect::setup_network_steward_workspace,
             session::librarian::setup_librarian_workspace,
             session::sound_designer::setup_sound_designer_workspace,
             session::integrator::setup_integrator_workspace,
