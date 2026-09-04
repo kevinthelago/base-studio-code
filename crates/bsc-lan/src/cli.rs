@@ -17,6 +17,7 @@ use bsc_lan_stream::crypto::{GroupKey, Sensor, Subscriber};
 use bsc_lan_stream::liveness::{Cadence, Liveliness};
 use bsc_lan_stream::subscription::{Finding, Subscription};
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use std::collections::BTreeSet;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::time::{Duration, Instant};
 use serde_json::json;
@@ -107,6 +108,34 @@ KEYS: the sensor's PUBLIC key (to verify) and the group key (to decrypt, and it 
 SECRET). A watcher never needs the sensor's private key.",
     },
     CmdDoc {
+        name: "estate",
+        summary: "what is actually on a segment, from what the sensor saw — and what should not be",
+        usage: "\
+bsc lan estate --eve <file> --segment <prefix> [--expect <a,b,c>] [--json|--pretty]
+
+Derives the estate from OBSERVATION rather than from a roster. The sensor sees every
+host on every VLAN through the SPAN, which makes it the one authority that cannot go
+stale by neglect — and every hand-maintained roster in this network has drifted.
+
+  --segment   a dotted /24 prefix, e.g. 10.99.2.
+  --expect    the addresses you believe are there, comma-separated
+
+THE THIRD CATEGORY IS THE POINT. Expected-and-seen is unremarkable.
+Expected-but-unseen may be retired, powered off, or quietly broken. SEEN BUT NOT
+EXPECTED on a management VLAN is a security finding — an unauthorised device, a
+forgotten test box, or a compromise — and it is exactly what a roster can never
+surface, because the roster is the thing that would have had to be updated.
+
+Every host carries the evidence for it: how many records mentioned it and which ports
+it was seen on. A host seen twice and a host seen ten thousand times are different
+claims and must not render alike. The record count is reported too, so \"nothing on
+this segment\" is distinguishable from \"nothing was parsed at all\".
+
+Read-only. Observation comes before anything that changes a device — see
+docs/llm-operator/guardrails.md, which is explicit that DNS and the firewall are
+single points of failure on this network.",
+    },
+    CmdDoc {
         name: "dry-run",
         summary: "what the sensor WOULD emit for a real EVE file, without a socket",
         usage: "\
@@ -136,6 +165,9 @@ struct Args {
     rate: Option<u32>,
     burst: Option<u32>,
     group: Option<String>,
+    eve: Option<String>,
+    segment: Option<String>,
+    expect: Option<String>,
     iface: Option<String>,
     sensor_public_key: Option<String>,
     group_key: Option<String>,
@@ -156,6 +188,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                 );
             }
             "--group" => a.group = Some(rest.value("--group needs <addr:port>")?),
+            "--eve" => a.eve = Some(rest.value("--eve needs a path to EVE output")?),
+            "--segment" => a.segment = Some(rest.value("--segment needs a /24 prefix, e.g. 10.99.2.")?),
+            "--expect" => a.expect = Some(rest.value("--expect needs a comma-separated address list")?),
             "--iface" => a.iface = Some(rest.value("--iface needs an interface IP")?),
             "--sensor-public-key" => {
                 a.sensor_public_key = Some(rest.value("--sensor-public-key needs 64 hex characters")?)
@@ -426,6 +461,66 @@ fn cmd_watch(a: &Args) -> Result<(), String> {
     }
 }
 
+fn cmd_estate(a: &Args) -> Result<(), String> {
+    let path = a.eve.as_deref().ok_or("estate needs --eve <file>")?;
+    let segment = a
+        .segment
+        .as_deref()
+        .ok_or("estate needs --segment <prefix>, e.g. --segment 10.99.2.")?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("could not read {path}: {e}"))?;
+    let expected: BTreeSet<String> = a
+        .expect
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    let e = bsc_lan_sense::estate::assess(&text, segment, &expected);
+    bsc_cli_util::emit(a.pretty, a.json, &e, || render_estate(&e, segment));
+    Ok(())
+}
+
+/// Rendered separately so it is unit-testable without a file.
+pub fn render_estate(e: &bsc_lan_sense::Estate, segment: &str) -> String {
+    // Evidence first. A verdict from zero records is not a clean segment.
+    if e.records_examined == 0 {
+        return format!(
+            "NOTHING PARSED — 0 record(s) read, so this says nothing about {segment}x.\n               This is NOT a clean segment."
+        );
+    }
+    let mut s = format!(
+        "{}x — {} record(s) examined\n",
+        segment, e.records_examined
+    );
+    // The finding leads.
+    if e.unexpected.is_empty() {
+        s.push_str("\n  no unexpected hosts\n");
+    } else {
+        s.push_str(&format!("\n  UNEXPECTED — {} host(s) seen that were not expected:\n", e.unexpected.len()));
+        for h in &e.unexpected {
+            s.push_str(&format!(
+                "    {:<16} {} observation(s), ports {:?}\n",
+                h.addr, h.observations, h.ports.iter().copied().collect::<Vec<_>>()
+            ));
+        }
+    }
+    if !e.missing.is_empty() {
+        s.push_str(&format!(
+            "\n  expected but never seen ({}) — retired, powered off, or broken:\n    {}\n",
+            e.missing.len(),
+            e.missing.join(", ")
+        ));
+    }
+    s.push_str(&format!("\n  accounted for ({}):\n", e.accounted.len()));
+    for h in &e.accounted {
+        s.push_str(&format!("    {:<16} {} observation(s)\n", h.addr, h.observations));
+    }
+    s
+}
+
 fn cmd_dry_run(a: &Args) -> Result<(), String> {
     let path = a
         .positional
@@ -541,6 +636,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("posture") => cmd_posture(&a),
         Some("keygen") => cmd_keygen(&a),
         Some("watch") => cmd_watch(&a),
+        Some("estate") => cmd_estate(&a),
         Some("dry-run") => cmd_dry_run(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
@@ -558,7 +654,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "watch", "dry-run"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "dry-run"]);
     }
 
     #[test]
@@ -789,6 +885,39 @@ mod tests {
         let s = render_finding(&Finding::SensorRestarted { previous_last_seq: 9 });
         assert!(s.contains("RESTART"));
         assert!(s.contains("not a gap"), "{s}");
+    }
+
+    #[test]
+    fn estate_needs_an_eve_file_and_a_segment_and_says_which() {
+        assert!(run(vec!["estate".into()], "bsc lan").unwrap_err().contains("--eve"));
+        let e = run(vec!["estate".into(), "--eve".into(), "/nonexistent".into()], "bsc lan").unwrap_err();
+        assert!(e.contains("--segment"), "{e}");
+    }
+
+    #[test]
+    fn nothing_parsed_never_renders_as_a_clean_segment() {
+        let e = bsc_lan_sense::Estate { records_examined: 0, ..Default::default() };
+        let s = render_estate(&e, "10.99.2.");
+        assert!(s.contains("NOTHING PARSED"));
+        assert!(s.contains("NOT a clean segment"), "{s}");
+    }
+
+    #[test]
+    fn an_unexpected_host_leads_the_rendering() {
+        let e = bsc_lan_sense::Estate {
+            records_examined: 400,
+            unexpected: vec![bsc_lan_sense::SeenHost {
+                addr: "10.99.2.77".into(),
+                observations: 12,
+                ports: Default::default(),
+            }],
+            ..Default::default()
+        };
+        let s = render_estate(&e, "10.99.2.");
+        let unexpected_at = s.find("UNEXPECTED").expect("the finding must appear");
+        let accounted_at = s.find("accounted for").expect("the roll-call must appear");
+        assert!(unexpected_at < accounted_at, "the finding must come before the roll-call:\n{s}");
+        assert!(s.contains("12 observation(s)"), "the evidence must travel with it");
     }
 
     #[test]
