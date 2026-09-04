@@ -11,18 +11,19 @@
 //! SQLite result cache with a TTL; [`lockfile`] parses manifests into packages; [`engine`] is the
 //! cache-first query logic; [`cli`] + [`mcp`] are the two session-facing surfaces over it.
 
-pub mod cache;
-pub mod finding;
-pub mod secrets;
-pub mod security_cli;
-pub mod cli;
-pub mod engine;
-pub mod install;
-pub mod lockfile;
-pub mod mcp;
-pub mod osv;
-pub mod types;
 
 pub use engine::Engine;
 pub use finding::{Finding, Kind, Locator};
 pub use types::{Advisory, Ecosystem, Package, PackageReport, ScanReport, Severity};
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cache.rs, src/finding.rs, src/secrets.rs, src/security_cli.rs, src/cli.rs, src/engine.rs, src/install.rs, src/lockfile.rs, src/mcp.rs, src/osv.rs, src/types.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-security--<module>.rs
+//     bsc graph impl set --id bsc-security--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-security--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

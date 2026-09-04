@@ -46,9 +46,21 @@
     /// The floor on `#[tauri::command]` declarations. Measured when the registration guard was
     /// written: 174 declared, 174 registered.
     const MIN_TAURI_COMMANDS: usize = 100;
-    /// The floor on bare `mod x;` declarations across both roots. MEASURED 2026-09-04: 138 under
-    /// `src-tauri/src` + 335 under `crates/` = 473.
-    const MIN_MODULE_DECLS: usize = 400;
+    /// The floor on bare `mod x;` declarations under `src-tauri/src`. MEASURED 2026-09-04: **138**.
+    ///
+    /// This half is STABLE. `src-tauri` cannot migrate into the graph (it owns its own `build.rs`, and
+    /// the materializer assumes a `crates/<name>` layout), so nothing but a broken parser takes it
+    /// down.
+    const MIN_SRC_TAURI_MODULE_DECLS: usize = 120;
+    /// The floor on bare `mod x;` declarations under `crates/`. MEASURED 2026-09-04: **260**, down
+    /// from 335 earlier the same day.
+    ///
+    /// This half DECAYS ON PURPOSE, and the decay is the epic working. A crate that migrates loses one
+    /// `mod x;` per module — `graph-materialize/build.rs` inlines each record as a `mod x { … }` BLOCK,
+    /// which declares nothing to resolve — so every wave of `bsc graph migrate-crate` legitimately
+    /// takes declarations out of this root while the unit count (files PLUS records) stays put. Set
+    /// well below the measurement, and re-measure rather than treating a drop as a failure.
+    const MIN_CRATE_MODULE_DECLS: usize = 180;
 
     /// The repository root — `src-tauri`'s parent.
     fn repo_root() -> std::path::PathBuf {
@@ -241,8 +253,11 @@
     #[test]
     fn every_declared_module_resolves_to_a_file_or_a_record() {
         let mut unresolved = Vec::new();
-        let mut declared = 0usize;
-        for (rel_root, min) in [("src-tauri/src", MIN_SRC_TAURI_UNITS), ("crates", MIN_CRATE_UNITS)] {
+        for (rel_root, min, min_decls) in [
+            ("src-tauri/src", MIN_SRC_TAURI_UNITS, MIN_SRC_TAURI_MODULE_DECLS),
+            ("crates", MIN_CRATE_UNITS, MIN_CRATE_MODULE_DECLS),
+        ] {
+            let mut declared = 0usize;
             let units = source_units(rel_root, min);
             let present: std::collections::HashSet<&str> = units.iter().map(|u| u.rel.as_str()).collect();
             for unit in &units {
@@ -270,14 +285,21 @@
                     }
                 }
             }
+            // Non-vacuity, PER ROOT: a declaration parser that stopped matching would find nothing
+            // to resolve and report a clean tree, which is the same output as a clean tree. The floor
+            // is per root and not a sum because the two roots have OPPOSITE dynamics: `src-tauri/src`
+            // cannot migrate and holds its population, while `crates/` sheds declarations every
+            // migration wave by design. One number cannot be set correctly for both — it either trips
+            // on a legitimate wave (it did, on the batch that wrote this) or it gets lowered until it
+            // sits under `src-tauri`'s own count, at which point `crates/` collapsing to ZERO passes on
+            // the other root's population: this repo's signature failure wearing a non-vacuity check's
+            // hat.
+            assert!(
+                declared >= min_decls,
+                "found only {declared} `mod x;` declarations under `{rel_root}` (floor {min_decls}), \
+                 so the parser is matching almost nothing there and this guard is inert over that root",
+            );
         }
-        // Non-vacuity: a declaration parser that stopped matching would find nothing to resolve and
-        // report a clean tree, which is the same output as a clean tree.
-        assert!(
-            declared >= MIN_MODULE_DECLS,
-            "found only {declared} `mod x;` declarations across both roots (floor {MIN_MODULE_DECLS}), \
-             so the parser is matching almost nothing and this guard is inert",
-        );
         assert!(
             unresolved.is_empty(),
             "declared module(s) that resolve to neither a file nor a graph record. Either a file was \
