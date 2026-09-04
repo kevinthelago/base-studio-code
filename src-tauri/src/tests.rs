@@ -10,29 +10,358 @@
         assert_eq!(format!("t{}p{}", 2, 8), "t2p8");
     }
 
+    // =============================================================================================
+    // THE SOURCE POPULATION every guard in this file walks.
+    // =============================================================================================
+
+    /// One unit of this workspace's Rust source: where it lives, and its text.
+    struct SourceUnit {
+        /// Path relative to the root passed to [`source_units`], forward-slashed.
+        rel: String,
+        /// The module's text — read from the file, or taken from its graph record's `code`.
+        text: String,
+        /// `true` when this module exists ONLY as a graph record, with no file on disk.
+        record_only: bool,
+    }
+
+    impl SourceUnit {
+        /// How to NAME this unit in a failure message. A reader told `platform/config.rs` will go
+        /// looking for a file, and for a record that is a dead end — so a record says so.
+        fn label(&self) -> String {
+            if self.record_only {
+                format!("{} (a graph record, not a file)", self.rel)
+            } else {
+                self.rel.clone()
+            }
+        }
+    }
+
+    /// The collapse floor for `src-tauri/src`. MEASURED 2026-09-04: **141** units, 0 of them records.
+    /// Set well below that on purpose — this detects a COLLAPSE, it is not a ratchet to bump whenever
+    /// a module lands or leaves.
+    const MIN_SRC_TAURI_UNITS: usize = 120;
+    /// The collapse floor for `crates/` — files PLUS records. MEASURED 2026-09-04: **514** units, of
+    /// which **80 exist only as records** (25 crates already compile out of the graph store).
+    const MIN_CRATE_UNITS: usize = 420;
+    /// The floor on `#[tauri::command]` declarations. Measured when the registration guard was
+    /// written: 174 declared, 174 registered.
+    const MIN_TAURI_COMMANDS: usize = 100;
+    /// The floor on bare `mod x;` declarations across both roots. MEASURED 2026-09-04: 138 under
+    /// `src-tauri/src` + 335 under `crates/` = 473.
+    const MIN_MODULE_DECLS: usize = 400;
+
+    /// The repository root — `src-tauri`'s parent.
+    fn repo_root() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri has a parent")
+            .to_path_buf()
+    }
+
+    /// Every Rust source unit under `rel_root` (a repo-relative directory — `src-tauri/src`,
+    /// `crates`), keyed by path relative to it, from the FILE tree **and** from the committed graph
+    /// store.
+    ///
+    /// **A MODULE IS NOT NECESSARILY A FILE.** Twenty-five crates already compile out of
+    /// `graph/algorithms.json`: `crates/graph-materialize/build.rs` inlines each record as a `mod`
+    /// block, the file is deleted, and `lib.rs` loses its `mod x;` line along with it. MEASURED
+    /// 2026-09-04, **80 record `src` paths under `crates/` have no file on disk at all**. `src-tauri`
+    /// cannot adopt that mechanism yet (it owns its own `build.rs`, and the materializer assumes a
+    /// `crates/<name>` layout), so it still has 141 files and 0 records — but its guards are the ones
+    /// that break the day that changes, which is what this resolver exists for.
+    ///
+    /// A guard that reaches the tree through `read_dir` does not FAIL when a module migrates. Its
+    /// population silently shrinks and it keeps passing over whatever is left — this repo's signature
+    /// failure, a gate that passes while covering less than the reader assumes. The worst instance was
+    /// `data_embeds_stay_consolidated_in_the_config_loader`, whose allow-list is keyed by relative
+    /// path and which carried no population check of any kind: migrating `session/settings.rs` would
+    /// have taken away the only module it has ever actually matched, and it would have reported the
+    /// same empty offender list either way.
+    ///
+    /// `min` is the population floor and is a REQUIRED argument on purpose — the same reason
+    /// `bsc-disk`'s `plan_*` functions take their policy as one. A non-vacuity assertion a caller may
+    /// omit is a non-vacuity assertion a caller WILL omit. It detects a COLLAPSE (a resolver pointed
+    /// at the wrong root, an unreadable store, a walk that stopped recursing); it cannot detect ONE
+    /// module going missing, which is what the allow-list, named-list and declaration checks at the
+    /// call sites are for.
+    fn source_units(rel_root: &str, min: usize) -> Vec<SourceUnit> {
+        let root = repo_root();
+        let dir = root.join(rel_root);
+        let mut units: std::collections::BTreeMap<String, SourceUnit> = Default::default();
+        collect_rs_files(&dir, &dir, &mut units);
+
+        // The COMMITTED store, read the same way `graph-materialize/build.rs` reads it — directly,
+        // never through `bsc_graph`, which reconciles the packaged seed and would pull in records the
+        // build never compiles.
+        let store_path = root.join("graph").join("algorithms.json");
+        let raw = std::fs::read_to_string(&store_path).unwrap_or_else(|e| {
+            panic!(
+                "cannot read the committed graph store at {} ({e}) — every source guard resolves its \
+                 modules through it, so an unreadable store means they are all walking a partial tree",
+                store_path.display(),
+            )
+        });
+        let store: serde_json::Value = serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", store_path.display()));
+        let impls = store
+            .get("implementations")
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("{} has no `implementations` array", store_path.display()));
+
+        let prefix = format!("{rel_root}/");
+        for record in impls {
+            let Some(src) = record.get("src").and_then(|v| v.as_str()) else { continue };
+            let Some(code) = record.get("code").and_then(|v| v.as_str()) else { continue };
+            let Some(rel) = src.strip_prefix(&prefix) else { continue };
+            if !rel.ends_with(".rs") {
+                continue;
+            }
+            // THE FILE WINS when both exist, and that is not a preference: while a file is on disk it
+            // is what rustc compiles, and a record sharing its path is an edit that has not been
+            // materialized yet. Scanning both would let a stale record raise an offender that is not
+            // in the compiled program.
+            units.entry(rel.to_string()).or_insert_with(|| SourceUnit {
+                rel: rel.to_string(),
+                text: code.to_string(),
+                record_only: true,
+            });
+        }
+
+        assert!(
+            units.len() >= min,
+            "the source population under `{rel_root}` collapsed to {} units (floor {min}). A guard \
+             walking a shrunken tree does not fail — it passes over what is left. Either the walk is \
+             broken, or modules migrated into graph/algorithms.json under a `src` prefix this resolver \
+             does not recognise.",
+            units.len(),
+        );
+        units.into_values().collect()
+    }
+
+    /// Every `.rs` FILE under `dir`, keyed relative to `base`.
+    fn collect_rs_files(
+        base: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut std::collections::BTreeMap<String, SourceUnit>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "target") {
+                    continue;
+                }
+                collect_rs_files(base, &path, out);
+            } else if path.extension().is_some_and(|x| x == "rs") {
+                let Ok(text) = std::fs::read_to_string(&path) else { continue };
+                let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                out.insert(rel.clone(), SourceUnit { rel, text, record_only: false });
+            }
+        }
+    }
+
+    /// The text of one NAMED unit, or a panic saying what went missing.
+    ///
+    /// Every "the detector still bites" check below goes through this, so the check cannot quietly
+    /// degrade into a skipped `if let` when its subject migrates.
+    fn unit_text<'a>(units: &'a [SourceUnit], rel: &str, why: &str) -> &'a str {
+        units
+            .iter()
+            .find(|u| u.rel == rel)
+            .unwrap_or_else(|| {
+                panic!(
+                    "`{rel}` resolves to neither a file nor a graph record, and {why}. Re-point this \
+                     check at whatever replaced it — do NOT delete it, because a guard whose known \
+                     positive has vanished is a guard that matches nothing.",
+                )
+            })
+            .text
+            .as_str()
+    }
+
+    /// Every path an allow-list is keyed by must still resolve to a source unit.
+    ///
+    /// THIS is the `tests.rs:27` failure, isolated. An allow-list keyed by relative path degrades to
+    /// SILENCE the moment one of its paths stops existing: the entry excuses nothing, the module it
+    /// was excusing is no longer in the walk, and the guard reports an empty offender list exactly as
+    /// it does when the tree is clean. Nothing in the output distinguishes "nothing to report" from
+    /// "nothing left to look at".
+    fn assert_allow_list_resolves(units: &[SourceUnit], allow: &[&str], guard: &str) {
+        let present: std::collections::HashSet<&str> = units.iter().map(|u| u.rel.as_str()).collect();
+        let dangling: Vec<&str> = allow.iter().copied().filter(|a| !present.contains(a)).collect();
+        assert!(
+            dangling.is_empty(),
+            "`{guard}` excuses path(s) that resolve to neither a file nor a graph record: {dangling:?}. \
+             An allow-list keyed by path stops guarding SILENTLY when its subject moves or migrates — \
+             re-key the entry onto wherever that module lives now, or drop it if it is genuinely gone.",
+        );
+    }
+
+    /// The directory a `mod x;` inside `rel` resolves against: the CONTAINING directory for a crate
+    /// root or a `mod.rs`, and the file's own stem for anything else — `cli.rs` owns `cli/`.
+    ///
+    /// Getting this wrong is silent in the safe direction and loud in the useless one: resolving
+    /// `crates/plandb/src/cli.rs`'s submodules against `src/` instead of `src/cli/` reported five
+    /// false unresolveds on the first pass here.
+    fn module_base(rel: &str) -> String {
+        let file = rel.rsplit('/').next().unwrap_or(rel);
+        if matches!(file, "mod.rs" | "lib.rs" | "main.rs") {
+            rel.strip_suffix(file).unwrap_or("").trim_end_matches('/').to_string()
+        } else {
+            rel.strip_suffix(".rs").unwrap_or(rel).to_string()
+        }
+    }
+
+    /// The module name declared by `line`, if it is a BARE `mod x;` declaration — no body, no path
+    /// attribute of its own. An inline `mod x { … }` declares nothing to resolve.
+    fn declared_module(line: &str) -> Option<&str> {
+        let mut rest = line.trim();
+        if let Some(after) = rest.strip_prefix("pub(") {
+            rest = after.split_once(')')?.1.trim_start();
+        } else if let Some(after) = rest.strip_prefix("pub ") {
+            rest = after.trim_start();
+        }
+        let name = rest.strip_prefix("mod ")?.strip_suffix(';')?.trim();
+        let named = !name.is_empty()
+            && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+        named.then_some(name)
+    }
+
+    /// Every `mod <name>;` declaration resolves to a source unit — a FILE, or a graph record.
+    ///
+    /// This is the invariant the guards above were all quietly relying on and none of them stated:
+    /// that walking the tree finds the whole program. It is the one check here that reacts to a SINGLE
+    /// module going missing, where a population floor only sees a collapse — remove any one module's
+    /// file and the `mod x;` that declares it has nothing left to point at.
+    ///
+    /// It is also what a HALF-MIGRATION looks like from the outside: record written, file deleted,
+    /// `mod x;` still in `lib.rs`. The crate does not build, but every guard that reaches the tree with
+    /// `read_dir` reports green over a smaller population first, and the smaller population is the part
+    /// nothing ever said out loud.
+    #[test]
+    fn every_declared_module_resolves_to_a_file_or_a_record() {
+        let mut unresolved = Vec::new();
+        let mut declared = 0usize;
+        for (rel_root, min) in [("src-tauri/src", MIN_SRC_TAURI_UNITS), ("crates", MIN_CRATE_UNITS)] {
+            let units = source_units(rel_root, min);
+            let present: std::collections::HashSet<&str> = units.iter().map(|u| u.rel.as_str()).collect();
+            for unit in &units {
+                let base = module_base(&unit.rel);
+                let lines: Vec<&str> = unit.text.lines().collect();
+                for (i, line) in lines.iter().enumerate() {
+                    let Some(name) = declared_module(line) else { continue };
+                    // `#[path = "…"]` re-points the declaration somewhere this cannot derive. There are
+                    // none in this workspace; skipping is cheaper than parsing the attribute, and a new
+                    // one shows up as a skip rather than as a false red.
+                    if i > 0 && lines[i - 1].contains("#[path") {
+                        continue;
+                    }
+                    declared += 1;
+                    let sep = if base.is_empty() { "" } else { "/" };
+                    let as_file = format!("{base}{sep}{name}.rs");
+                    let as_dir = format!("{base}{sep}{name}/mod.rs");
+                    if !present.contains(as_file.as_str()) && !present.contains(as_dir.as_str()) {
+                        unresolved.push(format!(
+                            "{rel_root}/{}:{} declares `mod {name};` — neither {as_file} nor {as_dir} \
+                             is a file or a graph record",
+                            unit.rel,
+                            i + 1,
+                        ));
+                    }
+                }
+            }
+        }
+        // Non-vacuity: a declaration parser that stopped matching would find nothing to resolve and
+        // report a clean tree, which is the same output as a clean tree.
+        assert!(
+            declared >= MIN_MODULE_DECLS,
+            "found only {declared} `mod x;` declarations across both roots (floor {MIN_MODULE_DECLS}), \
+             so the parser is matching almost nothing and this guard is inert",
+        );
+        assert!(
+            unresolved.is_empty(),
+            "declared module(s) that resolve to neither a file nor a graph record. Either a file was \
+             deleted without its declaration, or a record was written under a `src` path the resolver \
+             does not map:\n  {}",
+            unresolved.join("\n  "),
+        );
+    }
+
+    /// No guard in this file may reach the source tree except through [`source_units`].
+    ///
+    /// Nothing at RUN time can observe that a guard walked with `read_dir` instead — both spellings
+    /// produce the same green, and the difference only appears once a module migrates and one of them
+    /// quietly covers less. So this asserts about this file's own SOURCE, the same shape as
+    /// `every_store_env_mutation_is_inside_the_store_lock` in `crates/bsc-graph`.
+    ///
+    /// The needle is BUILT rather than written, so this test does not match itself.
+    #[test]
+    fn every_source_walking_guard_goes_through_the_resolver() {
+        let me = include_str!("tests.rs");
+        assert!(
+            me.contains("fn source_units("),
+            "the resolver this file's guards are required to use is gone; the rule below has no subject",
+        );
+        let needle = format!("join(\"{}\")", "src");
+        assert!(
+            !me.contains(&needle),
+            "a guard in this file joins the crate manifest with `src` and walks the result. That walk \
+             sees FILES only, so it stops covering a module the moment it becomes a record in \
+             graph/algorithms.json — and it does not fail when that happens, it just covers less. \
+             Resolve through `source_units(<repo-relative root>, <floor>)` instead.",
+        );
+    }
+
+    /// Does one source line embed something out of `data/` at compile time?
+    fn embeds_data(line: &str) -> bool {
+        (line.contains("include_str!(") || line.contains("include_dir!(")) && line.contains("/data")
+    }
+
     /// #2027 P4 guardrail: a compile-time `include_str!`/`include_dir!` reading from `data/` is the
     /// drift class the config-externalization epic removed — every config surface must flow through
     /// `platform::config` (the SINGLE embedded seed), never a second embed. Walk the crate source and
-    /// assert the only files embedding `data/` are the allowlisted ones; a NEW one must instead read
+    /// assert the only modules embedding `data/` are the allowlisted ones; a NEW one must instead read
     /// via `config::load_str`/`load_opt`. (If a genuine test-only shipped-artifact check needs an
     /// embed, add its path here with a note — that's the intended friction.)
     #[test]
     fn data_embeds_stay_consolidated_in_the_config_loader() {
         // rel path (forward-slash, from src/) → why it may embed `data/`.
         let allow = [
-            "platform/config.rs",  // the SINGLE production seed: include_dir!("$CARGO_MANIFEST_DIR/data")
+            "platform/config.rs",  // the SINGLE production seed loader (it embeds `$OUT_DIR/config-seed` today, not `data/` directly)
             "session/settings.rs", // test-only drift-guard reads (base.json / process.md / streams.json)
             "tests.rs",            // THIS guard file — it contains the match strings as literals
         ];
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut offenders = Vec::new();
-        collect_data_embeds(&src, &src, &allow, &mut offenders);
+        let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
+        // NON-VACUITY (1/2): the allow-list is keyed by PATH, so an entry whose module migrated
+        // excuses nothing and takes its subject out of the walk at the same time.
+        assert_allow_list_resolves(&units, &allow, "data_embeds_stay_consolidated_in_the_config_loader");
+
+        let mut offenders: Vec<String> = units
+            .iter()
+            .filter(|u| !allow.contains(&u.rel.as_str()))
+            .filter(|u| u.text.lines().any(embeds_data))
+            .map(SourceUnit::label)
+            .collect();
         offenders.sort();
         assert!(
             offenders.is_empty(),
             "new compile-time `data/` embed(s) outside the config loader (#2027 P4) — read these \
              through `platform::config::load_str` / `load_opt` instead of a second compile-time embed: \
              {offenders:?}",
+        );
+
+        // NON-VACUITY (2/2): the detector must still MATCH a module known to embed `data/`, or it
+        // passes by recognising nothing at all. `session/settings.rs` is that module — three
+        // `include_str!` reads out of `../../data/`. `platform/config.rs` is deliberately NOT the
+        // subject here: it moved to `$OUT_DIR/config-seed` and no longer matches the detector, which
+        // is exactly how quietly an allow-list entry goes stale.
+        assert!(
+            unit_text(&units, "session/settings.rs", "it is this guard's one known `data/` embedder")
+                .lines()
+                .any(embeds_data),
+            "the `data/` embed detector no longer matches the module known to hold one, so it is \
+             recognising nothing and would report an empty offender list against any number of new \
+             embeds",
         );
     }
 
@@ -56,9 +385,16 @@
             "session/deliver.rs",   // the one deliberate backend injector (#an-ask-is-delivered-not-left-to-be-found)
             "tests.rs",             // THIS guard — it holds the match string as a literal
         ];
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut offenders = Vec::new();
-        collect_pane_writers(&src, &src, &allow, &mut offenders);
+        let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
+        // NON-VACUITY (1/2): every excused path still resolves — see `assert_allow_list_resolves`.
+        assert_allow_list_resolves(&units, &allow, "rust_injectors_are_ratcheted");
+
+        let mut offenders: Vec<String> = units
+            .iter()
+            .filter(|u| !allow.contains(&u.rel.as_str()))
+            .filter(|u| u.text.contains("write_pane("))
+            .map(SourceUnit::label)
+            .collect();
         offenders.sort();
         assert!(
             offenders.is_empty(),
@@ -66,58 +402,18 @@
              crosses #only-the-user-resumes-a-session — the decision is the maintainer's, not a \
              refactor's. Argue it onto the list in this test with a reason: {offenders:?}",
         );
-        // The guard must actually be able to SEE an injector, or it passes by matching nothing — the
-        // vacuous-green failure this repo keeps paying for. `session/deliver.rs` is a known writer.
-        let deliver = std::fs::read_to_string(src.join("session/deliver.rs")).expect("deliver.rs is present");
+        // NON-VACUITY (2/2): the guard must actually be able to SEE an injector, or it passes by
+        // matching nothing — the vacuous-green failure this repo keeps paying for. `session/deliver.rs`
+        // is a known writer. This used to `read_to_string` it directly, which is precisely the reach
+        // that turns a migration into a panic (`deliver.rs is present`) rather than a resolution.
         assert!(
-            deliver.contains("write_pane("),
+            unit_text(&units, "session/deliver.rs", "it is the ratchet's one known backend injector")
+                .contains("write_pane("),
             "the ratchet's match string no longer appears in the known injector, so it is matching \
              nothing and would pass with any number of new writers",
         );
     }
 
-    /// Collect `.rs` files under `dir` (not allowlisted) that write into a pane's PTY.
-    fn collect_pane_writers(base: &std::path::Path, dir: &std::path::Path, allow: &[&str], out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_pane_writers(base, &path, allow, out);
-            } else if path.extension().is_some_and(|x| x == "rs") {
-                let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-                if allow.contains(&rel.as_str()) {
-                    continue;
-                }
-                let Ok(contents) = std::fs::read_to_string(&path) else { continue };
-                if contents.contains("write_pane(") {
-                    out.push(rel);
-                }
-            }
-        }
-    }
-
-    /// Collect `.rs` files under `dir` (not allowlisted) that embed `data/` at compile time.
-    fn collect_data_embeds(base: &std::path::Path, dir: &std::path::Path, allow: &[&str], out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_data_embeds(base, &path, allow, out);
-            } else if path.extension().is_some_and(|x| x == "rs") {
-                let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-                if allow.contains(&rel.as_str()) {
-                    continue;
-                }
-                let Ok(contents) = std::fs::read_to_string(&path) else { continue };
-                let embeds_data = contents.lines().any(|l| {
-                    (l.contains("include_str!(") || l.contains("include_dir!(")) && l.contains("/data")
-                });
-                if embeds_data {
-                    out.push(rel);
-                }
-            }
-        }
-    }
     /// Doctests are RUN by the gate now, so nothing here has to guess about them.
     ///
     /// This replaced a static scan for untagged ``` fences. The scan could not see an INDENTED code
@@ -160,24 +456,79 @@
     /// precisely the class this repo keeps paying for, so it is pinned here rather than left to notice.
     #[test]
     fn the_high_churn_seeds_are_never_embedded_again() {
-        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest.parent().expect("src-tauri has a parent");
         // Match the file NAME, so a re-embed under any relative path is caught.
         let names: Vec<&str> = bsc_util::packaged::RUNTIME_SEEDS
             .iter()
             .map(|rel| rel.rsplit('/').next().expect("a seed path has a file name"))
             .collect();
+        assert!(
+            !names.is_empty(),
+            "bsc_util::packaged::RUNTIME_SEEDS is empty, so this guard has nothing to look for and \
+             would pass over any re-embed",
+        );
 
-        let mut found = Vec::new();
-        for root in [manifest.join("src"), workspace.join("crates")] {
-            collect_seed_embeds(&root, workspace, &names, &mut found);
+        // (unit path, what to show a reader) for every line that embeds a seed.
+        let mut found: Vec<(String, String)> = Vec::new();
+        // `crates/` is where this guard was ALREADY going blind: 80 of its modules are graph records
+        // with no file on disk, and the old `read_dir` walk saw none of them.
+        for (rel_root, min) in [("src-tauri/src", MIN_SRC_TAURI_UNITS), ("crates", MIN_CRATE_UNITS)] {
+            for unit in source_units(rel_root, min) {
+                for (i, line) in unit.text.lines().enumerate() {
+                    if is_seed_embed(line, &names) {
+                        found.push((
+                            format!("{rel_root}/{}", unit.rel),
+                            format!("{rel_root}/{}:{}", unit.label(), i + 1),
+                        ));
+                    }
+                }
+            }
         }
         found.sort();
+
+        let mut unexpected: Vec<&str> = found
+            .iter()
+            .filter(|(path, _)| !KNOWN_SEED_EMBEDS.iter().any(|(known, _)| *known == path.as_str()))
+            .map(|(_, shown)| shown.as_str())
+            .collect();
+        unexpected.sort();
         assert!(
-            found.is_empty(),
+            unexpected.is_empty(),
             "a high-churn packaged seed is `include_str!`'d again, which makes every record edit \
              recompile Rust (measured: 3 crates / 7.4s vs 0 crates / 0.77s). Read it through \
-             `bsc_util::packaged::read_required` instead: {found:?}",
+             `bsc_util::packaged::read_required` instead: {unexpected:?}",
+        );
+
+        // The known-red list ratchets in BOTH directions: an entry that has stopped being an offender
+        // must be deleted in the same change that fixes it. Without this half it would decay into
+        // exactly the kind of stale path-keyed excuse this file was repaired for.
+        let stale: Vec<&(&str, &str)> = KNOWN_SEED_EMBEDS
+            .iter()
+            .filter(|(known, _)| !found.iter().any(|(path, _)| path.as_str() == *known))
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "KNOWN_SEED_EMBEDS names module(s) that no longer embed a seed — delete the entry, because \
+             a carried exception that outlives its problem is an excuse nobody will re-examine: {stale:?}",
+        );
+
+        // NON-VACUITY. This guard's positive set is EMPTY by design, so — unlike the two above — there
+        // is no real module to check the detector against, and a matcher that stopped matching would be
+        // indistinguishable from a clean tree. Check it against a constructed line instead, in both
+        // directions, so neither "never matches" nor "matches everything" can hide here.
+        // The `!` is interpolated rather than written, so this line does not itself read as an embed
+        // when this very file is walked — self-flagging would make the guard's own probe its offender.
+        let embed = format!("const SEED: &str = include_str{}(\"../data/knowledge/{}\");", '!', names[0]);
+        assert!(
+            is_seed_embed(&embed, &names),
+            "the seed-embed detector no longer recognises a compile-time embed of `{}`, so it is \
+             matching nothing and this guard is inert",
+            names[0],
+        );
+        let runtime_read = format!("let seed = read_required(\"knowledge/{}\")?;", names[0]);
+        assert!(
+            !is_seed_embed(&runtime_read, &names),
+            "the seed-embed detector now flags a RUNTIME read, which is the thing this guard exists to \
+             steer people towards",
         );
     }
 
@@ -535,35 +886,29 @@
         }
     }
 
-    /// Collect `<file>:<line>` for every `include_str!` of one of `names` under `dir`.
-    fn collect_seed_embeds(
-        dir: &std::path::Path,
-        base: &std::path::Path,
-        names: &[&str],
-        out: &mut Vec<String>,
-    ) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path.file_name().is_some_and(|n| n == "target") {
-                    continue;
-                }
-                collect_seed_embeds(&path, base, names, out);
-                continue;
-            }
-            if path.extension().is_none_or(|e| e != "rs") {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(&path) else { continue };
-            for (i, line) in text.lines().enumerate() {
-                // The guard's own assertion strings name these files; only an actual macro counts.
-                if line.contains("include_str!") && names.iter().any(|n| line.contains(n)) {
-                    let rel = path.strip_prefix(base).unwrap_or(&path);
-                    out.push(format!("{}:{}", rel.display(), i + 1));
-                }
-            }
-        }
+    /// Seed embeds that are LIVE and not fixed here — each with the item that fixes it.
+    ///
+    /// This is a KNOWN-RED list, not an allow-list, and the second assertion in the guard is the whole
+    /// difference: an entry that stops being an offender FAILS, so the exception cannot outlive its
+    /// problem the way a path-keyed excuse does.
+    ///
+    /// The one entry is what widening the walk to records FOUND, and its history is the item's thesis
+    /// in miniature: `d19adce07` (Aug 25) migrated `bsc-sound`'s modules into the graph and deleted the
+    /// files; `05aac70b6` (Sep 2) then added `sounds/signal.json` to `RUNTIME_SEEDS` under the title
+    /// "the last four crates read data/ at runtime — Class A done". By then this guard could no longer
+    /// SEE `release.rs`, so it reported green over a crate it had silently stopped covering, and the
+    /// "done" was recorded against a check that was no longer looking.
+    const KNOWN_SEED_EMBEDS: &[(&str, &str)] = &[(
+        "crates/bsc-sound/src/release.rs",
+        "#bsc-sound-still-embeds-the-signal-seed-as-a-record — the fix is a graph-store write \
+         (`bsc graph impl set` + `promote` on `bsc-sound--release.rs`), out of scope here",
+    )];
+
+    /// Does one source line `include_str!` one of the high-churn packaged seeds?
+    ///
+    /// The guard's own assertion strings name these files; only an actual macro counts.
+    fn is_seed_embed(line: &str, names: &[&str]) -> bool {
+        line.contains("include_str!") && names.iter().any(|n| line.contains(n))
     }
 
     /// Collect `<file>:<line>` for every BARE opening fence inside a doc comment under `dir`.
@@ -604,9 +949,16 @@
             ("bsc", "spawns the sidecar — the app's hottest process spawner (#4074)"),
         ];
 
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut decls: std::collections::HashMap<String, (bool, String)> = Default::default();
-        collect_command_decls(&src, &src, &mut decls);
+        let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
+        let decls = collect_command_decls(&units);
+        // NON-VACUITY: the named list below fails loudly when ONE command disappears, but nothing here
+        // noticed the whole surface shrinking — a parser that stopped matching, or a walk that lost
+        // half the tree to the graph store, would leave every name unfound and report the same thing.
+        assert!(
+            decls.len() >= MIN_TAURI_COMMANDS,
+            "expected the whole command surface, found {} declarations (floor {MIN_TAURI_COMMANDS})",
+            decls.len(),
+        );
 
         let mut sinned = Vec::new();
         for (cmd, why) in MUST_BE_ASYNC {
@@ -640,14 +992,21 @@
     /// drifted — which is why the guard is cheap now and expensive to add after the first time it does.
     #[test]
     fn every_tauri_command_is_registered_in_the_invoke_handler() {
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut decls: std::collections::HashMap<String, (bool, String)> = Default::default();
-        collect_command_decls(&src, &src, &mut decls);
+        let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
+        let decls = collect_command_decls(&units);
 
-        // Non-vacuity: a parser that stopped matching would make this pass while checking nothing.
-        assert!(decls.len() > 100, "expected the whole command surface, found {}", decls.len());
+        // Non-vacuity: a parser that stopped matching — or a walk that lost modules to the graph
+        // store — would make this pass while checking nothing.
+        assert!(
+            decls.len() >= MIN_TAURI_COMMANDS,
+            "expected the whole command surface, found {} declarations (floor {MIN_TAURI_COMMANDS})",
+            decls.len(),
+        );
 
-        let run = std::fs::read_to_string(src.join("app/run.rs")).expect("app/run.rs");
+        // Resolved as a UNIT, not `read_to_string`d: the registration list is exactly the kind of
+        // module that migrates, and `.expect("app/run.rs")` would then be a panic about a missing file
+        // rather than a guard reading a record.
+        let run = unit_text(&units, "app/run.rs", "it is where `generate_handler!` lives");
         let start = run.find("generate_handler!").expect("generate_handler! in app/run.rs");
         // Bracket-match the macro body rather than scanning a fixed window: the list grows, and a
         // truncated window would silently stop covering the commands added at the end of it.
@@ -692,40 +1051,28 @@
         );
     }
 
-    /// Map every `#[tauri::command]` in the tree to `(is_async, "file:line")`. Attribute and
+    /// Map every `#[tauri::command]` in `units` to `(is_async, "where:line")`. Attribute and
     /// signature can be separated by doc comments and other attributes, so scan forward to the first
     /// `fn` rather than assuming the next line.
-    #[cfg(test)]
-    fn collect_command_decls(
-        dir: &std::path::Path,
-        root: &std::path::Path,
-        out: &mut std::collections::HashMap<String, (bool, String)>,
-    ) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_command_decls(&path, root, out);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                let Ok(text) = std::fs::read_to_string(&path) else { continue };
-                let lines: Vec<&str> = text.lines().collect();
-                for (i, line) in lines.iter().enumerate() {
-                    if !line.trim_start().starts_with("#[tauri::command") {
-                        continue;
-                    }
-                    for probe in lines.iter().skip(i + 1).take(8) {
-                        if let Some(rest) = probe.split(" fn ").nth(1) {
-                            let name: String =
-                                rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-                            let rel = path.strip_prefix(root).unwrap_or(&path).display();
-                            let at = format!("{}:{}", rel.to_string().replace(std::path::MAIN_SEPARATOR, "/"), i + 1);
-                            out.insert(name, (probe.contains("async fn"), at));
-                            break;
-                        }
+    fn collect_command_decls(units: &[SourceUnit]) -> std::collections::HashMap<String, (bool, String)> {
+        let mut out: std::collections::HashMap<String, (bool, String)> = Default::default();
+        for unit in units {
+            let lines: Vec<&str> = unit.text.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if !line.trim_start().starts_with("#[tauri::command") {
+                    continue;
+                }
+                for probe in lines.iter().skip(i + 1).take(8) {
+                    if let Some(rest) = probe.split(" fn ").nth(1) {
+                        let name: String =
+                            rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                        out.insert(name, (probe.contains("async fn"), format!("{}:{}", unit.label(), i + 1)));
+                        break;
                     }
                 }
             }
         }
+        out
     }
 
     /// #a-temporary-script-is-a-missing-bsc-command — EVERY session charter the app ships must tell its
