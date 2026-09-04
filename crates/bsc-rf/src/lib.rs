@@ -39,6 +39,7 @@ pub mod deauth;
 pub mod detect;
 pub mod device;
 pub mod probe;
+pub mod spectral;
 pub mod survey;
 
 #[cfg(test)]
