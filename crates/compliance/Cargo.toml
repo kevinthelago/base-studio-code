@@ -2,10 +2,15 @@
 name = "compliance"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Native compliance-standards source of truth for base-studio-code (#1005) — the single, user-updatable store of current regulation / accessibility / user-protection standards (WCAG 2.2, GDPR, CCPA, SOC 2, …). Shipped as the bundled `bsc-compliance-mcp` stdio MCP server so the planner can bake the right requirements into every plan, and standards can be refreshed without an app release."
 
 # The core lib (no Tauri, no async runtime) so the bundled MCP binary stays lean and the
 # store/parse logic is unit-testable against in-memory fixtures with no live network.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "compliance"
 

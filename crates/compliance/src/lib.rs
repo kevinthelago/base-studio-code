@@ -11,11 +11,17 @@
 //! the baseline corpus; [`store`] is the SQLite source of truth (seeded on first open, user-editable);
 //! [`engine`] is the query + scoping logic; and [`mcp`] exposes the five tools the planner calls.
 
-pub mod cli;
-pub mod engine;
-pub mod mcp;
-pub mod seed;
-pub mod store;
-pub mod types;
 
 pub use types::{Domain, Requirement, Standard};
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/engine.rs, src/mcp.rs, src/seed.rs, src/store.rs, src/types.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get compliance--<module>.rs
+//     bsc graph impl set --id compliance--<module>.rs --code-file <f>
+//     bsc graph promote --id compliance--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));

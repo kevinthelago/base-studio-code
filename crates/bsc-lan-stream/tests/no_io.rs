@@ -11,7 +11,7 @@
 //! crates taking a dependency purely to test itself -- which is exactly the
 //! kind of edge that makes a guard stop being trusted.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const FORBIDDEN: &[(&str, &str)] = &[
     ("tokio", "an async runtime: the codec is synchronous and pure"),
@@ -54,34 +54,54 @@ fn the_wildcard_deny_lints_are_still_declared() {
     }
 }
 
-fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            rust_sources(&p, out);
-        } else if p.extension().is_some_and(|x| x == "rs") {
-            out.push(p);
-        }
-    }
-}
-
 /// THE POINT OF THIS CRATE, asserted rather than trusted.
 ///
 /// A socket needs no dependency -- `std::net` is always available -- so the
 /// manifest check above cannot see one. Only reading the source can.
+///
+/// This crate's modules are RECORDS in `graph/algorithms.json`, not files under
+/// `src/`, so the scan reads what the compiler actually reads: the materialized
+/// `$OUT_DIR/crate.rs` emitted by `graph-materialize/build.rs`, plus the one
+/// module that stays a file (`src/lib.rs`). Scanning `src/` after the migration
+/// found one file and correctly refused to call that a pass -- a scanner that
+/// silently reads nothing reports zero offenders, which reads as a pass.
 #[test]
 fn no_module_in_this_crate_opens_a_socket() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut files = Vec::new();
-    rust_sources(&src, &mut files);
-    files.sort();
+    let materialized = Path::new(env!("OUT_DIR")).join("crate.rs");
+    let text = std::fs::read_to_string(&materialized).unwrap_or_else(|e| {
+        panic!("cannot read the materialized crate at {}: {e}", materialized.display())
+    });
+
+    // Split into per-record sections on the marker `graph-materialize` emits at
+    // the head of every module, so an offender can be named by its RECORD id.
+    let mut sections: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        if let Some(id) = line
+            .trim_start()
+            .strip_prefix("// record `")
+            .and_then(|r| r.split('`').next())
+        {
+            sections.push((id.to_string(), String::new()));
+        } else if let Some(last) = sections.last_mut() {
+            last.1.push_str(line);
+            last.1.push('\n');
+        }
+    }
+
+    // The crate root stays a real file; scan it alongside the records.
+    let lib = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("lib.rs");
+    sections.push((
+        "src/lib.rs".to_string(),
+        std::fs::read_to_string(&lib).expect("crate root is readable"),
+    ));
 
     assert!(
-        files.len() >= 5,
-        "found only {} source files, so this scanner is not reading the crate and \
-         its silence means nothing",
-        files.len()
+        sections.len() >= 5,
+        "found only {} module(s) to scan, so this scanner is not reading the \
+         crate and its silence means nothing. The modules are records in \
+         graph/algorithms.json, materialized into {}",
+        sections.len(),
+        materialized.display()
     );
 
     const BANNED: &[&str] = &[
@@ -89,13 +109,11 @@ fn no_module_in_this_crate_opens_a_socket() {
         "std::fs", "File::open", "std::process",
     ];
 
-    for file in &files {
-        let text = std::fs::read_to_string(file).expect("source is readable");
-        let name = file.file_name().unwrap().to_string_lossy().to_string();
+    for (name, body) in &sections {
         for banned in BANNED {
             // Skip doc comments and ordinary comments: this crate's prose
             // legitimately discusses sockets and the transport it excludes.
-            let hit = text.lines().any(|l| {
+            let hit = body.lines().any(|l| {
                 let t = l.trim_start();
                 !t.starts_with("//") && !t.starts_with("*") && l.contains(banned)
             });
