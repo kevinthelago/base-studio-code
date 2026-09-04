@@ -8,14 +8,14 @@
 //! directions rather than written as a convenient `impl From` nobody reads.
 
 use crate::posture::Posture;
-use crate::procnet::{Socket, Transport};
+use crate::procnet::{Protocol, Socket};
 use bsc_lan_stream::frame::{AttestedPosture, ExposedSocket};
 
 fn describe(s: &Socket) -> ExposedSocket {
     ExposedSocket {
         transport: match s.transport {
-            Transport::Tcp => "tcp".to_string(),
-            Transport::Udp => "udp".to_string(),
+            Protocol::Tcp => "tcp".to_string(),
+            Protocol::Udp => "udp".to_string(),
         },
         addr: s.local_addr.clone(),
         port: s.local_port,
@@ -52,7 +52,7 @@ mod tests {
 
     fn sock(port: u16, reach: Reach) -> Socket {
         Socket {
-            transport: Transport::Tcp,
+            transport: Protocol::Tcp,
             role: Role::Inbound,
             reach,
             local_port: port,
