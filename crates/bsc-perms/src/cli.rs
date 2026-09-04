@@ -242,7 +242,11 @@ mod tests {
         // bugs are already recorded on `RoleCapability` — `writeGlobs` casing and the dropped
         // `roots` — and both were found exactly this way.
         let caps = baseline(&repo()).expect("the capability baseline must parse");
-        assert_eq!(caps.len(), 18, "the baseline holds 18 roles; a change here is a DELIBERATE act");
+        // 19 since `a-network-gets-a-root-session-that-can-use-what-it-owns` added the STEWARD — a
+        // network's root session, `none` on every axis with a read-only allow-list. Bumping this
+        // number is the deliberate act the message asks for, and the reasoning lives beside the
+        // capability itself in `roleCapabilityBaseline.fixtures.json`'s `_amendments`.
+        assert_eq!(caps.len(), 19, "the baseline holds 19 roles; a change here is a DELIBERATE act");
         for c in &caps {
             assert!(!c.role.is_empty(), "a capability with no role name");
         }
