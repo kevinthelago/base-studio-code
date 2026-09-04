@@ -303,6 +303,15 @@ pub fn run() {
             // Log-stream change watcher (#3638): emit `logs://<stream>` when a unified log file's mtime
             // advances, so the frontend reads each stream on CHANGE instead of polling it every ~1s.
             observability::log_watch::spawn(app.handle().clone());
+            // Subscribe to the LAN sensor's sealed stream, IF this host holds a
+            // subscriber config. No config means no socket — an app that binds a
+            // port because a file happened to parse is a surprise — and the
+            // reason is logged rather than left as a silent no-op, because a
+            // widget rendering its empty state looks the same either way.
+            match crate::lan::subscribe::spawn(app.handle().clone()) {
+                Ok(()) => log::info!("lan: subscribed to the sensor stream"),
+                Err(e) => log::info!("lan: not subscribing — {e}"),
+            }
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.

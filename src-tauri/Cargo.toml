@@ -97,6 +97,12 @@ bsc-shot = { path = "../crates/bsc-shot" }
 # The ONE bsc→app request channel + the navigate verb (#3274, epic #3260).
 bsc-appchan = { path = "../crates/bsc-appchan" }
 bsc-lan = { path = "../crates/bsc-lan" }
+# The app subscribes to the sensor's stream itself (src/lan/subscribe.rs): the
+# webview cannot bind a UDP socket, and putting the group key inside it would
+# be worse if it could.
+bsc-lan-sense = { path = "../crates/bsc-lan-sense" }
+bsc-lan-stream = { path = "../crates/bsc-lan-stream" }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 bsc-widget = { path = "../crates/bsc-widget" }
 bsc-navigate = { path = "../crates/bsc-navigate" }
 # Real fleet liveness over the shared channel (#4098) — the app owns PtyState, so only it can answer.

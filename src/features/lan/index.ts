@@ -7,7 +7,15 @@
 // boundary, not the storage.
 export {
   SpectrumAnalyzer,
+  LiveSpectrumAnalyzer,
+  useLanSpectrum,
   binFrequencyMhz,
   binHeight,
+  foldChannel,
+  isCurrent,
+  ageLabel,
+  NEVER_HEARD,
   type SpectrumBins,
+  type Liveness,
+  type LivenessState,
 } from "@/features/lan/SpectrumAnalyzer";
