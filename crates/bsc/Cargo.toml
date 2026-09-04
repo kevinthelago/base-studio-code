@@ -2,6 +2,7 @@
 name = "bsc"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The unified base-studio-code CLI (#1877): one binary, `bsc <command>` dispatching to every state store / tool that used to be its own `bsc-*` sidecar."
 
 # Single binary named `bsc` — the one sidecar bundled into the app.
@@ -113,3 +114,7 @@ bsc-config = { path = "../bsc-config" }
 # `bsc app` — the APP's own lifecycle: status (is the built app behind main), promote (fast-forward
 # main to develop at the repo root), rebuild, release, hooks.
 bsc-app = { path = "../bsc-app" }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
