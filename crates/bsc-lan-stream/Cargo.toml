@@ -23,6 +23,10 @@ chacha20poly1305 = "0.10"
 # every device added. Reuses curve25519-dalek, which snow already pulls in.
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
+[dev-dependencies]
+# Test-only: constructing a Sensor needs a signing key.
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+
 [lints.clippy]
 wildcard_enum_match_arm = "deny"
 match_wildcard_for_single_variants = "deny"

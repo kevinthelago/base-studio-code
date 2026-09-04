@@ -66,6 +66,22 @@ impl Cadence {
     }
 }
 
+/// A liveness state stripped of its payload.
+///
+/// Exists because edge-triggering must key on the STATE and never on the
+/// value: every [`Liveliness`] variant carries an elapsed time that changes on
+/// every single poll, so comparing whole values makes each poll look like a
+/// transition and produces an alert per poll — which is not an alert, it is
+/// noise that trains an operator to filter the channel. Discovered by the
+/// subscription's own edge-trigger test, 2026-09-04.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LivelinessKind {
+    NeverHeard,
+    Healthy,
+    Late,
+    Silent,
+}
+
 /// What the subscriber can say about whether the sensor is still there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Liveliness {
@@ -83,6 +99,16 @@ pub enum Liveliness {
 }
 
 impl Liveliness {
+    /// This verdict's state, without the elapsed time. Use for edge-triggering.
+    pub fn kind(&self) -> LivelinessKind {
+        match self {
+            Liveliness::NeverHeard { .. } => LivelinessKind::NeverHeard,
+            Liveliness::Healthy { .. } => LivelinessKind::Healthy,
+            Liveliness::Late { .. } => LivelinessKind::Late,
+            Liveliness::Silent { .. } => LivelinessKind::Silent,
+        }
+    }
+
     /// Healthy is the ONLY state that does not want a human. Never-heard
     /// wanting attention is the entire point of this module.
     pub fn needs_attention(&self) -> bool {
@@ -253,6 +279,15 @@ mod tests {
         assert_eq!(w.assess(9_000).elapsed_ms(), 4_000);
         assert_eq!(w.assess(20_000).elapsed_ms(), 15_000);
         assert_eq!(w.assess(90_000).elapsed_ms(), 85_000);
+    }
+
+    #[test]
+    fn the_kind_is_stable_while_the_elapsed_time_moves() {
+        // The property edge-triggering depends on: two verdicts in the same
+        // state must compare equal by kind even though their payloads differ.
+        let w = Watch::started_at(cadence(), 0);
+        assert_ne!(w.assess(1_000), w.assess(2_000), "payloads legitimately differ");
+        assert_eq!(w.assess(1_000).kind(), w.assess(2_000).kind(), "the state has not changed");
     }
 
     #[test]
