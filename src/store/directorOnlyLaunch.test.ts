@@ -31,30 +31,38 @@ describe("a director-only plan", () => {
   });
 });
 
-describe("…but the launch is only VISIBLE if the Console page is on", () => {
+describe("the launch does not touch the opt-in Console page", () => {
   it("asks for the console workspace", () => {
     useAppStore.setState({ tabs: [], activeTab: 0 } as never);
     useAppStore.getState().fleetStartProject("p", directorOnlyPlan(), "p", { hubPath: "/h" });
     expect(useAppStore.getState().activeWorkspace).toBe("console");
   });
 
-  it("and that request is REDIRECTED AWAY when the Console page is off — which is the default", async () => {
-    // THE MECHANISM. `fleetStartProject` sets `activeWorkspace: "console"` to bring its tab on screen,
-    // but the Console page is opt-in (#2372) and `effectiveWorkspace` sends a console-active workspace
-    // to Glance when it is off. The pane therefore never renders, `TerminalView` never mounts, and
-    // `pty_create` never runs — so a launch that succeeded in the STORE produces no shell and no agent.
-    const { effectiveWorkspace } = await import("@/app/registry");
-    expect(effectiveWorkspace("console", false)).toBe("glance");
-    expect(effectiveWorkspace("console", true)).toBe("console");
-  });
-
-  it("turns the Console page ON, so a launch it just made is reachable", () => {
-    // The fix. A launch the user cannot see is not a launch: the panes exist in the store and nothing
-    // ever mounts them. Enabling it here is narrow — it happens only when a fleet is deliberately
-    // started — and it is what makes `activeWorkspace: "console"` mean anything.
+  it("LEAVES the Console page off — starting a fleet is not consent to re-enable it", () => {
+    // THE REGRESSION THIS PINS. Both launch actions were briefly changed to force the console page on,
+    // reasoning that `effectiveWorkspace` redirects a console-active workspace to Glance while the page
+    // is off, so the pane never mounts. The page is OPT-IN (#2372) and the maintainer keeps it off; a
+    // launch may not flip a user preference to suit itself.
+    //
+    // The premise was false as well: a director ran to 596 transcript lines on 2026-09-04 with the page
+    // off, so the redirect is not what stops one mounting. Ref
+    // `a-fleet-launch-must-not-turn-the-legacy-console-page-on`.
     useAppStore.setState({ tabs: [], activeTab: 0, showConsolePage: false } as never);
     useAppStore.getState().fleetStartProject("p", directorOnlyPlan(), "p", { hubPath: "/h" });
-    expect(useAppStore.getState().showConsolePage, 
-      "a fleet launch must make its own tab reachable").toBe(true);
+    expect(useAppStore.getState().showConsolePage,
+      "a fleet launch must not turn the Console page on").toBe(false);
+  });
+
+  it("and neither does triage", () => {
+    useAppStore.setState({ tabs: [], activeTab: 0, showConsolePage: false } as never);
+    useAppStore.getState().triageStartProject("p", ["o/web"], "p");
+    expect(useAppStore.getState().showConsolePage,
+      "a triage launch must not turn the Console page on").toBe(false);
+  });
+
+  it("leaves an ALREADY-ON page on — it does not write the flag in either direction", () => {
+    useAppStore.setState({ tabs: [], activeTab: 0, showConsolePage: true } as never);
+    useAppStore.getState().fleetStartProject("p", directorOnlyPlan(), "p", { hubPath: "/h" });
+    expect(useAppStore.getState().showConsolePage).toBe(true);
   });
 });
