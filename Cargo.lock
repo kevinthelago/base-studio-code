@@ -523,6 +523,7 @@ dependencies = [
  "bsc-github",
  "bsc-graph",
  "bsc-graph-layout",
+ "bsc-lan",
  "bsc-llm",
  "bsc-navigate",
  "bsc-perms",
@@ -1039,11 +1040,13 @@ dependencies = [
 name = "bsc-lan"
 version = "0.1.0"
 dependencies = [
+ "bsc-appchan",
  "bsc-cli-util",
  "bsc-lan-sense",
  "bsc-lan-stream",
  "ed25519-dalek",
  "getrandom 0.4.2",
+ "serde",
  "serde_json",
 ]
 

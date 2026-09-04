@@ -16,8 +16,11 @@ path = "src/main.rs"
 
 [dependencies]
 bsc-cli-util = { path = "../bsc-cli-util" }
+# The ONE channel for asking the running app to do something (#3274).
+bsc-appchan = { path = "../bsc-appchan" }
 bsc-lan-sense = { path = "../bsc-lan-sense" }
 bsc-lan-stream = { path = "../bsc-lan-stream" }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 # Key material must come from the OS CSPRNG. Nothing else is acceptable here and
