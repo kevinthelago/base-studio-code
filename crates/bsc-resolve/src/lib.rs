@@ -59,7 +59,14 @@
 //! `pty_write` measured 3280 ms. The stores here are opened per call, so a per-session verb would
 //! reopen `skills.db` once per pane.
 
-pub mod cfg;
-pub mod cli;
-pub mod mcp;
-pub mod skill;
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cfg.rs, src/cli.rs, src/mcp.rs, src/skill.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-resolve--<module>.rs
+//     bsc graph impl set --id bsc-resolve--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-resolve--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
