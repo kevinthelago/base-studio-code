@@ -2,8 +2,6 @@ import { create } from "zustand";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist } from "zustand/middleware";
 import { persistStorage, throttledJSONStorage } from "@/shared/lib/core/storage";
-import { grandfatherTriaged, grandfatherLocalPublished } from "@/store/triagedMigration";
-import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
 import { reconcileBuiltInProfiles } from "@/shared/lib/security/agentProfiles";
@@ -83,20 +81,11 @@ export const useAppStore = create<AppStore>()(
       // so anything else would be a claim about a value that never reaches the storage.
       storage: throttledJSONStorage<ReturnType<typeof persistedState>>(persistStorage),
       version: 2,
-      // #2548: one-time grandfather. The Glance triaged filter (#2541) is forward-looking, so on an
-      // upgrade from persist v0 an existing user's already-worked projects (published + fleeted) carry
-      // no `triagedProjects` marker and vanish from Glance. Backfill it once from the persisted board +
-      // fleets. A fresh install starts at v1 with no persisted state, so this never runs for it and the
-      // strict rule holds (a new draft/published project stays hidden until it's actually triaged).
+      // The #2548 triaged grandfather lived here and is GONE with the gate it fed (#2541 retired). It
+      // backfilled a marker so that already-worked projects would not vanish from Glance on upgrade —
+      // a repair for a filter that no longer exists, and nothing now hides a project for want of it.
       migrate: (persisted, version) => {
-        const s = (persisted ?? {}) as Partial<AppStore> & {
-          githubState?: { records?: { title?: string }[] };
-          planFleet?: Record<string, { streams?: unknown[] } | undefined>;
-          triagedProjects?: Record<string, number>;
-        };
-        if (version < 1 && Object.keys(s.triagedProjects ?? {}).length === 0) {
-          s.triagedProjects = grandfatherTriaged(s.githubState?.records, s.planFleet, Date.now());
-        }
+        const s = (persisted ?? {}) as Partial<AppStore>;
         // v2 (#restart-does-not-resume-sessions): turn silent auto-resume off once. Named + exported
         // so the one-time-ness is testable on its own — see `migrateAutoResumeOff`.
         migrateAutoResumeOff(s, version);
@@ -199,25 +188,10 @@ export const useAppStore = create<AppStore>()(
         if (state?.agentProfiles) {
           state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
         }
-        // #2548 follow-up: the one-time triaged grandfather backfilled from the PERSISTED github board +
-        // fleets, but both are empty when the user is logged out / after a state reset — so an existing
-        // user's on-disk published projects still vanished from the Glance network (only the demo loaded).
-        // REPAIR once: when `triagedProjects` is still empty, grandfather from the RELIABLE local published
-        // inventory (`list_local_projects`), plus a re-derive from any github board / fleets now present.
-        // The empty-guard makes it self-limiting — a backfill makes triagedProjects non-empty, so it never
-        // re-runs, preserving the forward-looking rule (a genuinely new draft stays hidden until triaged).
-        if (state && Object.keys(state.triagedProjects ?? {}).length === 0) {
-          void safeInvoke<{ key: string; title: string; published: boolean }[]>("list_local_projects", undefined, []).then((list) => {
-            const keys = (Array.isArray(list) ? list : []).filter((p) => p?.published).map((p) => p.key);
-            useAppStore.setState((s) => {
-              if (Object.keys(s.triagedProjects).length > 0) return {}; // something already stamped meanwhile — leave it
-              const now = Date.now();
-              const seeded = grandfatherTriaged(s.githubState?.records, s.planFleet, now);
-              const merged = grandfatherLocalPublished(keys, seeded, now);
-              return Object.keys(merged).length ? { triagedProjects: merged } : {};
-            });
-          });
-        }
+        // The #2548 REPAIR backfill stood here and is GONE. `triagedProjects` is not persisted, so it
+        // was empty on EVERY boot and this fired on every boot — a `list_local_projects` round trip and
+        // a setState, purely to re-seed a marker that a filter would otherwise have used to hide the
+        // whole network. With the filter retired there is nothing to repair.
         // Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
         // (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a
         // fresh download appears), and migrate any persisted-but-not-yet-on-disk user blueprint forward
