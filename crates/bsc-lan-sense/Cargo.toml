@@ -1,0 +1,17 @@
+[package]
+name = "bsc-lan-sense"
+version = "0.1.0"
+edition = "2021"
+description = "`bsc lan` sensor-side observation: what the emit-only monitor Pi can see about itself. Its /proc parsing is pure text-to-verdict, so the security posture of a box nobody can log into is testable from fixtures."
+
+[lib]
+name = "bsc_lan_sense"
+
+[dependencies]
+bsc-lan-stream = { path = "../bsc-lan-stream" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[lints.clippy]
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"
