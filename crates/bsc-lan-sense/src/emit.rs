@@ -83,6 +83,11 @@ impl<T: Transport> Emitter<T> {
         Self { sensor, transport, policy, seq: 0, last_snapshot_ms: None }
     }
 
+    /// The transport this emitter writes through.
+    pub fn transport(&self) -> &T {
+        &self.transport
+    }
+
     /// The sequence the next datagram will carry.
     pub fn next_seq(&self) -> u64 {
         self.seq

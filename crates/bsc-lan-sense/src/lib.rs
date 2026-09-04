@@ -14,6 +14,7 @@ pub mod emit;
 pub mod error;
 pub mod eve;
 pub mod posture;
+pub mod run;
 pub mod procnet;
 pub mod transport;
 
@@ -22,6 +23,7 @@ pub use emit::{nonce_for, Emitter, SnapshotPolicy};
 pub use transport::{Transport, UdpMulticast};
 pub use error::ProcNetError;
 pub use eve::{parse_line, EveCounters, EveError, Parsed};
+pub use run::{RateLimit, RunCounters, SensorRun};
 pub use posture::{assess, Posture};
 pub use procnet::{parse_table, Protocol, Reach, Role, Socket, Table};
 
