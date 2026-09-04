@@ -46,9 +46,26 @@
     /// The floor on `#[tauri::command]` declarations. Measured when the registration guard was
     /// written: 174 declared, 174 registered.
     const MIN_TAURI_COMMANDS: usize = 100;
-    /// The floor on bare `mod x;` declarations across both roots. MEASURED 2026-09-04: 138 under
-    /// `src-tauri/src` + 335 under `crates/` = 473.
-    const MIN_MODULE_DECLS: usize = 400;
+    /// The floor on bare `mod x;` declarations under `src-tauri/src`. MEASURED 2026-09-04: **138**.
+    /// That root owns its own `build.rs` and cannot migrate into the graph yet, so unlike `crates/`
+    /// below its population is stable and this floor only ever has to survive ordinary churn.
+    const MIN_SRC_TAURI_MODULE_DECLS: usize = 110;
+    /// The floor on bare `mod x;` declarations under `crates/`. MEASURED 2026-09-04: **255**.
+    ///
+    /// **THIS POPULATION SHRINKS BY DESIGN — the floor is not a ratchet.** Every crate that migrates
+    /// into the graph store deletes its module files *and* the `pub mod x;` lines in its `lib.rs`;
+    /// `graph-materialize/build.rs` regenerates those into `$OUT_DIR/crate.rs`, which is not on the
+    /// walk. So a migrated crate costs this count its entire module list — `logs` and `bsc-fleet`
+    /// together cost 26 — while [`source_units`] still resolves every one of them, as a record. The
+    /// resolution half of this test is unaffected; only the non-vacuity count moves.
+    ///
+    /// The single combined floor this replaced was **one declaration from red** when that batch
+    /// landed (401 against a floor of 400), because it had been set from a count that assumed records
+    /// contribute declarations. They do not: a migrated leaf module has no `mod x;` of its own, so the
+    /// 80 record-only units add ~0 here and the old `= 473` in this comment was never the number the
+    /// code produced. Set well below the measurement, exactly like the unit floors above — this
+    /// detects a parser that stopped MATCHING, and a parser that stopped matching reports ~0, not 250.
+    const MIN_CRATE_MODULE_DECLS: usize = 150;
 
     /// The repository root — `src-tauri`'s parent.
     fn repo_root() -> std::path::PathBuf {
@@ -241,8 +258,11 @@
     #[test]
     fn every_declared_module_resolves_to_a_file_or_a_record() {
         let mut unresolved = Vec::new();
-        let mut declared = 0usize;
-        for (rel_root, min) in [("src-tauri/src", MIN_SRC_TAURI_UNITS), ("crates", MIN_CRATE_UNITS)] {
+        for (rel_root, min, decl_floor) in [
+            ("src-tauri/src", MIN_SRC_TAURI_UNITS, MIN_SRC_TAURI_MODULE_DECLS),
+            ("crates", MIN_CRATE_UNITS, MIN_CRATE_MODULE_DECLS),
+        ] {
+            let mut declared = 0usize;
             let units = source_units(rel_root, min);
             let present: std::collections::HashSet<&str> = units.iter().map(|u| u.rel.as_str()).collect();
             for unit in &units {
@@ -270,14 +290,17 @@
                     }
                 }
             }
+            // Non-vacuity, PER ROOT: a declaration parser that stopped matching would find nothing to
+            // resolve and report a clean tree, which is the same output as a clean tree. Asserted per
+            // root rather than over the sum, because a sum lets one root collapse to nothing while the
+            // other carries the total over the line — and `crates/` shrinks on purpose as crates
+            // migrate, so it is the root whose slack would have been spent hiding the other's.
+            assert!(
+                declared >= decl_floor,
+                "found only {declared} `mod x;` declarations under `{rel_root}` (floor {decl_floor}), \
+                 so the parser is matching almost nothing and this guard is inert over that root",
+            );
         }
-        // Non-vacuity: a declaration parser that stopped matching would find nothing to resolve and
-        // report a clean tree, which is the same output as a clean tree.
-        assert!(
-            declared >= MIN_MODULE_DECLS,
-            "found only {declared} `mod x;` declarations across both roots (floor {MIN_MODULE_DECLS}), \
-             so the parser is matching almost nothing and this guard is inert",
-        );
         assert!(
             unresolved.is_empty(),
             "declared module(s) that resolve to neither a file nor a graph record. Either a file was \
