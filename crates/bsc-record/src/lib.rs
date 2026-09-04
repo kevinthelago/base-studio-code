@@ -16,11 +16,6 @@
 //! (`bsc ui set --if-version <n>`) compares the CURRENT stored `rev` against `n` and refuses a stale
 //! overwrite, so a background writer can't silently clobber a record it never re-read.
 
-/// The single definition of how a FILE compares to a RECORD, shared by BOTH stores. It lives here
-/// rather than in `bsc-ui` because `bsc-ui` depends on `bsc-graph`, so the graph side could not
-/// reach it without a cycle — and a comparison re-derived per store is exactly the divergence its
-/// own header argues against.
-pub mod record_source;
 
 use serde_json::Value;
 
@@ -677,3 +672,15 @@ mod tests {
         assert!(bsc_util::iso8601_to_epoch_ms(&ts).is_some(), "parses back: {ts}");
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/record_source.rs does not exist — it is a record in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-record--<module>.rs
+//     bsc graph impl set --id bsc-record--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-record--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
