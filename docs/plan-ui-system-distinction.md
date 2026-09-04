@@ -71,7 +71,7 @@ way to opt out of a UI system it is not using.
 
 `uiMode` has exactly **one** functional consumer:
 
-- `src/features/planner/pane/FocusedBodies.tsx` — `PreviewPaneShell` vs `FileIntakePane`
+- `PreviewPaneShell` vs `FileIntakePane` — formerly `src/features/planner/pane/FocusedBodies.tsx`, DELETED with the planner UI; the distinction below is the surviving point, not the file
 - (plus `classifyConfig.ts` parsing and `crates/plandb/src/validate.rs` validation, kept in lockstep)
 
 So the field is cheap to extend. The work is not the branch — it is deciding **what the answer should

@@ -6,7 +6,7 @@
 // now fills, and the fill FADES — a soft edge reads as an estimate, a hard one reads as a measurement.
 import { describe, it, expect, afterEach } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
-import { GlanceNode, nodeFill } from "@/features/glance/GlanceNode";
+import { GlanceNode, nodeProgressMask, NODE_DIM } from "@/features/glance/GlanceNode";
 import type { GNode } from "@/features/glance/lib/glanceGraph";
 
 const node = (over: Partial<GNode> = {}): GNode => ({
@@ -23,35 +23,48 @@ const props = (n: GNode) => ({
 
 afterEach(() => cleanup());
 
-describe("nodeFill (#4123)", () => {
-  it("is the bare panel colour at zero — an unmeasured node must look unmeasured", () => {
-    // A visible 0% sliver would put a mark on every node in the graph and say nothing.
-    expect(nodeFill(0)).toBe("var(--bg-elev)");
-    expect(nodeFill(-1)).toBe("var(--bg-elev)");
+describe("nodeProgressMask — progress is OPACITY, not a colour", () => {
+  it("says NOTHING for an unmeasured node — absent is not zero", () => {
+    // The old code collapsed "no progress data" and "0% done" into one `0`, and got away with it only
+    // because a 0 fill drew nothing. Under an opacity scheme they MUST diverge: dimming an uncounted
+    // node reports "nothing here is finished" for "nobody has counted".
+    expect(nodeProgressMask(null)).toBeUndefined();
+    expect(nodeProgressMask(undefined)).toBeUndefined();
   });
 
-  it("layers the wash OVER the panel colour rather than replacing it", () => {
-    // The node has to keep its surface, and its contrast with the canvas, at every fill level.
-    expect(nodeFill(0.5)).toContain("var(--bg-elev)");
-    expect(nodeFill(0.5).startsWith("linear-gradient(90deg")).toBe(true);
+  it("dims the WHOLE node at 0% — uniformly, with no bright region", () => {
+    const m = nodeProgressMask(0)!;
+    expect(m).toBeDefined();
+    // Every stop that carries a fraction is at NODE_DIM, and the last one reaches the far edge.
+    expect(m).toContain(`rgba(0,0,0,${NODE_DIM}) 100%`);
+    expect(m).toMatch(/#000 0%, #000 0%/);   // the bright band has zero width
   });
 
-  it("ends the wash at the fill edge, not past it", () => {
-    expect(nodeFill(0.25)).toContain("transparent 25%");
-    expect(nodeFill(1)).toContain("transparent 100%");
+  it("returns the node to FULL opacity when complete — no mask at all", () => {
+    // A finished node is simply itself. Anything else would leave a permanent artefact on it.
+    expect(nodeProgressMask(1)).toBeUndefined();
+    expect(nodeProgressMask(2)).toBeUndefined();
   });
 
-  it("FADES instead of stopping — there is no boundary to misread", () => {
-    // The soft stop sits a fade-band before the edge, and is weaker than the origin.
-    const g = nodeFill(0.6);
-    expect(g).toMatch(/44%/);            // 60 − 16
-    const [origin, mid] = [...g.matchAll(/complete\) (\d+)%/g)].map((m) => Number(m[1]));
-    expect(origin).toBeGreaterThan(mid); // thinning, not a flat block
+  it("runs full strength -> NODE_DIM left to right, and never past the edge", () => {
+    const m = nodeProgressMask(0.25)!;
+    expect(m.startsWith("linear-gradient(90deg")).toBe(true);
+    expect(m).toContain("25%");
+    expect(m).toContain(`rgba(0,0,0,${NODE_DIM}) 100%`);
   });
 
-  it("never runs the fade below zero for an early node", () => {
-    expect(nodeFill(0.05)).toContain("0%");
-    expect(nodeFill(0.05)).not.toMatch(/-\d/);
+  it("KEEPS the fade band — a soft edge reads as an estimate, a hard one as a measurement", () => {
+    const m = nodeProgressMask(0.6)!;
+    expect(m).toMatch(/44%/);                 // 60 − FADE_PCT(16)
+    expect(m).not.toMatch(/-\d/);            // and never runs negative for an early node
+    expect(nodeProgressMask(0.05)!).not.toMatch(/-\d/);
+  });
+
+  it("carries NO completion colour — health is the only colour signal on a node", () => {
+    // The whole point of the change: progress stopped being a blue wash.
+    const m = nodeProgressMask(0.5)!;
+    expect(m).not.toContain("--graph-health-complete");
+    expect(m).not.toContain("color-mix");
   });
 });
 
@@ -61,17 +74,39 @@ describe("GlanceNode progress (#4123)", () => {
     expect(screen.queryByText("3/7")).toBeNull();
   });
 
-  it("fills the node itself, and keeps the exact counts on hover", () => {
+  it("MASKS the node rather than tinting it, and keeps the exact counts on hover", () => {
     const { container } = render(<GlanceNode {...props(node({ progress: { done: 3, total: 7 } }))} />);
     const el = container.firstElementChild as HTMLElement;
-    expect(el.style.background).toContain("linear-gradient");
+    // The surface stays the plain panel — progress is opacity now, so nothing is painted onto it.
+    expect(el.style.background).toBe("var(--bg-elev)");
+    expect(el.style.maskImage || el.style.getPropertyValue("mask-image")).toContain("linear-gradient");
     expect(el.getAttribute("title")).toBe("3/7 issues complete");
   });
 
-  it("leaves a node with no work visually untouched", () => {
+  it("sets the WEBKIT mask too — the app ships on WebKitGTK", () => {
+    // Without the prefixed property every node renders at full opacity in the product while looking
+    // perfect in Chromium: the feature would be invisible exactly where it ships.
+    const { container } = render(<GlanceNode {...props(node({ progress: { done: 3, total: 7 } }))} />);
+    const el = container.firstElementChild as HTMLElement;
+    const webkit = el.style.getPropertyValue("-webkit-mask-image") || (el.style as unknown as Record<string, string>).WebkitMaskImage;
+    expect(webkit).toContain("linear-gradient");
+  });
+
+  it("leaves a node with no work visually untouched — NOT dimmed", () => {
     const { container } = render(<GlanceNode {...props(node({ progress: { done: 0, total: 0 } }))} />);
     const el = container.firstElementChild as HTMLElement;
     expect(el.style.background).toBe("var(--bg-elev)");
+    expect(el.style.maskImage || el.style.getPropertyValue("mask-image") || "").toBe("");
     expect(el.getAttribute("title")).toBeNull();
+  });
+
+  it("a node with work but NOTHING done is dimmed — that is the case 0-vs-absent had to separate", () => {
+    const { container } = render(<GlanceNode {...props(node({ progress: { done: 0, total: 7 } }))} />);
+    const el = container.firstElementChild as HTMLElement;
+    // The CSSOM re-spaces colour functions, so compare with whitespace removed rather than pinning
+    // the browser's formatting.
+    const mask = (el.style.maskImage || el.style.getPropertyValue("mask-image")).replace(/\s+/g, "");
+    expect(mask).toContain(`rgba(0,0,0,${NODE_DIM})0%`);   // dim from the very start — nothing is done
+    expect(mask).toContain(`rgba(0,0,0,${NODE_DIM})100%`); // …all the way across
   });
 });

@@ -229,6 +229,10 @@ describe("the `operator` role is confined and can reach its own queue", () => {
     for (const c of ["bsc surface", "bsc request new", "bsc errors run", "bsc mem", "bsc session ask"]) {
       expect(allow).toContain(c);
     }
+    // `bsc help` is the CATALOG, and it has to be auto-runnable or the charter names an entry point the
+    // session cannot use: a confined role runs exactly this list and STOPS to ask for anything else,
+    // which an unattended session reads as a stall. It grants nothing — it prints the noun list.
+    expect(allow).toContain("bsc help");
     expect(allow).not.toContain("bsc");
     // Every entry names a verb — the shape the floor guard enforces across all personas.
     for (const c of allow) expect(c).toMatch(/^bsc [a-z]/);

@@ -184,6 +184,7 @@ mod tests {
             code: super::super::role_gate::Tier::Write,
             net: super::super::role_gate::Tier::Read,
             ui: super::super::role_gate::Tier::Read,
+            graph: super::super::role_gate::Tier::Read,
             write_globs: vec!["src/**".into()],
             allow: vec![],
             surfaces: None,

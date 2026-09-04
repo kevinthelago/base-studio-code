@@ -6,7 +6,8 @@
     "a-studios-floor-denies-what-its-charter-instructs (2026-08-28): every confined studio gains `bsc persona whatami`; every persona that can FILE a request gains `bsc request get`; and every persona whose CHARTER instructs `bsc session ask` gains that exact prefix. A WIDENING, and deliberate: it closes the same prose/permission split the architect amendment above records, with the sign flipped — a studio was told to read its request replies, to put a judgement call to a sibling studio, and could do neither. Measured across all five studios plus the curator; the grants are per-verb, never a bare noun, so `bsc session` (start/stop) and `bsc persona` (rewriting identities) stay the architect's alone. ONE CONSEQUENCE WORTH NAMING: `bsc session ask` to a STOPPED target starts it, because delivery wakes a session to hand it the request — that is inside the closed-set mitigation (the target is an id from a registry the app owns) and is strictly narrower than the architect's existing grant. The `_amendments` array reflows to multi-line here because it was hand-collapsed onto one; nothing else in the file changes shape.",
     "an-ask-is-a-loop-again-and-every-turn-is-delivered (2026-08-28): every studio instructed to reply gains `bsc session reply` — the verb that posts a turn into its ask loop AND delivers it to the other participant. It is what lets a studio PAUSE AND ASK rather than guess or stop, which is the reason the loop came back. Per-verb as before; `bsc session` start/stop stays the architect's.",
     "4055-the-integrator-takes-the-discovery-declared-inte (2026-09-01): integrator.allow += `bsc project integrations`. DELIBERATE, and it is the item's first acceptance criterion — the Integrator studio shipped with a playbook and no QUEUE, so it knew how to build an integration and nothing about which ones anyone wanted. The declarations live per-project in each hub's plan.db while the studio is a global singleton with no project context, so the roll-up read is what bridges them; without it the studio cannot see its own work list from inside its cage. SCOPED TO THREE TOKENS ON PURPOSE: `bsc project` is NOT a read-only noun — it carries `new`, `link`, `github-state` and `db` — so a bare prefix would let a studio confined to connectors CREATE projects and rewrite their contracts. The verb itself is read-only: it opens each plan store without creating or migrating one, and a declaration carries the auth SCHEME in prose with no field able to hold a credential. No access axis moved — github/git/code/ui stay `none` and net stays `read` — and `bsc project`, `bsc plan` and bare `bsc` remain ungranted, which `the_work_list_verb_is_allowed_and_nothing_wider_is` pins in Rust.",
-    "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added — nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves — so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers — a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role — narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier."
+    "surface-operator-runs-confined-to-its-own-noun (2026-09-03): NEW ROLE `operator`, added — nothing existing is widened or narrowed, and no other role's row moves. It exists because the surface OPERATOR (`surface-studio:noun-<noun>`, the persona that drives one `bsc <noun>` and reports what it COST) had no role of its own and was launching with NO ROLE AT ALL: `openSurfaceSession` sets the pane's model, provider and charter but never `setPaneRole`, and a surface pane is not in the fixed studio registry `studioRoleForPaneId` resolves — so it reached the launch unconfined, with the full `base.json` baseline including the build tier. MEASURED: it ran `cd <repo> && cargo run --bin bsc -- studio list`, compiling in the tree the running app owns, to invoke a binary already on its PATH. The tiers are copied UNCHANGED from the persona floor already in the store (github/git/net/ui read, code none), so no access axis moves; the new field is `allow`, whose PRESENCE is what flips `restrictedAllow` and suppresses the baseline tiers — a strict NARROWING of what that session can auto-run today. `tester`, the role its persona nominally declared, would have been wrong in both directions: it is unconfined (cargo stays) AND its denies include `bsc request`, the single command this actor's entire charter is about. The bare `bsc` entry is deliberate: an operator's noun is chosen per SESSION, so it cannot be enumerated in a static role — narrowing it to the assigned noun needs a per-pane profile and is left as follow-up. The MAINTAINER (`verb-`) pane is deliberately not confined here: it edits its crate and legitimately holds the build tier.",
+    "a-session-knows-the-binary-is-bsc (2026-09-03): operator.allow += `bsc help`. A WIDENING of a confined role, and deliberate. A surface session reached for `bsc-session` — it knew what it wanted and not what to type — and the charter now names the binary and the one command that lists every surface. Without the grant that instruction is unusable: a confined role auto-runs exactly its allow list and STOPS to ask for anything else, which an unattended local session reads as a stall rather than a refusal it can act on. `bsc help` prints the noun catalog and nothing else: it opens no store, reads no project, and takes no argument that could reach one, so the grant is strictly the ability to find out what exists. No access axis moves. The complement stays closed — every surface the role does not declare is still denied by name, so knowing a noun exists does not make it runnable, and the charter says so in the same breath it names the catalog."
   ],
   "roles": {
     "architect": {
@@ -19,6 +20,7 @@
       "code": "none",
       "net": "none",
       "ui": "none",
+      "graph": "none",
       "allow": [
         "bsc teams",
         "bsc persona",
@@ -45,6 +47,7 @@
       "code": "none",
       "net": "none",
       "ui": "write",
+      "graph": "write",
       "allow": [
         "bsc ui",
         "bsc graph",
@@ -58,7 +61,8 @@
       "git": "write",
       "code": "write",
       "net": "read",
-      "ui": "write"
+      "ui": "write",
+      "graph": "write"
     },
     "designer": {
       "role": "designer",
@@ -70,6 +74,7 @@
       "code": "none",
       "net": "none",
       "ui": "write",
+      "graph": "read",
       "harvestRoots": [
         "app-repo",
         "projects"
@@ -106,6 +111,7 @@
       "code": "write",
       "net": "read",
       "ui": "read",
+      "graph": "read",
       "surfaces": [
         "plan",
         "fleet",
@@ -130,7 +136,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "integrator": {
       "role": "integrator",
@@ -142,6 +149,7 @@
       "code": "none",
       "net": "read",
       "ui": "none",
+      "graph": "none",
       "allow": [
         "bsc data connector",
         "bsc project integrations",
@@ -160,7 +168,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "juror": {
       "role": "juror",
@@ -169,7 +178,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "librarian": {
       "role": "librarian",
@@ -181,6 +191,7 @@
       "code": "none",
       "net": "none",
       "ui": "read",
+      "graph": "write",
       "harvestRoots": [
         "app-repo",
         "projects"
@@ -213,7 +224,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "operator": {
       "role": "operator",
@@ -223,7 +235,9 @@
       "code": "none",
       "net": "read",
       "ui": "read",
+      "graph": "read",
       "allow": [
+        "bsc help",
         "bsc surface",
         "bsc request new",
         "bsc request list",
@@ -252,7 +266,8 @@
       "git": "read",
       "code": "write",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "reviewer": {
       "role": "reviewer",
@@ -261,7 +276,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "sound-designer": {
       "role": "sound-designer",
@@ -273,6 +289,7 @@
       "code": "none",
       "net": "none",
       "ui": "none",
+      "graph": "none",
       "allow": [
         "bsc sound",
         "bsc request new",
@@ -290,7 +307,8 @@
       "git": "read",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "triage": {
       "role": "triage",
@@ -299,7 +317,8 @@
       "git": "none",
       "code": "none",
       "net": "read",
-      "ui": "read"
+      "ui": "read",
+      "graph": "read"
     },
     "worker": {
       "role": "worker",
@@ -309,6 +328,7 @@
       "code": "write",
       "net": "read",
       "ui": "read",
+      "graph": "write",
       "surfaces": [
         "plan",
         "graph",

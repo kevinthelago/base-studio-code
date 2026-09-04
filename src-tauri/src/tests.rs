@@ -367,6 +367,71 @@
         );
     }
 
+    /// EVERY ROLE IS CLASSIFIED BY THE CAGE — caged, or uncaged by decision, and never neither.
+    ///
+    /// `sandboxPlanFor` on the frontend plans a namespace for any role that is not in `UNCAGED_ROLES`.
+    /// This side then refuses to build one for a role `Role::parse` does not know, and the session
+    /// launches as a plain shell — with `/bsc-hook` guest paths already written into its settings,
+    /// pointing at a mount namespace that does not exist. Every gate fails to execute, NON-BLOCKING,
+    /// so the session runs with no write-scope gate and no dangerous-command floor until the launcher
+    /// repairs it, on every single launch.
+    ///
+    /// MEASURED: adding the `operator` role put it in neither list, and that is exactly what happened.
+    /// `UNCAGED_ROLES` documents the same failure at 13 repairs in one app run. Both lists were
+    /// individually correct and the role fell between them, which no test could see — the mirror test
+    /// in `uncagedRoles.test.ts` compares two hardcoded lists to each other, so a role missing from
+    /// BOTH is invisible to it. This asserts the POPULATION instead: every role the capability table
+    /// knows lands in one bucket or the other.
+    #[test]
+    fn every_role_is_either_caged_or_uncaged_by_decision() {
+        use bsc_sandbox::profile::{Role, UNCAGED_ROLES};
+        let baseline: serde_json::Value = serde_json::from_str(include_str!(
+            "../../src/shared/lib/session/roleCapabilityBaseline.fixtures.json"
+        ))
+        .expect("the capability baseline parses");
+        let roles: Vec<String> = baseline["roles"]
+            .as_object()
+            .expect("roles is an object")
+            .keys()
+            .cloned()
+            .collect();
+        // The population, so a scanner that stopped matching fails loudly instead of going quiet.
+        assert!(roles.len() >= 17, "the baseline should hold every role; got {}", roles.len());
+
+        // A RATCHET, not a clean assertion, because this guard found THREE roles already in the state
+        // it was written to prevent. They are listed so the population can only SHRINK: a new role
+        // that lands unclassified fails immediately, and clearing one of these is a deliberate edit
+        // here. They are not laundered — each needs the same judgement `operator` got (is the cage
+        // able to serve its store, and if not, what is the blocker), and none can be answered by
+        // guessing. Filed as `three-roles-were-never-classified-by-the-cage`.
+        //
+        // Whether each MANIFESTS depends on something this side cannot see — `sandboxPlanFor` needs a
+        // role actually set on the pane, and a debug-studio pane deliberately carries none. `marketer`
+        // is a fleet role and fleet panes do carry theirs, so at least one of these is live.
+        const UNCLASSIFIED_LEGACY: &[&str] = &["curator", "debugger", "marketer"];
+        let unclassified: Vec<&String> = roles
+            .iter()
+            .filter(|r| {
+                Role::parse(r).is_none()
+                    && !UNCAGED_ROLES.iter().any(|(n, _, _)| *n == r.as_str())
+                    && !UNCLASSIFIED_LEGACY.contains(&r.as_str())
+            })
+            .collect();
+        // The legacy list may only shrink: an entry that HAS been classified must be removed from it,
+        // or the ratchet quietly stops ratcheting.
+        let stale: Vec<&&str> = UNCLASSIFIED_LEGACY
+            .iter()
+            .filter(|r| Role::parse(r).is_some() || UNCAGED_ROLES.iter().any(|(n, _, _)| n == *r))
+            .collect();
+        assert!(stale.is_empty(), "these are classified now — drop them from UNCLASSIFIED_LEGACY: {stale:?}");
+        assert!(
+            unclassified.is_empty(),
+            "these roles are neither caged nor listed in UNCAGED_ROLES, so the frontend plans a \
+             namespace this side then declines — leaving every launch with /bsc-hook paths that \
+             resolve to nothing and a session running with no gates: {unclassified:?}"
+        );
+    }
+
     /// `bundle.resources` must ship EXACTLY the seeds that are no longer embedded.
     ///
     /// This is the one failure the other tests structurally cannot see: dev resolves the seeds from the

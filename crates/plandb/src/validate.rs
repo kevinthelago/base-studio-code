@@ -612,6 +612,16 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             }
         }
     }
+    // `model` is checked for SHAPE here and for EXISTENCE at the CLI (`verify_classify_model`).
+    //
+    // The split is deliberate: this function is pure and every one of its tests is a `json!` literal,
+    // while deciding whether a model name is real requires asking the local runtime. Probing from
+    // here would put a network call inside a validator, and inside every test that ever calls it.
+    if let Some(m) = v.get("model") {
+        if !m.as_str().is_some_and(|s| !s.trim().is_empty()) {
+            errs.push(r#""model" must be a non-empty string when present — a Claude tier (haiku-4.5 | sonnet-4.5 | opus-4.5) or a model the local runtime has installed. Omit it entirely to fall through to the persona's default"#.into());
+        }
+    }
     if errs.is_empty() { Ok(()) } else { Err(reject(noun, errs)) }
 }
 
@@ -645,9 +655,17 @@ pub fn classify_readiness(v: &Value) -> String {
     // #4115: both system axes are echoed BEFORE `uiMode`, because they govern whether uiMode means
     // anything — for an `own` project our pipeline never renders, whichever surface the designs came
     // from — and because they are the security-relevant answer the planner must be able to re-read.
+    // The model is echoed as what it IS rather than as a default: absent means "each session falls
+    // through to its persona", which is a real and common answer, not a blank.
+    let model = v
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or("per-persona default");
     format!(
         " — {lifecycle} {app_type}; uiSystem {ui_system}; algorithmSystem {algo_system}; \
-         uiMode {ui}; GitHub: {github}; optional stages: {list}"
+         uiMode {ui}; GitHub: {github}; model: {model}; optional stages: {list}"
     )
 }
 
@@ -1046,6 +1064,22 @@ fn validate_stream_fields(at: &str, s: &Value, errs: &mut Vec<String>) {
             ));
         }
     }
+    // `feature` — which FEATURE this stream belongs to (`a-feature-owns-many-streams`).
+    //
+    // SHAPE only here; that the slug names a real feature is checked at the CLI, which has the store
+    // open. The split is the same one `classify.model` makes: this validator is pure and every one of
+    // its tests is a `json!` literal, so a check needing the roster cannot live in it.
+    //
+    // A present-but-empty value is refused rather than normalised away. It is the shape that LOOKS
+    // decided and resolves to nothing — the launch would fall back to the stream id and the author
+    // would never learn the difference.
+    if let Some(f) = s.get("feature") {
+        if !f.as_str().is_some_and(|x| !x.trim().is_empty()) {
+            errs.push(format!(
+                r#"{at}: "feature" must be a non-empty feature slug when present (see `bsc plan feature list`). Omit it entirely to fall back to the stream's own id"#
+            ));
+        }
+    }
 }
 
 /// Validate one stream blob for `fleet stream set <id>`: the object floor (a pane-id-safe `id` + a
@@ -1273,19 +1307,27 @@ pub fn validate_issue(issue: &PlanIssue, lenient: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether a feature is fully defined (mirrors the frontend `featureDefined`: name + behavior +
-/// ≥1 acceptance) — the Features gate needs EVERY feature defined.
-fn feature_defined(f: &PlanFeature) -> bool {
-    !f.name.trim().is_empty()
-        && f.behavior.as_deref().map(|b| !b.trim().is_empty()).unwrap_or(false)
-        && !f.acceptance.is_empty()
-}
-
-/// The non-fatal readiness echo after a feature write: `N of M features fully defined` (the
-/// Features gate needs all M, plus the user's confirm).
+/// The non-fatal readiness echo after a feature write.
+///
+/// It reports BOTH rules, because reporting one while the roster listing marked rows by the other is
+/// exactly the contradiction this echo used to be half of: it counted `feature_specified` while
+/// `render_feature_line` marked `feature_defined`, so `bsc plan feature list` could print `·` on
+/// nearly every row above a footer claiming `47 of 49 features fully defined`. The rules now live
+/// once each in [`crate::features`] and both numbers are named, so neither can be mistaken for the
+/// other.
 pub fn feature_readiness(feats: &[PlanFeature]) -> String {
-    let defined = feats.iter().filter(|f| feature_defined(f)).count();
-    format!("{defined} of {} features fully defined", feats.len())
+    let s = crate::features::features_summary(feats);
+    let gap = s.specified.saturating_sub(s.defined);
+    if gap == 0 {
+        format!("{} of {} features fully defined", s.defined, s.count)
+    } else {
+        // The gap is the interesting half: a feature that is described but declares no `requires`
+        // sends a worker to build from nothing. Naming it here is the only place that says so.
+        format!(
+            "{} of {} features fully defined ({gap} described but declaring no `requires`)",
+            s.defined, s.count
+        )
+    }
 }
 
 /// Validate a `fleet session set` row: `paneId` is the primary key the console + recovery join on,
@@ -2055,12 +2097,49 @@ mod tests {
         assert!(validate_issue(&PlanIssue { title: "t".into(), ..Default::default() }, true).is_err());
     }
 
+    /// The readiness echo reports the SAME rule `bsc plan feature list` marks rows by, and names the
+    /// gap between the two notions rather than picking one silently.
+    ///
+    /// It used to count `feature_specified` while the row mark used `feature_defined`, so one command
+    /// printed `·` against nearly every row above a footer claiming `47 of 49 features fully defined`
+    /// (MEASURED 2026-09-03 on studio-code). Both halves now come from `crate::features`.
     #[test]
-    fn feature_readiness_counts_fully_defined_features() {
-        let full = PlanFeature { name: "A".into(), behavior: Some("does".into()), acceptance: vec!["ok".into()], ..Default::default() };
+    fn feature_readiness_counts_fully_defined_features_and_names_the_requires_gap() {
+        let described = PlanFeature { name: "A".into(), behavior: Some("does".into()), acceptance: vec!["ok".into()], ..Default::default() };
         let title_only = PlanFeature { name: "B".into(), ..Default::default() };
-        assert_eq!(feature_readiness(&[full, title_only]), "1 of 2 features fully defined");
+        // Described but declaring no `requires`: NOT fully defined, and the echo says why rather than
+        // counting it in and leaving the author to wonder which rule the ✓ column used.
+        assert_eq!(
+            feature_readiness(&[described.clone(), title_only.clone()]),
+            "0 of 2 features fully defined (1 described but declaring no `requires`)"
+        );
+        // With `requires`, it is fully defined and there is no gap to report.
+        let full = PlanFeature { requires: vec!["merge.rs".into()], ..described };
+        assert_eq!(feature_readiness(&[full.clone(), title_only]), "1 of 2 features fully defined");
+        assert_eq!(feature_readiness(&[full]), "1 of 1 features fully defined");
         assert_eq!(feature_readiness(&[]), "0 of 0 features fully defined");
+    }
+
+    /// A stream's `feature` is SHAPE-checked here; that it names a real feature is the CLI's question
+    /// (`a-feature-owns-many-streams`).
+    #[test]
+    fn a_stream_feature_must_be_a_non_empty_slug_when_present() {
+        let ok = |f: serde_json::Value| {
+            validate_fleet_stream("api", &json!({ "id": "api", "repo": "o/r", "feature": f })).is_ok()
+        };
+        assert!(ok(json!("payments")));
+        // ABSENT is fine and is the fallback — the stream resolves by its own id.
+        assert!(validate_fleet_stream("api", &json!({ "id": "api", "repo": "o/r" })).is_ok());
+
+        // A present-but-empty value is the dangerous shape: it LOOKS decided and resolves to nothing,
+        // so the launch would fall back to the stream id and the author would never learn the
+        // difference. Refused, with the error saying how to mean "no feature" properly.
+        for bad in [json!(""), json!("   "), json!(true), json!(7), json!(null), json!(["payments"])] {
+            let err = validate_fleet_stream("api", &json!({ "id": "api", "repo": "o/r", "feature": bad }))
+                .unwrap_err();
+            assert!(err.contains("feature"), "names the field: {err}");
+            assert!(err.contains("Omit"), "says how to mean no feature: {err}");
+        }
     }
 
     #[test]
@@ -2094,6 +2173,40 @@ mod tests {
             "needsSkills": false, "needsAutomations": false
         }))
         .is_ok());
+    }
+
+    // ── the model axis (`discovery-chooses-the-model`) ───────────────────────────────────────
+
+    #[test]
+    fn classify_accepts_a_model_and_rejects_a_shape_that_could_never_launch() {
+        // Any non-empty string passes HERE — whether the name is real is `verify_classify_model`'s
+        // question, because answering it needs the local runtime. This half exists so a value that
+        // could never be a model name at all is refused before anything probes for it.
+        assert!(validate_classify_config(&json!({ "model": "sonnet-4.5" })).is_ok());
+        assert!(validate_classify_config(&json!({ "model": "qwen3.5:35b-a3b" })).is_ok());
+
+        // Absent is the default and must stay valid — the state of every project classified before
+        // this axis existed.
+        assert!(validate_classify_config(&json!({})).is_ok());
+
+        // A present-but-empty model is the dangerous shape: it LOOKS decided and resolves to nothing,
+        // so the fleet would silently fall through to the persona while the classification claims a
+        // choice was made. Refused rather than normalised away, and the error says how to mean
+        // "no project-level choice" properly.
+        for bad in [json!(""), json!("   "), json!(true), json!(3), json!(null), json!(["sonnet-4.5"])] {
+            let err = validate_classify_config(&json!({ "model": bad })).unwrap_err();
+            assert!(err.contains("model"), "names the field: {err}");
+            assert!(err.contains("Omit"), "says how to mean no choice: {err}");
+        }
+    }
+
+    #[test]
+    fn classify_readiness_reports_the_model_as_what_it_is_never_as_a_tier() {
+        // The echo is what the architect reads back after recording a discovery decision, so an
+        // absent model must read as the fall-through it actually is. Printing a tier here would state
+        // a choice nobody made — the same mistake `usesGithub` reports as UNDECIDED to avoid.
+        assert!(classify_readiness(&json!({})).contains("model: per-persona default"));
+        assert!(classify_readiness(&json!({ "model": "qwen3.5:9b" })).contains("model: qwen3.5:9b"));
     }
 
     #[test]

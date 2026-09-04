@@ -126,7 +126,7 @@ Per branch:
   --cmd "<the command>" --from <you>` instead of writing it. Read-only grep/jq pipelines and tests
   are exempt.
 - **Recycle worktrees, don't recreate them** — `cd wt-<short> && git checkout -B <ref> develop`
-  keeps the warm `target/` (0.41s vs 1m59s). `npm run worktrees:cap` is destructive and refuses
+  keeps the warm `target/` (0.41s vs 1m59s). `bsc worktree cap` (formerly `npm run worktrees:cap`, since moved onto the `bsc` surface) is destructive and refuses
   dirty trees on purpose; that refusal has already saved real staged work once.
 
 ## Done means

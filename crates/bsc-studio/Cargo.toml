@@ -20,6 +20,11 @@ name = "bsc_studio"
 bsc-json-store = { path = "../bsc-json-store" }
 # Shared leaf utilities (#1646): the one `~/.base-studio-code` base-dir resolver every store agrees on.
 bsc-util = { path = "../bsc-util" }
+# `conn` for the SQLite handle a FULL-scope backup needs. A store must be copied with `VACUUM INTO`
+# rather than a file copy: 16 `-wal` sidecars sit beside the plan stores on a live machine, and
+# copying a `.db` while its write-ahead log holds uncommitted pages yields a stale or corrupt file
+# that looks exactly like a working backup until someone restores it.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold (#1762): `CmdDoc` + the help dispatch / unknown-command renderer.
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }

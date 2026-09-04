@@ -17,7 +17,7 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 22] = [
+pub const VERBS: [&str; 24] = [
     "impl", "edge", "test", "harvest", "curate", "dump", "doctor", "refolder", "relink", "tests",
     "used-by", "features", "merge", "emit", "promote", "reseed", "unmaterialize", "build", "migrate-crate", "help",
     // The duplicate surfaces (epic-a-graph-finds-its-own-duplicates). They dispatched and appeared in
@@ -25,6 +25,11 @@ pub const VERBS: [&str; 22] = [
     // drift guard — and the librarian charter test, which asserts the seed names only verbs the CLI
     // has, could not accept prose that taught them.
     "dupes", "similar",
+    // The vocabulary reconcile (`the-graph-vocabulary-is-the-plans`) — `feature rename`.
+    "feature",
+    // The tag VOCABULARY (`the-graphs-cannot-be-searched-by-the-axes-they-store`). A search is only
+    // reachable by an agent that can first discover what there is to search for.
+    "tags",
 ];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
@@ -47,7 +52,7 @@ pub const BOOL_FLAGS: [&str; 13] = [
 ];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 54] = [
+pub const FLAGS: [&str; 56] = [
     "--pretty",
     // `tests set` (#141) — ALSO land the same test onto the packaged seed record, not only the
     // runtime store, so curating a moved/harvested test never needs a hand-written jq patch.
@@ -90,6 +95,9 @@ pub const FLAGS: [&str; 54] = [
     "--code-file",
     "--domain",
     "--feature",
+    "--feature",
+    // `feature rename … --under <folder-prefix>` — the split filter (the-graph-vocabulary-is-the-plans).
+    "--under",
     "--required-by",
     "--clear",
     "--tags",
@@ -1470,6 +1478,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let pretty = args.iter().any(|a| a == "--pretty");
     let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     let verb = positional.first().copied().unwrap_or("help");
+    // THE STORE WRITE GATE (`the-algorithms-graph-has-no-write-gate`). One check, here, rather than one
+    // per mutating arm: there are sixteen of them, a seventeenth is added regularly, and the per-arm
+    // shape is the one that silently drifts — a new verb that forgets the call is indistinguishable
+    // from a verb that is meant to be readable. Refusing at the dispatch boundary means a verb has to
+    // be named in `MUTATING` to be reachable at all, and `every_mutating_arm_is_classified` asserts
+    // that list against the dispatch.
+    //
+    // Until this existed the store had NO gate: `bsc-graph` held zero `require_write_scope` calls
+    // against `bsc-component`'s four, and `bsc` is in the mandatory permission tier, so every role on
+    // the board could write any algorithm record. A session declaring `{"graph":"none"}` created one
+    // and was told `ok: true`.
+    if is_store_mutation(&positional, &args) {
+        bsc_cli_util::require_write_scope("graph")?;
+        // …and WHICH records (`a-worker-writes-only-its-own-feature`). The gate above says whether
+        // this session writes the store at all; this says which of its 693 records — because
+        // `graph: write` alone still let a worker rewrite `core`, which 204 of them are and every
+        // feature composes.
+        require_feature_confinement(&positional, &args)?;
+    }
     let emit = |v: &Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
         // Through `bsc_util::emit_line`, NOT `println!`
@@ -1616,6 +1643,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(code) = source_flag(&args, "--code")? { im["code"] = Value::String(code); }
                 // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
                 if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
+                // `--feature` — HAND PLACEMENT on the ownership axis.
+                //
+                // `features --apply` derives it from `folder`, and that derivation covers the frontend
+                // layout only: `shared`/`app`/`store`/`features/<x>`. It has NO arm for `crates/<x>`,
+                // so not one of the 25 crates that compile from the graph can be placed automatically
+                // — every module migrated by `migrate-crate` lands featureless and fails the ownership
+                // gate. `features --apply` already documents that it "never overwrites a feature
+                // already set, so hand placement survives every re-run"; this is the verb that
+                // placement was missing.
+                //
+                // Deliberately NOT another arm in the derivation: a crate's feature is not mechanical
+                // from its path (`crates/bsc-fin` is the `finance` capability), and a rule that
+                // guessed would place records confidently and wrongly.
+                if let Some(f) = flag_value(&args, "--feature") { im["feature"] = Value::String(f); }
                 // The OWNERSHIP axis — which feature owns this record, so which worker may write it.
                 // Distinct from `--domain` (the curated collection facet) and from a plan feature's
                 // `requires` (the many-to-many USAGE relation, per project, so the library never learns
@@ -2075,12 +2116,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // The domain facet filter (#3120) — a cross-language domain collection ("all logistics algorithms").
                 let domain = flag_value(&args, "--domain");
                 let feature = flag_value(&args, "--feature");
+                // The TAG filter (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+                //
+                // `--tags` was already in `VALUE_FLAGS`, so it PARSED here and nothing consumed it:
+                // `--tags sort` and `--tags totally-nonexistent-tag-xyz` both returned all 693 records,
+                // with no error. A worker asking for a subset got the whole library back and had no way
+                // to tell — which is worse than the flag not existing, and is why 0 of 693 records
+                // carry a tag. A field that cannot be queried is a field nobody fills in.
+                //
+                // Same spelling as `impl set --tags a,b`, so the write and the read name the axis
+                // identically rather than making the caller remember which is singular.
+                let tags = list_flag(flag_value(&args, "--tags").as_deref());
+                let want: Vec<&str> = tags.as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
                 let impls: Vec<Value> = crate::implementations()
                     .into_iter()
                     .filter(|im| tech.as_deref().is_none_or(|t| im.get("tech").and_then(Value::as_str) == Some(t)))
                     .filter(|im| role.as_deref().is_none_or(|r| im.get("role").and_then(Value::as_str) == Some(r)))
                     .filter(|im| domain.as_deref().is_none_or(|d| crate::impl_in_domain(im, d)))
                     .filter(|im| feature.as_deref().is_none_or(|f| im.get("feature").and_then(Value::as_str) == Some(f)))
+                    .filter(|im| crate::impl_has_every_tag(im, &want))
                     .collect();
                 emit(&Value::Array(impls))
             }
@@ -2101,7 +2155,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // Every subverb in `IMPL_SUBVERBS`, in its order — the roster a caller who guessed wrong
             // needs is the WHOLE roster, and half of it used to be missing from this line.
             _ => Err("usage: bsc graph impl set … | impl get <id-or-name> | impl remove <id> \
-                      | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] \
+                      | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] [--tags a,b] \
                       | impl suppress <id> [--superseded-by <new-id>] [--seed] | impl unsuppress <id> \
                       | impl history <id> | impl revert <id> [--to <rev>] \
                       | impl sync-seed <id>… --seed-dir <dir> [--only <field>[,<field>…]] [--apply] \
@@ -3450,6 +3504,88 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `coreCandidates` is ranked by FOREIGN-DOMAIN FAN-IN — how many *different* domains compose a
         // record, not how often it is composed. Raw usage cannot tell shared infrastructure from one
         // feature's popular helper; the number of distinct callers-across-a-boundary can.
+        // `feature rename <from> <to> [--under <folder-prefix>] [--apply]` — move a feature's records
+        // onto another name (`the-graph-vocabulary-is-the-plans`).
+        //
+        // The graph's features were backfilled from FOLDERS, so they describe where code lives; the
+        // plan's describe units of work. Reconciling them onto one namespace is a RENAME, and
+        // `features --apply` cannot do it: that verb derives from the folder (which is what produced
+        // the divergence) and never overwrites a feature already set.
+        //
+        // `--under` exists for one measured reason: graph `shell` is TWO things — 92 records under
+        // `app/**` (the chrome) and 53 under `app/console/**` (the pane system) — and only a folder
+        // filter can split them onto `shell` and `console`. Without it the reconcile would have to
+        // choose one lane for both.
+        //
+        // DRY BY DEFAULT, like `features` and `unmaterialize`: it rewrites an ownership field across
+        // many records, and ownership is what decides which worker may write them.
+        "feature" if positional.get(1).copied() == Some("rename") => {
+            let from = positional.get(2).copied().ok_or(
+                "usage: bsc graph feature rename <from> <to> [--under <folder-prefix>] [--apply]",
+            )?;
+            let to = positional.get(3).copied().ok_or(
+                "usage: bsc graph feature rename <from> <to> [--under <folder-prefix>] [--apply]",
+            )?;
+            let under = flag_value(&args, "--under");
+            let apply = args.iter().any(|a| a == "--apply");
+            let mut g = crate::load();
+            let matched: Vec<(String, String, String, String)> = crate::implementations_of(&g)
+                .iter()
+                .filter(|im| im.get("feature").and_then(Value::as_str).unwrap_or_default().trim() == from)
+                .filter(|im| match under.as_deref() {
+                    None => true,
+                    Some(p) => im
+                        .get("folder")
+                        .and_then(Value::as_str)
+                        .or_else(|| im.get("src").and_then(Value::as_str))
+                        .unwrap_or_default()
+                        .starts_with(p),
+                })
+                .filter_map(|im| {
+                    // `tech` and `role` are READ FROM THE RECORD and resubmitted because `set_impl_by`
+                    // validates identity on the submitted value. Guessing either is what renamed 21
+                    // records wrongly on the first attempt at the folder backfill.
+                    Some((
+                        im.get("id").and_then(Value::as_str)?.to_string(),
+                        im.get("tech").and_then(Value::as_str)?.to_string(),
+                        im.get("role").and_then(Value::as_str)?.to_string(),
+                        im.get("folder").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    ))
+                })
+                .collect();
+            if apply {
+                for (id, tech, role, _) in &matched {
+                    // The DELTA plus the two identity fields — never the round-tripped record. A
+                    // resubmitted stored `null` reads as a CLEAR through the merge, which is how
+                    // `terminalhost.provides` was lost 448 records into the component backfill.
+                    crate::set_impl_by(
+                        &mut g,
+                        serde_json::json!({ "id": id, "tech": tech, "role": role, "feature": to }),
+                        "feature-rename",
+                        Some(&format!("feature: {from} -> {to}")),
+                    )?;
+                }
+                if !matched.is_empty() {
+                    crate::save(&g)?;
+                }
+            }
+            emit(&serde_json::json!({
+                "from": from,
+                "to": to,
+                "under": under,
+                "applied": apply,
+                "matched": matched.len(),
+                // A SAMPLE, not the whole set: the point of the dry run is that a person reads it, and
+                // 147 ids is not read, it is scrolled past. The count is the number that matters.
+                "sample": matched.iter().take(8).map(|(id, _, _, f)| serde_json::json!({ "id": id, "folder": f })).collect::<Vec<_>>(),
+            }))
+        }
+        // A BARE `feature` (or an unknown subverb) is a USAGE error, never an unknown-command
+        // rejection — `verbs_match_the_dispatcher` asserts exactly that for every entry in VERBS, and
+        // it is the difference between "you got the arguments wrong" and "this verb does not exist".
+        "feature" => Err(
+            "usage: bsc graph feature rename <from> <to> [--under <folder-prefix>] [--apply]".to_string(),
+        ),
         "features" => {
             let mut g = crate::load();
             let owned: Vec<Value> = crate::implementations_of(&g).into_iter().collect();
@@ -3530,6 +3666,22 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 "edgesIntoCore": r.edges_into_core,
                 "coreCandidates": candidates,
             }))
+        }
+        // `tags` — the tag vocabulary with a count per tag (`the-graphs-cannot-be-searched-by-the-axes-they-store`).
+        //
+        // The half that makes `impl list --tags` usable BY AN AGENT rather than by someone who already
+        // knows the answer: a tag cannot be searched for until it can be discovered, and the only other
+        // way to learn the vocabulary was `dump`, which is 11 MB.
+        //
+        // Deliberately NOT filtered by `--tech`: the point of a tag is that it crosses the language
+        // kits (`sorting` means the same thing in both), so scoping the vocabulary to one tech would
+        // teach a narrower vocabulary than the store actually holds.
+        "tags" => {
+            let rows: Vec<Value> = crate::tag_census(&crate::implementations())
+                .into_iter()
+                .map(|(tag, count)| serde_json::json!({ "tag": tag, "count": count }))
+                .collect();
+            emit(&Value::Array(rows))
         }
         "used-by" => {
             let g = crate::load();
@@ -3811,6 +3963,103 @@ fn set_impl_skipping_retired(
         return Ok(());
     }
     crate::set_impl_by(g, im, writer, Some(note)).map(|_| ())
+}
+
+/// Refuse a mutation that would write a record outside this session's features.
+///
+/// THE STORED FEATURE GOVERNS, never the submitted one. A write carrying `--feature mine` against a
+/// record owned by `core` is exactly the move confinement exists to stop, and reading the submitted
+/// value would wave it through — the record would simply change hands. For a record that does not
+/// exist yet there is no stored owner, so the SUBMITTED feature is the claim: a new record must
+/// declare a lane the session may write rather than slipping in unowned.
+///
+/// SCOPED TO THE ID-BEARING VERBS. `curate --apply` and `doctor --fix` write across the whole library
+/// and are not a worker's verbs; a confined session is stopped from those by the coarse gate long
+/// before this, and inventing a per-record answer for a whole-library sweep here would be guessing.
+fn require_feature_confinement(positional: &[&str], args: &[String]) -> Result<(), String> {
+    if bsc_cli_util::session_features().is_none() {
+        return Ok(());
+    }
+    let Some(id) = flag_value(args, "--id").or_else(|| positional.get(2).map(|s| s.to_string())) else {
+        return Ok(());
+    };
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return Ok(());
+    }
+    let stored = crate::implementations()
+        .into_iter()
+        .find(|im| im.get("id").and_then(Value::as_str) == Some(id.as_str()))
+        .and_then(|im| im.get("feature").and_then(Value::as_str).map(str::to_string));
+    match stored {
+        Some(owner) => bsc_cli_util::require_feature_write(&id, &owner),
+        // A NEW record: the submitted feature is the claim, and an absent one is refused by
+        // `require_feature_write`'s empty-feature rule rather than silently landing unowned.
+        None => bsc_cli_util::require_feature_write(&id, flag_value(args, "--feature").unwrap_or_default().trim()),
+    }
+}
+
+/// The verbs that MUTATE the algorithms store, as `(verb, subverb)` — `None` where the verb has no
+/// subverb. The gate in [`run`] reads this; nothing else may.
+///
+/// STORE mutation, specifically. `promote`, `emit`, `unmaterialize`, `migrate-crate` and
+/// `impl sync-seed` write REPO FILES, which are governed by the session's write globs and its FS
+/// confinement — a second gate on the `graph` scope would deny a librarian its own promote while the
+/// file boundary is what actually applies. `reseed` IS here: it overwrites the runtime store from the
+/// seed, which is a store write however it is spelled.
+const MUTATING: &[(&str, Option<&str>)] = &[
+    ("impl", Some("set")),
+    ("impl", Some("remove")),
+    ("impl", Some("revert")),
+    ("impl", Some("suppress")),
+    ("impl", Some("unsuppress")),
+    ("impl", Some("refresh")),
+    ("edge", Some("set")),
+    ("edge", Some("remove")),
+    ("tests", Some("set")),
+    ("tests", Some("harvest")),
+    ("curate", None),
+    ("merge", None),
+    ("refolder", None),
+    ("relink", None),
+    ("reseed", None),
+    ("features", None),
+    ("doctor", None),
+    ("harvest", None),
+];
+
+/// Whether this invocation would WRITE the store — the predicate the gate in [`run`] applies.
+///
+/// Four of the entries in [`MUTATING`] only write when a flag says so (`curate`/`harvest` need
+/// `--apply`, `doctor` needs `--fix`, `features` needs `--apply`), and their READ form is the common
+/// one — `doctor` is how a session finds out what is wrong, and denying that to a read-only role would
+/// make the store un-inspectable. So the flag is part of the question, not an afterthought.
+fn is_store_mutation(positional: &[&str], args: &[String]) -> bool {
+    let Some(verb) = positional.first().copied() else { return false };
+    // `<verb> help` and `<verb> <sub> help` ask for documentation and write nothing.
+    if positional.contains(&"help") {
+        return false;
+    }
+    let sub = positional.get(1).copied();
+    // A `None` subverb in [`MUTATING`] means THE VERB ITSELF mutates, whatever follows it — and what
+    // follows is an ARGUMENT, not a subverb (`merge <from> <into>`, `curate <dir>`, `relink <dir>`).
+    // Matching `positional[1]` against `None` for those let every one of them through the gate: probed
+    // live, `bsc graph merge a b` under `{"graph":"none"}` reached the arm and failed on the id lookup
+    // instead of being refused. Only an entry that NAMES a subverb compares one.
+    let named = MUTATING
+        .iter()
+        .any(|(v, s)| *v == verb && (s.is_none() || *s == sub));
+    if !named {
+        return false;
+    }
+    let has = |f: &str| args.iter().any(|a| a == f);
+    match verb {
+        "curate" | "harvest" | "features" => has("--apply"),
+        "doctor" => has("--fix"),
+        "relink" => !has("--dry-run"),
+        "tests" if sub == Some("harvest") => !has("--dry-run"),
+        _ => true,
+    }
 }
 
 /// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
@@ -4145,7 +4394,7 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
+         {prog} impl get <id-or-name> [--field <name>] [--raw] [--out <name>] | impl list [--tech <t>] [--role r] [--domain <d>] [--feature <f>] [--tags a,b]   # a language kit's implementations (#2863); --domain filters to a cross-language COLLECTION (#3120, partial by design); --feature filters to the OWNERSHIP axis — which feature owns the record, and so which worker may write it (`core` is the shared baseline); get falls back to a bare NAME when it's unambiguous, else lists the colliding ids (#118); --field narrows to ONE field (`code`, typically) — --raw unwraps it with no JSON quoting, and --out <name> writes those exact bytes to $BSC_SCRATCH/<name> instead of stdout (#137) — the read-side door symmetric with `impl set --code-file` (#76)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir-or-file> [--tech T] [--worthy-only] [--module] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745); a FILE target harvests just that module (#4161); --module lifts a FILE as ONE module-shaped candidate carrying the `provides` specifier, for making a logic module a record rather than a library function; --apply (module mode only) WRITES that candidate to the store, the only path for a module too large to pass as `impl set --code`\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
@@ -4159,6 +4408,8 @@ fn help(prog: &str) -> String {
   \n         {prog} tests harvest <dir> [--id a,b] [--dry-run] [--pretty]   # carry each impl's COLOCATED test file onto its node — the algorithms twin of `bsc ui tests harvest` (#4126). Bare, walks the WHOLE store; `--id` scopes the pairing to named ids only, so harvesting one record does not re-pair every other impl that happens to share its colocated-test pass (#123)
   \n         {prog} tests set --id <id> --src <test-file> [--name <n>] [--seed] [--if-version <n>] [--pretty]   # pair ONE record's test without a whole-tree harvest (#140); --seed ALSO lands it on the packaged seed record (`src-tauri/data/knowledge/algorithms.json`), not only the runtime store — a store-only write to a seeded record is transient (#141); --if-version <n> is the same OPTIMISTIC CONCURRENCY guard `impl set` carries (#183) — rejects the write unless the record's current rev is exactly n
   \n         {prog} doctor [--fix] [--dedup] [--pretty]             # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212). --dedup is a FOCUSED mode (#78): duplicate-candidate GROUPS over the impl set, on THREE signals — a near-identical BODY (tokenized k-gram shingles, so formatting and wrappers do not defeat it), the same SHAPE (identical code under identifier renaming, which the shingles structurally cannot find because they contain the identifiers), and a shared NAME together with a shared src MODULE (either alone is a naming convention, not a duplicate). N duplicates report as ONE row naming every member and every signal that grouped them, confined to one tech, and it is propose-only (fold with `{prog} merge`)\n  \
+         {prog} tags [--pretty]                            # the TAG VOCABULARY: every tag in the store with how many impls carry it, most-used first. Discover-then-search — `impl list --tags` cannot be reached by an agent that has no way to learn which tags exist, and the only other route was `dump` (11 MB). Not scoped by --tech on purpose: a tag crosses the language kits, so a per-tech vocabulary would teach a narrower one than the store holds\n  \
+         {prog} feature rename <from> <to> [--under <folder-prefix>] [--apply]   # move a feature's records onto ANOTHER NAME — the vocabulary reconcile (the-graph-vocabulary-is-the-plans). NOT `features`, which DERIVES the feature from the folder and never overwrites one already set: that is right for a backfill and useless for a rename, since the folder derivation is what produced the name you are changing. DRY BY DEFAULT (it rewrites OWNERSHIP, which decides who may write a record) — it prints the count and a sample, and writes only on --apply. --under narrows to records whose folder starts with the prefix, for the case that made it necessary: one graph feature holding two things in one tree (`shell` held both the app chrome and the console pane system). Writes the DELTA, never the round-tripped record — a resubmitted stored `null` reads as a CLEAR through the merge\n  \
          {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n  \
          {prog} features [--top N] [--apply] [--pretty]  # the OWNERSHIP axis measured: records per feature, what no feature owns, the composes edges that cross a feature vs point into `core`, and coreCandidates — records ranked by how many DIFFERENT features compose them. READ-ONLY unless --apply, which BACKFILLS `feature` from `folder` with the derivation both graphs share — dry by default, and it never overwrites a feature already set, so hand placement survives every re-run. `feature` is single-valued (it answers which worker may WRITE a record); the many-to-many USAGE relation is `requires` on a plan feature, per project, so the library never learns about projects. NOT to be confused with `--domain`, the curated cross-language COLLECTION facet (#3120), which is partial by design\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
@@ -4992,6 +5243,503 @@ mod tests {
         assert_eq!(report["upToDate"], serde_json::json!(["sync157-a"]));
         assert_eq!(report["synced"], serde_json::json!([]));
 
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── the store WRITE GATE (`the-algorithms-graph-has-no-write-gate`) ──────────────────────────
+
+    /// Minimal argv for every entry in [`MUTATING`], in its WRITING form.
+    ///
+    /// The args are deliberately nonsense (`a`, `b`, a missing dir): the gate fires BEFORE dispatch, so
+    /// a refused call never reaches the arm that would object to them. If the gate regresses, the arm
+    /// runs and returns some OTHER error — which is exactly what the assertion below distinguishes,
+    /// and why it checks the message rather than merely `is_err()`.
+    fn mutating_argv() -> Vec<Vec<String>> {
+        let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        vec![
+            v(&["impl", "set", "--tech", "rust", "--role", "algorithm", "--id", "x.rs", "--name", "x", "--no-src"]),
+            v(&["impl", "remove", "x.rs"]),
+            v(&["impl", "revert", "x.rs"]),
+            v(&["impl", "suppress", "x.rs"]),
+            v(&["impl", "unsuppress", "x.rs"]),
+            v(&["impl", "refresh", "x.rs=src/x.rs", "--apply"]),
+            v(&["edge", "set", "--id", "e", "--members", "a,b"]),
+            v(&["edge", "remove", "e"]),
+            v(&["tests", "set", "--id", "x.rs", "--src", "t.ts"]),
+            v(&["tests", "harvest", "."]),
+            v(&["curate", ".", "--apply"]),
+            v(&["merge", "a", "b"]),
+            v(&["refolder"]),
+            v(&["relink", "."]),
+            v(&["reseed", "--all"]),
+            v(&["features", "--apply"]),
+            v(&["doctor", "--fix"]),
+            v(&["harvest", ".", "--module", "--apply"]),
+        ]
+    }
+
+    /// THE BITE. Every mutating verb refuses under a read-only `graph` scope.
+    ///
+    /// It drives `run` rather than asserting on `require_write_scope`, and that distinction IS the
+    /// item: the helper was always correct and `bsc-component` had been calling it for four verbs,
+    /// while `bsc-graph` called it nowhere. A test at the helper would have been green throughout the
+    /// entire period the store had no gate at all.
+    ///
+    /// It also covers the classifier bug the manual probe caught: `MUTATING` pairs a verb with an
+    /// optional SUBVERB, and matching `positional[1]` against `None` let every verb taking a positional
+    /// ARGUMENT through — `merge a b`, `curate <dir>`, `relink <dir>`. Six of the eighteen rows below
+    /// were reaching their arm.
+    #[test]
+    fn every_mutating_verb_refuses_under_a_read_only_graph_scope() {
+        // THE STORE GUARD IS NOT OPTIONAL HERE, even though every call below is meant to be REFUSED.
+        //
+        // Without it these argvs resolve the DEFAULT store — the real
+        // `~/.base-studio-code/knowledge/algorithms.json`. That is harmless while the gate works and
+        // catastrophic the moment someone proves the bite by removing it: `curate . --apply` and
+        // `harvest . --module --apply` then run for real against the user's authoring copy. MEASURED,
+        // because that is exactly what happened — one bite run added 125 records to the live store and
+        // they had to be removed by hand.
+        //
+        // A test whose safety depends on the code under test still working is not safe. The guard is
+        // what makes it safe when the code is broken, which is the only time this test matters.
+        let dir = crate::unique_temp("graph-gate-refuse");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        for argv in mutating_argv() {
+            let shown = argv.join(" ");
+            for doc in [r#"{"graph":"none"}"#, r#"{"graph":"read"}"#] {
+                let err = bsc_cli_util::with_scopes(Some(doc), || run(argv.clone(), "bsc graph"))
+                    .expect_err(&format!("`{shown}` must be refused under {doc}"));
+                assert!(
+                    err.contains("'graph' scope is read-only"),
+                    "`{shown}` under {doc} must be refused BY THE GATE, not by the arm it should never \
+                     have reached; got: {err}"
+                );
+            }
+        }
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A CONFINED session writes only its own feature's records — at the CLI, not at the predicate
+    /// (`a-worker-writes-only-its-own-feature`).
+    ///
+    /// It drives `run` for the same reason the scope test does: `may_write_feature` is correct in
+    /// isolation and stays correct while nothing calls it. Only a test that goes through the dispatch
+    /// can see the wiring — and the wiring is the whole change.
+    #[test]
+    fn a_confined_session_writes_only_its_own_features_records() {
+        let dir = crate::unique_temp("graph-feature-confine");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        // Two records in different lanes, authored UNCONFINED (which is how a librarian works).
+        let author = |id: &str, feature: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--feature".into(), feature.into(), "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        author("mine.rs", "glance");
+        author("theirs.rs", "planner");
+        author("shared.rs", "core");
+
+        let write = |id: &str, extra: &[&str]| -> Result<(), String> {
+            let mut argv: Vec<String> = vec![
+                "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(), "--no-src".into(),
+            ];
+            argv.extend(extra.iter().map(|s| s.to_string()));
+            bsc_cli_util::with_features(Some("glance"), || bsc_util::capture_output(|| run(argv, "bsc graph")).0)
+        };
+
+        // Its OWN lane: allowed.
+        write("mine.rs", &[]).expect("a worker writes its own feature's records");
+
+        // Another feature's, and the shared baseline: refused, BY THE CONFINEMENT rather than by the
+        // arm it should never have reached — which is what checking the message distinguishes.
+        for (id, owner) in [("theirs.rs", "planner"), ("shared.rs", "core")] {
+            let err = write(id, &[]).expect_err("{id} must be refused");
+            assert!(err.contains("writes only"), "`{id}` refused by the confinement, not the arm: {err}");
+            assert!(err.contains(owner), "…naming its real owner: {err}");
+        }
+
+        // THE MOVE THE CONFINEMENT EXISTS TO STOP: claiming another lane's record for your own. The
+        // STORED feature governs, so a payload saying `--feature glance` cannot take `core`'s record.
+        let err = write("shared.rs", &["--feature", "glance"]).expect_err("a claim must not launder a write");
+        assert!(err.contains("core"), "the STORED owner decides, not the submitted one: {err}");
+
+        // A NEW record must declare a lane this session may write, rather than landing unowned.
+        assert!(write("brand-new.rs", &[]).is_err(), "a new record with no feature is refused");
+        write("brand-new.rs", &["--feature", "glance"]).expect("…and lands when it claims a lane it may write");
+
+        // UNCONFINED is unchanged — a librarian still writes anything.
+        let (r, _) = bsc_cli_util::with_features(None, || {
+            bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), "shared.rs".into(), "--name".into(), "shared".into(),
+                        "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            })
+        });
+        r.expect("an unconfined session writes the shared baseline");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// READS are untouched by the confinement — the half the maintainer was explicit about.
+    ///
+    /// A feature's `requires` deliberately names records it does NOT own, so a confinement that
+    /// bounded reads would make a worker's own prerequisites unreadable: the precise opposite of the
+    /// point. This is the assertion that would fail if the check ever moved to the dispatch's front.
+    #[test]
+    fn confinement_never_bounds_a_read() {
+        let dir = crate::unique_temp("graph-feature-confine-reads");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+        let (r, _) = bsc_util::capture_output(|| {
+            run(
+                vec![
+                    "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                    "algorithm".into(), "--id".into(), "shared.rs".into(), "--name".into(), "shared".into(),
+                    "--feature".into(), "core".into(), "--no-src".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        r.unwrap();
+
+        bsc_cli_util::with_features(Some("glance"), || {
+            for argv in [
+                vec!["impl".to_string(), "get".into(), "shared.rs".into()],
+                vec!["impl".to_string(), "list".into()],
+                vec!["doctor".to_string()],
+                vec!["dump".to_string()],
+                vec!["used-by".to_string(), "--all".into()],
+            ] {
+                let shown = argv.join(" ");
+                let (r, _) = bsc_util::capture_output(|| run(argv, "bsc graph"));
+                if let Err(e) = r {
+                    assert!(!e.contains("writes only"), "`{shown}` is a READ and must never be confined: {e}");
+                }
+            }
+        });
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The gate must not swallow the surface it exists to protect: reads, dry runs and help still work.
+    ///
+    /// This is the half that keeps the gate honest. `doctor` is how a session finds out what is WRONG
+    /// with the library, and a gate that denied it to a read-only role would make the store
+    /// un-inspectable by every role that most needs to inspect it.
+    #[test]
+    fn reads_dry_runs_and_help_are_untouched_by_the_gate() {
+        let dir = crate::unique_temp("graph-gate-reads");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        for argv in [
+            v(&["impl", "list"]),
+            v(&["dump"]),
+            v(&["doctor"]),                     // the READ form of a verb whose --fix is gated
+            v(&["features"]),                   // …and of one whose --apply is gated
+            v(&["curate", "."]),                // a plan, not an apply
+            v(&["relink", ".", "--dry-run"]),
+            v(&["used-by", "--all"]),
+            v(&["impl", "set", "help"]),        // `help` writes nothing, whatever verb it follows
+            v(&["merge", "help"]),
+        ] {
+            let shown = argv.join(" ");
+            let r = bsc_cli_util::with_scopes(Some(r#"{"graph":"none"}"#), || {
+                bsc_util::capture_output(|| run(argv.clone(), "bsc graph")).0
+            });
+            if let Err(e) = r {
+                assert!(
+                    !e.contains("scope is read-only"),
+                    "`{shown}` is a READ and must never hit the write gate; got: {e}"
+                );
+            }
+        }
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An ABSENT scope doc still ALLOWS — an ungated pane, and every existing test, keeps working.
+    ///
+    /// The dangerous state here is the one with no name: `scope_allows_write_in(None, …)` returns
+    /// `true`, so "no scope configured" is the WIDEST value, not the narrowest. Pinning it means a
+    /// later change to that default cannot silently brick every ad-hoc `bsc graph` invocation.
+    #[test]
+    fn an_absent_scope_doc_allows_the_write() {
+        let dir = crate::unique_temp("graph-gate-absent");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let argv: Vec<String> = ["impl", "set", "--tech", "rust", "--role", "algorithm", "--id", "ungated.rs", "--name", "ungated", "--no-src"]
+            .iter().map(|s| s.to_string()).collect();
+        let (r, _) = bsc_cli_util::with_scopes(None, || bsc_util::capture_output(|| run(argv, "bsc graph")));
+        r.expect("an ungated session writes as it always did");
+
+        // And a doc that grants `write` is equally allowed — the grant is real, not merely un-refused.
+        let argv2: Vec<String> = ["impl", "set", "--tech", "rust", "--role", "algorithm", "--id", "granted.rs", "--name", "granted", "--no-src"]
+            .iter().map(|s| s.to_string()).collect();
+        let (r2, _) = bsc_cli_util::with_scopes(Some(r#"{"graph":"write"}"#), || {
+            bsc_util::capture_output(|| run(argv2, "bsc graph"))
+        });
+        r2.expect("a `write` tier writes");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every verb named in [`MUTATING`] is a verb this CLI actually has.
+    ///
+    /// A typo there does not fail loudly — it silently leaves that verb UNGATED for ever, which is the
+    /// state this whole item exists to end. Nothing at run time can observe the difference, so the
+    /// vocabulary is asserted against the dispatch's own rosters.
+    #[test]
+    fn every_mutating_entry_names_a_real_verb() {
+        for (verb, sub) in MUTATING {
+            assert!(VERBS.contains(verb), "`{verb}` is in MUTATING but is not a bsc graph verb");
+            if let Some(sub) = sub {
+                let roster: &[&str] = match *verb {
+                    "impl" => &IMPL_SUBVERBS,
+                    "edge" => &EDGE_SUBVERBS,
+                    // `tests` has no exported roster; its two subverbs are named here.
+                    "tests" => &["harvest", "set"],
+                    other => panic!("MUTATING names a subverb under `{other}`, which has no roster"),
+                };
+                assert!(roster.contains(sub), "`{verb} {sub}` is in MUTATING but not in its subverb roster");
+            }
+        }
+        // NON-VACUITY: the list is asserted to still be a real population, so a MUTATING emptied by a
+        // bad merge reports as broken rather than as trivially passing.
+        assert!(MUTATING.len() >= 15, "MUTATING has shrunk to {} — a verb lost its gate", MUTATING.len());
+    }
+
+    /// THE BITE for `the-graphs-cannot-be-searched-by-the-axes-they-store`.
+    ///
+    /// `--tags` was already in `VALUE_FLAGS`, so it PARSED at the CLI and nothing consumed it in the
+    /// `impl list` arm: `--tags anything` returned the WHOLE store, with no error. That is the shape
+    /// this repo keeps getting caught by — a flag that looks like it worked. A caller could not tell a
+    /// filtered result from an unfiltered one, which is why 0 of 693 packaged records carry a tag.
+    ///
+    /// It asserts at the CLI rather than on the predicate on purpose: `impl_has_every_tag` is correct
+    /// in isolation and stays correct while the list arm never calls it. Only a test that goes through
+    /// `run` can observe the flag being dropped on the floor.
+    #[test]
+    fn impl_list_tags_filters_rather_than_being_silently_ignored() {
+        let dir = crate::unique_temp("impl-list-tags");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store_path = dir.join("algorithms.json");
+        let _store = store_at(&store_path);
+
+        let ids = |args: Vec<String>| -> Vec<String> {
+            let (r, out) = bsc_util::capture_output(|| run(args, "bsc graph"));
+            r.unwrap();
+            let mut v: Vec<String> = serde_json::from_str::<serde_json::Value>(out.trim())
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|i| i.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+                .collect();
+            v.sort();
+            v
+        };
+        let set = |id: &str, tags: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--tags".into(), tags.into(), "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        set("tagcli-a.rs", "pathfinding,graph");
+        set("tagcli-b.rs", "graph");
+
+        let all = ids(vec!["impl".into(), "list".into()]);
+        assert!(all.len() > 2, "the store carries the packaged seed plus our two: {}", all.len());
+
+        // ONE tag selects what carries it — and nothing else, which the old code could not do.
+        assert_eq!(
+            ids(vec!["impl".into(), "list".into(), "--tags".into(), "graph".into()]),
+            vec!["tagcli-a.rs".to_string(), "tagcli-b.rs".to_string()],
+        );
+        // A second tag NARROWS (AND, not OR).
+        assert_eq!(
+            ids(vec!["impl".into(), "list".into(), "--tags".into(), "pathfinding,graph".into()]),
+            vec!["tagcli-a.rs".to_string()],
+        );
+        // THE ASSERTION THAT FAILS AGAINST THE OLD CODE: a tag nothing carries returns NOTHING. Before
+        // this it returned every record in the store — the whole seed — and reported success.
+        let missing = ids(vec!["impl".into(), "list".into(), "--tags".into(), "totally-absent-xyz".into()]);
+        assert!(
+            missing.is_empty(),
+            "a tag no record carries must return an EMPTY list, not the whole store; got {} record(s)",
+            missing.len(),
+        );
+        // …and an ABSENT `--tags` is still not a filter, so adding the flag narrowed nothing by default.
+        assert_eq!(ids(vec!["impl".into(), "list".into()]), all);
+
+        // The vocabulary verb answers what there is to search for — the half that makes the filter
+        // reachable by an agent rather than by someone who already knew the tag.
+        let (r, out) = bsc_util::capture_output(|| run(vec!["tags".into()], "bsc graph"));
+        r.unwrap();
+        let census: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        let rows = census.as_array().unwrap();
+        let count_of = |t: &str| {
+            rows.iter().find(|r| r["tag"] == t).and_then(|r| r["count"].as_u64())
+        };
+        assert_eq!(count_of("graph"), Some(2), "a tag on two records counts twice: {census}");
+        assert_eq!(count_of("pathfinding"), Some(1));
+        // Most-used first, so the vocabulary's spine leads.
+        assert_eq!(rows.first().map(|r| r["tag"].clone()), Some(serde_json::json!("graph")));
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `feature rename` is DRY BY DEFAULT, splits on `--under`, and never round-trips the record
+    /// (`the-graph-vocabulary-is-the-plans`).
+    ///
+    /// The dry/apply split is the property under test, not a nicety: this rewrites the OWNERSHIP field
+    /// across many records at once, and ownership decides which worker may write them. A verb that
+    /// wrote on invocation would have moved 145 records the first time it was run to see what it
+    /// would do.
+    #[test]
+    fn feature_rename_is_dry_by_default_and_splits_on_a_folder_prefix() {
+        let dir = crate::unique_temp("graph-feature-rename");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let set = |id: &str, feature: &str, folder: &str| {
+            let (r, _) = bsc_util::capture_output(|| {
+                run(
+                    vec![
+                        "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                        "algorithm".into(), "--id".into(), id.into(), "--name".into(), id.into(),
+                        "--feature".into(), feature.into(), "--folder".into(), folder.into(),
+                        "--no-src".into(),
+                    ],
+                    "bsc graph",
+                )
+            });
+            r.unwrap();
+        };
+        set("ren-chrome.rs", "shell", "app/chrome");
+        set("ren-pane.rs", "shell", "app/console/panes");
+        let report = |argv: Vec<String>| -> Value {
+            let (r, out) = bsc_util::capture_output(|| run(argv, "bsc graph"));
+            r.unwrap();
+            serde_json::from_str(out.trim()).unwrap()
+        };
+        let feature_of = |id: &str| -> String {
+            crate::implementations()
+                .iter()
+                .find(|im| im.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|im| im.get("feature").and_then(Value::as_str))
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        // DRY: it reports and writes NOTHING.
+        //
+        // KEYED ON THE SEEDED RECORDS, never on a total. `BSC_GRAPH_STORE` pointed at an empty file
+        // still yields every PACKAGED implementation, because the store reconciles its seed on load —
+        // so `matched` here is 78, not 2, and an assertion on the count would break the next time
+        // anything is added to the seed, for no reason connected to what it checks.
+        let dry = report(vec!["feature".into(), "rename".into(), "shell".into(), "console".into()]);
+        assert!(dry["matched"].as_u64().unwrap() >= 2, "our two are in the match set: {dry}");
+        assert_eq!(dry["applied"], false);
+        assert_eq!(feature_of("ren-chrome.rs"), "shell", "a dry run must not move a record");
+        assert_eq!(feature_of("ren-pane.rs"), "shell");
+
+        // `--under` SPLITS. This is the case the flag exists for: one graph feature holding two things
+        // in one folder tree, which no whole-feature rename can separate.
+        let split = report(vec![
+            "feature".into(), "rename".into(), "shell".into(), "console".into(),
+            "--under".into(), "app/console".into(), "--apply".into(),
+        ]);
+        assert!(split["matched"].as_u64().unwrap() >= 1, "the console half matched: {split}");
+        assert_eq!(feature_of("ren-pane.rs"), "console", "the matched record moved");
+        assert_eq!(feature_of("ren-chrome.rs"), "shell", "the unmatched one did NOT");
+
+        // The sample is a SAMPLE — the count is the number that matters, and 147 ids is not read.
+        assert!(split["sample"].as_array().unwrap().len() <= 8);
+
+        // A `from` nothing carries matches nothing, rather than matching everything — the property a
+        // filter has to have, and the one `impl list --tags` did not.
+        assert_eq!(report(vec!["feature".into(), "rename".into(), "nope-xyz".into(), "x".into()])["matched"], 0);
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The rename writes the DELTA, so a field the record already had survives it.
+    ///
+    /// `set_impl_by` MERGES, so a verb that round-tripped the stored record would resubmit every
+    /// stored `null` — and a resubmitted `null` reads as a CLEAR. That is not hypothetical: it cost
+    /// `terminalhost.provides`, 448 records into the component folder backfill.
+    #[test]
+    fn feature_rename_preserves_every_other_field_on_the_record() {
+        let dir = crate::unique_temp("graph-feature-rename-keep");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _store = store_at(&dir.join("algorithms.json"));
+
+        let (r, _) = bsc_util::capture_output(|| {
+            run(
+                vec![
+                    "impl".into(), "set".into(), "--tech".into(), "rust".into(), "--role".into(),
+                    "algorithm".into(), "--id".into(), "keep.rs".into(), "--name".into(), "keep".into(),
+                    "--feature".into(), "old".into(), "--summary".into(), "a summary worth keeping".into(),
+                    "--domain".into(), "logistics".into(), "--tags".into(), "a,b".into(), "--no-src".into(),
+                ],
+                "bsc graph",
+            )
+        });
+        r.unwrap();
+        let before = crate::implementations().iter().find(|i| i["id"] == "keep.rs").cloned().unwrap();
+
+        let (r, _) = bsc_util::capture_output(|| {
+            run(vec!["feature".into(), "rename".into(), "old".into(), "new".into(), "--apply".into()], "bsc graph")
+        });
+        r.unwrap();
+        let after = crate::implementations().iter().find(|i| i["id"] == "keep.rs").cloned().unwrap();
+
+        assert_eq!(after["feature"], "new", "the feature moved");
+        for k in ["summary", "domain", "tags", "name", "tech", "role"] {
+            assert_eq!(after[k], before[k], "`{k}` must survive a feature rename");
+        }
         unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -7607,4 +8355,34 @@ mod reseed_tests {
         assert!(VERBS.contains(&"reseed"));
     }
 
+}
+
+#[cfg(test)]
+mod hand_placement {
+    //! `impl set --feature` — the ownership axis, set by hand.
+    //!
+    //! The folder derivation covers the FRONTEND layout only (`shared`/`app`/`store`/`features/<x>`)
+    //! and has no arm for `crates/<x>`, so not one of the 25 crates that compile from the graph can be
+    //! placed automatically: every module `migrate-crate` lifts lands featureless and fails the
+    //! ownership gate. `features --apply` already promised that hand placement survives a re-run; this
+    //! is the verb it was promising about.
+
+    #[test]
+    fn the_folder_derivation_genuinely_cannot_place_a_crate_module() {
+        // The reason this flag exists, asserted rather than described — if a `crates` arm is added
+        // later this fails, and tells whoever added it to reconsider whether the flag is still needed.
+        assert_eq!(bsc_util::feature_from_folder("crates/bsc-fin/src"), None);
+        assert_eq!(bsc_util::feature_from_folder("crates/plandb/src/cli"), None);
+        // …while the frontend layout it WAS written for still resolves.
+        assert_eq!(bsc_util::feature_from_folder("src/features/glance/lib").as_deref(), Some("glance"));
+        assert_eq!(bsc_util::feature_from_folder("src/shared/lib/core").as_deref(), Some("core"));
+    }
+
+    #[test]
+    fn the_flag_is_accepted_and_the_count_kept_up() {
+        // A flag missing from FLAGS is rejected as unknown before it reaches the set arm, and the
+        // length is a const that has to be bumped with it — both easy to forget, both silent to miss.
+        assert!(super::FLAGS.contains(&"--feature"), "--feature must be an accepted flag");
+        assert_eq!(super::FLAGS.len(), 56);
+    }
 }

@@ -71,6 +71,9 @@ struct Args {
     dry_run: bool,
     r#ref: Option<String>,
     note: Option<String>,
+    /// `--test <name>`, REPEATABLE — the failures a known-red declaration accounts for. Empty leaves
+    /// the declaration leg-level.
+    tests: Vec<String>,
     db: Option<String>,
     positional: Vec<String>,
 }
@@ -84,6 +87,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         dry_run: false,
         r#ref: None,
         note: None,
+        tests: Vec::new(),
         db: None,
         positional: Vec::new(),
     };
@@ -96,6 +100,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--dry-run" => a.dry_run = true,
             "--ref" => a.r#ref = Some(v.value("--ref needs a plan ref")?),
             "--note" => a.note = Some(v.value("--note needs text")?),
+            // Repeatable: a leg may own more than one known failure, and replacing rather than
+            // appending would silently drop the earlier ones.
+            "--test" => a.tests.push(v.value("--test needs a test name")?),
             "--db" => a.db = Some(v.value("--db needs a path")?),
             _ => return Ok(false),
         }
@@ -336,11 +343,22 @@ fn cmd_known_red(args: &Args, prog: &str) -> Result<(), String> {
             let leg = args
                 .positional
                 .get(2)
-                .ok_or_else(|| format!("usage: {prog} known-red add <leg-key> --ref <plan-ref> [--note <text>]"))?;
+                .ok_or_else(|| {
+                    format!("usage: {prog} known-red add <leg-key> --ref <plan-ref> [--test <name>]… [--note <text>]")
+                })?;
             let owner = args.r#ref.as_deref().unwrap_or("");
-            store.known_red_add(leg, owner, args.note.as_deref())?;
+            // `--test` NARROWS the declaration to the failures it names. Without it the declaration is
+            // leg-level and excuses everything in that leg, which is how a freshly broken test rode
+            // out behind `0 unexplained`. Not required, because `tsc` and `eslint` genuinely cannot
+            // enumerate — but a leg that CAN name its failures should.
+            store.known_red_add(leg, owner, args.note.as_deref(), &args.tests)?;
             if !args.json {
-                println!("known-red: {leg} → owned by {owner}");
+                let scope = if args.tests.is_empty() {
+                    " (LEG-LEVEL — excuses every failure in this leg; pass --test to narrow it)".to_string()
+                } else {
+                    format!(" for {}", args.tests.join(", "))
+                };
+                println!("known-red: {leg} → owned by {owner}{scope}");
             }
             Ok(())
         }
@@ -397,7 +415,7 @@ mod tests {
             passed: legs.iter().all(|(_, ok)| *ok),
             legs: legs
                 .iter()
-                .map(|(k, ok)| Leg { key: (*k).into(), label: (*k).into(), ok: *ok, seconds: 1.0 })
+                .map(|(k, ok)| Leg { key: (*k).into(), label: (*k).into(), ok: *ok, seconds: 1.0, failures: Vec::new() })
                 .collect(),
         }
     }

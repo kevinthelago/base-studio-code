@@ -55,6 +55,11 @@ describe("every glance graph fold has a caller", () => {
   const FOLDS: [string, string][] = [
     ["withSurfaceNodes", "surface-nodes.ts"],
     ["crateDrillGraph", "surface-nodes.ts"],
+    // `the-feature-band-has-no-caller` — the SECOND instance of the class this file was written for.
+    // `featureBand` shipped with three passing tests and no call site, so there was no feature node in
+    // the running app and the maintainer found it by opening Glance. It is listed here now; that this
+    // list is hand-maintained is exactly why it did not help, and the item says so.
+    ["withFeatureNodes", "feature-nodes.ts"],
   ];
 
   const all = sources();
@@ -83,5 +88,69 @@ describe("every glance graph fold has a caller", () => {
       callers.map((c) => c.name),
       `${fold} is exported and projected but nothing calls it — the node it draws cannot appear`,
     ).not.toHaveLength(0);
+  });
+});
+
+// THE HAND-MAINTAINED LIST ABOVE IS WHY THIS CLASS SHIPPED TWICE.
+//
+// `withFeatureNodes` was added to `FOLDS` when `the-feature-band-has-no-caller` landed, so the BAND was
+// covered — and `featureDrill`, exported from the same module and written in the same commit, was not.
+// It had no caller at all, and clicking a feature node was a dead click until a maintainer found it.
+// A list you must remember to extend does not catch the thing you forgot.
+//
+// So this half is DERIVED: every function a projection module exports must be CALLED somewhere other
+// than its own body. That is a weaker claim than the list above makes — a sibling caller satisfies it,
+// which is right, because a helper reached only from its module's entry point genuinely does run
+// (`surfaceGraph` is the standing example, and demanding a component call it would be wrong). It is
+// strictly stronger than nothing, and it is the exact claim that was false for `featureDrill`.
+describe("every projection a graph library exports is called somewhere", () => {
+  /** The modules whose whole job is projecting store rows into graph nodes. */
+  const PROJECTION_RECORDS = ["feature-nodes.ts", "surface-nodes.ts"];
+
+  const seed = JSON.parse(readFileSync("src-tauri/data/knowledge/algorithms.json", "utf8")) as {
+    implementations: { id: string; code?: string }[];
+  };
+  const byId = new Map(seed.implementations.map((i) => [i.id, i.code ?? ""]));
+  /**
+   * Every module body EXCEPT the one that defines the symbol, WITH EVERY DEFINITION SITE STRIPPED.
+   *
+   * Excluding the defining record by id is not enough, and the first draft of this guard was green
+   * against a deliberately broken tree because of it: the packaged kit (`react-ui.json`) carries a
+   * GENERATED copy of every record's source in its runtime map, so `export function featureDrill(`
+   * appears there too — and a substring search for `featureDrill(` matched the copy's own definition.
+   * The guard reported a call site that was a second copy of the declaration.
+   *
+   * Stripping `function <sym>(` removes declarations wherever they are copied to, while leaving real
+   * calls intact. A sibling's call inside the module's own generated copy still counts, which is the
+   * transitive-coverage rule stated above.
+   */
+  const elsewhere = (exclude: string, sym: string) => {
+    const hay = [
+      ...seed.implementations.filter((i) => i.id !== exclude).map((i) => i.code ?? ""),
+      ...sources()
+        .filter((s) => s.name !== "algorithms.json")
+        .map((s) => s.text),
+    ].join("\n");
+    return hay.split(`function ${sym}(`).join("function \u0000(");
+  };
+
+  const cases = PROJECTION_RECORDS.flatMap((rec) =>
+    [...(byId.get(rec) ?? "").matchAll(/export function (\w+)/g)].map((m) => [rec, m[1]] as [string, string]),
+  );
+
+  it("found the projection modules and their exports", () => {
+    // Non-vacuity: a regex that stopped matching would report a clean sweep for the wrong reason.
+    expect(PROJECTION_RECORDS.every((r) => byId.has(r))).toBe(true);
+    expect(cases.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it.each(cases)("%s::%s has a call site", (rec, sym) => {
+    const hay = elsewhere(rec, sym);
+    expect(
+      hay.includes(`${sym}(`),
+      `${rec} exports ${sym} and NOTHING outside that module calls it. A projection with no call ` +
+        `site draws nothing, and every other gate passes while it does — that is how the feature ` +
+        `band shipped with no caller, and then the feature DRILL after it.`,
+    ).toBe(true);
   });
 });

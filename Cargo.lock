@@ -732,6 +732,7 @@ dependencies = [
  "bsc-debug",
  "bsc-disk",
  "bsc-files",
+ "bsc-fin",
  "bsc-fleet",
  "bsc-github",
  "bsc-graph",
@@ -917,6 +918,18 @@ dependencies = [
  "bsc-cli-util",
  "bsc-graph",
  "ignore",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-fin"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
@@ -1253,6 +1266,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-sqlite-util",
  "bsc-util",
  "serde",
  "serde_json",
@@ -1264,6 +1278,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-llm",
  "bsc-util",
  "serde_json",
 ]
@@ -4558,6 +4573,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-data",
+ "bsc-llm",
  "bsc-sqlite-util",
  "bsc-util",
  "rusqlite",

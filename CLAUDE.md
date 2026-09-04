@@ -253,6 +253,38 @@ A worker records its before/after on its change record with `bsc plan change per
 <before> <after>`, which renders into the change and reaches the director. **Nothing here can fail a
 gate** — that is deliberate, and it is why the reviewer is the only reader who acts on a regression.
 
+### Backing this machine up — `bsc studio save --all`
+
+Nothing here is pushed to a remote by policy, so the stores and the git environment exist on ONE
+disk. The full runbook, including restore, is [`docs/backup-and-restore.md`](docs/backup-and-restore.md).
+
+```bash
+bsc studio save "full-system" --all --out /path/to/dest   # every store + every plan.db
+bsc studio save help                                      # the per-system flags, FROM the roster
+```
+
+`--dir` is which install to **read**; `--out` is where the backup **goes**. That split is the whole
+point of the flag: `--dir <empty>` used to create empty stores at the destination and back up THOSE,
+reporting success.
+
+**Capture is by DISCOVERY, not a roster.** Every `*.db` under the base dir is taken, so a store a
+future crate adds is backed up without anyone remembering a row. That direction was chosen after the
+allow-list silently omitted `atlas.db`, and the roster guard only caught it because one developer's
+machine happened to have created the file. An unknown store is CAPTURED — a backup holding something
+unnecessary costs disk, one missing something costs the data.
+
+`secrets.db` is captured by **nothing**, and that omission is recorded rather than silent: the values
+live in the OS keychain, but which services you are paired with is itself disclosure, and restoring
+those rows on another machine would describe pairings that machine does not have.
+
+Two refusals, both because a backup must not lie: an all-empty source is refused naming what it found
+bare, and an `--out` at a `.json` path is refused when a database-backed system forces a directory.
+
+**Verify on the far end, never locally** — a local check proves the bytes you made, not the ones that
+arrived. And note `git clone --mirror` is NOT a git backup here: it keeps `refs/stash` (the top entry)
+but not its reflog, so it preserved **1 of 32** stashes when measured.
+
+
 ## Project Structure
 
 ```
@@ -332,15 +364,23 @@ base-studio-code/
 
 ### Frontend conventions (feature-first, #1309)
 
-> **MOST OF THE FRONTEND IS NOT FILES.** ~1,005 modules ship as RECORDS — 338 component records under
-> `src-tauri/data/components/app/**` plus 667 implementations in `data/knowledge/algorithms.json` — and
-> the files that held them are deleted (epic #3604, "the graph IS the app"). **77 non-test modules
-> remain under `src/`**. The harvest that produced that floor is finished — `bsc ui retire --dry` was run
-> against every module and none was retirable — but the COUNT has moved since (it was 69), so the
-> per-reason breakdown below is the last one that summed and is now **stale by roughly nine modules**.
-> Re-derive it before relying on any single figure; the shape is what still holds.
+> **MOST OF THE FRONTEND IS NOT FILES.** Measured 2026-09-03: **981 modules ship as RECORDS** — 308
+> component records under `src-tauri/data/components/app/**` plus 673 implementations in
+> `data/knowledge/algorithms.json` — against **91 non-test modules under `src/`**. The files that held
+> the records are deleted (epic #3604, "the graph IS the app"), and that 10:1 ratio is the claim that
+> matters and still holds.
 >
-> The floor, as last derived: 26 hold MODULE STATE on a specifier that is also REGISTERED
+> **DO NOT read the file count as a settled floor — it is rising.** This paragraph used to say the
+> harvest was finished and 77 was the floor. The sequence is 69 → 77 → **91**, and **40 non-test files
+> were added under `src/` in the three weeks to 2026-09-03**. Many are legitimate by the reasons listed
+> below (barrels, `store.ts` module state, registrars, statically-imported hooks) — but "the harvest is
+> finished" is no longer an evidenced claim, and the breakdown below **sums to ~68, not 91**, so roughly
+> twenty-three modules are unaccounted for. Treat the reasons as the SHAPE of why files survive, never
+> as a census. Whether the author-into-the-store rule below is still being applied is an open question,
+> not a settled one: `the-module-floor-claim-is-stale-and-directionally-wrong`.
+>
+> The floor reasons, as last derived (summing to ~68 against the 69 of that day, NOT to today's 91):
+> 26 hold MODULE STATE on a specifier that is also REGISTERED
 > (two live copies — `bsc graph impl set` refuses the write), 14 use `import.meta.glob`, 10 are imported
 > STATICALLY by `main.tsx`/`App.tsx`, 7 are type-only, 6 are algorithms seed modules whose node `code` is
 > generated *from* the file, and one each for the entry, test setup, a `vite.config.ts` import, a record
@@ -361,6 +401,56 @@ base-studio-code/
 >
 > Counts drift every tranche and a stale one is worse than none. Re-measure:
 > `find src -name "*.ts" -o -name "*.tsx" | grep -vE "\.(test|spec)\." | wc -l`
+
+### CHANGING a module that is a record — the write path, end to end
+
+`docs/records.md` tells you how to FIND a record and when you may retire one. This is the other half:
+how to change one and get the change to the compiler. It applies to Rust too — **25 crates compile FROM
+the graph** (they carry `build = "../graph-materialize/build.rs"`; count them with
+`grep -l graph-materialize/build.rs crates/*/Cargo.toml`), so `crates/bsc-studio/src/` holding only
+`lib.rs` is normal, not broken.
+
+**A record lives in up to four places, and a partial write is the failure mode.** Leave one behind and
+`graph-promote-check` goes red for every session on the box, or worse, the change is silently inert.
+
+    ~/.base-studio-code/knowledge/algorithms.json   RUNTIME store — per-user, SHARED BY EVERY SESSION
+    <repo>/graph/algorithms.json                    REPO store — what the BUILD compiles
+    src-tauri/data/knowledge/algorithms.json        PACKAGED seed — what SHIPS and what a fresh install reconciles
+    .bsc-records/                                   EMITTED — rebuilt from the seed; never hand-edited
+
+The sequence, which is the same for a Rust CLI or a frontend module:
+
+```bash
+# 1. get the current source OUT — never retype it, and never pass source on the command line
+#    (a backtick or ${…} is substituted away silently, and large modules exceed the argv limit)
+bsc graph impl get <id> --field code --raw > /tmp/x.rs
+
+# 2. edit /tmp/x.rs, then write it back. --if-version is OPTIMISTIC CONCURRENCY against the
+#    SHARED runtime store: it refuses unless the record's rev is exactly n, so you cannot clobber
+#    another session's edit that landed while you were working. Read the rev with `impl history`.
+bsc graph impl set --tech rust --id <id> --role algorithm --name <n> \
+  --code-file /tmp/x.rs --if-version <n> --by <you> --note "<why>"
+
+# 3. into the REPO store so the build sees it. --root is REQUIRED from a worktree.
+bsc graph promote --id <id> --root "$PWD"
+
+# 4. into the PACKAGED seed. BSC_DATA_DIR is REQUIRED from a worktree — without it the seed write
+#    lands in the repo ROOT, which is checked out on `main` and running the app.
+BSC_DATA_DIR="$PWD/src-tauri/data" bsc graph promote --id <id> --seed --root "$PWD"
+```
+
+Then build. `crates/graph-materialize/build.rs` reads `<repo_root>/graph/algorithms.json` and
+materializes each record into `$OUT_DIR/crate.rs`, so **step 3 is what makes your edit compile** —
+after step 2 alone, `cargo check` still sees the old code and nothing says so.
+
+**Verify you touched exactly what you meant.** A line count cannot tell you: these files are one long
+JSON line, so any edit shows as `1 +/- 1`. Diff the PARSED store instead —
+`git show HEAD:graph/algorithms.json` against the working copy, keyed by record id.
+
+**A red `graph-promote-check` is usually not yours.** The runtime store is shared, so the leg reports
+drift from whatever anyone on the box is authoring. It prints each drifted node's author and age;
+if the edit is minutes old, that is live authoring and you should leave it alone rather than promote it.
+
 
 The frontend is **feature-first vertical slices** — `app/` (shell) · `features/` (one folder per
 feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`components/`, `lib/`,
@@ -476,7 +566,7 @@ and the same data is reached with `bsc plan`.
 The planning page is a split: the live Claude session (terminal, center) + the **focused project pane** (`ProjectPane.tsx`, `focus` mode). The pane shows **one phase at a time** — a navigable **stepper** (per-phase status from `sectionStatus`: complete/active/locked/upcoming, incomplete phases pulse), a phase header with a **gate pill** (`evalGate`), lock/done banners, the phase body (Context / Structure+lens / Permissions+director, else a generic card), and a **footer advance bar** (back · jump/back-to-current · approve & continue when the gate passes · publish). It auto-follows the live session (`currentSection` = active phase) while letting the user navigate; selection resets on a project switch. Pure model: `focusedPlan.ts`; shell: `FocusedShell.tsx`. (Replaced the all-sections scroll + the full-width N-bar.)
 
 ### Blueprints — the lifecycle library (#609 / #645 / #636 / #647 / #3785)
-A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`; UI: the library rail + blueprint cards in `list/ProjectsList.tsx` / `list/BlueprintCard.tsx` (each card offers *use for new projects* · *delete* for user blueprints), with import/update modals in `blueprints/`.
+A **blueprint** is the reusable template that seeds a project's plan: an ordered set of stages, each with a prompt module, **pipelines**, a declarative **gate** (`gateRule` → `evalGate`), an optional **output disposition**, and attached **skills**. Model: `src/features/planner/stages/blueprints.ts`. **The library UI is gone** with the rest of the planner screen (`delete-the-planner-ui-keep-the-planner`) — `list/ProjectsList.tsx` and `list/BlueprintCard.tsx` no longer exist, and neither do the import/update modals. Blueprints are reached with `bsc blueprint`; the one surviving in-app surface is the `blueprintpicker` component record.
 - **Goal/domain routes, not lifecycle selectors (#645/#3785):** a blueprint is a curated planning **route for a domain**, carrying a `mode` (`create` vs `operate`, which selects the planner intro), its own `icon`/`h` for the card tile, and a curated feature list. Packaged set: **Default** (the blank/general route) + the domain routes **CRM · ERP · Helpdesk/ITSM · HR/HCM · Project Management**. The Library searches by free text (`filterBlueprints`).
   The lifecycle `category` field is **gone** (#3785) — it had degenerated to the same `greenfield` on every packaged blueprint, so it coloured every card identically and never varied a weight table. **Lifecycle is discovered per PROJECT** at discovery (`ClassifyConfig.lifecycle`, #3784) and is what Glance's project-node colouring and the Market rubric's weight table now read. `mode` (not the old category) decides whether a built-in auto-pins the packaged UI kit.
 - **Skills (#636):** a section (or the whole blueprint) can attach reusable **skills** — the Skills library (`blueprintSkills.ts`). They're resolved and written to the hub's `skills.md` for the planner, and inlined into each worker's `CLAUDE.local.md` at fleet launch (`ensure_worktree`).
@@ -574,7 +664,7 @@ Drives: which git/gh writes auto-approve vs **prompt** (the `ask` tier for a har
 Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for the user, #297), the worker↔director Q&A pair `bsc-ask`/`bsc-answer`, the `bsc-issue`/`bsc-assign` capture-and-route emitters, the planner→director/issuer `bsc-brief` channel (#2377 — the planner's runtime voice, pushing a mid-build plan update into the running fleet; folds into `CoordState.briefs` and the director pump surfaces it, once per pane, to reconcile + route onward via `bsc-assign`), and the completion emitters `bsc-landed/merged/closed/failed`. The **Coordination inbox** (`CoordinatorInbox`) surfaces paused / blocked-on-a-question / ready sessions for the user. **Runtime dependency-wait was removed (#1039):** there is no `bsc-blocked --on` and no coordinator auto-wake — `dependsOn` is a *planning-time* sequencing hint only; at run time workers build against the planned contracts in parallel and never park on an upstream, and the director owns contracts + integration.
 
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)
-Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc.rs`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
+Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc/`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
 
 **The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`; `bsc teams model <team> <node> <tier>` overrides ONE placement's model, where `bsc persona model` moves an identity's default everywhere it is placed), `bsc project` (project-hub list/published), and `bsc files` (file tree + `read`, the root-confined file-text
 verb a session reaches for when neither harvest lifts a module — #4161). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
@@ -943,8 +1033,17 @@ A note is worth writing WHILE the reasoning is live; reconstructed afterwards it
 that mattered.
 
 **4 · Verify — the gate. TWO TIERS: scoped while you iterate, FULL before it merges.**
+
+**Run it as `bsc work gate`, not `npm run gate`.** It streams the real gate through untouched and then
+records EACH LEG on this branch's change record from the gate's own machine-readable verdict — so the
+record is EVIDENCE the gate ran rather than a claim that it did. Recording by hand made it a claim:
+measured over five slices in one session, ~25 results were read off a terminal and retyped, and
+nothing checked them. It takes the ref from the BRANCH, which is why the 1:1 branch rule matters.
+
 ```bash
-npm run gate              # while iterating — only what this change can affect
+bsc work gate             # scoped, and records every leg
+bsc work gate --full      # what step 7 runs
+npm run gate              # the same gate, recording nothing
 npm run gate -- --full    # what step 7 runs; also `npm run gate:full`
 ```
 
@@ -961,6 +1060,13 @@ orphaned ten stylesheets with every gate green; twelve pages rendering records t
 from their files; a vitest config change that dropped 8 test files and reported all-passing. Narrowing
 the per-commit gate is defensible **only** because step 7 still runs the unscoped one before anything
 lands — and because the narrowing is printed rather than silent.
+
+**A SCOPED GATE THAT RESOLVES TO ZERO LEGS STILL PRINTS `gate passed`.** Measured 2026-09-03 on a
+markdown-only change: `rust crates: (none), frontend files: 0`, 0 legs recorded, exit green — while
+three of the changed docs ARE read by tests (`docLinks.test.ts`, `architectDocs.test.ts`,
+`plannerOrphans.test.ts`). So a doc edit that breaks a doc-reading test lands green. Until
+`an-e2e-only-change-gets-a-gate-that-runs-nothing` is fixed, read the printed scope: if it says it
+ran nothing, it verified nothing, and you should name the affected tests yourself.
 
 **Do not expect a uniform speedup — the scope is the honest answer, not a discount.** Measured
 transitive dependents: `crates/bsc-ui` reaches 2 crates, `crates/data` 11, `src-tauri` 1, and
@@ -1120,6 +1226,21 @@ now prints each drifted node's author and age, and warns off a promote when the 
 That turned an unowned standing red into a line you can act on in seconds. **Whether a gate should stop
 failing the build is a MAINTAINER decision, not a branch's** — record the case on the item and leave the
 leg alone.
+
+#### Four sharp edges that are not obvious and cost real time
+
+- **Never `cargo fmt`.** There is no `rustfmt.toml`, no fmt gate leg, and lines run to 142 chars. It
+  reformats hundreds of files you did not touch and buries your change.
+- **Never hand-merge `develop` into `main`.** A `--no-ff` merge commit on `main` breaks EVERY future
+  `npm run promote`, permanently — promote fast-forwards, and refuses once `main` has a commit
+  `develop` does not. Use `npm run promote`; if it refuses, that refusal is the signal, not the obstacle.
+- **Single-quote the text of a `bsc plan change note`.** Backticks in a double-quoted shell string are
+  command substitution, so the shell eats them before `bsc` sees them — and notes are APPEND-ONLY, so
+  the loss cannot be repaired. Check the exit status too: a failed `note` writes nothing while the
+  commit still lands, so the slice looks finished and the record is simply absent.
+- **`node --check <file>` to see whether a script parses — never `import()` it.** An `import()`
+  EXECUTES the module. Doing that to a script with top-level side effects once moved `main` by 66
+  commits.
 
 **5 · Commit** on the branch — **never push**. End the message with the agreed `Co-Authored-By:` trailer.
 

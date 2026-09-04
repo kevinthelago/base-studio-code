@@ -454,6 +454,82 @@ pub fn scope_allows_write(scope: &str) -> bool {
     scope_allows_write_in(session_env(&SCOPES_OVERRIDE, BSC_SCOPES_ENV).as_deref(), scope)
 }
 
+/// The env var naming the FEATURES a session may write records in
+/// (`a-worker-writes-only-its-own-feature`) — whitespace/comma separated, stamped at launch from the
+/// worker's stream's feature.
+///
+/// The fine half of the pair. `$BSC_SCOPES` answers "may this session write this STORE at all";
+/// this answers "which RECORDS in it". Both must pass, and they are separate because they fail for
+/// different reasons and want different messages.
+pub const BSC_FEATURES_ENV: &str = "BSC_FEATURES";
+
+/// The features this session may write, or `None` when it is UNCONFINED.
+///
+/// `None` and `Some(empty)` are deliberately different, and the difference is the whole safety story:
+/// absent means no confinement was configured (a hand shell, a librarian, every existing test) and
+/// everything is writable, while an explicitly empty list would mean "write nothing". Conflating them
+/// would either brick every ungated session or silently un-confine every worker.
+pub fn session_features() -> Option<Vec<String>> {
+    let raw = session_env(&FEATURES_OVERRIDE, BSC_FEATURES_ENV)?;
+    let list: Vec<String> = raw
+        .split([',', ' ', '\t', '\n'])
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_string)
+        .collect();
+    // A var set to whitespace is a MISCONFIGURATION, not a statement that the session writes nothing.
+    // Reading it as the latter would brick a worker on a launch bug, so it reads as unconfined and the
+    // coarse store gate still applies.
+    if list.is_empty() { None } else { Some(list) }
+}
+
+/// Whether this session may WRITE a record owned by `feature`.
+///
+/// `feature` is the record's own ownership axis; an EMPTY one (a record that carries none) is refused
+/// under confinement, because "owned by nobody" must not read as "owned by everybody" — that is the
+/// hole a confinement exists to close.
+///
+/// **NOT a security boundary**, for the reason [`scope_allows_write`] states: a session owns its
+/// environment. It is defense-in-depth against the accident — a worker fixing its own bug by editing
+/// the shared record every other feature composes.
+pub fn may_write_feature(feature: &str) -> bool {
+    match session_features() {
+        None => true,
+        Some(allowed) => {
+            let f = feature.trim();
+            !f.is_empty() && allowed.iter().any(|a| a == f)
+        }
+    }
+}
+
+/// [`may_write_feature`] as a `Result` for the verb handlers, with the refusal a reader can act on.
+///
+/// It names the record, ITS feature and the session's — three facts, because the common cause is not
+/// "you may not write" but "you are in the wrong lane", and a message without both sides cannot say
+/// which. The reserved tiers get their own sentence: `core` is not a lane anyone is assigned to, so
+/// pointing a worker at its own feature would be advice it cannot follow.
+pub fn require_feature_write(record: &str, feature: &str) -> Result<(), String> {
+    if may_write_feature(feature) {
+        return Ok(());
+    }
+    let mine = session_features().unwrap_or_default().join(", ");
+    let owner = if feature.trim().is_empty() { "(no feature)" } else { feature.trim() };
+    let hint = match owner {
+        "core" | "reference" | "shell" | "store" => {
+            "that is a SHARED tier every feature builds on, so it is not any one worker's to change —              route it through your director with `bsc plan request new`"
+        }
+        "(no feature)" => {
+            "a record owned by no feature cannot be written under confinement — give it one with              `--feature <slug>`, or ask your director which lane it belongs to"
+        }
+        _ => "route it through your director with `bsc plan request new`",
+    };
+    Err(format!(
+        "'{record}' belongs to feature '{owner}', and this session writes only: {mine}.
+  {hint}
+           (reads are unaffected — `get`/`list`/`dupes`/`doctor` see every record)"
+    ))
+}
+
 /// A per-thread override of one session env var. Outer `None` = no override in force (read the real
 /// env); `Some(inner)` = use `inner`, where `None` means "the var is unset".
 type EnvOverride = std::cell::RefCell<Option<Option<String>>>;
@@ -461,6 +537,8 @@ type EnvOverride = std::cell::RefCell<Option<Option<String>>>;
 thread_local! {
     /// The scope-doc override — see [`with_scopes`].
     static SCOPES_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The feature-confinement override — see [`with_features`].
+    static FEATURES_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
     /// The scratch-dir override — see [`with_scratch`].
     static SCRATCH_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
     /// The confinement-root override — see [`with_repo_root`].
@@ -520,6 +598,12 @@ fn with_env_override<T>(
 /// ```
 pub fn with_scopes<T>(doc: Option<&str>, f: impl FnOnce() -> T) -> T {
     with_env_override(&SCOPES_OVERRIDE, doc, f)
+}
+
+/// Run `f` with `$BSC_FEATURES` forced to `list` for the calling thread only — the test seam for
+/// [`may_write_feature`], and the reason its tests mutate no process-global state.
+pub fn with_features<T>(list: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&FEATURES_OVERRIDE, list, f)
 }
 
 /// Run `f` with `$BSC_SCRATCH` forced to `dir` **for the calling thread only** (#3382) — the scratch
@@ -1718,3 +1802,78 @@ mod tests {
 // This header stays a file because include! refuses crate-level //! docs and #![…] inner
 // attributes (E0753 / "an inner attribute is not permitted in this context").
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));
+#[cfg(test)]
+mod feature_confinement_tests {
+    use super::*;
+
+    /// `None` (unconfined) and `Some(empty)` are DIFFERENT, and conflating them is the whole hazard.
+    ///
+    /// Absent means no confinement was configured — a hand shell, a librarian, every existing test —
+    /// and everything is writable. An explicitly empty list would mean "write nothing". Reading a
+    /// misconfigured blank var as the latter would brick a worker on a launch bug, so it reads as
+    /// unconfined and the coarse store gate still applies.
+    #[test]
+    fn an_absent_or_blank_features_var_is_unconfined_not_write_nothing() {
+        with_features(None, || {
+            assert!(session_features().is_none());
+            assert!(may_write_feature("core"), "an unconfined session writes anything");
+            assert!(may_write_feature(""), "…including a record that carries no feature");
+        });
+        for blank in ["", "   ", " , , "] {
+            with_features(Some(blank), || {
+                assert!(session_features().is_none(), "a blank var reads as UNCONFINED: {blank:?}");
+                assert!(may_write_feature("core"));
+            });
+        }
+    }
+
+    /// The list parses the shapes a launch actually produces, and confinement means what it says.
+    #[test]
+    fn a_confined_session_writes_its_own_features_and_nothing_else() {
+        // Space, comma and mixed — a stamped env var is not guaranteed one separator.
+        for list in ["glance", "glance,algorithms", "glance algorithms", "glance, algorithms"] {
+            with_features(Some(list), || {
+                assert!(may_write_feature("glance"), "{list:?}");
+                // The reserved tiers are refused like any other feature the session does not name.
+                // `core` is 204 algorithm records every feature composes; a worker fixing its own bug
+                // by editing the shared one is exactly the accident this exists to stop.
+                assert!(!may_write_feature("core"), "{list:?}");
+                assert!(!may_write_feature("planner"), "{list:?}");
+                // A record owned by NOBODY is refused too: "owned by nobody" must not read as "owned
+                // by everybody", which is the hole a confinement exists to close.
+                assert!(!may_write_feature(""), "{list:?}");
+                assert!(!may_write_feature("   "), "{list:?}");
+            });
+        }
+        with_features(Some("glance,algorithms"), || {
+            assert!(may_write_feature("algorithms"), "every named feature is writable, not just the first");
+        });
+    }
+
+    /// The refusal names the record, ITS feature and the session's — three facts, because the common
+    /// cause is "you are in the wrong lane" and a message with only one side cannot say which.
+    #[test]
+    fn the_refusal_names_both_sides_and_points_somewhere_actionable() {
+        with_features(Some("glance"), || {
+            let err = require_feature_write("safe-invoke.ts", "core").unwrap_err();
+            assert!(err.contains("safe-invoke.ts"), "{err}");
+            assert!(err.contains("'core'"), "the record's feature: {err}");
+            assert!(err.contains("glance"), "and the session's: {err}");
+            // A shared tier gets its own sentence: `core` is not a lane anyone is assigned to, so
+            // pointing a worker at its own feature would be advice it cannot follow.
+            assert!(err.contains("SHARED tier"), "{err}");
+            assert!(err.contains("bsc plan request new"), "…and where to take it: {err}");
+            // Reads are stated, because the first thing a refused reader wonders is whether it has
+            // just lost access to the library it composes against.
+            assert!(err.contains("reads are unaffected"), "{err}");
+
+            // A record with no feature says how to fix THAT, which is a different action.
+            let orphan = require_feature_write("mystery.ts", "").unwrap_err();
+            assert!(orphan.contains("(no feature)"), "{orphan}");
+            assert!(orphan.contains("--feature"), "{orphan}");
+
+            // …and a write the session MAY make is not an error at all.
+            assert!(require_feature_write("glance-graph.ts", "glance").is_ok());
+        });
+    }
+}

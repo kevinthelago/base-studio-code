@@ -42,7 +42,18 @@ impl Store {
 
     /// Declare `leg` orthogonal, owned by plan item `owner`. Replaces any prior declaration for that
     /// leg — a re-declaration is a correction, not a second opinion to keep beside the first.
-    pub fn known_red_add(&self, leg: &str, owner: &str, note: Option<&str>) -> Result<(), String> {
+    /// `tests` NARROWS the declaration to the failures it names, which is the difference between
+    /// accounting for a known failure and excusing every failure in its leg. MEASURED 2026-09-03:
+    /// keyed on the leg alone, this excused a test a commit had just broken and the gate reported
+    /// `0 unexplained`. Empty ⇒ leg-level, for the legs that cannot enumerate (`tsc` reports a
+    /// program, `eslint` a file set).
+    pub fn known_red_add(
+        &self,
+        leg: &str,
+        owner: &str,
+        note: Option<&str>,
+        tests: &[String],
+    ) -> Result<(), String> {
         let (leg, owner) = (leg.trim(), owner.trim());
         if leg.is_empty() {
             return Err("a known-red declaration needs a gate leg key (`bsc work gate` prints them)".into());
@@ -59,6 +70,15 @@ impl Store {
         row.insert("ref".into(), serde_json::Value::String(owner.to_string()));
         if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
             row.insert("note".into(), serde_json::Value::String(n.to_string()));
+        }
+        let tests: Vec<serde_json::Value> = tests
+            .iter()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .map(|t| serde_json::Value::String(t.to_string()))
+            .collect();
+        if !tests.is_empty() {
+            row.insert("tests".into(), serde_json::Value::Array(tests));
         }
         all.insert(leg.to_string(), serde_json::Value::Object(row));
         self.blob_set("known_red", &serde_json::Value::Object(all)).map_err(|e| e.to_string())
@@ -90,7 +110,7 @@ mod tests {
     fn a_declaration_round_trips_and_carries_its_owner() {
         let s = store("round");
         assert!(s.known_red_list().unwrap().is_empty(), "nothing is declared by default");
-        s.known_red_add("graph-store", "develop-is-red-the-repo-graph-store-is-behind", Some("9 nodes behind")).unwrap();
+        s.known_red_add("graph-store", "develop-is-red-the-repo-graph-store-is-behind", Some("9 nodes behind"), &[]).unwrap();
         let all = s.known_red_list().unwrap();
         assert_eq!(all["graph-store"]["ref"], "develop-is-red-the-repo-graph-store-is-behind");
         assert_eq!(all["graph-store"]["note"], "9 nodes behind");
@@ -101,19 +121,19 @@ mod tests {
         // The whole safeguard. A leg listed here is one nobody looks at again, so an unowned entry is
         // how a real failure gets parked forever — the list has to stay a queue, not a wastebasket.
         let s = store("owner");
-        let err = s.known_red_add("graph-store", "  ", None).unwrap_err();
+        let err = s.known_red_add("graph-store", "  ", None, &[]).unwrap_err();
         assert!(err.contains("--ref"), "{err}");
         assert!(err.contains("parked forever"), "the refusal says WHY: {err}");
         assert!(s.known_red_list().unwrap().is_empty(), "nothing was written");
         // ...and a leg key is equally required.
-        assert!(s.known_red_add("", "some-ref", None).is_err());
+        assert!(s.known_red_add("", "some-ref", None, &[]).is_err());
     }
 
     #[test]
     fn re_declaring_a_leg_corrects_it_rather_than_keeping_two_opinions() {
         let s = store("redeclare");
-        s.known_red_add("graph-store", "old-item", None).unwrap();
-        s.known_red_add("graph-store", "new-item", None).unwrap();
+        s.known_red_add("graph-store", "old-item", None, &[]).unwrap();
+        s.known_red_add("graph-store", "new-item", None, &[]).unwrap();
         let all = s.known_red_list().unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all["graph-store"]["ref"], "new-item");
@@ -122,7 +142,7 @@ mod tests {
     #[test]
     fn removing_reports_whether_anything_was_actually_there() {
         let s = store("remove");
-        s.known_red_add("graph-store", "item", None).unwrap();
+        s.known_red_add("graph-store", "item", None, &[]).unwrap();
         assert!(s.known_red_remove("graph-store").unwrap());
         // Saying "removed" for a leg that was never declared reports an act that did not happen.
         assert!(!s.known_red_remove("graph-store").unwrap());
