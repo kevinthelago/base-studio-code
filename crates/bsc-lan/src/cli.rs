@@ -160,6 +160,32 @@ the request to open it through that surface would make the escape hatch depend o
 thing it is escaping.",
     },
     CmdDoc {
+        name: "spectrum",
+        summary: "what the radio hears across the band, from the spectral FFT",
+        usage: "\
+bsc lan spectrum [--trigger] [--source <file>] [--json|--pretty]
+
+Reads the radio's spectral FFT bins and reports one aggregated record per channel.
+
+THE ONLY TIER THAT SEES NON-WIFI ENERGY. Frame capture — however good — is blind to
+a microwave, a cordless phone, or a jammer that radiates without emitting valid
+802.11, because there are no frames to capture. This reads ENERGY.
+
+READING NEVER WRITES. Draining what the driver has buffered is harmless; --trigger
+writes to the control file and changes how the radio behaves, so it is opt-in.
+Observation comes before mutation (docs/llm-operator/guardrails.md).
+
+NEEDS ROOT: debugfs is root-only. Without it you get a permission error naming the
+path, not an empty spectrum.
+
+AN EMPTY READ IS NOT A QUIET BAND, and this says so. Zero samples means nothing was
+observed — a different claim from a clear channel, and they look identical on any
+display that does not distinguish them.
+
+--source reads a captured sample file instead of the live radio, so the decode can be
+exercised anywhere.",
+    },
+    CmdDoc {
         name: "dry-run",
         summary: "what the sensor WOULD emit for a real EVE file, without a socket",
         usage: "\
@@ -197,6 +223,8 @@ struct Args {
     group_key: Option<String>,
     for_seconds: Option<u64>,
     timeout_ms: Option<i64>,
+    trigger: bool,
+    source: Option<String>,
     positional: Vec<String>,
 }
 
@@ -221,6 +249,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                 a.sensor_public_key = Some(rest.value("--sensor-public-key needs 64 hex characters")?)
             }
             "--group-key" => a.group_key = Some(rest.value("--group-key needs 64 hex characters")?),
+            "--trigger" => a.trigger = true,
+            "--source" => a.source = Some(rest.value("--source needs a path to a sample file")?),
             "--timeout" => {
                 a.timeout_ms = Some(
                     rest.value("--timeout needs a whole number of milliseconds")?
@@ -438,6 +468,75 @@ const ANALYZER_TIMEOUT_MS: i64 = 4_000;
 const POLL_INTERVAL_MS: u64 = 40;
 /// Requests older than this are swept, so a dead run cannot wedge the channel.
 const STALE_MS: i64 = 60_000;
+
+fn cmd_spectrum(a: &Args) -> Result<(), String> {
+    use bsc_lan_sense::spectrum::{discover, from_bytes, read_samples, trigger, Mode};
+
+    let read = if let Some(src) = a.source.as_deref() {
+        let raw = std::fs::read(src).map_err(|e| format!("could not read {src}: {e}"))?;
+        from_bytes(&raw)
+    } else {
+        let path = discover().map_err(|e| e.to_string())?;
+        if a.trigger {
+            // The only mutating step, and only on request.
+            trigger(&path, Mode::Background).map_err(|e| e.to_string())?;
+            trigger(&path, Mode::Trigger).map_err(|e| e.to_string())?;
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+        }
+        let r = read_samples(&path).map_err(|e| e.to_string())?;
+        if a.trigger {
+            // Leaving a scan running costs a thermally-saturated box work.
+            let _ = trigger(&path, Mode::Disable);
+        }
+        r
+    };
+
+    let out = json!({
+        "observed": read.observed(),
+        "samples": read.samples,
+        "bytes": read.bytes,
+        "malformed_tail": read.malformed_tail.as_ref().map(|e| e.to_string()),
+        "channels": read.channels.iter().map(|c| json!({
+            "freq_mhz": c.freq_mhz,
+            "sweeps": c.sweeps,
+            "noise_dbm": c.noise_dbm,
+            "peak_magnitude": c.peak_magnitude,
+            "peak_bin": c.peak_bin,
+            "bin_max": c.bin_max.to_vec(),
+        })).collect::<Vec<_>>(),
+    });
+
+    bsc_cli_util::emit(a.pretty, a.json, &out, || {
+        if !read.observed() {
+            return format!(
+                "NOTHING OBSERVED — 0 sample(s) in {} byte(s).\n  \
+                 This is NOT a quiet band. Without --trigger this only drains what the driver \
+                 already buffered; a radio that is idle or off-channel buffers nothing.",
+                read.bytes
+            );
+        }
+        let mut s = format!("{} sample(s) over {} byte(s)\n", read.samples, read.bytes);
+        for c in &read.channels {
+            let peak_hz = c.peak_magnitude;
+            s.push_str(&format!(
+                "\n  {} MHz — {} sweeps, noise {} dBm, peak {peak_hz} at bin {}\n    ",
+                c.freq_mhz, c.sweeps, c.noise_dbm, c.peak_bin
+            ));
+            // A coarse inline profile: enough to see a shape without a UI.
+            let top = c.bin_max.iter().copied().max().unwrap_or(1).max(1);
+            for v in c.bin_max.iter() {
+                let level = (u32::from(*v) * 8 / u32::from(top)).min(7) as usize;
+                s.push([' ', '.', ':', '-', '=', '+', '*', '#'][level]);
+            }
+            s.push('\n');
+        }
+        if let Some(e) = &read.malformed_tail {
+            s.push_str(&format!("\n  the stream ended badly: {e}\n  The channels above still stand.\n"));
+        }
+        s
+    });
+    Ok(())
+}
 
 fn cmd_analyzer(a: &Args) -> Result<(), String> {
     let verb = a
@@ -719,6 +818,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     match a.positional.first().map(String::as_str) {
         Some("posture") => cmd_posture(&a),
         Some("keygen") => cmd_keygen(&a),
+        Some("spectrum") => cmd_spectrum(&a),
         Some("analyzer") => cmd_analyzer(&a),
         Some("watch") => cmd_watch(&a),
         Some("estate") => cmd_estate(&a),
@@ -739,7 +839,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "analyzer", "dry-run"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "estate", "analyzer", "spectrum", "dry-run"]);
     }
 
     #[test]
