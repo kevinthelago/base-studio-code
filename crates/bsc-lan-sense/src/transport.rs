@@ -35,6 +35,31 @@ pub trait Transport {
 /// off the local segment**, whatever some router elsewhere is configured to
 /// do with the group. It bounds the blast radius of a misconfigured multicast
 /// route to nothing.
+/// Whether the kernel loops our own multicast back to this host.
+///
+/// The sensor wants this OFF: it has no receive path at all, so looping its
+/// own traffic back up the stack is pure cost on a thermally-saturated box.
+///
+/// ## What this setting does NOT do, measured rather than assumed
+///
+/// An earlier version of this comment claimed a same-host end-to-end test
+/// needs the loop enabled. **That is false**, and a bite test proved it: the
+/// end-to-end test in [`crate::receive`] passes with `Loopback::Off`.
+/// `IP_MULTICAST_LOOP` has no observable effect when the outgoing interface is
+/// loopback — the datagram is delivered either way — so the setting is
+/// meaningful on a real NIC and indifferent on `lo`.
+///
+/// It is kept as a named parameter because Off is a deliberate choice for the
+/// sensor that a future reader should see and not "optimise" away, not because
+/// the tests depend on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Loopback {
+    /// The sensor. Nothing on this host listens.
+    Off,
+    /// Same-host tests.
+    On,
+}
+
 pub struct UdpMulticast {
     socket: UdpSocket,
 }
@@ -46,6 +71,15 @@ impl UdpMulticast {
     /// absent, so that no future edit can casually add a read to the sensor's
     /// one outbound socket.
     pub fn bind(interface_addr: Ipv4Addr, group: SocketAddrV4) -> io::Result<Self> {
+        Self::bind_with(interface_addr, group, Loopback::Off)
+    }
+
+    /// As [`bind`](Self::bind), choosing whether our own multicast loops back.
+    pub fn bind_with(
+        interface_addr: Ipv4Addr,
+        group: SocketAddrV4,
+        loopback: Loopback,
+    ) -> io::Result<Self> {
         // Port 0: the kernel picks the source port. The sensor is never
         // addressed, so a fixed source port would buy nothing and would be one
         // more stable thing to aim at.
@@ -57,9 +91,7 @@ impl UdpMulticast {
         // line that needs `socket2::Socket::set_multicast_if_v4`, and the
         // symptom of not fixing it would be telemetry leaving the wrong NIC.
         socket.set_multicast_ttl_v4(1)?;
-        // Never loop our own traffic back: the sensor has no receive path and
-        // looping would only cost the thermally-saturated Pi work.
-        socket.set_multicast_loop_v4(false)?;
+        socket.set_multicast_loop_v4(matches!(loopback, Loopback::On))?;
         socket.connect(group)?;
         Ok(Self { socket })
     }

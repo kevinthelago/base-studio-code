@@ -12,8 +12,13 @@ use bsc_lan_sense::emit::{Emitter, SnapshotPolicy};
 use bsc_lan_sense::posture::Posture;
 use bsc_lan_sense::run::{RateLimit, SensorRun};
 use bsc_lan_sense::transport::Transport;
-use bsc_lan_stream::crypto::{GroupKey, Sensor};
-use ed25519_dalek::SigningKey;
+use bsc_lan_sense::receive::{MulticastReceiver, Tick};
+use bsc_lan_stream::crypto::{GroupKey, Sensor, Subscriber};
+use bsc_lan_stream::liveness::{Cadence, Liveliness};
+use bsc_lan_stream::subscription::{Finding, Subscription};
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use std::net::{Ipv4Addr, SocketAddrV4};
+use std::time::{Duration, Instant};
 use serde_json::json;
 
 pub const TAGLINE: &str =
@@ -71,6 +76,37 @@ deliberately. Both the signing key and the group key are SECRET — the group ke
 confidentiality half, not a public identifier.",
     },
     CmdDoc {
+        name: "watch",
+        summary: "subscribe to a sensor's multicast stream and report what it says — and what it stops saying",
+        usage: "\
+bsc lan watch --group <addr:port> --sensor-public-key <hex> --group-key <hex>
+              [--iface <ip>] [--for <seconds>] [--json|--pretty]
+
+Joins the sensor's multicast group, verifies every datagram, tracks the sequence, and
+reports findings. Any number of subscribers may watch the same stream; the sensor holds
+no subscriber state and does not know who is listening.
+
+IT REPORTS WHAT IT DID NOT RECEIVE, which is the part that matters. The stream is
+one-way, so there is no acknowledgement and the sensor can never learn that nobody heard
+it. Only a subscriber can notice absence:
+
+  NeverHeard   nothing has EVER arrived. Usually configuration -- wrong group, wrong
+               key -- or, on this network, a mirror-destination port that will not
+               forward ordinary traffic. It is NEVER reported as healthy.
+  Silent       the sensor was heard and then stopped. Usually the sensor or the path.
+
+Those two are kept apart because they send you to debug different halves.
+
+A REJECTED DATAGRAM IS REPORTED, NOT DROPPED. A signature failure on the group means
+somebody is injecting into it -- the exact attack the signature exists to stop -- and
+silently discarding it would mean the defence works while nobody ever learns it was
+needed. A bad signature and an undecryptable payload are reported differently: the
+first is a forger, the second is usually a stale group key.
+
+KEYS: the sensor's PUBLIC key (to verify) and the group key (to decrypt, and it is
+SECRET). A watcher never needs the sensor's private key.",
+    },
+    CmdDoc {
         name: "dry-run",
         summary: "what the sensor WOULD emit for a real EVE file, without a socket",
         usage: "\
@@ -99,6 +135,11 @@ struct Args {
     pretty: bool,
     rate: Option<u32>,
     burst: Option<u32>,
+    group: Option<String>,
+    iface: Option<String>,
+    sensor_public_key: Option<String>,
+    group_key: Option<String>,
+    for_seconds: Option<u64>,
     positional: Vec<String>,
 }
 
@@ -112,6 +153,19 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
                     rest.value("--rate needs a whole number of datagrams per second")?
                         .parse()
                         .map_err(|_| "--rate needs a whole number".to_string())?,
+                );
+            }
+            "--group" => a.group = Some(rest.value("--group needs <addr:port>")?),
+            "--iface" => a.iface = Some(rest.value("--iface needs an interface IP")?),
+            "--sensor-public-key" => {
+                a.sensor_public_key = Some(rest.value("--sensor-public-key needs 64 hex characters")?)
+            }
+            "--group-key" => a.group_key = Some(rest.value("--group-key needs 64 hex characters")?),
+            "--for" => {
+                a.for_seconds = Some(
+                    rest.value("--for needs a whole number of seconds")?
+                        .parse()
+                        .map_err(|_| "--for needs a whole number of seconds".to_string())?,
                 );
             }
             "--burst" => {
@@ -234,6 +288,144 @@ impl Transport for Counting {
     }
 }
 
+/// Decode 64 hex characters into 32 bytes.
+pub fn unhex32(s: &str, what: &str) -> Result<[u8; 32], String> {
+    let s = s.trim();
+    if s.len() != 64 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "{what} must be exactly 64 hexadecimal characters (got {} character(s))",
+            s.len()
+        ));
+    }
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            .map_err(|_| format!("{what} is not valid hexadecimal"))?;
+    }
+    Ok(out)
+}
+
+/// Render one finding for a person reading a terminal.
+pub fn render_finding(f: &Finding) -> String {
+    match f {
+        Finding::Event(e) => format!("event      {e:?}"),
+        Finding::Snapshot(s) => format!(
+            "snapshot   posture={} counters={}",
+            if s.posture.is_sealed() { "sealed" } else { "NOT sealed" },
+            s.counters.len()
+        ),
+        // Not noise. Somebody is putting datagrams on the group that the sensor
+        // did not sign.
+        Finding::ForgeryRejected { seen } => {
+            format!("FORGERY    a datagram was not signed by this sensor ({seen} so far) — somebody is injecting into the group")
+        }
+        Finding::UndecryptableRejected { seen } => {
+            format!("key        signed by the sensor but would not decrypt ({seen} so far) — usually a stale group key, not an attack")
+        }
+        Finding::MalformedRejected { seen } => format!("malformed  not one of ours ({seen} so far)"),
+        Finding::Gap { missing_from, missing_to } => {
+            format!("GAP        datagrams {missing_from}..={missing_to} never arrived — the next snapshot restores the view")
+        }
+        Finding::Replayed { seq, last } => {
+            format!("REPLAY     sequence {seq} seen again (last was {last}) — refused")
+        }
+        Finding::SensorRestarted { previous_last_seq } => {
+            format!("RESTART    the sensor rebooted (it had reached {previous_last_seq}) — not a gap")
+        }
+        Finding::ViewDegraded => "degraded   something was missed; only a snapshot can restore this".into(),
+        Finding::ViewWhole => "whole      a snapshot restored the view".into(),
+        Finding::PostureChanged { from, to } => format!(
+            "POSTURE    {} -> {}",
+            match from {
+                Some(p) if p.is_sealed() => "sealed",
+                Some(_) => "not sealed",
+                None => "(first report)",
+            },
+            if to.is_sealed() { "sealed" } else { "NOT SEALED" }
+        ),
+        Finding::LivelinessChanged { to } => match to {
+            // Reads correctly at zero, which is when an operator first sees it.
+            Liveliness::NeverHeard { waiting_ms } if *waiting_ms < 1_000 => {
+                "NEVER HEARD  nothing has arrived since watching began — check the group and the keys, and whether the switch forwards this group at all".into()
+            }
+            Liveliness::NeverHeard { waiting_ms } => format!(
+                "NEVER HEARD  nothing has arrived in {}s — check the group and the keys, and whether the switch forwards this group at all",
+                waiting_ms / 1000
+            ),
+            Liveliness::Healthy { since_last_ms } => {
+                format!("healthy      last heard {}s ago", since_last_ms / 1000)
+            }
+            Liveliness::Late { since_last_ms, .. } => {
+                format!("LATE         nothing for {}s", since_last_ms / 1000)
+            }
+            Liveliness::Silent { since_last_ms, .. } => format!(
+                "SILENT       nothing for {}s — treat the stream as gone",
+                since_last_ms / 1000
+            ),
+        },
+    }
+}
+
+fn cmd_watch(a: &Args) -> Result<(), String> {
+    let group: SocketAddrV4 = a
+        .group
+        .as_deref()
+        .ok_or("watch needs --group <addr:port>, e.g. --group 239.10.20.30:5140")?
+        .parse()
+        .map_err(|_| "--group must be <ipv4-addr>:<port>".to_string())?;
+    let iface: Ipv4Addr = match a.iface.as_deref() {
+        Some(s) => s.parse().map_err(|_| "--iface must be an IPv4 address".to_string())?,
+        None => Ipv4Addr::UNSPECIFIED,
+    };
+    let pub_hex = a
+        .sensor_public_key
+        .as_deref()
+        .ok_or("watch needs --sensor-public-key <hex> (the sensor's PUBLIC key, from `bsc lan keygen`)")?;
+    let group_hex = a
+        .group_key
+        .as_deref()
+        .ok_or("watch needs --group-key <hex> (SECRET, shared by every subscriber)")?;
+
+    let verifying = VerifyingKey::from_bytes(&unhex32(pub_hex, "--sensor-public-key")?)
+        .map_err(|_| "--sensor-public-key is not a valid ed25519 public key".to_string())?;
+    let group_key = GroupKey::from_bytes(unhex32(group_hex, "--group-key")?);
+
+    let timeout = Duration::from_millis(500);
+    let rx = MulticastReceiver::join(iface, group, timeout)
+        .map_err(|e| format!("could not join {group} on {iface}: {e}"))?;
+
+    let cadence = Cadence {
+        snapshot_interval_ms: 10_000,
+        grace_ms: 2_000,
+        missed_snapshots_before_alert: 3,
+    };
+    let started = Instant::now();
+    let mut sub = Subscription::new(Subscriber::new(verifying, group_key), cadence, 0);
+    let deadline = a.for_seconds.map(Duration::from_secs);
+
+    loop {
+        let now_ms = started.elapsed().as_millis() as u64;
+        // A timeout is a TICK, not an error: it is the only chance a watcher
+        // gets to notice that the stream has stopped.
+        let findings = match rx.next_tick().map_err(|e| format!("receive failed: {e}"))? {
+            Tick::Datagram(d) => sub.receive(&d, now_ms),
+            Tick::Quiet => sub.poll(now_ms),
+        };
+        for f in &findings {
+            println!("{}", render_finding(f));
+        }
+        // Poll on every turn, so liveness surfaces even during steady traffic.
+        for f in sub.poll(now_ms) {
+            println!("{}", render_finding(&f));
+        }
+        if let Some(d) = deadline {
+            if started.elapsed() >= d {
+                return Ok(());
+            }
+        }
+    }
+}
+
 fn cmd_dry_run(a: &Args) -> Result<(), String> {
     let path = a
         .positional
@@ -348,6 +540,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     match a.positional.first().map(String::as_str) {
         Some("posture") => cmd_posture(&a),
         Some("keygen") => cmd_keygen(&a),
+        Some("watch") => cmd_watch(&a),
         Some("dry-run") => cmd_dry_run(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
@@ -365,7 +558,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["posture", "keygen", "dry-run"]);
+        assert_eq!(names, vec!["posture", "keygen", "watch", "dry-run"]);
     }
 
     #[test]
@@ -519,6 +712,83 @@ mod tests {
     fn an_ipv6_endpoint_is_bracketed_so_the_colons_are_unambiguous() {
         assert_eq!(endpoint("::", 41719), "[::]:41719");
         assert_eq!(endpoint("0.0.0.0", 22), "0.0.0.0:22");
+    }
+
+    #[test]
+    fn a_key_must_be_exactly_sixty_four_hex_characters() {
+        assert!(unhex32(&"a".repeat(64), "--group-key").is_ok());
+        for bad in ["", "abc", &"z".repeat(64), &"a".repeat(63), &"a".repeat(65)] {
+            let e = unhex32(bad, "--group-key").unwrap_err();
+            assert!(e.contains("--group-key"), "the error should name the flag: {e}");
+        }
+    }
+
+    #[test]
+    fn watch_refuses_to_run_without_the_group_and_both_keys() {
+        for (argv, expect) in [
+            (vec!["watch".to_string()], "--group"),
+            (
+                vec!["watch".into(), "--group".into(), "239.1.2.3:5140".into()],
+                "--sensor-public-key",
+            ),
+            (
+                vec![
+                    "watch".into(), "--group".into(), "239.1.2.3:5140".into(),
+                    "--sensor-public-key".into(), "a".repeat(64),
+                ],
+                "--group-key",
+            ),
+        ] {
+            let e = run(argv, "bsc lan").unwrap_err();
+            assert!(e.contains(expect), "expected the error to name {expect}, got: {e}");
+        }
+    }
+
+    /// A forgery finding must read as an attack, not as a statistic. Whoever
+    /// sees this line is being told somebody is injecting into the group.
+    #[test]
+    fn a_forgery_finding_reads_as_an_attack() {
+        let s = render_finding(&Finding::ForgeryRejected { seen: 7 });
+        assert!(s.contains("FORGERY"));
+        assert!(s.contains("injecting"), "the line must say what it means: {s}");
+    }
+
+    #[test]
+    fn a_stale_group_key_does_not_read_as_an_attack() {
+        // Sending someone hunting an intruder over a key-rotation mistake is
+        // its own kind of failure.
+        let s = render_finding(&Finding::UndecryptableRejected { seen: 3 });
+        assert!(!s.contains("FORGERY"));
+        assert!(s.contains("stale group key"), "{s}");
+    }
+
+    #[test]
+    fn never_heard_never_renders_as_healthy() {
+        let s = render_finding(&Finding::LivelinessChanged {
+            to: Liveliness::NeverHeard { waiting_ms: 90_000 },
+        });
+        assert!(s.contains("NEVER HEARD"));
+        assert!(!s.to_lowercase().contains("healthy"), "{s}");
+        // And it names the things actually worth checking.
+        assert!(s.contains("group") && s.contains("key") && s.contains("forward"), "{s}");
+    }
+
+    #[test]
+    fn never_heard_reads_correctly_at_zero_elapsed() {
+        // The first poll is when an operator meets this line, and "in 0s" is
+        // confusing at exactly the moment it matters most.
+        let s = render_finding(&Finding::LivelinessChanged {
+            to: Liveliness::NeverHeard { waiting_ms: 0 },
+        });
+        assert!(!s.contains("in 0s"), "{s}");
+        assert!(s.contains("since watching began"), "{s}");
+    }
+
+    #[test]
+    fn a_restart_does_not_render_as_a_gap() {
+        let s = render_finding(&Finding::SensorRestarted { previous_last_seq: 9 });
+        assert!(s.contains("RESTART"));
+        assert!(s.contains("not a gap"), "{s}");
     }
 
     #[test]
