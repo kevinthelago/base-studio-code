@@ -57,6 +57,7 @@
       "resources/data/personas/planner.json": "data/personas/planner.json",
       "resources/data/personas/reviewer.json": "data/personas/reviewer.json",
       "resources/data/personas/sound-designer.json": "data/personas/sound-designer.json",
+      "resources/data/personas/steward.json": "data/personas/steward.json",
       "resources/data/personas/surface-operator.json": "data/personas/surface-operator.json",
       "resources/data/personas/tester.json": "data/personas/tester.json",
       "resources/data/personas/triage.json": "data/personas/triage.json",
