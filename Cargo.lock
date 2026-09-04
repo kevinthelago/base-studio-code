@@ -730,6 +730,7 @@ dependencies = [
  "bsc-config",
  "bsc-data",
  "bsc-debug",
+ "bsc-deploy",
  "bsc-disk",
  "bsc-files",
  "bsc-fin",
@@ -891,6 +892,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bsc-deploy"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
