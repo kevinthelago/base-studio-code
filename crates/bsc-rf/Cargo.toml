@@ -1,0 +1,15 @@
+[package]
+name = "bsc-rf"
+version = "0.1.0"
+edition = "2021"
+description = "`bsc rf` — DEFENSIVE RF monitoring: detect radio jamming and RF denial-of-service against 2.4/5 GHz WiFi from a commodity adapter. Reads the radio's own telemetry (nl80211 survey occupancy, monitor-mode radiotap frame statistics) and fuses several weak signals into a verdict that carries its evidence. Nothing here transmits — there is no injection, no deauth and no active probing path, and a test asserts it."
+
+[lib]
+name = "bsc_rf"
+
+[dependencies]
+# The shared CLI scaffold (#1762): CmdDoc help catalog + the emit/absent-marker conventions every
+# other `bsc` noun renders through.
+bsc-cli-util = { path = "../bsc-cli-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
