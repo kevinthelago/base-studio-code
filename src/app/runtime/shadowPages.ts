@@ -89,8 +89,14 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     // retire — `file: null` here is the designed end state reached at birth
     // rather than at the end of a migration, which is what "new UI is authored
     // into the store" produces.
-    rendersFrom: "record",
+    rendersFrom: "graph",
     modules: [{ recordId: "spectrumanalyzer", file: null }],
+    // An APP SCREEN, not a kit composition: the shell renders it, just in a
+    // detached window (`?detach=analyzer`) rather than the main one. Its host
+    // feature has no graph platform of its own — the analyzer composes only
+    // shared primitives — so importing the feature's barrel is what makes the
+    // record resolvable to the binding walk.
+    ensurePlatform: () => import("@/features/lan"),
   },
   {
     pageId: "accessibilitypage",
