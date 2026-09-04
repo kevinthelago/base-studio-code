@@ -38,15 +38,17 @@
 //! colocated `.test.ts` files are carried over assertion-for-assertion into the `#[cfg(test)]`
 //! modules beside each port — see `the-disk-janitors-move-to-bsc-disk-and-bsc-worktree`.
 
-pub mod cli;
-pub mod dedupe;
-pub mod gc;
-pub mod link;
-pub mod pool;
-pub mod prune;
-pub mod root;
-pub mod sweep;
-pub mod unit;
-pub mod worktree;
 
 pub use root::repo_root;
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/dedupe.rs, src/gc.rs, src/link.rs, src/pool.rs, src/prune.rs, src/root.rs, src/sweep.rs, src/unit.rs, src/worktree.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-disk--<module>.rs
+//     bsc graph impl set --id bsc-disk--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-disk--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
