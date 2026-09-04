@@ -83,6 +83,16 @@ export interface ShadowPageDef {
 /** The pages the graph carries, in rail order. */
 export const SHADOW_PAGES: ShadowPageDef[] = [
   {
+    pageId: "spectrumanalyzer",
+    label: "Spectrum analyzer",
+    // Authored RECORD-FIRST (`bsc lan analyzer`), so there was never a file to
+    // retire — `file: null` here is the designed end state reached at birth
+    // rather than at the end of a migration, which is what "new UI is authored
+    // into the store" produces.
+    rendersFrom: "record",
+    modules: [{ recordId: "spectrumanalyzer", file: null }],
+  },
+  {
     pageId: "accessibilitypage",
     label: "Accessibility",
     // The ONLY file-rendered entry, and deliberately so. Settings was rolled back to files (#3758) and its

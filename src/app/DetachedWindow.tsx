@@ -6,7 +6,7 @@ import { ConsoleGraphHost } from "@/app/console/ConsoleGraphHost";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
 import { StudioSessionHosts } from "@/features/studio-sessions";
-import { SpectrumAnalyzer } from "@/features/lan/SpectrumAnalyzer";
+import { SpectrumAnalyzer } from "@/features/lan";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";

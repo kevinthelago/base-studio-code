@@ -19,7 +19,7 @@
 //! time a user closes the window with its own title-bar button, and then
 //! `open` reports `AlreadyOpen` about a window that is not there.
 
-use bsc_lan::analyzer::{decide, Action, AnalyzerRequest, AnalyzerResult, WINDOW_LABEL, WINDOW_URL};
+use bsc_lan::analyzer::{decide, AnalyzerRequest, AnalyzerResult, WINDOW_LABEL, WINDOW_URL};
 use tauri::Manager;
 
 /// Apply one analyser request against the live window set.
@@ -57,17 +57,10 @@ pub fn apply(app: &tauri::AppHandle, req: &AnalyzerRequest) -> Result<AnalyzerRe
     Ok(AnalyzerResult { outcome })
 }
 
-/// Whether an action would change anything, given the window state. Split out
-/// so the decision is testable without a Tauri app handle, which cannot be
-/// constructed in a unit test.
-pub fn would_change(action: Action, is_open: bool) -> bool {
-    decide(action, is_open).changed()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bsc_lan::analyzer::Outcome;
+    use bsc_lan::analyzer::{Action, Outcome};
 
     #[test]
     fn the_handler_decides_the_same_way_the_contract_does() {
@@ -82,7 +75,7 @@ mod tests {
             (Action::Toggle, true, Outcome::Closed),
         ] {
             assert_eq!(decide(a, open), want);
-            assert_eq!(would_change(a, open), want.changed());
+            assert_eq!(decide(a, open).changed(), want.changed());
         }
     }
 
