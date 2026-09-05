@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use crate::migrate::CodeMask;
 use tree_sitter::{Language, Node, Parser};
 
 /// A candidate library implementation harvested from real code (#2745) — the seed's `implementations`
@@ -754,8 +755,16 @@ pub(crate) const BACKSLASH: char = '\u{5C}';
 /// resolves them, and textual normalization across a value only known at compile time is where an
 /// off-by-one silently reads the wrong file.
 ///
-/// Left alone: an already-absolutized `concat!(…)` form, and a path that is not a plain string
-/// literal.
+/// Left alone: an already-absolutized `concat!(…)` form, a path that is not a plain string literal,
+/// and — the reason this reuses [`CodeMask`] — a token that is not CODE.
+///
+/// That last one is the same blind spot [`crate::migrate::include_str_targets`] was moved off raw
+/// text for on 2026-09-04, and it lands harder here. A reporter that miscounts a token in a comment
+/// refuses a crate, loudly. A REWRITER that miscounts one edits it: the `//` prose above became
+/// `concat!(env!("CARGO_MANIFEST_DIR"), …)`, and a fixture STRING naming `include_str!` — which is
+/// exactly what `migrate.rs` carries for the tests OF the refusal rule — had its CONTENTS changed,
+/// so the test asserting on that fixture silently started asserting something else. There is now ONE
+/// answer to "is this token code", not two that can disagree.
 fn absolutize_includes(src: &str, file: &Path) -> String {
     // The file's directory relative to the crate root — `src` for everything `build.rs` materializes,
     // but derived rather than assumed, since `harvest_module` is not only called on those.
@@ -766,41 +775,52 @@ fn absolutize_includes(src: &str, file: &Path) -> String {
     let rel_dir = rel_dir.to_string_lossy().replace('\\', "/");
     let prefix = if rel_dir.is_empty() { String::new() } else { format!("{rel_dir}/") };
 
-    let mut out = String::with_capacity(src.len());
-    let mut rest = src;
-    while let Some(hit) = ["include_str!", "include_bytes!"]
-        .iter()
-        .filter_map(|m| rest.find(m).map(|i| (i, *m)))
-        .min_by_key(|(i, _)| *i)
-    {
-        let (at, mac) = hit;
-        let after = &rest[at + mac.len()..];
-        let open = after.find('(');
-        // The argument, if it is a plain string literal: `(` then whitespace then `"…"`.
-        let literal = open.and_then(|o| {
-            let arg = after[o + 1..].trim_start();
-            let pad = after[o + 1..].len() - arg.len();
-            arg.strip_prefix('"')
-                .and_then(|r| r.find('"').map(|e| (o + 1 + pad, r[..e].to_string(), o + 1 + pad + 1 + e + 1)))
-        });
-        match literal {
-            // An absolute path, or one already rooted at an env var, is left exactly as it is.
-            Some((start, path, end)) if !path.starts_with('/') && !path.contains(':') => {
-                out.push_str(&rest[..at + mac.len() + start]);
-                out.push_str(&format!(
-                    "concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{prefix}{path}\")"
-                ));
-                rest = &rest[at + mac.len() + end..];
+    let mask = CodeMask::of(src);
+    let b = src.as_bytes();
+
+    // Collected first, applied after: two macro names are scanned, so the hits do not arrive in
+    // source order, and splicing out of order would corrupt the offsets.
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    for mac in ["include_str!", "include_bytes!"] {
+        for (at, _) in src.match_indices(mac) {
+            // In code, and a WHOLE token — `my_include_str!` is a different macro.
+            if !mask.is_code(at) || (at > 0 && (b[at - 1].is_ascii_alphanumeric() || b[at - 1] == b'_')) {
+                continue;
             }
-            _ => {
-                out.push_str(&rest[..at + mac.len()]);
-                rest = &rest[at + mac.len()..];
+            let Some(open) = mask.next_token(b, at + mac.len()) else { continue };
+            if !mask.is_code(open) || b[open] != b'(' {
+                continue;
             }
+            let Some(arg) = mask.next_token(b, open + 1) else { continue };
+            // The argument must BE the literal, not merely contain one — that is what leaves the
+            // already-absolutized `concat!(env!(…), "…")` form alone, and with it every re-harvest.
+            let Some(lit) = mask.string_at(arg) else { continue };
+            // A raw literal is left alone as it always was: its body may hold a bare `"`, which the
+            // plain literal this emits cannot carry.
+            let path = &lit.body;
+            if lit.raw || path.starts_with('/') || path.contains(':') {
+                continue;
+            }
+            edits.push((
+                lit.start,
+                lit.after,
+                format!("concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{prefix}{path}\")"),
+            ));
         }
     }
-    out.push_str(rest);
+    edits.sort_by_key(|(start, _, _)| *start);
+
+    let mut out = String::with_capacity(src.len());
+    let mut cut = 0usize;
+    for (start, end, replacement) in edits {
+        out.push_str(&src[cut..start]);
+        out.push_str(&replacement);
+        cut = end;
+    }
+    out.push_str(&src[cut..]);
     out
 }
+
 
 fn absolutize_imports(code: &str, file: &Path, root: &Path) -> String {
     let dir = file.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -2889,6 +2909,154 @@ export const lbl = createStoreLabel;
         assert!(c.code.contains("include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"))"), "an OUT_DIR include is untouched");
         // IDEMPOTENT: harvesting the rewritten code again must not wrap it a second time.
         assert_eq!(absolutize_includes(&c.code, &f), c.code, "already-absolutized code is a fixed point");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The REWRITE half of the blind spot `include_str_targets` was moved off raw text for today
+    /// (include-str-targets-cannot-tell-a-live-call-from-a-string-about-one).
+    ///
+    /// That one only REPORTED, so a false positive cost a wrongly-refused crate. This one REWRITES:
+    /// a token in a comment or a fixture string became `concat!(env!("CARGO_MANIFEST_DIR"), …)` in
+    /// the stored record, so the CONTENTS of a fixture changed and the test asserting on it silently
+    /// started asserting something else. `bsc-graph` is exactly such a crate — `migrate.rs` carries
+    /// fixture strings naming `include_str!` for the tests OF the refusal rule — and so is THIS file,
+    /// whose doc comment on `absolutize_includes` names a relative include to explain the rewrite.
+    ///
+    /// All four shapes live in ONE fixture on purpose: the point is not that a comment is skipped, it
+    /// is that the genuine call in the same file is still rewritten while the other three are not.
+    #[test]
+    fn a_token_in_a_comment_or_a_fixture_string_is_never_rewritten() {
+        let root = crate::unique_temp("rewrite-blind-spot");
+        let manifest = root.join("crates").join("demo");
+        let dir = manifest.join("src");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(manifest.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+        let f = dir.join("refuse.rs");
+        std::fs::write(
+            &f,
+            concat!(
+                // PROSE. The shape that refused `bsc-graph` for the reporting half was a `//` comment
+                // inside the very function implementing the rule; this file's own doc comment on
+                // `absolutize_includes` has it too.
+                "// include_str!(\"../data/from-a-comment.json\") resolves against the FILE.\n",
+                // A RAW-STRING fixture: the quotes inside are UNESCAPED, so nothing accidental saves
+                // it. This is the shape a test fixture actually takes.
+                "const RAW_FIXTURE: &str = r#\"pub const A: &str = include_str!(\"in-a-raw-fixture.json\");\"#;\n",
+                // The escaped-quote fixture. It survived the old scan BY ACCIDENT (`\\\"` fails
+                // `strip_prefix('\"')`), which is why it is not evidence on its own — pinned here so a
+                // future rewrite of the extractor cannot lose the accident's replacement.
+                "const ESC_FIXTURE: &str = \"pub const B: &str = include_str!(\\\"in-an-escaped-fixture.json\\\");\";\n",
+                // …and the GENUINE call, which must still be absolutized.
+                "pub const LIVE: &str = include_str!(\"../data/live.json\");\n",
+            ),
+        )
+        .unwrap();
+
+        let code = harvest_module(&f, &root).expect("harvests").code;
+
+        assert!(
+            code.contains("// include_str!(\"../data/from-a-comment.json\") resolves against the FILE."),
+            "the comment is left verbatim: {code}",
+        );
+        assert!(
+            code.contains("r#\"pub const A: &str = include_str!(\"in-a-raw-fixture.json\");\"#"),
+            "the raw-string fixture is left verbatim: {code}",
+        );
+        assert!(
+            code.contains("include_str!(\\\"in-an-escaped-fixture.json\\\")"),
+            "the escaped fixture is left verbatim: {code}",
+        );
+        assert!(
+            code.contains("include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/../data/live.json\"))"),
+            "the genuine call is still absolutized: {code}",
+        );
+        // The POPULATION, so a future change that rewrites one of the three cannot pass by also
+        // happening to satisfy the four assertions above.
+        assert_eq!(code.matches("CARGO_MANIFEST_DIR").count(), 1, "exactly one rewrite happened: {code}");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// THE REWRITE QUESTION FOR `bsc-graph` ITSELF, answered against the real crate rather than a
+    /// synthetic tree — because the synthetic tree is the thing that was already agreeing with the
+    /// bug.
+    ///
+    /// `include_str_targets` going lexical made this crate's migration dry run clean, but a clean
+    /// dry run only answers whether it is REFUSED. It said nothing about what harvesting would DO,
+    /// and what it would have done is rewrite the `//` prose on [`absolutize_includes`] above and the
+    /// `include_str!` fixtures in `migrate.rs` that exist for the tests OF the refusal rule.
+    ///
+    /// Every `include_str!` in this crate's source is prose or a fixture — there is not one live
+    /// relative include — so the rewrite over its own `src/` must be the IDENTITY. If this ever goes
+    /// red because a genuine relative include was added, that is real signal about this crate's
+    /// migration and not a test to relax.
+    ///
+    /// The remaining blocker is elsewhere and named on the migration item: three guards in this
+    /// crate walk its own `src/` (`extract.rs`, `node_urn.rs`, `repo_store.rs` all root themselves at
+    /// `CARGO_MANIFEST_DIR`) and would need repointing before the files become records.
+    #[test]
+    fn harvesting_this_crates_own_source_rewrites_nothing() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut scanned = 0usize;
+        for entry in std::fs::read_dir(&src).expect("the crate has a src/") {
+            let path = entry.expect("readable entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("readable module");
+            scanned += 1;
+            assert_eq!(
+                absolutize_includes(&text, &path),
+                text,
+                "{} holds no live relative include, so harvesting it must change nothing",
+                path.display(),
+            );
+        }
+        // The POPULATION, because a walk that silently found nothing reads exactly like a pass.
+        assert!(scanned >= 8, "the walk reached this crate's modules, not an empty directory: {scanned}");
+    }
+
+    /// THE ANSWER TO AN OPEN QUESTION on the migration record: the 15 `include_str!("../../fixtures/x")`
+    /// sites in `bsc-news` and `research` were rewritten BY HAND before those crates migrated
+    /// (`a34ed4202`), on the belief that a nested module's relative include would be mishandled.
+    ///
+    /// It would not have been. `absolutize_includes` DERIVES the source directory from the file
+    /// (`file.parent()` against the manifest it walks up to) rather than assuming `src/`, so
+    /// `src/sources/wikipedia.rs` yields `<manifest>/src/sources/../../fixtures/x`, which is
+    /// `crates/research/fixtures/x` — exactly where those fixtures live. The `..` segments are left in
+    /// deliberately (the filesystem resolves them; textual normalization across a value only known at
+    /// compile time is where an off-by-one silently reads the wrong file), so the derived form differs
+    /// from the hand-written one in TEXT and not in what it opens.
+    ///
+    /// Verdict: those rewrites were HARMLESS, not necessary. This test is why the next wave does not
+    /// have to redo them — it asserts the derived path RESOLVES TO A REAL FILE, not merely that the
+    /// string looks right.
+    #[test]
+    fn a_nested_module_reaches_a_fixture_above_its_source_root() {
+        let root = crate::unique_temp("nested-include");
+        let manifest = root.join("crates").join("research");
+        let dir = manifest.join("src").join("sources");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(manifest.join("fixtures")).unwrap();
+        std::fs::write(manifest.join("Cargo.toml"), "[package]\nname = \"research\"\n").unwrap();
+        std::fs::write(manifest.join("fixtures").join("wikipedia_page.json"), "{}").unwrap();
+        let f = dir.join("wikipedia.rs");
+        // The site VERBATIM, as `crates/research/src/sources/wikipedia.rs` carried it.
+        std::fs::write(&f, "const PAGE: &str = include_str!(\"../../fixtures/wikipedia_page.json\");\n").unwrap();
+
+        let code = harvest_module(&f, &root).expect("harvests").code;
+        assert!(
+            code.contains(
+                "include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/sources/../../fixtures/wikipedia_page.json\"))"
+            ),
+            "the directory is DERIVED, not assumed to be src/: {code}",
+        );
+        // …and the derived path is not merely well-formed, it opens the fixture.
+        assert!(
+            manifest.join("src/sources/../../fixtures/wikipedia_page.json").is_file(),
+            "the `..` segments resolve to the real fixture, so the hand-rewrite was not needed",
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }
