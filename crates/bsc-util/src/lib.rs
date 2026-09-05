@@ -15,12 +15,6 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The canonical `bsc` subcommand registry — the unified umbrella binary's state CLIs (#1843/#1877,
-/// ONE list shared by the agent's prompt block + the shell-helper drift guard) plus the `.mcp.json`
-/// command sentinels for the two bundled MCP servers (now `bsc mcp <sub>` subcommands, #1848/#1877).
-pub mod feature_rule;
-pub mod required_by;
-pub mod sidecars;
 pub use sidecars::{Sidecar, CHANNEL_MOCK_MCP, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
 
 /// **This app's own project key** — the hub its own faults and plan live under.
@@ -42,63 +36,19 @@ pub use sidecars::{Sidecar, CHANNEL_MOCK_MCP, COMPLIANCE_MCP, RESEARCH_MCP, SIDE
 /// not a mechanical one. Recorded on `epic-a-build-or-launch-failure-leaves-no-record`.
 pub const SELF_PROJECT_KEY: &str = "studio-code";
 
-/// The canonical observability log-stream registry (#1847) — ONE list shared by the app's env
-/// staging (`wire_bsc_env`) and the unified `bsc-logs` reader (`crates/logs`).
-pub mod divergence;
-pub mod log_streams;
 pub use divergence::{divergence_line, emit_divergence, emit_divergence_to, DIVERGENCE_ENV};
 pub use log_streams::{LogStream, LOG_STREAMS};
 
-/// The canonical model-tier registry — ONE list shared by the app's launch path
-/// (`claude_model_flag`) and the `bsc persona` / `bsc teams` verbs that WRITE a model, so a tier the
-/// CLI accepts is exactly a tier the harness can launch.
-pub mod models;
 pub use models::{is_model_id, model_alias, model_id_list, model_ids, ModelTier, MODEL_TIERS};
 
-/// The canonical always-on dangerous-bash floor (#1844) — ONE list both the Claude harness
-/// (`Bash(<glob>)` deny rules) and the bsc-agent runtime (substring match) render from.
-pub mod dangerous;
 
-/// Matching for the SESSION's bash deny patterns (#3483) — program-name entries match the PROGRAM,
-/// not any substring of the command. Kept apart from [`dangerous`], whose substring semantics are
-/// load-bearing and deliberately unchanged.
-pub mod deny;
 
-/// Write-scope matching (#1297) — the one gate a mount namespace cannot subsume, compiled here so
-/// the static hook binary a sandboxed session CAN reach carries the same rule as `scope.sh`.
-/// Deliberately hand-written fnmatch rather than a glob crate: shell `case` lets `*` cross `/`, and
-/// every mainstream glob crate does not.
-pub mod scope;
 
-/// The blocking decision for a Bash tool call — the dangerous floor then the session's deny
-/// patterns. ONE implementation, called by both `bsc hook bash-deny` and the standalone hook binary.
-pub mod bash_gate;
 
-/// Packaged seed data resolved at RUNTIME rather than `include_str!`'d, so a record edit is no
-/// longer a Rust invalidation. See the module docs for the measurements that motivated it.
-pub mod packaged;
 
-/// A named, cross-process, cross-session file lock under `~/.base-studio-code/locks/` — the same
-/// directory `scripts/gateLock.mjs`'s full-gate slot lock already uses. Generalized here (request
-/// #185) so any `bsc` verb can take a lock on something outside its own process, such as
-/// `bsc plan integrate` serializing `git merge` calls against a shared working tree.
-pub mod filelock;
 
-/// The pane-id grammar (`epic-frontend-logic-over-backend-resources-belongs-in-rust`) — mint an
-/// identity, read one back, and the decisions that hang off it. Proved against the TypeScript it is
-/// ported from; see the module docs for the ambiguities it deliberately reproduces.
-pub mod pane_id;
 
-/// The canonical pane ACTIVITY vocabulary and its rollup (#435) — ported from
-/// `src/app/console/lib/paneStatus.ts` under `epic-frontend-logic-over-backend-resources-belongs-in-rust`.
-/// It sits beside [`pane_id`] because it is the reasoning ON TOP of that grammar, and because the
-/// tunnel's desktop→mobile status mapping needs it on this side of the wire.
-pub mod pane_status;
 
-/// The turn-open GATE (#1184/#4005) — what the boundaries `bsc-activity` records MEAN, ported from
-/// `src/app/console/lib/paneActivity.ts`. It sits beside [`pane_status`] because both answer "what is
-/// this pane doing"; this one from recorded turn events, that one from the grid.
-pub mod pane_activity;
 
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
@@ -966,3 +916,15 @@ mod feature_from_folder_store_tests {
         }
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/feature_rule.rs, src/required_by.rs, src/sidecars.rs, src/divergence.rs, src/log_streams.rs, src/models.rs, src/dangerous.rs, src/deny.rs, src/scope.rs, src/bash_gate.rs, src/packaged.rs, src/filelock.rs, src/pane_id.rs, src/pane_status.rs, src/pane_activity.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-util--<module>.rs
+//     bsc graph impl set --id bsc-util--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-util--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
