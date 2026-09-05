@@ -33,48 +33,15 @@
 //! `lessons` (self-correction lessons, #1362). Each type is re-exported here so the crate's public
 //! API stays flat (`plandb::PlanIssue`, `plandb::Store`, …).
 
-/// The `bsc plan` subcommand (#1877) — the agent-facing CLI extracted from the old `bsc-plan` binary,
-/// dispatched to by the unified `bsc` umbrella and the legacy `bsc-plan` shim.
-pub mod cli;
 
-mod artifacts;
-mod assignments;
-mod blueprint;
-pub mod changes;
-mod confirmed;
-mod decisions;
-// The classify PREDICATES in here have no caller yet: the flip is a separate item
+// The classify PREDICATES have no caller yet: the flip is a separate item
 // (`the-classification-answers-its-own-questions-on-the-bsc-surface`) so the derivation and the
-// behaviour change stay independently revertible. REMOVING THIS ATTRIBUTE IS PART OF THAT ITEM — it
-// is the marker that the derivation is still orphaned, and leaving it would hide the next orphan.
-#[allow(dead_code)]
-mod classify;
-pub mod known_red;
-mod requirement;
-mod deploy;
-mod discovery;
-mod integrations;
-mod features;
-mod fleet;
-mod issues;
-mod lessons;
-mod market;
-mod mcp;
-mod repos;
-pub mod coord;
-pub mod requests;
-mod schema;
-/// Per-stream access scoping (#3279): a worker session sees + touches only its own stream's issues.
-/// `pub` so the app/bridge can reuse the same pure rules the `bsc plan` CLI enforces.
-pub mod scope;
-mod sessions;
-mod skipped;
-mod transformations;
-mod triage;
-mod ui;
-/// Set-time validation for the structured JSON writes (#2395) — `pub` so the app/bridge can reuse
-/// the same shape checks the `bsc plan` CLI enforces.
-pub mod validate;
+// behaviour change stay independently revertible. The `#[allow(dead_code)]` that marks this is the
+// marker that the derivation is still orphaned, and removing it IS PART OF THAT ITEM — leaving it
+// would hide the next orphan. It no longer sits on a `mod classify;` line here: classify is a
+// record now, and the attribute rides with it as `moduleAttrs` on `plandb--classify.rs`, which
+// build.rs re-emits onto the generated `mod classify {`. Read it with:
+//     bsc graph impl get plandb--classify.rs
 
 pub use artifacts::Artifact;
 pub use decisions::Decision;
@@ -405,3 +372,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/cli/render.rs, src/cli/snapshot.rs, src/cli/issues.rs, src/cli/fleet.rs, src/cli/nouns.rs, src/cli/hub.rs, src/cli/changes.rs, src/cli/integrate.rs, src/artifacts.rs, src/assignments.rs, src/blueprint.rs, src/changes.rs, src/confirmed.rs, src/decisions.rs, src/classify.rs, src/known_red.rs, src/requirement.rs, src/deploy.rs, src/discovery.rs, src/integrations.rs, src/features.rs, src/fleet.rs, src/issues.rs, src/lessons.rs, src/market.rs, src/mcp.rs, src/repos.rs, src/coord.rs, src/requests.rs, src/schema.rs, src/scope.rs, src/sessions.rs, src/skipped.rs, src/transformations.rs, src/triage.rs, src/ui.rs, src/validate.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get plandb--<module>.rs
+//     bsc graph impl set --id plandb--<module>.rs --code-file <f>
+//     bsc graph promote --id plandb--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
