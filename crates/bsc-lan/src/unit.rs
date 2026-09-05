@@ -89,7 +89,7 @@ pub const UNIT_NAME: &str = "bsc-lan-sense";
 /// less rather than more; the wire is capped at 20 datagrams a second and this
 /// uses four. What it buys is four times the vertical resolution and a burst
 /// that survives aggregation instead of being averaged into its neighbours.
-pub const DEFAULT_INTERVAL_MS: u64 = 250;
+pub const DEFAULT_INTERVAL_MS: u64 = 100;
 
 // Checked by the COMPILER: four emissions a second against a wire capped at
 // twenty is the headroom that makes this affordable, and a future edit that
@@ -485,9 +485,9 @@ pub mod tests {
         // a tuning knob — it decides whether a burst can be told from a steady
         // signal at all. Pinned so a later "quieter default" is a decision
         // somebody makes rather than a regression nobody sees.
-        assert_eq!(DEFAULT_INTERVAL_MS, 250);
+        assert_eq!(DEFAULT_INTERVAL_MS, 100);
         let u = render(&cfg("10.99.2.118:45142"), &spec()).unwrap();
-        assert!(u.contains("--interval 250"), "{u}");
+        assert!(u.contains("--interval 100"), "{u}");
     }
 
     #[test]
