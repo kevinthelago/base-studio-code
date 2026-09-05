@@ -156,6 +156,9 @@ directory this prints, and put the `piper` binary on PATH. Both are then found w
 #[derive(Default, Debug)]
 struct Args {
     all: bool,
+    verify: bool,
+    mic: Option<String>,
+    blend: Option<String>,
     ipa: bool,
     lang: Option<String>,
     device: Option<String>,
@@ -172,6 +175,9 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let (mut a, positional) = args::walk(raw, Args::default(), |flag, a: &mut Args, rest| {
         match flag {
             "--all" => a.all = true,
+            "--verify" => a.verify = true,
+            "--mic" => a.mic = Some(rest.value("--mic needs a capture device, e.g. plughw:CARD=USB,DEV=0")?),
+            "--blend" => a.blend = Some(rest.value("--blend needs voices, e.g. am_puck:2,bm_george:1")?),
             "--ipa" => a.ipa = true,
             "--lang" => a.lang = Some(rest.value("--lang needs an espeak language code, e.g. es or ja")?),
             "--device" => a.device = Some(rest.value("--device needs an output device name")?),
@@ -493,10 +499,28 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
         return Err("nothing to say — `bsc say \"some text\"`".into());
     }
     let platform = host_platform()?;
-    let requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
+    let mut requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
+    // Blending is a property of style vectors, which only kokoro has. Asking for one is asking for
+    // kokoro, and saying so beats silently ignoring the flag on a provider that cannot honour it.
+    if a.blend.is_some() {
+        match requested {
+            Some(ProviderKind::Kokoro) | None => requested = Some(ProviderKind::Kokoro),
+            Some(other) => {
+                return Err(format!(
+                    "--blend mixes kokoro style vectors; the {} provider has none",
+                    other.as_str()
+                ))
+            }
+        }
+    }
     let chosen_voice = resolve_voice(a);
     let probed = probe(platform, chosen_voice.as_deref());
     let device = resolve_device(a);
+    // --verify needs a microphone; the system default is measured-silent on some machines, so it is
+    // named explicitly rather than assumed.
+    let verify_mic: Option<String> = a.verify.then(|| {
+        a.mic.clone().or_else(|| std::env::var("BSC_SAY_MIC").ok()).unwrap_or_else(|| "default".into())
+    });
     let res = voice::resolve(requested, probed.considered.clone());
     let req = SayRequest {
         text,
@@ -507,12 +531,12 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
     match res.chosen {
         Some(ProviderKind::Piper) => {
             let (binary, model) = probed.piper.ok_or("piper resolved but its paths went missing")?;
-            speak_with_piper(platform, &binary, &model, &req, device.as_deref())
+            speak_with_piper(platform, &binary, &model, &req, device.as_deref(), verify_mic.as_deref())
         }
         Some(ProviderKind::Kokoro) => {
             let (paths, voice, espeak, data) =
                 probed.kokoro.ok_or("kokoro resolved but its paths went missing")?;
-            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref(), a.ipa, a.lang.as_deref().unwrap_or("en-us"))
+            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref(), a.ipa, a.lang.as_deref().unwrap_or("en-us"), a.blend.as_deref(), verify_mic.as_deref())
         }
         Some(ProviderKind::System) => {
             let cmd = voice::system_command(platform, &req)?;
@@ -529,6 +553,7 @@ fn speak_with_piper(
     model: &std::path::Path,
     req: &SayRequest,
     device: Option<&str>,
+    verify_mic: Option<&str>,
 ) -> Result<(), String> {
     let keep = req.out.is_some();
     let target = match &req.out {
@@ -552,8 +577,11 @@ fn speak_with_piper(
                 target.display()
             )
         })?;
-    let result =
-        spawn(&voice::play_command(platform, player, &target.display().to_string(), device));
+    announce_speaking(&target);
+    let result = match verify_mic {
+        Some(mic) => play_and_verify(platform, player, &target.display().to_string(), device, mic),
+        None => spawn(&voice::play_command(platform, player, &target.display().to_string(), device)),
+    };
     // A temp wav is ours to clean up whether or not playback worked.
     let _ = std::fs::remove_file(&target);
     result
@@ -570,6 +598,8 @@ fn speak_with_kokoro(
     device: Option<&str>,
     literal_ipa: bool,
     lang: &str,
+    blend: Option<&str>,
+    verify_mic: Option<&str>,
 ) -> Result<(), String> {
     use crate::kokoro;
     let ipa = if literal_ipa {
@@ -578,10 +608,13 @@ fn speak_with_kokoro(
         kokoro::phonemize(espeak, espeak_data, &req.text, lang)?
     };
     let mut voice = kokoro::Voice::load(paths)?;
-    let (ids, _) = kokoro::tokenize(&ipa, voice.vocab());
-    let bytes = std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?;
-    let style = kokoro::style_for(&bytes, ids.len())?;
-    let (samples, missing) = voice.speak_ipa(&ipa, &style, voice::clamp_rate(req.rate))?;
+    let bytes = match blend {
+        Some(spec) => blend_bytes(&paths.voices, spec)?,
+        None => std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?,
+    };
+    // `speak`, not `speak_ipa`: it chunks to the model's ceiling. Measured before it existed — an
+    // ordinary paragraph is 805 phonemes against a 510 limit, and the surplus was dropped silently.
+    let (samples, missing) = voice.speak(&ipa, &bytes, voice::clamp_rate(req.rate))?;
     if !missing.chars.is_empty() {
         // Never silent: an unrepresentable phoneme is a mispronunciation, and a mispronunciation
         // gets blamed on the model rather than on the mapping.
@@ -616,10 +649,88 @@ fn speak_with_kokoro(
         .iter()
         .find_map(|p| on_path(p, platform).map(|_| *p))
         .ok_or("nothing on this machine can play audio — use --out to keep the file")?;
-    let result =
-        spawn(&voice::play_command(platform, player, &target.display().to_string(), device));
+    announce_speaking(&target);
+    let result = match verify_mic {
+        Some(mic) => play_and_verify(platform, player, &target.display().to_string(), device, mic),
+        None => spawn(&voice::play_command(platform, player, &target.display().to_string(), device)),
+    };
     let _ = std::fs::remove_file(&target);
     result
+}
+
+/// Record `ms` from `device` and return its RMS.
+///
+/// Shells to `arecord` rather than taking a capture dependency: `bsc say` already shells to `aplay`
+/// to make sound, and reaching for ALSA in-process to measure it would put the whole audio stack in
+/// the build of a crate whose job is to talk.
+fn room_level(device: &str, ms: u32) -> Result<f32, String> {
+    let tmp = std::env::temp_dir().join(format!("bsc-say-room-{}.wav", std::process::id()));
+    let secs = ((ms as f32 / 1000.0).ceil() as u32).max(1);
+    let out = std::process::Command::new("arecord")
+        .args(["-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-d", &secs.to_string()])
+        .arg(&tmp)
+        .output()
+        .map_err(|e| format!("could not run arecord: {e}"))?;
+    if !out.status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("arecord failed on '{device}': {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let mut r = hound::WavReader::open(&tmp).map_err(|e| format!("{e}"))?;
+    let samples: Vec<f32> =
+        r.samples::<i16>().filter_map(|s| s.ok()).map(|s| s as f32 / i16::MAX as f32).collect();
+    let _ = std::fs::remove_file(&tmp);
+    if samples.is_empty() {
+        return Err(format!("'{device}' produced no samples"));
+    }
+    Ok((samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt())
+}
+
+/// Play, listen to ourselves, and stop if the room says nobody could have heard it.
+///
+/// The maintainer's idea, and a better one than muting the ear: what the app can understand of its
+/// own voice is EVIDENCE, and the thing it is evidence for is whether speaking is worth doing at
+/// all. MEASURED with media in the room — full scale on three speakers, and only sentence tails
+/// survived transcription. Loudness had run out; the only remaining move is to notice and stop.
+fn play_and_verify(
+    platform: Platform,
+    player: &str,
+    wav: &str,
+    device: Option<&str>,
+    mic: &str,
+) -> Result<(), String> {
+    // The room BEFORE we open our mouth. Everything downstream is a comparison against this.
+    let ambient = room_level(mic, 400)?;
+    let cmd = voice::play_command(platform, player, wav, device);
+    let mut child = std::process::Command::new(&cmd.program)
+        .args(&cmd.args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("could not run {}: {e}", cmd.program))?;
+    let during = room_level(mic, 900);
+    let verdict = match during {
+        Ok(d) => voice::audibility(ambient, d),
+        Err(e) => {
+            let _ = child.kill();
+            return Err(format!("could not measure the room while speaking: {e}"));
+        }
+    };
+    if !verdict.audible {
+        // Stop rather than finish a sentence into a void. Playback is a child we own.
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "stopped speaking: the room did not change ({:+.1} dB, ambient {:.4} -> {:.4}). \
+             Something louder is playing, and finishing the sentence would only have been \
+             technically true.",
+            verdict.lift_db, verdict.ambient, verdict.during
+        ));
+    }
+    let status = child.wait().map_err(|e| format!("waiting for {}: {e}", cmd.program))?;
+    if !status.success() {
+        return Err(format!("{} exited with {status}", cmd.program));
+    }
+    Ok(())
 }
 
 fn cmd_devices(a: &Args) -> Result<(), String> {
@@ -680,6 +791,51 @@ fn cmd_voice(a: &Args) -> Result<(), String> {
         },
     }
     Ok(())
+}
+
+/// Publish a speaking deadline so `bsc ear` declines to record what we are about to say.
+///
+/// DEMONSTRATED before this existed: one announcement produced five captured segments, two of which
+/// transcribed as the app's own words. Always-on capture plus a speaking app is a loop.
+///
+/// The deadline covers the audio PLUS a tail, because playback ends when the file ends and the room
+/// keeps ringing — the tail is exactly what gets captured as a stray fragment. Best-effort
+/// throughout: a failure to write it must never stop the app speaking.
+fn announce_speaking(wav: &std::path::Path) {
+    let Some(path) = bsc_util::speaking_flag_path() else { return };
+    let secs = hound::WavReader::open(wav)
+        .ok()
+        .map(|r| r.duration() as f64 / r.spec().sample_rate.max(1) as f64)
+        .unwrap_or(0.0);
+    let until = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+        + (secs * 1000.0) as i64
+        + REVERB_TAIL_MS;
+    let _ = std::fs::write(path, until.to_string());
+}
+
+/// How long the room keeps ringing after playback stops.
+///
+/// A GUESS WITH A MEASUREMENT BEHIND IT, and it should become a measured value: the Scarlett heard
+/// monitor output across the desk at peak 0.19, so the path is loud enough for a tail to matter.
+/// Too short and a fragment of our own voice still lands; too long and the user's first words after
+/// an announcement are swallowed.
+const REVERB_TAIL_MS: i64 = 400;
+
+/// Load and mix the voices a blend names.
+fn blend_bytes(dir: &std::path::Path, spec: &str) -> Result<Vec<u8>, String> {
+    let parts = crate::kokoro::parse_blend(spec)?;
+    let mut sources = Vec::new();
+    for c in &parts {
+        let path = dir.join(format!("{}.bin", c.voice));
+        let bytes = std::fs::read(&path).map_err(|_| {
+            format!("no voice '{}' to blend — `bsc say voices` lists what is installed", c.voice)
+        })?;
+        sources.push((bytes, c.weight));
+    }
+    crate::kokoro::blend_voices(&sources)
 }
 
 fn cmd_voices(a: &Args) -> Result<(), String> {

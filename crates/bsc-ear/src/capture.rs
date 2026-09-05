@@ -127,6 +127,40 @@ pub fn parse_started_ms(name: &str) -> Option<i64> {
     stamp.parse::<i64>().ok()
 }
 
+/// Is the app speaking right now, per the deadline `bsc say` published?
+///
+/// PURE, and separate from reading the file, because the interesting cases are all about the
+/// CONTENT: a deadline in the past, a deadline absurdly far in the future, a truncated write, a file
+/// that is not a number at all. None of those need a filesystem to exercise.
+///
+/// **Anything unreadable means NOT suppressed.** The ear failing open is the right direction: a
+/// misparse that suppressed capture would silently deafen an always-on recorder, and nobody would
+/// notice until they went looking for a conversation that was never stored. A misparse that records
+/// too much is visible in the transcript and recoverable.
+pub fn speaking_until(contents: &str, now_unix_ms: i64) -> Option<i64> {
+    let ms: i64 = contents.trim().parse().ok()?;
+    // A deadline more than a minute out is not a long sentence, it is a stale or corrupt write.
+    // Honouring it would deafen the ear for as long as the bad value said to.
+    //
+    // `now` is a PARAMETER, not a clock read. The first version of this called itself pure while
+    // reaching for the wall clock, and the tests caught it immediately by disagreeing about what
+    // time it was — which is the whole reason a function that judges a deadline must be handed the
+    // moment it is judging against.
+    (ms > 0).then_some(ms).filter(|m| *m - now_unix_ms < 60_000)
+}
+
+/// Whether capture should be held off right now.
+pub fn is_speaking(contents: &str, now_unix_ms: i64) -> bool {
+    speaking_until(contents, now_unix_ms).is_some_and(|until| now_unix_ms < until)
+}
+
+/// Read the flag from disk. Absent, unreadable or stale all read as "not speaking".
+fn app_is_speaking() -> bool {
+    let Some(p) = bsc_util::speaking_flag_path() else { return false };
+    let Ok(raw) = std::fs::read_to_string(p) else { return false };
+    is_speaking(&raw, now_ms())
+}
+
 /// Segments currently on disk, for the retention pass.
 pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
@@ -495,6 +529,7 @@ pub fn run(
     let flen = audio::frame_len(cfg.vad.frame_ms);
     let mut last_beat = std::time::Instant::now();
     let mut warned_warm = false;
+    let mut suppressing = false;
     if let Some(beat) = &cfg.heartbeat {
         let _ = std::fs::write(beat, now_ms().to_string());
     }
@@ -511,6 +546,26 @@ pub fn run(
                 return Err("the capture stream ended unexpectedly".into())
             }
         }
+        // HALF DUPLEX. While the app is speaking, its own voice is arriving at the microphone —
+        // measured before this existed, one announcement produced five segments, two of them
+        // transcribing as the app's own words. Drop the audio rather than feed it to the detector,
+        // and close anything already open so a real utterance is not merged with our own.
+        if app_is_speaking() {
+            pending.clear();
+            if !suppressing {
+                suppressing = true;
+                if let Some(Recorded::Kept { name, .. }) = rec.finish()? {
+                    on_event(format!("kept {name} (closed — the app started speaking)"));
+                }
+                on_event("holding off: the app is speaking".to_string());
+            }
+            continue;
+        }
+        if suppressing {
+            suppressing = false;
+            on_event("listening again".to_string());
+        }
+
         while pending.len() >= flen {
             let frame: Vec<f32> = pending.drain(..flen).collect();
             if let Some(r) = rec.push_frame(&frame)? {
@@ -769,5 +824,59 @@ mod tests {
         assert_eq!(parse_started_ms("notes.txt"), None, "a non-segment yields no date");
         assert_eq!(parse_started_ms("seg-notanumber-001.wav"), None);
         assert_eq!(parse_started_ms("seg-1700000000123-004.wav"), Some(1_700_000_000_123));
+    }
+}
+
+#[cfg(test)]
+mod suppression_tests {
+    use super::*;
+
+    const NOW: i64 = 1_800_000_000_000;
+
+    /// THE DIRECTION THAT MATTERS. Anything unreadable must read as NOT speaking, so a misparse
+    /// records too much rather than going silently deaf. A deafened always-on recorder is invisible
+    /// until somebody goes looking for a conversation that was never stored; an over-recorded one is
+    /// visible in the transcript and recoverable.
+    #[test]
+    fn anything_unreadable_means_not_speaking() {
+        for junk in ["", "   ", "not a number", "12.5", "-1", "0", "\0", "9999999999999999999999"] {
+            assert!(!is_speaking(junk, NOW), "{junk:?} must not suppress capture");
+        }
+    }
+
+    #[test]
+    fn a_live_deadline_suppresses_and_an_expired_one_does_not() {
+        let live = (NOW + 3_000).to_string();
+        assert!(is_speaking(&live, NOW), "3s out is a normal utterance");
+        assert!(!is_speaking(&live, NOW + 3_001), "past the deadline it stops mattering");
+        let past = (NOW - 5_000).to_string();
+        assert!(!is_speaking(&past, NOW));
+    }
+
+    /// A DEADLINE, NOT A LOCK, precisely so a killed speaker cannot deafen the ear forever. Nothing
+    /// cleans this file up — an expired value simply stops being true.
+    #[test]
+    fn a_crashed_speaker_cannot_deafen_the_ear_permanently() {
+        let stranded = (NOW + 30_000).to_string();
+        assert!(is_speaking(&stranded, NOW), "still inside its window");
+        assert!(!is_speaking(&stranded, NOW + 31_000), "and it expires on its own");
+    }
+
+    /// A corrupt or stale write far in the future is not a long sentence. Honouring it would hold
+    /// capture off for as long as the bad number said to, which for a plausible-looking timestamp is
+    /// years.
+    #[test]
+    fn an_absurd_deadline_is_refused_rather_than_honoured() {
+        let year_out = (NOW + 365 * 24 * 3600 * 1000i64).to_string();
+        assert!(!is_speaking(&year_out, NOW), "a year is not an utterance");
+        let minute = (NOW + 59_000).to_string();
+        assert!(is_speaking(&minute, NOW), "but a long announcement still counts");
+    }
+
+    #[test]
+    fn the_flag_lives_where_both_crates_agree_it_does() {
+        let p = bsc_util::speaking_flag_path().expect("a home dir");
+        assert!(p.ends_with("say-speaking"), "{p:?}");
+        assert!(p.to_string_lossy().contains(".base-studio-code"), "{p:?}");
     }
 }

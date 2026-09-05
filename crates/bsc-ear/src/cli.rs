@@ -90,6 +90,33 @@ LISTENING and hear nothing, forever, looking exactly like a quiet room.
 input here reads 0.00235 against 0.00002 for the dead ones, which is the gap the verdict uses.",
     },
     CmdDoc {
+        name: "liveness",
+        summary: "tell a voice in the room from one played at the microphone — per device, never assumed",
+        usage: "\
+bsc ear liveness <wav>...                       # judge, against this device's calibration
+bsc ear liveness calibrate --live-dir <dir> --replay-dir <dir>
+bsc ear liveness show
+
+MEASURED on 28 recordings through one mic in one room. The feature is a single band ratio,
+energy(100-300Hz) over energy(20-100Hz), and the separation was total: live 3.78 to 1411, replayed
+0.01 to 1.67.
+
+THE PHYSICS DOES THE WORK. A loudspeaker ADDS cabinet and room resonance below 100Hz while
+ATTENUATING the 100-300Hz fundamental, so replayed speech is bass-heavy and hollow in exactly the
+band a real voice occupies. The first hypothesis was the opposite — that a close voice would have
+MORE sub-bass from proximity effect — and the controlled test refuted it: replay had fifteen times
+more. Measuring beat reasoning about it.
+
+NO MODEL, DELIBERATELY. Pretrained replay detectors exist (AASIST, RawNet2, from the ASVspoof
+Physical Access track). They would bring a PyTorch stack to beat a feature that already separates
+without error, and they are the fallback for when this stops working rather than the starting point.
+
+THE THRESHOLD IS PER DEVICE AND IS NEVER ASSUMED. Every number above came from one monitor and one
+audio interface. A phone speaker has a different response — plausibly less sub-bass, which would push
+it toward the live class and produce a confident wrong answer in exactly the case that matters most,
+since a phone is the mobile-tunnel case. An uncalibrated pairing is reported as unknown.",
+    },
+    CmdDoc {
         name: "prosody",
         usage: "\
 bsc ear prosody [<wav>...] [--dir <path>] [--json|--pretty]
@@ -126,6 +153,8 @@ is no second copy, and anything past the window is already gone.",
 #[derive(Default, Debug)]
 struct Args {
     all: bool,
+    live_dir: Option<String>,
+    replay_dir: Option<String>,
     json: bool,
     pretty: bool,
     device: Option<String>,
@@ -138,6 +167,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let (mut a, positional) = args::walk(raw, Args::default(), |flag, a: &mut Args, rest| {
         match flag {
             "--all" => a.all = true,
+            "--live-dir" => a.live_dir = Some(rest.value("--live-dir needs a directory of live recordings")?),
+            "--replay-dir" => a.replay_dir = Some(rest.value("--replay-dir needs a directory of replayed recordings")?),
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--device" => a.device = Some(rest.value("--device needs a device name")?),
@@ -471,6 +502,121 @@ fn read_wav(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
     Ok((mono, spec.sample_rate))
 }
 
+fn liveness_store(p: &Paths, device: &str) -> PathBuf {
+    let safe: String = device
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+    p.root.join("liveness").join(format!("{safe}.json"))
+}
+
+/// Measure the ratio for each file with enough signal to measure.
+///
+/// GATED ON ENERGY, NOT ON VOICING, and the difference is the whole subtlety. Silence must be
+/// excluded — the feature is fundamental-over-rumble and silence has no fundamental, so an empty
+/// segment scores exactly like a replayed one. But `prosody::has_speech` is the WRONG gate for it:
+/// replayed speech has a fundamental so attenuated that the pitch detector finds no voiced frames,
+/// so the very property that makes replay detectable also makes it look empty. Measured — a replay
+/// of the maintainer's own voice came back "no speech" instead of "replayed".
+///
+/// Energy separates the three cases cleanly where voicing collapses two of them: silence is quiet,
+/// replayed speech is loud with a weak fundamental, live speech is loud with a strong one.
+fn ratios_of(files: &[std::path::PathBuf]) -> Result<Vec<f32>, String> {
+    let mut out = Vec::new();
+    for f in files {
+        let (s, sr) = read_wav(f)?;
+        if crate::audio::rms(&s) < crate::liveness::MIN_MEASURABLE_RMS {
+            continue;
+        }
+        if let Some(r) = crate::liveness::liveness_ratio(&s, sr) {
+            out.push(r);
+        }
+    }
+    Ok(out)
+}
+
+fn cmd_liveness(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::liveness;
+    let device = a.device.clone().unwrap_or_else(|| "default".into());
+    let store = liveness_store(p, &device);
+    let sub = a.positional.get(1).map(String::as_str);
+
+    if sub == Some("show") {
+        let raw = std::fs::read_to_string(&store)
+            .map_err(|_| format!("no calibration for '{device}' — run `bsc ear liveness calibrate`"))?;
+        let c: liveness::Calibration = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+        println!("device      {}", c.device);
+        println!("live        {} samples, min {:.2}, median {:.2}", c.n_live, c.live_min, c.live_median);
+        println!("replayed    {} samples, max {:.2}, median {:.2}", c.n_replay, c.replay_max, c.replay_median);
+        println!("threshold   {:.2}", c.threshold);
+        println!("separable   {}", if c.separable { "yes" } else { "NO — this pairing cannot be judged on this feature" });
+        return Ok(());
+    }
+
+    if sub == Some("calibrate") {
+        let (Some(ld), Some(rd)) = (&a.live_dir, &a.replay_dir) else {
+            return Err(
+                "calibration needs both classes: --live-dir <dir> --replay-dir <dir>. Directories \
+                 rather than file lists, because a calibration wants every clip you have of each \
+                 kind and listing them by hand invites picking the flattering ones."
+                    .into(),
+            );
+        };
+        let wavs = |d: &str| -> Result<Vec<PathBuf>, String> {
+            let mut v: Vec<PathBuf> = std::fs::read_dir(d)
+                .map_err(|e| format!("{d}: {e}"))?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|f| f.extension().is_some_and(|x| x == "wav"))
+                .collect();
+            v.sort();
+            Ok(v)
+        };
+        let cal = liveness::calibrate(&device, &ratios_of(&wavs(ld)?)?, &ratios_of(&wavs(rd)?)?)?;
+        if let Some(dir) = store.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
+        }
+        std::fs::write(&store, serde_json::to_string_pretty(&cal).map_err(|e| format!("{e}"))?)
+            .map_err(|e| format!("could not write {}: {e}", store.display()))?;
+        println!(
+            "calibrated '{}': live >= {:.2} (n={}), replayed <= {:.2} (n={}), threshold {:.2}",
+            device, cal.live_min, cal.n_live, cal.replay_max, cal.n_replay, cal.threshold
+        );
+        if !cal.separable {
+            println!("WARNING: the classes OVERLAP on this pairing — nothing will be judged from it.");
+        }
+        return Ok(());
+    }
+
+    // Judge.
+    let cal: Option<liveness::Calibration> = std::fs::read_to_string(&store)
+        .ok()
+        .and_then(|r| serde_json::from_str(&r).ok());
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("nothing to judge — pass one or more wav files".into());
+    }
+    if cal.is_none() {
+        println!("no calibration for '{device}' — every verdict below will be `unknown`, which is the");
+        println!("honest answer rather than a guess. Calibrate with `bsc ear liveness calibrate`.\n");
+    }
+    for f in &files {
+        let (s, sr) = read_wav(f)?;
+        // Silence has no fundamental, so it scores like replay — gate on ENERGY, not voicing,
+        // because replayed speech is barely voiced by design.
+        let loud = crate::audio::rms(&s) >= liveness::MIN_MEASURABLE_RMS;
+        let ratio = loud.then(|| liveness::liveness_ratio(&s, sr)).flatten();
+        let v = liveness::judge(ratio, cal.as_ref());
+        println!(
+            "  {:<34} {:<9} ratio {}",
+            f.file_name().and_then(|x| x.to_str()).unwrap_or("?"),
+            format!("{v:?}").to_lowercase(),
+            ratio.map(|r| format!("{r:8.2}")).unwrap_or_else(|| " too quiet".into())
+        );
+    }
+    Ok(())
+}
+
 fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
     use crate::prosody;
     let files: Vec<std::path::PathBuf> = if a.positional.len() > 1 {
@@ -584,6 +730,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("status") => cmd_status(&a, &p),
         Some("listen") => cmd_listen(&a, &p, true),
         Some("levels") => cmd_levels(&a),
+        Some("liveness") => cmd_liveness(&a, &p),
         Some("prosody") => cmd_prosody(&a, &p),
         Some("segments") => cmd_segments(&a, &p),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
@@ -603,7 +750,10 @@ mod tests {
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
         assert_eq!(
             names,
-            vec!["devices", "start", "stop", "status", "listen", "levels", "prosody", "segments"]
+            vec![
+                "devices", "start", "stop", "status", "listen", "levels", "liveness", "prosody",
+                "segments"
+            ]
         );
     }
 
