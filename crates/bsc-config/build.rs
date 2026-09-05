@@ -13,6 +13,13 @@ const NON_CONFIG_DIRS: &[&str] = &["components", "knowledge"];
 /// the point), so the staging logic is duplicated rather than shared — the two copies are pinned
 /// together by the exclude-list test instead.
 fn main() {
+    // Materialize this crate's graph records into `$OUT_DIR/crate.rs`, which `lib.rs`
+    // `include!`s. A package gets exactly ONE build script and this one is already spoken for, so
+    // the materializer is CALLED here rather than reached with `build = "../graph-materialize/
+    // build.rs"` — same source, same output, one manifest line's difference
+    // (`graph-materialize-becomes-a-real-build-dependency`).
+    graph_materialize::emit();
+
     let manifest = env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
     let out = env::var("OUT_DIR").expect("cargo sets OUT_DIR");
     let src = Path::new(&manifest).join("../../src-tauri/data");
