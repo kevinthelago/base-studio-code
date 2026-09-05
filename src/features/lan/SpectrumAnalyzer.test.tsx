@@ -227,6 +227,17 @@ describe("isCurrent", () => {
     expect(isCurrent(silent)).toBe(false);
     expect(isCurrent(NEVER_HEARD)).toBe(false);
   });
+
+  it("does not call a stream late when nothing is actually overdue", () => {
+    // SEEN ON SCREEN: "SENSOR LATE by 0ms" over a waterfall filling at 4 Hz.
+    // A verdict exactly on its deadline has not missed it, and a warning that
+    // fires for nothing teaches a reader to ignore the one that matters.
+    expect(isCurrent({ state: "late", sinceMs: 12_000, overdueByMs: 0 })).toBe(true);
+    // One millisecond past IS late — the boundary is the only exemption.
+    expect(isCurrent({ state: "late", sinceMs: 12_001, overdueByMs: 1 })).toBe(false);
+    // And a silent sensor is never excused, whatever the arithmetic says.
+    expect(isCurrent({ state: "silent", sinceMs: 40_000, overdueByMs: 0 })).toBe(false);
+  });
 });
 
 describe("ageLabel", () => {
