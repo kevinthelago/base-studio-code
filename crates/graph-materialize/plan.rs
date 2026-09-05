@@ -85,10 +85,24 @@ pub struct Unit {
 /// The module PATH denoted by a source path relative to `crates/<crate>/src/`, or `None` when the file
 /// is not a module of this crate.
 ///
-/// `None` for the crate ROOT (`lib.rs` / `main.rs`), which stays a real file because `include!` refuses
-/// crate-level `//!` docs and `#![…]` inner attributes; `main.rs` counts because a binary crate declares
-/// its modules there and `include!`s the generated file there, so materializing it would make the root
-/// try to include itself. `None` too for a stray `src/mod.rs`, which denotes no module at all.
+/// `None` for the crate ROOT (`lib.rs` / `main.rs`), which is not a MODULE of the crate: `main.rs`
+/// counts because a binary crate declares its modules there and `include!`s the generated file there,
+/// so materializing it would make the root try to include itself. `None` too for a stray `src/mod.rs`,
+/// which denotes no module at all.
+///
+/// # The root is NOT permanent floor, and this comment used to say it was
+///
+/// It read "stays a real file because `include!` refuses crate-level `//!` docs and `#![…]` inner
+/// attributes". BOTH HALVES WERE ANSWERABLE (`a-crate-root-is-shared-so-a-crate-is-one-file`). The
+/// E0753 refusal is about an INCLUDED file; `#![doc = include_str!(concat!(env!("OUT_DIR"),
+/// "/crate_doc.md"))]` in the REAL root is legal, and `include_str!` resolves out of `OUT_DIR`, which
+/// this build script writes — so the root can be ONE shared file
+/// (`crates/graph-materialize/crate_root.rs`) that every adopter's `[lib] path` points at, and each
+/// crate still gets its own rustdoc. The four inner attributes in this repo moved to their manifests'
+/// `[lints]` tables, stable since Rust 1.74.
+///
+/// So the ROOT is a record too, selected by [`Plan::select_doc`] rather than here — this `None` is now
+/// the statement "not a module", which is what makes the two selections unable to collide.
 pub fn module_path(rest: &str) -> Option<Vec<String>> {
     let stem = rest.strip_suffix(".rs")?;
     if stem == "lib" || stem == "main" {

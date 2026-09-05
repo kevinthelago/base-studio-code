@@ -17,6 +17,65 @@ pub const TAGLINE: &str = "speak text aloud — the neural voice when it is inst
 
 /// Where piper voices live when `$BSC_SAY_VOICE_DIR` does not say otherwise.
 pub const VOICE_DIR_ENV: &str = "BSC_SAY_VOICE_DIR";
+/// Overrides the output device for one process — how a hook or automation names an output.
+pub const DEVICE_ENV: &str = "BSC_SAY_DEVICE";
+
+/// The remembered output device, if one was chosen.
+///
+/// Precedence: `--device`, then `$BSC_SAY_DEVICE`, then this file, then the system default. A
+/// speech feature that needs a flag every single time is a speech feature nothing automated will
+/// ever use, so the choice has to survive the process that made it.
+fn device_file() -> Option<PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("say-device"))
+}
+
+fn voice_file() -> Option<PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("say-voice"))
+}
+
+fn remembered_voice() -> Option<String> {
+    let raw = std::fs::read_to_string(voice_file()?).ok()?;
+    let t = raw.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
+/// `--voice`, then the remembered choice, then whatever sorts first.
+fn resolve_voice(a: &Args) -> Option<String> {
+    a.voice.clone().or_else(remembered_voice)
+}
+
+fn remembered_device() -> Option<String> {
+    let raw = std::fs::read_to_string(device_file()?).ok()?;
+    let t = raw.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
+fn resolve_device(a: &Args) -> Option<String> {
+    a.device
+        .clone()
+        .or_else(|| std::env::var(DEVICE_ENV).ok().filter(|v| !v.trim().is_empty()))
+        .or_else(remembered_device)
+}
+
+/// Playback devices, from `aplay -L`.
+///
+/// Parsed from the player's OWN listing rather than enumerated separately, so every name printed is
+/// a name `aplay -D` will accept. A list whose entries the player then rejects is worse than none.
+fn list_outputs() -> Result<Vec<String>, String> {
+    let out = std::process::Command::new("aplay")
+        .arg("-L")
+        .output()
+        .map_err(|e| format!("could not run aplay: {e}"))?;
+    if !out.status.success() {
+        return Err("aplay could not list output devices".into());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        // A PCM name starts at column 0; its description is indented beneath it.
+        .filter(|l| !l.starts_with(char::is_whitespace) && !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .collect())
+}
 
 pub const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
@@ -38,9 +97,42 @@ TEXT NEVER REACHES A SHELL. It is passed as a single argv element or on the chil
 voice name reaches PowerShell through the environment rather than the script. This is not incidental
 — an agent speaks whatever it was told to speak, so the text is the least trustworthy input here.
 
+A SUCCESSFUL EXIT MEANS AUDIO WAS WRITTEN, NOT THAT ANYONE HEARD IT. There is no way to probe
+whether a human was in earshot, so `bsc say` cannot tell you. It played to ALSA `default` and
+returned 0 while the sound went to an unworn headset — `bsc say devices` is how you choose where it
+comes out, and the choice is remembered.
+
 WHICH ENGINE ANSWERS IS PROBED, NOT CONFIGURED. Piper when its binary and a voice both resolve,
 otherwise the OS speech service, and if you named one with --provider it is honoured or refused —
 never quietly swapped for the other. `bsc say voices` reports what was found and what was not.",
+    },
+    CmdDoc {
+        name: "devices",
+        summary: "playback devices, and which one speech will actually come out of",
+        usage: "\
+bsc say devices [--all] [--json|--pretty]
+bsc say devices --set <name>     # remember it, so a hook does not need the flag
+bsc say devices --set default    # go back to the system default
+
+Lists the outputs `aplay -D` will accept, parsed from aplay's own listing so a name printed here is
+never a name the player then rejects.
+
+IT EXISTS BECAUSE A SUCCESSFUL EXIT IS NOT A PROMISE ANYONE HEARD YOU. `bsc say` played to ALSA
+`default` and returned 0 while the audio went to a headset nobody was wearing — the speakers were on
+HDMI. That is the same failure `bsc ear levels` prevents on the input side, and unlike the input side
+there is no way to measure it: you cannot probe whether a human heard something. So the fallback is
+to let a person choose once, and remember it.
+
+Precedence: --device, then $BSC_SAY_DEVICE, then the remembered choice, then the system default.",
+    },
+    CmdDoc {
+        name: "voice",
+        summary: "the voice speech uses by default — print it, or remember one",
+        usage: "\
+bsc say voice              # what is remembered
+bsc say voice am_puck      # remember it
+
+Precedence: --voice, then this, then whichever voice sorts first.",
     },
     CmdDoc {
         name: "voices",
@@ -63,6 +155,10 @@ directory this prints, and put the `piper` binary on PATH. Both are then found w
 
 #[derive(Default, Debug)]
 struct Args {
+    all: bool,
+    ipa: bool,
+    lang: Option<String>,
+    device: Option<String>,
     json: bool,
     pretty: bool,
     provider: Option<String>,
@@ -75,6 +171,10 @@ struct Args {
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let (mut a, positional) = args::walk(raw, Args::default(), |flag, a: &mut Args, rest| {
         match flag {
+            "--all" => a.all = true,
+            "--ipa" => a.ipa = true,
+            "--lang" => a.lang = Some(rest.value("--lang needs an espeak language code, e.g. es or ja")?),
+            "--device" => a.device = Some(rest.value("--device needs an output device name")?),
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
             "--provider" => a.provider = Some(rest.value("--provider needs 'system' or 'piper'")?),
@@ -135,11 +235,28 @@ fn installed_voice_files() -> Vec<String> {
         .collect()
 }
 
+/// Where espeak-ng lives — PATH first, then the copy piper bundles.
+///
+/// Kokoro needs a grapheme-to-phoneme step and piper already ships one, so on a machine with piper
+/// installed this costs nothing extra. Looked up rather than assumed, because the bundled copy is
+/// an implementation detail of a different provider and may not be there.
+fn find_espeak(platform: Platform) -> Option<(PathBuf, PathBuf)> {
+    if let Some(p) = on_path("espeak-ng", platform) {
+        let data = p.parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        return Some((p, data));
+    }
+    let bundled = bsc_util::home_dir()?.join(".local/share/piper");
+    let exe = bundled.join(if platform == Platform::Windows { "espeak-ng.exe" } else { "espeak-ng" });
+    exe.is_file().then_some((exe, bundled))
+}
+
 /// What actually resolved on this machine.
 struct Probed {
     considered: Vec<Availability>,
     /// (piper binary, model path) when both halves are present.
     piper: Option<(PathBuf, PathBuf)>,
+    /// (kokoro paths, the chosen voice file, espeak, espeak data) when the whole chain resolves.
+    kokoro: Option<(crate::kokoro::Paths, PathBuf, PathBuf, PathBuf)>,
     system: Option<PathBuf>,
 }
 
@@ -203,7 +320,70 @@ fn probe(platform: Platform, requested_voice: Option<&str>) -> Probed {
             },
         ),
     };
-    Probed { considered: vec![piper_avail, system_avail], piper, system }
+    // Kokoro needs four things and reports precisely which one is missing — "kokoro unavailable"
+    // with no reason is the class of message that sends someone looking in the wrong place.
+    let (kokoro, kokoro_avail) = probe_kokoro(platform, requested_voice);
+    Probed { considered: vec![kokoro_avail, piper_avail, system_avail], piper, kokoro, system }
+}
+
+type KokoroSetup = (crate::kokoro::Paths, PathBuf, PathBuf, PathBuf);
+
+fn probe_kokoro(platform: Platform, requested_voice: Option<&str>) -> (Option<KokoroSetup>, Availability) {
+    let unavailable = |detail: String| Availability { kind: ProviderKind::Kokoro, available: false, detail };
+    let Some(paths) = crate::kokoro::Paths::resolve() else {
+        return (None, unavailable("no home directory, so the model dir could not be resolved".into()));
+    };
+    if !paths.complete() {
+        let missing = [
+            (!paths.model.is_file()).then(|| format!("model.onnx at {}", paths.model.display())),
+            (!paths.tokenizer.is_file()).then(|| "tokenizer.json".to_string()),
+            (!paths.voices.is_dir()).then(|| "a voices/ directory".to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        return (None, unavailable(format!("kokoro is missing {}", missing.join(", "))));
+    }
+    let Some((espeak, data)) = find_espeak(platform) else {
+        return (
+            None,
+            unavailable("kokoro needs espeak-ng for phonemisation and none is on PATH or bundled with piper".into()),
+        );
+    };
+    let installed: Vec<String> = std::fs::read_dir(&paths.voices)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter(|n| n.ends_with(".bin"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let pick = match requested_voice {
+        Some(want) => installed.iter().find(|f| f.strip_suffix(".bin") == Some(want)).cloned(),
+        None => {
+            let mut v = installed.clone();
+            v.sort();
+            v.into_iter().next()
+        }
+    };
+    match pick {
+        Some(name) => {
+            let file = paths.voices.join(&name);
+            let detail = format!("kokoro with {}", file.display());
+            (
+                Some((paths, file, espeak, data)),
+                Availability { kind: ProviderKind::Kokoro, available: true, detail },
+            )
+        }
+        None => (
+            None,
+            unavailable(match requested_voice {
+                Some(v) if installed.is_empty() => format!("no voice '{v}', and no .bin voice at all"),
+                Some(v) => format!("no voice '{v}' (installed: {})", installed.join(", ")),
+                None => "the model is present but no .bin voice is installed".to_string(),
+            }),
+        ),
+    }
 }
 
 // ── Execution ─────────────────────────────────────────────────────────────────────────────────────
@@ -314,18 +494,25 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
     }
     let platform = host_platform()?;
     let requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
-    let probed = probe(platform, a.voice.as_deref());
+    let chosen_voice = resolve_voice(a);
+    let probed = probe(platform, chosen_voice.as_deref());
+    let device = resolve_device(a);
     let res = voice::resolve(requested, probed.considered.clone());
     let req = SayRequest {
         text,
         rate: a.rate.unwrap_or(1.0),
-        voice: a.voice.clone(),
+        voice: chosen_voice,
         out: a.out.clone(),
     };
     match res.chosen {
         Some(ProviderKind::Piper) => {
             let (binary, model) = probed.piper.ok_or("piper resolved but its paths went missing")?;
-            speak_with_piper(platform, &binary, &model, &req)
+            speak_with_piper(platform, &binary, &model, &req, device.as_deref())
+        }
+        Some(ProviderKind::Kokoro) => {
+            let (paths, voice, espeak, data) =
+                probed.kokoro.ok_or("kokoro resolved but its paths went missing")?;
+            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref(), a.ipa, a.lang.as_deref().unwrap_or("en-us"))
         }
         Some(ProviderKind::System) => {
             let cmd = voice::system_command(platform, &req)?;
@@ -341,6 +528,7 @@ fn speak_with_piper(
     binary: &std::path::Path,
     model: &std::path::Path,
     req: &SayRequest,
+    device: Option<&str>,
 ) -> Result<(), String> {
     let keep = req.out.is_some();
     let target = match &req.out {
@@ -364,10 +552,134 @@ fn speak_with_piper(
                 target.display()
             )
         })?;
-    let result = spawn(&voice::play_command(platform, player, &target.display().to_string()));
+    let result =
+        spawn(&voice::play_command(platform, player, &target.display().to_string(), device));
     // A temp wav is ours to clean up whether or not playback worked.
     let _ = std::fs::remove_file(&target);
     result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn speak_with_kokoro(
+    platform: Platform,
+    paths: &crate::kokoro::Paths,
+    voice_file: &std::path::Path,
+    espeak: &std::path::Path,
+    espeak_data: &std::path::Path,
+    req: &SayRequest,
+    device: Option<&str>,
+    literal_ipa: bool,
+    lang: &str,
+) -> Result<(), String> {
+    use crate::kokoro;
+    let ipa = if literal_ipa {
+        req.text.clone()
+    } else {
+        kokoro::phonemize(espeak, espeak_data, &req.text, lang)?
+    };
+    let mut voice = kokoro::Voice::load(paths)?;
+    let (ids, _) = kokoro::tokenize(&ipa, voice.vocab());
+    let bytes = std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?;
+    let style = kokoro::style_for(&bytes, ids.len())?;
+    let (samples, missing) = voice.speak_ipa(&ipa, &style, voice::clamp_rate(req.rate))?;
+    if !missing.chars.is_empty() {
+        // Never silent: an unrepresentable phoneme is a mispronunciation, and a mispronunciation
+        // gets blamed on the model rather than on the mapping.
+        eprintln!(
+            "bsc say: {} phoneme(s) had no token and were dropped: {:?}",
+            missing.chars.len(),
+            missing.chars
+        );
+    }
+
+    let keep = req.out.is_some();
+    let target = match &req.out {
+        Some(p) => PathBuf::from(p),
+        None => std::env::temp_dir().join(format!("bsc-say-k-{}.wav", std::process::id())),
+    };
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: kokoro::SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&target, spec)
+        .map_err(|e| format!("could not write {}: {e}", target.display()))?;
+    for s in &samples {
+        w.write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16).map_err(|e| e.to_string())?;
+    }
+    w.finalize().map_err(|e| e.to_string())?;
+    if keep {
+        return Ok(());
+    }
+    let player = ["aplay", "pw-play", "afplay"]
+        .iter()
+        .find_map(|p| on_path(p, platform).map(|_| *p))
+        .ok_or("nothing on this machine can play audio — use --out to keep the file")?;
+    let result =
+        spawn(&voice::play_command(platform, player, &target.display().to_string(), device));
+    let _ = std::fs::remove_file(&target);
+    result
+}
+
+fn cmd_devices(a: &Args) -> Result<(), String> {
+    // `--device <name>` doubles as the setter here: `bsc say devices --device X` remembers X.
+    if let Some(want) = &a.device {
+        let path = device_file().ok_or("no home directory, so nothing could be remembered")?;
+        if want == "default" {
+            let _ = std::fs::remove_file(&path);
+            println!("output reset to the system default");
+            return Ok(());
+        }
+        let known = list_outputs().unwrap_or_default();
+        if !known.iter().any(|d| d == want) {
+            return Err(format!(
+                "'{want}' is not an output aplay knows — `bsc say devices` lists them. Not \
+                 remembering a name that will fail at playback time."
+            ));
+        }
+        std::fs::write(&path, want).map_err(|e| format!("could not write {}: {e}", path.display()))?;
+        println!("speech will play through {want}");
+        return Ok(());
+    }
+
+    let all = list_outputs()?;
+    let chosen = resolve_device(a);
+    let shown: Vec<&String> =
+        all.iter().filter(|n| a.all || crate::voice::is_primary_output(n)).collect();
+    if a.json || a.pretty {
+        let v = json!({ "outputs": shown, "chosen": chosen, "total": all.len() });
+        let s = if a.pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+        println!("{}", s.map_err(|e| format!("could not render: {e}"))?);
+        return Ok(());
+    }
+    for d in &shown {
+        let mark = if Some((*d).clone()) == chosen { "*" } else { " " };
+        println!("{mark} {d}");
+    }
+    match &chosen {
+        Some(c) => println!("\nspeech plays through: {c}"),
+        None => println!("\nspeech plays through the system default — which may not be audible to you"),
+    }
+    if all.len() > shown.len() {
+        println!("{} routing variant(s) hidden — `--all` shows them", all.len() - shown.len());
+    }
+    Ok(())
+}
+
+fn cmd_voice(a: &Args) -> Result<(), String> {
+    let path = voice_file().ok_or("no home directory, so nothing could be remembered")?;
+    match a.positional.get(1) {
+        Some(name) => {
+            std::fs::write(&path, name).map_err(|e| format!("could not write {}: {e}", path.display()))?;
+            println!("speech will use {name}");
+        }
+        None => match remembered_voice() {
+            Some(v) => println!("{v}"),
+            None => println!("no remembered voice — whichever sorts first is used"),
+        },
+    }
+    Ok(())
 }
 
 fn cmd_voices(a: &Args) -> Result<(), String> {
@@ -462,6 +774,8 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         return Ok(());
     }
     match a.positional.first().map(String::as_str) {
+        Some("devices") => cmd_devices(&a),
+        Some("voice") => cmd_voice(&a),
         Some("voices") => cmd_voices(&a),
         Some("speak") if a.positional.len() == 1 => Err(SPEAK_ALONE.into()),
         Some("speak") => cmd_speak(&a, a.positional[1..].join(" ")),
@@ -483,7 +797,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["speak", "voices"]);
+        assert_eq!(names, vec!["speak", "devices", "voice", "voices"]);
     }
 
     #[test]
@@ -575,6 +889,25 @@ mod tests {
         let d = engine_detail(many.join("\n").as_bytes());
         assert!(d.contains("line8 / line9 / line10"), "tail, in order: {d}");
         assert!(!d.contains("line1 "), "the head is dropped: {d}");
+    }
+
+    /// The order matters and nothing else asserts it: a one-off `--device` must beat the
+    /// environment, and the environment must beat a choice remembered months ago. Getting this
+    /// backwards means a flag that appears to do nothing.
+    #[test]
+    fn an_explicit_device_beats_the_environment_which_beats_what_was_remembered() {
+        let a = Args { device: Some("explicit".into()), ..Args::default() };
+        std::env::set_var(DEVICE_ENV, "from-env");
+        assert_eq!(resolve_device(&a).as_deref(), Some("explicit"));
+
+        let bare = Args::default();
+        assert_eq!(resolve_device(&bare).as_deref(), Some("from-env"), "env is next");
+
+        std::env::remove_var(DEVICE_ENV);
+        // With neither, it falls through to the remembered file or the system default; both are
+        // acceptable here, and what matters is that it does not return the env value we just
+        // cleared.
+        assert_ne!(resolve_device(&bare).as_deref(), Some("from-env"));
     }
 
     #[test]

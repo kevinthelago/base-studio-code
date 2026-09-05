@@ -374,3 +374,161 @@ fn rs_files(dir: &Path, prefix: &str) -> Vec<String> {
     out.sort();
     out
 }
+
+// ---------------------------------------------------------------------------------------------
+// THE CRATE ROOT IS SHARED. The guards for `a-crate-root-is-shared-so-a-crate-is-one-file`.
+// ---------------------------------------------------------------------------------------------
+
+/// Every adopter's `[lib]` `path`, and whether its `src/` still holds a root — read off THIS checkout.
+///
+/// Returned as data rather than asserted inline so both guards below read the same tree the same way,
+/// and so a failure can name every offender instead of the first.
+fn adopters(root: &Path) -> Vec<(String, String, Option<String>)> {
+    let mut out = Vec::new();
+    let dir = root.join("crates");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return out };
+    let mut names: Vec<String> =
+        entries.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+    names.sort();
+    for name in names {
+        let krate = dir.join(&name);
+        let Ok(manifest) = std::fs::read_to_string(krate.join("Cargo.toml")) else { continue };
+        // The SHARED-SCRIPT route only. A crate reaching the materializer through the build-DEPENDENCY
+        // route (`crates/data`, `crates/bsc-config`, `src-tauri`) owns a build script doing other jobs
+        // and is not at the floor by a long way; sweeping it in would assert a rule about crates this
+        // change never touched.
+        if !manifest.contains(r#"build = "../graph-materialize/build.rs""#) {
+            continue;
+        }
+        let root_src = std::fs::read_to_string(krate.join("src").join("lib.rs")).ok();
+        out.push((name, manifest, root_src));
+    }
+    out
+}
+
+/// NO ADOPTER HAS RE-GROWN A PRIVATE CRATE ROOT.
+///
+/// The shared root is one file (`crates/graph-materialize/crate_root.rs`) and its whole value is that
+/// it is ONE — a crate that quietly grows a `src/lib.rs` of its own again is back at two files and
+/// nothing else would say so, because it still compiles perfectly. `migrate-crate` can put a crate at
+/// the floor; only a guard keeps it there.
+///
+/// The rule is conditional on purpose: 48 crates still hold real code in their roots, and that is the
+/// LARGER migration this is not. What is asserted is the implication — a root that is only its docs
+/// and the one `include!` must not be a file.
+///
+/// It FAILS against the tree this change replaced: on `develop` all 11 crates below had exactly that
+/// root and no `[lib] path`, so this named all 11.
+#[test]
+fn no_adopter_has_regrown_a_private_crate_root() {
+    let root = repo();
+    let mut offenders: Vec<String> = Vec::new();
+    let mut at_floor = 0usize;
+    for (name, manifest, root_src) in adopters(&root) {
+        let wants = r#"path = "../graph-materialize/crate_root.rs""#;
+        match root_src {
+            // A root that still holds a program keeps its file — that is the other migration.
+            Some(src) if !root_is_bare_for_test(&src) => {}
+            // A root that is only docs + the include has no reason to exist.
+            Some(_) => offenders.push(format!(
+                "crates/{name}/src/lib.rs is only its docs and the include, but the manifest does not \
+                 point [lib] path at the shared crate root"
+            )),
+            // A BINARY ROOT IS OUT OF SCOPE, and saying so is not a loophole. `bsc` and `bsc-agent`
+            // declare their modules in `src/main.rs` and have no lib at all; the same trick applies to
+            // them through `[[bin]] path`, but nothing wires it yet, so asserting the lib rule over
+            // them would report two healthy crates as broken.
+            None if root.join("crates").join(&name).join("src").join("main.rs").is_file() => {}
+            None => {
+                if manifest.lines().any(|l| l.trim() == wants) {
+                    at_floor += 1;
+                } else {
+                    offenders.push(format!(
+                        "crates/{name} has no src/lib.rs and no `{wants}` — it will not compile, and \
+                         cargo will look for a root that is not there"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "{} adopter(s) off the shared root:\n  {}", offenders.len(), offenders.join("\n  "));
+    // THE POPULATION, asserted rather than described. A rewritten `adopters` that stopped matching
+    // would find zero crates and report a clean pass over nothing — the exact green-that-sees-less
+    // this repo keeps paying for.
+    assert!(at_floor >= 11, "only {at_floor} crate(s) are at the floor; 11 were migrated");
+}
+
+/// The floor test, restated where this crate can see it.
+///
+/// `bsc-graph::migrate::root_is_bare` is the authority and the two must agree, but this package is a
+/// build-dependency of ~54 crates and taking `bsc-graph` for a test would compile it before any of
+/// them could start. The rule is four lines; the dependency would not be.
+fn root_is_bare_for_test(src: &str) -> bool {
+    let mut include = false;
+    for line in src.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with("//") {
+            continue;
+        }
+        if t.starts_with("include!(concat!(env!(\"OUT_DIR\")") {
+            include = true;
+            continue;
+        }
+        return false;
+    }
+    include
+}
+
+/// TWO ADOPTERS SHARING ONE ROOT FILE STILL DOCUMENT THEMSELVES DIFFERENTLY.
+///
+/// This is the whole risk the shared root introduces, and it is invisible from a build: every crate
+/// compiles, every test passes, and `cargo doc` quietly renders the same page for all 61. So the
+/// difference is asserted at the mechanism — `emit_into` writing the real `$OUT_DIR/crate_doc.md` that
+/// `#![doc = include_str!(…)]` reads — over the REAL committed store, rather than observed by hand.
+#[test]
+fn two_adopters_produce_different_crate_docs() {
+    let root = repo();
+    let read = |krate: &str| {
+        let out = scratch(krate);
+        emit_into(&root.join("crates").join(krate), &out, Some(&root), Adoption::Required)
+            .unwrap_or_else(|e| panic!("materializing {krate}: {e}"));
+        std::fs::read_to_string(out.join("crate_doc.md")).expect("crate_doc.md is always written")
+    };
+    let fin = read("bsc-fin");
+    let tunnel = read("bsc-tunnel");
+    assert!(!fin.trim().is_empty(), "bsc-fin's crate docs reached OUT_DIR");
+    assert!(!tunnel.trim().is_empty(), "bsc-tunnel's crate docs reached OUT_DIR");
+    assert_ne!(fin, tunnel, "one shared crate root must NOT collapse every crate's documentation into one");
+    // …and each is its OWN prose, not merely a different length.
+    assert!(fin.contains("finance"), "bsc-fin documents the finance store: {fin}");
+    assert!(tunnel.contains("tunnel"), "bsc-tunnel documents the tunnel: {tunnel}");
+    // The markdown carries no `//!` markers — it is included as markdown, not as Rust.
+    assert!(!fin.contains("//!"), "the doc record holds markdown, not doc comments");
+}
+
+/// THE SHARED ROOT IS ONE FILE, and the only thing that guarantees byte-identity for 61 crates.
+///
+/// Asserted against every adopter's manifest rather than by comparing copies, because there is nothing
+/// to compare: a second copy is exactly the failure. It also pins the two lines the root must have —
+/// a root that lost the `#![doc = …]` would compile and silently document nothing.
+#[test]
+fn the_shared_crate_root_is_one_file_that_carries_both_halves() {
+    let root = repo();
+    let path = root.join("crates").join("graph-materialize").join("crate_root.rs");
+    let src = std::fs::read_to_string(&path).expect("crates/graph-materialize/crate_root.rs");
+    assert!(
+        src.contains(r#"#![doc = include_str!(concat!(env!("OUT_DIR"), "/crate_doc.md"))]"#),
+        "the shared root must pick up each crate's OWN docs from OUT_DIR"
+    );
+    assert!(src.contains(r#"include!(concat!(env!("OUT_DIR"), "/crate.rs"));"#), "…and its modules");
+    let code = src.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with("//")).count();
+    assert_eq!(code, 2, "the shared root is two lines of code; anything more is per-crate logic in a shared file");
+    // Nobody has copied it. `[lib] path` is the only way to reach it, and a copy under any crate's own
+    // directory would be a second root that can drift.
+    let stray: Vec<String> = adopters(&root)
+        .into_iter()
+        .filter(|(name, ..)| root.join("crates").join(name).join("crate_root.rs").is_file())
+        .map(|(name, ..)| name)
+        .collect();
+    assert!(stray.is_empty(), "crate_root.rs is copied into: {stray:?}");
+}

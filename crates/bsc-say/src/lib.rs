@@ -6,4 +6,5 @@
 //! saying so, a rate mapped onto the wrong scale, or spoken text reaching something that parses it.
 
 pub mod cli;
+pub mod kokoro;
 pub mod voice;

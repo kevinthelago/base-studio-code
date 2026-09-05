@@ -138,6 +138,7 @@ const COMMANDS: &[Surface] = &[
     active("graph", "bsc-graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)", Some("knowledge/algorithms.json — packaged seed + writable store, $BSC_GRAPH_STORE")),
     active("cad", "bsc-cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL", None),
     active("widget", "bsc-widget", "toggleable UI surfaces: one NODE per widget and the stream it subscribes to", Some("a closed set in code — an id selects a node, never a path")),
+    active("ear", "bsc-ear", "always-on local capture: speech-only segments inside an enforced retention window (the listening half of `say`)", Some("audio + state under ~/.base-studio-code/ear")),
     active("say", "bsc-say", "speak text aloud: the neural voice (piper) when installed, the OS voice when not (NOT `sound`, which is the synthesis kit store)", Some("no store — piper voices in ~/.base-studio-code/voices")),
     active("lan", "bsc-lan", "the emit-only LAN sensor: what a host exposes · its keys · what it would send (NOT `network`, which is the user domain store)", Some("no store yet — keys are printed, never written")),
     active("deploy", "bsc-deploy", "ship a binary to a device and take it back: status · push · rollback (push-only; LAB has no egress)", Some("the device roster — deploy/devices.json")),
@@ -215,6 +216,7 @@ fn surface_verbs(noun: &str) -> Option<&'static [bsc_cli_util::CmdDoc]> {
         "cad" => bsc_cad::cli::COMMANDS,
         "widget" => bsc_widget::cli::COMMANDS,
         "say" => bsc_say::cli::COMMANDS,
+        "ear" => bsc_ear::cli::COMMANDS,
         "lan" => bsc_lan::cli::COMMANDS,
         "deploy" => bsc_deploy::cli::COMMANDS,
         "capability" => bsc_capability::cli::COMMANDS,
@@ -772,6 +774,7 @@ pub(crate) fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "cad" => bsc_cad::cli::run(rest, "bsc cad"),
         "widget" => bsc_widget::cli::run(rest, "bsc widget"),
         "say" => bsc_say::cli::run(rest, "bsc say"),
+        "ear" => bsc_ear::cli::run(rest, "bsc ear"),
         "lan" => bsc_lan::cli::run(rest, "bsc lan"),
         "deploy" => bsc_deploy::cli::run(rest, "bsc deploy"),
         "capability" => bsc_capability::cli::run(rest, "bsc capability"),
@@ -859,8 +862,8 @@ mod tests {
     ///
     /// This crate compiles FROM THE GRAPH: `defer`, `hook`, `serve` and `superseded` are RECORDS in
     /// `graph/algorithms.json` that `crates/graph-materialize/build.rs` writes into
-    /// `$OUT_DIR/crate.rs`. `main.rs` stays a real file — `include!` refuses crate-level `//!` docs,
-    /// and it is where `dispatch`, `surface_cli` and `surface_help` live — so the three source scans
+    /// `$OUT_DIR/crate.rs`. `main.rs` stays a real file — it holds `dispatch`, `surface_cli` and
+    /// `surface_help`, and a BINARY root has no `[lib] path` to point at the shared crate root — so the three source scans
     /// below still find what they are looking for. They read BOTH anyway, because the alternative is
     /// a scan whose coverage silently depends on which modules happen not to be records yet: move one
     /// scanned `fn` into the graph and an `include_str!("main.rs")` scan stops seeing it, and the only
@@ -1697,6 +1700,8 @@ mod tests {
 //     bsc graph impl set --id bsc--<module>.rs --code-file <f>
 //     bsc graph promote --id bsc--<module>.rs
 //
-// This header stays a file because include! refuses crate-level //! docs and #![…] inner
-// attributes (E0753 / "an inner attribute is not permitted in this context").
+// This header is still a file because this root holds crate-level code of its own, and because
+// a BINARY root reaches the shared `crates/graph-materialize/crate_root.rs` through `[[bin]]
+// path`, which nothing wires yet. A library root down to its //! docs and this include is
+// migrated (`a-crate-root-is-shared-so-a-crate-is-one-file`).
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));

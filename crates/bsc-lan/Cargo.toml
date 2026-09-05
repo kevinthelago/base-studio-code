@@ -32,6 +32,15 @@ libc = "0.2"
 # What a captured frame MEANS — parsing only; this crate owns the socket.
 bsc-rf = { path = "../bsc-rf" }
 
+[lints.rust]
+# DENY, NOT FORBID, and the difference is load-bearing. One audited module here holds a raw file
+# descriptor and lifts this with `#[allow(unsafe_code)]` plus a SAFETY note per call; `forbid`
+# cannot be overridden anywhere, which would mean either no capture at all or the unsafe living in
+# a crate with no business holding a descriptor. Moved out of `src/lib.rs` when the crate root
+# became the SHARED one (`a-crate-root-is-shared-so-a-crate-is-one-file`) — a manifest lint is
+# exactly a crate-level attribute, so the inner `#[allow]` still overrides it.
+unsafe_code = "deny"
+
 [lints.clippy]
 wildcard_enum_match_arm = "deny"
 match_wildcard_for_single_variants = "deny"
