@@ -22,32 +22,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-/// The byte-identical `main` of every `bsc-*` CLI: run `run`, mapping `Ok(())` to
-/// [`ExitCode::SUCCESS`] and `Err(e)` to `<prog>: <e>` on stderr + [`ExitCode::FAILURE`]. `prog` is
-/// the binary name printed in the error — passed once here rather than re-typed in each bin's
-/// `eprintln!` (which is how they drifted out of sync with their actual binary name).
-///
-/// ```ignore
-/// fn main() -> std::process::ExitCode {
-///     bsc_cli_util::cli_main("bsc-plan", run)
-/// }
-/// ```
-/// `.claude/session.json` — what a session IS, resolved from where it stands (#a-session-outside-the-
-/// app-can-discover-itself-from-claude-session-json). Lives HERE rather than in `bsc-util` because
-/// that crate is deliberately std-only, and beside `resolve_store_path` because it answers the same
-/// family of question: how does a session that nobody configured find out what it is.
-/// The argument walk every `bsc` CLI repeats — `-h` routing, the unknown-flag refusal, positionals —
-/// with each caller keeping its own flag set and its own refusal wording (`args::walk`). Seventeen
-/// hand-written copies, five of which had lost their `-h` arm.
-pub mod args;
-/// The command surface as DATA — a record may supply any `CmdDoc`-driven CLI's tagline and catalog,
-/// declining and falling back to the compiled one on anything malformed
-/// (`generalize-the-surface-record-beyond-json-store`).
-pub mod surface;
-#[cfg(test)]
-mod surface_tests;
 
-pub mod session;
 
 pub fn cli_main(prog: &str, run: impl FnOnce() -> Result<(), String>) -> ExitCode {
     match run() {
@@ -1791,18 +1766,6 @@ mod tests {
     }
 }
 
-// This crate's modules are IN THE GRAPH, not in this directory.
-// src/vendored.rs does not exist — it is a record in the
-// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
-// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
-//     bsc graph impl get bsc-cli-util--<module>.rs
-//     bsc graph impl set --id bsc-cli-util--<module>.rs --code-file <f>
-//     bsc graph promote --id bsc-cli-util--<module>.rs
-//
-// This header is still a file because this root holds crate-level code of its own. A root
-// down to its //! docs and this include is migrated too: the docs become the
-// `bsc-cli-util--lib.rs` doc record and [lib] path points at crates/graph-materialize/crate_root.rs.
-include!(concat!(env!("OUT_DIR"), "/crate.rs"));
 #[cfg(test)]
 mod feature_confinement_tests {
     use super::*;
@@ -1878,3 +1841,16 @@ mod feature_confinement_tests {
         });
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/args.rs, src/session.rs, src/surface.rs, src/surface_tests.rs, src/vendored.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-cli-util--<module>.rs
+//     bsc graph impl set --id bsc-cli-util--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-cli-util--<module>.rs
+//
+// This header is still a file because this root holds crate-level code of its own. A root
+// down to its //! docs and this include is migrated too: the docs become the
+// `bsc-cli-util--lib.rs` doc record and [lib] path points at crates/graph-materialize/crate_root.rs.
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
