@@ -885,6 +885,7 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-util",
+ "graph-materialize",
  "include_dir",
  "serde",
  "serde_json",
@@ -901,6 +902,7 @@ dependencies = [
  "bsc-util",
  "csv",
  "duckdb",
+ "graph-materialize",
  "keyring",
  "reqwest 0.12.28",
  "serde",

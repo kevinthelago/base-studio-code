@@ -40,7 +40,59 @@
 use std::path::Path;
 
 /// The shared build script a migrated crate opts into, as it appears in its `Cargo.toml`.
+///
+/// This is the line for a crate at `crates/<name>`; the path inside it is relative to the crate, so at
+/// another depth it is [`marker_for`] that answers. See that function.
 pub const MARKER: &str = r#"build = "../graph-materialize/build.rs""#;
+
+/// The `[build-dependencies]` entry a crate takes when it reaches the materializer by CALLING it —
+/// the line for a crate at `crates/<name>`, with [`dep_for`] as its depth-aware twin.
+pub const DEP: &str = r#"graph-materialize = { path = "../graph-materialize" }"#;
+
+/// The call a crate's OWN build script makes, as one more job beside the ones it already had.
+///
+/// [`calls_materializer`] is what detects it, lexically — a mention of this in a doc comment is not a
+/// call, and reading one as a call already changed a refusal once.
+pub const CALL: &str = "graph_materialize::emit();";
+
+/// How a crate reaches the materializer. **A package gets exactly ONE build script**, and that single
+/// fact is the whole reason there are two routes rather than one.
+///
+/// Both run THE SAME SOURCE — `crates/graph-materialize/build.rs` and its `src/lib.rs` `include!` the
+/// same `plan.rs` and `emit.rs` — so a crate emits byte-identical output whichever way it got there.
+/// The choice is about the manifest, never about the rules.
+///
+/// # Where this sits relative to [`calls_materializer`]
+///
+/// They are two halves of one story and neither subsumes the other:
+///
+/// - [`calls_materializer`] is PASSIVE. It asks whether a build script is ALREADY wired, and both
+///   `refuse_reason` and the apply path use it to leave such a crate alone — nothing to replace,
+///   nothing to opt in. That is what lets `migrate-crate src-tauri` work, since `src-tauri/build.rs`
+///   was hand-wired ahead of its first record.
+/// - [`Route::Alongside`] is ACTIVE. It DOES the wiring, for a crate whose build script does not have
+///   it yet. `crates/data` and `crates/bsc-config` are that case
+///   (`the-two-build-rs-crates-adopt-the-materializer-alongside-their-own`) and there was no route to
+///   them at all before it: [`Route::Shared`] refuses them, correctly, because the `build =` key would
+///   silently replace the script they need.
+///
+/// So the three shapes are: no build script → [`Route::Shared`]; a build script that already calls →
+/// either route, both no-ops on the wiring; a build script that does NOT call → `--alongside` only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Route {
+    /// The shared script IS the crate's build script ([`marker_for`]). One line in `Cargo.toml`, no
+    /// build script of the crate's own. This is how the 58 crates that opted in before
+    /// `graph-materialize` became a real package reach it, and it stays the default.
+    #[default]
+    Shared,
+    /// The crate KEEPS its own `build.rs` and calls [`CALL`] from it, taking [`dep_for`] as a
+    /// `[build-dependencies]` entry.
+    ///
+    /// Reached with `--alongside`. It is NOT the default and must not become one: for a crate with no
+    /// build script of its own it would add a FILE where [`Route::Shared`] adds a line, which is
+    /// exactly the net-zero outcome the shared script exists to avoid.
+    Alongside,
+}
 
 /// One `(pub )?mod name;` declaration, with everything attached to it that carries meaning.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +324,14 @@ pub struct CrateShape<'a> {
     /// have told a depth-1 crate it was not migrated when it was, and offered it a build key cargo
     /// cannot resolve.
     pub marker: &'a str,
+    /// The `[build-dependencies]` line THIS crate would need under [`Route::Alongside`] — [`dep_for`]
+    /// of its repo-relative directory.
+    ///
+    /// A field for exactly the reason [`marker`](Self::marker) is one: the path inside it is relative
+    /// to the crate. `src-tauri` reaches the same package at `../crates/graph-materialize`, and writing
+    /// the depth-1 form there would produce a manifest cargo cannot resolve — the same
+    /// silent-until-build failure, on the other route.
+    pub dep: &'a str,
     /// EVERY module of the crate, at every depth — see [`module_tree`].
     ///
     /// This replaced a flat `top_files` + `nested_count` pair, and the replacement is what removed the
@@ -559,54 +619,100 @@ fn impl_set_argv(id: &str, n: &ModuleNode) -> Vec<String> {
 /// Every refusal here was a real failure first. Refusing UP FRONT is the feature: reached late, a
 /// migration has already written records for a crate that will not complete, and the message names a
 /// symptom instead of a cause.
-pub fn refuse_reason(shape: &CrateShape<'_>) -> Option<String> {
+pub fn refuse_reason(shape: &CrateShape<'_>, route: Route) -> Option<String> {
     let marker = shape.marker;
     if shape.cargo_toml.contains(marker) {
         return Some(format!("already migrated — its Cargo.toml carries {marker}"));
     }
-    // A CRATE GETS EXACTLY ONE BUILD SCRIPT, and `opt_in` adds ours without looking for the crate's own.
-    // Checked FIRST because it is the only refusal here whose damage is silent.
-    //
-    // REAL, both found green by `migrate-crate` on 2026-09-04:
-    //   crates/bsc-config/build.rs stages $OUT_DIR/config-seed for an `include_dir!` in lib.rs —
-    //     replacing it is an immediate, loud compile failure.
-    //   crates/data/build.rs emits `cargo:rustc-link-lib=dylib=rstrtmgr` on WINDOWS ONLY, for DuckDB's
-    //     Restart Manager references — replacing it changes NOTHING observable on Linux and breaks the
-    //     Windows link. That is the dangerous one, and it is why the message quotes the directives.
-    //
-    // Neither crate DECLARES `build =`: cargo auto-detects `build.rs`, so nothing in the manifest names
-    // the script, and a reader diffing the Cargo.toml afterwards sees only a line being added.
-    //
-    // …UNLESS that build script ALREADY CALLS THE MATERIALIZER. Then it is not a script about to be
-    // replaced, it is the OTHER adoption route — a build-dependency call site, which
-    // `graph-materialize-becomes-a-real-build-dependency` added so a package whose build script already
-    // does other jobs (src-tauri does four) could materialize without giving any of them up. Nothing to
-    // replace, nothing to fold, and `opt_in` is skipped for it downstream. See `calls_materializer`.
-    if let Some((path, src)) = shape.build_rs.filter(|(_, s)| !calls_materializer(s)) {
-        let effects = build_script_effects(src);
-        let does = if effects.is_empty() {
-            "emits no cargo: directives".to_string()
-        } else {
-            format!("emits {}", effects.join(", "))
-        };
-        return Some(format!(
-            "{path} already exists ({} lines, {does}) and this crate gets exactly ONE build script — \
-             cargo AUTO-DETECTS build.rs, so nothing in Cargo.toml names it and adding {marker} would \
-             SILENTLY REPLACE it. Fold what it does into crates/graph-materialize/build.rs first, or \
-             migrate this crate by hand",
-            src.lines().count()
-        ));
-    }
-    // The same collision, declared rather than auto-detected. `opt_in` inserts MARKER after the edition
-    // line without removing anything, so a second `build =` key makes the manifest unparseable — and it
-    // would do so AFTER the records were written, which is the late failure this function exists to
-    // prevent.
-    if let Some(declared) = declared_build_script(shape.cargo_toml) {
-        return Some(format!(
-            "its Cargo.toml already declares `build = \"{declared}\"` and a crate gets exactly ONE build \
-             script — adding {marker} would leave two `build` keys in one manifest. Fold that script into \
-             crates/graph-materialize/build.rs first, or migrate this crate by hand"
-        ));
+    match route {
+        // A CRATE GETS EXACTLY ONE BUILD SCRIPT, and `opt_in` adds ours without looking for the crate's
+        // own. Checked FIRST because it is the only refusal here whose damage is silent.
+        //
+        // REAL, both found green by `migrate-crate` on 2026-09-04:
+        //   crates/bsc-config/build.rs stages $OUT_DIR/config-seed for an `include_dir!` in lib.rs —
+        //     replacing it is an immediate, loud compile failure.
+        //   crates/data/build.rs emits `cargo:rustc-link-lib=dylib=rstrtmgr` on WINDOWS ONLY, for
+        //     DuckDB's Restart Manager references — replacing it changes NOTHING observable on Linux
+        //     and breaks the Windows link. That is the dangerous one, and it is why the message quotes
+        //     the directives.
+        //
+        // Neither crate DECLARES `build =`: cargo auto-detects `build.rs`, so nothing in the manifest
+        // names the script, and a reader diffing the Cargo.toml afterwards sees only a line being added.
+        //
+        // …UNLESS that build script ALREADY CALLS THE MATERIALIZER. Then it is not a script about to be
+        // replaced, it is the OTHER adoption route — a build-dependency call site, which
+        // `graph-materialize-becomes-a-real-build-dependency` added so a package whose build script
+        // already does other jobs (src-tauri does four) could materialize without giving any of them up.
+        // Nothing to replace, nothing to fold, and `opt_in` is skipped for it downstream. See
+        // `calls_materializer`.
+        //
+        // It stays a REFUSAL for the un-wired case rather than silently becoming `--alongside`: the two
+        // routes edit different files, and quietly picking the one that rewrites the crate's own build
+        // script is not a choice a tool should make for a reader who asked for the other.
+        Route::Shared => {
+            if let Some((path, src)) = shape.build_rs.filter(|(_, s)| !calls_materializer(s)) {
+                let effects = build_script_effects(src);
+                let does = if effects.is_empty() {
+                    "emits no cargo: directives".to_string()
+                } else {
+                    format!("emits {}", effects.join(", "))
+                };
+                return Some(format!(
+                    "{path} already exists ({} lines, {does}) and this crate gets exactly ONE build \
+                     script — cargo AUTO-DETECTS build.rs, so nothing in Cargo.toml names it and adding \
+                     {marker} would SILENTLY REPLACE it. Re-run with --alongside to KEEP that script and \
+                     call the materializer from it instead",
+                    src.lines().count()
+                ));
+            }
+            // The same collision, declared rather than auto-detected. `opt_in` inserts the marker after
+            // the edition line without removing anything, so a second `build =` key makes the manifest
+            // unparseable — and it would do so AFTER the records were written, which is the late failure
+            // this function exists to prevent.
+            if let Some(declared) = declared_build_script(shape.cargo_toml) {
+                return Some(format!(
+                    "its Cargo.toml already declares `build = \"{declared}\"` and a crate gets exactly \
+                     ONE build script — adding {marker} would leave two `build` keys in one manifest. \
+                     Re-run with --alongside to KEEP that script and call the materializer from it instead"
+                ));
+            }
+        }
+        // The mirror image: `--alongside` has nothing to add the call TO unless the crate owns a build
+        // script, and the write path edits the AUTO-DETECTED `<crate_dir>/build.rs` by name.
+        //
+        // NOTE what is deliberately NOT refused here — a build script that already calls the
+        // materializer. That is `calls_materializer`'s carve-out and it is the same answer on this
+        // route: the wiring half is simply already done, `add_emit_call` and `opt_in` are both
+        // idempotent, and the modules still migrate. Refusing it would block `migrate-crate src-tauri`,
+        // whose build script was hand-wired ahead of its first record — the exact crate the carve-out
+        // was written for.
+        Route::Alongside => {
+            let Some((path, src)) = shape.build_rs else {
+                return Some(
+                    "--alongside keeps the crate's OWN build script and calls the materializer from it, \
+                     and this crate has no build.rs — drop --alongside and it opts into the shared script \
+                     with one manifest line instead of a new file"
+                        .to_string(),
+                );
+            };
+            // A DECLARED path other than `build.rs` is refused rather than guessed at: the write path
+            // edits `<crate_dir>/build.rs` by name, so a manifest pointing somewhere else would have the
+            // call inserted into a file cargo never runs — inert, and invisible, which is the exact
+            // silent-success failure every refusal here exists to prevent.
+            if let Some(declared) = declared_build_script(shape.cargo_toml) {
+                if declared != "build.rs" {
+                    return Some(format!(
+                        "its Cargo.toml declares `build = \"{declared}\"`, but --alongside edits {path} — \
+                         the call would land in a file cargo does not run. Add {CALL} to {declared} by \
+                         hand, with `{}` under [build-dependencies]",
+                        shape.dep
+                    ));
+                }
+            }
+            if !src.contains("fn main(") {
+                return Some(format!("{path} has no `fn main(` for --alongside to add {CALL} to"));
+            }
+        }
     }
     // A NESTED MODULE DIRECTORY USED TO BE REFUSED HERE, and it was the largest remaining blocker —
     // four crates outright (~17,900 lines) and every one of src-tauri's 137 nested files.
@@ -683,8 +789,19 @@ pub fn refuse_reason(shape: &CrateShape<'_>) -> Option<String> {
 /// It lists every file that stopped existing, at every depth — `src/cli/nouns.rs` as readily as
 /// `src/cli.rs` — because the header is the only thing a reader who opens the directory has to tell
 /// them where the code went.
-fn include_block(krate: &str, nodes: &[ModuleNode]) -> String {
+fn include_block(krate: &str, nodes: &[ModuleNode], route: Route) -> String {
     let files: Vec<String> = nodes.iter().map(|n| format!("src/{}", n.file)).collect();
+    // WHICH build script, because the header is what a reader who opens the directory acts on. Saying
+    // "the shared build script" for a `--alongside` crate sends them looking for a `build =` key its
+    // manifest does not have — the same invisibility that made the collision this route exists for so
+    // hard to see in the first place.
+    let by = match route {
+        Route::Shared => "materialized into $OUT_DIR by the shared build script.".to_string(),
+        Route::Alongside => format!(
+            "materialized into $OUT_DIR by `{CALL}`, called from this\n// crate's own build.rs \
+             (a package gets exactly ONE build script, and this one was taken)."
+        ),
+    };
     [
         "// This crate's modules are IN THE GRAPH, not in this directory.".to_string(),
         format!(
@@ -693,8 +810,7 @@ fn include_block(krate: &str, nodes: &[ModuleNode]) -> String {
             if files.len() == 1 { "does not exist" } else { "do not exist" },
             if files.len() == 1 { "it is a record" } else { "they are records" }
         ),
-        "// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script."
-            .to_string(),
+        format!("// committed graph/algorithms.json, {by}"),
         "// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:"
             .to_string(),
         format!("//     bsc graph impl get {krate}--<module>.rs"),
@@ -743,9 +859,15 @@ pub fn strip_child_decls(module_src: &str, children: &[ModuleDecl]) -> Result<St
 ///
 /// `decls` are the ROOT's own declarations (the lines to remove); `nodes` is every module at every
 /// depth (what the header lists), so a nested crate's header names the files a reader will not find.
-pub fn rewrite_lib(lib_src: &str, decls: &[ModuleDecl], nodes: &[ModuleNode], krate: &str) -> Result<String, String> {
+pub fn rewrite_lib(
+    lib_src: &str,
+    decls: &[ModuleDecl],
+    nodes: &[ModuleNode],
+    krate: &str,
+    route: Route,
+) -> Result<String, String> {
     let out = remove_decl_blocks(lib_src, decls)?;
-    Ok(format!("{}\n\n{}", out.trim_end(), include_block(krate, nodes)))
+    Ok(format!("{}\n\n{}", out.trim_end(), include_block(krate, nodes, route)))
 }
 
 /// The PACKAGE name, which is not always the directory name — `crates/data` is `bsc-data`.
@@ -772,36 +894,133 @@ pub fn package_name(cargo_toml: &str, dir_name: &str) -> String {
     dir_name.to_string()
 }
 
-/// `Cargo.toml` with the shared build script and the build-dependency it needs.
+/// `Cargo.toml` with the route's build wiring.
 ///
-/// `marker` is [`marker_for`] of the crate's repo-relative directory, not the [`MARKER`] constant: the
-/// path inside the key is relative to the crate that declares it, so it is a fact about the crate's
-/// DEPTH. All 58 adopters sit at `crates/<name>` and get the constant back unchanged.
-pub fn opt_in(cargo_toml: &str, marker: &str) -> String {
+/// `wiring` is [`marker_for`] of the crate's repo-relative directory under [`Route::Shared`], and
+/// [`dep_for`] of it under [`Route::Alongside`] — never the [`MARKER`] / [`DEP`] constants, because the
+/// path inside each is relative to the crate that declares it and is therefore a fact about the crate's
+/// DEPTH. All 58 shared adopters sit at `crates/<name>` and get the constant back unchanged.
+///
+/// The two routes wire DIFFERENT dependencies, and swapping them is silently wrong rather than a
+/// compile error: the shared script parses the store itself (`serde_json`), while a crate that CALLS
+/// the materializer needs the package and never touches JSON.
+///
+/// Idempotent on both routes: re-running adds nothing a second time.
+pub fn opt_in(cargo_toml: &str, route: Route, wiring: &str) -> String {
     let mut out = cargo_toml.to_string();
-    if !out.contains(marker) {
+    if route == Route::Shared && !out.contains(wiring) {
         // After the `edition` line, which every crate in this workspace has.
         if let Some(idx) = out.lines().position(|l| l.trim_start().starts_with("edition")) {
             let mut lines: Vec<String> = out.lines().map(str::to_string).collect();
-            lines.insert(idx + 1, marker.to_string());
+            lines.insert(idx + 1, wiring.to_string());
             out = lines.join("\n");
             if cargo_toml.ends_with('\n') && !out.ends_with('\n') {
                 out.push('\n');
             }
         }
     }
+    let (key, block) = match route {
+        Route::Shared => (
+            "serde_json",
+            "[build-dependencies]\n\
+             # build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.\n\
+             serde_json = \"1\"\n\n"
+                .to_string(),
+        ),
+        Route::Alongside => (
+            "graph-materialize",
+            format!(
+                "[build-dependencies]\n\
+                 # GRAPH MATERIALIZATION, as a real build-dependency. A package gets exactly ONE build\n\
+                 # script and this crate already has its own, so the `build = \"…/graph-materialize/\n\
+                 # build.rs\"` line the other adopters use is not available here — the shared file has to\n\
+                 # be CALLED instead. build.rs runs it as one more job.\n\
+                 {wiring}\n\n"
+            ),
+        ),
+    };
     if !out.lines().any(|l| l.trim() == "[build-dependencies]") {
-        let dep = "[build-dependencies]\n\
-                   # build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.\n\
-                   serde_json = \"1\"\n\n";
         if let Some(at) = out.find("[lib]") {
-            out.insert_str(at, dep);
+            out.insert_str(at, &block);
         } else {
-            out = format!("{}\n\n{}", out.trim_end(), dep.trim_end());
+            out = format!("{}\n\n{}", out.trim_end(), block.trim_end());
+            out.push('\n');
+        }
+    } else if !section_of(&out, "[build-dependencies]").contains(key) {
+        // The section exists but not our entry — add the LINE rather than a second header, which would
+        // be a manifest with two `[build-dependencies]` tables and is a hard cargo error. `src-tauri`
+        // is exactly this shape: it already declares `tauri-build` there.
+        let mut lines: Vec<String> = out.lines().map(str::to_string).collect();
+        if let Some(idx) = lines.iter().position(|l| l.trim() == "[build-dependencies]") {
+            let entry: Vec<&str> = block.lines().skip(1).filter(|l| !l.is_empty()).collect();
+            lines.insert(idx + 1, entry.join("\n"));
+            out = lines.join("\n");
             out.push('\n');
         }
     }
     out
+}
+
+/// The body of one TOML table — from its header to the next `[` at the start of a line, or the end.
+///
+/// Used to ask whether `[build-dependencies]` already names an entry. A whole-file `contains` would
+/// answer yes for `serde_json` in `[dependencies]`, which is true of nearly every crate here.
+fn section_of(cargo_toml: &str, header: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    for line in cargo_toml.lines() {
+        if line.trim() == header {
+            inside = true;
+            continue;
+        }
+        if inside && line.starts_with('[') {
+            break;
+        }
+        if inside {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The crate's OWN build script with [`CALL`] added as one more job.
+///
+/// Inserted as the FIRST statement of `fn main`, not the last, and that is a constraint rather than a
+/// preference: finding the END of `main` means matching braces, and a build script here is full of
+/// `format!`/`panic!` strings carrying `{}` — `bsc-config`'s own has `"could not create the staged
+/// config seed at {}: {e}"` — so a brace count closes `main` inside a string literal and splices the
+/// call into the middle of the file. The jobs are independent (each only prints `cargo:` directives or
+/// writes under `$OUT_DIR`), so order among them carries no meaning.
+///
+/// [`Route::Alongside`] means the crate's `lib.rs` `include!`s the result, so this calls `emit()` — the
+/// hard-error entry point — never `emit_when_adopted()`. `src-tauri` uses the latter because it was
+/// wired AHEAD of its first record; a crate migrating modules in the same change is not.
+///
+/// Idempotent, and it asks [`calls_materializer`] rather than a bare `contains` for the same reason
+/// that function exists: a build script whose DOC COMMENT names the call has not made one.
+pub fn add_emit_call(build_src: &str) -> Result<String, String> {
+    if calls_materializer(build_src) {
+        return Ok(build_src.to_string());
+    }
+    let at = build_src.find("fn main(").ok_or("build.rs has no `fn main(` to add the call to")?;
+    let open = build_src[at..]
+        .find('{')
+        .map(|i| at + i + 1)
+        .ok_or("build.rs's `fn main` has no body to add the call to")?;
+    let mut out = String::with_capacity(build_src.len() + 256);
+    out.push_str(&build_src[..open]);
+    out.push_str(
+        "\n    // Materialize this crate's graph records into `$OUT_DIR/crate.rs`, which `lib.rs`\n    \
+         // `include!`s. A package gets exactly ONE build script and this one is already spoken for, so\n    \
+         // the materializer is CALLED here rather than reached with a `build =` key — same source, same\n    \
+         // output, one manifest line's difference\n    \
+         // (`graph-materialize-becomes-a-real-build-dependency`).\n    ",
+    );
+    out.push_str(CALL);
+    out.push('\n');
+    out.push_str(&build_src[open..]);
+    Ok(out)
 }
 
 /// Every path the workspace manifest lists in `members`, in declaration order.
@@ -918,13 +1137,42 @@ pub fn resolve_crate_dir(root: &Path, krate: &str) -> Result<String, String> {
 /// `MARKER` there would produce a manifest cargo cannot resolve, which is a silent-until-build failure
 /// of exactly the kind `refuse_reason` exists to move to the front.
 pub fn marker_for(crate_dir: &str) -> String {
+    let mut rel = rel_to_materializer(crate_dir);
+    rel.push("build.rs".into());
+    format!("build = \"{}\"", rel.join("/"))
+}
+
+/// The `[build-dependencies]` line a crate at `crate_dir` needs to CALL the materializer, relative to
+/// ITSELF — [`marker_for`]'s twin on the other route.
+///
+/// Same depth fact, same failure if ignored: [`DEP`] is right at `crates/<name>` and wrong everywhere
+/// else, and `src-tauri` — the one adopter not at that depth — declares
+/// `path = "../crates/graph-materialize"`. Sharing [`rel_to_materializer`] with `marker_for` is what
+/// keeps the two from disagreeing about depth, which is the kind of drift neither would report.
+pub fn dep_for(crate_dir: &str) -> String {
+    let rel = rel_to_materializer(crate_dir);
+    // The materializer's OWN directory resolves to no segments at all, which is `.` as a cargo path —
+    // nonsense as a dependency (it cannot depend on itself) but it must not render as the empty string,
+    // which is what a bare `join` produces and what an earlier version of this pair got wrong.
+    let path = if rel.is_empty() { ".".to_string() } else { rel.join("/") };
+    format!("graph-materialize = {{ path = \"{path}\" }}")
+}
+
+/// The path SEGMENTS from `crate_dir` up to `crates/graph-materialize` — possibly none, when the crate
+/// IS that directory.
+///
+/// One derivation behind both [`marker_for`] and [`dep_for`]: a crate reaches the same package either
+/// way, so the only thing that can differ between the two lines is what they append. Returning segments
+/// rather than a joined string is deliberate — joining here made `marker_for("crates/graph-materialize")`
+/// render `build = "/build.rs"` with a leading slash, which `the_build_key_is_derived_from_the_crates_own_depth`
+/// caught immediately. An empty path is a real case, not a corner.
+fn rel_to_materializer(crate_dir: &str) -> Vec<String> {
     const TARGET: [&str; 2] = ["crates", "graph-materialize"];
     let from: Vec<&str> = crate_dir.split('/').filter(|s| !s.is_empty()).collect();
     let shared = from.iter().zip(TARGET.iter()).take_while(|(a, b)| a == b).count();
     let mut rel: Vec<String> = std::iter::repeat_n("..".to_string(), from.len() - shared).collect();
     rel.extend(TARGET[shared..].iter().map(|s| (*s).to_string()));
-    rel.push("build.rs".into());
-    format!("build = \"{}\"", rel.join("/"))
+    rel
 }
 
 /// Does this crate's OWN build script already call the materializer?
@@ -1021,6 +1269,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         .ok_or("usage: bsc graph migrate-crate <crate> [--apply]")?
         .clone();
     let apply = args.iter().any(|a| a == "--apply");
+    let route = if args.iter().any(|a| a == "--alongside") { Route::Alongside } else { Route::Shared };
     let root = args
         .iter()
         .position(|a| a == "--root")
@@ -1056,11 +1305,13 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
     // does.
     let nodes = module_tree(&src_dir, &lib_src);
     let marker = marker_for(&crate_dir);
+    let dep = dep_for(&crate_dir);
     let shape = CrateShape {
         cargo_toml: &cargo_toml,
         build_rs: build_src.as_deref().map(|s| (build_rel.as_str(), s)),
         root_name: &root_name,
         marker: &marker,
+        dep: &dep,
         modules: &nodes,
     };
     // THE VERDICT AND THE PLAN ARE TWO DIFFERENT ANSWERS, and a dry run is owed both.
@@ -1074,7 +1325,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
     // learning less than the tool knows. So the plan is printed either way and the refusal is still
     // returned as the error — stdout gains the plan, stderr and the exit code are byte-identical to
     // what they were (`the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too`).
-    let refusal = refuse_reason(&shape).map(|why| format!("REFUSED {krate}: {why}"));
+    let refusal = refuse_reason(&shape, route).map(|why| format!("REFUSED {krate}: {why}"));
     if apply {
         if let Some(why) = refusal {
             return Err(why);
@@ -1084,6 +1335,17 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
 
     writeln!(out, "\n{} {krate} — {} module(s):", if apply { "migrating" } else { "would migrate" }, nodes.len())
         .map_err(|e| e.to_string())?;
+    if route == Route::Alongside {
+        // The plan says which FILE it is about to rewrite, because that is the whole difference between
+        // the routes and it is otherwise invisible until after `--apply`.
+        let already = build_src.as_deref().is_some_and(calls_materializer);
+        writeln!(
+            out,
+            "  route: ALONGSIDE — {build_rel} is KEPT and {}",
+            if already { format!("already calls `{CALL}`") } else { format!("gains `{CALL}`") }
+        )
+        .map_err(|e| e.to_string())?;
+    }
     for n in &nodes {
         // The ROLE is part of the plan, so the plan says it. A reader dry-running a crate with test
         // modules should see they land as `role: test` before `--apply` writes anything, not discover
@@ -1219,16 +1481,37 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
 
     // ── rewire the crate. The rewrite is computed BEFORE anything is deleted, so a declaration this
     // cannot locate stops the migration with every file still present. ──────────────────────────
-    let rewritten = rewrite_lib(&lib_src, &root_decls, &nodes, &krate).map_err(|e| {
+    let rewritten = rewrite_lib(&lib_src, &root_decls, &nodes, &krate, route).map_err(|e| {
         rollback.restore();
         format!("{e} — nothing was deleted")
     })?;
-    // A crate whose OWN build script already calls the materializer is opted in ALREADY, through a
-    // build-dependency rather than the `build =` key — adding the key would replace the very script
-    // doing the call. `refuse_reason` lets that crate through for the same reason; this is the other
-    // half of that decision, and leaving it out would have made the refusal a silent misfeature.
-    if !build_src.as_deref().is_some_and(calls_materializer) {
-        std::fs::write(&cargo_path, opt_in(&cargo_toml, &marker)).map_err(|e| e.to_string())?;
+    match route {
+        // A crate whose OWN build script already calls the materializer is opted in ALREADY, through a
+        // build-dependency rather than the `build =` key — adding the key would replace the very script
+        // doing the call. `refuse_reason` lets that crate through for the same reason; this is the other
+        // half of that decision, and leaving it out would have made the refusal a silent misfeature.
+        Route::Shared => {
+            if !build_src.as_deref().is_some_and(calls_materializer) {
+                std::fs::write(&cargo_path, opt_in(&cargo_toml, route, &marker)).map_err(|e| e.to_string())?;
+            }
+        }
+        // The other route WRITES that call rather than presuming it. Both steps are idempotent, so a
+        // crate wired by hand ahead of its first record (`src-tauri`) passes through unchanged — which
+        // is why "already calls the materializer" is not a refusal on this route either.
+        //
+        // The build script is rewritten BEFORE anything is deleted, for the same reason the lib rewrite
+        // is computed first: a `main` this cannot find must stop the migration with every file still
+        // present, not after.
+        Route::Alongside => {
+            let src = build_src.as_deref().ok_or("--alongside needs the crate's build.rs")?;
+            let with_call = add_emit_call(src).inspect_err(|_| {
+                rollback.restore();
+            })?;
+            if with_call != src {
+                std::fs::write(&build_path, with_call).map_err(|e| format!("cannot write {build_rel}: {e}"))?;
+            }
+            std::fs::write(&cargo_path, opt_in(&cargo_toml, route, &dep)).map_err(|e| e.to_string())?;
+        }
     }
     std::fs::write(&root_path, rewritten).map_err(|e| e.to_string())?;
     for n in &nodes {
@@ -1309,7 +1592,7 @@ mod tests {
         assert_eq!(d.docs, vec!["/// The CLI.".to_string()], "doc collected in either order");
         assert_eq!(d.attrs, vec!["#[cfg(feature = \"x\")]".to_string()], "attribute too");
         let nodes = [node(&["cli"], "cli.rs", Some(""))];
-        let out = rewrite_lib(src, &[d], &nodes, "demo").expect("the block is locatable");
+        let out = rewrite_lib(src, &[d], &nodes, "demo", Route::Shared).expect("the block is locatable");
         assert!(!out.contains("mod cli;"), "declaration gone: {out}");
         assert!(!out.contains("#[cfg(feature"), "attribute gone WITH it: {out}");
         assert!(!out.contains("/// The CLI."), "doc gone WITH it: {out}");
@@ -1408,6 +1691,7 @@ mod tests {
             &[decl("cli", true)],
             &[node(&["cli"], "cli.rs", Some(""))],
             "demo",
+            Route::Shared,
         )
         .unwrap();
         assert!(
@@ -1420,6 +1704,7 @@ mod tests {
             &[decl("cli", true), decl("store", true)],
             &[node(&["cli"], "cli.rs", Some("")), node(&["store"], "store.rs", Some(""))],
             "demo",
+            Route::Shared,
         )
         .unwrap();
         assert!(
@@ -1434,9 +1719,26 @@ mod tests {
             &[decl("cli", true)],
             &[node(&["cli"], "cli.rs", Some("")), node(&["cli", "nouns"], "cli/nouns.rs", Some(""))],
             "demo",
+            Route::Shared,
         )
         .unwrap();
         assert!(deep.contains("// src/cli.rs, src/cli/nouns.rs do not exist"), "{deep}");
+
+        // …and it names the build script that ACTUALLY runs. `--alongside` leaves no `build =` key in
+        // the manifest, so "the shared build script" would send the next reader hunting for a line that
+        // is not there — the same invisibility that made the collision this route exists for so hard to
+        // see in the first place.
+        let along = rewrite_lib(
+            "pub mod cli;\n",
+            &[decl("cli", true)],
+            &[node(&["cli"], "cli.rs", Some(""))],
+            "demo",
+            Route::Alongside,
+        )
+        .unwrap();
+        assert!(!along.contains("the shared build script"), "{along}");
+        assert!(along.contains("crate's own build.rs") && along.contains(CALL), "{along}");
+        assert!(one.contains("the shared build script"), "…and the other route still says so: {one}");
     }
 
     #[test]
@@ -1468,7 +1770,7 @@ mod tests {
     }
 
     fn shape<'a>(cargo: &'a str, modules: &'a [ModuleNode]) -> CrateShape<'a> {
-        CrateShape { cargo_toml: cargo, build_rs: None, root_name: "lib.rs", marker: MARKER, modules }
+        CrateShape { cargo_toml: cargo, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules }
     }
 
     #[test]
@@ -1476,20 +1778,20 @@ mod tests {
         let cli = vec![node(&["cli"], "cli.rs", Some("pub fn run() {}\n"))];
 
         let already = format!("[package]\nedition = \"2021\"\n{MARKER}\n");
-        assert!(refuse_reason(&shape(&already, &cli)).unwrap().contains("already migrated"));
+        assert!(refuse_reason(&shape(&already, &cli), Route::Shared).unwrap().contains("already migrated"));
 
         let plain = "[package]\nedition = \"2021\"\n";
-        assert!(refuse_reason(&shape(plain, &[])).unwrap().contains("declares no modules"));
+        assert!(refuse_reason(&shape(plain, &[]), Route::Shared).unwrap().contains("declares no modules"));
 
         let gone = vec![node(&["gone"], "gone.rs", None)];
-        let missing = refuse_reason(&shape(plain, &gone)).unwrap();
+        let missing = refuse_reason(&shape(plain, &gone), Route::Shared).unwrap();
         assert!(missing.contains("gone") && missing.contains("no matching file"), "{missing}");
 
         // A `*_test/*_tests` module is NO LONGER refused (`a-test-only-module-is-not-an-algorithm`) —
         // pinned positively by `a_test_named_module_no_longer_refuses_the_crate`.
 
         // …and a crate it CAN do is not refused.
-        assert!(refuse_reason(&shape(plain, &cli)).is_none());
+        assert!(refuse_reason(&shape(plain, &cli), Route::Shared).is_none());
     }
 
     /// A NESTED MODULE DIRECTORY IS NO LONGER A REFUSAL. It was the single largest remaining blocker —
@@ -1503,14 +1805,14 @@ mod tests {
             node(&["cli"], "cli.rs", Some("pub fn run() {}\n")),
             node(&["cli", "nouns"], "cli/nouns.rs", Some("pub fn noun() {}\n")),
         ];
-        assert_eq!(refuse_reason(&shape(plain, &two_level)), None, "the 2018-style directory module");
+        assert_eq!(refuse_reason(&shape(plain, &two_level), Route::Shared), None, "the 2018-style directory module");
 
         // …and `bsc-news`'s: the body inside the directory, as `mod.rs`.
         let mod_rs = vec![
             node(&["signals"], "signals/mod.rs", Some("pub struct S;\n")),
             node(&["signals", "framing"], "signals/framing.rs", Some("pub fn f() {}\n")),
         ];
-        assert_eq!(refuse_reason(&shape(plain, &mod_rs)), None, "the mod.rs directory module");
+        assert_eq!(refuse_reason(&shape(plain, &mod_rs), Route::Shared), None, "the mod.rs directory module");
     }
 
     /// REGRESSION, from Slice D. `bsc-persona/src/cli.rs` carried `include_str!("cli.rs")` — a test
@@ -1526,9 +1828,9 @@ mod tests {
         let plain = "[package]\nedition = \"2021\"\n";
         let sources = vec![node(&["cli"], "cli.rs", Some("fn t() { let s = include_str!(\"cli.rs\"); }"))];
         let shape = CrateShape {
-            cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, modules: &sources,
+            cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &sources,
         };
-        let why = refuse_reason(&shape).expect("a self-read must be refused");
+        let why = refuse_reason(&shape, Route::Shared).expect("a self-read must be refused");
         assert!(why.contains("include_str!"), "names the mechanism: {why}");
         assert!(why.contains("src/cli.rs"), "names the file that goes away: {why}");
 
@@ -1540,9 +1842,9 @@ mod tests {
             Some("const I: &str = include_str!(\"../data/agent-instructions.md\");"),
         )];
         let ok = CrateShape {
-            cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, modules: &survives,
+            cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &survives,
         };
-        assert!(refuse_reason(&ok).is_none(), "a data file that survives is not a refusal");
+        assert!(refuse_reason(&ok, Route::Shared).is_none(), "a data file that survives is not a refusal");
     }
 
     /// REGRESSION, and the one that cost the most: a raw TEXT scan cannot tell a LIVE `include_str!`
@@ -1574,12 +1876,12 @@ mod tests {
         let mut wrong: Vec<String> = Vec::new();
         for src in not_a_call {
             let modules = vec![node(&["cli"], "cli.rs", Some(src))];
-            let shape = CrateShape { cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, modules: &modules };
+            let shape = CrateShape { cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &modules };
             let targets = include_str_targets(src);
             if !targets.is_empty() {
                 wrong.push(format!("read {targets:?} out of TEXT: {src}"));
             }
-            if let Some(why) = refuse_reason(&shape) {
+            if let Some(why) = refuse_reason(&shape, Route::Shared) {
                 wrong.push(format!("REFUSED over text: {src}\n      → {why}"));
             }
         }
@@ -1603,11 +1905,11 @@ mod tests {
     #[test]
     fn opt_in_adds_the_build_script_and_its_dependency_once() {
         let before = "[package]\nname = \"demo\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n";
-        let once = opt_in(before, MARKER);
+        let once = opt_in(before, Route::Shared, MARKER);
         assert!(once.contains(MARKER));
         assert!(once.contains("[build-dependencies]"));
         // Idempotent: a re-run must not double-add either.
-        let twice = opt_in(&once, MARKER);
+        let twice = opt_in(&once, Route::Shared, MARKER);
         assert_eq!(twice.matches(MARKER).count(), 1, "{twice}");
         assert_eq!(twice.matches("[build-dependencies]").count(), 1, "{twice}");
     }
@@ -1626,7 +1928,7 @@ mod tests {
         let windows_link = "fn main() {\n    if std::env::var(\"CARGO_CFG_TARGET_OS\").as_deref() == Ok(\"windows\") {\n        println!(\"cargo:rustc-link-lib=dylib=rstrtmgr\");\n    }\n}\n";
         let mut s = shape(plain, &cli);
         s.build_rs = Some(("crates/data/build.rs", windows_link));
-        let why = refuse_reason(&s).expect("an existing build.rs must be refused");
+        let why = refuse_reason(&s, Route::Shared).expect("an existing build.rs must be refused");
         assert!(why.contains("crates/data/build.rs"), "names the file: {why}");
         assert!(why.contains("cargo:rustc-link-lib"), "names what it does: {why}");
         assert!(why.contains("5 lines"), "names how much there is to lose: {why}");
@@ -1635,51 +1937,63 @@ mod tests {
         // A script emitting nothing still refuses, and says so rather than printing an empty list.
         let mut quiet = shape(plain, &cli);
         quiet.build_rs = Some(("crates/x/build.rs", "fn main() {}\n"));
-        let why = refuse_reason(&quiet).expect("a silent build.rs is still a build.rs");
+        let why = refuse_reason(&quiet, Route::Shared).expect("a silent build.rs is still a build.rs");
         assert!(why.contains("emits no cargo: directives"), "{why}");
 
         // The DECLARED twin: `opt_in` would leave two `build` keys in one manifest, and only after the
         // records had been written.
         let declared = "[package]\nedition = \"2021\"\nbuild = \"gen.rs\"\n";
-        let why = refuse_reason(&shape(declared, &cli)).expect("a declared build script too");
+        let why = refuse_reason(&shape(declared, &cli), Route::Shared).expect("a declared build script too");
         assert!(why.contains("gen.rs") && why.contains("ONE build"), "{why}");
 
         // …and a crate with no build script of its own is still not refused.
-        assert!(refuse_reason(&shape(plain, &cli)).is_none());
+        assert!(refuse_reason(&shape(plain, &cli), Route::Shared).is_none());
     }
 
     /// The two crates the audit found GREEN on 2026-09-04, driven through the REAL `run` against this
-    /// repo. Both are flat, both declare only files that exist, so every other refusal passes them.
+    /// repo — and they are no longer refused, because they were MIGRATED.
     ///
-    /// `crates/data` is checked by the EXISTENCE of its `build.rs`, never by building it: its directive
-    /// fires only on Windows, so on this box a replacement compiles, links and tests clean while the
-    /// Windows link is broken. A test that tried to observe the breakage would observe nothing.
+    /// # This test INVERTED, and the inversion is the deliverable
+    ///
+    /// It used to assert that `crates/data` and `crates/bsc-config` are refused for owning their own
+    /// build script, and that was the correct verdict for as long as there was no route to them.
+    /// `the-two-build-rs-crates-adopt-the-materializer-alongside-their-own` built that route: both keep
+    /// their script and CALL the materializer from it, so `calls_materializer`'s carve-out now lets them
+    /// through and the next refusal reached is the ordinary one — they have no modules left to migrate.
+    ///
+    /// What the old assertion protected is not lost, it MOVED, and both halves are stronger where they
+    /// went: the refusal's verdict, message and exit are pinned byte-for-byte in
+    /// `the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too`, and the state of these two
+    /// crates is pinned in `the_two_build_rs_crates_reach_the_materializer_alongside_their_own`, which
+    /// also asserts `crates/data`'s Windows-only link directive survived.
+    ///
+    /// `crates/data` is still checked by READING, never by building: its directive fires only on
+    /// Windows, so on this box a replacement compiles, links and tests clean while the Windows link is
+    /// broken. A test that tried to observe the breakage would observe nothing.
     #[test]
-    fn the_two_crates_with_their_own_build_script_are_refused_by_the_real_run() {
+    fn the_two_crates_with_their_own_build_script_migrated_and_are_no_longer_refused() {
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
         for krate in ["bsc-config", "data"] {
             let dir = repo.join("crates").join(krate);
-            assert!(dir.join("build.rs").is_file(), "crates/{krate}/build.rs is the premise of this test");
+            assert!(dir.join("build.rs").is_file(), "crates/{krate}/build.rs SURVIVED — the whole point");
             let cargo = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap();
-            assert!(!cargo.contains(MARKER), "crates/{krate} is not migrated yet");
+            assert!(!cargo.contains(MARKER), "…and was never replaced by the shared script");
             assert!(
                 declared_build_script(&cargo).is_none(),
-                "crates/{krate} does NOT declare build = — cargo auto-detects it, which is what makes the \
-                 replacement silent"
+                "crates/{krate} still declares no build = — cargo auto-detects it, which is what would \
+                 have made the replacement silent"
             );
 
             let mut out: Vec<u8> = Vec::new();
             let err = run(&[krate.into(), "--root".into(), repo.to_string_lossy().to_string()], &mut out)
-                .expect_err("a crate with its own build.rs must be refused");
+                .expect_err("an already-migrated crate has nothing left to migrate");
             assert!(err.contains(&format!("REFUSED {krate}")), "{err}");
-            assert!(err.contains(&format!("crates/{krate}/build.rs")), "names the file: {err}");
-            // GUARD FLIP, deliberate and recorded. This used to assert `out.is_empty()` — a refusal
-            // printed no plan. `migrate-crate-can-target-a-crate-outside-the-crates-directory` split the
-            // VERDICT from the PLAN: a dry run writes nothing whatever it prints, so withholding the
-            // plan only meant the reader learned less than the tool knew (one sentence about one
-            // `include_str!` for a 142-module crate). What must not move is the verdict, and that is
-            // what is asserted above and pinned byte-for-byte in
-            // `the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too`.
+            // THE REASON MOVED, and that is the assertion. It is no longer the build-script collision —
+            // that premise is false now — it is that lib.rs declares no modules, because they are all
+            // records. Asserting the NEW reason rather than deleting the test is what keeps this from
+            // passing for some third reason nobody looked at.
+            assert!(err.contains("declares no modules"), "the reason moved to the ordinary one: {err}");
+            assert!(!err.contains("gets exactly ONE build script"), "…and is NOT the collision: {err}");
             let text = String::from_utf8_lossy(&out);
             assert!(text.contains(&format!("would migrate {krate}")), "the plan is shown: {text}");
             assert!(text.contains("DRY RUN — nothing was written"), "…and said to be inert: {text}");
@@ -1834,7 +2148,7 @@ mod tests {
             node(&["rust_test"], "rust_test.rs", Some("pub fn crate_name() {}\n")),
         ];
         assert_eq!(
-            refuse_reason(&shape("[package]\nedition = \"2021\"\n", &modules)),
+            refuse_reason(&shape("[package]\nedition = \"2021\"\n", &modules), Route::Shared),
             None,
             "a *_test/*_tests module must not refuse the crate, at any depth — the filename is not evidence"
         );
@@ -2054,10 +2368,10 @@ mod tests {
         // …and `opt_in` writes what it is given, still exactly once.
         let before = "[package]\nname = \"x\"\nedition = \"2021\"\n";
         let deep = marker_for("src-tauri");
-        let once = opt_in(before, &deep);
+        let once = opt_in(before, Route::Shared, &deep);
         assert_eq!(once.matches(&deep).count(), 1, "{once}");
         assert!(!once.contains(MARKER), "a depth-1 crate must NOT get the crates/<name> path: {once}");
-        assert_eq!(opt_in(&once, &deep), once, "opt_in is idempotent at any depth");
+        assert_eq!(opt_in(&once, Route::Shared, &deep), once, "opt_in is idempotent at any depth");
     }
 
     /// A BUILD SCRIPT THAT ALREADY CALLS THE MATERIALIZER IS NOT A COLLISION.
@@ -2073,12 +2387,12 @@ mod tests {
 
         let mut calls = shape(plain, &cli);
         calls.build_rs = Some(("src-tauri/build.rs", "fn main() {\n    tauri_build::build();\n    graph_materialize::emit_when_adopted();\n}\n"));
-        assert!(refuse_reason(&calls).is_none(), "the call-site route is already opted in");
+        assert!(refuse_reason(&calls, Route::Shared).is_none(), "the call-site route is already opted in");
 
         // …and one that does something ELSE still refuses, so the carve-out is exactly this case.
         let mut other = shape(plain, &cli);
         other.build_rs = Some(("src-tauri/build.rs", "fn main() {\n    tauri_build::build();\n}\n"));
-        assert!(refuse_reason(&other).is_some(), "a build script doing other work is still a collision");
+        assert!(refuse_reason(&other, Route::Shared).is_some(), "a build script doing other work is still a collision");
 
         assert!(calls_materializer("graph_materialize::emit();"));
         assert!(!calls_materializer("// mentions graph-materialize in prose only"));
@@ -2109,20 +2423,52 @@ mod tests {
     #[test]
     fn the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too() {
         let root = repo();
-        for krate in ["data", "bsc-config"] {
-            let mut out: Vec<u8> = Vec::new();
-            let err = run(&[krate.into(), "--root".into(), root.to_string_lossy().to_string()], &mut out)
-                .expect_err("its own build.rs is still a refusal");
-            // THE VERDICT, verbatim — this is what stderr and the exit code carry, and it must not move.
-            assert!(err.starts_with(&format!("REFUSED {krate}: ")), "{err}");
-            assert!(err.contains(&format!("{krate}/build.rs already exists")), "{err}");
-            assert!(err.contains("this crate gets exactly ONE build script"), "{err}");
-            // …and the plan the reader was previously not shown.
-            let text = String::from_utf8(out).unwrap();
-            assert!(text.contains(&format!("would migrate {krate}")), "the plan is printed too: {text}");
-            assert!(text.contains("DRY RUN — nothing was written"), "{text}");
-            assert!(!text.contains("pass --apply to write"), "a refused crate is not invited to apply: {text}");
-        }
+        // THE REFUSAL ARM MOVED TO A FIXTURE, and the reason is worth stating rather than hiding: this
+        // test used to drive `data` and `bsc-config`, the two REAL crates the audit found refusing for
+        // their own build script. `the-two-build-rs-crates-adopt-the-materializer-alongside-their-own`
+        // migrated both, so **the repo now holds no crate in that state at all** — the population is
+        // empty, and `the_two_build_rs_crates_reach_the_materializer_alongside_their_own` below asserts
+        // that as a fact rather than leaving it as this test's silent absence.
+        //
+        // A synthetic crate is the honest replacement: the contract being pinned is the VERDICT, its
+        // MESSAGE and its EXIT, and `run` reaches all three the same way whatever tree it is pointed at.
+        let fixture = std::env::temp_dir().join(format!("bsc-migrate-refusal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&fixture);
+        let src = fixture.join("crates").join("demo").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "//! demo\npub mod cli;\n").unwrap();
+        std::fs::write(src.join("cli.rs"), "pub fn run() {}\n").unwrap();
+        std::fs::write(fixture.join("crates/demo/Cargo.toml"), "[package]\nname = \"demo\"\nedition = \"2021\"\n").unwrap();
+        // `crates/data`'s script in shape: a WINDOWS-ONLY link directive, the one whose loss is
+        // invisible on Linux. That asymmetry is why this refusal has to be reached up front.
+        std::fs::write(
+            fixture.join("crates/demo/build.rs"),
+            "fn main() {\n    if std::env::var(\"CARGO_CFG_TARGET_OS\").as_deref() == Ok(\"windows\") {\n        println!(\"cargo:rustc-link-lib=dylib=rstrtmgr\");\n    }\n}\n",
+        )
+        .unwrap();
+
+        let mut out: Vec<u8> = Vec::new();
+        let err = run(&["demo".into(), "--root".into(), fixture.to_string_lossy().to_string()], &mut out)
+            .expect_err("its own build.rs is still a refusal");
+        // THE VERDICT, verbatim — this is what stderr and the exit code carry, and it must not move.
+        assert!(err.starts_with("REFUSED demo: "), "{err}");
+        assert!(err.contains("demo/build.rs already exists"), "{err}");
+        assert!(err.contains("this crate gets exactly ONE build script"), "{err}");
+        assert!(err.contains("cargo:rustc-link-lib"), "it names what would be lost: {err}");
+        // …and the plan the reader was previously not shown.
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("would migrate demo"), "the plan is printed too: {text}");
+        assert!(text.contains("DRY RUN — nothing was written"), "{text}");
+        assert!(!text.contains("pass --apply to write"), "a refused crate is not invited to apply: {text}");
+
+        // …and the SAME crate is accepted with `--alongside`, which is the way out the message names.
+        let mut out: Vec<u8> = Vec::new();
+        run(&["demo".into(), "--alongside".into(), "--root".into(), fixture.to_string_lossy().to_string()], &mut out)
+            .expect("--alongside keeps that build script instead of replacing it");
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("route: ALONGSIDE"), "{text}");
+        assert!(text.contains("crates/demo/build.rs is KEPT"), "{text}");
+        let _ = std::fs::remove_dir_all(&fixture);
 
         // A crate with NOTHING in the way still reports exactly as it always did — the clean arm, so
         // this test cannot pass by making every dry run look refused.
@@ -2133,6 +2479,168 @@ mod tests {
         assert!(text.contains("would migrate bsc-json-store — 3 module(s):"), "{text}");
         assert!(text.contains("src/cli.rs  ->  record bsc-json-store--cli.rs"), "{text}");
         assert!(text.ends_with("DRY RUN — pass --apply to write.\n"), "byte-for-byte the old ending: {text}");
+    }
+
+    /// The mirror of the build-script refusal: `--alongside` is the route FOR a crate that already owns
+    /// a build script, so the same shape that stops [`Route::Shared`] is its precondition.
+    #[test]
+    fn the_alongside_route_takes_exactly_the_crate_the_shared_route_refuses() {
+        let plain = "[package]\nedition = \"2021\"\n";
+        let cli = vec![node(&["cli"], "cli.rs", Some("pub fn run() {}\n"))];
+        let windows_link = "fn main() {\n    if std::env::var(\"CARGO_CFG_TARGET_OS\").as_deref() == Ok(\"windows\") {\n        println!(\"cargo:rustc-link-lib=dylib=rstrtmgr\");\n    }\n}\n";
+
+        let mut s = shape(plain, &cli);
+        s.build_rs = Some(("crates/data/build.rs", windows_link));
+        let why = refuse_reason(&s, Route::Shared).expect("the premise: Shared still refuses it");
+        assert!(why.contains("--alongside"), "and the refusal NAMES the way out: {why}");
+        assert_eq!(refuse_reason(&s, Route::Alongside), None, "…which takes it");
+
+        // …and refuses the OPPOSITE crate, rather than quietly creating a build.rs where one manifest
+        // line would have done. That direction matters: `--alongside` on a script-less crate adds a
+        // FILE, which is the net-zero outcome the shared script exists to avoid.
+        let why = refuse_reason(&shape(plain, &cli), Route::Alongside)
+            .expect("--alongside needs a build script to add the call to");
+        assert!(why.contains("no build.rs"), "{why}");
+
+        // A build script that ALREADY calls the materializer is NOT refused on this route either — that
+        // is `calls_materializer`'s carve-out, and it is the same answer here: the wiring half is done,
+        // `add_emit_call` and `opt_in` are idempotent, and the modules still migrate. Refusing it would
+        // block `--alongside` on `src-tauri`, the very crate the carve-out was written for.
+        let mut again = shape(plain, &cli);
+        again.build_rs = Some(("src-tauri/build.rs", "fn main() {\n    graph_materialize::emit_when_adopted();\n}\n"));
+        assert_eq!(refuse_reason(&again, Route::Alongside), None, "already wired is not a redo, it is a no-op");
+
+        // A DECLARED script at some other path: the write path edits `<crate_dir>/build.rs` by name, so
+        // the call would land in a file cargo never runs. Refused, with the hand-edit spelled out.
+        let elsewhere = "[package]\nedition = \"2021\"\nbuild = \"gen.rs\"\n";
+        let mut odd = shape(elsewhere, &cli);
+        odd.build_rs = Some(("crates/x/build.rs", "fn main() {}\n"));
+        let why = refuse_reason(&odd, Route::Alongside).expect("a build key elsewhere must refuse");
+        assert!(why.contains("gen.rs") && why.contains(CALL), "{why}");
+
+        // …but `build = "build.rs"` spelled out explicitly is the same file, and is fine.
+        let explicit = "[package]\nedition = \"2021\"\nbuild = \"build.rs\"\n";
+        let mut same = shape(explicit, &cli);
+        same.build_rs = Some(("crates/x/build.rs", "fn main() {}\n"));
+        assert_eq!(refuse_reason(&same, Route::Alongside), None);
+    }
+
+    /// The two routes wire DIFFERENT dependencies, and swapping them is silently wrong rather than a
+    /// compile error: the shared script parses the store itself (`serde_json`), while a crate that CALLS
+    /// the materializer needs the package and never touches JSON.
+    #[test]
+    fn opt_in_wires_the_dependency_the_route_actually_needs() {
+        let before = "[package]\nname = \"demo\"\nedition = \"2021\"\n\n[dependencies]\nserde_json = \"1\"\n";
+
+        let along = opt_in(before, Route::Alongside, DEP);
+        assert!(along.contains(DEP), "{along}");
+        assert!(!along.contains(MARKER), "--alongside must NOT add a build key: {along}");
+        assert_eq!(along.matches("[build-dependencies]").count(), 1, "{along}");
+        // Idempotent — and note the crate already has `serde_json` in `[dependencies]`, which is why the
+        // "is it already there" question is asked of the SECTION and not of the whole file.
+        let twice = opt_in(&along, Route::Alongside, DEP);
+        assert_eq!(twice.matches(DEP).count(), 1, "{twice}");
+        assert_eq!(twice.matches("[build-dependencies]").count(), 1, "{twice}");
+
+        // An EXISTING `[build-dependencies]` gains a LINE, never a second header — two tables of one
+        // name is a hard cargo error, and it would land after the records were written. `src-tauri` is
+        // exactly this shape: it already declares `tauri-build` there.
+        let has = "[package]\nname = \"demo\"\nedition = \"2021\"\n\n[build-dependencies]\ntauri-build = \"2\"\n";
+        let out = opt_in(has, Route::Alongside, DEP);
+        assert_eq!(out.matches("[build-dependencies]").count(), 1, "{out}");
+        assert!(out.contains(DEP) && out.contains("tauri-build"), "{out}");
+
+        // DEPTH, the same fact `marker_for` carries: `src-tauri` reaches the package one level up, and
+        // writing the `crates/<name>` form there is a manifest cargo cannot resolve.
+        assert_eq!(dep_for("crates/data"), DEP, "the depth-1 form is the constant");
+        assert_eq!(dep_for("src-tauri"), "graph-materialize = { path = \"../crates/graph-materialize\" }");
+        assert_eq!(dep_for("pkgs/a/b"), "graph-materialize = { path = \"../../../crates/graph-materialize\" }");
+        let deep = dep_for("src-tauri");
+        let out = opt_in("[package]\nname = \"x\"\nedition = \"2021\"\n", Route::Alongside, &deep);
+        assert!(out.contains(&deep) && !out.contains(DEP), "a depth-1 path must not be written there: {out}");
+    }
+
+    /// The call goes in as the FIRST statement of `main`, because finding the LAST one means matching
+    /// braces and a build script here is full of `{}` inside format strings — `bsc-config`'s own has
+    /// `"could not create the staged config seed at {}: {e}"`. A brace count closes `main` inside that
+    /// literal and splices the call into the middle of a string.
+    #[test]
+    fn the_emit_call_is_added_to_main_and_survives_braces_in_string_literals() {
+        let bracey = "use std::fs;\n\nfn main() {\n    let d = \"x\";\n    panic!(\"could not stage {}: {e}\", d);\n}\n";
+        let out = add_emit_call(bracey).expect("a build script with a main");
+        assert!(out.contains(CALL), "{out}");
+        assert!(out.contains("panic!(\"could not stage {}: {e}\", d);"), "the literal is untouched: {out}");
+        let at_call = out.find(CALL).unwrap();
+        assert!(at_call > out.find("fn main() {").unwrap(), "{out}");
+        assert!(at_call < out.find("let d = ").unwrap(), "{out}");
+
+        // Idempotent, so a re-run cannot emit twice — and it asks `calls_materializer`, not a bare
+        // `contains`, so a build script whose DOC COMMENT names the call is still wired by this.
+        assert_eq!(add_emit_call(&out).unwrap().matches(CALL).count(), 1);
+        let doc_only = "//! calls `graph_materialize::emit()` as a fifth job\nfn main() {}\n";
+        assert!(add_emit_call(doc_only).unwrap().contains(CALL), "prose is not a call: {doc_only}");
+
+        // …and it REFUSES rather than appending to nothing.
+        assert!(add_emit_call("// no main here\n").is_err());
+    }
+
+    /// THE POPULATION, against the real tree — and it is what
+    /// `the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too` points at when it explains why
+    /// its refusal arm is a fixture now.
+    ///
+    /// `crates/data` is the crate this whole route exists for: its `build.rs` emits
+    /// `cargo:rustc-link-lib=dylib=rstrtmgr` on Windows ONLY, so replacing it is invisible on every
+    /// machine that could test it and breaks the Windows link. `crates/bsc-config` stages
+    /// `$OUT_DIR/config-seed` for an `include_dir!`. Both keep their script AND materialize.
+    #[test]
+    fn the_two_build_rs_crates_reach_the_materializer_alongside_their_own() {
+        let root = repo();
+        for krate in ["data", "bsc-config"] {
+            let dir = root.join("crates").join(krate);
+            let build = std::fs::read_to_string(dir.join("build.rs"))
+                .unwrap_or_else(|e| panic!("crates/{krate}/build.rs is the premise of this test: {e}"));
+            let cargo = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap();
+
+            assert!(calls_materializer(&build), "crates/{krate}/build.rs must CALL the materializer");
+            assert!(cargo.contains(DEP), "…and take it as a build-dependency: {cargo}");
+            assert!(!cargo.contains(MARKER), "…and NOT point `build =` at the shared script: {cargo}");
+            assert!(
+                declared_build_script(&cargo).is_none(),
+                "crates/{krate} still declares no `build =` — cargo AUTO-DETECTS build.rs, which is what \
+                 makes a replacement silent and is why this route exists"
+            );
+            // The crate root is a file holding the `include!`, and nothing else of its source is.
+            let lib = std::fs::read_to_string(dir.join("src").join("lib.rs")).unwrap();
+            assert!(lib.contains(r#"include!(concat!(env!("OUT_DIR"), "/crate.rs"));"#), "{krate}");
+            let rs = std::fs::read_dir(dir.join("src")).unwrap().flatten().count();
+            assert_eq!(rs, 1, "crates/{krate}/src holds only lib.rs");
+        }
+
+        // `crates/data`'s directive, ASSERTED HERE TOO rather than only in that crate's own tests.
+        // Nothing on a non-Windows box can exercise it, so the guard has to be textual — and having it
+        // in the migration tool as well is deliberate: this is the tool that would have destroyed it.
+        let build = std::fs::read_to_string(root.join("crates/data/build.rs")).unwrap();
+        assert!(build.contains(r#"println!("cargo:rustc-link-lib=dylib=rstrtmgr");"#), "{build}");
+        assert!(build.contains(r#"std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")"#), "{build}");
+
+        // AND THE POPULATION IS EXHAUSTIVE. No crate under `crates/` owns a build script that does NOT
+        // call the materializer any more, which is precisely why the refusal above needs a fixture.
+        let unwired: Vec<String> = std::fs::read_dir(root.join("crates"))
+            .unwrap()
+            .flatten()
+            .filter_map(|e| {
+                let src = std::fs::read_to_string(e.path().join("build.rs")).ok()?;
+                // `crates/graph-materialize`'s own build.rs IS the shared script — it calls the local
+                // `emit()`, not `graph_materialize::emit()`, and materializes nothing of its own.
+                let name = e.file_name().to_string_lossy().into_owned();
+                (name != "graph-materialize" && !calls_materializer(&src)).then_some(name)
+            })
+            .collect();
+        assert!(
+            unwired.is_empty(),
+            "a crate owns an un-wired build script again ({unwired:?}) — the refusal arm of \
+             `the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too` could drive it for real"
+        );
     }
 
     /// THE DELIVERABLE, against the REAL tree: `bsc graph migrate-crate src-tauri` is a real DRY RUN.

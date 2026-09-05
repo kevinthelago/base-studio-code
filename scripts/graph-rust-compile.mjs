@@ -93,8 +93,50 @@ export function loadGateSources(root) {
   );
 }
 
-/** The one line a crate adds to its manifest to have its source materialized from the graph. */
+/** The line a crate adds to its manifest when it owns no build script of its own. */
 export const MATERIALIZE_MARKER = 'build = "../graph-materialize/build.rs"';
+
+/**
+ * The OTHER route into the same materializer, and missing it is a SILENT UNDER-REPORT.
+ *
+ * A package gets exactly ONE build script, so a crate that already has one cannot point `build =`
+ * anywhere — it takes `graph-materialize` as a build-dependency and calls it from its own `build.rs`
+ * (`the-two-build-rs-crates-adopt-the-materializer-alongside-their-own`). `crates/data` and
+ * `crates/bsc-config` do exactly that, and neither carries `MATERIALIZE_MARKER`.
+ *
+ * MEASURED the moment those two migrated, with only the marker checked: 20 healthy Tier-A records
+ * dropped out of the exclusion, this sweep built them standalone, and reported **16 FAILED** with
+ * `unresolved import bsc_cli_util` / `cannot find module or crate serde_json`. Every one of those is
+ * the sweep asking a whole crate module to compile alone — the exact libel the Tier-A split exists to
+ * prevent — and nothing about the records had changed.
+ */
+export const MATERIALIZE_DEP = 'graph-materialize = { path = "../graph-materialize" }';
+
+/**
+ * Is `graph-materialize` a key of this manifest's `[build-dependencies]` table?
+ *
+ * SECTION-SCOPED, and a whole-file `includes` is wrong in the other direction. `crates/bsc-graph`
+ * takes the same package as a **dev**-dependency — its tests drive the shipped symbols rather than a
+ * restatement — while its own source is NOT materialized. A whole-file check reported it Tier A, which
+ * would have EXCLUDED its records from this sweep: the quieter failure of the two, since a record that
+ * is never swept never reports anything at all.
+ *
+ * Matches the KEY, not `MATERIALIZE_DEP` verbatim, because `src-tauri` reaches the same package at
+ * `../crates/graph-materialize` — the path is not part of the question. A test pins that the exact
+ * line the migration writes satisfies this.
+ */
+export function takesMaterializerAsBuildDependency(cargoToml) {
+  let inside = false;
+  for (const line of cargoToml.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("[")) {
+      inside = t === "[build-dependencies]";
+      continue;
+    }
+    if (inside && t.startsWith("graph-materialize")) return true;
+  }
+  return false;
+}
 
 /**
  * Crate directories whose source lives in the graph — read from each crate's OWN manifest.
@@ -105,13 +147,15 @@ export const MATERIALIZE_MARKER = 'build = "../graph-materialize/build.rs"';
  * tier is still decided by the compile; this only keeps a record out of a population it never joined.
  *
  * Derived, never hand-maintained: a crate is in this set exactly when its manifest opts in, so the list
- * cannot drift from reality the way a literal would.
+ * cannot drift from reality the way a literal would. **Both** opt-in routes count — see
+ * `MATERIALIZE_DEP` for what checking only one of them costs.
  */
 export function materializedCrates(cratesDirs, readManifest) {
   const out = new Set();
   for (const dir of cratesDirs) {
     const text = readManifest(dir);
-    if (typeof text === "string" && text.includes(MATERIALIZE_MARKER)) out.add(dir);
+    if (typeof text !== "string") continue;
+    if (text.includes(MATERIALIZE_MARKER) || takesMaterializerAsBuildDependency(text)) out.add(dir);
   }
   return out;
 }
