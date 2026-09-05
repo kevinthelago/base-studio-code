@@ -2,7 +2,12 @@
 name = "bsc-lan-core"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "`bsc lan` domain vocabulary and adapter traits for the LAN control plane. Pure types and traits; no I/O. Folded from the networkmonitor repo's bsc-lan-core (2026-09-04) when the stack collapsed onto suricata + one native process."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_lan_core"
