@@ -106,3 +106,90 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod capability_tests {
+    //! A window label is not merely a name — it decides whether that window can
+    //! do ANYTHING. Tauri grants permissions per capability, and each capability
+    //! names the window labels it covers; a window matching none is granted
+    //! nothing, so its `listen()` is denied and no event can reach it.
+    //!
+    //! MEASURED: the spectrum widget rendered nothing while the backend logged
+    //! `1000 spectrum record(s) delivered … 0 rejected`, because
+    //! `capabilities/default.json` covered `main` and `tab-*` and the widget
+    //! slice minted a third prefix. It fails silently in BOTH directions —
+    //! `app.emit` returns Ok having emitted to every permitted webview, and
+    //! `listen()` resolves to a handle that never fires — so a working sender
+    //! and a working receiver produce a dead channel with nothing to report.
+
+    /// The capability document, read from disk so a moved or renamed file fails
+    /// loudly rather than leaving the guard scanning nothing.
+    fn capability_windows() -> Vec<String> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities/default.json");
+        let text = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()));
+        let doc: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", p.display()));
+        let windows: Vec<String> = doc["windows"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} has no `windows` array", p.display()))
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        assert!(!windows.is_empty(), "the capability covers no windows at all");
+        windows
+    }
+
+    /// Tauri's glob: a trailing `*` matches any suffix, otherwise it is exact.
+    fn covers(pattern: &str, label: &str) -> bool {
+        match pattern.strip_suffix('*') {
+            Some(prefix) => label.starts_with(prefix),
+            None => pattern == label,
+        }
+    }
+
+    #[test]
+    fn every_widget_window_this_app_can_create_is_covered_by_a_capability() {
+        // Derived from the code that MINTS the labels, never restated here: a
+        // second list is a list that drifts, and the drift is invisible until
+        // somebody opens the window and sees nothing.
+        let windows = capability_windows();
+        assert!(
+            !bsc_widget::WIDGETS.is_empty(),
+            "no widgets to check — this guard would pass over an empty set"
+        );
+        for w in bsc_widget::WIDGETS {
+            let label = bsc_widget::window_label(w.id);
+            assert!(
+                windows.iter().any(|p| covers(p, &label)),
+                "the widget window {label:?} matches no capability window pattern {windows:?} — \
+                 it would be granted NOTHING, its listen() denied, and no event could reach it"
+            );
+        }
+    }
+
+    #[test]
+    fn the_matcher_is_the_glob_tauri_actually_uses() {
+        // Asserted directly, because the whole guard rests on it: a matcher
+        // that was too GENEROUS would pass a label Tauri then refuses, which is
+        // the failure this test exists to catch, arriving by another door.
+        assert!(covers("main", "main"));
+        assert!(!covers("main", "main-2"));
+        assert!(covers("tab-*", "tab-7"));
+        assert!(!covers("tab-*", "bsc-widget-spectrum"));
+        assert!(covers("bsc-widget-*", "bsc-widget-spectrum"));
+        assert!(!covers("bsc-widget-*", "widget-spectrum"));
+    }
+
+    #[test]
+    fn the_detached_tab_prefix_is_still_covered() {
+        // The prefix that already worked, pinned: widening the list must not
+        // come at the cost of the windows that were fine.
+        let windows = capability_windows();
+        for label in ["main", "tab-1"] {
+            assert!(
+                windows.iter().any(|p| covers(p, label)),
+                "{label} lost its capability coverage"
+            );
+        }
+    }
+}
