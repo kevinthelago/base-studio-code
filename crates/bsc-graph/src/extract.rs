@@ -328,18 +328,49 @@ const SKIP_DIRS: &[&str] = &[
     "tests", "fixtures", "__tests__",
 ];
 
-/// Test files carry no production implementation — skip them.
+/// A TypeScript test file, by the naming CONVENTION this tooling owns — skip it.
 ///
-/// Rust was entirely unguarded before #4136 (only the TS suffixes were listed), so `*_test.rs` /
-/// `*_tests.rs` harvested as production. The `#[cfg(test)]` module INSIDE a production file is a
-/// separate concern the parser handles; this is the whole-file gate.
+/// TypeScript keeps a pure filename rule because `.test.ts` / `.spec.ts` is a convention with no
+/// exceptions here: the suffix is what makes vitest pick the file up, so a file wearing it IS a test
+/// by construction. Rust has no such convention, and reading its filenames as one is what
+/// `a-test-only-module-is-not-an-algorithm` removed — see [`rust_file_is_test_only`], which asks the
+/// file instead and is applied by the WALKS rather than here.
+///
+/// Rust is not unguarded as a result. Inline test code was never this gate's job: `collect_defs`
+/// skips a `#[test]` fn and everything inside a `#[cfg(test)] mod` (#2955), which is what covers the
+/// `#[cfg(test)]` module inside a production file.
 fn is_test_file(name: &str) -> bool {
     name.ends_with(".test.ts")
         || name.ends_with(".test.tsx")
         || name.ends_with(".spec.ts")
         || name.ends_with(".spec.tsx")
-        || name.ends_with("_test.rs")
-        || name.ends_with("_tests.rs")
+}
+
+/// Is this Rust FILE test-only — nothing in it is reachable from production code?
+///
+/// The filename is the TRIGGER, never the verdict (`a-test-only-module-is-not-an-algorithm`). #4136
+/// gated `*_test.rs` / `*_tests.rs` out of the harvest by name alone, which was right about the files
+/// it was written for and wrong about the rule: `crates/bsc-graph/src/rust_test.rs` is 358 lines of
+/// production logic — nine `pub fn` and a `pub struct`, the Rust half of `bsc graph test` — and the
+/// suffix called it a test, so no record could be created and the crate could not migrate.
+///
+/// So the suffix only raises the question and the file's own contents answer it: a test-only file
+/// EXPORTS NOTHING. Everything it holds is a `#[test]` fn or a helper for one, reachable from nowhere
+/// else, and there is nothing in it for another module to reuse — which is exactly what the function
+/// harvest is looking for.
+///
+/// Deliberately scoped to the suffix rather than applied to every Rust file: every production module in
+/// this workspace carries an inline `#[cfg(test)] mod tests`, and a rule that read "has tests" as
+/// "is a test" would empty the harvest. Measured population: 3 files in the tree match the suffix.
+///
+/// `pub(crate)` / `pub(super)` count as exports — they are reachable from elsewhere in the crate.
+fn rust_file_is_test_only(name: &str, src: &str) -> bool {
+    if !(name.ends_with("_test.rs") || name.ends_with("_tests.rs")) {
+        return false;
+    }
+    // TOP-LEVEL only (column 0). A `pub fn` nested inside the file's own `#[cfg(test)] mod tests` is
+    // not an export of the file, and counting it would make every test module look like production.
+    !src.lines().any(|l| l.starts_with("pub ") || l.starts_with("pub("))
 }
 
 /// Normalize a function name to a candidate kebab-case id: split camelCase / PascalCase humps and
@@ -657,10 +688,12 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
 pub fn harvest_file(file: &Path) -> Vec<Candidate> {
     let mut defs: Vec<Def> = Vec::new();
     let mut raw: Vec<(String, String, String)> = Vec::new();
-    if let Some((tech, src, tree)) = parse(file) {
-        let rel = file.file_name().and_then(|n| n.to_str()).unwrap_or("").replace('\\', "/");
-        collect_defs(tree.root_node(), &src, tech, false, &rel, &mut defs);
-        collect_calls(tree.root_node(), &src, tech, false, None, &mut raw);
+    if !skips_the_function_harvest(file) {
+        if let Some((tech, src, tree)) = parse(file) {
+            let rel = file.file_name().and_then(|n| n.to_str()).unwrap_or("").replace('\\', "/");
+            collect_defs(tree.root_node(), &src, tech, false, &rel, &mut defs);
+            collect_calls(tree.root_node(), &src, tech, false, None, &mut raw);
+        }
     }
     let parent = file.parent().unwrap_or(Path::new("."));
     build_candidates(defs, raw, parent)
@@ -1256,6 +1289,25 @@ pub fn scan_shapes(dir: &Path, tech_filter: Option<&str>) -> Vec<FnShape> {
     out
 }
 
+/// Does the FUNCTION-granularity harvest skip this file? A TypeScript test by its name, or a Rust
+/// test-only file by its contents.
+///
+/// Applied at the walk rather than inside `language_for`, so MODULE-granularity harvesting
+/// ([`harvest_module`]) is not gated by it. At module granularity the whole file is one record and
+/// the question is never "skip or lift" — it is what ROLE the record wears. Refusing to lift is what
+/// left two crates with 19,688 lines that could not be retired.
+fn skips_the_function_harvest(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if is_test_file(name) {
+        return true;
+    }
+    if name.ends_with("_test.rs") || name.ends_with("_tests.rs") {
+        // Only now is the file read, so the common case costs nothing.
+        return std::fs::read_to_string(path).is_ok_and(|src| rust_file_is_test_only(name, &src));
+    }
+    false
+}
+
 fn scan_shapes_walk(dir: &Path, root: &Path, tech_filter: Option<&str>, out: &mut Vec<FnShape>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
@@ -1266,6 +1318,9 @@ fn scan_shapes_walk(dir: &Path, root: &Path, tech_filter: Option<&str>, out: &mu
             if !SKIP_DIRS.contains(&name) {
                 scan_shapes_walk(&path, root, tech_filter, out);
             }
+            continue;
+        }
+        if skips_the_function_harvest(&path) {
             continue;
         }
         let Some((tech, src, tree)) = parse(&path) else { continue };
@@ -1305,7 +1360,12 @@ fn harvest_walk(dir: &Path, root: &Path, out: &mut Vec<Def>) {
             if !SKIP_DIRS.contains(&name) {
                 harvest_walk(&path, root, out);
             }
-        } else if let Some((tech, src, tree)) = parse(&path) {
+            continue;
+        }
+        if skips_the_function_harvest(&path) {
+            continue;
+        }
+        if let Some((tech, src, tree)) = parse(&path) {
             let rel = path
                 .strip_prefix(root)
                 .unwrap_or(&path)
@@ -1982,7 +2042,12 @@ fn walk_calls(dir: &Path, out: &mut Vec<(String, String, String)>) {
             if !SKIP_DIRS.contains(&name) {
                 walk_calls(&path, out);
             }
-        } else if let Some((tech, src, tree)) = parse(&path) {
+            continue;
+        }
+        if skips_the_function_harvest(&path) {
+            continue;
+        }
+        if let Some((tech, src, tree)) = parse(&path) {
             collect_calls(tree.root_node(), &src, tech, false, None, out);
         }
     }
@@ -2490,6 +2555,66 @@ mod tests {
         assert_eq!(c.src, "tests/fixtures/sample.ts");
         assert_eq!(c.role, "algorithm");
         assert!(c.composes.is_empty(), "a module states its deps as imports, not compose edges");
+    }
+
+    /// A MODULE-GRANULARITY harvest always lifts, whatever the file is called
+    /// (`a-test-only-module-is-not-an-algorithm`).
+    ///
+    /// `is_test_file` used to gate `*_test.rs` / `*_tests.rs` out of `language_for`, which
+    /// `harvest_module` reaches through `parse`. So no record could be created for
+    /// `bsc-graph/src/rust_test.rs` (18,304 lines) or `bsc-json-store/src/surface_tests.rs` (1,384),
+    /// and a file with no record cannot be retired — `migrate-crate` refused both crates outright.
+    ///
+    /// The question at module granularity is never "skip or lift": the whole file is one record, so
+    /// the only question is what ROLE it wears. Refusing to lift is what blocked retirement.
+    #[test]
+    fn harvest_module_lifts_a_test_named_file() {
+        let dir = std::env::temp_dir().join(format!("bsc-graph-testname-{}", std::process::id()));
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        // The REAL shape of the two blocked modules, minimised.
+        let only_tests = "//! Tests for the surface.\n#[test]\nfn a_spec_round_trips() { assert!(true); }\n";
+        std::fs::write(src.join("surface_tests.rs"), only_tests).unwrap();
+        // …and the shape that disproves the filename rule: production logic wearing a test-ish name.
+        let production = "//! The Rust half of `bsc graph test`.\npub fn crate_name(id: &str) -> String { id.into() }\n";
+        std::fs::write(src.join("rust_test.rs"), production).unwrap();
+
+        for (file, why) in [
+            ("surface_tests.rs", "a genuinely test-only module still lifts — it needs a record to be retired"),
+            ("rust_test.rs", "production logic named `*_test.rs` lifts, because the name is not evidence"),
+        ] {
+            let c = harvest_module(&src.join(file), &dir).unwrap_or_else(|| panic!("{file}: {why}"));
+            assert_eq!(c.code, std::fs::read_to_string(src.join(file)).unwrap(), "{file} lifts verbatim");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The FUNCTION-granularity walk still skips a test-only file (#4136), but decides by CONTENT.
+    ///
+    /// #4136 was a real defect: Rust was unguarded, so every `fn` in a `*_test.rs` harvested as a
+    /// reusable library candidate. The fix was a filename suffix, and the suffix is what later blocked
+    /// two crates and mislabelled two records. So the suffix is demoted to a TRIGGER — it raises the
+    /// question — and the file's own contents answer it: a test-only file exports nothing.
+    #[test]
+    fn the_function_walk_skips_a_test_only_file_by_content_not_by_name() {
+        // Exports nothing, so nothing in it is reusable by another module: test-only.
+        let only_tests = "#[test]\nfn checks() {}\nfn workspace_rust_sources() -> Vec<String> { vec![] }\n";
+        // Exports production items, so it is production however it is named.
+        let production = "pub fn crate_name(id: &str) -> String { id.into() }\n#[cfg(test)]\nmod tests { #[test] fn t() {} }\n";
+
+        assert!(rust_file_is_test_only("surface_tests.rs", only_tests), "no exported item — test-only");
+        assert!(
+            !rust_file_is_test_only("rust_test.rs", production),
+            "crates/bsc-graph/src/rust_test.rs is production logic; the `_test.rs` suffix must not \
+             outvote nine `pub fn` and a `pub struct`"
+        );
+        // `pub(crate)` is an export too — it is reachable from elsewhere in the crate.
+        assert!(!rust_file_is_test_only("x_tests.rs", "pub(crate) fn helper() {}\n#[test]\nfn t() {}\n"));
+        // The suffix is the trigger: a file that is not named like a test is never gated by this at all,
+        // whatever it contains, because every production module holds an inline `#[cfg(test)] mod tests`.
+        assert!(!rust_file_is_test_only("cli.rs", only_tests), "the suffix is the trigger, not the verdict");
     }
 
     #[test]
