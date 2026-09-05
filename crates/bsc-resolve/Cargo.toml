@@ -26,3 +26,8 @@ log = "0.4"
 [build-dependencies]
 # build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
 serde_json = "1"
+
+[lib]
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"

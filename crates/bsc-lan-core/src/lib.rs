@@ -30,7 +30,6 @@
 //! This crate depends on no async runtime, HTTP client or SSH library --
 //! `tests/dependency_absence.rs` pins that.
 
-#![deny(clippy::wildcard_enum_match_arm)]
 
 
 pub use action::Action;
@@ -56,6 +55,7 @@ pub use ttl::Ttl;
 //     bsc graph impl set --id bsc-lan-core--<module>.rs --code-file <f>
 //     bsc graph promote --id bsc-lan-core--<module>.rs
 //
-// This header stays a file because include! refuses crate-level //! docs and #![…] inner
-// attributes (E0753 / "an inner attribute is not permitted in this context").
+// This header is still a file because this root holds crate-level code of its own. A root
+// down to its //! docs and this include is migrated too: the docs become the
+// `bsc-lan-core--lib.rs` doc record and [lib] path points at crates/graph-materialize/crate_root.rs.
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));

@@ -859,8 +859,8 @@ mod tests {
     ///
     /// This crate compiles FROM THE GRAPH: `defer`, `hook`, `serve` and `superseded` are RECORDS in
     /// `graph/algorithms.json` that `crates/graph-materialize/build.rs` writes into
-    /// `$OUT_DIR/crate.rs`. `main.rs` stays a real file — `include!` refuses crate-level `//!` docs,
-    /// and it is where `dispatch`, `surface_cli` and `surface_help` live — so the three source scans
+    /// `$OUT_DIR/crate.rs`. `main.rs` stays a real file — it holds `dispatch`, `surface_cli` and
+    /// `surface_help`, and a BINARY root has no `[lib] path` to point at the shared crate root — so the three source scans
     /// below still find what they are looking for. They read BOTH anyway, because the alternative is
     /// a scan whose coverage silently depends on which modules happen not to be records yet: move one
     /// scanned `fn` into the graph and an `include_str!("main.rs")` scan stops seeing it, and the only
@@ -1697,6 +1697,8 @@ mod tests {
 //     bsc graph impl set --id bsc--<module>.rs --code-file <f>
 //     bsc graph promote --id bsc--<module>.rs
 //
-// This header stays a file because include! refuses crate-level //! docs and #![…] inner
-// attributes (E0753 / "an inner attribute is not permitted in this context").
+// This header is still a file because this root holds crate-level code of its own, and because
+// a BINARY root reaches the shared `crates/graph-materialize/crate_root.rs` through `[[bin]]
+// path`, which nothing wires yet. A library root down to its //! docs and this include is
+// migrated (`a-crate-root-is-shared-so-a-crate-is-one-file`).
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));

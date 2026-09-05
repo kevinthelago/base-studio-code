@@ -6,7 +6,6 @@
 //! overridden anywhere, which would mean either no capture at all or the
 //! unsafe living in a crate that has no business holding a file descriptor —
 //! and the narrower blast radius is one audited module here.
-#![deny(unsafe_code)]
 
 #[allow(unsafe_code)]
 pub mod capture;

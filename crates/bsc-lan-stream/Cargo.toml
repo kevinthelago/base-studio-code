@@ -32,6 +32,13 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 # Test-only: constructing a Sensor needs a signing key.
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
+[lints.rust]
+# NO UNSAFE, FORBID rather than deny — see bsc-lan-sense. Moved here from `#![forbid(unsafe_code)]`
+# in `src/lib.rs` when the crate root became the SHARED one
+# (`a-crate-root-is-shared-so-a-crate-is-one-file`); cargo has read lints from the manifest
+# since 1.74 and this file stays whatever happens to `src/`.
+unsafe_code = "forbid"
+
 [lints.clippy]
 wildcard_enum_match_arm = "deny"
 match_wildcard_for_single_variants = "deny"
