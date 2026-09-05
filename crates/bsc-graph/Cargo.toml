@@ -2,6 +2,7 @@
 name = "bsc-graph"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc graph`."
 
 [dependencies]
@@ -50,3 +51,7 @@ tree-sitter-rust = "0.24"
 # crate means those tests drive the SHIPPED symbols — a restatement could drift, and the drift would be
 # invisible precisely where it matters.
 graph-materialize = { path = "../graph-materialize" }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
