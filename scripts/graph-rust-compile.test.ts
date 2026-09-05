@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { closureOf, importedNames, importsFor, materialize, mergeById, materializedCrates, isMaterializedModule, MATERIALIZE_MARKER } from "./graph-rust-compile.mjs";
+import { closureOf, importedNames, importsFor, materialize, mergeById, materializedCrates, isMaterializedModule, MATERIALIZE_MARKER, MATERIALIZE_DEP, takesMaterializerAsBuildDependency } from "./graph-rust-compile.mjs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** `crates/` of THIS repo, resolved from this test file so it works from any cwd. */
+const CRATES = join(dirname(fileURLToPath(import.meta.url)), "..", "crates");
 
 /**
  * The materialization convention is the load-bearing part of the Rust sweep, and getting it wrong does
@@ -157,11 +163,83 @@ ${MATERIALIZE_MARKER}
     "bsc-graph": `[package]
 name = "bsc-graph"
 `,
+    // The OTHER opt-in route, verbatim in shape: a crate that already owns a build.rs cannot point
+    // `build =` anywhere, so it takes the materializer as a build-dependency and CALLS it. `crates/data`
+    // and `crates/bsc-config` are exactly this.
+    data: `[package]
+name = "bsc-data"
+
+[build-dependencies]
+${MATERIALIZE_DEP}
+`,
   };
 
   it("reads the opt-in from each crate's OWN manifest, never a literal list", () => {
     const got = materializedCrates(["bsc-blueprint", "bsc-graph"], (d: string) => manifests[d] ?? null);
     expect([...got]).toEqual(["bsc-blueprint"]);
+  });
+
+  // REGRESSION, and it is the reason `MATERIALIZE_DEP` exists. Checking only the `build =` marker
+  // dropped 20 healthy records out of the Tier-A exclusion the moment `crates/data` and
+  // `crates/bsc-config` migrated — the sweep then built them standalone and reported 16 FAILED with
+  // `unresolved import bsc_cli_util`, which is a whole crate module being asked to compile alone.
+  it("counts a crate that CALLS the materializer from its own build.rs", () => {
+    const got = materializedCrates(["bsc-blueprint", "bsc-graph", "data"], (d: string) => manifests[d] ?? null);
+    expect([...got].sort()).toEqual(["bsc-blueprint", "data"]);
+  });
+
+  // The two routes are exclusive by construction — a package gets exactly ONE build script — so a
+  // manifest carrying both is a mistake, not a shape to support. It still resolves to "materializes",
+  // because the question this answers is whether the records are Tier A, and they are either way.
+  it("is a single question, however the crate opted in", () => {
+    const both = `[package]\nname = "x"\n${MATERIALIZE_MARKER}\n\n[build-dependencies]\n${MATERIALIZE_DEP}\n`;
+    expect([...materializedCrates(["x"], () => both)]).toEqual(["x"]);
+  });
+
+  // THE SECTION IS PART OF THE QUESTION, and getting this wrong fails the OTHER way — quietly.
+  // `crates/bsc-graph` takes the same package as a DEV-dependency (its tests drive the shipped
+  // symbols) while its own source is not materialized. A whole-file `includes` read it as Tier A,
+  // which would have excluded its records from this sweep entirely — and a record that is never swept
+  // never reports anything at all.
+  it("does NOT count the package as a dev- or ordinary dependency", () => {
+    const dev = `[package]\nname = "x"\n\n[dev-dependencies]\n${MATERIALIZE_DEP}\n`;
+    const plain = `[package]\nname = "x"\n\n[dependencies]\n${MATERIALIZE_DEP}\n`;
+    expect([...materializedCrates(["x"], () => dev)]).toEqual([]);
+    expect([...materializedCrates(["x"], () => plain)]).toEqual([]);
+    expect(takesMaterializerAsBuildDependency(dev)).toBe(false);
+    // …and the build-dependencies table ENDS at the next header rather than swallowing the file.
+    const after = `[package]\nname = "x"\n\n[build-dependencies]\ntauri-build = "2"\n\n[dev-dependencies]\n${MATERIALIZE_DEP}\n`;
+    expect(takesMaterializerAsBuildDependency(after)).toBe(false);
+    // The PATH is not part of the question: src-tauri reaches the same package one level up.
+    expect(
+      takesMaterializerAsBuildDependency(
+        '[build-dependencies]\ngraph-materialize = { path = "../crates/graph-materialize" }\n',
+      ),
+    ).toBe(true);
+  });
+
+  // THE REAL MANIFESTS, so the fixtures above cannot drift into describing a shape the repo stopped
+  // using. Both routes must be represented, or one of them is untested against reality.
+  it("finds both routes among the repo's own crates", () => {
+    const dirs = readdirSync(CRATES, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    const read = (d: string) => {
+      try {
+        return readFileSync(join(CRATES, d, "Cargo.toml"), "utf8");
+      } catch {
+        return null;
+      }
+    };
+    const got = materializedCrates(dirs, read);
+    const shared = dirs.filter((d) => read(d)?.includes(MATERIALIZE_MARKER));
+    const alongside = dirs.filter((d) => takesMaterializerAsBuildDependency(read(d) ?? ""));
+    expect(shared.length).toBeGreaterThan(20);
+    expect(alongside.sort()).toEqual(["bsc-config", "data"]);
+    for (const d of [...shared, ...alongside]) expect(got.has(d)).toBe(true);
+    // The one real crate that takes the materializer WITHOUT materializing — the reason the dependency
+    // half is section-scoped. Named, so removing that dev-dependency says the case is gone rather than
+    // quietly stopping to cover it.
+    expect(read("bsc-graph")).toContain(MATERIALIZE_DEP);
+    expect(got.has("bsc-graph")).toBe(false);
   });
 
   it("tolerates a crate with no readable manifest", () => {

@@ -344,7 +344,7 @@ fn materialized_crates() -> Vec<String> {
         .filter(|e| e.path().is_dir())
         .filter(|e| {
             std::fs::read_to_string(e.path().join("Cargo.toml"))
-                .is_ok_and(|t| t.contains(crate::build_facet::MATERIALIZE_MARKER))
+                .is_ok_and(|t| crate::build_facet::materializes(&t))
         })
         .filter_map(|e| e.file_name().into_string().ok())
         .collect()

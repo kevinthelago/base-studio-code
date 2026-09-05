@@ -145,11 +145,66 @@ pub fn artifact_name(sha: &str, ext: &str) -> String {
     format!("{sha}.{ext}")
 }
 
-/// The one line a crate adds to its manifest to have its source materialized from the graph.
+/// The line a crate adds to its manifest to have its source materialized from the graph — the route
+/// taken by every crate that owns no build script of its own.
 ///
 /// Mirrored in `scripts/graph-rust-compile.mjs`; the two must move together, and that script's header
 /// says so. Different languages, so the constant cannot be shared — only kept honest.
 pub const MATERIALIZE_MARKER: &str = "build = \"../graph-materialize/build.rs\"";
+
+/// The OTHER route into the same materializer, and missing it is a silent under-report.
+///
+/// A package gets exactly ONE build script, so a crate that already has one cannot point `build =`
+/// anywhere: it takes `graph-materialize` as a build-dependency and CALLS it from its own `build.rs`
+/// (`the-two-build-rs-crates-adopt-the-materializer-alongside-their-own`). `crates/data` and
+/// `crates/bsc-config` do exactly that, and neither carries [`MATERIALIZE_MARKER`].
+///
+/// This constant exists because keying only on the marker made [`is_tier_a`] answer **false** for 20
+/// healthy records the moment those two migrated, and `graph-rust-compile` then swept them as
+/// standalone nodes and reported 16 of them FAILED — the precise libel the Tier-A exclusion exists to
+/// prevent, restored by a manifest line rather than by anything about the records.
+pub const MATERIALIZE_DEP: &str = "graph-materialize = { path = \"../graph-materialize\" }";
+
+/// Does this manifest opt the crate into graph materialization, by EITHER route?
+///
+/// One predicate rather than two call-site `contains` checks, so a third route (if one is ever added)
+/// has one place to land instead of two that can disagree.
+///
+/// # The dependency half is SECTION-SCOPED, and a whole-file `contains` is wrong
+///
+/// `crates/bsc-graph` takes `graph-materialize` as a **dev-dependency** — `materialize_plan_tests`
+/// drives the shipped symbols rather than a restatement of them — and its own source is NOT
+/// materialized. A whole-file `contains` therefore reported it Tier A, which would have EXCLUDED its
+/// records from the standalone sweep: the opposite error to the one this function was widened for, and
+/// the quieter of the two, since a record that is never swept never reports anything at all. Found by
+/// [`tests::both_routes_are_present_among_the_repos_own_crates`], which asserts the POPULATION rather
+/// than a single example.
+///
+/// The KEY is what is matched inside that section, not [`MATERIALIZE_DEP`] verbatim: `src-tauri`
+/// reaches the same package at `../crates/graph-materialize`, so the path is not part of the question.
+/// A test pins that `MATERIALIZE_DEP` — the exact line the migration writes — satisfies this.
+pub fn materializes(cargo_toml: &str) -> bool {
+    cargo_toml.contains(MATERIALIZE_MARKER) || takes_materializer_as_a_build_dependency(cargo_toml)
+}
+
+/// Is `graph-materialize` a key of this manifest's `[build-dependencies]` table?
+///
+/// A hand-rolled section walk rather than a TOML parse: this crate has no TOML dependency, and the two
+/// facts needed — where the table starts, and which keys are in it — are one `starts_with('[')` apart.
+fn takes_materializer_as_a_build_dependency(cargo_toml: &str) -> bool {
+    let mut inside = false;
+    for line in cargo_toml.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            inside = t == "[build-dependencies]";
+            continue;
+        }
+        if inside && t.starts_with("graph-materialize") {
+            return true;
+        }
+    }
+    false
+}
 
 /// The crate directory a record's `src` belongs to, if it is under `crates/`.
 pub fn crate_of(src: Option<&str>) -> Option<&str> {
@@ -401,5 +456,77 @@ mod tests {
         let mut m = vec![0x00, b'a', b's', b'm', 0x01, 0x00, 0x00, 0x00];
         m.extend_from_slice(&[1, 0x7f]); // claims 127 bytes that are not there
         assert_eq!(wasm_export_count(&m), Some(0), "walks off the end and stops");
+    }
+
+    /// THERE ARE TWO WAYS INTO THE MATERIALIZER, and reading only one of them is a silent
+    /// under-report: the records stay healthy, the exclusion stops covering them, and the sweep
+    /// reports them broken. That is what happened when `crates/data` and `crates/bsc-config` adopted
+    /// the alongside route — 20 records left Tier A and 16 came back FAILED.
+    #[test]
+    fn materializes_reads_both_opt_in_routes() {
+        let shared = format!("[package]\nname = \"x\"\n{MATERIALIZE_MARKER}\n");
+        let alongside = format!("[package]\nname = \"x\"\n\n[build-dependencies]\n{MATERIALIZE_DEP}\n");
+        assert!(materializes(&shared), "the shared build script");
+        assert!(materializes(&alongside), "the build-dependency the crate CALLS");
+        assert!(!materializes("[package]\nname = \"x\"\n"), "and a crate that opted into neither");
+
+        // THE SECTION IS PART OF THE QUESTION. `crates/bsc-graph` takes the same package as a
+        // DEV-dependency, to drive the shipped symbols from `materialize_plan_tests`, and its source is
+        // not materialized. Reading it as Tier A would EXCLUDE its records from the standalone sweep —
+        // the quiet failure, since a record that is never swept never reports anything.
+        let dev = format!("[package]\nname = \"x\"\n\n[dev-dependencies]\n{MATERIALIZE_DEP}\n");
+        assert!(!materializes(&dev), "a dev-dependency is not an opt-in: {dev}");
+        let plain = format!("[package]\nname = \"x\"\n\n[dependencies]\n{MATERIALIZE_DEP}\n");
+        assert!(!materializes(&plain), "nor is a normal dependency: {plain}");
+        // …and the section ENDS at the next table, rather than swallowing the rest of the file.
+        let after = "[package]\nname = \"x\"\n\n[build-dependencies]\ntauri-build = \"2\"\n\n[dev-dependencies]\ngraph-materialize = { path = \"../graph-materialize\" }\n";
+        assert!(!materializes(after), "{after}");
+
+        // The PATH is not part of the question: `src-tauri` reaches the same package one level up.
+        let up = "[package]\nname = \"x\"\n\n[build-dependencies]\ngraph-materialize = { path = \"../crates/graph-materialize\" }\n";
+        assert!(materializes(up), "{up}");
+
+        // …and each route reaches `is_tier_a` through the same set, so a record of either crate is
+        // excluded from the standalone sweep.
+        let crates = vec!["bsc-blueprint".to_string(), "data".to_string()];
+        assert!(is_tier_a(Some("crates/data/src/schema.rs"), &crates));
+        assert!(is_tier_a(Some("crates/bsc-blueprint/src/cli.rs"), &crates));
+        assert!(!is_tier_a(Some("crates/bsc-graph/src/cli.rs"), &crates));
+    }
+
+    /// The REAL manifests, so the constants above cannot drift into describing a shape the repo
+    /// stopped using — and so that both routes stay represented rather than one being untested.
+    /// Mirrors `finds both routes among the repo's own crates` in `scripts/graph-rust-compile.test.ts`;
+    /// the two implementations must move together, which is exactly what this pair is for.
+    #[test]
+    fn both_routes_are_present_among_the_repos_own_crates() {
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("crates/");
+        let mut shared = 0usize;
+        let mut alongside: Vec<String> = Vec::new();
+        for entry in std::fs::read_dir(crates).expect("crates/ is readable").flatten() {
+            let Ok(text) = std::fs::read_to_string(entry.path().join("Cargo.toml")) else { continue };
+            if text.contains(MATERIALIZE_MARKER) {
+                shared += 1;
+            }
+            if takes_materializer_as_a_build_dependency(&text) {
+                alongside.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        // The one real crate that takes the materializer WITHOUT materializing — the reason the
+        // dependency half is section-scoped. Named, so deleting the dev-dependency makes this test say
+        // the case is gone rather than quietly stopping to cover it.
+        let bsc_graph = std::fs::read_to_string(crates.join("bsc-graph").join("Cargo.toml")).expect("bsc-graph");
+        assert!(
+            bsc_graph.contains(MATERIALIZE_DEP),
+            "bsc-graph takes graph-materialize (as a DEV-dependency) — the premise of this case"
+        );
+        assert!(!materializes(&bsc_graph), "…and is NOT materialized: {bsc_graph}");
+        assert!(shared > 20, "the shared route is the bulk of them, found {shared}");
+        alongside.sort();
+        assert_eq!(
+            alongside,
+            vec!["bsc-config".to_string(), "data".to_string()],
+            "the alongside route's population, named so a third crate joining is a deliberate edit"
+        );
     }
 }
