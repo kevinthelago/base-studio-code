@@ -35,6 +35,62 @@ struct WhisperResult {
 struct WhisperSegment {
     #[serde(default)]
     text: String,
+    /// Millisecond offsets from the start of the file. Present in `-oj` output; optional here so
+    /// the text-only readers (`parse_result`) that never look at them keep deserializing.
+    #[serde(default)]
+    offsets: Option<Offsets>,
+}
+#[derive(Deserialize, Clone, Copy)]
+struct Offsets {
+    #[serde(default)]
+    from: u64,
+    #[serde(default)]
+    to: u64,
+}
+
+/// One transcribed phrase with its place in the recording: `(from_ms, to_ms, text)`.
+///
+/// This is what a diarizer's speaker turns get aligned against — same clock (both are milliseconds
+/// from the start of the file), so the two just overlap.
+pub type TimedPhrase = (u64, u64, String);
+
+/// Transcribe ONE file into timed phrases, for attribution against speaker turns.
+///
+/// Separate from [`transcribe_batch`] on purpose: that path stores one text blob per captured
+/// segment and never needed the within-file timing. Attribution does — it has to know WHEN each
+/// phrase was said to say WHO said it — so this returns the per-phrase offsets whisper already emits
+/// and throws away nothing.
+pub fn timed_transcript(w: &Whisper, file: &Path) -> Result<(String, Vec<TimedPhrase>), String> {
+    let out = std::process::Command::new(&w.binary)
+        .arg("-m")
+        .arg(&w.model)
+        .args(["-oj", "-np", "-l", "auto"])
+        .arg(file)
+        .output()
+        .map_err(|e| format!("could not run {}: {e}", w.binary.display()))?;
+    if !out.status.success() {
+        return Err(format!(
+            "whisper exited with {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("")
+        ));
+    }
+    let json_path = file.with_extension("wav.json");
+    let raw = std::fs::read_to_string(&json_path)
+        .map_err(|e| format!("whisper wrote no result for {}: {e}", file.display()))?;
+    let _ = std::fs::remove_file(&json_path);
+    let w: WhisperJson = serde_json::from_str(&raw).map_err(|e| format!("not a whisper result: {e}"))?;
+    let lang = if w.result.language.is_empty() { "unknown".into() } else { w.result.language };
+    let phrases = w
+        .transcription
+        .into_iter()
+        .filter_map(|s| {
+            let t = s.text.trim().to_string();
+            let o = s.offsets?;
+            (!t.is_empty()).then_some((o.from, o.to, t))
+        })
+        .collect();
+    Ok((lang, phrases))
 }
 
 /// Which segments still need words, given what the store already holds.

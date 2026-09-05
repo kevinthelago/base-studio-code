@@ -272,6 +272,50 @@ pub fn placement_margin(
     Some(other - if own.is_infinite() { 0.0 } else { own })
 }
 
+/// One transcribed phrase, attributed to a speaker.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct AttributedPhrase {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    /// The speaker whose turn this phrase overlaps most, or `None` when it overlaps no turn — a
+    /// phrase whisper found in a stretch the voice detector called silence, which happens and is
+    /// worth showing as unattributed rather than pinned to whoever spoke nearest.
+    pub speaker: Option<usize>,
+    pub text: String,
+}
+
+/// Stitch a transcript onto diarized turns: give each phrase the speaker it overlaps most in time.
+///
+/// The two share one clock — milliseconds from the start of the file — so alignment is just
+/// overlap. A phrase can straddle a speaker change; it is attributed to whichever turn it shares
+/// the most time with, because a phrase belongs to whoever said most of it. Overlap of zero means
+/// the phrase fell in a gap between turns (whisper heard something the segmenter did not open a turn
+/// for), and that is reported as `None` rather than snapped to the nearest turn — a guessed speaker
+/// on a phrase that matched no one is exactly the confident-but-wrong answer to avoid.
+///
+/// `turns` is `(start_ms, end_ms, speaker)`; an unplaced turn carries `None` and can still win the
+/// overlap, marking the phrase unattributed for an honest reason rather than by a gap.
+pub fn attribute(
+    phrases: &[crate::transcribe::TimedPhrase],
+    turns: &[(u64, u64, Option<usize>)],
+) -> Vec<AttributedPhrase> {
+    phrases
+        .iter()
+        .map(|(pf, pt, text)| {
+            let mut best_overlap = 0u64;
+            let mut speaker = None;
+            for &(ts, te, spk) in turns {
+                let overlap = (*pt).min(te).saturating_sub((*pf).max(ts));
+                if overlap > best_overlap {
+                    best_overlap = overlap;
+                    speaker = spk;
+                }
+            }
+            AttributedPhrase { start_ms: *pf, end_ms: *pt, speaker, text: text.clone() }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,5 +436,39 @@ mod tests {
         let labels = cluster(&turns, SAME_SPEAKER);
         let m = placement_margin(0, &turns, &labels).expect("two speakers, so a margin exists");
         assert!(m > 0.0, "a clear turn is nearer its own cluster than the other: margin {m}");
+    }
+
+    fn phrase(from: u64, to: u64, text: &str) -> crate::transcribe::TimedPhrase {
+        (from, to, text.to_string())
+    }
+
+    /// The core of the feature: each phrase gets the speaker whose turn it sits inside.
+    #[test]
+    fn a_phrase_is_attributed_to_the_turn_it_sits_in() {
+        let turns = vec![(0, 3000, Some(0)), (3000, 6000, Some(1))];
+        let phrases = vec![phrase(200, 2500, "we're not taking kittens"), phrase(3200, 5800, "why can't you keep them")];
+        let out = attribute(&phrases, &turns);
+        assert_eq!(out[0].speaker, Some(0));
+        assert_eq!(out[1].speaker, Some(1));
+        assert_eq!(out[0].text, "we're not taking kittens");
+    }
+
+    /// A phrase that straddles a speaker change goes to whoever said MOST of it — a phrase belongs
+    /// to the person who spoke the majority of its span, not to whichever turn started first.
+    #[test]
+    fn a_straddling_phrase_goes_to_the_dominant_speaker() {
+        let turns = vec![(0, 1000, Some(0)), (1000, 5000, Some(1))];
+        // 800ms in speaker 0, 3000ms in speaker 1.
+        let out = attribute(&[phrase(200, 4000, "…")], &turns);
+        assert_eq!(out[0].speaker, Some(1), "the majority speaker wins the straddle");
+    }
+
+    /// A phrase whisper found in a stretch the segmenter never opened a turn for overlaps nobody,
+    /// and is reported unattributed rather than snapped to the nearest voice.
+    #[test]
+    fn a_phrase_in_a_turn_gap_is_unattributed_not_guessed() {
+        let turns = vec![(0, 1000, Some(0)), (8000, 9000, Some(1))];
+        let out = attribute(&[phrase(3000, 4000, "a cough between turns")], &turns);
+        assert_eq!(out[0].speaker, None, "no overlap means no speaker, not the nearest one");
     }
 }

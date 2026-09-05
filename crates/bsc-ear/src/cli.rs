@@ -213,6 +213,26 @@ Each turn prints its time span, its speaker, and a confidence margin — how muc
 its own voice than the next-nearest one. A small margin is a turn that could have gone either way,
 which is worth seeing rather than trusting the label blindly.",
     },
+    CmdDoc {
+        name: "attribute",
+        summary: "the transcript, stitched onto the voices — who said what, line by line",
+        usage: "\
+bsc ear attribute <wav>... [--json|--pretty]
+
+Transcribes the recording (whisper), diarizes it (`diarize`), and stitches the two together: each
+transcribed phrase is attributed to the speaker whose turn it overlaps most in time. The result is
+the recording read back as a conversation — Speaker 0 / Speaker 1 / … with what each one said.
+
+It composes the two halves and adds nothing to their limits. The words are only as good as whisper
+on that audio (it hallucinates on noise, and repeats on heavy overlap), and the speakers are only as
+good as `diarize` (it over-splits short turns on the coarse feature-based voiceprint). A phrase that
+overlaps no speech turn — something whisper heard in a stretch the detector called silence — is
+shown as unattributed rather than pinned to the nearest voice.
+
+Needs a whisper binary: `$BSC_WHISPER_BIN` / `$BSC_WHISPER_MODEL`, or `whisper-cli` on PATH with a
+model under the models dir. Naming a speaker (which one is you) is a later step; this labels them 0,
+1, 2 in the order they first speak.",
+    },
 ];
 
 #[derive(Default, Debug)]
@@ -728,27 +748,7 @@ fn cmd_diarize(a: &Args) -> Result<(), String> {
     for f in &files {
         let (samples, sr) = read_wav(f)?;
         let spans = turns_of(&samples)?;
-        // Fingerprint each turn; a turn too short or too unvoiced to place becomes `None`.
-        let prints: Vec<Option<diarize::Voiceprint>> = spans
-            .iter()
-            .map(|&(s, e)| {
-                let lo = (s * sr as u64 / 1000) as usize;
-                let hi = ((e * sr as u64 / 1000) as usize).min(samples.len());
-                if hi <= lo {
-                    return None;
-                }
-                let vp = diarize::voiceprint(&samples[lo..hi], sr);
-                let placeable = vp.seconds >= diarize::MIN_TURN_SECONDS
-                    && (vp.f0.is_some() || vp.voiced_fraction < diarize::MIN_VOICED_FRACTION);
-                // A turn is placeable if it is long enough AND has a real fingerprint. An extremely
-                // short one, or one that is pure silence between real turns, is left unplaced.
-                if placeable && vp.envelope.iter().any(|b| *b != 0.0) {
-                    Some(vp)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let prints = voiceprints_of(&samples, sr, &spans);
         let labels = diarize::cluster(&prints, diarize::SAME_SPEAKER);
         let speakers = labels.iter().flatten().collect::<std::collections::BTreeSet<_>>().len();
         out.push((f.clone(), spans, prints, labels, speakers));
@@ -811,6 +811,93 @@ fn cmd_diarize(a: &Args) -> Result<(), String> {
          so Speaker 0 here is not Speaker 0 there. Naming a voice, and splitting people who talk over\n\
          each other, are separate steps this does not do."
     );
+    Ok(())
+}
+
+/// Fingerprint each turn; a turn too short, too unvoiced, or silent is left `None` and placed by
+/// nothing. The ONE place the placeable rule lives, so `diarize` and `attribute` never disagree
+/// about which turns count.
+fn voiceprints_of(
+    samples: &[f32],
+    sr: u32,
+    spans: &[(u64, u64)],
+) -> Vec<Option<crate::diarize::Voiceprint>> {
+    use crate::diarize;
+    spans
+        .iter()
+        .map(|&(s, e)| {
+            let lo = (s * sr as u64 / 1000) as usize;
+            let hi = ((e * sr as u64 / 1000) as usize).min(samples.len());
+            if hi <= lo {
+                return None;
+            }
+            let vp = diarize::voiceprint(&samples[lo..hi], sr);
+            // Long enough AND with a real fingerprint. A very short turn, or pure silence between
+            // real turns, is left unplaced rather than assigned to whoever it landed nearest.
+            let placeable = vp.seconds >= diarize::MIN_TURN_SECONDS
+                && (vp.f0.is_some() || vp.voiced_fraction < diarize::MIN_VOICED_FRACTION)
+                && vp.envelope.iter().any(|b| *b != 0.0);
+            placeable.then_some(vp)
+        })
+        .collect()
+}
+
+/// Diarize a file into speaker-labelled turns: `(start_ms, end_ms, speaker)`. The shared half of
+/// `diarize` and `attribute` — segment, fingerprint, cluster — so the two verbs agree by construction.
+fn speaker_turns(samples: &[f32], sr: u32) -> Result<Vec<(u64, u64, Option<usize>)>, String> {
+    let spans = turns_of(samples)?;
+    let prints = voiceprints_of(samples, sr, &spans);
+    let labels = crate::diarize::cluster(&prints, crate::diarize::SAME_SPEAKER);
+    Ok(spans.iter().zip(labels).map(|(&(s, e), l)| (s, e, l)).collect())
+}
+
+fn cmd_attribute(a: &Args) -> Result<(), String> {
+    use crate::{diarize, transcribe};
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass one or more wav files to attribute".into());
+    }
+    let whisper = transcribe::Whisper::resolve()?;
+
+    let mut out = Vec::new();
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        let turns = speaker_turns(&samples, sr)?;
+        let (lang, phrases) = transcribe::timed_transcript(&whisper, f)?;
+        let lines = diarize::attribute(&phrases, &turns);
+        let speakers = turns.iter().filter_map(|t| t.2).collect::<std::collections::BTreeSet<_>>().len();
+        out.push((f.clone(), lang, speakers, lines));
+    }
+
+    if a.json || a.pretty {
+        let v: Vec<_> = out
+            .iter()
+            .map(|(f, lang, speakers, lines)| {
+                json!({ "file": f.file_name().and_then(|s| s.to_str()), "language": lang, "speakers": speakers, "lines": lines })
+            })
+            .collect();
+        return print_json(&v, a.pretty);
+    }
+
+    for (f, lang, speakers, lines) in &out {
+        println!("\n{}  ({lang}, {speakers} voice(s))", f.file_name().and_then(|s| s.to_str()).unwrap_or("?"));
+        // Group consecutive phrases by the same speaker into one block, the way a transcript reads.
+        let mut i = 0;
+        while i < lines.len() {
+            let spk = lines[i].speaker;
+            let start = lines[i].start_ms;
+            let mut text = String::new();
+            while i < lines.len() && lines[i].speaker == spk {
+                if !text.is_empty() {
+                    text.push(' ');
+                }
+                text.push_str(&lines[i].text);
+                i += 1;
+            }
+            let who = spk.map(|s| format!("Speaker {s}")).unwrap_or_else(|| "(unattributed)".into());
+            println!("  [{}] {who}: {text}", fmt_ms(start));
+        }
+    }
     Ok(())
 }
 
@@ -1053,6 +1140,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("prosody") => cmd_prosody(&a, &p),
         Some("segments") => cmd_segments(&a, &p),
         Some("diarize") => cmd_diarize(&a),
+        Some("attribute") => cmd_attribute(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -1072,7 +1160,7 @@ mod tests {
             names,
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "prosody",
-                "transcribe", "transcripts", "segments", "diarize"
+                "transcribe", "transcripts", "segments", "diarize", "attribute"
             ]
         );
     }
