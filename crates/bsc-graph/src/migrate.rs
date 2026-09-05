@@ -1576,7 +1576,7 @@ mod tests {
             if !targets.is_empty() {
                 wrong.push(format!("read {targets:?} out of TEXT: {src}"));
             }
-            if let Some(why) = refuse_reason(&shape) {
+            if let Some(why) = refuse_reason(&shape, Route::Shared) {
                 wrong.push(format!("REFUSED over text: {src}\n      → {why}"));
             }
         }
