@@ -417,7 +417,12 @@ fn adopters(root: &Path) -> Vec<(String, String, Option<String>)> {
         if !manifest.contains(r#"build = "../graph-materialize/build.rs""#) {
             continue;
         }
-        let root_src = std::fs::read_to_string(krate.join("src").join("lib.rs")).ok();
+        // EITHER ROOT. A binary declares its program in `src/main.rs` and reaches the shared root
+        // through `[[bin]] path`; reading only `lib.rs` reported `bsc-hook` as having no root at all
+        // and quietly excused it from the rule.
+        let root_src = std::fs::read_to_string(krate.join("src").join("lib.rs"))
+            .or_else(|_| std::fs::read_to_string(krate.join("src").join("main.rs")))
+            .ok();
         out.push((name, manifest, root_src));
     }
     out
@@ -448,21 +453,26 @@ fn no_adopter_has_regrown_a_private_crate_root() {
             Some(src) if !root_is_bare_for_test(&src) => {}
             // A root that is only docs + the include has no reason to exist.
             Some(_) => offenders.push(format!(
-                "crates/{name}/src/lib.rs is only its docs and the include, but the manifest does not \
-                 point [lib] path at the shared crate root"
+                "crates/{name}'s crate root is only its docs and the include, but the manifest does \
+                 not point its [lib]/[[bin]] path at the shared crate root"
             )),
-            // A BINARY ROOT IS OUT OF SCOPE, and saying so is not a loophole. `bsc` and `bsc-agent`
-            // declare their modules in `src/main.rs` and have no lib at all; the same trick applies to
-            // them through `[[bin]] path`, but nothing wires it yet, so asserting the lib rule over
-            // them would report two healthy crates as broken.
-            None if root.join("crates").join(&name).join("src").join("main.rs").is_file() => {}
+            // A BINARY ROOT USED TO BE OUT OF SCOPE, "because nothing wires it yet". Something does
+            // now (`the-crate-body-is-a-record-not-only-its-children`): `bsc-hook` reaches the same
+            // shared file through `[[bin]] path`, so the carve-out is gone and the rule is one rule.
             None => {
                 if manifest.lines().any(|l| l.trim() == wants) {
                     at_floor += 1;
+                    // AND NOTHING ELSE EITHER. The floor is a `Cargo.toml` and nothing else, so a
+                    // crate that pointed its path at the shared root and kept a `src/` of stray
+                    // modules would compile perfectly while being two files again.
+                    let strays = rs_files(&root.join("crates").join(&name).join("src"), "");
+                    if !strays.is_empty() {
+                        offenders.push(format!("crates/{name} is at the floor but src/ still holds {strays:?}"));
+                    }
                 } else {
                     offenders.push(format!(
-                        "crates/{name} has no src/lib.rs and no `{wants}` — it will not compile, and \
-                         cargo will look for a root that is not there"
+                        "crates/{name} has no crate root on disk and no `{wants}` — it will not \
+                         compile, and cargo will look for a root that is not there"
                     ));
                 }
             }
@@ -472,7 +482,10 @@ fn no_adopter_has_regrown_a_private_crate_root() {
     // THE POPULATION, asserted rather than described. A rewritten `adopters` that stopped matching
     // would find zero crates and report a clean pass over nothing — the exact green-that-sees-less
     // this repo keeps paying for.
-    assert!(at_floor >= 11, "only {at_floor} crate(s) are at the floor; 11 were migrated");
+    // 11 BEFORE `the-crate-body-is-a-record-not-only-its-children`, 16 after — the five crates whose
+    // whole implementation was their root and which `migrate-crate` could not see at all. The number
+    // is what makes this red against the pre-change tree rather than merely unchanged.
+    assert!(at_floor >= 16, "only {at_floor} crate(s) are at the floor; 16 have been migrated");
 }
 
 /// The floor test, restated where this crate can see it.
@@ -521,6 +534,83 @@ fn two_adopters_produce_different_crate_docs() {
     assert!(tunnel.contains("tunnel"), "bsc-tunnel documents the tunnel: {tunnel}");
     // The markdown carries no `//!` markers — it is included as markdown, not as Rust.
     assert!(!fin.contains("//!"), "the doc record holds markdown, not doc comments");
+}
+
+/// THE SPLIT ITSELF, where a unit test can see it.
+///
+/// `split_root` is the whole mechanism of `the-crate-body-is-a-record-not-only-its-children` and the
+/// two guards below reach it only through a real store and a real `$OUT_DIR`. The rules it has to keep
+/// are cheap to state and were each a way to get this silently wrong.
+#[test]
+fn split_root_divides_the_prose_from_the_program_without_moving_a_line() {
+    let src = "//! One.\n//!\n//! Two.\npub use x::y;\n\npub fn go() {}\n";
+    let (doc, body) = split_root(src);
+    assert_eq!(doc, "One.\n\nTwo.\n", "the `//!` marker is stripped and the prose is verbatim");
+    // LINE COUNT IS PRESERVED, which is what keeps the offset header's subtraction exact. Removing the
+    // doc block would be the obvious implementation and would make every reported line wrong by 3.
+    assert_eq!(body.lines().count(), src.lines().count(), "same height:\n{body}");
+    assert!(!body.contains("//!"), "an inner doc comment cannot survive include! (E0753)");
+    assert!(body.starts_with("// One."), "…so it becomes a plain comment: {body}");
+    assert!(body.contains("pub use x::y;") && body.contains("pub fn go()"), "the program is verbatim");
+
+    // Only the LEADING run. `//!` inside an inline module is legal in an included file and is left
+    // exactly as written — rewriting it would change that module's own documentation.
+    let inline = "//! Head.\npub mod m {\n    //! Inner.\n}\n";
+    let (doc, body) = split_root(inline);
+    assert_eq!(doc, "Head.\n");
+    assert!(body.contains("//! Inner."), "an inline module keeps its own inner docs: {body}");
+
+    // A root with no prose contributes an EMPTY doc, never a blank line: the shared root includes
+    // `crate_doc.md` unconditionally, so a lone newline would head every undocumented crate's rustdoc.
+    assert_eq!(split_root("pub fn go() {}\n").0, "");
+    assert_eq!(split_root("").0, "");
+    // …and a root opening with a plain comment contributes none either, which is correct — that
+    // comment is not documentation.
+    assert_eq!(split_root("// not docs\n//! nor these\n").0, "");
+}
+
+/// TWO CRATES WHOSE BODY IS A RECORD STILL DOCUMENT THEMSELVES DIFFERENTLY — and still get their own
+/// PROGRAM.
+///
+/// The sibling above pins the doc-only crates migrated by `a-crate-root-is-shared-so-a-crate-is-one-file`.
+/// This one pins the crates whose ROOT RECORD CARRIES CODE, which is a second way for the shared file
+/// to collapse two crates into one: `crate.rs` is per-`$OUT_DIR` exactly as `crate_doc.md` is, and
+/// nothing about a build would say if it stopped being.
+///
+/// `mcp-rpc` and `bsc-appchan` are two of the five crates that owned no record at all before this
+/// change. It is RED against the pre-change tree twice over: neither crate had a record, so
+/// `Adoption::Required` is a hard error before any assertion is reached.
+#[test]
+fn two_crates_whose_body_is_a_record_get_their_own_docs_and_their_own_program() {
+    let root = repo();
+    let read = |krate: &str| {
+        let out = scratch(krate);
+        emit_into(&root.join("crates").join(krate), &out, Some(&root), Adoption::Required)
+            .unwrap_or_else(|e| panic!("materializing {krate}: {e}"));
+        let doc = std::fs::read_to_string(out.join("crate_doc.md")).expect("crate_doc.md");
+        let body = std::fs::read_to_string(out.join("crate.rs")).expect("crate.rs");
+        (doc, body)
+    };
+    let (rpc_doc, rpc_body) = read("mcp-rpc");
+    let (chan_doc, chan_body) = read("bsc-appchan");
+
+    // The DOCS are each crate's own — the risk the shared `#![doc = include_str!(…)]` introduces.
+    assert!(!rpc_doc.trim().is_empty() && !chan_doc.trim().is_empty(), "both crates document themselves");
+    assert_ne!(rpc_doc, chan_doc, "one shared crate root must NOT collapse two crates' documentation");
+    assert!(rpc_doc.contains("JSON-RPC"), "mcp-rpc documents the JSON-RPC core: {rpc_doc}");
+    assert!(chan_doc.contains("app"), "bsc-appchan documents the app channel: {chan_doc}");
+    assert!(!rpc_doc.contains("//!"), "the doc half is markdown, not doc comments");
+
+    // The PROGRAM is each crate's own too, and that is the half this change added. A body is not a
+    // module block: it is emitted at the top level, which is where the crate root's items were.
+    assert_ne!(rpc_body, chan_body, "…nor their programs");
+    assert!(rpc_body.contains("pub trait ToolServer"), "mcp-rpc's own root items: {rpc_body}");
+    assert!(chan_body.contains("pub struct Envelope"), "bsc-appchan's own root items");
+    // The body is at the TOP LEVEL, where the crate root's items were — never wrapped in a module
+    // named after the crate, which would move every path the crate's dependents use.
+    assert!(!rpc_body.contains("mod mcp_rpc"), "the root body is not wrapped in a module: {rpc_body}");
+    // The `//!` block SURVIVES as a plain comment, which is what keeps the offset arithmetic exact.
+    assert!(!rpc_body.contains("//!"), "an inner doc comment cannot survive include! (E0753)");
 }
 
 /// THE SHARED ROOT IS ONE FILE, and the only thing that guarantees byte-identity for 61 crates.

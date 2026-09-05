@@ -1080,6 +1080,9 @@ dependencies = [
 [[package]]
 name = "bsc-graph-layout"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "bsc-hook"

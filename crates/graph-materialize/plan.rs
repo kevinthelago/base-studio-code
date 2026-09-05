@@ -82,6 +82,78 @@ pub struct Unit {
     pub attrs: Vec<String>,
 }
 
+/// The crate ROOT's record, split into the two halves the shared root wants.
+///
+/// One record, two destinations: the `//!` prose becomes `$OUT_DIR/crate_doc.md`, which the shared
+/// root picks up with `#![doc = include_str!(…)]`, and everything else becomes the TOP of
+/// `$OUT_DIR/crate.rs`, which it `include!`s. That is the whole capability
+/// `the-crate-body-is-a-record-not-only-its-children` adds: before it, the root record could carry
+/// documentation and nothing else, so a crate whose implementation IS its root — five of them, with no
+/// child module for `migrate-crate` to see — could not be migrated at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootUnit {
+    /// The record id, reproduced into the generated file's offset header.
+    pub id: String,
+    /// The crate's own documentation, as MARKDOWN — no `//!` markers.
+    pub doc: String,
+    /// The crate root's program, ready to `include!`, or `None` for a `role: doc` record that holds
+    /// prose and nothing else.
+    pub body: Option<String>,
+}
+
+/// Split a crate root's Rust source into its crate-level documentation and an `include!`-able body.
+///
+/// # The `//!` lines are REWRITTEN, never removed, and that is the whole trick
+///
+/// An inner doc comment cannot survive `include!` (E0753), so the leading `//!` block has to stop being
+/// one. Deleting it would work and would silently break the ONE thing that makes a 500-line record
+/// navigable: every module header says "line N here is line N-<offset> in the record", and dropping k
+/// lines off the front makes that subtraction wrong by k for every line below it. So each `//!` becomes
+/// `//` — same line, same count, same arithmetic, and a reader of the generated file still sees the
+/// prose that a rustdoc reader gets from `crate_doc.md`.
+///
+/// # Only the LEADING run
+///
+/// The split point is the first line that is neither blank nor a `//!` comment. `//!` deeper in the
+/// file belongs to an inline `mod x { //! … }`, which is legal inside an included file and must be
+/// left exactly as written. A root that opens with a plain `//` comment therefore contributes no crate
+/// documentation — correct, because that comment is not documentation either.
+pub fn split_root(code: &str) -> (String, String) {
+    let mut doc: Vec<String> = Vec::new();
+    let mut body: Vec<String> = Vec::new();
+    let mut in_head = true;
+    for line in code.lines() {
+        if in_head {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("//!") {
+                doc.push(rest.strip_prefix(' ').unwrap_or(rest).to_string());
+                body.push(line.replacen("//!", "//", 1));
+                continue;
+            }
+            if trimmed.is_empty() {
+                body.push(line.to_string());
+                continue;
+            }
+            in_head = false;
+        }
+        body.push(line.to_string());
+    }
+    while doc.last().is_some_and(|l| l.trim().is_empty()) {
+        doc.pop();
+    }
+    (terminated(doc.join("\n")), terminated(body.join("\n")))
+}
+
+/// `s` with a trailing newline, unless it is empty. An empty doc must stay EMPTY — the shared root
+/// includes `crate_doc.md` unconditionally, and a lone newline would render as a blank first line on
+/// every crate that has authored no prose.
+fn terminated(mut s: String) -> String {
+    if !s.is_empty() && !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
+}
+
 /// The module PATH denoted by a source path relative to `crates/<crate>/src/`, or `None` when the file
 /// is not a module of this crate.
 ///
@@ -161,7 +233,13 @@ pub fn expected_id(crate_dir: &str, rest: &str) -> String {
 /// `offset + 1` and the subtraction is exact — which is the ONLY thing making a compiler error inside a
 /// 12,609-line record navigable. Bodies are emitted at COLUMN 0, never indented to their nesting depth,
 /// because indenting would change the columns a compiler error points at and buy nothing.
-pub fn render(mut units: Vec<Unit>, crate_dir: &str, src_prefix: &str, header: &str) -> Result<String, String> {
+pub fn render(
+    mut units: Vec<Unit>,
+    root: Option<(&str, &str)>,
+    crate_dir: &str,
+    src_prefix: &str,
+    header: &str,
+) -> Result<String, String> {
     units.sort_by(|a, b| a.path.cmp(&b.path));
     if let Some(dup) = units.windows(2).find(|w| w[0].path == w[1].path) {
         return Err(format!(
@@ -197,6 +275,17 @@ pub fn render(mut units: Vec<Unit>, crate_dir: &str, src_prefix: &str, header: &
     // afterwards would shift every one of them by the preamble's height, silently — the arithmetic
     // would still look right and every reported line would be wrong.
     let mut out = String::from(header);
+    // THE CRATE ROOT'S OWN BODY GOES FIRST, at the top level, because that is where it was. Item order
+    // is nothing to rustc, but it is everything to a reader diffing the generated file against the root
+    // it replaced. Its offset header is computed exactly as a module's is — see `emit_level`.
+    if let Some((id, body)) = root {
+        let body_starts_at = out.lines().count() + 1;
+        out.push_str(&format!("// record `{id}` — line N here is line N-{body_starts_at} in the record.\n"));
+        out.push_str(body);
+        if !body.ends_with('\n') {
+            out.push('\n');
+        }
+    }
     emit_level(&mut out, &units, 0, &[]);
     Ok(out)
 }

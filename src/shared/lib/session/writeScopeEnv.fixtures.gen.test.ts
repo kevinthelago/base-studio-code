@@ -8,7 +8,7 @@
 //   BSC_SCOPES      — the role's per-store access tiers, checked by the store CLIs before a mutating
 //                     verb (#2470).
 //
-// `crates/bsc-hook/src/main.rs:107` reads the first and BLOCKS on it; `crates/bsc-cli-util` reads the
+// The `bsc-hook--main.rs` record reads the first and BLOCKS on it; `crates/bsc-cli-util` reads the
 // second and refuses a store write on it. Rust enforces both on every tool call and computes neither.
 //
 // The values are read out of `buildAgentEnv` itself rather than recomposed from its parts, so the
