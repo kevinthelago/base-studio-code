@@ -3107,6 +3107,7 @@ mod tests {
         let mut decls = 0usize;
         let mut restricted = 0usize;
         let mut bad: Vec<String> = Vec::new();
+        let mut on_disk: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for m in &members {
             let src = root.join(m).join("src");
             let Some(root_name) = ["lib.rs", "main.rs"].into_iter().find(|f| src.join(f).is_file()) else {
@@ -3117,6 +3118,9 @@ mod tests {
             walked += 1;
             decls += walk.nodes.len();
             restricted += walk.nodes.iter().filter(|n| n.decl.vis.starts_with("pub(")).count();
+            for n in &walk.nodes {
+                on_disk.insert(format!("{m}/src/{}", n.file));
+            }
             bad.extend(walk.unreadable.into_iter().map(|l| format!("{m}: {l}")));
         }
         assert!(
@@ -3124,10 +3128,49 @@ mod tests {
             "a `mod` declaration in this workspace cannot be read, so its crate's plan would be short: \
              {bad:?}"
         );
+
+        // THE OTHER HOME. A migrated crate has no declarations left to read: `src/` holds one `lib.rs`
+        // carrying the `include!`, and its modules live in the committed store, reaching the compiler
+        // through `$OUT_DIR/crate.rs`. Counting only what is on disk shrinks this census every time a
+        // crate migrates and forces the floor down after it, which is a floor that has stopped meaning
+        // anything. `expected_id_agrees_with_extract_module_id` already counts both homes for exactly
+        // this reason, and this is the same correction.
+        //
+        // MEASURED 2026-09-05: the disk half is 157 declarations, `bsc-graph` supplies 10 of them, and
+        // the old `>= 150` floor therefore turned RED the moment that crate migrated — 147 — over a
+        // population that had not lost a single module.
+        let store = crate::repo_store::read_at(&crate::repo_store::path_under(&root))
+            .expect("the committed store parses")
+            .expect("the committed store exists");
+        let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
+        let mut in_store = 0usize;
+        for i in impls {
+            let Some(src) = i.get("src").and_then(|v| v.as_str()) else { continue };
+            let Some((_, file)) = src.split_once("/src/") else { continue };
+            if !file.ends_with(".rs") || file == "lib.rs" || file == "main.rs" {
+                continue;
+            }
+            if on_disk.contains(src) {
+                continue; // a record whose file also exists — counted once, above
+            }
+            in_store += 1;
+        }
+
         // POPULATION, because a walk that stopped finding anything would satisfy the assertion above in
         // silence — which is the failure mode this whole item is about.
         assert!(walked >= 60, "only {walked} crates walked");
-        assert!(decls >= 150, "only {decls} declarations read across the workspace");
+        // THE CENSUS, across both homes, so migrating a crate MOVES a module rather than deleting it.
+        assert!(
+            decls + in_store >= 150,
+            "only {} modules across both homes — {decls} declared on disk, {in_store} in the committed \
+             store",
+            decls + in_store,
+        );
+        // …and the PARSER itself, on the modules that are still declared on disk. The census above
+        // cannot see a disk parser that stopped matching, because the store half would hold the total
+        // up. Deliberately loose — this number falls by design as crates migrate, and its job is to
+        // catch 0, not to track the true count.
+        assert!(decls >= 60, "only {decls} declarations read off disk — the parser has stopped matching");
         // MEASURED 2026-09-04: 175 declarations across 71 walked crates, 16 of them file-backed `pub(crate) mod` — 13 in `src-tauri`, 3 in
         // `bsc-component`. A floor rather than an equality so an ordinary backend change does not
         // redden it, but a parser that stopped reading the form goes to 0 and fails here.
