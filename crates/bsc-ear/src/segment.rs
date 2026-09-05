@@ -327,8 +327,8 @@ mod tests {
     #[test]
     fn the_default_config_is_valid_and_a_chattering_one_is_refused() {
         assert!(VadConfig::default().validate().is_ok());
-        let mut c = VadConfig::default();
-        c.close_ratio = c.open_ratio;
+        let d = VadConfig::default();
+        let c = VadConfig { close_ratio: d.open_ratio, ..d };
         let e = c.validate().unwrap_err();
         assert!(e.contains("chatters"), "the refusal should say what goes wrong: {e}");
         assert!(Segmenter::new(c).is_err(), "and the constructor must refuse it too");
@@ -420,9 +420,8 @@ mod tests {
     /// beyond the heat death of the universe, which downstream reads as a segment that never began.
     #[test]
     fn a_preroll_longer_than_the_stream_clamps_to_its_beginning() {
-        let mut cfg = VadConfig::default();
-        cfg.warmup_ms = 200;
-        cfg.preroll_ms = 10_000; // far longer than anything captured yet
+        // A pre-roll far longer than anything captured yet.
+        let cfg = VadConfig { warmup_ms: 200, preroll_ms: 10_000, ..VadConfig::default() };
         let mut s = Segmenter::new(cfg).unwrap();
         push_ms(&mut s, QUIET, 400);
         let ev = push_ms(&mut s, LOUD, 1_000);
@@ -434,8 +433,7 @@ mod tests {
 
     #[test]
     fn a_continuous_noise_source_cannot_produce_one_unbounded_segment() {
-        let mut cfg = VadConfig::default();
-        cfg.max_segment_ms = 2_000;
+        let cfg = VadConfig { max_segment_ms: 2_000, ..VadConfig::default() };
         let mut s = Segmenter::new(cfg).unwrap();
         settle(&mut s);
         let ev = push_ms(&mut s, LOUD, 10_000);

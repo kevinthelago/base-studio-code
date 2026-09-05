@@ -396,20 +396,21 @@ fn cmd_status(a: &Args, p: &Paths) -> Result<(), String> {
 }
 
 fn cmd_levels(a: &Args) -> Result<(), String> {
-    let devices = capture::list_devices()?;
-    let names: Vec<String> = devices
+    // Names first, from one cheap enumeration; then probe each on its own. Hardware before routed,
+    // because probing a routed node takes the hardware with it — see `audio::probe_order`.
+    let mut names: Vec<String> = capture::list_devices()?
         .into_iter()
         .filter(|d| a.all || crate::audio::is_primary_device(&d.name))
         .map(|d| d.name)
         .collect();
-    let mut rows = Vec::new();
-    for n in &names {
-        let (level, note) = match capture::probe_level(Some(n), 600) {
-            Ok((_, rms)) => (Some(rms), String::new()),
-            Err(e) => (None, e),
-        };
-        rows.push((n.clone(), level, note));
-    }
+    names.sort_by(|x, y| crate::audio::probe_order(x, y));
+    let rows: Vec<(String, Option<f32>, String)> = names
+        .into_iter()
+        .map(|n| match capture::probe_level(Some(&n), 600) {
+            Ok((_, rms)) => (n, Some(rms), String::new()),
+            Err(e) => (n, None, e),
+        })
+        .collect();
     if a.json || a.pretty {
         let v: Vec<_> = rows
             .iter()
@@ -434,7 +435,7 @@ fn cmd_levels(a: &Args) -> Result<(), String> {
 
 fn cmd_segments(a: &Args, p: &Paths) -> Result<(), String> {
     let mut held = capture::held_segments(&p.audio());
-    held.sort_by(|x, y| y.started_unix_ms.cmp(&x.started_unix_ms));
+    held.sort_by_key(|s| std::cmp::Reverse(s.started_unix_ms));
     if a.json || a.pretty {
         return print_json(&held, a.pretty);
     }

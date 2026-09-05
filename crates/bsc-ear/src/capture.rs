@@ -116,6 +116,17 @@ fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
+/// Recover a segment's start time from its name: `seg-<unix_ms>-<seq>.wav`.
+///
+/// Split at the FIRST `-` after the prefix, never parsed whole — the sequence suffix is part of the
+/// name and parsing it as digits of the timestamp yields an epoch a thousand years wide. Returns
+/// `None` for anything that does not match, so the caller can fall back rather than invent a date.
+pub fn parse_started_ms(name: &str) -> Option<i64> {
+    let rest = name.strip_prefix("seg-")?.strip_suffix(".wav")?;
+    let stamp = rest.split('-').next()?;
+    stamp.parse::<i64>().ok()
+}
+
 /// Segments currently on disk, for the retention pass.
 pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
@@ -128,11 +139,7 @@ pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
             let md = e.metadata().ok()?;
             // The name carries the start time; the mtime is when writing FINISHED, which for a long
             // segment is a different number and the wrong one to age it by.
-            let started = name
-                .trim_start_matches("seg-")
-                .trim_end_matches(".wav")
-                .parse::<i64>()
-                .ok()
+            let started = parse_started_ms(&name)
                 .unwrap_or_else(|| {
                     md.modified()
                         .ok()
@@ -190,6 +197,11 @@ fn publish_state(cfg: &CaptureConfig, seg: &Segmenter, device: &str, p: &Progres
 /// capture device delivers silence, as do the USB interface and the headset, while only the onboard
 /// input is live. Nothing in an enumeration says which of those is true, so an always-on ear pointed
 /// at the default would report LISTENING and hear nothing, forever.
+/// `cpal::SampleFormat` is non_exhaustive with nine variants, all handled identically here — by
+/// refusing, and naming the format refused. The crate denies `wildcard_enum_match_arm` on purpose;
+/// enumerating nine variants to reach one outcome, and still needing a catch-all, is the case the
+/// deny is not for.
+#[allow(clippy::wildcard_enum_match_arm)]
 pub fn probe_level(name: Option<&str>, ms: u64) -> Result<(String, f32), String> {
     let _hush = HushStderr::new();
     let host = cpal::default_host();
@@ -201,6 +213,43 @@ pub fn probe_level(name: Option<&str>, ms: u64) -> Result<(String, f32), String>
             .ok_or_else(|| format!("no capture device named '{want}'"))?,
         None => host.default_input_device().ok_or("no default capture device")?,
     };
+    probe_device(&device, ms)
+}
+
+/// Probe every capture device from ONE enumeration.
+///
+/// Enumerating per device was wrong and the failure was reproducible: probing the routed devices
+/// first takes the interface through pipewire, and the NEXT enumeration then cannot see the
+/// hardware node — so the Scarlett, which `bsc ear devices` had just listed, came back as "no
+/// capture device named". Two enumerations can disagree, so there is now only one.
+pub fn probe_levels(keep: impl Fn(&str) -> bool, ms: u64) -> Result<Vec<(String, Result<f32, String>)>, String> {
+    let _hush = HushStderr::new();
+    let host = cpal::default_host();
+    // ITERATED, not collected. Collecting holds every device handle open for the whole sweep, and
+    // measured on this machine that silently lost four of seven — `d.name()` began failing for the
+    // hardware nodes and each one was skipped without a word. Probing inline means exactly one
+    // device is held at a time, which is also what the driver expects.
+    let mut out = Vec::new();
+    for d in host.input_devices().map_err(|e| format!("could not enumerate capture devices: {e}"))? {
+        let name = match d.name() {
+            Ok(n) => n,
+            // Reported, never skipped: a device dropped in silence is indistinguishable from one
+            // that is not plugged in, which is the exact confusion this verb exists to end.
+            Err(e) => {
+                out.push(("<unnamed>".to_string(), Err(format!("could not read its name: {e}"))));
+                continue;
+            }
+        };
+        if !keep(&name) {
+            continue;
+        }
+        let level = probe_device(&d, ms).map(|(_, rms)| rms);
+        out.push((name, level));
+    }
+    Ok(out)
+}
+
+fn probe_device(device: &cpal::Device, ms: u64) -> Result<(String, f32), String> {
     let dname = device.name().unwrap_or_else(|_| "<unnamed>".into());
     let supported = device.default_input_config().map_err(|e| format!("{e}"))?;
     let channels = supported.channels();
@@ -298,11 +347,17 @@ impl Recorder {
         (self.written * 1000) / u64::from(TARGET_HZ)
     }
 
-    /// A name that sorts and ages correctly even when two segments open inside the same millisecond
-    /// — which a synthetic stream does constantly and a real one does eventually.
+    /// A name that sorts and ages correctly even when two segments open inside the same
+    /// millisecond — which a synthetic stream does constantly and a real one does eventually.
+    ///
+    /// THE SEPARATOR IS LOAD-BEARING. Without it the sequence is CONCATENATED onto the timestamp:
+    /// `seg-1788616309803` + `001` parses back as 1788616309803001, a thousand times the real
+    /// epoch, and every age computed from it comes out as -29,780,461,557 minutes. Measured on the
+    /// first live capture — and the collision test passed throughout, because it only asserted that
+    /// two names differ.
     fn next_name(&mut self) -> String {
         self.seq += 1;
-        format!("seg-{}{:03}.wav", now_ms(), self.seq % 1000)
+        format!("seg-{}-{:03}.wav", now_ms(), self.seq % 1000)
     }
 
     pub fn push_frame(&mut self, frame: &[f32]) -> Result<Option<Recorded>, String> {
@@ -399,6 +454,11 @@ fn spec() -> hound::WavSpec {
 ///
 /// `on_event` receives one human line per boundary, so the foreground form is legible and the
 /// daemon's log says what it heard.
+/// `cpal::SampleFormat` is non_exhaustive with nine variants, all handled identically here — by
+/// refusing, and naming the format refused. The crate denies `wildcard_enum_match_arm` on purpose;
+/// enumerating nine variants to reach one outcome, and still needing a catch-all, is the case the
+/// deny is not for.
+#[allow(clippy::wildcard_enum_match_arm)]
 pub fn run(
     cfg: &CaptureConfig,
     stop: &dyn Fn() -> bool,
@@ -695,7 +755,7 @@ mod tests {
     fn held_segments_ages_by_the_name_not_the_mtime() {
         let t = tmp("age");
         std::fs::create_dir_all(&t.0).unwrap();
-        std::fs::write(t.0.join("seg-1700000000123.wav"), b"x").unwrap();
+        std::fs::write(t.0.join("seg-1700000000123-001.wav"), b"x").unwrap();
         std::fs::write(t.0.join("notes.txt"), b"x").unwrap();
         let held = held_segments(&t.0);
         assert_eq!(held.len(), 1, "only wavs count");
@@ -712,5 +772,31 @@ mod tests {
         let a = r.next_name();
         let b = r.next_name();
         assert_ne!(a, b, "a synthetic stream opens segments far faster than the clock ticks");
+    }
+
+    /// THE BUG THE COLLISION TEST DID NOT CATCH, because it only asserted that two names differ.
+    /// The sequence was concatenated onto the timestamp, so `seg-1788616309803001.wav` parsed back
+    /// as a thousand times the real epoch and `bsc ear status` reported "-29780461557 minutes back".
+    /// A name has to survive the round trip, not merely be unique.
+    #[test]
+    fn a_segment_name_round_trips_to_the_time_it_actually_started() {
+        let t = tmp("roundtrip");
+        let mut r = rec_in(&t.0);
+        let before = now_ms();
+        let name = r.next_name();
+        let after = now_ms();
+
+        let parsed = parse_started_ms(&name).expect("the name must carry a readable start time");
+        assert!(
+            parsed >= before && parsed <= after,
+            "{name} parsed to {parsed}, outside the {before}..{after} window it was made in"
+        );
+        // The symptom as the user saw it: an age in minutes that is neither negative nor absurd.
+        let age_min = (now_ms() - parsed) / 60_000;
+        assert!((0..2).contains(&age_min), "age came out as {age_min} minutes");
+
+        assert_eq!(parse_started_ms("notes.txt"), None, "a non-segment yields no date");
+        assert_eq!(parse_started_ms("seg-notanumber-001.wav"), None);
+        assert_eq!(parse_started_ms("seg-1700000000123-004.wav"), Some(1_700_000_000_123));
     }
 }

@@ -209,9 +209,32 @@ pub fn is_primary_device(name: &str) -> bool {
     matches!(name, "default" | "pipewire" | "sysdefault" | "pulse") || name.starts_with("plughw:")
 }
 
+/// Probe order: hardware nodes BEFORE routed ones.
+///
+/// Measured, and the reason this function exists: probing `sysdefault`/`pipewire`/`default` takes
+/// the interface through the sound server, and the hardware node then disappears from enumeration
+/// for the rest of the sweep — so the Scarlett, the one device the user actually wanted measured,
+/// was reported as missing. Hardware first means each real input is measured while it is free, and
+/// the routed nodes (which the sound server is happy to share) come after.
+pub fn probe_order(a: &str, b: &str) -> std::cmp::Ordering {
+    let rank = |n: &str| if n.starts_with("plughw:") || n.starts_with("hw:") { 0 } else { 1 };
+    rank(a).cmp(&rank(b)).then_with(|| a.cmp(b))
+}
+
 #[cfg(test)]
 mod device_tests {
     use super::*;
+
+    /// Probing a routed node takes the hardware with it and hides the hardware node from the rest
+    /// of the sweep — measured, and it lost the one device that mattered.
+    #[test]
+    fn hardware_is_probed_before_anything_routed() {
+        let mut v = vec!["default", "plughw:CARD=USB,DEV=0", "pipewire", "plughw:CARD=X,DEV=0", "sysdefault"];
+        v.sort_by(|a, b| probe_order(a, b));
+        assert_eq!(v[0], "plughw:CARD=USB,DEV=0", "the interface is measured while it is free");
+        assert_eq!(v[1], "plughw:CARD=X,DEV=0");
+        assert!(v[2..].iter().all(|n| !n.starts_with("plughw:")), "routed nodes come last: {v:?}");
+    }
 
     #[test]
     fn the_routed_defaults_and_one_node_per_card_survive_the_filter() {

@@ -196,7 +196,7 @@ mod tests {
     /// the recording in progress.
     #[test]
     fn an_unmeetable_budget_is_reported_rather_than_met_by_deleting_the_live_recording() {
-        let budget = Budget { max_bytes: 1 * MB, max_age_ms: 2 * 60 * 60 * 1000 };
+        let budget = Budget { max_bytes: MB, max_age_ms: 2 * 60 * 60 * 1000 };
         let held = vec![seg("live", 50, 0)];
         let e = plan_eviction(NOW, &held, &budget, Some("live"));
         assert!(e.delete.is_empty(), "nothing else to give: {e:?}");
