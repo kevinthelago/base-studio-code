@@ -23,6 +23,28 @@ React/TypeScript WebView frontend. The Rust side is the focus of this document.
 | Secrets | `keyring` (OS keychain — Windows Credential Manager / macOS Keychain) for source connectors |
 | Push | `jsonwebtoken` + `reqwest` (FCM v1 service-account flow) |
 
+> **THE FOLDERS BELOW ARE NOT ON DISK — they are RECORDS.**
+> `src-tauri-compiles-from-the-graph` moved all 138 of this crate's modules into the algorithms
+> graph, so `src-tauri/src/` holds four files: the two crate roots, `tests.rs`, and one orphan.
+> Everything else lives in `graph/algorithms.json` and reaches the compiler through
+> `$OUT_DIR/crate.rs`, materialized by `graph_materialize::emit_when_adopted()` — called from
+> `src-tauri/build.rs` as a fifth job, because a package gets exactly ONE build script and this one
+> was already taken.
+>
+> **The structure this document describes is unchanged.** A record's module path IS its old file
+> path, so `crate::console::pty` still resolves and `platform/paths.rs` is still where
+> `worktrees_dir` lives. What changed is how you OPEN one — which is why the paths below are
+> backticked rather than linked: a link is a promise you can follow it, and these would send you
+> hunting for a file that was deliberately deleted.
+>
+> ```bash
+> bsc graph impl get src-tauri--platform--paths.rs --field code --raw   # read it
+> bsc graph impl set --id src-tauri--platform--paths.rs --code-file <f> # change it
+> bsc graph promote --id src-tauri--platform--paths.rs --root "$PWD"    # …and make it compile
+> ```
+>
+> [`docs/records.md`](records.md) carries the rest, including what must be true before retiring one.
+
 **The organizing principle: the folder tree *is* the architecture.** Every subsystem is one folder
 under `src-tauri/src/`. The crate root [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) is *only*
 module declarations plus a block of `pub(crate) use` re-exports that preserve the pre-restructure
@@ -37,25 +59,25 @@ spawnable libraries/CLIs live under [`crates/`](../crates/).
 
 ## 2. `src-tauri/src/` subsystems
 
-`run()` (in [`app/run.rs`](../src-tauri/src/app/run.rs)) builds the Tauri app, registers plugins,
+`run()` (in `app/run.rs`) builds the Tauri app, registers plugins,
 `manage()`s the shared state objects (`PtyState`, `TunnelState`, `PerfState`, `LogState`,
 `UncleanShutdown`), and registers **every** command in one `tauri::generate_handler![...]` block —
 that block is the canonical index of the backend's command surface.
 
 | Folder | Owns | Key files |
 |---|---|---|
-| [`platform/`](../src-tauri/src/platform/) | OS primitives shared by every domain; no domain deps | `paths.rs` (every `~/.base-studio-code` location), `git.rs` (`git_lines`/`git_output`), `shell.rs` (shell resolution + bash⇄native path/quote conversion), `process.rs` (`no_window` — suppress console flashes), `fsx.rs` (`sanitize_project_key`/`worktree_slug`/`map_slug`, `atomic_write`(`_json`), `read_json_object_or_default`, `read_text_files` section-file ingest, `clear_readonly_recursive`, safe-relpath), `docstore.rs` (document library) |
-| [`app/`](../src-tauri/src/app/) | The Tauri shell + lifecycle | `run.rs` (`run()` — plugins, state, the invoke handler, exit cleanup), `state.rs`, `recovery.rs` (`.session-lock` crash detection, #1041), `single_instance.rs` (#1303), `dialog.rs` (native pickers) |
-| [`console/`](../src-tauri/src/console/) | The interactive PTY execution surface | `pty/` (dir-module, #1660 — `pty/mod.rs`: `pty_create` + the `pty_*` commands, the session env; `pty/job.rs`: the Windows Job Object / Unix process-group tree kill), `ledger.rs` (boot-time orphan reaping), `discovery.rs` (durable session discovery), `shell_rc/` (the `bsc-*` shell-helper rc constants; a dir-module) |
-| [`session/`](../src-tauri/src/session/) | How an agent session is launched, configured & permissioned (one directory, #1917) | `harness.rs` (`HarnessAdapter` seam — `ClaudeCodeAdapter` vs `BscAgentAdapter`), `launch.rs` (`claude_launch`, model flags, history probes), `claude_config.rs` (read/write + self-heal `~/.claude.json` trust state), `settings.rs` (`ensure_session_settings` → `.claude/settings.json`, the role gate, the `DEFAULT_DENY`/mandatory baseline), `llm.rs` (the `llm_complete` one-shot completion → `crates/llm`) |
-| [`project/`](../src-tauri/src/project/) | The on-disk project hub + plan store | `hub.rs` (hub lifecycle, `list_local_projects`, `mark_published`, `delete_project_dir`), `plan_db.rs` (the `plan_*` command wrappers over `crates/plandb`), `plan_files.rs` (read/clear plan sections), `files.rs` (the path-safe hub-file write primitive pipelines call — relocated from `fleet/staging.rs`, #1667), `blueprints.rs` (list/write/delete — now delegates to the Tauri-free `bsc-blueprint` crate, #1761), `dead_code.rs` + `ui_skeleton.rs` (the dead-code scan / UI-skeleton collect, split out of the old `inspect.rs`, #1690) |
-| [`planner/`](../src-tauri/src/planner/) | The planning session | `workspace.rs` (`setup_workspaces` — builds the hub), `prompts.rs` (the planner CLAUDE.md template + `PLANNING_*` intros), `directives.rs` (`planner_intro_prompt`, per-stage directives) |
-| [`fleet/`](../src-tauri/src/fleet/) | The parallel worker fleet | `worktree.rs` (`ensure_worktree` — per-agent git worktree + `CLAUDE.local.md`), `teardown.rs` (`teardown_worktree`, `reclaim_worktrees`, build-artifact excludes), `director.rs` (`ensure_director_protocol`), `protocols.rs` (the injected worker/injection-resistance MD consts + the idempotent `append_section_once` helper), `inspect.rs` (the per-worker worktree audit — uncommitted changes, branch, recent commits, the `WorktreeCommit` struct; fleet owns worktrees so the audit lives here) |
-| [`github/`](../src-tauri/src/github/) | GitHub integration & auth | `api.rs` (REST/GraphQL/gist proxy — `github_request`, `github_graphql`, `github_post/put/patch`), `oauth.rs` (device flow), `repos.rs` (`clone_repo`), `readiness.rs` (`gh`/`git`/`gh auth` preflight probe), `git_hooks.rs` (hook inspection) |
-| [`sources/`](../src-tauri/src/sources/) | Migration data sources / the "Source pane" | `data/` (dir-module split #1661 — `data/data_csv.rs`: CSV ingest; `data/data_scan.rs`: platform-scan + infer/persist Data Model commands → `crates/data`), `oauth.rs` (PKCE loopback OAuth), `credentials.rs` (OS-keychain connector secrets) |
-| [`extensions/`](../src-tauri/src/extensions/) | MCP servers, hooks, skills | `mcp.rs` (`mcp_clone`/`mcp_build`/`mcp_status`, `write_mcp_json`), `hooks.rs` (`write_session_hooks`), `skills.rs` (`write_session_skills` → `.claude/skills/<slug>/SKILL.md`), `cfg.rs` (`McpServerCfg`/`HookCfg`/`SkillCfg`) — the global skills store (`crates/skilldb`) is reached through the generic `bsc` command (`bsc skill …`, #2142), not per-verb commands |
-| [`observability/`](../src-tauri/src/observability/) | Logs, metrics, accounting | `logs.rs` (managed log streams + caps, and the readers for the app-wide `bsc-*` TSVs — audit/skill/hook/mcp/coord, #1689), `perf.rs` (`PerfState`, the background sampler, `PerfSpan`), `tokens/` (dir-module #1659 — `tokens/cost.rs`: `read_token_usage`, delegating pricing to `crates/logs`; `tokens/messages.rs`; `activity.rs` was removed). The worktree-changes/commits/branch audit moved to `fleet/inspect.rs` (#1667). |
-| [`mobile/`](../src-tauri/src/mobile/) | The paired mobile companion (desktop glue) | `push.rs` (FCM v1 delivery), `tunnel/mod.rs` (`TunnelState` bus + the `tunnel_*` commands; re-exports the wire protocol + Noise from the `bsc-tunnel` crate), `tunnel/state.rs` (the in-process bus + FCM worker), `tunnel/transport.rs` (relay dial-out + pump), `tunnel/commands.rs`. The Tauri-free wire types + Noise crypto live in [`crates/bsc-tunnel`](../crates/bsc-tunnel/) (#1919). |
+| `platform/` | OS primitives shared by every domain; no domain deps | `paths.rs` (every `~/.base-studio-code` location), `git.rs` (`git_lines`/`git_output`), `shell.rs` (shell resolution + bash⇄native path/quote conversion), `process.rs` (`no_window` — suppress console flashes), `fsx.rs` (`sanitize_project_key`/`worktree_slug`/`map_slug`, `atomic_write`(`_json`), `read_json_object_or_default`, `read_text_files` section-file ingest, `clear_readonly_recursive`, safe-relpath), `docstore.rs` (document library) |
+| `app/` | The Tauri shell + lifecycle | `run.rs` (`run()` — plugins, state, the invoke handler, exit cleanup), `state.rs`, `recovery.rs` (`.session-lock` crash detection, #1041), `single_instance.rs` (#1303), `dialog.rs` (native pickers) |
+| `console/` | The interactive PTY execution surface | `pty/` (dir-module, #1660 — `pty/mod.rs`: `pty_create` + the `pty_*` commands, the session env; `pty/job.rs`: the Windows Job Object / Unix process-group tree kill), `ledger.rs` (boot-time orphan reaping), `discovery.rs` (durable session discovery), `shell_rc/` (the `bsc-*` shell-helper rc constants; a dir-module) |
+| `session/` | How an agent session is launched, configured & permissioned (one directory, #1917) | `harness.rs` (`HarnessAdapter` seam — `ClaudeCodeAdapter` vs `BscAgentAdapter`), `launch.rs` (`claude_launch`, model flags, history probes), `claude_config.rs` (read/write + self-heal `~/.claude.json` trust state), `settings.rs` (`ensure_session_settings` → `.claude/settings.json`, the role gate, the `DEFAULT_DENY`/mandatory baseline), `llm.rs` (the `llm_complete` one-shot completion → `crates/llm`) |
+| `project/` | The on-disk project hub + plan store | `hub.rs` (hub lifecycle, `list_local_projects`, `mark_published`, `delete_project_dir`), `plan_db.rs` (the `plan_*` command wrappers over `crates/plandb`), `plan_files.rs` (read/clear plan sections), `files.rs` (the path-safe hub-file write primitive pipelines call — relocated from `fleet/staging.rs`, #1667), `blueprints.rs` (list/write/delete — now delegates to the Tauri-free `bsc-blueprint` crate, #1761), `dead_code.rs` + `ui_skeleton.rs` (the dead-code scan / UI-skeleton collect, split out of the old `inspect.rs`, #1690) |
+| `planner/` | The planning session | `workspace.rs` (`setup_workspaces` — builds the hub), `prompts.rs` (the planner CLAUDE.md template + `PLANNING_*` intros), `directives.rs` (`planner_intro_prompt`, per-stage directives) |
+| `fleet/` | The parallel worker fleet | `worktree.rs` (`ensure_worktree` — per-agent git worktree + `CLAUDE.local.md`), `teardown.rs` (`teardown_worktree`, `reclaim_worktrees`, build-artifact excludes), `director.rs` (`ensure_director_protocol`), `protocols.rs` (the injected worker/injection-resistance MD consts + the idempotent `append_section_once` helper), `inspect.rs` (the per-worker worktree audit — uncommitted changes, branch, recent commits, the `WorktreeCommit` struct; fleet owns worktrees so the audit lives here) |
+| `github/` | GitHub integration & auth | `api.rs` (REST/GraphQL/gist proxy — `github_request`, `github_graphql`, `github_post/put/patch`), `oauth.rs` (device flow), `repos.rs` (`clone_repo`), `readiness.rs` (`gh`/`git`/`gh auth` preflight probe), `git_hooks.rs` (hook inspection) |
+| `sources/` | Migration data sources / the "Source pane" | `data/` (dir-module split #1661 — `data/data_csv.rs`: CSV ingest; `data/data_scan.rs`: platform-scan + infer/persist Data Model commands → `crates/data`), `oauth.rs` (PKCE loopback OAuth), `credentials.rs` (OS-keychain connector secrets) |
+| `extensions/` | MCP servers, hooks, skills | `mcp.rs` (`mcp_clone`/`mcp_build`/`mcp_status`, `write_mcp_json`), `hooks.rs` (`write_session_hooks`), `skills.rs` (`write_session_skills` → `.claude/skills/<slug>/SKILL.md`), `cfg.rs` (`McpServerCfg`/`HookCfg`/`SkillCfg`) — the global skills store (`crates/skilldb`) is reached through the generic `bsc` command (`bsc skill …`, #2142), not per-verb commands |
+| `observability/` | Logs, metrics, accounting | `logs.rs` (managed log streams + caps, and the readers for the app-wide `bsc-*` TSVs — audit/skill/hook/mcp/coord, #1689), `perf.rs` (`PerfState`, the background sampler, `PerfSpan`), `tokens/` (dir-module #1659 — `tokens/cost.rs`: `read_token_usage`, delegating pricing to `crates/logs`; `tokens/messages.rs`; `activity.rs` was removed). The worktree-changes/commits/branch audit moved to `fleet/inspect.rs` (#1667). |
+| `mobile/` | The paired mobile companion (desktop glue) | `push.rs` (FCM v1 delivery), `tunnel/mod.rs` (`TunnelState` bus + the `tunnel_*` commands; re-exports the wire protocol + Noise from the `bsc-tunnel` crate), `tunnel/state.rs` (the in-process bus + FCM worker), `tunnel/transport.rs` (relay dial-out + pump), `tunnel/commands.rs`. The Tauri-free wire types + Noise crypto live in [`crates/bsc-tunnel`](../crates/bsc-tunnel/) (#1919). |
 | [`tests.rs`](../src-tauri/src/tests.rs) / `testutil.rs` | Cross-cutting integration tests + the shared test harness (`temp_home`, `ENV_LOCK`, `write_file`) | — |
 
 ---
@@ -97,7 +119,7 @@ of these crates and exposes thin command wrappers over them.
 
 ## 4. Key flows, end to end
 
-### Console / PTY launch — `pty_create` ([`console/pty/mod.rs`](../src-tauri/src/console/pty/mod.rs))
+### Console / PTY launch — `pty_create` (`console/pty/mod.rs`)
 
 1. **Reconnect-or-create:** if a `PtySession` already exists for the `pane_id` (tab switch), return
    `Ok(false)` instead of respawning.
@@ -126,7 +148,7 @@ of these crates and exposes thin command wrappers over them.
 Reader/output is teed to the frontend (Tauri events) **and** to the `TunnelState` bus for mobile.
 On boot, `app/run.rs` reaps PTY children leaked by a prior unclean run via `pty_ledger::reconcile_on_boot()`.
 
-### Session settings & the role gate — `ensure_session_settings` ([`session/settings.rs`](../src-tauri/src/session/settings.rs))
+### Session settings & the role gate — `ensure_session_settings` (`session/settings.rs`)
 
 Writes the session's `.claude/settings.json`. The model: **allow Bash broadly** (so loops / pipes /
 `&&` chains run without prompts — "start and go") but layer a curated `DEFAULT_DENY` (sudo, `rm -rf /`,
@@ -137,11 +159,11 @@ The role gate (planner / worker / director / triage / tester / reviewer / issuer
 allow/deny/ask tool rules and write-path scoping the frontend passes in; the `ask` tier is the hard
 push-confirm gate.
 
-### Fleet & git worktrees — `ensure_worktree` ([`fleet/worktree.rs`](../src-tauri/src/fleet/worktree.rs))
+### Fleet & git worktrees — `ensure_worktree` (`fleet/worktree.rs`)
 
 Idempotently creates one git worktree per fleet agent at
 **`~/.base-studio-code/worktrees/<key>/<repoShort>--<agentSlug>`** — note this is **outside** the
-project hub (#844; see `worktrees_dir` in [`platform/paths.rs`](../src-tauri/src/platform/paths.rs)),
+project hub (#844; see `worktrees_dir` in `platform/paths.rs`),
 so the planner spec at `projects/<key>/CLAUDE.md` is *not* an ancestor of a worker's cwd (Claude Code
 walks `CLAUDE.md` up every parent, which previously leaked the ~52KB planning spec into every worker).
 The branch is named after the agent's stream id (reused if it already exists). The agent's focused
@@ -150,7 +172,7 @@ build artifacts (`target/`, `node_modules/`) are git-excluded and marked app-own
 warden never quarantines a worker for an artifact it didn't author. The director runs at the hub
 itself and merges the branches via PRs.
 
-### Planner workspace — `setup_workspaces` ([`planner/workspace.rs`](../src-tauri/src/planner/workspace.rs))
+### Planner workspace — `setup_workspaces` (`planner/workspace.rs`)
 
 Builds the project hub at `~/.base-studio-code/projects/<key>/` (slugified by `sanitize_project_key`;
 an empty key is refused). It creates `.claude/`, `prompts/`, `contracts/` (one doc per feature seam,
@@ -160,7 +182,7 @@ permissions, and clones linked repos in as subdirs. The hub **never moves**: pub
 in-place `.published` marker file (#922), not a directory location, so the planner's cwd (and Claude's
 cwd-keyed `--continue` history) stays stable.
 
-### Mobile tunnel — Noise IK over a zero-knowledge relay ([`mobile/tunnel/`](../src-tauri/src/mobile/tunnel/))
+### Mobile tunnel — Noise IK over a zero-knowledge relay (`mobile/tunnel/`)
 
 Both peers dial *out* to a Cloudflare relay (`relay/`); the relay forwards only opaque
 `{ room, ciphertext }`. The payload is an end-to-end **Noise IK** session
@@ -168,14 +190,14 @@ Both peers dial *out* to a Cloudflare relay (`relay/`); the relay forwards only 
 `bsc graph impl get bsc-tunnel--noise.rs`) — the
 desktop is the **responder** with a long-lived static keypair; the mobile is the **initiator** and
 learns the desktop's static public key from the **QR**. `TunnelState`
-([`mod.rs`](../src-tauri/src/mobile/tunnel/mod.rs)) is the in-process bus that tees PTY output, holds
+(`mod.rs`) is the in-process bus that tees PTY output, holds
 pane/session metadata + plan-sync caches, and gates input (every pairing starts **view-only** until
 the desktop grants input). `transport.rs` dials the relay over `rustls` TLS, runs the handshake, and
 pumps the bus (chunking PTY output under the 64KB Noise frame cap). The wire types in `protocol.rs`
 mirror mobile's `types.ts` — breaking changes need coordinated PRs in both repos (and the contract
 fixtures, resolved by filename via `find_fixture`, must stay byte-exact).
 
-### Extensions / MCP ([`extensions/`](../src-tauri/src/extensions/))
+### Extensions / MCP (`extensions/`)
 
 `mcp_clone` downloads a catalog MCP server into `~/.base-studio-code/mcp/<name>` (slugified, can't
 escape the root); `write_mcp_json` registers servers (incl. the bundled `bsc-research-mcp` /
@@ -190,7 +212,7 @@ the same CLI a live session uses (#2142) — not a per-verb Tauri command layer.
 ## 5. Tauri command conventions
 
 A backend command is an `async`/sync `fn` annotated `#[tauri::command]`, made `pub(crate)`, and
-listed in the `tauri::generate_handler![...]` block in [`app/run.rs`](../src-tauri/src/app/run.rs).
+listed in the `tauri::generate_handler![...]` block in `app/run.rs`.
 Shared state is injected via `State<'_, T>` (e.g. `State<'_, PtyState>`), the app handle via
 `AppHandle`. Commands return `Result<T, String>` (the `Err` string surfaces to the frontend) or a
 plain serializable value; errors are typically mapped with `.map_err(|e| e.to_string())`.
@@ -202,9 +224,9 @@ plain serializable value; errors are typically mapped with `.map_err(|e| e.to_st
 > *return values***. A returned struct is serialized by serde **as-is**.
 
 So a struct with plain Rust fields serializes as snake_case and the frontend must read snake_case —
-e.g. `WorkspacePaths { planning_dir }` ([`planner/workspace.rs`](../src-tauri/src/planner/workspace.rs))
+e.g. `WorkspacePaths { planning_dir }` (`planner/workspace.rs`)
 and `WorktreeCommit { hash, subject, author, date }`
-([`fleet/inspect.rs`](../src-tauri/src/fleet/inspect.rs)) are read as `planning_dir`,
+(`fleet/inspect.rs`) are read as `planning_dir`,
 `hash`, … on the frontend. When a struct should present camelCase to the frontend, it carries
 `#[serde(rename_all = "camelCase")]` explicitly — this is widespread (the tunnel protocol, source
 data, perf/log configs, …). **Mismatched casing reads `undefined` silently** (#789), so match the
@@ -233,7 +255,7 @@ no PATH changes; bundled with the app and rebuilt with `npm run build:plan`):
 | `bsc-compliance-mcp` | `compliance` | (stdio MCP) | Current compliance standards for the planner. |
 | `bsc-agent` | `bsc-agent` | `$BSC_AGENT_BIN` (per-console harness) | The model-agnostic agent runtime, when a console's provider is `bsc-agent`. |
 
-**Pure-shell helpers** ([`console/shell_rc/`](../src-tauri/src/console/shell_rc/)) — rc-file
+**Pure-shell helpers** (`console/shell_rc/`) — rc-file
 fragments concatenated into `~/.base-studio-code/bsc-env.sh` and sourced via `BASH_ENV`. They have
 hyphenated names (so they can't be `export -f`'d and must be *defined* in each subshell). Each one is
 best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or kills the shell:
@@ -317,7 +339,7 @@ regression test in the same branch.
 
 - **Worktrees live out of the hub (#844).** They're at `~/.base-studio-code/worktrees/<key>/<repo>--<slug>`,
   **not** `projects/<key>/.worktrees/`. Trust `worktrees_dir` in
-  [`platform/paths.rs`](../src-tauri/src/platform/paths.rs).
+  `platform/paths.rs`.
 - **The crate set is larger than the headline four.** Beyond `plandb`/`data`/`llm`/`research`, the
   workspace also has `skilldb`, `logs`, `compliance`, `mcp-rpc`, `bsc-blueprint`, `bsc-project`, and the
   internal `bsc-util`/`bsc-sqlite-util`/`bsc-cli-util` libs — the full set with package/binary names is

@@ -150,9 +150,9 @@ export function takesMaterializerAsBuildDependency(cargoToml) {
  * cannot drift from reality the way a literal would. **Both** opt-in routes count — see
  * `MATERIALIZE_DEP` for what checking only one of them costs.
  */
-export function materializedCrates(cratesDirs, readManifest) {
+export function materializedCrates(crateDirs, readManifest) {
   const out = new Set();
-  for (const dir of cratesDirs) {
+  for (const dir of crateDirs) {
     const text = readManifest(dir);
     if (typeof text !== "string") continue;
     if (text.includes(MATERIALIZE_MARKER) || takesMaterializerAsBuildDependency(text)) out.add(dir);
@@ -160,11 +160,30 @@ export function materializedCrates(cratesDirs, readManifest) {
   return out;
 }
 
+/**
+ * The crate DIRECTORY a record's `src` belongs to, REPO-RELATIVE — `crates/plandb`, `src-tauri`.
+ *
+ * Repo-relative rather than a bare crate NAME, and that is the whole fix. A crate does not have to
+ * live under `crates/`: `src-tauri` sits one level up, so a `^crates/` match returned nothing for all
+ * 138 of its records the moment it migrated, none of them were excluded, and this sweep built whole
+ * crate modules standalone — MEASURED at `src-tauri-compiles-from-the-graph`: **119 FAILED** with
+ * `unresolved import tauri`, which is the sweep asking a crate module to compile alone rather than any
+ * defect in a record. Exactly the silent under-report `MATERIALIZE_DEP` documents, one level further
+ * out: that constant was already written FOR `src-tauri`, but the directory half never followed.
+ *
+ * A directory is also the key nothing can collide in — it is what a manifest is read from — where a
+ * bare name would put a hypothetical top-level `data/` and `crates/data/` in one bucket.
+ */
+export function crateDirOf(src) {
+  if (typeof src !== "string") return null;
+  const i = src.indexOf("/src/");
+  return i > 0 ? src.slice(0, i) : null;
+}
+
 /** Does this record's `src` belong to a crate that materializes its source? */
 export function isMaterializedModule(src, crates) {
-  if (typeof src !== "string") return false;
-  const m = src.match(/^crates\/([^/]+)\//);
-  return m ? crates.has(m[1]) : false;
+  const dir = crateDirOf(src);
+  return dir ? crates.has(dir) : false;
 }
 
 /** Transitive closure of a node, split into the code to materialize and the primitives to import. */
@@ -252,12 +271,22 @@ if (process.argv[1]?.endsWith("graph-rust-compile.mjs")) {
   // NOT wrapped in a catch. An earlier version swallowed everything here, which turned a missing import
   // into an empty crate list — the filter silently did nothing and the sweep failed on a record it
   // should never have swept. A broad catch around a lookup is how a guard quietly stops guarding.
-  const crateDirs = readdirSync(join(root, "crates"), { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name);
+  // EVERY crate directory, not only the ones under `crates/`. A workspace member is any directory
+  // holding a `Cargo.toml`, and `src-tauri` is one of them — see `crateDirOf` for what missing it cost.
+  // Derived by looking for the manifest rather than naming `src-tauri`, so the next crate that lands
+  // outside `crates/` is covered without anyone remembering a literal.
+  const crateDirs = [
+    ...readdirSync(join(root, "crates"), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => `crates/${e.name}`),
+    ...readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== "crates" && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .filter((name) => existsSync(join(root, name, "Cargo.toml"))),
+  ];
   const materialized = materializedCrates(crateDirs, (dir) => {
     try {
-      return readFileSync(join(root, "crates", dir, "Cargo.toml"), "utf8");
+      return readFileSync(join(root, dir, "Cargo.toml"), "utf8");
     } catch {
       return null;
     }
