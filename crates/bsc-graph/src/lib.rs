@@ -9,18 +9,6 @@
 //! after a write reflects the write ("verify after every write"). #2745 layers the extract-to-harvest
 //! feeder (mine reusable code from a project into the library) on top.
 
-pub mod node_urn;
-pub mod features;
-pub mod build_facet;
-pub mod impl_refresh;
-pub mod cli;
-/// The store→file direction (#4192) — the twin of `bsc ui emit`, with the shared-`src` hazard
-/// that makes an algorithm emit deliberately unlike a component one.
-pub mod emit;
-pub mod extract;
-pub mod migrate;
-pub mod repo_store;
-pub mod rust_test;
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -3063,3 +3051,15 @@ mod stale_write_tests {
         assert_eq!(bsc_record::HISTORY_CAP, 30, "the cap this reasoning rests on");
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/node_urn.rs, src/features.rs, src/build_facet.rs, src/impl_refresh.rs, src/cli.rs, src/emit.rs, src/extract.rs, src/migrate.rs, src/repo_store.rs, src/rust_test.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-graph--<module>.rs
+//     bsc graph impl set --id bsc-graph--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-graph--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
