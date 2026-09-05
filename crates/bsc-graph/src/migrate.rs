@@ -94,12 +94,23 @@ pub enum Route {
     Alongside,
 }
 
-/// One `(pub )?mod name;` declaration, with everything attached to it that carries meaning.
+/// One `<vis> mod name;` declaration, with everything attached to it that carries meaning.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleDecl {
     pub name: String,
-    /// `pub mod` vs a private `mod`. `build.rs` emits what this says, not an assumption.
-    pub public: bool,
+    /// The declared VISIBILITY, verbatim — `"pub"`, `"pub(crate)"`, `"pub(super)"`, `"pub(self)"`,
+    /// `"pub(in crate::a)"`, or `""` for a bare private `mod`. `build.rs` emits what this says, not an
+    /// assumption.
+    ///
+    /// A STRING rather than the `bool` it used to be, because `pub` and private were never the whole
+    /// set: `pub(crate) mod x;` is neither, and collapsing it to either one changes what the crate
+    /// exports. It was not an exotic shape — 13 declarations in `src-tauri` are spelled that way, and
+    /// `planner/mod.rs` spells ALL FOUR of its children that way, so the entire subtree left with them.
+    ///
+    /// Canonically SPACED rather than byte-verbatim (`pub (crate)` records as `pub(crate)`), for the
+    /// reason [`role_for`] squeezes an attribute: a record must not change because somebody reformatted
+    /// the declaration.
+    pub vis: String,
     /// The declaration line verbatim.
     pub line: String,
     /// The whole contiguous block this declaration owns — its attributes and docs in the order the
@@ -117,6 +128,18 @@ pub struct ModuleDecl {
     pub attrs: Vec<String>,
 }
 
+impl ModuleDecl {
+    /// The `--module-vis` value this declaration records.
+    ///
+    /// `private` rather than an empty string because that is the word
+    /// `graph-materialize/emit.rs` maps back to a bare `mod`; every other visibility is passed through
+    /// unchanged, and that side already renders an ARBITRARY vis string (`Some(v) => format!("{v} ")`),
+    /// so `pub(crate)` materializes as `pub(crate) mod x { … }` with nothing else to teach it.
+    pub fn module_vis(&self) -> &str {
+        if self.vis.is_empty() { "private" } else { &self.vis }
+    }
+}
+
 /// The `(pub )?mod name;` declarations in a crate root, with their docs and attributes.
 ///
 /// `mod tests` is never one — an inline test module has no file to migrate.
@@ -127,10 +150,44 @@ pub struct ModuleDecl {
 /// `crates/llm` an orphaned `#[cfg(test)]` landed on `pub use anthropic::AnthropicProvider;` and
 /// compiled that re-export out of every non-test build.
 pub fn module_decls(lib_src: &str) -> Vec<ModuleDecl> {
+    read_decls(lib_src).0
+}
+
+/// [`module_decls`], plus every line that IS a `mod` declaration and could not be read as one.
+///
+/// The pair exists because the second half used to be nothing at all. A declaration the parser did not
+/// recognize was indistinguishable from a line that is not a declaration, so it left the plan SHORT and
+/// silent — 13 modules of `src-tauri`, and with `planner/mod.rs` a whole subtree. That is this repo's
+/// signature failure (a tool reporting less than it knows while looking green), so the shortfall is now
+/// a value the caller has to carry rather than a `continue`.
+///
+/// Each entry is the offending line, trimmed and verbatim.
+pub fn read_decls(lib_src: &str) -> (Vec<ModuleDecl>, Vec<String>) {
+    // WHICH BYTES ARE CODE. `mod` inside a doc comment or a test fixture string is prose ABOUT a
+    // declaration, not one — and this crate's own `migrate.rs` holds four such fixture lines
+    // (`pub mod cli;\n\` inside a raw continuation), which a raw line scan reads as an unreadable
+    // declaration and would refuse the crate over. The mask already exists for `include_str!`
+    // evidence, which is the same discrimination.
+    let mask = CodeMask::of(lib_src);
     let lines: Vec<&str> = lib_src.split('\n').collect();
     let mut out = Vec::new();
+    let mut unreadable = Vec::new();
+    let mut line_start = 0usize;
     for (i, raw) in lines.iter().enumerate() {
-        let Some((public, name)) = parse_mod_line(raw) else { continue };
+        let at = line_start;
+        line_start += raw.len() + 1;
+        let Some(kw) = raw.find("mod") else { continue };
+        if !mask.is_code(at + kw) {
+            continue;
+        }
+        let (vis, name) = match parse_mod_line(raw) {
+            ModLine::Decl(vis, name) => (vis, name),
+            ModLine::Unreadable => {
+                unreadable.push(raw.trim().to_string());
+                continue;
+            }
+            ModLine::Other => continue,
+        };
         if name == "tests" {
             continue;
         }
@@ -152,32 +209,142 @@ pub fn module_decls(lib_src: &str) -> Vec<ModuleDecl> {
         }
         out.push(ModuleDecl {
             name: name.to_string(),
-            public,
+            vis,
             line: (*raw).to_string(),
             block: lines[j..=i].join("\n"),
             docs,
             attrs,
         });
     }
-    out
+    (out, unreadable)
 }
 
-/// `(pub )?mod <name>;` on a line of its own, or `None`. Returns whether it was `pub`.
+/// What a source line is, as far as module declarations go.
+///
+/// THREE answers rather than two, and the third is the whole point of the type. A `mod` declaration the
+/// parser could not read used to return the same `None` as a line that is not a declaration at all, so
+/// the tool's plan was short and nothing said so. A silent skip is what produced the `pub(crate)` gap;
+/// [`ModLine::Unreadable`] is what stops the next one, because [`refuse_reason`] turns it into a
+/// refusal that names the line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ModLine<'a> {
+    /// `<vis> mod <name>;` — the visibility verbatim (`""` when private) and the module name.
+    Decl(String, &'a str),
+    /// It IS a `mod` declaration and this parser cannot read how it is spelled. Never skipped.
+    Unreadable,
+    /// Not a declaration: ordinary code, or an inline `mod x { … }`, which has no file to migrate.
+    Other,
+}
+
+/// `<vis> mod <name>;` on a line of its own — see [`ModLine`].
 ///
 /// Deliberately line-shaped rather than a parse: the rewrite removes the matched LINE, so anything this
 /// recognizes must be removable as one. A `mod x { … }` inline module is not matched and not migrated.
-fn parse_mod_line(line: &str) -> Option<(bool, &str)> {
+///
+/// EVERY visibility Rust spells is read, and each one round-trips unchanged, because
+/// `graph-materialize/plan.rs::emit_level` nests a child INSIDE its parent's `mod` block — the
+/// materialized crate has the identical module tree, so a POSITION-RELATIVE visibility (`pub(super)`,
+/// `pub(self)`, `pub(in <path>)`) means in the record exactly what it meant in the file. Excluding them
+/// would have been the cheaper change and the wrong one: `pub(crate)` was already "the exotic form
+/// nobody writes" right up until it hid a subtree, and a form left unread is a form left SILENT.
+fn parse_mod_line(line: &str) -> ModLine<'_> {
     let t = line.trim();
-    let (public, rest) = match t.strip_prefix("pub ") {
-        Some(r) => (true, r.trim_start()),
-        None => (false, t),
-    };
-    let rest = rest.strip_prefix("mod ")?;
-    let name = rest.strip_suffix(';')?.trim();
-    if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return None;
+    // The TAIL of a multi-line visibility — `pub(\n    crate\n) mod x;`. Its restriction is on another
+    // line, so the declaration can be neither read nor REMOVED as one line. Reported, not dropped.
+    if let Some(tail) = t.strip_prefix(')') {
+        return match mod_shape(tail.trim_start()) {
+            ModShape::Decl(_) | ModShape::Unreadable => ModLine::Unreadable,
+            ModShape::Inline | ModShape::NotMod => ModLine::Other,
+        };
     }
-    Some((public, name))
+    // The visibility prefix. `pub` must be a whole TOKEN (`pub_thing` is not `pub`), and Rust allows a
+    // space before the restriction (`pub (crate) mod x;`), so it is consumed rather than string-matched.
+    let after_pub = t
+        .strip_prefix("pub")
+        .filter(|a| !a.starts_with(|c: char| c.is_alphanumeric() || c == '_'));
+    let (vis, rest) = match after_pub {
+        None => (Ok(String::new()), t),
+        Some(after) => {
+            let after = after.trim_start();
+            match after.strip_prefix('(') {
+                // `pub(` with no `)` on this line is the HEAD of a multi-line visibility; its tail is
+                // caught above, which is where the restriction can actually be judged.
+                None => (Ok("pub".to_string()), after),
+                Some(open) => match open.find(')') {
+                    None => return ModLine::Other,
+                    Some(close) => (restriction(&open[..close]), open[close + 1..].trim_start()),
+                },
+            }
+        }
+    };
+    // The SHAPE is decided before the visibility is judged, so `pub(in weird!) fn f()` is ordinary code
+    // rather than an unreadable module declaration.
+    match mod_shape(rest) {
+        ModShape::NotMod | ModShape::Inline => ModLine::Other,
+        ModShape::Unreadable => ModLine::Unreadable,
+        ModShape::Decl(name) => match vis {
+            Ok(v) => ModLine::Decl(v, name),
+            Err(()) => ModLine::Unreadable,
+        },
+    }
+}
+
+/// What follows a visibility on a line.
+enum ModShape<'a> {
+    /// `mod <name>;` — the name.
+    Decl(&'a str),
+    /// `mod <name> { … }`, which owns no file.
+    Inline,
+    /// A `mod` declaration whose name or trailer this tool cannot read — a raw identifier
+    /// (`mod r#async;`), a trailing comment, two declarations on one line, a `;` on the next line.
+    /// Each of those is removable-as-a-line in a way that would take something else with it, or
+    /// materializable only by guessing, so each is reported rather than migrated.
+    Unreadable,
+    /// Not a `mod` item at all.
+    NotMod,
+}
+
+fn mod_shape(rest: &str) -> ModShape<'_> {
+    let Some(after) = rest.strip_prefix("mod") else { return ModShape::NotMod };
+    if !after.starts_with(char::is_whitespace) {
+        return ModShape::NotMod;
+    }
+    let body = after.trim();
+    if body.split(';').next().unwrap_or(body).contains('{') {
+        return ModShape::Inline;
+    }
+    match body.strip_suffix(';').map(str::trim) {
+        Some(name) if is_ident(name) => ModShape::Decl(name),
+        _ => ModShape::Unreadable,
+    }
+}
+
+/// The canonical `pub(…)` spelling for a restriction, or `Err` when it is not one Rust defines.
+///
+/// Whitespace is normalized rather than preserved (`pub(in  crate :: a)` records as
+/// `pub(in crate::a)`) so a record does not change because a declaration was reformatted.
+fn restriction(raw: &str) -> Result<String, ()> {
+    let squeezed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    match squeezed.as_str() {
+        "crate" | "super" | "self" => Ok(format!("pub({squeezed})")),
+        r => match r.strip_prefix("in ") {
+            Some(path) => {
+                let segs: Vec<&str> = path.split("::").map(str::trim).collect();
+                if segs.iter().all(|s| is_ident(s)) {
+                    Ok(format!("pub(in {})", segs.join("::")))
+                } else {
+                    Err(())
+                }
+            }
+            None => Err(()),
+        },
+    }
+}
+
+/// A plain Rust identifier — no raw `r#` form, which names a FILE this tool would have to spell
+/// differently from the declaration.
+fn is_ident(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
 /// The parent's `/// …` for a module, rewritten as the `//! …` that belongs at the top of its body.
@@ -269,13 +436,40 @@ impl ModuleNode {
 /// [`refuse_reason`]'s job: a walk that silently dropped it would migrate a crate whose root still
 /// declares a module nothing provides.
 pub fn module_tree(src_dir: &Path, root_src: &str) -> Vec<ModuleNode> {
-    let mut out = Vec::new();
-    walk_modules(src_dir, "", &[], root_src, &mut out);
-    out
+    module_walk(src_dir, root_src, "the crate root").nodes
 }
 
-fn walk_modules(src_dir: &Path, rel_dir: &str, prefix: &[String], parent_src: &str, out: &mut Vec<ModuleNode>) {
-    for decl in module_decls(parent_src) {
+/// The result of one crate walk: its modules, and every declaration the walk could not read.
+pub struct CrateWalk {
+    /// Every module, depth-first from the root, parents before their children.
+    pub nodes: Vec<ModuleNode>,
+    /// `<file>: <line>` for each `mod` declaration [`parse_mod_line`] cannot read.
+    ///
+    /// It is carried out of the walk instead of dropped inside it because a declaration the tool cannot
+    /// see is a module it will not migrate, and the plan says nothing about what it never reached. That
+    /// silence is the failure this list exists to make impossible — see [`refuse_reason`].
+    pub unreadable: Vec<String>,
+}
+
+/// [`module_tree`], keeping what the walk could not read. `root_file` names the crate root for a
+/// human — `lib.rs`, `main.rs`.
+pub fn module_walk(src_dir: &Path, root_src: &str, root_file: &str) -> CrateWalk {
+    let mut walk = CrateWalk { nodes: Vec::new(), unreadable: Vec::new() };
+    walk_modules(src_dir, "", &[], root_src, root_file, &mut walk);
+    walk
+}
+
+fn walk_modules(
+    src_dir: &Path,
+    rel_dir: &str,
+    prefix: &[String],
+    parent_src: &str,
+    parent_file: &str,
+    walk: &mut CrateWalk,
+) {
+    let (decls, unreadable) = read_decls(parent_src);
+    walk.unreadable.extend(unreadable.into_iter().map(|l| format!("{parent_file}: {l}")));
+    for decl in decls {
         let mut path = prefix.to_vec();
         path.push(decl.name.clone());
         let beside = format!("{rel_dir}{}.rs", decl.name);
@@ -290,16 +484,19 @@ fn walk_modules(src_dir: &Path, rel_dir: &str, prefix: &[String], parent_src: &s
             (beside, has_dir)
         };
         let source = std::fs::read_to_string(src_dir.join(&file)).ok();
+        // A directory module's own declarations are read HERE and reported by the recursion below, so
+        // each unreadable line is attributed to exactly one file rather than twice or not at all.
         let children = if is_dir_module {
             source.as_deref().map(module_decls).unwrap_or_default()
         } else {
             Vec::new()
         };
-        out.push(ModuleNode { path: path.clone(), file, decl, children, source: source.clone() });
+        let child_file = file.clone();
+        walk.nodes.push(ModuleNode { path: path.clone(), file, decl, children, source: source.clone() });
         if is_dir_module {
             if let Some(src) = source.as_deref() {
-                let name = path.last().expect("just pushed");
-                walk_modules(src_dir, &format!("{rel_dir}{name}/"), &path, src, out);
+                let name = path.last().expect("just pushed").clone();
+                walk_modules(src_dir, &format!("{rel_dir}{name}/"), &path, src, &child_file, walk);
             }
         }
     }
@@ -340,6 +537,12 @@ pub struct CrateShape<'a> {
     /// session state) is now invisible for a better reason than a heuristic — nothing DECLARES it, so
     /// the walk never reaches it.
     pub modules: &'a [ModuleNode],
+    /// Every `mod` declaration in this crate the walk could NOT read — see [`CrateWalk::unreadable`].
+    ///
+    /// A field on the SHAPE rather than a warning printed by the walk, because the honest verdict for a
+    /// crate holding one is a refusal: the plan is short by an unknown amount, and `--apply` would
+    /// migrate the modules it found while leaving behind declarations pointing at files it deleted.
+    pub unreadable: &'a [String],
 }
 
 /// Which bytes of Rust source are CODE, and where the string literals sitting in code are.
@@ -610,7 +813,7 @@ fn role_for(d: &ModuleDecl) -> &'static str {
 fn impl_set_argv(id: &str, n: &ModuleNode) -> Vec<String> {
     let d = &n.decl;
     ["impl", "set", "--tech", "rust", "--id", id, "--role", role_for(d),
-     "--name", n.name(), "--module-vis", if d.public { "pub" } else { "private" }]
+     "--name", n.name(), "--module-vis", d.module_vis()]
         .iter().map(|s| (*s).to_string()).collect()
 }
 
@@ -623,6 +826,23 @@ pub fn refuse_reason(shape: &CrateShape<'_>, route: Route) -> Option<String> {
     let marker = shape.marker;
     if shape.cargo_toml.contains(marker) {
         return Some(format!("already migrated — its Cargo.toml carries {marker}"));
+    }
+    // A DECLARATION THIS TOOL CANNOT READ IS A REFUSAL, NEVER A SKIP.
+    //
+    // The plan would be short by an unknown amount and nothing would say so — which is exactly how
+    // `pub(crate) mod x;` went unseen for the whole of `src-tauri` and, through `planner/mod.rs`, for a
+    // whole subtree. It is also a correctness risk under `--apply`: the "declares [x] with no matching
+    // file" check below cannot see a declaration the parser did not read either, so the migration would
+    // delete files while leaving the declarations that name them.
+    if !shape.unreadable.is_empty() {
+        let shown: Vec<&str> = shape.unreadable.iter().take(5).map(String::as_str).collect();
+        let more = shape.unreadable.len().saturating_sub(shown.len());
+        return Some(format!(
+            "{} module declaration(s) cannot be read, so the plan would be SHORT and nothing would say              so: {}{}. `migrate-crate` reads `mod x;`, `pub mod x;` and every restricted form              (`pub(crate)`, `pub(super)`, `pub(self)`, `pub(in <path>)`) written on ONE line with a              plain identifier. Put the declaration in one of those shapes, or teach `parse_mod_line`              the new one — do not leave it unseen",
+            shape.unreadable.len(),
+            shown.join("; "),
+            if more > 0 { format!("; and {more} more") } else { String::new() }
+        ));
     }
     match route {
         // A CRATE GETS EXACTLY ONE BUILD SCRIPT, and `opt_in` adds ours without looking for the crate's
@@ -1303,7 +1523,8 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
     // scan used to be one `read_dir` of `src/` and a count of directories, which is why a nested
     // directory could only ever be a refusal — nothing in `lib.rs` names `cli/nouns.rs`, only `cli.rs`
     // does.
-    let nodes = module_tree(&src_dir, &lib_src);
+    let walk = module_walk(&src_dir, &lib_src, &root_name);
+    let nodes = walk.nodes;
     let marker = marker_for(&crate_dir);
     let dep = dep_for(&crate_dir);
     let shape = CrateShape {
@@ -1313,6 +1534,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         marker: &marker,
         dep: &dep,
         modules: &nodes,
+        unreadable: &walk.unreadable,
     };
     // THE VERDICT AND THE PLAN ARE TWO DIFFERENT ANSWERS, and a dry run is owed both.
     //
@@ -1445,7 +1667,8 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         set_res.inspect_err(|_| {
             rollback.restore();
         })?;
-        writeln!(out, "  harvested {id}{}", if d.public { "" } else { " (private)" }).map_err(|e| e.to_string())?;
+        writeln!(out, "  harvested {id}{}", if d.vis == "pub" { String::new() } else { format!(" ({})", d.module_vis()) })
+            .map_err(|e| e.to_string())?;
         done.push(Migrated { module: n.module_path(), id });
     }
 
@@ -1557,15 +1780,11 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
 mod tests {
     use super::*;
 
-    fn decl(name: &str, public: bool) -> ModuleDecl {
-        ModuleDecl {
-            name: name.into(),
-            public,
-            line: format!("{}mod {name};", if public { "pub " } else { "" }),
-            block: format!("{}mod {name};", if public { "pub " } else { "" }),
-            docs: vec![],
-            attrs: vec![],
-        }
+    /// One declaration, as `module_decls` would have read it. `vis` is the visibility verbatim —
+    /// `""` for a bare private `mod`.
+    fn decl(name: &str, vis: &str) -> ModuleDecl {
+        let line = format!("{}mod {name};", if vis.is_empty() { String::new() } else { format!("{vis} ") });
+        ModuleDecl { name: name.into(), vis: vis.into(), line: line.clone(), block: line, docs: vec![], attrs: vec![] }
     }
 
     #[test]
@@ -1574,11 +1793,137 @@ mod tests {
         let d = module_decls(src);
         assert_eq!(d.len(), 2, "the inline `mod tests {{` is not a declaration: {d:?}");
         assert_eq!(d[0].name, "cli");
-        assert!(d[0].public);
+        assert_eq!(d[0].vis, "pub");
         assert_eq!(d[0].docs, vec!["/// The CLI.".to_string()]);
         assert_eq!(d[1].name, "surface_tests");
-        assert!(!d[1].public, "a bare `mod` is private and must be recorded as such");
+        assert_eq!(d[1].vis, "", "a bare `mod` is private and must be recorded as such");
         assert_eq!(d[1].attrs, vec!["#[cfg(test)]".to_string()]);
+    }
+
+    /// THE GAP, as a unit. Against the parser this replaced, ALL FOUR of these were invisible and the
+    /// assertion read `left: []` — not a near-miss on one exotic form, a whole class unseen, because
+    /// `strip_prefix("pub ")` demanded a SPACE where every restriction puts a paren.
+    ///
+    /// EVERY visibility Rust spells is read, and none is flattened to `pub`. That is not generosity, it
+    /// is a property of the other end: `graph-materialize/plan.rs::emit_level` nests a child INSIDE its
+    /// parent's `mod` block, so the materialized crate has the identical module tree and a
+    /// POSITION-RELATIVE visibility means there exactly what it meant in the file.
+    #[test]
+    fn every_restricted_visibility_is_read_and_recorded_verbatim() {
+        let src = "//! crate\n\
+                   pub(crate) mod closure;\n\
+                   pub(super) mod near;\n\
+                   pub(self) mod own;\n\
+                   pub(in crate::a::b) mod deep;\n\
+                   pub mod open;\n\
+                   mod shut;\n";
+        let d = module_decls(src);
+        let got: Vec<(&str, &str)> = d.iter().map(|x| (x.name.as_str(), x.vis.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                ("closure", "pub(crate)"),
+                ("near", "pub(super)"),
+                ("own", "pub(self)"),
+                ("deep", "pub(in crate::a::b)"),
+                ("open", "pub"),
+                ("shut", ""),
+            ],
+            "every form is a declaration, and its visibility is recorded as written"
+        );
+        // What travels to the record. `private` is the word `emit.rs` maps back to a bare `mod`;
+        // everything else is passed through, which is why nothing on the emit side needed teaching.
+        let vis: Vec<&str> = d.iter().map(ModuleDecl::module_vis).collect();
+        assert_eq!(vis, ["pub(crate)", "pub(super)", "pub(self)", "pub(in crate::a::b)", "pub", "private"]);
+    }
+
+    /// A record must not change because somebody reformatted the declaration — the same rule
+    /// [`role_for`] applies to an attribute. Rust allows a space before the restriction and around the
+    /// `::`, and `pub` is a TOKEN, so `pub_thing` is not one.
+    #[test]
+    fn a_reformatted_visibility_records_the_same_thing() {
+        let d = module_decls("pub (crate) mod a;\npub(crate)mod b;\npub(in  crate :: x ) mod c;\n");
+        let got: Vec<(&str, &str)> = d.iter().map(|x| (x.name.as_str(), x.vis.as_str())).collect();
+        assert_eq!(got, [("a", "pub(crate)"), ("b", "pub(crate)"), ("c", "pub(in crate::x)")]);
+        assert_eq!(module_decls("pub_thing mod x;\n").len(), 0, "`pub` must be a whole token");
+    }
+
+    /// The `--module-vis` the tool actually SENDS, from the declaration a walk actually read.
+    ///
+    /// A separate assertion from the parser's, because `impl_set_argv` is where the value leaves this
+    /// crate and a parser test cannot see it — the same seam that caught `role_for` being bypassed by a
+    /// hardcoded `"algorithm"` at this exact call site.
+    #[test]
+    fn impl_set_argv_sends_the_restricted_visibility_it_read() {
+        let mut n = node(&["closure"], "closure.rs", Some("pub fn c() {}"));
+        n.decl = module_decls("pub(crate) mod closure;\n").remove(0);
+        let argv = impl_set_argv("bsc-component--closure.rs", &n);
+        let at = argv.iter().position(|a| a == "--module-vis").expect("the flag is sent");
+        assert_eq!(argv[at + 1], "pub(crate)", "not flattened to pub, and not to private: {argv:?}");
+
+        n.decl = module_decls("mod closure;\n").remove(0);
+        let argv = impl_set_argv("x", &n);
+        let at = argv.iter().position(|a| a == "--module-vis").expect("the flag is sent");
+        assert_eq!(argv[at + 1], "private", "a bare `mod` still records `private`");
+    }
+
+    /// A `mod` DECLARATION THIS PARSER CANNOT READ IS A REFUSAL, never a skip.
+    ///
+    /// A silent skip is the entire bug: the plan comes up short by an unknown amount and the tool
+    /// reports success. So each shape below is one the parser deliberately does NOT migrate — a raw
+    /// identifier names a file it would have to spell differently from the declaration, a trailing
+    /// comment or a second declaration on the line would be swallowed by a LINE removal, and a
+    /// multi-line visibility cannot be read OR removed as one line — and each is REPORTED.
+    #[test]
+    fn a_declaration_this_parser_cannot_read_is_reported_not_skipped() {
+        for line in ["mod r#async;", "mod x; // note", "mod a; mod b;", "pub(nonsense) mod x;", ") mod x;"] {
+            let (decls, unreadable) = read_decls(&format!("{line}\n"));
+            assert!(decls.is_empty(), "`{line}` must not be migrated");
+            assert_eq!(unreadable, [line.to_string()], "`{line}` must be REPORTED, not dropped");
+        }
+        // …and what must NOT be reported: ordinary code, an inline module, and a `pub(…)` restriction
+        // on something that is not a module at all.
+        for line in ["pub(in weird!) fn f() {}", "mod x { }", "pub(crate) mod x { }", "let modest = 1;"] {
+            assert!(read_decls(&format!("{line}\n")).1.is_empty(), "`{line}` is not a bad declaration");
+        }
+
+        // The refusal names the count and the line, so the reader can act on it.
+        let modules = [node(&["cli"], "cli.rs", Some(""))];
+        let bad = ["lib.rs: mod r#async;".to_string()];
+        let sh = CrateShape {
+            cargo_toml: "[package]\nedition = \"2021\"\n",
+            build_rs: None,
+            root_name: "lib.rs",
+            marker: MARKER,
+            dep: DEP,
+            modules: &modules,
+            unreadable: &bad,
+        };
+        let why = refuse_reason(&sh, Route::Shared).expect("an unreadable declaration is a refusal");
+        assert!(why.contains("lib.rs: mod r#async;"), "names the line: {why}");
+        assert!(why.contains("cannot be read"), "{why}");
+        assert!(why.contains("pub(crate)"), "says which shapes it DOES read: {why}");
+    }
+
+    /// A `mod` token in a COMMENT or a STRING is prose about a declaration, not one.
+    ///
+    /// This is not hypothetical tidiness: `crates/bsc-graph/src/cli.rs` is a directory module, so the
+    /// walk reads its source, and this file holds four `pub mod cli;\n\` fixture lines inside raw
+    /// continuations. A line scan reads those as unreadable declarations and refuses `bsc-graph` over
+    /// its own test data — the same trap the `include_str!` evidence hit in this file the day before,
+    /// which is why `CodeMask` was already here to reuse rather than a second answer to write.
+    #[test]
+    fn a_mod_line_inside_a_comment_or_a_string_is_neither_read_nor_reported() {
+        let src = "//! doc: pub mod cli;\n\
+                   // mod r#async;\n\
+                   const F: &str = \"pub mod cli;\";\n\
+                   const G: &str = \"mod r#async;\";\n\
+                   /* mod block; */\n\
+                   pub(crate) mod real;\n";
+        let (decls, unreadable) = read_decls(src);
+        assert_eq!(decls.len(), 1, "only the live declaration: {decls:?}");
+        assert_eq!(decls[0].name, "real");
+        assert!(unreadable.is_empty(), "nothing in a comment or a literal is a bad declaration: {unreadable:?}");
     }
 
     /// REGRESSION. An `#[…]` above a declaration is not decoration — removing the declaration and
@@ -1688,7 +2033,7 @@ mod tests {
     fn the_generated_header_agrees_in_number() {
         let one = rewrite_lib(
             "pub mod cli;\n",
-            &[decl("cli", true)],
+            &[decl("cli", "pub")],
             &[node(&["cli"], "cli.rs", Some(""))],
             "demo",
             Route::Shared,
@@ -1701,7 +2046,7 @@ mod tests {
         );
         let two = rewrite_lib(
             "pub mod cli;\npub mod store;\n",
-            &[decl("cli", true), decl("store", true)],
+            &[decl("cli", "pub"), decl("store", "pub")],
             &[node(&["cli"], "cli.rs", Some("")), node(&["store"], "store.rs", Some(""))],
             "demo",
             Route::Shared,
@@ -1716,7 +2061,7 @@ mod tests {
         // `src/` is told that `src/cli/nouns.rs` is gone too — the directory itself is deleted.
         let deep = rewrite_lib(
             "pub mod cli;\n",
-            &[decl("cli", true)],
+            &[decl("cli", "pub")],
             &[node(&["cli"], "cli.rs", Some("")), node(&["cli", "nouns"], "cli/nouns.rs", Some(""))],
             "demo",
             Route::Shared,
@@ -1730,7 +2075,7 @@ mod tests {
         // see in the first place.
         let along = rewrite_lib(
             "pub mod cli;\n",
-            &[decl("cli", true)],
+            &[decl("cli", "pub")],
             &[node(&["cli"], "cli.rs", Some(""))],
             "demo",
             Route::Alongside,
@@ -1763,14 +2108,22 @@ mod tests {
         ModuleNode {
             path: path.iter().map(|s| (*s).to_string()).collect(),
             file: file.into(),
-            decl: decl(path.last().expect("a module has a name"), true),
+            decl: decl(path.last().expect("a module has a name"), "pub"),
             children: vec![],
             source: source.map(str::to_string),
         }
     }
 
     fn shape<'a>(cargo: &'a str, modules: &'a [ModuleNode]) -> CrateShape<'a> {
-        CrateShape { cargo_toml: cargo, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules }
+        CrateShape {
+            cargo_toml: cargo,
+            build_rs: None,
+            root_name: "lib.rs",
+            marker: MARKER,
+            dep: DEP,
+            modules,
+            unreadable: &[],
+        }
     }
 
     #[test]
@@ -1829,6 +2182,7 @@ mod tests {
         let sources = vec![node(&["cli"], "cli.rs", Some("fn t() { let s = include_str!(\"cli.rs\"); }"))];
         let shape = CrateShape {
             cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &sources,
+            unreadable: &[],
         };
         let why = refuse_reason(&shape, Route::Shared).expect("a self-read must be refused");
         assert!(why.contains("include_str!"), "names the mechanism: {why}");
@@ -1843,6 +2197,7 @@ mod tests {
         )];
         let ok = CrateShape {
             cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &survives,
+            unreadable: &[],
         };
         assert!(refuse_reason(&ok, Route::Shared).is_none(), "a data file that survives is not a refusal");
     }
@@ -1876,7 +2231,15 @@ mod tests {
         let mut wrong: Vec<String> = Vec::new();
         for src in not_a_call {
             let modules = vec![node(&["cli"], "cli.rs", Some(src))];
-            let shape = CrateShape { cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &modules };
+            let shape = CrateShape {
+                cargo_toml: plain,
+                build_rs: None,
+                root_name: "lib.rs",
+                marker: MARKER,
+                dep: DEP,
+                modules: &modules,
+                unreadable: &[],
+            };
             let targets = include_str_targets(src);
             if !targets.is_empty() {
                 wrong.push(format!("read {targets:?} out of TEXT: {src}"));
@@ -2643,6 +3006,74 @@ mod tests {
         );
     }
 
+    /// THE GATE THIS FIX OWES, over the REAL workspace: no crate holds a `mod` declaration the parser
+    /// cannot read.
+    ///
+    /// The invariant is not "`pub(crate)` works now" — it is that a declaration this tool cannot read is
+    /// never SILENT. The fix repaired one instance; this is what stops the next, because the next one
+    /// will be spelled some way nobody has thought of and the only thing that generalizes is the
+    /// refusal. Reading it off the real tree rather than a fixture matters: `bsc-graph`'s own `cli.rs`
+    /// is a directory module holding `pub mod cli;` fixture strings, which is exactly the false positive
+    /// that would make this gate unusable and be quietly demoted.
+    ///
+    /// SCOPED to the files the tool actually READS — the crate roots and the directory-module sources
+    /// the walk reaches — not every `.rs` in the repo, because a leaf module's source is never parsed
+    /// for declarations and scanning it would report fixtures nothing acts on.
+    #[test]
+    fn no_workspace_crate_holds_a_mod_declaration_this_parser_cannot_read() {
+        let root = repo();
+        let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("the workspace manifest");
+        let members = workspace_members(&manifest);
+        assert!(members.len() >= 60, "only {} members — the member list is not being read", members.len());
+
+        let mut walked = 0usize;
+        let mut decls = 0usize;
+        let mut restricted = 0usize;
+        let mut bad: Vec<String> = Vec::new();
+        for m in &members {
+            let src = root.join(m).join("src");
+            let Some(root_name) = ["lib.rs", "main.rs"].into_iter().find(|f| src.join(f).is_file()) else {
+                continue;
+            };
+            let Ok(root_src) = std::fs::read_to_string(src.join(root_name)) else { continue };
+            let walk = module_walk(&src, &root_src, root_name);
+            walked += 1;
+            decls += walk.nodes.len();
+            restricted += walk.nodes.iter().filter(|n| n.decl.vis.starts_with("pub(")).count();
+            bad.extend(walk.unreadable.into_iter().map(|l| format!("{m}: {l}")));
+        }
+        assert!(
+            bad.is_empty(),
+            "a `mod` declaration in this workspace cannot be read, so its crate's plan would be short: \
+             {bad:?}"
+        );
+        // POPULATION, because a walk that stopped finding anything would satisfy the assertion above in
+        // silence — which is the failure mode this whole item is about.
+        assert!(walked >= 60, "only {walked} crates walked");
+        assert!(decls >= 150, "only {decls} declarations read across the workspace");
+        // MEASURED 2026-09-04: 175 declarations across 71 walked crates, 16 of them file-backed `pub(crate) mod` — 13 in `src-tauri`, 3 in
+        // `bsc-component`. A floor rather than an equality so an ordinary backend change does not
+        // redden it, but a parser that stopped reading the form goes to 0 and fails here.
+        assert!(restricted >= 16, "only {restricted} restricted-visibility modules — the parser regressed");
+    }
+
+    /// The OTHER crate the gap stranded, against the real tree. `bsc-component` is already migrated, so
+    /// `--apply` still refuses it — but the DRY RUN's plan went from 0 modules to its three
+    /// `pub(crate)` ones, which is why that crate ends at four files instead of one.
+    #[test]
+    fn bsc_component_no_longer_strands_its_three_pub_crate_modules() {
+        let root = repo();
+        let mut out: Vec<u8> = Vec::new();
+        let why = run(&["bsc-component".into(), "--root".into(), root.to_string_lossy().to_string()], &mut out)
+            .expect_err("an already-migrated crate is still refused");
+        let text = String::from_utf8(out).unwrap();
+        assert!(why.contains("already migrated"), "the verdict is unchanged: {why}");
+        assert!(text.contains("would migrate bsc-component — 3 module(s):"), "{text}");
+        for m in ["closure", "import-symbols", "usage-sources"] {
+            assert!(text.contains(&format!("record bsc-component--{m}.rs")), "{m} is planned: {text}");
+        }
+    }
+
     /// THE DELIVERABLE, against the REAL tree: `bsc graph migrate-crate src-tauri` is a real DRY RUN.
     ///
     /// The shape is checked rather than a golden list — 137 nested modules would make this test a second
@@ -2688,13 +3119,21 @@ mod tests {
             .filter_map(|l| l.split("  ->  ").next())
             .collect();
         // MEASURED 2026-09-04 against the real tree, by diffing this plan against every `.rs` file
-        // under `src-tauri/src`: 142 files, 123 planned, 19 not — and each of the 19 is accounted for
+        // under `src-tauri/src`: 142 files, 136 planned, 6 not — and each of the 6 is accounted for
         // below rather than left as a remainder.
+        //
+        // It was 123 of 142 until `parse_mod_line` learned to read a restricted visibility. The
+        // thirteen it gained are not a tidy-up: four of them are the whole `planner` subtree, whose
+        // `mod.rs` declares every child `pub(crate) mod`.
         let direct = planned.iter().filter(|f| !f.contains('/')).count();
         let deep = planned.iter().filter(|f| f.contains('/')).count();
         let mod_rs = planned.iter().filter(|f| f.ends_with("mod.rs")).count();
-        assert!(planned.len() > 100, "only {} modules planned", planned.len());
-        assert_eq!(direct, 1, "`prelude.rs` is the only direct child the walk reaches: {planned:?}");
+        assert_eq!(planned.len(), 136, "every module of src-tauri, at every depth: {}", planned.len());
+        assert_eq!(direct, 2, "`prelude.rs` and `testutil.rs` are the direct children: {planned:?}");
+        assert!(
+            planned.contains(&"planner/prompts.rs") && planned.contains(&"testutil.rs"),
+            "a `pub(crate) mod` declaration is planned like any other: {planned:?}"
+        );
         assert!(deep > 100, "only {deep} modules at depth >= 2 — the body this change exists for");
         assert_eq!(mod_rs, 24, "the 24 directory modules");
 
@@ -2708,19 +3147,15 @@ mod tests {
         let test_mods = ["tests.rs", "console/shell_rc/tests.rs", "mobile/tunnel/tests.rs"];
         // Declared by NOTHING, so not a module of this crate at all — the same verdict rustc reaches.
         let orphans = ["mobile/push.rs"];
-        // …AND THE ONE THAT IS A TOOL GAP RATHER THAN A DECISION. `parse_mod_line` understands `mod x;`
-        // and `pub mod x;` but NOT `pub(crate) mod x;`, so these 13 declarations are invisible to the
-        // walk — and because `planner/mod.rs` declares all four of its children that way, a whole
-        // subtree goes with them. It is a genuine hole and it is NOT this item's (the item resolves
-        // WHERE the crate is; this is about how a declaration is spelled), so it is pinned here rather
-        // than left to be rediscovered. Fix `parse_mod_line` and this list goes to zero — which turns
-        // this assertion red, on purpose, so the count and the comment cannot rot.
-        let restricted_vis = [
-            "testutil.rs", "console/bsc_warm.rs", "console/pty/busy.rs", "console/pty/reap.rs",
-            "console/pty/scrollback.rs", "fleet/commons.rs", "fleet/director_new.rs", "fleet/start.rs",
-            "fleet/wake.rs", "planner/directives.rs", "planner/injection_scan.rs", "planner/prompts.rs",
-            "planner/workspace.rs",
-        ];
+        // …AND THE BUCKET THAT WAS A TOOL GAP RATHER THAN A DECISION, now EMPTY. It held the 13
+        // `pub(crate) mod` declarations `parse_mod_line` could not read, pinned here by the branch that
+        // found them so that fixing the parser would turn this assertion red rather than let the count
+        // and the comment rot. It did, and this is the other half of that agreement.
+        //
+        // It stays as an EMPTY list rather than being deleted: the assertion below is that the buckets
+        // are EXHAUSTIVE, and a named empty bucket says the gap was closed where a missing one would
+        // just look like it never existed.
+        let restricted_vis: [&str; 0] = [];
         let unexplained: Vec<&&String> = missing
             .iter()
             .filter(|f| {
@@ -2735,7 +3170,8 @@ mod tests {
             roots.len() + test_mods.len() + orphans.len() + restricted_vis.len(),
             "every bucket must still describe a REAL file — a stale name here would hide a new gap"
         );
-        assert_eq!(restricted_vis.len(), 13, "the `pub(crate) mod` hole, measured");
+        assert_eq!(restricted_vis.len(), 0, "the `pub(crate) mod` hole is closed, not merely smaller");
+        assert_eq!(missing.len(), 6, "only the roots, the `mod tests` and the orphan are unplanned: {missing:?}");
         // A CRATE ROOT IS NEVER A MODULE. Migrating `lib.rs` would delete the file the `include!` lands
         // in, which is not a recoverable state.
         assert!(!planned.contains(&"lib.rs"), "lib.rs is a crate root: {planned:?}");
@@ -3258,6 +3694,72 @@ mod materialize_plan_tests {
         // migrate nested modules, so this floor is deliberately well under it — it exists to catch the
         // byte-identity arm going empty, not to pin a census.
         assert!(flat_crates >= 30, "only {flat_crates} flat crates — the byte-identity claim is thinning");
+    }
+
+    /// THE ROUND TRIP, PROVED BY RENDERING rather than asserted: a `pub(crate) mod x;` declaration
+    /// materializes as `pub(crate) mod x { … }`.
+    ///
+    /// Every link is the SHIPPED one. The declaration is read by `module_decls`, the `--module-vis`
+    /// value is the one `impl_set_argv` actually sends, the record is a store on disk, and the output
+    /// comes from `graph_materialize::Plan::render_store` — the code the build runs. A test that
+    /// asserted `decl.vis == "pub(crate)"` would have passed just as happily with an emit side that
+    /// dropped the restriction on the floor, and dropping it is not a formatting difference: it widens
+    /// what the crate exports.
+    ///
+    /// The private and `pub` arms ride along so the change is proved to be an ADDITION — the two
+    /// visibilities that already worked must render exactly as they did.
+    #[test]
+    fn a_restricted_visibility_materializes_as_the_declaration_it_came_from() {
+        let dir = std::env::temp_dir().join(format!("bsc-vis-render-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("graph")).expect("temp repo");
+        std::fs::create_dir_all(dir.join("crates").join("demo").join("src")).expect("temp crate");
+        std::fs::write(dir.join("crates/demo/Cargo.toml"), "[package]\nname = \"demo\"\n").expect("manifest");
+
+        // The declarations, read by the real parser…
+        let decls = super::module_decls("pub(crate) mod hidden;\npub mod open;\nmod shut;\n");
+        assert_eq!(decls.len(), 3, "the parser reads all three: {decls:?}");
+
+        // …turned into records carrying the `--module-vis` value the migration actually sends.
+        let impls: Vec<serde_json::Value> = decls
+            .iter()
+            .map(|d| {
+                let mut n = super::ModuleNode {
+                    path: vec![d.name.clone()],
+                    file: format!("{}.rs", d.name),
+                    decl: d.clone(),
+                    children: vec![],
+                    source: None,
+                };
+                n.decl = d.clone();
+                let argv = super::impl_set_argv(&format!("demo--{}.rs", d.name), &n);
+                let at = argv.iter().position(|a| a == "--module-vis").expect("sent");
+                serde_json::json!({
+                    "id": format!("demo--{}.rs", d.name),
+                    "src": format!("crates/demo/src/{}.rs", d.name),
+                    "code": format!("pub fn {}() {{}}", d.name),
+                    "moduleVis": argv[at + 1].clone(),
+                })
+            })
+            .collect();
+        std::fs::write(
+            dir.join("graph/algorithms.json"),
+            serde_json::to_string(&serde_json::json!({ "implementations": impls })).expect("json"),
+        )
+        .expect("store");
+
+        let plan = graph_materialize::plan_for(&dir.join("crates/demo"), None).expect("the temp repo resolves");
+        let raw = std::fs::read_to_string(&plan.store_path).expect("store reads");
+        let out = plan
+            .render_store(&raw, graph_materialize::Adoption::Required)
+            .expect("renders")
+            .expect("three records is not nothing");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(out.contains("pub(crate) mod hidden {\n"), "the restriction SURVIVES materialization:\n{out}");
+        assert!(out.contains("\npub mod open {\n"), "`pub` is unchanged:\n{out}");
+        assert!(out.contains("\nmod shut {\n"), "a private module is still a bare `mod`:\n{out}");
+        assert!(!out.contains("pub mod hidden"), "and is NOT widened to `pub`:\n{out}");
     }
 
     /// Every `.rs` under `dir`, as a path relative to it, skipping dot-directories.
