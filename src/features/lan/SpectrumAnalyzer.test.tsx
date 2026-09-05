@@ -3,7 +3,8 @@ import { render, screen } from "@testing-library/react";
 import {
   SpectrumAnalyzer, binFrequencyMhz, binEdgesMhz, binDbm, rampColor, strengthFraction,
   spanOf, pushRow, rowGradient, isCurrent, ageLabel, emptyStateDiagnosis,
-  extentOf, rangeDb, timeTicks, NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
+  extentOf, rangeDb, timeTicks, axisTicks, tickAnchor,
+  NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
   type SpectrumBins, type Liveness, type Row,
 } from "@/features/lan/SpectrumAnalyzer";
 
@@ -123,6 +124,45 @@ describe("the observed span", () => {
     const s = spanOf([row({ freqMhz: 2412 }), row({ freqMhz: 2462 })]);
     expect(s!.loMhz).toBeCloseTo(2402, 6);
     expect(s!.hiMhz).toBeCloseTo(2472, 6);
+  });
+});
+
+describe("the frequency axis", () => {
+  it("keeps the tick count readable however wide the span grows", () => {
+    // A FIXED 5 MHz STEP DOES NOT SURVIVE A HOPPING RADIO. One channel is 20
+    // MHz and four ticks; a radio that has swept 2412 to 2462 spans 70 MHz and
+    // fifteen, which overlap into a smear. Seen on screen as the axis
+    // "overflowing and adding ticks as it grows".
+    for (const [lo, hi] of [[2427, 2447], [2402, 2472], [2400, 2500], [2400, 5900]]) {
+      const t = axisTicks({ loMhz: lo, hiMhz: hi });
+      expect(t.length).toBeLessThanOrEqual(8);
+      expect(t.length).toBeGreaterThan(0);
+      expect(t.every((f) => f >= lo && f <= hi)).toBe(true);
+    }
+  });
+
+  it("labels round numbers, not arbitrary ones", () => {
+    // The 1-2-5 progression any axis uses: a step of 3.5 MHz would fit just as
+    // many labels and none of them would be a number anyone thinks in.
+    for (const [lo, hi] of [[2427, 2447], [2402, 2472], [2400, 2500]]) {
+      const t = axisTicks({ loMhz: lo, hiMhz: hi });
+      const step = t.length > 1 ? t[1] - t[0] : 0;
+      expect([1, 2, 5, 10, 20, 50, 100, 200, 500]).toContain(step);
+      expect(t.every((f) => Number.isInteger(f))).toBe(true);
+    }
+  });
+
+  it("has nothing to draw for a span of no width", () => {
+    expect(axisTicks({ loMhz: 2437, hiMhz: 2437 })).toEqual([]);
+  });
+
+  it("anchors the outermost labels INSIDE the chart rather than straddling its edge", () => {
+    // Half of "2427" hanging off the plot is what an overflowing axis looks
+    // like. Only the ends are special; everything between still centres.
+    expect(tickAnchor(0).transform).toBe("none");
+    expect(tickAnchor(100).transform).toBe("translateX(-100%)");
+    expect(tickAnchor(50).transform).toBe("translateX(-50%)");
+    expect(tickAnchor(50).left).toBe("50%");
   });
 });
 
