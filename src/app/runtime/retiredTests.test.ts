@@ -23,14 +23,17 @@
 import { describe, it, expect } from "vitest";
 import { relativeImportSpecifiers } from "@/shared/lib/runtime/shadow/pageBinding";
 import { planRecords } from "../../../scripts/emit-records.mjs";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Every packaged seed, as the record objects the app would load. */
-const seeds = import.meta.glob<{ id?: string; provides?: string; tests?: { name?: string; src?: string }[] }>(
-  "@data/components/app/**/*.json",
-  { eager: true, import: "default" },
-);
+const seeds = import.meta.glob<{
+  id?: string;
+  provides?: string;
+  /** Provenance — the file the record was harvested FROM. Present on records with no `provides`. */
+  src?: string;
+  tests?: { name?: string; src?: string }[];
+}>("@data/components/app/**/*.json", { eager: true, import: "default" });
 
 /** Every file under `src/`, keyed the way a specifier addresses it (`@/x/y` → `x/y`). */
 const srcFiles = new Set(
@@ -172,5 +175,98 @@ describe("an edge test is executed, not merely stored", () => {
     for (const t of planRecords().edgeTests) {
       expect(t.members.length, `${t.id} spans 2+ records — one is a node test`).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+
+// ── A module that is STILL A FILE also carries tests, and only the file runs them ───────────────────
+//
+// (`fifteen-test-files-duplicate-a-carried-test`.) The guard at the top of this file deliberately skips
+// a record whose module is still present — "not retired, nothing to preserve yet". That is true of the
+// MODULE and false of the TEST, and the gap is the whole of that item's finding: 15 test files under
+// `src/` are byte-identical to a test carried on a record, and for FOURTEEN of them the emitter can
+// never materialize the carried copy. Two independent reasons, both in `crates/bsc-emit/src/plan.rs`:
+//
+//   collect_seeds  keys the seed map by `provides` and takes ONLY a specifier starting with `@/`.
+//                  A record without one is never in the map, so its tests are unreachable — 7 of the 15.
+//   plan_records   then SKIPS any spec whose module file is still under `src/` ("the file is still
+//                  there and authoritative"), which takes the carried tests with it — the other 7.
+//
+// So a record in either state holds assertions that execute from exactly ONE place: the colocated file.
+// Deleting it because it "duplicates the record" runs those assertions nowhere, on a green gate — this
+// repo's signature failure, and precisely the mistake a by-content duplicate census invites.
+//
+// Each arm asserts its own POPULATION, because "no record is in this state" and "the scan quietly
+// stopped matching" are indistinguishable from a passing result.
+describe("a carried test the emitter can never emit still needs its colocated file", () => {
+  /** Every packaged algorithm implementation, beside the component records globbed above. */
+  const impls = (
+    JSON.parse(
+      readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"),
+    ) as { implementations?: (typeof seeds)[string][] }
+  ).implementations;
+
+  const TEST_EXT = [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"];
+  /** Is a colocated test running this module?
+   *
+   *  TWO SHAPES, and the second was found by this guard rather than reasoned out. The flat one is
+   *  `x/y.ts` beside `x/y.test.ts`. The other is a BARREL: `@/shared/ui/charts` resolves through
+   *  `shared/ui/charts/index.ts`, and its colocated test is `shared/ui/charts/charts.test.tsx` —
+   *  named for the DIRECTORY, not for `index`. A flat-only check calls that record untested and
+   *  reports a gap that is not there, so a barrel accepts any test sitting directly inside it.
+   *  (docs/records.md, "A barrel is addressed THREE ways".) */
+  const IN_DIR = /^[^/]+\.(?:test|spec)\.tsx?$/;
+  const hasTestFile = (base: string) =>
+    TEST_EXT.some((e) => srcFiles.has(base + e)) ||
+    [...srcFiles].some((f) => f.startsWith(base + "/") && IN_DIR.test(f.slice(base.length + 1)));
+  const carriedAssertions = (rec: { tests?: { src?: string }[] }) =>
+    (rec.tests ?? []).reduce((n, t) => n + countAssertions(t.src ?? ""), 0);
+
+  it("a record whose MODULE is still a file keeps its colocated test — the record's copy is not emitted", () => {
+    const gaps: string[] = [];
+    let checked = 0;
+    for (const rec of [...Object.values(seeds), ...(impls ?? [])]) {
+      const spec = typeof rec?.provides === "string" ? rec.provides.trim() : "";
+      if (!spec.startsWith("@/") || !isOwnSpecifier(spec)) continue;
+      const base = spec.slice(2);
+      if (!hasFile(base)) continue; // retired — the guard at the top of this file owns it
+      const carried = carriedAssertions(rec);
+      if (!carried) continue;
+      checked++;
+      if (!hasTestFile(base)) gaps.push(`${spec} — ${carried} assertion(s) stored, and no file runs them`);
+    }
+    expect(
+      gaps,
+      `these records carry tests that NOTHING executes. The module is still a file, so ` +
+        `\`plan_records\` skips the record and its carried copy is never emitted — the colocated test ` +
+        `file is the only executor there is:\n  ${gaps.join("\n  ")}`,
+    ).toEqual([]);
+    expect(checked, "the guard examined at least one still-a-file record carrying tests").toBeGreaterThan(0);
+  });
+
+  it("a record with NO `@/` provides keeps its colocated test — `collect_seeds` never keys it at all", () => {
+    const gaps: string[] = [];
+    let checked = 0;
+    for (const rec of [...Object.values(seeds), ...(impls ?? [])]) {
+      const spec = typeof rec?.provides === "string" ? rec.provides.trim() : "";
+      if (spec.startsWith("@/")) continue; // the arm above
+      const from = typeof rec?.src === "string" ? rec.src.trim() : "";
+      if (!from.startsWith("src/")) continue; // no provenance under src/ — no position to check
+      const base = from.slice("src/".length).replace(/\.(tsx?|jsx?)$/, "");
+      if (!hasFile(base)) continue; // the provenance file is gone; nothing colocated is expressible
+      const carried = carriedAssertions(rec);
+      if (!carried) continue;
+      checked++;
+      if (!hasTestFile(base)) {
+        gaps.push(`${rec.id ?? from} — ${carried} assertion(s) stored, and no file runs them`);
+      }
+    }
+    expect(
+      gaps,
+      `these records carry tests that NOTHING executes. Without an \`@/\` specifier \`collect_seeds\` ` +
+        `never puts the record in the seed map, so the emitter cannot materialize its test at any ` +
+        `point — the colocated file is the only executor there is:\n  ${gaps.join("\n  ")}`,
+    ).toEqual([]);
+    expect(checked, "the guard examined at least one provides-less record carrying tests").toBeGreaterThan(0);
   });
 });
