@@ -51,6 +51,23 @@ pub fn pending(on_disk: &[String], done: &[String]) -> Vec<String> {
     v
 }
 
+/// `<prefix>/lib` for a binary at `<prefix>/bin/<name>`, when that directory exists.
+///
+/// whisper.cpp builds as several shared objects — libwhisper, libggml and one per backend. A build
+/// tree resolves them through an absolute RUNPATH into itself, so it works exactly where it was
+/// built and nowhere else; `cmake --install` lays out the conventional bin/ + lib/ pair and STRIPS
+/// that RUNPATH, which leaves the installed copy unable to find its own libraries. Both are correct
+/// by their own lights and neither runs, so the spawn supplies the missing half. Prepending keeps
+/// an operator's own LD_LIBRARY_PATH ahead of ours.
+///
+/// A binary that needs nothing (a static build, or one on the system loader path) has no such
+/// directory and is spawned unchanged.
+fn sibling_lib_dir(binary: &std::path::Path) -> Option<std::path::PathBuf> {
+    let prefix = binary.parent().filter(|p| p.file_name() == Some("bin".as_ref()))?.parent()?;
+    let libs = prefix.join("lib");
+    libs.is_dir().then_some(libs)
+}
+
 /// Read one whisper JSON result into text and a language.
 pub fn parse_result(json: &str) -> Result<(String, String), String> {
     let w: WhisperJson =
@@ -127,7 +144,16 @@ pub fn transcribe_batch(
         return Ok(vec![]);
     }
     let paths: Vec<PathBuf> = names.iter().map(|n| dir.join(n)).collect();
-    let out = std::process::Command::new(&w.binary)
+    let mut cmd = std::process::Command::new(&w.binary);
+    if let Some(libs) = sibling_lib_dir(&w.binary) {
+        let mut path = std::ffi::OsString::from(&libs);
+        if let Some(existing) = std::env::var_os("LD_LIBRARY_PATH") {
+            path.push(":");
+            path.push(existing);
+        }
+        cmd.env("LD_LIBRARY_PATH", path);
+    }
+    let out = cmd
         .arg("-m")
         .arg(&w.model)
         .args(["-oj", "-np", "-l", "auto"])
@@ -204,4 +230,40 @@ mod tests {
         let (t, _) = parse_result(r#"{"result":{"language":"en"},"transcription":[]}"#).unwrap();
         assert!(t.is_empty(), "no segments means no text, not a panic");
     }
+
+    /// A whisper build that carries its own shared objects is unreachable without this: the build
+    /// tree resolves them by an absolute RUNPATH into itself, and `cmake --install` strips that
+    /// RUNPATH while laying out bin/ + lib/. Measured on this machine, the installed copy exits 127
+    /// with "libwhisper.so.1: cannot open shared object file" and the ear reports the transcriber as
+    /// simply broken.
+    #[test]
+    fn an_installed_whisper_finds_the_libraries_beside_its_bin_dir() {
+        let root = std::env::temp_dir().join(format!("bsc-ear-libdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("prefix/bin")).unwrap();
+        std::fs::create_dir_all(root.join("prefix/lib")).unwrap();
+        let installed = root.join("prefix/bin/whisper-cli");
+        std::fs::write(&installed, "").unwrap();
+        assert_eq!(sibling_lib_dir(&installed).as_deref(), Some(root.join("prefix/lib").as_path()));
+
+        // A build tree with no lib/ beside it, and a binary loose on PATH, are both spawned
+        // unchanged — supplying a directory that does not exist would be its own bug.
+        std::fs::create_dir_all(root.join("bare/bin")).unwrap();
+        let bare = root.join("bare/bin/whisper-cli");
+        std::fs::write(&bare, "").unwrap();
+        assert_eq!(sibling_lib_dir(&bare), None, "no lib/ beside bin/ means nothing to add");
+
+        let loose = root.join("whisper-cli");
+        std::fs::write(&loose, "").unwrap();
+        assert_eq!(sibling_lib_dir(&loose), None, "a binary not under a bin/ dir has no prefix");
+
+        // A `lib` that is a FILE is not a library directory.
+        std::fs::create_dir_all(root.join("odd/bin")).unwrap();
+        std::fs::write(root.join("odd/lib"), "not a directory").unwrap();
+        let odd = root.join("odd/bin/whisper-cli");
+        std::fs::write(&odd, "").unwrap();
+        assert_eq!(sibling_lib_dir(&odd), None, "a file named lib is not a library directory");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
 }
