@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { closureOf, importedNames, importsFor, materialize, mergeById, materializedCrates, isMaterializedModule, MATERIALIZE_MARKER, MATERIALIZE_DEP, takesMaterializerAsBuildDependency } from "./graph-rust-compile.mjs";
+import { closureOf, importedNames, importsFor, materialize, mergeById, materializedCrates, isMaterializedModule, crateDirOf, MATERIALIZE_MARKER, MATERIALIZE_DEP, takesMaterializerAsBuildDependency } from "./graph-rust-compile.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -254,14 +254,38 @@ ${MATERIALIZE_DEP}
   });
 
   it("excludes a record belonging to a materialized crate", () => {
-    const crates = new Set(["bsc-blueprint"]);
+    const crates = new Set(["crates/bsc-blueprint"]);
     expect(isMaterializedModule("crates/bsc-blueprint/src/cli.rs", crates)).toBe(true);
     expect(isMaterializedModule("crates/cve/src/install.rs", crates)).toBe(false);
   });
 
-  it("ignores a record with no src, or one outside crates/", () => {
-    const crates = new Set(["bsc-blueprint"]);
+  // REGRESSION, and it is the reason the key is a repo-relative DIRECTORY rather than a crate NAME.
+  // `src-tauri` is a workspace member one level ABOVE `crates/`, so a `^crates/` match returned
+  // nothing for all 138 of its records the moment it migrated. None was excluded, the sweep built
+  // whole crate modules standalone, and it reported **119 FAILED** with `unresolved import tauri` —
+  // the libel the Tier-A split exists to prevent, with nothing about the records changed.
+  it("excludes a record of a crate that is NOT under crates/", () => {
+    const crates = new Set(["crates/bsc-blueprint", "src-tauri"]);
+    expect(isMaterializedModule("src-tauri/src/app/run.rs", crates)).toBe(true);
+    expect(isMaterializedModule("src-tauri/src/mobile/tunnel/transport.rs", crates)).toBe(true);
+    expect(crateDirOf("src-tauri/src/console/pty/mod.rs")).toBe("src-tauri");
+    expect(crateDirOf("crates/plandb/src/cli.rs")).toBe("crates/plandb");
+  });
+
+  // The two namespaces cannot collide, which a bare name could not promise: a top-level `data/` crate
+  // and `crates/data` would share one bucket, and excluding either would silently exclude the other.
+  it("keys a top-level crate separately from its namesake under crates/", () => {
+    const crates = new Set(["crates/data"]);
+    expect(isMaterializedModule("crates/data/src/schema.rs", crates)).toBe(true);
+    expect(isMaterializedModule("data/src/schema.rs", crates)).toBe(false);
+  });
+
+  it("ignores a record with no src, or one that is not a crate module", () => {
+    const crates = new Set(["crates/bsc-blueprint"]);
     expect(isMaterializedModule(undefined, crates)).toBe(false);
+    // A FRONTEND record: `src/…` has no leading slash before `src`, so it names no crate directory.
     expect(isMaterializedModule("src/features/x.ts", crates)).toBe(false);
+    expect(crateDirOf("src/features/x.ts")).toBe(null);
+    expect(crateDirOf(undefined)).toBe(null);
   });
 });

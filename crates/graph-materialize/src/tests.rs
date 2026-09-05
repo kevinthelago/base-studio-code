@@ -296,63 +296,80 @@ fn every_opted_in_crate_resolves_to_exactly_the_prefix_the_old_derivation_hardco
     assert!(checked >= 40, "only {checked} crates carry the marker — the walk is wrong");
 }
 
-/// THE `src-tauri` PROOF, and the whole point of this change: the largest un-migrated body in the repo
-/// (141 files, 54,683 lines, zero records) now resolves correctly, from its own one-level depth, with
-/// its own `build.rs` still owning the four jobs it already had.
+/// THE `src-tauri` PROOF, and the whole point of this change: the largest body in the repo resolves
+/// correctly from its own one-level depth, with its own `build.rs` still owning the four jobs it had.
 ///
-/// NO MODULE IS MIGRATED HERE. What is asserted is that everything downstream of the resolution is
-/// already correct: the root is this checkout, the store is the committed one, the prefix is the one
-/// the 137 nested files actually live under, and the selection is EMPTY today — which is exactly why
-/// `src-tauri/build.rs` calls [`emit_when_adopted`] and not [`emit`].
+/// # This test INVERTED, and its own failure message is what asked for it
+///
+/// It used to assert that the selection is EMPTY — `src-tauri` owned no record, so
+/// `emit_when_adopted` wrote nothing and the crate was wired AHEAD of its first record. The message
+/// under that assertion said what to do when it fired: "if this fires the migration has started and
+/// this test should become the byte-identity check instead". `src-tauri-compiles-from-the-graph`
+/// fired it, and this is that check.
+///
+/// The resolution half is unchanged and still the thing that mattered, because it is what the old
+/// derivation could not express at all. What replaces the emptiness assertion is the rendering: every
+/// selected record must reach the generated file, under a module path derived from its `src`, with
+/// the parent chain intact — which is the property a 138-record, 24-directory-module crate needs and
+/// a zero-record one could not exercise.
 #[test]
-fn src_tauri_resolves_correctly_today_and_selects_nothing_yet() {
+fn src_tauri_resolves_and_now_renders_every_record_it_owns() {
     let root = repo();
     let plan = plan_for(&root.join("src-tauri"), None).expect("src-tauri resolves");
     assert_eq!(plan.repo_root, root, "one level deep, and still this checkout");
     assert_eq!(plan.crate_dir, "src-tauri");
-    assert_eq!(plan.src_prefix, "src-tauri/src/", "the prefix its 141 files actually live under");
+    assert_eq!(plan.src_prefix, "src-tauri/src/", "the prefix its modules live under");
     assert!(plan.store_path.is_file(), "{} is the committed store", plan.store_path.display());
 
     // The old derivation, reproduced, so the failure it caused is recorded rather than described.
     let old_root = root.join("src-tauri").parent().and_then(Path::parent).unwrap().to_path_buf();
     assert_ne!(old_root, root, "`parent().parent()` from a one-deep crate leaves the repo entirely");
 
-    // Selection over the REAL store. Zero today — `src-tauri` owns no record — and the emit is
-    // therefore a no-op rather than the hard error a `Required` adopter would get.
+    // Selection over the REAL store.
     let raw = std::fs::read_to_string(&plan.store_path).expect("the committed store reads");
     let store: serde_json::Value = serde_json::from_str(&raw).expect("it parses");
     let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
     let selected = plan.select(impls);
-    assert!(
-        selected.is_empty(),
-        "src-tauri owns {} records — this item does NOT migrate any module, so if this fires the \
-         migration has started and this test should become the byte-identity check instead",
-        selected.len()
-    );
-    assert_eq!(plan.render_store(&raw, Adoption::Optional).expect("no error"), None, "nothing to write yet");
-    assert!(
-        plan.render_store(&raw, Adoption::Required).is_err(),
-        "…while a Required adopter owning nothing stays a hard error"
-    );
+    // POPULATION, because a selection that silently stopped matching would satisfy every assertion
+    // below over nothing — which is exactly what the emptiness assertion used to look like.
+    // Measured 2026-09-05: 138 records, 24 of them directory modules.
+    assert!(selected.len() >= 136, "src-tauri owns only {} records", selected.len());
+    let mod_rs = selected.iter().filter(|u| u.id.ends_with("--mod.rs")).count();
+    assert!(mod_rs >= 24, "only {mod_rs} directory modules selected");
 
-    // And every one of its real modules maps to a module path under that prefix, which is what a
-    // future migration will select on. POPULATION-asserted so a walk that found nothing reads as a
-    // failure rather than as a pass.
-    let mut mapped = 0usize;
-    let mut nested = 0usize;
-    for f in rs_files(&root.join("src-tauri").join("src"), "") {
-        if f == "lib.rs" || f == "main.rs" {
-            continue;
-        }
-        assert!(module_path(&f).is_some(), "src-tauri/src/{f} maps to no module");
-        assert_eq!(expected_id("src-tauri", &f), format!("src-tauri--{}", f.replace('/', "--").replace('_', "-")));
-        if f.contains('/') {
-            nested += 1;
-        }
-        mapped += 1;
+    // AND IT RENDERS. `Optional` no longer means "writes nothing" for this crate — it means the same
+    // thing `Required` does now that a record exists, which is the state change this test records.
+    let rendered = plan
+        .render_store(&raw, Adoption::Optional)
+        .expect("no error")
+        .expect("a crate that owns records renders them");
+    assert_eq!(
+        plan.render_store(&raw, Adoption::Required).expect("no error"),
+        Some(rendered.clone()),
+        "Optional and Required agree once the crate owns a record — adoption only decides what EMPTY means"
+    );
+    // Every selected record must actually reach the file, at its own depth. A `mod <name> {` for the
+    // last segment is the weakest claim that cannot be satisfied by dropping a nested unit on the floor.
+    for u in &selected {
+        let name = u.path.last().expect("a module has a name");
+        assert!(
+            rendered.contains(&format!("mod {name} {{")),
+            "`{}` (module `{}`) is selected but never rendered",
+            u.id,
+            u.path.join("::")
+        );
+        assert!(rendered.contains(&format!("record `{}`", u.id)), "…and its offset header is missing");
     }
-    assert!(mapped > 100, "only {mapped} modules found under src-tauri/src");
-    assert!(nested > 100, "only {nested} nested — the depth this crate needed");
+
+    // The FILES that are left map to nothing this crate would select, which is the other half: a
+    // crate root is never a module, and `mod tests` stays a file beside `lib.rs`.
+    let left = rs_files(&root.join("src-tauri").join("src"), "");
+    for f in &left {
+        if f == "lib.rs" || f == "main.rs" {
+            assert!(module_path(f).is_none(), "a crate root is not a module: {f}");
+        }
+    }
+    assert!(left.len() <= 8, "src-tauri/src still holds {} files — the migration did not land", left.len());
 }
 
 /// Every `.rs` under `dir`, as a path relative to it, skipping dot-directories.

@@ -292,7 +292,16 @@ base-studio-code/
 ├── src-tauri/               # Rust backend (Tauri v2)
 │   ├── Cargo.toml           # workspace root
 │   ├── tauri.conf.json
-│   └── src/                 # ONE FOLDER PER SUBSYSTEM — the folder tree IS the architecture
+│   └── src/                 # ONE FOLDER PER SUBSYSTEM — but the FOLDERS ARE RECORDS, NOT DIRECTORIES
+│                            #   (`src-tauri-compiles-from-the-graph`). 138 modules moved into
+│                            #   `graph/algorithms.json`; `src-tauri/src/` holds FOUR files — lib.rs,
+│                            #   main.rs, tests.rs and one undeclared orphan. A record's module path
+│                            #   IS its old file path, so every path below still names where a module
+│                            #   BELONGS and `crate::console::pty` still resolves — you just open it
+│                            #   with `bsc graph impl get src-tauri--console--pty--mod.rs` rather than
+│                            #   with an editor. build.rs calls `graph_materialize::emit_when_adopted()`
+│                            #   as a fifth job (a package gets exactly ONE build script, and this one
+│                            #   was taken), which writes `$OUT_DIR/crate.rs` for lib.rs to `include!`.
 │       ├── main.rs          #   binary entry → app::run()
 │       ├── lib.rs           #   crate root: module decls + the leaf-helper prelude (#1918; no module aliases)
 │       ├── prelude.rs        #   the crate's named leaf-helper prelude (paths/git/shell/fs/…), `use crate::prelude::*`
