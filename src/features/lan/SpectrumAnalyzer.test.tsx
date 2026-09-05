@@ -445,9 +445,7 @@ describe("the analyzer window", () => {
   });
 
   it("clips the time gutter, so no label can name a row that is not drawn", () => {
-    const { container } = render(
-      <SpectrumAnalyzer rows={[row({}, 2), row({}, 1)]} liveness={healthy} />,
-    );
+    render(<SpectrumAnalyzer rows={[row({}, 2), row({}, 1)]} liveness={healthy} />);
     const now = screen.getByText("now");
     const gutter = now.parentElement as HTMLElement;
     expect(gutter.style.position).toBe("absolute");
