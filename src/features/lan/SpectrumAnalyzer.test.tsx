@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import {
   SpectrumAnalyzer, binFrequencyMhz, binEdgesMhz, binDbm, rampColor, strengthFraction,
   spanOf, pushRow, rowGradient, isCurrent, ageLabel, emptyStateDiagnosis,
-  extentOf, rangeDb, timeTicks, axisTicks, tickAnchor, staleBanner,
+  extentOf, rangeDb, timeTicks, axisTicks, tickAnchor, staleBanner, contributingSensors,
   NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
   type SpectrumBins, type Liveness, type Row,
 } from "@/features/lan/SpectrumAnalyzer";
@@ -19,16 +19,16 @@ const bins = (n = 56, fill = 10): number[] => Array.from({ length: n }, () => fi
 
 function sample(over: Partial<SpectrumBins> = {}): SpectrumBins {
   return {
-    freqMhz: 2437, sweeps: 200, noiseDbm: -95,
+    sensor: "monitor-pi", freqMhz: 2437, sweeps: 200, noiseDbm: -95,
     peakMagnitude: 1514, peakBin: 30, binMax: bins(), ...over,
   };
 }
 
 const row = (over: Partial<SpectrumBins> = {}, at = 0): Row => ({ at, bins: sample(over) });
 
-const healthy: Liveness = { state: "healthy", sinceMs: 200, overdueByMs: 0 };
-const silent: Liveness = { state: "silent", sinceMs: 45_000, overdueByMs: 33_000 };
-const late: Liveness = { state: "late", sinceMs: 13_000, overdueByMs: 1_000 };
+const healthy: Liveness = { sensor: "monitor-pi", state: "healthy", sinceMs: 200, overdueByMs: 0 };
+const silent: Liveness = { sensor: "monitor-pi", state: "silent", sinceMs: 45_000, overdueByMs: 33_000 };
+const late: Liveness = { sensor: "monitor-pi", state: "late", sinceMs: 13_000, overdueByMs: 1_000 };
 
 describe("bin geometry", () => {
   it("spreads the bins across the channel's 20 MHz, centred on the tuned frequency", () => {
@@ -272,11 +272,11 @@ describe("isCurrent", () => {
     // SEEN ON SCREEN: "SENSOR LATE by 0ms" over a waterfall filling at 4 Hz.
     // A verdict exactly on its deadline has not missed it, and a warning that
     // fires for nothing teaches a reader to ignore the one that matters.
-    expect(isCurrent({ state: "late", sinceMs: 12_000, overdueByMs: 0 })).toBe(true);
+    expect(isCurrent({ sensor: "monitor-pi", state: "late", sinceMs: 12_000, overdueByMs: 0 })).toBe(true);
     // One millisecond past IS late — the boundary is the only exemption.
-    expect(isCurrent({ state: "late", sinceMs: 12_001, overdueByMs: 1 })).toBe(false);
+    expect(isCurrent({ sensor: "monitor-pi", state: "late", sinceMs: 12_001, overdueByMs: 1 })).toBe(false);
     // And a silent sensor is never excused, whatever the arithmetic says.
-    expect(isCurrent({ state: "silent", sinceMs: 40_000, overdueByMs: 0 })).toBe(false);
+    expect(isCurrent({ sensor: "monitor-pi", state: "silent", sinceMs: 40_000, overdueByMs: 0 })).toBe(false);
   });
 });
 
@@ -323,7 +323,35 @@ describe("staleBanner", () => {
   });
 });
 
+describe("contributingSensors", () => {
+  it("names every sensor in the history, in first-seen order", () => {
+    // A waterfall blended from several radios without saying so is a lie about
+    // where anything was heard: one sensor's quiet band and another's busy one
+    // average into a picture neither of them saw.
+    const rows: Row[] = [
+      { at: 3, bins: sample({ sensor: "office" }) },
+      { at: 2, bins: sample({ sensor: "garage" }) },
+      { at: 1, bins: sample({ sensor: "office" }) },
+    ];
+    expect(contributingSensors(rows)).toEqual(["office", "garage"]);
+  });
+
+  it("has nothing to name for an empty history", () => {
+    expect(contributingSensors([])).toEqual([]);
+  });
+});
+
 describe("the analyzer window", () => {
+  it("names which sensors are contributing to what is drawn", () => {
+    render(
+      <SpectrumAnalyzer
+        rows={[{ at: 2, bins: sample({ sensor: "garage" }) }, { at: 1, bins: sample({ sensor: "office" }) }]}
+        liveness={healthy}
+      />,
+    );
+    expect(screen.getByText(/sensors contributing: garage, office/)).toBeTruthy();
+  });
+
   it("NEVER renders an empty display as a quiet band", () => {
     render(<SpectrumAnalyzer rows={[]} />);
     expect(screen.getByText(/NOT a quiet band/i)).toBeTruthy();

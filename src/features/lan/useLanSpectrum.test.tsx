@@ -32,7 +32,7 @@ const bins = (fill: number): number[] => Array.from({ length: 56 }, () => fill);
 
 function record(over: Partial<SpectrumBins> = {}): SpectrumBins {
   return {
-    freqMhz: 2437, sweeps: 3328, noiseDbm: -95,
+    sensor: "monitor-pi", freqMhz: 2437, sweeps: 3328, noiseDbm: -95,
     peakMagnitude: 2551, peakBin: 21, binMax: bins(10), receivedAtMs: 1000, ...over,
   };
 }
@@ -54,7 +54,7 @@ describe("the analyzer wired to the live stream", () => {
 
   it("renders a record that arrives from the backend", () => {
     render(<LiveSpectrumAnalyzer />);
-    emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
+    emit<Liveness>("lan://liveness", { sensor: "monitor-pi", state: "healthy", sinceMs: 0, overdueByMs: 0 });
     emit<SpectrumBins>("lan://spectrum", record());
     expect(screen.getByText(/2427–2447 MHz observed/)).toBeTruthy();
     expect(screen.queryByText(/NOT a quiet band/i)).toBeNull();
@@ -64,7 +64,7 @@ describe("the analyzer wired to the live stream", () => {
     // One graph across everything observed — the hop is visible as the span
     // growing, and each row still covers only where the radio actually was.
     render(<LiveSpectrumAnalyzer />);
-    emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
+    emit<Liveness>("lan://liveness", { sensor: "monitor-pi", state: "healthy", sinceMs: 0, overdueByMs: 0 });
     emit<SpectrumBins>("lan://spectrum", record({ freqMhz: 2412 }));
     expect(screen.getByText(/2402–2422 MHz observed/)).toBeTruthy();
     emit<SpectrumBins>("lan://spectrum", record({ freqMhz: 2462 }));
@@ -73,7 +73,7 @@ describe("the analyzer wired to the live stream", () => {
 
   it("accumulates a window per record, so duration is vertical extent", () => {
     render(<LiveSpectrumAnalyzer />);
-    emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
+    emit<Liveness>("lan://liveness", { sensor: "monitor-pi", state: "healthy", sinceMs: 0, overdueByMs: 0 });
     for (let i = 0; i < 4; i++) {
       emit<SpectrumBins>("lan://spectrum", record({ receivedAtMs: 1000 + i }));
     }
@@ -84,11 +84,11 @@ describe("the analyzer wired to the live stream", () => {
     // The whole point of carrying liveness across: the chart must stop
     // claiming to be the air right now the moment it stops being it.
     render(<LiveSpectrumAnalyzer />);
-    emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
+    emit<Liveness>("lan://liveness", { sensor: "monitor-pi", state: "healthy", sinceMs: 0, overdueByMs: 0 });
     emit<SpectrumBins>("lan://spectrum", record());
     expect(screen.queryByText(/not the air now/)).toBeNull();
 
-    emit<Liveness>("lan://liveness", { state: "silent", sinceMs: 40_000, overdueByMs: 30_000 });
+    emit<Liveness>("lan://liveness", { sensor: "monitor-pi", state: "silent", sinceMs: 40_000, overdueByMs: 30_000 });
     expect(screen.getByText(/SENSOR SILENT for 40s/)).toBeTruthy();
     // And the history is still there — it is the most recent truth available.
     expect(screen.getByText(/2427–2447 MHz observed/)).toBeTruthy();
