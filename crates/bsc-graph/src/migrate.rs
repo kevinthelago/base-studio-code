@@ -357,24 +357,74 @@ pub struct CrateShape<'a> {
 ///   scanner that ends a literal at the next `"` splits it in the middle and reads the inside as code.
 /// - **`'a` is a lifetime, not a quote.** Treating one as an opening char literal blanks every byte to
 ///   the next `'`, which is usually real code — the failure that hides a live call.
-struct CodeMask {
+pub(crate) struct CodeMask {
     /// One entry per BYTE: `true` when that byte is code, `false` inside a comment or a literal.
     code: Vec<bool>,
-    /// Every string literal in code position — `(offset of its opening quote, its raw body)`,
-    /// ascending. The body is the text between the delimiters, which is what a path literal is.
-    strings: Vec<(usize, String)>,
+    /// Every string literal in code position, ascending by [`CodeString::start`].
+    pub(crate) strings: Vec<CodeString>,
+}
+
+/// One string literal sitting in code position — its SPAN as well as its body.
+///
+/// The span is what a REWRITER needs and a reporter does not: [`include_str_targets`] only has to
+/// read a path out, while `extract::absolutize_includes` has to replace the literal in place, and
+/// "the bytes of the literal" is not something a text scan can recover once escapes and raw
+/// delimiters are in play.
+pub(crate) struct CodeString {
+    /// The first byte of the literal TOKEN, prefix included — `r` in `r#"…"#`, `b` in `b"…"`.
+    pub(crate) start: usize,
+    /// The text between the delimiters, verbatim. Escapes are NOT decoded: this is what the source
+    /// says, which is what has to be written back.
+    pub(crate) body: String,
+    /// The byte after the closing delimiter, so `start..after` is the whole literal.
+    pub(crate) after: usize,
+    /// A raw literal (`r"…"`, `r#"…"#`, `br#"…"#`), whose body may itself contain a bare `"`.
+    pub(crate) raw: bool,
 }
 
 impl CodeMask {
-    fn is_code(&self, at: usize) -> bool {
+    pub(crate) fn is_code(&self, at: usize) -> bool {
         self.code.get(at).copied().unwrap_or(false)
     }
 
-    fn of(src: &str) -> Self {
+    /// The string literal STARTING at `at`, when one does.
+    ///
+    /// A literal's own bytes are not code, so [`is_code`](Self::is_code) alone cannot walk to one —
+    /// a scan looking for the argument of `include_str!` steps clean over the argument. `strings` is
+    /// ascending by construction, so this is a binary search.
+    pub(crate) fn string_at(&self, at: usize) -> Option<&CodeString> {
+        self.strings.binary_search_by_key(&at, |s| s.start).ok().map(|i| &self.strings[i])
+    }
+
+    /// The next byte at or after `from` that begins a TOKEN — whitespace and comments stepped over,
+    /// and a string literal reported at its opening byte rather than walked past.
+    ///
+    /// Stepping over a comment rather than stopping at it is deliberate: `include_str! /* why */
+    /// ("x")` is one live call, and reading the `/` as the argument would quietly decline to
+    /// absolutize a path that then fails to resolve out of `$OUT_DIR`.
+    pub(crate) fn next_token(&self, src: &[u8], from: usize) -> Option<usize> {
+        let mut k = from;
+        while k < src.len() {
+            if self.string_at(k).is_some() {
+                return Some(k);
+            }
+            if self.is_code(k) {
+                if src[k].is_ascii_whitespace() {
+                    k += 1;
+                    continue;
+                }
+                return Some(k);
+            }
+            k += 1;
+        }
+        None
+    }
+
+    pub(crate) fn of(src: &str) -> Self {
         let b = src.as_bytes();
         let n = b.len();
         let mut code = vec![true; n];
-        let mut strings: Vec<(usize, String)> = Vec::new();
+        let mut strings: Vec<CodeString> = Vec::new();
         let mut i = 0usize;
         while i < n {
             if b[i] == b'/' && i + 1 < n && b[i + 1] == b'/' {
@@ -406,7 +456,12 @@ impl CodeMask {
             if let Some((quote, hashes, raw)) = string_open(b, i) {
                 let body = quote + 1;
                 let (body_end, after) = if raw { close_raw(b, body, hashes) } else { close_plain(b, body) };
-                strings.push((quote, String::from_utf8_lossy(&b[body..body_end]).into_owned()));
+                strings.push(CodeString {
+                    start: i,
+                    body: String::from_utf8_lossy(&b[body..body_end]).into_owned(),
+                    after: after.min(n),
+                    raw,
+                });
                 code[i..after.min(n)].fill(false);
                 i = after;
                 continue;
@@ -520,8 +575,8 @@ fn include_str_targets(src: &str) -> Vec<String> {
             continue;
         }
         let end = (at..b.len()).find(|k| b[*k] == b')' && mask.is_code(*k)).unwrap_or(b.len());
-        if let Some((_, value)) = mask.strings.iter().rev().find(|(s, _)| *s > at && *s < end) {
-            out.push(value.clone());
+        if let Some(s) = mask.strings.iter().rev().find(|s| s.start > at && s.start < end) {
+            out.push(s.body.clone());
         }
     }
     out
