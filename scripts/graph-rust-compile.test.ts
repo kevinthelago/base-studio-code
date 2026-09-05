@@ -235,11 +235,18 @@ ${MATERIALIZE_DEP}
     expect(shared.length).toBeGreaterThan(20);
     expect(alongside.sort()).toEqual(["bsc-config", "data"]);
     for (const d of [...shared, ...alongside]) expect(got.has(d)).toBe(true);
-    // The one real crate that takes the materializer WITHOUT materializing — the reason the dependency
-    // half is section-scoped. Named, so removing that dev-dependency says the case is gone rather than
+    // The one real crate holding the package in BOTH sections — the reason the dependency half is
+    // section-scoped. It was the live "takes the materializer WITHOUT materializing" case until
+    // `bsc-graph-compiles-from-the-graph` migrated it; it now materializes by the SHARED route while
+    // still taking the package as a DEV-dependency, so what a real manifest proves here is the sharper
+    // half: the two sections are read independently, and a dev-dependency is not the build-dependency
+    // opt-in even in the one crate that carries both. The "and nothing else" direction lives in the
+    // fixture test above. Named, so removing that dev-dependency says the case is gone rather than
     // quietly stopping to cover it.
     expect(read("bsc-graph")).toContain(MATERIALIZE_DEP);
-    expect(got.has("bsc-graph")).toBe(false);
+    expect(takesMaterializerAsBuildDependency(read("bsc-graph") ?? "")).toBe(false);
+    expect(alongside).not.toContain("bsc-graph");
+    expect(got.has("bsc-graph")).toBe(true);
   });
 
   it("tolerates a crate with no readable manifest", () => {
