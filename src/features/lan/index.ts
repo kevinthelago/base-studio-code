@@ -21,6 +21,7 @@ export {
   isCurrent,
   ageLabel,
   emptyStateDiagnosis,
+  staleBanner,
   NEVER_HEARD,
   HISTORY,
   MIN_RANGE_DB,

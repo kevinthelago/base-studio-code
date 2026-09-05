@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import {
   SpectrumAnalyzer, binFrequencyMhz, binEdgesMhz, binDbm, rampColor, strengthFraction,
   spanOf, pushRow, rowGradient, isCurrent, ageLabel, emptyStateDiagnosis,
-  extentOf, rangeDb, timeTicks, axisTicks, tickAnchor,
+  extentOf, rangeDb, timeTicks, axisTicks, tickAnchor, staleBanner,
   NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
   type SpectrumBins, type Liveness, type Row,
 } from "@/features/lan/SpectrumAnalyzer";
@@ -300,6 +300,26 @@ describe("emptyStateDiagnosis", () => {
   it("has a distinct sentence for every liveness state", () => {
     const all = [NEVER_HEARD, healthy, late, silent].map(emptyStateDiagnosis);
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+describe("staleBanner", () => {
+  it("never calls a stream LATE just because its liveness has not arrived", () => {
+    // SEEN ON SCREEN: "SENSOR LATE by 0ms" over 148 windows of live waterfall,
+    // because the two-branch version put never-heard into the late arm. A
+    // confident wrong claim is worse than an unhelpful one — it sends a reader
+    // after a sensor that is fine.
+    const b = staleBanner(NEVER_HEARD);
+    expect(b).not.toMatch(/LATE/);
+    expect(b).toMatch(/NO LIVENESS YET/);
+  });
+
+  it("has a distinct line for every state, and nothing to say when healthy", () => {
+    expect(staleBanner(healthy)).toBe("");
+    const said = [NEVER_HEARD, late, silent].map(staleBanner);
+    expect(new Set(said).size).toBe(said.length);
+    expect(staleBanner(late)).toMatch(/LATE by 1s/);
+    expect(staleBanner(silent)).toMatch(/SILENT for 45s/);
   });
 });
 

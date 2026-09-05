@@ -247,7 +247,6 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
     std::thread::spawn(move || {
         let started = Instant::now();
         let mut sub = Subscription::new(Subscriber::new(verifying, group_key), CADENCE, 0);
-        let mut last_liveness: Option<LivenessPayload> = None;
         let mut tally = Tally::default();
         loop {
             let now_ms = started.elapsed().as_millis() as u64;
@@ -280,15 +279,22 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
             if let Some(line) = tally.report() {
                 log::info!("{line}");
             }
-            // Emitted on every tick, not only on a change: a widget that
-            // mounts after the last transition would otherwise have no way to
-            // learn the current state, and "no liveness yet" would render the
-            // same as "healthy".
-            let p = liveness_payload(sub.liveliness(now_ms));
-            if last_liveness.as_ref() != Some(&p) {
-                let _ = app.emit(LIVENESS_EVENT, &p);
-                last_liveness = Some(p);
-            }
+            // EVERY TICK, not only on a change, and the difference is not
+            // theoretical: this comment said exactly this while the code below
+            // it compared against the previous payload and skipped the emit.
+            //
+            // A Tauri event reaches the windows that exist WHEN IT IS SENT, so
+            // change-detection silently makes the state unobtainable for any
+            // window opened afterwards. At a 100 ms sensor cadence and a 500 ms
+            // read timeout `since_last_ms` is frequently 0, so the payload
+            // repeats for long stretches and the emit stops altogether — and a
+            // widget opened during one of those stretches sat on its initial
+            // NEVER_HEARD while spectrum rows poured in beneath it. Seen on
+            // screen: 148 windows of live waterfall under a banner reporting a
+            // sensor nobody had heard from.
+            //
+            // Two a second is nothing. Being unobservable is not.
+            let _ = app.emit(LIVENESS_EVENT, &liveness_payload(sub.liveliness(now_ms)));
         }
     });
     Ok(())
