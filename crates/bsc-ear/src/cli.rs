@@ -90,6 +90,29 @@ LISTENING and hear nothing, forever, looking exactly like a quiet room.
 input here reads 0.00235 against 0.00002 for the dead ones, which is the gap the verdict uses.",
     },
     CmdDoc {
+        name: "prosody",
+        usage: "\
+bsc ear prosody [<wav>...] [--dir <path>] [--json|--pretty]
+
+Measures HOW something was said, and scores arousal against the speaker's own habit.
+
+IT DOES NOT CLASSIFY EMOTION, deliberately. Categorical emotion models benchmark near 70% on ACTED
+speech, fall apart on spontaneous speech, and emit a label nothing can argue with. Arousal — how
+activated the voice is — rides on correlates that are physically measurable: pitch rises and
+spreads, the voice gets louder and less even, speech speeds up, and vocal effort pushes energy
+higher up the spectrum. Those are reported individually AND combined, so the score can always be
+taken apart.
+
+VALENCE IS ABSENT ON PURPOSE. Pleasant-versus-unpleasant is the dimension acoustic models are worst
+at, and the transcript carries it far better than the waveform does.
+
+THE SCORE IS RELATIVE TO THE SPEAKER. A quiet person at their most animated may never reach a loud
+person's resting level, so an absolute number describes the larynx and the preamp rather than the
+moment. With fewer than six segments to compare against, the score is reported as NOT GROUNDED
+rather than quietly presented as if it meant something.",
+        summary: "how something was said: pitch, loudness, effort, rate — and arousal against the speaker's own habit",
+    },
+    CmdDoc {
         name: "segments",
         summary: "the audio currently held, newest first",
         usage: "\
@@ -433,6 +456,100 @@ fn cmd_levels(a: &Args) -> Result<(), String> {
     Ok(())
 }
 
+/// Read a wav as mono f32 at its own rate.
+fn read_wav(path: &std::path::Path) -> Result<(Vec<f32>, u32), String> {
+    let mut r = hound::WavReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let spec = r.spec();
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Int => {
+            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            r.samples::<i32>().filter_map(|s| s.ok()).map(|s| s as f32 / max).collect()
+        }
+        hound::SampleFormat::Float => r.samples::<f32>().filter_map(|s| s.ok()).collect(),
+    };
+    let mono = crate::audio::to_mono(&samples, spec.channels);
+    Ok((mono, spec.sample_rate))
+}
+
+fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::prosody;
+    let files: Vec<std::path::PathBuf> = if a.positional.len() > 1 {
+        a.positional[1..].iter().map(std::path::PathBuf::from).collect()
+    } else {
+        let mut v: Vec<_> = std::fs::read_dir(p.audio())
+            .map_err(|e| format!("could not read {}: {e}", p.audio().display()))?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|f| f.extension().is_some_and(|x| x == "wav"))
+            .collect();
+        v.sort();
+        v
+    };
+    if files.is_empty() {
+        return Err("no wavs to measure — pass paths, or --dir a capture directory".into());
+    }
+
+    // TWO PASSES, and it has to be two: the baseline IS the other segments, so nothing can be
+    // scored until every one of them has been measured.
+    let mut measured = Vec::new();
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        let pr = prosody::measure(&prosody::frames(&samples, sr), sr);
+        measured.push((f.clone(), pr));
+    }
+    let mut base = prosody::Baseline::default();
+    for (_, pr) in &measured {
+        base.observe(pr);
+    }
+    let (speech, silent): (Vec<_>, Vec<_>) = measured.iter().partition(|(_, pr)| pr.has_speech());
+    let mut scored: Vec<_> =
+        speech.iter().map(|(f, pr)| (f.clone(), *pr, prosody::arousal(pr, &base))).collect();
+    scored.sort_by(|x, y| y.2.score.partial_cmp(&x.2.score).unwrap_or(std::cmp::Ordering::Equal));
+
+    if a.json || a.pretty {
+        let v: Vec<_> = scored
+            .iter()
+            .map(|(f, pr, ar)| json!({ "file": f.file_name().and_then(|s| s.to_str()), "prosody": pr, "arousal": ar }))
+            .collect();
+        return print_json(&v, a.pretty);
+    }
+    if !base.ready() {
+        println!(
+            "NOT GROUNDED: {} segment(s) is too thin a baseline to z-score against (need {}).\n\
+             The numbers below are printed, but the arousal column does not yet mean anything.\n",
+            base.n,
+            prosody::MIN_BASELINE
+        );
+    }
+    println!("{:<30} {:>7} {:>7} {:>7} {:>7} {:>6}  {:>7}", "segment", "arousal", "f0", "range", "loud", "rate", "secs");
+    for (f, pr, ar) in &scored {
+        println!(
+            "{:<30} {:>+7.2} {:>7.0} {:>7.0} {:>7.4} {:>6.1}  {:>7.1}",
+            f.file_name().and_then(|s| s.to_str()).unwrap_or("?"),
+            ar.score,
+            pr.f0_median,
+            pr.f0_range,
+            pr.rms_mean,
+            pr.onset_rate,
+            pr.duration_s
+        );
+    }
+    if !silent.is_empty() {
+        println!("\n{} segment(s) carried NO VOICED SPEECH and are not scored:", silent.len());
+        for (f, pr) in &silent {
+            println!(
+                "  {:<28} voiced {:.0}%  rms {:.4}",
+                f.file_name().and_then(|s| s.to_str()).unwrap_or("?"),
+                pr.voiced_fraction * 100.0,
+                pr.rms_mean
+            );
+        }
+        println!("  (not low arousal — no speech. Cross-check these against what ASR claimed they said.)");
+    }
+    println!("\narousal is a z-score against these same segments — 0 is this speaker's ordinary.");
+    Ok(())
+}
+
 fn cmd_segments(a: &Args, p: &Paths) -> Result<(), String> {
     let mut held = capture::held_segments(&p.audio());
     held.sort_by_key(|s| std::cmp::Reverse(s.started_unix_ms));
@@ -467,6 +584,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("status") => cmd_status(&a, &p),
         Some("listen") => cmd_listen(&a, &p, true),
         Some("levels") => cmd_levels(&a),
+        Some("prosody") => cmd_prosody(&a, &p),
         Some("segments") => cmd_segments(&a, &p),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
@@ -483,7 +601,10 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["devices", "start", "stop", "status", "listen", "levels", "segments"]);
+        assert_eq!(
+            names,
+            vec!["devices", "start", "stop", "status", "listen", "levels", "prosody", "segments"]
+        );
     }
 
     #[test]
