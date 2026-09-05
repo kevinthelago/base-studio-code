@@ -54,6 +54,13 @@ const isOwnSpecifier = (spec: string) =>
 
 const countAssertions = (src: string) => (src.match(/^\s*(it|test)\(/gm) ?? []).length;
 
+/** Every packaged algorithm implementation, beside the component records globbed above. */
+const allImpls = (
+  JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8")) as {
+    implementations?: (typeof seeds)[string][];
+  }
+).implementations;
+
 describe("a retired module keeps its tests in the gate", () => {
   it("every RETIRED record that carries tests has them EXECUTED — from src/, or from the emitted record", () => {
     const plan = planRecords();
@@ -176,6 +183,58 @@ describe("an edge test is executed, not merely stored", () => {
       expect(t.members.length, `${t.id} spans 2+ records — one is a node test`).toBeGreaterThanOrEqual(2);
     }
   });
+
+  // ── A MIGRATED TEST'S FILE MAY NOT COME BACK (`the-frontend-tests-are-records`) ──────────────────
+  //
+  // `plan_records` puts an edge in `edgeShadowed` when its `src` file still exists: "the file still
+  // exists ⇒ IT is the copy that runs". Nothing was asserting that bucket, so a re-added file was a
+  // SILENT second copy of the assertions — coverage intact, and two copies free to drift, which is
+  // the exact failure records exist to remove. It is not hypothetical: the migration deletes the file
+  // and the store keeps the test, so any later `git checkout`, revert or merge that resurrects the
+  // path re-creates the pair.
+  //
+  // Unlike a node test, an edge is never MIRRORED — `bsc graph edge set --src` is the migration verb,
+  // not a harvest — so a populated `edgeShadowed` has no legitimate reading. Reads the packaged SEED,
+  // not the shared runtime store, so a half-finished migration in someone else's session cannot
+  // redden this for everyone; only a COMMITTED one can.
+  it("no edge test's file has come back to src/ — a shadowed edge is a second copy of the assertions", () => {
+    const plan = planRecords();
+    const seedEdges: { id?: string; src?: string; tests?: unknown[] }[] =
+      (JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"))
+        .edges ?? []) as { id?: string; src?: string; tests?: unknown[] }[];
+    const srcOf = new Map(seedEdges.map((e) => [e.id ?? "", e.src ?? "(no src)"]));
+    expect(
+      plan.edgeShadowed.map((id: string) => `${id} — ${srcOf.get(id)} is back on disk`),
+      "these edges carry a test AND the file they were migrated out of exists again. Delete the file " +
+        "(the store copy is emitted into `.bsc-records/` and runs there), or drop the edge — but not both.",
+    ).toEqual([]);
+    // Non-vacuity: an empty seed and a seed nothing matched look identical from here.
+    const withTests = seedEdges.filter((e) => (e.tests ?? []).length > 0).length;
+    expect(withTests, "packaged edges carrying tests").toBeGreaterThanOrEqual(50);
+  });
+
+  // The node half of the same reappearance. `plan_records` shadows a record's WHOLE `tests` manifest
+  // on one colocated file — `test_file_exists(repo, spec)` is a single check, not a per-entry one — so
+  // re-adding `src/<spec>.test.ts` beside a record carrying five tests stops FOUR of them running while
+  // the fifth reads as the file that replaced them. Measured on `session-roles.ts`, which carries five.
+  it("no record carrying several tests has a colocated file — one file shadows the whole manifest", () => {
+    // FLAT, exactly as `test_file_exists` in `crates/bsc-emit/src/plan.rs` is — `<spec><ext>`, never
+    // the barrel form the guard below accepts. A looser check here would report a shadow the emitter
+    // does not actually apply.
+    const colocated = (base: string) =>
+      [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"].some((e) => srcFiles.has(base + e));
+    const carriers = [...Object.values(seeds), ...(allImpls ?? [])].filter(
+      (r) => (r.tests ?? []).length > 1 && (r.provides ?? "").startsWith("@/"),
+    );
+    const shadowedWhole = carriers
+      .filter((r) => colocated((r.provides as string).slice(2)))
+      .map((r) => `${r.provides} — ${(r.tests ?? []).length} carried, all shadowed by one file`);
+    expect(
+      shadowedWhole,
+      "a colocated test file shadows EVERY test its record carries, not just the matching one",
+    ).toEqual([]);
+    expect(carriers.length, "records carrying more than one test").toBeGreaterThanOrEqual(20);
+  });
 });
 
 
@@ -200,11 +259,7 @@ describe("an edge test is executed, not merely stored", () => {
 // stopped matching" are indistinguishable from a passing result.
 describe("a carried test the emitter can never emit still needs its colocated file", () => {
   /** Every packaged algorithm implementation, beside the component records globbed above. */
-  const impls = (
-    JSON.parse(
-      readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"),
-    ) as { implementations?: (typeof seeds)[string][] }
-  ).implementations;
+  const impls = allImpls;
 
   const TEST_EXT = [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"];
   /** Is a colocated test running this module?

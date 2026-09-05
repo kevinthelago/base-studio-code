@@ -308,6 +308,65 @@ Two things the emitter refuses, loudly rather than silently:
   relatively. They are rewritten to `@/…` on emit — the same rewrite `bsc ui retire` applies to the
   file copy, so both copies of a test resolve identically.
 
+### A test that is not ABOUT one module — the edge tier
+
+`the-frontend-tests-are-records`. Most of what is left under `src/` is tests, and most of those are not
+the colocated test of a single module: they reach across several records at once. Those have a home of
+their own, and the rule that picks between the two is mechanical.
+
+**Resolve the test's `@/…` imports to the records that answer them, and count the distinct ids.**
+
+| distinct records | home | verb |
+|---|---|---|
+| 1 | that record's `tests[]` | `bsc graph tests set --id <id> --src <file>` (`bsc ui tests set` for a component) |
+| 2 or more | an **edge** whose `members` are exactly those ids | `bsc graph edge set --id <id> --members a,b --src <file>` |
+
+Both are emitted into `.bsc-records/` and run in the default gate, so the file is deleted in the same
+change — the whole point is that there is one copy.
+
+**An edge is the mechanically safer of the two.** `bsc-emit` writes an edge test back at its ORIGINAL
+relative path, so its filename, its directory and therefore its vitest project all survive. A node test
+is re-addressed to the RECORD's path and numbered (`sessionRoles.1.test.ts`), which means it can cross
+the `/lib/` boundary the `node`/`dom` projects split on and silently change environment. **So a node test
+moves only when the record keeps it on the same side of that boundary**, and only when its relative
+imports still resolve from the record's directory — `componentBridge.previewErrors.test.ts` imported
+`./componentBridge` and its one record lives in `shared/lib/core`, so the emitter refused it. Read
+`bsc-emit --plan --json` before deleting anything: `unresolvable` and `edgeUnresolvable` name exactly
+these, and they are the cheap version of finding out.
+
+**A member must be an ALGORITHM impl id.** `bsc-graph`'s `seed_parses_impl_only_and_is_primitives_rooted`
+asserts every packaged edge member is an id in `implementations[]`, and `bsc graph edge set` does not
+check it — so a component-record member reaches the seed and reddens a Rust leg three gates later. The
+frontend's records live in two stores, so a test spanning a component AND an impl has no legal edge
+today: of 55 candidates, 49 were all-impl, 12 had to drop a component member, and 7 fell below two
+members and could not move at all.
+
+Four categories are NOT edge material, and saying so is the point rather than a gap:
+
+- **A test whose module is still a FILE.** It is that file's colocated test; there is no record yet.
+- **A `*.gen.test.ts`.** A generator writes that path; moving it puts the generator and the test in
+  different trees.
+- **A guard OVER the record system** (`src/app/runtime/*`). It reads the seed to judge the emitted
+  tree; emitting it into that tree is circular.
+- **A whole-tree guard** — a test that resolves to 5, 7, 10 records is not evidence about an edge
+  between a few of them, and an id naming ten members is not readable. Those want a different home.
+
+Two write hazards, both measured and both filed:
+
+- **`bsc graph tests set --seed` REPLACES the seed record's `tests` array** while the store half
+  appends, so it silently drops whatever the record already carried. Write the store, then
+  `bsc graph impl sync-seed <id> --seed-dir src-tauri/data/knowledge --only tests --apply`.
+- **`bsc ui tests set` / `bsc ui tests adopt` replace too**, on both copies — so a component record
+  that already carries a test cannot yet gain a second one.
+
+A third: a `bsc-graph` cli fixture squats on the real `session-roles.ts` id and reconciles the packaged
+seed into its temp store, so adding a carried test to THAT record fails a Rust test.
+
+And the store you sync FROM may be BEHIND the seed: syncing `session-roles.ts` regressed the packaged
+`scopeWriteGlobs` test by 876 bytes of assertions, because the runtime copy predated a carve-out the
+seed had. Diff the parsed seed by record id, keyed on each carried test's `name` + length, and check
+that every entry that was there is still there.
+
 ### Traps that cost real time
 
 - **`vi.mock("./x")` breaks silently.** A mock keys on the resolved module. While the file exists, a
