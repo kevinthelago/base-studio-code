@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import {
   SpectrumAnalyzer, binFrequencyMhz, binHeight, foldChannel, isCurrent, ageLabel,
-  NEVER_HEARD, type SpectrumBins, type Liveness,
+  emptyStateDiagnosis, NEVER_HEARD, type SpectrumBins, type Liveness,
 } from "@/features/lan/SpectrumAnalyzer";
 
 // The analyzer ships as a RECORD (src-tauri/data/components/app/features/lan/),
@@ -89,7 +89,47 @@ describe("ageLabel", () => {
   });
 });
 
+describe("emptyStateDiagnosis", () => {
+  it("distinguishes a sensor nobody can hear from one whose RADIO is producing nothing", () => {
+    // MEASURED: this panel showed the same words for an hour while the sensor
+    // was healthy and delivering snapshots and its radio had wedged. Those are
+    // completely different faults — one is keys or network, the other is the
+    // radio — and an empty chart says neither.
+    const unheard = emptyStateDiagnosis(NEVER_HEARD);
+    const heard = emptyStateDiagnosis(healthy);
+    expect(unheard).not.toEqual(heard);
+    expect(unheard).toMatch(/keys/i);
+    expect(heard).toMatch(/radio/i);
+    expect(heard).toMatch(/IS heard/);
+  });
+
+  it("says how long a silent sensor has been gone, and how late a late one is", () => {
+    expect(emptyStateDiagnosis(silent)).toMatch(/45s/);
+    expect(emptyStateDiagnosis(late)).toMatch(/1s/);
+  });
+
+  it("has a distinct sentence for every liveness state", () => {
+    const all = [NEVER_HEARD, healthy, late, silent].map(emptyStateDiagnosis);
+    expect(new Set(all).size).toBe(all.length);
+    for (const s of all) expect(s.length).toBeGreaterThan(0);
+  });
+});
+
 describe("the analyzer window", () => {
+  it("tells the reader WHY it is empty, not just that it is", () => {
+    // The empty panel is the surface an operator stares at when something is
+    // wrong, so it has to carry the one fact that splits the diagnosis.
+    render(<SpectrumAnalyzer channels={[]} liveness={healthy} />);
+    expect(screen.getByText(/IS heard/)).toBeTruthy();
+    expect(screen.getByText(/radio is producing nothing/)).toBeTruthy();
+  });
+
+  it("says something different when nothing has arrived at all", () => {
+    render(<SpectrumAnalyzer channels={[]} liveness={NEVER_HEARD} />);
+    expect(screen.getByText(/Nothing has been heard from the sensor at all/)).toBeTruthy();
+    expect(screen.queryByText(/IS heard/)).toBeNull();
+  });
+
   it("NEVER renders an empty chart as a quiet band", () => {
     // No data and a clear channel look identical on a spectrum display, and
     // only one of them is good news. This is the same refusal the posture

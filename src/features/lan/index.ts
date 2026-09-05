@@ -14,6 +14,7 @@ export {
   foldChannel,
   isCurrent,
   ageLabel,
+  emptyStateDiagnosis,
   NEVER_HEARD,
   type SpectrumBins,
   type Liveness,
