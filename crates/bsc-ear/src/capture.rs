@@ -201,7 +201,6 @@ fn publish_state(cfg: &CaptureConfig, seg: &Segmenter, device: &str, p: &Progres
 /// refusing, and naming the format refused. The crate denies `wildcard_enum_match_arm` on purpose;
 /// enumerating nine variants to reach one outcome, and still needing a catch-all, is the case the
 /// deny is not for.
-#[allow(clippy::wildcard_enum_match_arm)]
 pub fn probe_level(name: Option<&str>, ms: u64) -> Result<(String, f32), String> {
     let _hush = HushStderr::new();
     let host = cpal::default_host();
@@ -216,39 +215,11 @@ pub fn probe_level(name: Option<&str>, ms: u64) -> Result<(String, f32), String>
     probe_device(&device, ms)
 }
 
-/// Probe every capture device from ONE enumeration.
-///
-/// Enumerating per device was wrong and the failure was reproducible: probing the routed devices
-/// first takes the interface through pipewire, and the NEXT enumeration then cannot see the
-/// hardware node — so the Scarlett, which `bsc ear devices` had just listed, came back as "no
-/// capture device named". Two enumerations can disagree, so there is now only one.
-pub fn probe_levels(keep: impl Fn(&str) -> bool, ms: u64) -> Result<Vec<(String, Result<f32, String>)>, String> {
-    let _hush = HushStderr::new();
-    let host = cpal::default_host();
-    // ITERATED, not collected. Collecting holds every device handle open for the whole sweep, and
-    // measured on this machine that silently lost four of seven — `d.name()` began failing for the
-    // hardware nodes and each one was skipped without a word. Probing inline means exactly one
-    // device is held at a time, which is also what the driver expects.
-    let mut out = Vec::new();
-    for d in host.input_devices().map_err(|e| format!("could not enumerate capture devices: {e}"))? {
-        let name = match d.name() {
-            Ok(n) => n,
-            // Reported, never skipped: a device dropped in silence is indistinguishable from one
-            // that is not plugged in, which is the exact confusion this verb exists to end.
-            Err(e) => {
-                out.push(("<unnamed>".to_string(), Err(format!("could not read its name: {e}"))));
-                continue;
-            }
-        };
-        if !keep(&name) {
-            continue;
-        }
-        let level = probe_device(&d, ms).map(|(_, rms)| rms);
-        out.push((name, level));
-    }
-    Ok(out)
-}
-
+/// `cpal::SampleFormat` is non_exhaustive with nine variants, all handled identically here — by
+/// refusing, and naming the format refused. The crate denies `wildcard_enum_match_arm` on purpose;
+/// enumerating nine variants to reach one outcome, and still needing a catch-all, is the case the
+/// deny is not for.
+#[allow(clippy::wildcard_enum_match_arm)]
 fn probe_device(device: &cpal::Device, ms: u64) -> Result<(String, f32), String> {
     let dname = device.name().unwrap_or_else(|_| "<unnamed>".into());
     let supported = device.default_input_config().map_err(|e| format!("{e}"))?;
