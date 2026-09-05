@@ -270,31 +270,187 @@ pub struct CrateShape<'a> {
     pub modules: &'a [ModuleNode],
 }
 
-/// Every path literal passed to an `include_str!` in `src`.
+/// Which bytes of Rust source are CODE, and where the string literals sitting in code are.
 ///
-/// Deliberately a text scan, not a parse: the shapes in this tree are `include_str!("x.rs")` and
-/// `include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs"))`, and both are answered by taking the
-/// LAST string literal before the closing paren. A parser would be more correct and would not change a
-/// single verdict here.
-fn include_str_targets(src: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for (at, _) in src.match_indices("include_str!") {
-        let rest = &src[at..];
-        let end = rest.find(')').unwrap_or(rest.len());
-        let head = &rest[..end];
-        // The last quoted literal in the macro call is the path in both shapes above.
-        let mut last: Option<String> = None;
-        let mut it = head.char_indices().peekable();
-        while let Some((i, c)) = it.next() {
-            if c != '"' { continue; }
-            if let Some(close) = head[i + 1..].find('"') {
-                last = Some(head[i + 1..i + 1 + close].to_string());
-                while let Some(&(j, _)) = it.peek() {
-                    if j <= i + close + 1 { it.next(); } else { break; }
+/// NOT a parser — a LEXER, and only over the four things that can hide a token from a text scan:
+/// `//` line comments, `/* … */` block comments (which NEST in Rust), string literals under every
+/// prefix the language allows (`"…"`, `b"…"`, `c"…"`, `r"…"`, `r#"…"#`, `br#"…"#`), and char
+/// literals. That is the exact discrimination the caller needs and nothing more: the difference
+/// between a LIVE `include_str!` and text that merely NAMES one is entirely lexical, so a full parse
+/// would answer the same question at far greater cost, while anything narrower than a lexer keeps
+/// getting it wrong in one direction or the other.
+///
+/// Two details are load-bearing rather than incidental:
+/// - **Escapes.** The fixture that blocked `bsc-graph` is `"… include_str!(\"cli.rs\") …"`, so a
+///   scanner that ends a literal at the next `"` splits it in the middle and reads the inside as code.
+/// - **`'a` is a lifetime, not a quote.** Treating one as an opening char literal blanks every byte to
+///   the next `'`, which is usually real code — the failure that hides a live call.
+struct CodeMask {
+    /// One entry per BYTE: `true` when that byte is code, `false` inside a comment or a literal.
+    code: Vec<bool>,
+    /// Every string literal in code position — `(offset of its opening quote, its raw body)`,
+    /// ascending. The body is the text between the delimiters, which is what a path literal is.
+    strings: Vec<(usize, String)>,
+}
+
+impl CodeMask {
+    fn is_code(&self, at: usize) -> bool {
+        self.code.get(at).copied().unwrap_or(false)
+    }
+
+    fn of(src: &str) -> Self {
+        let b = src.as_bytes();
+        let n = b.len();
+        let mut code = vec![true; n];
+        let mut strings: Vec<(usize, String)> = Vec::new();
+        let mut i = 0usize;
+        while i < n {
+            if b[i] == b'/' && i + 1 < n && b[i + 1] == b'/' {
+                let start = i;
+                while i < n && b[i] != b'\n' {
+                    i += 1;
+                }
+                code[start..i].fill(false);
+                continue;
+            }
+            if b[i] == b'/' && i + 1 < n && b[i + 1] == b'*' {
+                let start = i;
+                let mut depth = 1usize;
+                i += 2;
+                while i < n && depth > 0 {
+                    if b[i] == b'/' && i + 1 < n && b[i + 1] == b'*' {
+                        depth += 1;
+                        i += 2;
+                    } else if b[i] == b'*' && i + 1 < n && b[i + 1] == b'/' {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                code[start..i].fill(false);
+                continue;
+            }
+            if let Some((quote, hashes, raw)) = string_open(b, i) {
+                let body = quote + 1;
+                let (body_end, after) = if raw { close_raw(b, body, hashes) } else { close_plain(b, body) };
+                strings.push((quote, String::from_utf8_lossy(&b[body..body_end]).into_owned()));
+                code[i..after.min(n)].fill(false);
+                i = after;
+                continue;
+            }
+            if b[i] == b'\'' {
+                if let Some(after) = close_char(b, i) {
+                    code[i..after.min(n)].fill(false);
+                    i = after;
+                    continue;
                 }
             }
+            i += 1;
         }
-        if let Some(l) = last { out.push(l); }
+        CodeMask { code, strings }
+    }
+}
+
+/// A string literal opening at `i`: `(the quote's offset, how many `#` pad a raw one, whether it is raw)`.
+///
+/// The prefix only counts when it STARTS a token, or the `r` of `for` opens a raw string.
+fn string_open(b: &[u8], i: usize) -> Option<(usize, usize, bool)> {
+    let n = b.len();
+    if i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_') {
+        return None;
+    }
+    let mut j = i;
+    if j < n && matches!(b[j], b'b' | b'c') {
+        j += 1;
+    }
+    let raw = j < n && b[j] == b'r';
+    if raw {
+        j += 1;
+    }
+    let hash_start = j;
+    while j < n && b[j] == b'#' {
+        j += 1;
+    }
+    let hashes = j - hash_start;
+    // `#` padding is a RAW-string thing; `#[attr]` and `#"` are not string opens.
+    if j < n && b[j] == b'"' && (raw || hashes == 0) { Some((j, hashes, raw)) } else { None }
+}
+
+/// The body end and the byte after a plain string literal — the one shape where `\"` does NOT close it.
+fn close_plain(b: &[u8], body: usize) -> (usize, usize) {
+    let n = b.len();
+    let mut k = body;
+    while k < n {
+        match b[k] {
+            b'\\' => k += 2,
+            b'"' => return (k, k + 1),
+            _ => k += 1,
+        }
+    }
+    (n, n)
+}
+
+/// The same, for `r#"…"#`: nothing escapes, and the terminator is `"` followed by exactly the padding.
+fn close_raw(b: &[u8], body: usize, hashes: usize) -> (usize, usize) {
+    let n = b.len();
+    let mut k = body;
+    while k < n {
+        if b[k] == b'"' && b[k + 1..].iter().take(hashes).filter(|c| **c == b'#').count() == hashes {
+            return (k, k + 1 + hashes);
+        }
+        k += 1;
+    }
+    (n, n)
+}
+
+/// The byte after a char literal at `i`, or `None` when the quote opens a LIFETIME instead.
+fn close_char(b: &[u8], i: usize) -> Option<usize> {
+    let n = b.len();
+    if i + 1 >= n {
+        return None;
+    }
+    if b[i + 1] == b'\\' {
+        // An escape, bounded: `'\u{1F600}'` is the longest shape Rust allows.
+        return (i + 2..n.min(i + 13)).find(|k| b[*k] == b'\'').map(|k| k + 1);
+    }
+    // Exactly one char, which may be several bytes — walk off its UTF-8 continuation bytes.
+    let mut k = i + 2;
+    while k < n && b[k] & 0xC0 == 0x80 {
+        k += 1;
+    }
+    if k < n && b[k] == b'\'' { Some(k + 1) } else { None }
+}
+
+/// Every path literal passed to a LIVE `include_str!` in `src`.
+///
+/// Still not a parse — the shapes in this tree are `include_str!("x.rs")` and
+/// `include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/x.rs"))`, and both are answered by taking the
+/// LAST string literal before the closing paren.
+///
+/// What it is no longer is a RAW text scan. That could not tell a call from text describing one, and it
+/// cost twice in a day: `bsc-graph` was refused over the fixture string in
+/// `refuses_a_module_that_reads_a_file_the_migration_deletes` and over the `//` comments in
+/// [`refuse_reason`] that explain the rule — the rule refusing the crate that implements it — and
+/// `bsc-secret` was refused a second time with identical wording after its live read was removed and
+/// only the prose explaining the removal was left. So a token is evidence only where [`CodeMask`] says
+/// it is code, and the literals it may read are the ones the same pass found in code position.
+fn include_str_targets(src: &str) -> Vec<String> {
+    let mask = CodeMask::of(src);
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    for (at, _) in src.match_indices("include_str!") {
+        if !mask.is_code(at) {
+            continue;
+        }
+        // …and a whole token: `my_include_str!` is a different macro.
+        if at > 0 && (b[at - 1].is_ascii_alphanumeric() || b[at - 1] == b'_') {
+            continue;
+        }
+        let end = (at..b.len()).find(|k| b[*k] == b')' && mask.is_code(*k)).unwrap_or(b.len());
+        if let Some((_, value)) = mask.strings.iter().rev().find(|(s, _)| *s > at && *s < end) {
+            out.push(value.clone());
+        }
     }
     out
 }
@@ -306,8 +462,9 @@ fn include_str_targets(src: &str) -> Vec<String> {
 /// `crates/data` legible: its single directive is `cargo:rustc-link-lib`, a LINK instruction guarded by
 /// `CARGO_CFG_TARGET_OS == "windows"` — so losing it is invisible on Linux and breaks the Windows link.
 ///
-/// A text scan, matching [`include_str_targets`]: a directive inside a comment is counted, which
-/// over-reports into a message a human reads and never into a verdict.
+/// A RAW text scan, unlike [`include_str_targets`]: a directive inside a comment is counted. That is
+/// the same mistake, made deliberately, because it lands somewhere else — this feeds a message a human
+/// reads and never a verdict, so over-reporting costs a reader one glance rather than a blocked crate.
 pub fn build_script_effects(src: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (at, _) in src.match_indices("cargo:") {
@@ -1172,6 +1329,52 @@ mod tests {
             cargo_toml: plain, build_rs: None, root_name: "lib.rs", modules: &survives,
         };
         assert!(refuse_reason(&ok).is_none(), "a data file that survives is not a refusal");
+    }
+
+    /// REGRESSION, and the one that cost the most: a raw TEXT scan cannot tell a LIVE `include_str!`
+    /// from text that merely NAMES one, and both halves of that mistake were paid for in a day.
+    ///
+    /// `bsc-graph` itself — 19,804 lines, the largest crate left — was refused over the FIXTURE STRING
+    /// on the first line below, which is the fixture for
+    /// `refuses_a_module_that_reads_a_file_the_migration_deletes`: the rule refusing the crate that
+    /// implements it, over its own test data. The mirror image cost a rewrite — an agent removed
+    /// `bsc-secret`'s genuine self-read and explained WHY in prose, and the refusal fired again, with
+    /// identical wording, on a file that no longer had a live call.
+    ///
+    /// Every case here is TEXT ABOUT the macro. None is a call, so none may be refused.
+    #[test]
+    fn text_about_an_include_str_is_not_a_live_call() {
+        let plain = "[package]\nedition = \"2021\"\n";
+        let not_a_call = [
+            // The real `bsc-graph` blocker, verbatim from this very file.
+            "let sources = vec![(\"cli\".to_string(), \"fn t() { let s = include_str!(\\\"cli.rs\\\"); }\".to_string())];",
+            // The `bsc-secret` shape: the read is GONE and only the explanation of it remains.
+            "// the test used to call include_str!(\"cli.rs\") on its own source; it reads the record now",
+            "/// Was `include_str!(\"cli.rs\")` before the migration.",
+            "/* include_str!(\"cli.rs\") — kept here only to say what was removed */",
+            // A raw string is a string too, and its escapes do not work the way a naive scan assumes.
+            "const F: &str = r#\"fn t() { let s = include_str!(\"cli.rs\"); }\"#;",
+        ];
+        // Collected rather than asserted one at a time: the two shapes fail for different reasons, and a
+        // report that stops at the first says nothing about whether the others were ever fixed.
+        let mut wrong: Vec<String> = Vec::new();
+        for src in not_a_call {
+            let modules = vec![node(&["cli"], "cli.rs", Some(src))];
+            let shape = CrateShape { cargo_toml: plain, build_rs: None, root_name: "lib.rs", modules: &modules };
+            let targets = include_str_targets(src);
+            if !targets.is_empty() {
+                wrong.push(format!("read {targets:?} out of TEXT: {src}"));
+            }
+            if let Some(why) = refuse_reason(&shape) {
+                wrong.push(format!("REFUSED over text: {src}\n      → {why}"));
+            }
+        }
+        assert!(wrong.is_empty(), "text about include_str! counted as a live call:\n  - {}", wrong.join("\n  - "));
+
+        // …and the discrimination is not "never refuse": a LIVE call sitting in the same file as all of
+        // that text is still found, so the fix cannot have been a blanket exemption.
+        let mixed = format!("{}\n{}\nfn t() {{ let s = include_str!(\"cli.rs\"); }}\n", not_a_call[1], not_a_call[0]);
+        assert_eq!(include_str_targets(&mixed), vec!["cli.rs".to_string()], "exactly the live call");
     }
 
     /// REGRESSION. `cargo build -p <dir>` never ran for `crates/data`, whose package is `bsc-data` —
