@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import {
   SpectrumAnalyzer, binFrequencyMhz, binEdgesMhz, binDbm, rampColor, strengthFraction,
   spanOf, pushRow, rowGradient, isCurrent, ageLabel, emptyStateDiagnosis,
-  extentOf, rangeDb, NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
+  extentOf, rangeDb, timeTicks, NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
   type SpectrumBins, type Liveness, type Row,
 } from "@/features/lan/SpectrumAnalyzer";
 
@@ -176,6 +176,34 @@ describe("rowGradient", () => {
   });
 });
 
+describe("timeTicks", () => {
+  it("labels the newest row `now`, because everything else is read against it", () => {
+    const rows = [row({}, 10_000), row({}, 9_000)];
+    expect(timeTicks(rows, 1)[0]).toEqual({ index: 0, label: "now" });
+  });
+
+  it("reports the AGE of the row it sits beside, not the row count times a cadence", () => {
+    // Windows do not arrive on a perfect cadence — a wedged radio, a late
+    // datagram or a restarted sensor all stretch the gap — so labelling every
+    // Nth row "N seconds" would draw a clock that is confidently wrong.
+    const rows = [row({}, 100_000), row({}, 99_000), row({}, 40_000), row({}, 39_000)];
+    const ticks = timeTicks(rows, 2);
+    expect(ticks.map((t) => t.label)).toEqual(["now", "-60s"]);
+    expect(ticks[1].index).toBe(2);
+  });
+
+  it("never labels a row as being in the future", () => {
+    // A sensor restart can hand back a smaller timestamp than the one before.
+    const rows = [row({}, 1_000), row({}, 50_000)];
+    expect(timeTicks(rows, 1).every((t) => !t.label.startsWith("--"))).toBe(true);
+    expect(timeTicks(rows, 1)[1].label).toBe("-0ms");
+  });
+
+  it("has nothing to say about an empty history", () => {
+    expect(timeTicks([])).toEqual([]);
+  });
+});
+
 describe("isCurrent", () => {
   it("treats ONLY a healthy stream as the air right now", () => {
     expect(isCurrent(healthy)).toBe(true);
@@ -236,7 +264,13 @@ describe("the analyzer window", () => {
     render(<SpectrumAnalyzer rows={[row()]} liveness={healthy} />);
     expect(screen.getByText(/ESTIMATED as dB above the reported noise floor/)).toBeTruthy();
     expect(screen.getByText(/scaled to the range actually observed/)).toBeTruthy();
+    expect(screen.getByText(/time runs DOWN from now/)).toBeTruthy();
     expect(screen.getByText(/per-bin PEAK across each window \(not a mean\)/)).toBeTruthy();
+  });
+
+  it("labels the time axis so the vertical is readable as duration", () => {
+    render(<SpectrumAnalyzer rows={[row({}, 2), row({}, 1)]} liveness={healthy} />);
+    expect(screen.getByText("now")).toBeTruthy();
   });
 
   it("renders one band per observed window, newest first", () => {

@@ -26,6 +26,8 @@ export {
   MIN_RANGE_DB,
   extentOf,
   rangeDb,
+  timeTicks,
+  ROW_PX,
   CHANNEL_WIDTH_MHZ,
   UNOBSERVED,
   type SpectrumBins,
@@ -34,4 +36,5 @@ export {
   type Row,
   type Span,
   type Extent,
+  type TimeTick,
 } from "@/features/lan/SpectrumAnalyzer";
