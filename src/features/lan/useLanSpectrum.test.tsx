@@ -56,18 +56,28 @@ describe("the analyzer wired to the live stream", () => {
     render(<LiveSpectrumAnalyzer />);
     emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
     emit<SpectrumBins>("lan://spectrum", record());
-    expect(screen.getByText(/2437 MHz · 3328 sweeps/)).toBeTruthy();
+    expect(screen.getByText(/2427–2447 MHz observed/)).toBeTruthy();
     expect(screen.queryByText(/NOT a quiet band/i)).toBeNull();
   });
 
-  it("keeps two alternating channels on screen rather than swapping between them", () => {
+  it("widens the axis when the radio hops rather than showing two separate charts", () => {
+    // One graph across everything observed — the hop is visible as the span
+    // growing, and each row still covers only where the radio actually was.
     render(<LiveSpectrumAnalyzer />);
     emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
     emit<SpectrumBins>("lan://spectrum", record({ freqMhz: 2412 }));
-    emit<SpectrumBins>("lan://spectrum", record({ freqMhz: 2437 }));
-    emit<SpectrumBins>("lan://spectrum", record({ freqMhz: 2412, sweeps: 4000 }));
-    expect(screen.getByText(/2412 MHz · 4000 sweeps/)).toBeTruthy();
-    expect(screen.getByText(/2437 MHz · 3328 sweeps/)).toBeTruthy();
+    expect(screen.getByText(/2402–2422 MHz observed/)).toBeTruthy();
+    emit<SpectrumBins>("lan://spectrum", record({ freqMhz: 2462 }));
+    expect(screen.getByText(/2402–2472 MHz observed/)).toBeTruthy();
+  });
+
+  it("accumulates a window per record, so duration is vertical extent", () => {
+    render(<LiveSpectrumAnalyzer />);
+    emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
+    for (let i = 0; i < 4; i++) {
+      emit<SpectrumBins>("lan://spectrum", record({ receivedAtMs: 1000 + i }));
+    }
+    expect(screen.getByText(/4 window\(s\)/)).toBeTruthy();
   });
 
   it("marks the last sweep as stale when the sensor goes silent", () => {
@@ -76,12 +86,12 @@ describe("the analyzer wired to the live stream", () => {
     render(<LiveSpectrumAnalyzer />);
     emit<Liveness>("lan://liveness", { state: "healthy", sinceMs: 0, overdueByMs: 0 });
     emit<SpectrumBins>("lan://spectrum", record());
-    expect(screen.queryByText(/LAST sweep/)).toBeNull();
+    expect(screen.queryByText(/not the air now/)).toBeNull();
 
     emit<Liveness>("lan://liveness", { state: "silent", sinceMs: 40_000, overdueByMs: 30_000 });
     expect(screen.getByText(/SENSOR SILENT for 40s/)).toBeTruthy();
-    // And the sweep is still there — it is the most recent truth available.
-    expect(screen.getByText(/2437 MHz · 3328 sweeps/)).toBeTruthy();
+    // And the history is still there — it is the most recent truth available.
+    expect(screen.getByText(/2427–2447 MHz observed/)).toBeTruthy();
   });
 
   it("stops listening when the window goes away", () => {
