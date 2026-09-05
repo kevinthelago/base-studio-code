@@ -160,6 +160,68 @@ pub fn liveness_payload(l: Liveliness) -> LivenessPayload {
     }
 }
 
+/// What the subscription has actually done, so "is it working" is answerable.
+///
+/// MEASURED while debugging the analyzer: every fact obtainable from outside said the chain was
+/// healthy — the sensor sending 54 datagrams in 30s, 17 arriving here in 15s, the socket bound and its
+/// Recv-Q draining, the right component served to the right window — and the widget still rendered its
+/// empty state. Nothing could say which link was broken, because the one process that sees every
+/// datagram kept no account of them.
+///
+/// The counts one layer down already exist ([`Subscription::rejections`]); nothing read them. This is
+/// a voice for machinery that was already counting.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Tally {
+    /// Datagrams handed to the subscriber.
+    pub received: u64,
+    /// Spectrum records that reached the webview.
+    pub emitted: u64,
+    /// Signature did not verify — somebody is injecting, or the public key is the wrong half.
+    pub forged: u64,
+    /// Signed by the sensor, undecryptable — a group-key mismatch, not an attack.
+    pub undecryptable: u64,
+    /// Not a well-formed datagram of ours.
+    pub malformed: u64,
+}
+
+impl Tally {
+    /// Every rejection, whatever the cause.
+    pub fn rejected(&self) -> u64 {
+        self.forged + self.undecryptable + self.malformed
+    }
+
+    /// A line worth logging, or `None`.
+    ///
+    /// QUIET WHEN HEALTHY, LOUD WHEN NOT. A line per datagram at 1 Hz is a log nobody reads; silence
+    /// while every datagram is rejected is worse, because that is exactly the case an empty display
+    /// cannot distinguish from a quiet band. So: the first of each kind, then powers of ten — the same
+    /// policy the SENSOR uses for its send failures, deliberately rather than a second one invented
+    /// here, so both ends of one stream report trouble the same way.
+    ///
+    /// The three rejection kinds are never merged into one number: a forgery, a group-key mismatch and
+    /// a malformed frame are three different diagnoses with three different fixes, and "12 rejected"
+    /// sends a reader to look at all three.
+    pub fn report(&self) -> Option<String> {
+        let r = self.rejected();
+        if r > 0 && bsc_lan_sense::emitloop::SendLog::should_report(r) {
+            return Some(format!(
+                "lan: REJECTING the stream — {} of {} datagram(s) refused \
+                 ({} forged, {} undecryptable, {} malformed). A forged datagram means the public key \
+                 is the wrong half or somebody is injecting; undecryptable means the group keys \
+                 disagree. {} spectrum record(s) have reached the widget.",
+                r, self.received, self.forged, self.undecryptable, self.malformed, self.emitted
+            ));
+        }
+        if self.emitted > 0 && bsc_lan_sense::emitloop::SendLog::should_report(self.emitted) {
+            return Some(format!(
+                "lan: {} spectrum record(s) delivered to the widget from {} datagram(s), {} rejected",
+                self.emitted, self.received, r
+            ));
+        }
+        None
+    }
+}
+
 /// Start the subscription for the app's lifetime, if this host holds a
 /// subscriber config. Returns whether it started, so the caller can log the
 /// reason rather than leaving a silent no-op.
@@ -186,10 +248,14 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
         let started = Instant::now();
         let mut sub = Subscription::new(Subscriber::new(verifying, group_key), CADENCE, 0);
         let mut last_liveness: Option<LivenessPayload> = None;
+        let mut tally = Tally::default();
         loop {
             let now_ms = started.elapsed().as_millis() as u64;
             let findings = match rx.next_tick() {
-                Ok(Tick::Datagram(d)) => sub.receive(&d, now_ms),
+                Ok(Tick::Datagram(d)) => {
+                    tally.received += 1;
+                    sub.receive(&d, now_ms)
+                }
                 Ok(Tick::Quiet) => sub.poll(now_ms),
                 // A receive error is not a reason to stop listening: the
                 // interface can go down and come back under a running app, and
@@ -201,8 +267,18 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
                 if let Finding::Event(e) = f {
                     if let Some(p) = payload_for(e, now_ms) {
                         let _ = app.emit(SPECTRUM_EVENT, &p);
+                        tally.emitted += 1;
                     }
                 }
+            }
+            // Read from the subscriber rather than counted here: it is the thing that classified them,
+            // and a second count kept alongside would eventually disagree with the first.
+            let r = sub.rejections();
+            tally.forged = r.forged;
+            tally.undecryptable = r.undecryptable;
+            tally.malformed = r.malformed;
+            if let Some(line) = tally.report() {
+                log::info!("{line}");
             }
             // Emitted on every tick, not only on a change: a widget that
             // mounts after the last transition would otherwise have no way to
@@ -364,6 +440,95 @@ mod tests {
         assert_eq!((nh.state, nh.since_ms), ("never-heard", 5_000));
         let s = liveness_payload(Liveliness::Silent { since_last_ms: 40_000, overdue_by_ms: 30_000 });
         assert_eq!((s.state, s.since_ms, s.overdue_by_ms), ("silent", 40_000, 30_000));
+    }
+
+    #[test]
+    fn a_wholly_rejected_stream_is_loud_because_that_is_what_silence_hides() {
+        // THE CASE THIS EXISTS FOR. A display with no data and a subscriber
+        // refusing every datagram look identical from outside, and only one of
+        // them is a key problem. Silence here would leave the reader with the
+        // same empty screen and nothing to act on.
+        let t = Tally { received: 1, emitted: 0, forged: 1, ..Default::default() };
+        let line = t.report().expect("the first rejection must be reported");
+        assert!(line.contains("REJECTING"), "{line}");
+        assert!(line.contains("wrong half"), "the line must say what a forgery MEANS: {line}");
+    }
+
+    #[test]
+    fn the_three_rejection_kinds_are_never_merged_into_one_number() {
+        // A forgery, a group-key mismatch and a malformed frame are three
+        // diagnoses with three different fixes. "12 rejected" sends a reader to
+        // look at all three.
+        // A total the cadence actually reports at (the first, then powers of
+        // ten) — a breakdown nobody is shown is not a breakdown.
+        let t = Tally { received: 10, emitted: 0, forged: 7, undecryptable: 2, malformed: 1 };
+        assert_eq!(t.rejected(), 10);
+        let line = t.report().expect("reported");
+        for part in ["7 forged", "2 undecryptable", "1 malformed"] {
+            assert!(line.contains(part), "the breakdown is missing {part}: {line}");
+        }
+    }
+
+    #[test]
+    fn a_healthy_stream_says_so_once_and_then_goes_quiet() {
+        // A line per datagram at 1 Hz is a log nobody reads, so the signal has
+        // to survive being frequent.
+        let mut reported = Vec::new();
+        for n in 1..=1000u64 {
+            let t = Tally { received: n, emitted: n, ..Default::default() };
+            if t.report().is_some() {
+                reported.push(n);
+            }
+        }
+        assert_eq!(reported, vec![1, 10, 100, 1000], "reported at: {reported:?}");
+    }
+
+    #[test]
+    fn the_cadence_is_the_sensors_own_policy_rather_than_a_second_one() {
+        // Both ends of one stream must report trouble the same way, or a reader
+        // comparing the two logs is comparing two different rules.
+        for n in [1u64, 2, 9, 10, 11, 100, 999, 1000] {
+            let t = Tally { received: n, emitted: 0, forged: n, ..Default::default() };
+            assert_eq!(
+                t.report().is_some(),
+                bsc_lan_sense::emitloop::SendLog::should_report(n),
+                "the rejection cadence diverged from the sensor's at n={n}"
+            );
+        }
+    }
+
+    #[test]
+    fn nothing_that_is_reported_can_carry_a_key() {
+        // The same bar the payload has to clear, at the other end of the same
+        // stream: a log line is at least as durable as a Debug line.
+        // BOTH branches, and each must actually PRODUCE a line — a bite caught
+        // the earlier version of this test asserting over `unwrap_or_default()`
+        // on a Tally the cadence never reports, so it checked an empty string
+        // and passed against a report that appended a key.
+        let group_hex: String = GROUP_KEY.iter().map(|b| format!("{b:02x}")).collect();
+        for t in [
+            Tally { received: 10, emitted: 0, forged: 7, undecryptable: 2, malformed: 1 },
+            Tally { received: 10, emitted: 10, ..Default::default() },
+        ] {
+            let line = t.report().expect("this tally must produce a line, or the test asserts nothing");
+            assert!(!line.is_empty());
+            assert!(!line.contains(&group_hex), "a key reached the log: {line}");
+            assert!(
+                !line
+                    .split(|c: char| !c.is_ascii_hexdigit())
+                    .any(|run| run.len() >= 64),
+                "the line carries a 64-character hex run — the shape of every key here: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejections_and_deliveries_are_counted_separately() {
+        // A subscriber that is BOTH delivering and rejecting is the interesting
+        // case — one sensor working and one impostor injecting — and a single
+        // counter would hide whichever was smaller.
+        let t = Tally { received: 10, emitted: 9, forged: 1, ..Default::default() };
+        assert_eq!((t.emitted, t.rejected()), (9, 1));
     }
 
     #[test]
