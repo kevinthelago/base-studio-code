@@ -182,6 +182,88 @@ fn split_to_fit(s: &str, max: usize) -> Vec<String> {
     pieces
 }
 
+// ── Blending ──────────────────────────────────────────────────────────────────────────────────────
+//
+// A voice is 510 stacked 256-float style vectors, and the model consumes one of them as a plain
+// tensor. Nothing about it is a lookup key, so a weighted average of two voices is not a trick — it
+// is a valid point in the same space, and the model has no way to tell it was not shipped that way.
+// This turns 29 English voices into a continuum.
+
+/// One component of a blend: a voice name and how much of it to use.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Component {
+    pub voice: String,
+    pub weight: f32,
+}
+
+/// Parse `af_heart:0.7,bm_george:0.3`, or a bare `af_heart,bm_george` for an even mix.
+///
+/// Weights are NORMALISED rather than required to sum to one. Asking a person to make their numbers
+/// add up is asking them to do arithmetic to express a preference, and `2:1` is a clearer way to say
+/// "twice as much of the first" than `0.667:0.333`.
+pub fn parse_blend(spec: &str) -> Result<Vec<Component>, String> {
+    let mut parts = Vec::new();
+    for raw in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let (voice, weight) = match raw.split_once(':') {
+            Some((v, w)) => {
+                let weight: f32 = w.trim().parse().map_err(|_| {
+                    format!("'{w}' is not a weight — use `voice:number`, e.g. am_puck:2")
+                })?;
+                (v.trim().to_string(), weight)
+            }
+            None => (raw.to_string(), 1.0),
+        };
+        if voice.is_empty() {
+            return Err(format!("'{raw}' names no voice"));
+        }
+        if !weight.is_finite() || weight < 0.0 {
+            return Err(format!("'{voice}' has a weight of {weight}, which is not a proportion"));
+        }
+        parts.push(Component { voice, weight });
+    }
+    if parts.is_empty() {
+        return Err("a blend needs at least one voice".into());
+    }
+    let total: f32 = parts.iter().map(|c| c.weight).sum();
+    if total <= 0.0 {
+        return Err("every weight in that blend is zero, which describes no voice".into());
+    }
+    for c in &mut parts {
+        c.weight /= total;
+    }
+    Ok(parts)
+}
+
+/// Weighted average of whole voice files, vector by vector.
+///
+/// Averages EVERY row, not just the one a given utterance will use, so the result is a complete
+/// voice usable at any length rather than one that works for a phrase and falls apart on a sentence.
+pub fn blend_voices(sources: &[(Vec<u8>, f32)]) -> Result<Vec<u8>, String> {
+    let Some((first, _)) = sources.first() else {
+        return Err("nothing to blend".into());
+    };
+    let len = first.len();
+    if len == 0 || len % 4 != 0 {
+        return Err(format!("a voice file of {len} bytes is not an array of floats"));
+    }
+    for (bytes, _) in sources {
+        if bytes.len() != len {
+            return Err(format!(
+                "voices differ in size ({} vs {len} bytes) — they are not the same kind of voice and                  averaging them would misalign every vector",
+                bytes.len()
+            ));
+        }
+    }
+    let n = len / 4;
+    let mut acc = vec![0.0f32; n];
+    for (bytes, w) in sources {
+        for (i, chunk) in bytes.as_chunks::<4>().0.iter().enumerate() {
+            acc[i] += f32::from_le_bytes(*chunk) * w;
+        }
+    }
+    Ok(acc.iter().flat_map(|f| f.to_le_bytes()).collect())
+}
+
 /// What could not be turned into a token, so a silent mangling is never possible.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Unmapped {
@@ -442,5 +524,86 @@ mod chunk_tests {
             assert!(c.chars().count() <= 60, "{} chars", c.chars().count());
             assert!(std::str::from_utf8(c.as_bytes()).is_ok(), "never split mid-codepoint");
         }
+    }
+}
+
+#[cfg(test)]
+mod blend_tests {
+    use super::*;
+
+    fn voice_of(value: f32, rows: usize) -> Vec<u8> {
+        (0..rows * STYLE_DIM).flat_map(|_| value.to_le_bytes()).collect()
+    }
+    fn first_float(b: &[u8]) -> f32 {
+        f32::from_le_bytes([b[0], b[1], b[2], b[3]])
+    }
+
+    #[test]
+    fn weights_are_normalised_so_a_ratio_expresses_a_preference() {
+        // 2:1 must mean the same as 0.667:0.333 — asking a person to make numbers sum to one is
+        // asking them to do arithmetic to express a preference.
+        let a = parse_blend("x:2,y:1").unwrap();
+        assert!((a[0].weight - 2.0 / 3.0).abs() < 1e-6, "{a:?}");
+        assert!((a[1].weight - 1.0 / 3.0).abs() < 1e-6);
+        let b = parse_blend("x:0.667,y:0.333").unwrap();
+        assert!((a[0].weight - b[0].weight).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_bare_list_is_an_even_mix() {
+        let p = parse_blend("x,y,z").unwrap();
+        assert_eq!(p.len(), 3);
+        for c in &p {
+            assert!((c.weight - 1.0 / 3.0).abs() < 1e-6, "{c:?}");
+        }
+    }
+
+    #[test]
+    fn nonsense_blends_are_refused_with_the_shape_named() {
+        assert!(parse_blend("").is_err(), "an empty blend describes no voice");
+        assert!(parse_blend("x:0,y:0").unwrap_err().contains("zero"));
+        assert!(parse_blend("x:-1").unwrap_err().contains("proportion"));
+        assert!(parse_blend("x:banana").unwrap_err().contains("voice:number"));
+        assert!(parse_blend(":1").unwrap_err().contains("names no voice"));
+    }
+
+    /// The whole point: an average of two style vectors is a valid point in the same space, and the
+    /// model cannot tell it was not shipped that way.
+    #[test]
+    fn an_even_blend_lands_exactly_between_its_parents() {
+        let a = voice_of(1.0, 4);
+        let b = voice_of(3.0, 4);
+        let mixed = blend_voices(&[(a, 0.5), (b, 0.5)]).unwrap();
+        assert!((first_float(&mixed) - 2.0).abs() < 1e-6, "got {}", first_float(&mixed));
+    }
+
+    #[test]
+    fn weighting_moves_the_result_toward_the_heavier_voice() {
+        let a = voice_of(0.0, 2);
+        let b = voice_of(10.0, 2);
+        let mostly_b = blend_voices(&[(a.clone(), 0.25), (b.clone(), 0.75)]).unwrap();
+        assert!((first_float(&mostly_b) - 7.5).abs() < 1e-5, "got {}", first_float(&mostly_b));
+        let only_a = blend_voices(&[(a, 1.0), (b, 0.0)]).unwrap();
+        assert_eq!(first_float(&only_a), 0.0, "a zero-weighted voice contributes nothing");
+    }
+
+    /// EVERY row is averaged, not just the one a given utterance happens to use. A blend that only
+    /// mixed the row for the current length would work for a phrase and fall apart on a sentence.
+    #[test]
+    fn every_length_row_is_blended_not_just_the_one_in_use() {
+        let mixed = blend_voices(&[(voice_of(1.0, 20), 0.5), (voice_of(3.0, 20), 0.5)]).unwrap();
+        assert_eq!(mixed.len(), 20 * STYLE_DIM * 4, "the result is a complete voice");
+        for row in [0usize, 7, 19] {
+            let at = row * STYLE_DIM * 4;
+            assert!((first_float(&mixed[at..]) - 2.0).abs() < 1e-6, "row {row} was not blended");
+        }
+    }
+
+    #[test]
+    fn mismatched_voices_are_refused_rather_than_misaligned() {
+        let e = blend_voices(&[(voice_of(1.0, 4), 0.5), (voice_of(1.0, 3), 0.5)]).unwrap_err();
+        assert!(e.contains("differ in size"), "{e}");
+        assert!(blend_voices(&[]).is_err());
+        assert!(blend_voices(&[(vec![1, 2, 3], 1.0)]).is_err(), "not a whole number of floats");
     }
 }

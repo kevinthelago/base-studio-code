@@ -156,6 +156,7 @@ directory this prints, and put the `piper` binary on PATH. Both are then found w
 #[derive(Default, Debug)]
 struct Args {
     all: bool,
+    blend: Option<String>,
     ipa: bool,
     lang: Option<String>,
     device: Option<String>,
@@ -172,6 +173,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let (mut a, positional) = args::walk(raw, Args::default(), |flag, a: &mut Args, rest| {
         match flag {
             "--all" => a.all = true,
+            "--blend" => a.blend = Some(rest.value("--blend needs voices, e.g. am_puck:2,bm_george:1")?),
             "--ipa" => a.ipa = true,
             "--lang" => a.lang = Some(rest.value("--lang needs an espeak language code, e.g. es or ja")?),
             "--device" => a.device = Some(rest.value("--device needs an output device name")?),
@@ -493,7 +495,20 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
         return Err("nothing to say — `bsc say \"some text\"`".into());
     }
     let platform = host_platform()?;
-    let requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
+    let mut requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
+    // Blending is a property of style vectors, which only kokoro has. Asking for one is asking for
+    // kokoro, and saying so beats silently ignoring the flag on a provider that cannot honour it.
+    if a.blend.is_some() {
+        match requested {
+            Some(ProviderKind::Kokoro) | None => requested = Some(ProviderKind::Kokoro),
+            Some(other) => {
+                return Err(format!(
+                    "--blend mixes kokoro style vectors; the {} provider has none",
+                    other.as_str()
+                ))
+            }
+        }
+    }
     let chosen_voice = resolve_voice(a);
     let probed = probe(platform, chosen_voice.as_deref());
     let device = resolve_device(a);
@@ -512,7 +527,7 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
         Some(ProviderKind::Kokoro) => {
             let (paths, voice, espeak, data) =
                 probed.kokoro.ok_or("kokoro resolved but its paths went missing")?;
-            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref(), a.ipa, a.lang.as_deref().unwrap_or("en-us"))
+            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref(), a.ipa, a.lang.as_deref().unwrap_or("en-us"), a.blend.as_deref())
         }
         Some(ProviderKind::System) => {
             let cmd = voice::system_command(platform, &req)?;
@@ -571,6 +586,7 @@ fn speak_with_kokoro(
     device: Option<&str>,
     literal_ipa: bool,
     lang: &str,
+    blend: Option<&str>,
 ) -> Result<(), String> {
     use crate::kokoro;
     let ipa = if literal_ipa {
@@ -579,7 +595,10 @@ fn speak_with_kokoro(
         kokoro::phonemize(espeak, espeak_data, &req.text, lang)?
     };
     let mut voice = kokoro::Voice::load(paths)?;
-    let bytes = std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?;
+    let bytes = match blend {
+        Some(spec) => blend_bytes(&paths.voices, spec)?,
+        None => std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?,
+    };
     // `speak`, not `speak_ipa`: it chunks to the model's ceiling. Measured before it existed — an
     // ordinary paragraph is 805 phonemes against a 510 limit, and the surplus was dropped silently.
     let (samples, missing) = voice.speak(&ipa, &bytes, voice::clamp_rate(req.rate))?;
@@ -714,6 +733,20 @@ fn announce_speaking(wav: &std::path::Path) {
 /// Too short and a fragment of our own voice still lands; too long and the user's first words after
 /// an announcement are swallowed.
 const REVERB_TAIL_MS: i64 = 400;
+
+/// Load and mix the voices a blend names.
+fn blend_bytes(dir: &std::path::Path, spec: &str) -> Result<Vec<u8>, String> {
+    let parts = crate::kokoro::parse_blend(spec)?;
+    let mut sources = Vec::new();
+    for c in &parts {
+        let path = dir.join(format!("{}.bin", c.voice));
+        let bytes = std::fs::read(&path).map_err(|_| {
+            format!("no voice '{}' to blend — `bsc say voices` lists what is installed", c.voice)
+        })?;
+        sources.push((bytes, c.weight));
+    }
+    crate::kokoro::blend_voices(&sources)
+}
 
 fn cmd_voices(a: &Args) -> Result<(), String> {
     let platform = host_platform()?;
