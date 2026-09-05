@@ -5,7 +5,8 @@
 //   BSC_HARVEST_ROOTS   which trees it may SCAN, read-only, outside its own repo
 //   BSC_STREAM          whether `bsc plan` is scoped to one fleet stream or sees them all
 //
-// `crates/plandb/src/scope.rs` reads the third and scopes every plan read/write to it;
+// The record `plandb--scope.rs` (plandb compiles from the graph — there is no
+// `crates/plandb/src/scope.rs` file) reads the third and scopes every plan read/write to it;
 // `crates/bsc-ui/src/cli.rs` reads the second and refuses a harvest outside it; `crates/bsc-sandbox`
 // records the hazard of the first crossing into a cage without ever deciding who gets one.
 //
