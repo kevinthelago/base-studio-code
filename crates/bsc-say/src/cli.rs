@@ -210,6 +210,12 @@ fn probe(platform: Platform, requested_voice: Option<&str>) -> Probed {
 
 /// Spawn a [`SpeechCommand`] and wait for it. Nothing here builds a string a shell would read; the
 /// program and every argument are separate values all the way down to `execvp`.
+///
+/// The child's stderr is CAPTURED and surfaced only if it fails. Speaking is a side effect, not a
+/// report: piper logs a voice-load line and a real-time factor on every successful run, and a
+/// `bsc say` that prints four lines of engine chatter is unusable from a hook or an automation. The
+/// same capture is what makes a failure legible, since the engine's own message is the only thing
+/// that says WHY — an exit code alone would be a regression from printing everything.
 fn spawn(cmd: &SpeechCommand) -> Result<(), String> {
     use std::process::{Command, Stdio};
     let mut c = Command::new(&cmd.program);
@@ -218,6 +224,11 @@ fn spawn(cmd: &SpeechCommand) -> Result<(), String> {
         c.env(k, v);
     }
     c.stdin(if cmd.stdin.is_some() { Stdio::piped() } else { Stdio::null() });
+    // BOTH streams are captured. `bsc say` produces audio, not text, so nothing a speech engine
+    // writes belongs on our stdout — piper announces the wav path there on every successful run,
+    // which would corrupt the output of anything piping `bsc say` alongside another command.
+    c.stderr(Stdio::piped());
+    c.stdout(Stdio::piped());
     let mut child = c
         .spawn()
         .map_err(|e| format!("could not run {}: {e}", cmd.program))?;
@@ -227,11 +238,27 @@ fn spawn(cmd: &SpeechCommand) -> Result<(), String> {
         // Dropped so the child sees EOF — `say` and `piper` both read to end and would hang without it.
         drop(pipe);
     }
-    let status = child.wait().map_err(|e| format!("waiting for {}: {e}", cmd.program))?;
-    if !status.success() {
-        return Err(format!("{} exited with {status}", cmd.program));
+    // `wait_with_output` rather than `wait`: a piped stderr nobody drains can fill its buffer and
+    // deadlock a chatty child against a parent that is waiting for it to exit.
+    let out = child.wait_with_output().map_err(|e| format!("waiting for {}: {e}", cmd.program))?;
+    if !out.status.success() {
+        // stderr first: an engine that logs to both puts the diagnosis there and the filename on stdout.
+        let said = [out.stderr.as_slice(), b"\n", out.stdout.as_slice()].concat();
+        return Err(format!("{} exited with {}{}", cmd.program, out.status, engine_detail(&said)));
     }
     Ok(())
+}
+
+/// The engine's own last words, appended to a failure. Trimmed to the final few lines because a
+/// crashing synthesizer can emit a great deal and the tail is the part that says what went wrong.
+/// Takes the combined streams, since which one carries the diagnosis differs per engine.
+fn engine_detail(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let tail: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).rev().take(3).collect();
+    if tail.is_empty() {
+        return String::new();
+    }
+    format!(" — {}", tail.into_iter().rev().collect::<Vec<_>>().join(" / "))
 }
 
 /// Run a command purely to read its stdout; an unavailable tool is an empty answer, not an error,
@@ -532,6 +559,22 @@ mod tests {
         assert_eq!(find_in(&dirs, "piper", Platform::Linux), None, "no .exe fallback off Windows");
         assert_eq!(find_in(&dirs, "nothing", Platform::Windows), None);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A successful speak must be SILENT, so the engine's chatter is only ever attached to a failure
+    /// — and when there is a failure, the engine's own words are the only thing that says why.
+    #[test]
+    fn engine_output_is_kept_for_failures_and_is_empty_when_there_is_nothing_to_say() {
+        assert_eq!(engine_detail(b""), "", "nothing to report adds nothing");
+        assert_eq!(engine_detail(b"   \n \n"), "", "blank lines are not a message");
+        let d = engine_detail(b"loading\nmodel missing: en_US.onnx\n");
+        assert!(d.starts_with(" — "), "{d}");
+        assert!(d.contains("model missing"), "{d}");
+        // Only the tail survives, in order, so a chatty engine cannot bury its own last words.
+        let many: Vec<String> = (1..=10).map(|i| format!("line{i}")).collect();
+        let d = engine_detail(many.join("\n").as_bytes());
+        assert!(d.contains("line8 / line9 / line10"), "tail, in order: {d}");
+        assert!(!d.contains("line1 "), "the head is dropped: {d}");
     }
 
     #[test]
