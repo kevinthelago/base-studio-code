@@ -274,6 +274,79 @@ impl Plan {
         self.select_root(impls).map(|r| r.doc)
     }
 
+    /// The repo-relative prefix this crate's INTEGRATION TEST targets sit under —
+    /// `crates/plandb/tests/`, `src-tauri/tests/`.
+    ///
+    /// DERIVED from [`Plan::src_prefix`] rather than stored beside it, so a `Plan` built by an older
+    /// caller cannot be missing it and nothing that constructs one has to change.
+    pub fn tests_prefix(&self) -> String {
+        format!("{}tests/", self.src_prefix.strip_suffix("src/").unwrap_or(&self.src_prefix))
+    }
+
+    /// The `[[test]]` targets this crate's EDGES carry — the integration-test half of [`Plan::select`].
+    ///
+    /// # Why the EDGE tier and not `implementations`
+    ///
+    /// An integration test is a relationship: `wire_contract.rs` exercises four `bsc-lan-stream`
+    /// modules together, and no single one of them owns it. That is precisely what an edge is — a
+    /// `members` list plus the test that spans them — and it is why the tier existed with a store, a
+    /// CLI and nothing that ran a test. This is what runs it.
+    ///
+    /// Selection mirrors [`Plan::select`] exactly: the edge's `src` must sit directly under this
+    /// crate's `tests/`, and [`test_target_name`] must name a target (cargo auto-discovers `tests/*.rs`
+    /// and nothing deeper). An edge belonging to another crate, or one whose provenance is a frontend
+    /// `src/` path, is simply not this crate's and yields nothing.
+    ///
+    /// # Failure is loud, in one shape
+    ///
+    /// An edge carrying MORE THAN ONE test body has nowhere to put the second: a cargo test target is
+    /// one file. Reporting it beats taking the first silently, which is how a migrated test stops
+    /// running behind a green gate.
+    pub fn select_test_targets(&self, edges: &[serde_json::Value]) -> Result<Vec<TestTarget>, String> {
+        let prefix = self.tests_prefix();
+        let mut out: Vec<TestTarget> = Vec::new();
+        for e in edges {
+            let Some(src) = e.get("src").and_then(|v| v.as_str()) else { continue };
+            let Some(rest) = src.strip_prefix(&prefix) else { continue };
+            let Some(name) = test_target_name(rest) else { continue };
+            let id = e.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let bodies: Vec<&str> = e
+                .get("tests")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|t| t.get("src").and_then(|v| v.as_str()))
+                        .filter(|c| !c.trim().is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+            match bodies.len() {
+                // An edge with no carried test is a relationship recorded for its own sake — real, and
+                // simply not a test target. Skipped, never an error.
+                0 => continue,
+                1 => out.push(TestTarget { id, name, code: bodies[0].to_string() }),
+                n => {
+                    return Err(format!(
+                        "edge `{id}` carries {n} test bodies but names ONE cargo test target \
+                         (`{prefix}{name}.rs`) — a test target is one file. Split it into one edge per \
+                         file, or drop the extra bodies."
+                    ))
+                }
+            }
+        }
+        // Deterministic order: cargo reruns this on every store change and a shuffled output would
+        // rewrite files for no reason.
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Some(dup) = out.windows(2).find(|w| w[0].name == w[1].name) {
+            return Err(format!(
+                "two edges claim test target `{}` of crate `{}`: `{}` and `{}`. One is superseded — \
+                 remove it (`bsc graph edge remove <id>`) and re-promote.",
+                dup[0].name, self.crate_dir, dup[0].id, dup[1].id
+            ));
+        }
+        Ok(out)
+    }
+
     /// The generated `crate.rs` body for this crate, given the store's raw JSON text.
     pub fn render_store(&self, raw: &str, adoption: Adoption) -> Result<Option<String>, String> {
         let store: serde_json::Value = serde_json::from_str(raw)
@@ -336,6 +409,11 @@ pub fn emit_into(
     // that has authored no doc record yet must still build. Written BEFORE the module render can bail,
     // for the same reason.
     write_crate_doc(&plan, &raw, out_dir)?;
+    // The crate's INTEGRATION TEST targets, also written BEFORE the module render can bail: a crate
+    // may legitimately carry a test target while its modules are still files, and the `[[test]]`
+    // entry in its manifest `include!`s the result unconditionally, so a missing file is a compile
+    // error rather than an empty test.
+    write_test_targets(&plan, &raw, out_dir)?;
     let Some(body) = plan.render_store(&raw, adoption)? else { return Ok(0) };
     let modules = body.lines().filter(|l| l.trim_start().starts_with("// record `")).count();
     let dest = out_dir.join("crate.rs");
@@ -356,6 +434,36 @@ fn write_crate_doc(plan: &Plan, raw: &str, out_dir: &Path) -> Result<(), String>
     let doc = plan.select_doc(impls).unwrap_or_default();
     let dest = out_dir.join("crate_doc.md");
     std::fs::write(&dest, doc).map_err(|e| format!("cannot write {}: {e}", dest.display()))
+}
+
+/// Write `$OUT_DIR/tests/<name>.rs` for every integration-test target this crate's edges carry, for
+/// the shared `crates/graph-materialize/test_root.rs` to `include!`.
+///
+/// Returns the target names written, so a caller (and a test) can see WHICH rather than only how many.
+///
+/// A crate with no test edges writes nothing and creates no directory — the overwhelming majority, and
+/// an empty `tests/` dir under `$OUT_DIR` would be pure noise.
+fn write_test_targets(plan: &Plan, raw: &str, out_dir: &Path) -> Result<Vec<String>, String> {
+    let store: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", plan.store_path.display()))?;
+    let empty = Vec::new();
+    // READ-ONLY on a key that may not exist: a store with no `edges` array is the normal shape for
+    // every committed store that has never carried one, and asking must not be able to change that.
+    let edges = store.get("edges").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let targets = plan.select_test_targets(edges)?;
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dir = out_dir.join("tests");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let mut written = Vec::new();
+    for t in &targets {
+        let dest = dir.join(format!("{}.rs", t.name));
+        std::fs::write(&dest, render_test_target(t))
+            .map_err(|e| format!("cannot write {}: {e}", dest.display()))?;
+        written.push(t.name.clone());
+    }
+    Ok(written)
 }
 
 /// The build-script entry point for a crate whose `lib.rs` `include!`s the generated file.

@@ -124,6 +124,12 @@ export function graphCommands() {
     { label: "graph (rust nodes compile)", key: "graph-rust-compile", stage: "compile", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
     { label: "graph (repo store is current)", key: "graph-promote-check", stage: "compile", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
     { label: "graph (the kits agree)", key: "graph-cross-kit", stage: "test", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
+    // The Rust EDGE tier's two-copy invariant (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`).
+    // A carried Rust test is a real cargo test target now, so it CAN silently stop running: delete the
+    // file, forget the `[[test]]` entry, and nextest reports all-passing with 8 fewer tests in it
+    // (measured, 67 -> 59). This is the only thing that looks. It also catches the record and the file
+    // it was lifted from drifting apart, which it found on its FIRST run.
+    { label: "graph (rust test edges)", key: "graph-rust-tests", stage: "test", cmd: "node", args: ["scripts/graph-rust-tests.mjs"] },
   ];
 }
 
@@ -214,11 +220,15 @@ export function isRecordStorePath(file) {
  * store at all, has to reach the second without touching the first.
  */
 export function isGraphSourcePath(file) {
+  // A crate's OWN manifest decides whether a graph-carried `[[test]]` target is compiled at all, so
+  // editing one can stop a test running without touching a line of source.
+  if (/^crates\/[^/]+\/Cargo\.toml$/.test(file)) return true;
   return file.startsWith("graph/")
     || file.startsWith("src-tauri/data/knowledge/")
     || file.startsWith("crates/bsc-graph/")
     || file === "scripts/graph-rust-compile.mjs"
     || file === "scripts/graph-cross-kit.mjs"
+    || file === "scripts/graph-rust-tests.mjs"
     // The cross-kit CONTRACT: adding a case must re-run the agreement check that reads it.
     || file === "src/features/algorithms/lib/crossKit.fixtures.json";
 }
