@@ -162,7 +162,12 @@ fn app_is_speaking() -> bool {
 }
 
 /// Segments currently on disk, for the retention pass.
-pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
+///
+/// `done` names the segments whose words are already stored. Passed in rather than looked up here,
+/// because retention must not depend on the transcript store existing — an ear with no transcriber
+/// still has to bound its disk, and it does so by treating everything as unsaved, which is the safe
+/// direction: it holds audio slightly longer rather than dropping words.
+pub fn held_segments_with(dir: &Path, done: &dyn Fn(&str) -> bool) -> Vec<HeldSegment> {
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
     rd.filter_map(|e| e.ok())
         .filter_map(|e| {
@@ -181,9 +186,15 @@ pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
                         .map(|d| d.as_millis() as i64)
                         .unwrap_or(0)
                 });
-            Some(HeldSegment { name, bytes: md.len(), started_unix_ms: started })
+            let transcribed = done(&name);
+            Some(HeldSegment { name, bytes: md.len(), started_unix_ms: started, transcribed })
         })
         .collect()
+}
+
+/// Segments on disk, with none of them known to be transcribed.
+pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
+    held_segments_with(dir, &|_| false)
 }
 
 /// Apply the retention plan. Returns how many files went.
@@ -763,7 +774,7 @@ mod tests {
             VadConfig::default(),
             // Room for roughly one 2s segment (2s at 32,000 B/s = 64 kB).
             // Room for about two segments: each is pre-roll + 2s speech + hangover at 32 kB/s.
-            Budget { max_bytes: 200_000, max_age_ms: 60 * 60 * 1000 },
+            Budget { max_bytes: 200_000, max_age_ms: 60 * 60 * 1000, transcribe_grace_ms: 4 * 60 * 60 * 1000 },
         )
         .unwrap();
         feed(&mut r, QUIET, 4_000);

@@ -248,6 +248,7 @@ fn budget(window_min: Option<u64>) -> Budget {
         Some(m) => {
             let secs = m.saturating_mul(60);
             Budget {
+                transcribe_grace_ms: Budget::default().transcribe_grace_ms,
                 max_age_ms: (secs as i64).saturating_mul(1000),
                 // Headroom over the duration so TIME is what binds an ordinary window.
                 max_bytes: retention::bytes_for_seconds(secs).saturating_add(retention::bytes_for_seconds(secs) / 8),
