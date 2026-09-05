@@ -336,12 +336,24 @@ describe("graph step", () => {
     expect(without.some((l) => l.startsWith("graph ("))).toBe(false);
   });
 
-  it("carries all three halves — nodes compile, the repo store is current, the kits agree", () => {
+  // A crate's OWN manifest decides whether a graph-carried `[[test]]` target is compiled at all, so
+  // editing one can stop a test running without touching a line of source
+  // (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). Measured: dropping the entry left
+  // nextest reporting 59 passed where it had run 67, all green.
+  it("runs when a crate manifest moves — that is what decides if a carried test is compiled", () => {
+    expect(plan(["crates/bsc-lan-stream/Cargo.toml"]).runGraph).toBe(true);
+    expect(plan(["scripts/graph-rust-tests.mjs"]).runGraph).toBe(true);
+    // A crate's SOURCE still does not, so the rule stayed a rule rather than becoming "any crate file".
+    expect(plan(["crates/plandb/src/lib.rs"]).runGraph).toBe(false);
+  });
+
+  it("carries all four halves — nodes compile, the repo store is current, the kits agree, the rust test edges run", () => {
     const cmds = graphCommands();
-    expect(cmds).toHaveLength(3);
+    expect(cmds).toHaveLength(4);
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
     expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
+    expect(cmds[3].args).toContain("scripts/graph-rust-tests.mjs");
   });
 
   // THE CLAIM CENSUS IS NOT SCOPED, and that is deliberate — see the comment on it in gateScope.mjs.

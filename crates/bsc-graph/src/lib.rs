@@ -252,6 +252,10 @@ pub fn load() -> Value {
 /// RECOVERABLE (delete one, it returns on next load). Custom (non-seed) impls stay fully removable.
 /// Returns whether it changed `g`. Order-stable: the store's own impls keep their order; missing seed
 /// impls are appended in seed order.
+///
+/// EDGES reconcile by the same rule (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). They did
+/// not, so an edge that reached the packaged seed was invisible to every machine that already had a
+/// runtime store -- which made the whole `promote --seed` path for the tier deliver to nobody.
 pub fn reconcile_seed(g: &mut Value) -> bool {
     let suppressed: std::collections::HashSet<String> = suppressions_of(g)
         .iter()
@@ -272,12 +276,63 @@ pub fn reconcile_seed(g: &mut Value) -> bool {
                 .unwrap_or(false)
         })
         .collect();
+    let missing_edges = reconcile_edges_into(g, &edges_of(&seed()));
+
+    if missing.is_empty() && !missing_edges {
+        return false;
+    }
+    if !missing.is_empty() {
+        let arr = ensure_array(g, "implementations");
+        for im in missing {
+            arr.push(im);
+        }
+    }
+    true
+}
+
+/// Append every edge of `from` whose id is ABSENT from `g`, and report whether anything was added —
+/// the edge half of [`reconcile_seed`] (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`).
+///
+/// # Why this tier reconciles at all
+///
+/// It did not, and the consequence was that the packaged seed could not deliver an edge to any
+/// machine that had ever authored one. [`load`] falls back WHOLLY to the seed only when no store file
+/// exists, so a fresh CLONE on a developer's box — which is every box here — read its own store,
+/// found no `edges` key, and showed none. MEASURED: a store holding one impl and no edges answered
+/// `bsc graph edge list` with `[]` while the packaged seed carried the edge. `bsc graph promote --id
+/// <edge> --seed` already lands an edge in the seed; without this, landing it there reached nobody.
+///
+/// # Taken as an argument rather than read from [`seed`]
+///
+/// So it is testable without a packaged seed and without `set_var("BSC_DATA_DIR", …)` — the
+/// process-global mutation that makes a suite pass under `cargo nextest` (one process per test) and
+/// fail under `cargo test` (threads in one), which this repo has paid for twice.
+///
+/// Same rule as the implementation half and deliberately no more: an id the store already holds is
+/// NEVER overwritten, so a local edit survives; what is absent is appended in `from` order.
+///
+/// NO SUPPRESSION CHECK, and that is not an oversight. A tombstone is keyed on an IMPLEMENTATION id
+/// ([`is_suppressed`]), an edge id is a different namespace, and consulting one list for two
+/// namespaces would let an impl's tombstone silently retire an unrelated edge that shares its name.
+pub fn reconcile_edges_into(g: &mut Value, from: &[Value]) -> bool {
+    let have: std::collections::HashSet<&str> =
+        g.get("edges").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default()
+            .iter()
+            .filter_map(|e| e.get("id").and_then(Value::as_str))
+            .collect();
+    let missing: Vec<Value> = from
+        .iter()
+        .filter(|e| e.get("id").and_then(Value::as_str).map(|id| !have.contains(id)).unwrap_or(false))
+        .cloned()
+        .collect();
+    // ADDITIVE, exactly as `edges_of` is: nothing missing must not insert an empty `edges` array into
+    // a store that has none, or every store on every box grows the key on its next read.
     if missing.is_empty() {
         return false;
     }
-    let arr = ensure_array(g, "implementations");
-    for im in missing {
-        arr.push(im);
+    let arr = ensure_array(g, "edges");
+    for e in missing {
+        arr.push(e);
     }
     true
 }
@@ -484,6 +539,51 @@ pub fn set_edge(g: &mut Value, e: Value) -> Result<bool, String> {
         arr.push(e);
         Ok(false)
     }
+}
+
+/// Confirm an edge write actually LANDED — `sent` is the payload `set_edge` was given, `after` is the
+/// store as RE-READ FROM DISK once the write was persisted.
+///
+/// Request #222: `edge set` reported `{"ok":true}` for writes that were not in the store immediately
+/// afterwards — 2 of 55 sequential calls, measured. The runtime store is one shared JSON document that
+/// every writer rewrites WHOLE, so a concurrent session's save silently discards everything added
+/// between its own read and its write. `impl set` and `tests set` both carry `--if-version` for exactly
+/// this; an edge has no `rev` to compare against and there is no `edge history` to read one from, so the
+/// guarantee that IS available is to look and to FAIL rather than to report a write that is not there.
+///
+/// Checks PRESENCE and then every key the write supplied. Presence alone is not enough: the losing half
+/// of the race is just as often "another session's version of this id is what survived", and an edge
+/// whose members are somebody else's is a coverage claim over the wrong records rather than a missing one.
+///
+/// Pure, so both failure branches are provable without a real race. Extracted here rather than inlined in
+/// the verb for that reason — a check that can only be exercised by losing a race is a check nobody can
+/// show works.
+pub fn verify_edge_write(sent: &Value, after: &Value) -> Result<(), String> {
+    let id = sent.get("id").and_then(Value::as_str).unwrap_or_default();
+    let Some(landed) = edges_of(after)
+        .into_iter()
+        .find(|x| x.get("id").and_then(Value::as_str) == Some(id))
+    else {
+        return Err(format!(
+            "edge '{id}' is NOT in the store after writing it — a concurrent writer overwrote the whole \
+             document. Nothing here was corrupted; re-run the same `edge set` command."
+        ));
+    };
+    // A null in the payload MEANS "remove this key", so an absent key on the landed edge is the write
+    // succeeding, not failing.
+    if let Some(obj) = sent.as_object() {
+        for (k, v) in obj {
+            let got = landed.get(k.as_str());
+            let ok = if v.is_null() { got.is_none() } else { got == Some(v) };
+            if !ok {
+                return Err(format!(
+                    "edge '{id}' landed WITHOUT the '{k}' this write supplied — a concurrent writer \
+                     overwrote it between the write and the read-back. Re-run the same `edge set` command."
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Delete an edge by id. Returns whether one was removed.

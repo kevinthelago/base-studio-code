@@ -95,3 +95,9 @@ include!("../emit.rs");
 
 #[cfg(test)]
 mod tests;
+
+// The integration-test half — a crate's `tests/*.rs` targets, materialized from the EDGE tier
+// (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). Its own module because it asserts its own
+// selection rule, output directory and shared root file, and shares no fixture with `tests`.
+#[cfg(test)]
+mod test_targets;
