@@ -143,6 +143,30 @@ and every measurement later normalised against it would be wrong in the same dir
 saying so. Measured: real speech sits at spectral flux ~1.0 against silence's ~0.6.",
     },
     CmdDoc {
+        name: "classify",
+        summary: "what KIND of sound this is — learned from labelled examples, not written down",
+        usage: "\
+bsc ear classify <wav>...
+bsc ear classify train --live-dir <dir>   # one SUBDIRECTORY per class, each holding wavs
+bsc ear classify show
+
+Nearest-centroid over robustly-scaled acoustic features. MEASURED on 319 ESC-50 clips against real
+speech: speech modulates more than every machine class — a vacuum cleaner is three times LOUDER than
+speech while modulating a third as much, which is exactly the case loudness alone cannot see.
+
+LEARNED, NOT HARDCODED. The rule that fell out of those measurements (flux > 0.90 and crest < 12,
+which found 12/12 speech at 1.6% false positives) is a good rule, and writing it down would mean
+editing source to add a class. Learning it means adding recordings.
+
+THREE FEATURES ARE LOGGED because they span orders of magnitude — rms 0.001 to 0.2, crest 4 to 28,
+centroid 1300 to 2800. On a linear scale two quiet sounds would round to identical while two loud
+ones looked far apart, and the classifier would quietly be measuring loudness.
+
+IT ANSWERS `unknown` FREELY. A sound unlike anything it was shown is not forced into the nearest
+bucket: the point of classifying is deciding what to keep, and a confident wrong label is worse for
+that than an admitted gap.",
+    },
+    CmdDoc {
         name: "features",
         summary: "the raw acoustic measurements behind classification — level, modulation, crest, flux, centroid",
         usage: "\
@@ -813,6 +837,110 @@ fn cmd_sweep(a: &Args, _p: &Paths, device: &str, store: &std::path::Path) -> Res
     Ok(())
 }
 
+fn model_path(p: &Paths) -> PathBuf {
+    p.root.join("classify.json")
+}
+
+/// Labelled examples from a directory of per-class subdirectories.
+fn labelled_from(dir: &std::path::Path) -> Result<Vec<(String, crate::classify::Features)>, String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+        let e = e.map_err(|e| format!("{e}"))?;
+        if !e.path().is_dir() {
+            continue;
+        }
+        let class = e.file_name().to_string_lossy().to_string();
+        for f in std::fs::read_dir(e.path()).map_err(|e| format!("{e}"))? {
+            let f = f.map_err(|e| format!("{e}"))?.path();
+            if f.extension().is_some_and(|x| x == "wav") {
+                let (s, sr) = read_wav(&f)?;
+                out.push((class.clone(), crate::classify::measure(&s, sr)));
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!(
+            "no labelled audio under {} — expected one SUBDIRECTORY per class, each holding wavs",
+            dir.display()
+        ));
+    }
+    Ok(out)
+}
+
+fn cmd_classify(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::classify;
+    let store = model_path(p);
+    let sub = a.positional.get(1).map(String::as_str);
+
+    if sub == Some("train") {
+        let dir = a.live_dir.clone().ok_or(
+            "training needs labelled audio: --live-dir <dir>, holding one subdirectory per class",
+        )?;
+        let labelled = labelled_from(std::path::Path::new(&dir))?;
+        let reject = a.window_min.map(|m| m as f32).unwrap_or(3.0);
+        let model = classify::train(&labelled, reject)?;
+        std::fs::write(&store, serde_json::to_string_pretty(&model).map_err(|e| format!("{e}"))?)
+            .map_err(|e| format!("could not write {}: {e}", store.display()))?;
+        println!("learned {} class(es) from {} example(s):", model.profiles.len(), labelled.len());
+        for pr in &model.profiles {
+            println!("  {:<20} {:>4} examples", pr.class, pr.examples);
+        }
+        println!("rejecting anything beyond scaled distance {reject}");
+        return Ok(());
+    }
+
+    if sub == Some("show") {
+        let raw = std::fs::read_to_string(&store)
+            .map_err(|_| "no model yet — run `bsc ear classify train --live-dir <dir>`".to_string())?;
+        let m: classify::Model = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+        println!("{:<20} {:>5}  {}", "class", "n", classify::FEATURE_NAMES.join("  "));
+        for pr in &m.profiles {
+            let cells: Vec<String> = pr.centre.iter().map(|c| format!("{c:>7.3}")).collect();
+            println!("{:<20} {:>5}  {}", pr.class, pr.examples, cells.join(" "));
+        }
+        println!("\nscale (per feature): {:?}", m.scale.iter().map(|s| (s * 1000.0).round() / 1000.0).collect::<Vec<_>>());
+        println!("reject beyond: {}", m.reject_beyond);
+        return Ok(());
+    }
+
+    let raw = std::fs::read_to_string(&store)
+        .map_err(|_| "no model yet — run `bsc ear classify train --live-dir <dir>`".to_string())?;
+    let m: classify::Model = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass one or more wav files to classify".into());
+    }
+    let mut rows = Vec::new();
+    for f in &files {
+        let (s, sr) = read_wav(f)?;
+        rows.push((f.clone(), classify::classify(&classify::measure(&s, sr), &m)));
+    }
+    if a.json || a.pretty {
+        let v: Vec<_> = rows
+            .iter()
+            .map(|(f, v)| json!({ "file": f.file_name().and_then(|s| s.to_str()), "verdict": v }))
+            .collect();
+        let s = if a.pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+        println!("{}", s.map_err(|e| format!("{e}"))?);
+        return Ok(());
+    }
+    for (f, v) in &rows {
+        let name = f.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+        match &v.class {
+            Some(c) => println!(
+                "  {name:<30} {c:<18} d={:.2}{}",
+                v.distance,
+                v.runner_up
+                    .as_ref()
+                    .map(|(r, d)| format!("   (next: {r} at {d:.2})"))
+                    .unwrap_or_default()
+            ),
+            None => println!("  {name:<30} {:<18} d={:.2} — nothing was close enough to claim", "unknown", v.distance),
+        }
+    }
+    Ok(())
+}
+
 fn cmd_features(a: &Args) -> Result<(), String> {
     let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
     if files.is_empty() {
@@ -1152,6 +1280,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("liveness") => cmd_liveness(&a, &p),
         Some("features") => cmd_features(&a),
         Some("floor") => cmd_floor(&a, &p),
+        Some("classify") => cmd_classify(&a, &p),
         Some("transcribe") => cmd_transcribe(&a, &p),
         Some("transcripts") => cmd_transcripts(&a, &p),
         Some("prosody") => cmd_prosody(&a, &p),
@@ -1175,7 +1304,7 @@ mod tests {
             names,
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
-                "features", "prosody",
+                "classify", "features", "prosody",
                 "transcribe", "transcripts", "segments"
             ]
         );
