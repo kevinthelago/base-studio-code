@@ -36,6 +36,25 @@
             )
         }
 
+        /// A CARGO TARGET ROOT — a crate root, or a file cargo auto-discovers as its own target:
+        /// `<crate>/tests/x.rs`, `<crate>/examples/x.rs`, `<crate>/benches/x.rs`.
+        ///
+        /// Same reason as [`is_crate_root`], one level out. Cargo compiles each of those as a
+        /// separate crate, so no `mod x;` in a lib or bin can ever resolve to one — they can only
+        /// ever sit in the denominator of the declaration ratio below, never in its numerator.
+        /// Depth matters: `tests/fixtures/sample.rs` is NOT auto-discovered (cargo looks one level
+        /// deep), so it is deliberately not matched here.
+        fn is_target_root(&self) -> bool {
+            if self.is_crate_root() {
+                return true;
+            }
+            let seg: Vec<&str> = self.rel.split('/').collect();
+            // `<crate>/tests/x.rs` under the `crates` root, or `tests/x.rs` under a crate-local one.
+            seg.len() >= 2
+                && matches!(seg[seg.len() - 2], "tests" | "examples" | "benches")
+                && seg[seg.len() - 1].ends_with(".rs")
+        }
+
         /// How to NAME this unit in a failure message. A reader told `platform/config.rs` will go
         /// looking for a file, and for a record that is a dead end — so a record says so.
         fn label(&self) -> String {
@@ -301,7 +320,16 @@
             // declarations while the module files are all still on disk, so the ratio goes to zero
             // and this fails loudly. The COLLAPSE question is answered separately and
             // migration-neutrally by the MIN_*_UNITS floors, which count files PLUS records.
-            let on_disk_modules = units.iter().filter(|u| !u.record_only && !u.is_crate_root()).count();
+            // TARGET ROOTS, not just crate roots, and the difference is what made this fire.
+            // `crates/` holds ~23 files under `tests/` and `examples/`; cargo compiles each as its
+            // own target, so no `mod x;` can resolve to one and they can only ever pad the
+            // denominator. Counting them was harmless while `src/` modules outnumbered them, and
+            // stopped being harmless as migration emptied the numerator: MEASURED here, 22
+            // declarations against 52 "module files", of which 23 were target roots. Excluding them
+            // is not lowering the floor — it is comparing the declarations to the files a
+            // declaration could actually point at, which is the ratio the comment above claims to
+            // be measuring and the only version of it that stays stable as the last crates migrate.
+            let on_disk_modules = units.iter().filter(|u| !u.record_only && !u.is_target_root()).count();
             assert!(
                 declared * 2 >= on_disk_modules,
                 "found only {declared} `mod x;` declaration(s) under `{rel_root}` against \

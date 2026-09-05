@@ -2840,7 +2840,6 @@ mod tests {
     /// caller actually sees is byte-identical.
     #[test]
     fn the_refusal_is_unchanged_and_the_dry_run_now_shows_its_plan_too() {
-        let root = repo();
         // THE REFUSAL ARM MOVED TO A FIXTURE, and the reason is worth stating rather than hiding: this
         // test used to drive `data` and `bsc-config`, the two REAL crates the audit found refusing for
         // their own build script. `the-two-build-rs-crates-adopt-the-materializer-alongside-their-own`
@@ -2890,13 +2889,36 @@ mod tests {
 
         // A crate with NOTHING in the way still reports exactly as it always did — the clean arm, so
         // this test cannot pass by making every dry run look refused.
+        //
+        // THE CLEAN ARM MOVED TO A FIXTURE TOO, for the same reason the refusal arm above did and one
+        // step later. It used to drive `bsc-json-store`, the last small tool-clean crate in the tree;
+        // `bsc-json-store-and-bsc-util-compile-from-the-graph` migrated it and `bsc-util`, so the
+        // repo now holds NO unmigrated tool-clean crate at all and the arm broke with
+        // `REFUSED bsc-json-store: already migrated`. That is the migration finishing, not a
+        // regression — and it is the second time this test has outlived its live example, which is
+        // what a test pointed at a population being deliberately emptied does.
+        //
+        // The synthetic crate keeps the contract this arm exists for verbatim: the header line with
+        // its module COUNT, one `src/<f>  ->  record <id>` line per module, and the byte-exact ending
+        // that separates a clean dry run from a refused one.
+        let clean = std::env::temp_dir().join(format!("bsc-migrate-clean-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&clean);
+        let src = clean.join("crates").join("tidy").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "//! tidy\npub mod cli;\npub mod surface;\n").unwrap();
+        std::fs::write(src.join("cli.rs"), "pub fn run() {}\n").unwrap();
+        std::fs::write(src.join("surface.rs"), "pub fn surface() {}\n").unwrap();
+        std::fs::write(clean.join("crates/tidy/Cargo.toml"), "[package]\nname = \"tidy\"\nedition = \"2021\"\n").unwrap();
+
         let mut out: Vec<u8> = Vec::new();
-        run(&["bsc-json-store".into(), "--root".into(), root.to_string_lossy().to_string()], &mut out)
-            .expect("bsc-json-store is clean");
+        run(&["tidy".into(), "--root".into(), clean.to_string_lossy().to_string()], &mut out)
+            .expect("tidy has nothing in the way");
         let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("would migrate bsc-json-store — 3 module(s):"), "{text}");
-        assert!(text.contains("src/cli.rs  ->  record bsc-json-store--cli.rs"), "{text}");
+        assert!(text.contains("would migrate tidy — 2 module(s):"), "{text}");
+        assert!(text.contains("src/cli.rs  ->  record tidy--cli.rs"), "{text}");
+        assert!(text.contains("src/surface.rs  ->  record tidy--surface.rs"), "{text}");
         assert!(text.ends_with("DRY RUN — pass --apply to write.\n"), "byte-for-byte the old ending: {text}");
+        let _ = std::fs::remove_dir_all(&clean);
     }
 
     /// The mirror of the build-script refusal: `--alongside` is the route FOR a crate that already owns

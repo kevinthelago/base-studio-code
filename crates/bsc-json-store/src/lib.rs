@@ -24,12 +24,6 @@
 //! [`cli::CliSpec`] and dispatched by the unified `bsc` binary (#1877). Its `Store`-facing behavior
 //! (`list`/`get`/`set`/`remove`) is unchanged by the SQLite migration.
 
-pub mod cli;
-/// The command surface as DATA — load `cli`'s [`cli::CliSpec`] from a record instead of a `static`,
-/// so changing a verb is a record write rather than a rebuild (#spike-load-the-json-store-cli-spec-from-a-record).
-pub mod surface;
-#[cfg(test)]
-mod surface_tests;
 
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -483,3 +477,15 @@ mod preserve_order_tests {
         assert_eq!(serde_json::to_string(&v).unwrap(), r#"{"id":"button","name":"Button","feature":"core"}"#);
     }
 }
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/surface.rs, src/surface_tests.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-json-store--<module>.rs
+//     bsc graph impl set --id bsc-json-store--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-json-store--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
