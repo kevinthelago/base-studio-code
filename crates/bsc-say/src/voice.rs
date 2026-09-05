@@ -293,6 +293,49 @@ pub fn play_command(platform: Platform, player: &str, wav: &str, device: Option<
     SpeechCommand { program: player.into(), args, stdin: None, env: vec![] }
 }
 
+// ── Audibility ────────────────────────────────────────────────────────────────────────────────────
+//
+// The app can hear itself, so it can measure whether speaking accomplished anything. MEASURED with
+// media playing in the same room: at full scale on three speakers simultaneously, transcription of
+// the app's own voice reached WER 0.70-1.00 and only sentence TAILS survived. There was no headroom
+// left to spend — speech and media share a band and a room, and the app cannot win by being louder.
+//
+// So loudness becomes a MEASUREMENT rather than a setting: compare the room while speaking against
+// the room just before, and the difference says whether the voice arrived or merely happened.
+
+/// What the room did when we spoke.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize)]
+pub struct Audibility {
+    /// Room level before speaking, RMS.
+    pub ambient: f32,
+    /// Room level while speaking, RMS.
+    pub during: f32,
+    /// How much louder the room got, in dB. This is the number that matters.
+    pub lift_db: f32,
+    /// Whether the voice measurably arrived.
+    pub audible: bool,
+}
+
+/// Below this lift, the room did not meaningfully change when we spoke, so nobody heard a sentence.
+///
+/// 6 dB is roughly "twice as loud" and is deliberately not generous: the failure being caught is a
+/// voice that is technically present and practically absent, and a threshold low enough to pass that
+/// case would defeat the whole measurement.
+pub const AUDIBLE_LIFT_DB: f32 = 6.0;
+
+/// Did speaking actually change the room?
+///
+/// PURE, taking both levels as arguments, so every interesting case — silence, a deafening room, a
+/// dead microphone, a level of exactly zero — is a unit test rather than a session with a speaker.
+pub fn audibility(ambient: f32, during: f32) -> Audibility {
+    // A dead or muted microphone reads as zero on BOTH, and 0/0 is not an answer. Treat an
+    // unmeasurable room as inaudible: claiming the voice arrived on no evidence is the one
+    // conclusion that would make this feature worse than not having it.
+    let usable = ambient.is_finite() && during.is_finite() && ambient > 0.0 && during > 0.0;
+    let lift_db = if usable { 20.0 * (during / ambient).log10() } else { f32::NEG_INFINITY };
+    Audibility { ambient, during, lift_db, audible: usable && lift_db >= AUDIBLE_LIFT_DB }
+}
+
 // ── Resolution ────────────────────────────────────────────────────────────────────────────────────
 
 /// One provider's verdict, with the reason attached. The reason is not decoration: a provider that
@@ -626,5 +669,47 @@ mod tests {
         assert!(a.args.contains(&"plughw:CARD=HDMI,DEV=3".to_string()), "{:?}", a.args);
         let w = play_command(Platform::Linux, "pw-play", "/tmp/a.wav", Some("sink-x"));
         assert!(w.args.iter().any(|x| x.contains("sink-x")), "{:?}", w.args);
+    }
+}
+
+#[cfg(test)]
+mod audibility_tests {
+    use super::*;
+
+    #[test]
+    fn a_voice_that_doubles_the_room_is_audible() {
+        let a = audibility(0.01, 0.02); // +6dB exactly
+        assert!((a.lift_db - 6.0).abs() < 0.1, "{a:?}");
+        assert!(a.audible);
+        assert!(audibility(0.01, 0.1).audible, "10x is plainly audible");
+    }
+
+    /// THE CASE THIS EXISTS FOR, measured with media playing: the voice is technically present and
+    /// practically absent. The room barely moves, and only sentence tails survive transcription.
+    #[test]
+    fn a_voice_that_barely_moves_a_loud_room_is_not_audible() {
+        let a = audibility(0.08, 0.09); // ~1dB — swamped
+        assert!(!a.audible, "{a:?}");
+        assert!(a.lift_db < 2.0);
+    }
+
+    /// An unmeasurable room must NOT read as success. Claiming the voice arrived on no evidence is
+    /// the one conclusion that makes this worse than not measuring at all — it would license
+    /// speaking into a void and calling it delivered.
+    #[test]
+    fn a_dead_microphone_reads_as_inaudible_not_as_fine() {
+        for (amb, dur) in [(0.0, 0.0), (0.0, 0.05), (0.02, 0.0)] {
+            let a = audibility(amb, dur);
+            assert!(!a.audible, "ambient {amb} during {dur} must not pass: {a:?}");
+        }
+        assert!(!audibility(f32::NAN, 0.05).audible);
+        assert!(!audibility(0.01, f32::INFINITY).audible);
+    }
+
+    #[test]
+    fn a_quieter_room_during_speech_is_negative_lift_and_never_audible() {
+        let a = audibility(0.05, 0.01);
+        assert!(a.lift_db < 0.0, "{a:?}");
+        assert!(!a.audible);
     }
 }
