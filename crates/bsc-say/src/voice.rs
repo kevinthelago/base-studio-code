@@ -264,15 +264,32 @@ pub fn piper_command(model: &str, out: &str, req: &SayRequest) -> SpeechCommand 
     }
 }
 
-/// Play a finished wav. Separate from synthesis because piper writes a file and something else has to
-/// make noise with it — and on Linux which player exists varies, so the caller probes.
-pub fn play_command(platform: Platform, player: &str, wav: &str) -> SpeechCommand {
-    let args = match platform {
-        // `-q` on aplay; pw-play and afplay take the path alone. Kept uniform: the path is the last
-        // element in every case, which is what the tests assert.
-        Platform::Linux if player == "aplay" => vec!["-q".into(), wav.to_string()],
-        Platform::Linux | Platform::MacOs | Platform::Windows => vec![wav.to_string()],
-    };
+/// Play a finished wav on a named output, or the system default when `device` is `None`.
+///
+/// THE DEVICE ARGUMENT IS THE WHOLE POINT. Without it this played to ALSA `default`, exited 0, and
+/// produced silence from the listener's position — measured on the developer's own machine, where
+/// `default` routes to a headset while the speakers are on HDMI. A speech command that succeeds
+/// while nobody hears it is the same failure `bsc ear levels` exists to prevent on the input side.
+pub fn play_command(platform: Platform, player: &str, wav: &str, device: Option<&str>) -> SpeechCommand {
+    let mut args: Vec<String> = Vec::new();
+    match platform {
+        // `-q` on aplay; pw-play and afplay take the path alone. The path stays LAST in every case,
+        // which is what the tests assert.
+        Platform::Linux if player == "aplay" => {
+            args.push("-q".into());
+            if let Some(d) = device {
+                args.push("-D".into());
+                args.push(d.to_string());
+            }
+        }
+        Platform::Linux if player == "pw-play" => {
+            if let Some(d) = device {
+                args.push(format!("--target={d}"));
+            }
+        }
+        Platform::Linux | Platform::MacOs | Platform::Windows => {}
+    }
+    args.push(wav.to_string());
     SpeechCommand { program: player.into(), args, stdin: None, env: vec![] }
 }
 
@@ -354,6 +371,16 @@ pub fn resolve(requested: Option<ProviderKind>, considered: Vec<Availability>) -
         reason: format!("nothing on this machine can speak — {}", why.join("; ")),
         considered,
     }
+}
+
+/// Whether a playback device name is one a person would choose.
+///
+/// ALSA lists the same hardware many times over on the output side too — `hw:`, `front:`,
+/// `surround*:`, `iec958:`, `dmix:` and `sysdefault:CARD=` are routing variants of one card.
+pub fn is_primary_output(name: &str) -> bool {
+    matches!(name, "default" | "pipewire" | "pulse" | "sysdefault")
+        || name.starts_with("plughw:")
+        || name.starts_with("hdmi:")
 }
 
 /// Pick a piper voice model from what is installed. `requested` matches on the file stem, so
@@ -585,9 +612,19 @@ mod tests {
         for (p, player) in
             [(Platform::Linux, "aplay"), (Platform::Linux, "pw-play"), (Platform::MacOs, "afplay")]
         {
-            let c = play_command(p, player, "/tmp/a.wav");
+            let c = play_command(p, player, "/tmp/a.wav", None);
             assert_eq!(c.args.last().map(String::as_str), Some("/tmp/a.wav"), "{player}");
             assert_eq!(c.program, player);
+            // And still last once a device is named, which is the ordering that would break first.
+            let d = play_command(p, player, "/tmp/a.wav", Some("plughw:CARD=HDMI,DEV=3"));
+            assert_eq!(d.args.last().map(String::as_str), Some("/tmp/a.wav"), "{player} with a device");
         }
+
+        // The device must actually reach the player, not be quietly ignored.
+        let a = play_command(Platform::Linux, "aplay", "/tmp/a.wav", Some("plughw:CARD=HDMI,DEV=3"));
+        assert!(a.args.contains(&"-D".to_string()), "{:?}", a.args);
+        assert!(a.args.contains(&"plughw:CARD=HDMI,DEV=3".to_string()), "{:?}", a.args);
+        let w = play_command(Platform::Linux, "pw-play", "/tmp/a.wav", Some("sink-x"));
+        assert!(w.args.iter().any(|x| x.contains("sink-x")), "{:?}", w.args);
     }
 }
