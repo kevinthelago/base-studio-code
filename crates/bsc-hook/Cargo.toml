@@ -2,6 +2,7 @@
 name = "bsc-hook"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 
 # DELIBERATELY TWO DEPENDENCIES, both pure Rust.
 #
@@ -20,4 +21,8 @@ serde_json = "1"
 
 [[bin]]
 name = "bsc-hook"
-path = "src/main.rs"
+path = "../graph-materialize/crate_root.rs"
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

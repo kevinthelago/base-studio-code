@@ -202,37 +202,76 @@ impl Plan {
         mine
     }
 
-    /// This crate's OWN crate-level documentation, from its doc record, as the markdown that
-    /// `crate_doc.md` holds.
+    /// This crate's ROOT record — its documentation, and now its BODY.
     ///
-    /// # Why the crate root's documentation is a record like everything else
+    /// # Why the crate root's source is a record like everything else
     ///
     /// The crate root used to be the one file a migrated crate could not give up, and the stated
     /// reason was that `include!` refuses crate-level `//!` docs (E0753). That is true of an INCLUDED
     /// file and false of the real root: `#![doc = include_str!(concat!(env!("OUT_DIR"), "/crate_doc.md"))]`
     /// is a legal inner attribute in `crate_root.rs`, and `include_str!` resolves out of `OUT_DIR`,
-    /// which is this script's to write. So the prose moves into the graph, where it dedupes and relates
-    /// like every other record, and the shared root still gives each adopter its own rustdoc.
+    /// which is this script's to write. So the prose moved into the graph
+    /// (`a-crate-root-is-shared-so-a-crate-is-one-file`).
     ///
-    /// SELECTED BY THE DERIVATION THAT ALREADY EXISTS, not by a new field. The doc record's `src` is
-    /// the crate root's path (`crates/bsc-fin/src/lib.rs`) and its id is `expected_id` of that path
-    /// (`bsc-fin--lib.rs`) — the same "this record IS that whole file" statement every module record
+    /// THAT LEFT THE ROOT'S PROGRAM BEHIND, and it was the larger half. `migrate-crate` moves DECLARED
+    /// CHILDREN (`mod X;`); a crate whose whole implementation is its root has none, so five crates
+    /// were not blocked but INVISIBLE — refused with "declares no modules — there is nothing to
+    /// migrate". Letting this one record carry the body too
+    /// (`the-crate-body-is-a-record-not-only-its-children`) is one capability that reaches every
+    /// remaining root rather than 64 separate migrations. [`split_root`] does the split; the body lands
+    /// at the top of `crate.rs` and the prose in `crate_doc.md`.
+    ///
+    /// SELECTED BY THE DERIVATION THAT ALREADY EXISTS, not by a new field. The record's `src` is the
+    /// crate root's path (`crates/mcp-rpc/src/lib.rs`) and its id is `expected_id` of that path
+    /// (`mcp-rpc--lib.rs`) — the same "this record IS that whole file" statement every module record
     /// makes. It can never be mistaken for a module because [`module_path`] already returns `None` for
     /// `lib.rs`/`main.rs`, so [`Plan::select`] skips it without knowing it exists.
     ///
-    /// `None` means the crate has authored no doc record, which is not an error: 48 crates still own a
-    /// real `lib.rs` and never read this file, and a crate mid-migration should get an empty rustdoc
+    /// `main.rs` IS TRIED, and it is not a formality: `bsc-hook` is a binary whose whole 165-line
+    /// program is its root, and a binary reaches the shared root through `[[bin]] path` exactly as a
+    /// library does through `[lib] path`. `lib.rs` WINS when both exist, and it is deliberate rather
+    /// than incidental: `$OUT_DIR` is per PACKAGE, not per target, so a package that migrated BOTH
+    /// roots would need two `crate.rs` and get one. `bsc graph migrate-crate` cannot produce that
+    /// state — `migrate::crate_root` picks `lib.rs` first, so the binary root of a package that also
+    /// has a lib is never harvested — and this order is what makes the two agree about which root the
+    /// generated file belongs to.
+    ///
+    /// `role: doc` is the record that holds PROSE AND NOTHING ELSE, which is what the eleven crates
+    /// migrated before this change carry. Its `code` is markdown, never Rust, so it is taken verbatim
+    /// and contributes no body — the discriminator is the role because that is what the role already
+    /// means, and inventing a second field to say the same thing would let the two disagree.
+    ///
+    /// `None` means the crate has authored no root record, which is not an error: a crate that still
+    /// owns a real `lib.rs` never reads this, and a crate mid-migration should get an empty rustdoc
     /// rather than a failed build.
-    pub fn select_doc(&self, impls: &[serde_json::Value]) -> Option<String> {
-        let want_src = format!("{}lib.rs", self.src_prefix);
-        let want_id = expected_id(&self.crate_dir, "lib.rs");
-        impls
-            .iter()
-            .find(|i| {
+    pub fn select_root(&self, impls: &[serde_json::Value]) -> Option<RootUnit> {
+        for name in ["lib.rs", "main.rs"] {
+            let want_src = format!("{}{name}", self.src_prefix);
+            let want_id = expected_id(&self.crate_dir, name);
+            let Some(rec) = impls.iter().find(|i| {
                 i.get("src").and_then(|v| v.as_str()) == Some(want_src.as_str())
                     && i.get("id").and_then(|v| v.as_str()) == Some(want_id.as_str())
-            })
-            .and_then(|i| i.get("code")?.as_str().map(str::to_string))
+            }) else {
+                continue;
+            };
+            let code = rec.get("code").and_then(|v| v.as_str()).unwrap_or_default();
+            let role = rec.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+            return Some(if role == "doc" {
+                RootUnit { id: want_id, doc: code.to_string(), body: None }
+            } else {
+                let (doc, body) = split_root(code);
+                RootUnit { id: want_id, doc, body: Some(body) }
+            });
+        }
+        None
+    }
+
+    /// This crate's own crate-level documentation, as the markdown that `crate_doc.md` holds.
+    ///
+    /// A thin read of [`Plan::select_root`], kept because the documentation is what the shared root
+    /// asks for and the body is not — the two halves have different callers.
+    pub fn select_doc(&self, impls: &[serde_json::Value]) -> Option<String> {
+        self.select_root(impls).map(|r| r.doc)
     }
 
     /// The generated `crate.rs` body for this crate, given the store's raw JSON text.
@@ -245,7 +284,14 @@ impl Plan {
             .ok_or_else(|| format!("{} has no `implementations` array", self.store_path.display()))?;
 
         let mine = self.select(impls);
-        if mine.is_empty() {
+        // THE ROOT COUNTS AS A SELECTION. `mcp-rpc` owns exactly one record — its root — and reading
+        // "no record" off the module list alone would have made the crate this capability exists for
+        // fail its own build with the message for a crate that authored nothing.
+        let root = self.select_root(impls);
+        let root_body = root
+            .as_ref()
+            .and_then(|r| r.body.as_deref().filter(|b| !b.trim().is_empty()).map(|b| (r.id.as_str(), b)));
+        if mine.is_empty() && root_body.is_none() {
             return match adoption {
                 Adoption::Required => Err(format!(
                     "crate `{}` opted into graph materialization but no record in {} has a `src` under {}. \
@@ -262,7 +308,7 @@ impl Plan {
         // where a test can reach them. TWO RECORDS CLAIMING ONE MODULE is not a last-one-wins: it
         // happened, when renaming a record onto the path-derived id scheme left the superseded id in
         // the store with the same `src`, and the emitted `pub mod cli` twice reached the compiler as E0428.
-        render(mine, &self.crate_dir, &self.src_prefix, PREAMBLE).map(Some)
+        render(mine, root_body, &self.crate_dir, &self.src_prefix, PREAMBLE).map(Some)
     }
 }
 

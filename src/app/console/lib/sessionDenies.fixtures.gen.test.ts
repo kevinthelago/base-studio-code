@@ -4,8 +4,9 @@
 // WHY THIS ONE MATTERS MORE THAN MOST. This list is the single source for both the `permissions.deny`
 // rules and the `$BSC_DENY_BASH` env — and under the BYPASS posture `permissions.deny` is ignored
 // entirely, so the `bsc-deny` PreToolUse hook reading `$BSC_DENY_BASH` is the only thing left enforcing
-// it. `crates/bsc-hook/src/main.rs` BLOCKS on these patterns and cannot compute them; `console/pty` just
-// copies the string into the child env. Rust enforces a policy it never derived.
+// it. The `bsc-hook--main.rs` record (`bsc graph impl get bsc-hook--main.rs`) BLOCKS on these patterns
+// and cannot compute them; `console/pty` just copies the string into the child env. Rust enforces a
+// policy it never derived.
 //
 // Three sources compose it: the user's global denies, the ROLE's denies minus the pushes the pane's FLOW
 // grants back (#304), and the PROFILE's denies.
