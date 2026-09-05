@@ -18,6 +18,12 @@ pub struct HeldSegment {
     /// the end because that is the oldest audio the file contains, and the promise is about how far
     /// back the ear can remember.
     pub started_unix_ms: i64,
+    /// Whether its words have been captured somewhere that outlives the audio.
+    ///
+    /// Audio expires on a two-hour window; a transcript is 855 times smaller and should outlive it
+    /// by a year. If the sweep wins the race, the words are gone permanently and nothing reports
+    /// it — the silent-loss shape that produced four separate bugs in one day.
+    pub transcribed: bool,
 }
 
 /// Two independent ceilings, because either alone leaves a hole. Time alone lets a loud room fill
@@ -26,6 +32,11 @@ pub struct HeldSegment {
 pub struct Budget {
     pub max_bytes: u64,
     pub max_age_ms: i64,
+    /// How long past normal expiry an UNTRANSCRIBED segment is held, waiting for the transcriber.
+    ///
+    /// Not unbounded, deliberately. A stopped transcriber must not be able to defeat the retention
+    /// bound and fill the disk, so the protection expires — and when it does, the loss is named.
+    pub transcribe_grace_ms: i64,
 }
 
 impl Default for Budget {
@@ -33,7 +44,13 @@ impl Default for Budget {
     /// 32,000 bytes per second, so two hours is ~230 MB. Rounded up to 256 MB so an ordinary
     /// two-hour window is bounded by TIME, and the byte ceiling only bites when something is wrong.
     fn default() -> Self {
-        Budget { max_bytes: 256 * 1024 * 1024, max_age_ms: 2 * 60 * 60 * 1000 }
+        Budget {
+            max_bytes: 256 * 1024 * 1024,
+            max_age_ms: 2 * 60 * 60 * 1000,
+            // Four hours past expiry. Long enough to survive a restart or a backlog, short enough
+            // that a transcriber left broken overnight cannot quietly consume the disk.
+            transcribe_grace_ms: 4 * 60 * 60 * 1000,
+        }
     }
 }
 
@@ -45,6 +62,14 @@ pub enum Cause {
     Age,
     /// Inside the window, but the bytes did not fit.
     Size,
+    /// Evicted WITHOUT having been transcribed — its words are gone.
+    ///
+    /// A distinct cause because it is a LOSS, not housekeeping. Untranscribed segments are held
+    /// past their normal expiry so the transcriber can catch up, but not forever: a transcriber
+    /// that is broken or stopped would otherwise defeat the retention bound entirely and fill the
+    /// disk. So there is a grace period, and what falls off the end of it is reported as lost
+    /// rather than swept quietly.
+    LostUntranscribed,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
@@ -90,21 +115,37 @@ pub fn plan_eviction(
     let mut delete: Vec<Evicted> = Vec::new();
     let mut kept: Vec<&HeldSegment> = Vec::new();
     for s in candidates {
-        if now_unix_ms.saturating_sub(s.started_unix_ms) > budget.max_age_ms {
-            delete.push(Evicted { name: s.name.clone(), cause: Cause::Age });
-        } else {
+        let age = now_unix_ms.saturating_sub(s.started_unix_ms);
+        if age <= budget.max_age_ms {
             kept.push(s);
+        } else if s.transcribed {
+            delete.push(Evicted { name: s.name.clone(), cause: Cause::Age });
+        } else if age <= budget.max_age_ms.saturating_add(budget.transcribe_grace_ms) {
+            // Past expiry but inside the grace window: hold it, the transcriber may still catch up.
+            kept.push(s);
+        } else {
+            // Grace exhausted. The words are gone, and saying so is the point of the distinct cause.
+            delete.push(Evicted { name: s.name.clone(), cause: Cause::LostUntranscribed });
         }
     }
 
     let protected_bytes: u64 =
         held.iter().filter(|s| Some(s.name.as_str()) == protect).map(|s| s.bytes).sum();
     let mut total: u64 = protected_bytes + kept.iter().map(|s| s.bytes).sum::<u64>();
-    let mut i = 0;
-    while total > budget.max_bytes && i < kept.len() {
-        delete.push(Evicted { name: kept[i].name.clone(), cause: Cause::Size });
+    // Under size pressure, spend the TRANSCRIBED segments first — their words are already saved, so
+    // deleting them costs only the audio. Only when those run out is untranscribed audio taken, and
+    // then it is reported as a loss rather than as housekeeping.
+    let order: Vec<usize> = (0..kept.len())
+        .filter(|&i| kept[i].transcribed)
+        .chain((0..kept.len()).filter(|&i| !kept[i].transcribed))
+        .collect();
+    for i in order {
+        if total <= budget.max_bytes {
+            break;
+        }
+        let cause = if kept[i].transcribed { Cause::Size } else { Cause::LostUntranscribed };
+        delete.push(Evicted { name: kept[i].name.clone(), cause });
         total = total.saturating_sub(kept[i].bytes);
-        i += 1;
     }
 
     Eviction { delete, kept_bytes: total, under_budget: total <= budget.max_bytes }
@@ -130,7 +171,11 @@ mod tests {
             name: name.into(),
             bytes: mb * MB,
             started_unix_ms: NOW - age_min * 60 * 1000,
+            transcribed: true,
         }
+    }
+    fn pending(name: &str, mb: u64, age_min: i64) -> HeldSegment {
+        HeldSegment { transcribed: false, ..seg(name, mb, age_min) }
     }
 
     fn names(e: &Eviction) -> Vec<&str> {
@@ -157,7 +202,7 @@ mod tests {
 
     #[test]
     fn inside_the_window_the_oldest_go_first_until_the_bytes_fit() {
-        let budget = Budget { max_bytes: 25 * MB, max_age_ms: 2 * 60 * 60 * 1000 };
+        let budget = Budget { max_bytes: 25 * MB, max_age_ms: 2 * 60 * 60 * 1000, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
         let held = vec![seg("newest", 10, 1), seg("oldest", 10, 50), seg("middle", 10, 20)];
         let e = plan_eviction(NOW, &held, &budget, None);
         assert_eq!(names(&e), vec!["oldest"], "one is enough to get under: {e:?}");
@@ -170,7 +215,7 @@ mod tests {
     /// that starts up staring at a directory already far over budget still converges in one pass.
     #[test]
     fn a_directory_already_far_over_budget_at_startup_is_brought_back_in_one_pass() {
-        let budget = Budget { max_bytes: 30 * MB, max_age_ms: 2 * 60 * 60 * 1000 };
+        let budget = Budget { max_bytes: 30 * MB, max_age_ms: 2 * 60 * 60 * 1000, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
         let held: Vec<HeldSegment> =
             (0..100).map(|i| seg(&format!("s{i:03}"), 5, 100 - i as i64)).collect();
         let e = plan_eviction(NOW, &held, &budget, None);
@@ -186,7 +231,7 @@ mod tests {
     /// privacy costume.
     #[test]
     fn the_segment_being_written_is_never_evicted_at_any_age_or_size() {
-        let budget = Budget { max_bytes: 1, max_age_ms: 0 };
+        let budget = Budget { max_bytes: 1, max_age_ms: 0, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
         let held = vec![seg("live", 50, 999), seg("other", 50, 999)];
         let e = plan_eviction(NOW, &held, &budget, Some("live"));
         assert_eq!(names(&e), vec!["other"], "only the unprotected one goes: {e:?}");
@@ -196,7 +241,7 @@ mod tests {
     /// the recording in progress.
     #[test]
     fn an_unmeetable_budget_is_reported_rather_than_met_by_deleting_the_live_recording() {
-        let budget = Budget { max_bytes: MB, max_age_ms: 2 * 60 * 60 * 1000 };
+        let budget = Budget { max_bytes: MB, max_age_ms: 2 * 60 * 60 * 1000, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
         let held = vec![seg("live", 50, 0)];
         let e = plan_eviction(NOW, &held, &budget, Some("live"));
         assert!(e.delete.is_empty(), "nothing else to give: {e:?}");
@@ -206,13 +251,65 @@ mod tests {
 
     #[test]
     fn age_and_size_are_reported_separately_so_a_wrong_ceiling_is_identifiable() {
-        let budget = Budget { max_bytes: 10 * MB, max_age_ms: 60 * 60 * 1000 };
+        let budget = Budget { max_bytes: 10 * MB, max_age_ms: 60 * 60 * 1000, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
         let held = vec![seg("ancient", 1, 300), seg("big1", 20, 5), seg("big2", 20, 3)];
         let e = plan_eviction(NOW, &held, &budget, None);
         let by_cause: Vec<(&str, Cause)> =
             e.delete.iter().map(|d| (d.name.as_str(), d.cause)).collect();
         assert!(by_cause.contains(&("ancient", Cause::Age)), "{by_cause:?}");
         assert!(by_cause.iter().any(|(_, c)| *c == Cause::Size), "{by_cause:?}");
+    }
+
+/// THE RACE THIS INTERLOCK EXISTS FOR. Audio expires on two hours; a transcript is 855 times
+    /// smaller and should outlive it by a year. If the sweep wins, the words are gone permanently
+    /// and nothing reports it.
+    #[test]
+    fn an_untranscribed_segment_survives_a_sweep_that_wants_to_delete_it() {
+        // Past the two-hour window, but its words are not saved anywhere yet.
+        let held = vec![pending("unsaved", 1, 150), seg("saved", 1, 150)];
+        let e = plan_eviction(NOW, &held, &Budget::default(), None);
+        assert_eq!(names(&e), vec!["saved"], "only the one whose words are safe may go: {e:?}");
+    }
+
+    /// But not forever. A transcriber that is broken or stopped must not be able to defeat the
+    /// retention bound and fill the disk, so the protection expires — and the loss is NAMED rather
+    /// than swept quietly under `Age`.
+    #[test]
+    fn the_grace_period_ends_and_the_loss_is_reported_as_a_loss() {
+        let b = Budget::default();
+        let past_grace = (b.max_age_ms + b.transcribe_grace_ms) / 60_000 + 10;
+        let held = vec![pending("abandoned", 1, past_grace)];
+        let e = plan_eviction(NOW, &held, &b, None);
+        assert_eq!(names(&e), vec!["abandoned"]);
+        assert_eq!(
+            e.delete[0].cause,
+            Cause::LostUntranscribed,
+            "an untranscribed eviction is a LOSS, not housekeeping — it must not report as Age"
+        );
+    }
+
+    /// Under size pressure the transcribed segments are spent first: their words are already saved,
+    /// so deleting them costs only audio. Untranscribed audio is the last thing taken.
+    #[test]
+    fn size_pressure_spends_saved_audio_before_unsaved() {
+        let budget = Budget { max_bytes: 12 * MB, max_age_ms: 2 * 60 * 60 * 1000, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
+        // Both inside the window; only bytes force the issue. The unsaved one is OLDER, so a
+        // naive oldest-first pass would take it — that is exactly the mistake being prevented.
+        let held = vec![pending("unsaved-old", 10, 90), seg("saved-new", 10, 5)];
+        let e = plan_eviction(NOW, &held, &budget, None);
+        assert_eq!(names(&e), vec!["saved-new"], "the saved one goes despite being newer: {e:?}");
+    }
+
+    #[test]
+    fn when_nothing_is_saved_the_bound_still_holds_eventually() {
+        let budget = Budget { max_bytes: 5 * MB, max_age_ms: 60 * 60 * 1000, transcribe_grace_ms: 60 * 60 * 1000 };
+        let held: Vec<HeldSegment> = (0..10).map(|i| pending(&format!("p{i}"), 5, 10 * i as i64)).collect();
+        let e = plan_eviction(NOW, &held, &budget, None);
+        assert!(!e.delete.is_empty(), "a stopped transcriber must not defeat the disk bound");
+        assert!(
+            e.delete.iter().all(|d| d.cause == Cause::LostUntranscribed),
+            "and every one of those is reported as a loss: {e:?}"
+        );
     }
 
     #[test]
