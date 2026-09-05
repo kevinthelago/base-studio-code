@@ -133,7 +133,10 @@ pub fn expected_id(crate_dir: &str, rest: &str) -> String {
 /// * nothing selected at all, which the caller reports because it knows the prefix it searched.
 ///
 /// `header` is the generated file's preamble and is emitted FIRST, because the offsets below are line
-/// numbers in the finished file.
+/// numbers in the finished file. `src_prefix` is the crate's repo-relative source root
+/// (`crates/plandb/src/`, `src-tauri/src/`) and appears ONLY in the missing-parent error, which has to
+/// name a real file — it was hard-coded as `crates/<crate>/src/` until a crate could sit at another
+/// depth (`graph-materialize-becomes-a-real-build-dependency`).
 ///
 /// # The offset header, at every depth
 ///
@@ -142,7 +145,7 @@ pub fn expected_id(crate_dir: &str, rest: &str) -> String {
 /// `offset + 1` and the subtraction is exact — which is the ONLY thing making a compiler error inside a
 /// 12,609-line record navigable. Bodies are emitted at COLUMN 0, never indented to their nesting depth,
 /// because indenting would change the columns a compiler error points at and buy nothing.
-pub fn render(mut units: Vec<Unit>, crate_dir: &str, header: &str) -> Result<String, String> {
+pub fn render(mut units: Vec<Unit>, crate_dir: &str, src_prefix: &str, header: &str) -> Result<String, String> {
     units.sort_by(|a, b| a.path.cmp(&b.path));
     if let Some(dup) = units.windows(2).find(|w| w[0].path == w[1].path) {
         return Err(format!(
@@ -163,7 +166,7 @@ pub fn render(mut units: Vec<Unit>, crate_dir: &str, header: &str) -> Result<Str
                 return Err(format!(
                     "module `{}` of crate `{crate_dir}` has no record for its parent `{}` — a nested \
                      module cannot be placed without one. Harvest the directory module itself \
-                     (`crates/{crate_dir}/src/{}.rs` or `crates/{crate_dir}/src/{}/mod.rs`) and promote it.",
+                     (`{src_prefix}{}.rs` or `{src_prefix}{}/mod.rs`) and promote it.",
                     p.join("::"),
                     parent.join("::"),
                     parent.join("/"),

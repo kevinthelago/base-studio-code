@@ -544,6 +544,7 @@ dependencies = [
  "ed25519-dalek",
  "errordb",
  "futures-util",
+ "graph-materialize",
  "include_dir",
  "jsonwebtoken",
  "keyring",
@@ -1011,6 +1012,7 @@ dependencies = [
  "bsc-record",
  "bsc-runtime",
  "bsc-util",
+ "graph-materialize",
  "serde",
  "serde_json",
  "tree-sitter",
@@ -3007,6 +3009,13 @@ dependencies = [
  "glib-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "graph-materialize"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
