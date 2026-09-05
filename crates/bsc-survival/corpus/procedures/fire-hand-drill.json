@@ -1,0 +1,35 @@
+{
+  "id": "fire-hand-drill",
+  "category": "fire",
+  "name": "Hand drill",
+  "summary": "A spindle spun between bare palms into a fireboard — the lowest rung of the ladder, needing nothing you did not grow or find.",
+  "time": "1-2 hours to make the set; 1-3 minutes of continuous work to run it",
+  "materials": [
+    { "item": "straight dry spindle 60-90 cm", "substitutes": ["mullein stalk", "horseweed", "yucca stalk", "elderberry", "cattail stalk", "goldenrod"] },
+    { "item": "fireboard of soft dry wood", "substitutes": ["cedar board", "cottonwood", "willow", "basswood", "sotol"] },
+    { "item": "ember pan", "substitutes": ["bark", "leaf", "thin wood chip", "knife blade"] },
+    { "item": "tinder bundle", "substitutes": ["tinder", "bird's nest", "cedar bark"] }
+  ],
+  "steps": [
+    { "text": "Everything BONE DRY. A hand drill fails on damp wood before technique ever becomes the problem." },
+    { "text": "Cut a shallow socket near the edge of the fireboard, then a V-notch from the edge into about one eighth of it, cut all the way through." },
+    { "text": "Set the ember pan under the notch and pin the board with your foot." },
+    { "text": "Spin the spindle between flat palms, pressing DOWN as you run your hands from top to bottom of the spindle.", "why": "Downward pressure is what makes heat; spin without it and you polish a glazed socket that will never take again." },
+    { "text": "At the bottom of the stroke, snap your hands back to the top WITHOUT letting the spindle stop or lift.", "why": "Every pause bleeds the heat you just made. The floating-hands hand-off is the whole skill." },
+    { "text": "When black dust fills the notch and smoke rises on its own, stop and do not move the board." },
+    { "text": "Let the dust pile smoke by itself, then tip it into the tinder bundle and blow it to flame." }
+  ],
+  "verify": [
+    "Fine black powdery dust, not brown grit. Brown means too little downward pressure.",
+    "Smoke still rising 10-20 seconds after you have stopped is an ember."
+  ],
+  "limits": [
+    "This is the hardest method here by a wide margin and the least forgiving of wet, cold, or tired hands. It is a skill to own before you need it, not one to learn in the situation.",
+    "It works reliably only with the right plant species for spindle and board, which is knowledge about YOUR ground that this record cannot supply."
+  ],
+  "cautions": [
+    "Blisters end the attempt and then persist for days. Stop before the skin tears, not after.",
+    "A glazed, shiny socket has stopped generating dust — rough it up before continuing."
+  ],
+  "tags": ["fire", "friction", "hand drill", "primitive", "no-equipment"]
+}
