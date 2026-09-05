@@ -338,6 +338,52 @@ fn declared_build_script(cargo_toml: &str) -> Option<String> {
     None
 }
 
+/// The `role` a migrated module's record wears — `test` or `algorithm`
+/// (`a-test-only-module-is-not-an-algorithm`).
+///
+/// A module is a TEST when its DECLARATION gates it out of production builds. `#[cfg(test)]` on the
+/// `mod` line is not a heuristic about the module: it is the compiler's own statement that the module
+/// is absent from every shipped binary, which is exactly what "not production logic" means.
+///
+/// This is the write path that produced the two mis-roled records. Every module `migrate-crate` lifted
+/// was set `--role algorithm`, so `llm--http-it.rs` (405 lines of localhost mock-HTTP integration test)
+/// and `bsc-ui--test-store.rs` both landed claiming to be production logic. Nothing broke — the same
+/// `moduleAttrs` still gate them out at materialization — but any consumer that surveys or ranks
+/// implementations counted test code as production logic.
+///
+/// The role is STORED, not recomputed from `moduleAttrs` on every read. Derivation is the auditor, not
+/// the definition: `bsc graph doctor` reports the two disagreeing (`mis-roled-test`), which keeps a
+/// reformatted attribute from silently reclassifying a record and leaves room to label a test-support
+/// module that is deliberately not `#[cfg(test)]`-gated.
+///
+/// A FEATURE gate is not a test gate: `crates/data` gates three modules on
+/// `#[cfg(feature = "duckdb-store")]` and those are production logic that happens to be optional.
+fn role_for(d: &ModuleDecl) -> &'static str {
+    let is_cfg_test = d.attrs.iter().any(|a| {
+        // Whitespace-insensitive: a record must not change role because somebody reformatted the
+        // declaration. `#[ cfg ( test ) ]` and `#[cfg(test)]` are the same gate.
+        let squeezed: String = a.chars().filter(|c| !c.is_whitespace()).collect();
+        squeezed == "#[cfg(test)]"
+    });
+    if is_cfg_test { "test" } else { "algorithm" }
+}
+
+/// The `impl set` argv `migrate-crate` delegates for one module — the record's declaration, recorded.
+///
+/// A FUNCTION rather than an inline vec because it is the only place the ROLE is chosen, and a test
+/// that reaches `role_for` alone does not prove this call site uses it. It did not: the role was a
+/// hardcoded `"algorithm"` here for every module, which is exactly how `llm--http-it.rs` and
+/// `bsc-ui--test-store.rs` came to claim they were production logic. Reverting `role_for` to a constant
+/// left every `role_for` unit test green, because none of them ran through here.
+///
+/// `delegate` is a free function, so a test cannot capture what was sent; making the argv itself
+/// testable is the seam that costs nothing.
+fn impl_set_argv(id: &str, n: &ModuleNode) -> Vec<String> {
+    let d = &n.decl;
+    ["impl", "set", "--tech", "rust", "--id", id, "--role", role_for(d),
+     "--name", n.name(), "--module-vis", if d.public { "pub" } else { "private" }]
+        .iter().map(|s| (*s).to_string()).collect()
+}
 
 /// Why this crate cannot be migrated by this tool, or `None` when it can.
 ///
@@ -407,26 +453,16 @@ pub fn refuse_reason(shape: &CrateShape<'_>) -> Option<String> {
             missing.join(", ")
         ));
     }
-    // A `*_test.rs` / `*_tests.rs` module CANNOT be harvested: `is_test_file` in `extract::language_for`
-    // gates the whole file out deliberately (#4136 — a test file carries no production implementation).
-    // It is a real module all the same (`bsc-json-store` declares `#[cfg(test)] mod surface_tests;`), so
-    // the crate cannot reach the floor until that rule and this migration are reconciled.
+    // A `*_test.rs` / `*_tests.rs` MODULE USED TO BE REFUSED HERE, because `is_test_file` gated the
+    // whole file out of the harvest (#4136) so no record could be created and the file could not be
+    // retired. It is not a refusal any more: that gate read a FILENAME as a verdict, and
+    // `crates/bsc-graph/src/rust_test.rs` — 358 lines of production logic — disproved it. The
+    // function-granularity harvest still skips a test-only file, now by its CONTENTS
+    // (`extract::rust_file_is_test_only`), while module granularity always lifts and records the role.
     //
-    // Reached late this produced an empty harvest and the message "harvest reported no id — refusing to
-    // guess one", which names the symptom and not the cause — and the modules harvested BEFORE it had
-    // already been written to the runtime store, leaving records for a crate that never migrated.
-    let test_only: Vec<&str> = decls
-        .iter()
-        .filter(|n| n.name().ends_with("_test") || n.name().ends_with("_tests"))
-        .map(ModuleNode::name)
-        .collect();
-    if !test_only.is_empty() {
-        return Some(format!(
-            "module(s) [{}] are named *_test/*_tests, which harvest skips as test files (is_test_file, \
-             #4136) — the record cannot be created, so the file cannot be retired",
-            test_only.join(", ")
-        ));
-    }
+    // What the refusal was right about survives as the ROLE: see `role_for`. A `#[cfg(test)]` module
+    // migrates as `role: test`, so it is retired without being counted as production logic — at every
+    // depth, now that `module_tree` walks nested modules.
     // A module that reads a file THIS MIGRATION DELETES cannot survive it, and `absolutize_includes`
     // makes that failure quieter rather than louder: it faithfully rewrites the path so it resolves from
     // `$OUT_DIR`, which turns "cannot resolve" into "No such file or directory" four steps later, at
@@ -695,7 +731,18 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
     writeln!(out, "\n{} {krate} — {} module(s):", if apply { "migrating" } else { "would migrate" }, nodes.len())
         .map_err(|e| e.to_string())?;
     for n in &nodes {
-        writeln!(out, "  src/{}  ->  record {}", n.file, n.record_id(&krate)).map_err(|e| e.to_string())?;
+        // The ROLE is part of the plan, so the plan says it. A reader dry-running a crate with test
+        // modules should see they land as `role: test` before `--apply` writes anything, not discover
+        // it afterwards from the store.
+        let role = role_for(&n.decl);
+        writeln!(
+            out,
+            "  src/{}  ->  record {}{}",
+            n.file,
+            n.record_id(&krate),
+            if role == "algorithm" { String::new() } else { format!("  (role: {role})") },
+        )
+        .map_err(|e| e.to_string())?;
     }
     if !apply {
         writeln!(out, "\nDRY RUN — pass --apply to write.").map_err(|e| e.to_string())?;
@@ -756,9 +803,7 @@ pub fn run(args: &[String], out: &mut dyn std::io::Write) -> Result<(), String> 
         // Record HOW it was declared, so materializing reproduces the program rather than a widened,
         // ungated approximation of it. Attributes go through a FILE — `#[cfg(feature = "x")]` on a
         // command line loses its quotes and brackets silently.
-        let mut set: Vec<String> = ["impl", "set", "--tech", "rust", "--id", &id, "--role", "algorithm",
-                                    "--name", n.name(), "--module-vis", if d.public { "pub" } else { "private" }]
-            .iter().map(|s| s.to_string()).collect();
+        let mut set = impl_set_argv(&id, n);
         // Beside the ROOT, never beside the module — a nested module's directory is deleted at the end
         // of this run, and a scratch file left in one would make the directory non-empty.
         let attrs_file = src_dir.join(format!(".attrs-{}", n.path.join("-")));
@@ -1069,9 +1114,8 @@ mod tests {
         let missing = refuse_reason(&shape(plain, &gone)).unwrap();
         assert!(missing.contains("gone") && missing.contains("no matching file"), "{missing}");
 
-        let tests = vec![node(&["surface_tests"], "surface_tests.rs", Some(""))];
-        let test_only = refuse_reason(&shape(plain, &tests)).unwrap();
-        assert!(test_only.contains("surface_tests") && test_only.contains("is_test_file"), "{test_only}");
+        // A `*_test/*_tests` module is NO LONGER refused (`a-test-only-module-is-not-an-algorithm`) —
+        // pinned positively by `a_test_named_module_no_longer_refuses_the_crate`.
 
         // …and a crate it CAN do is not refused.
         assert!(refuse_reason(&shape(plain, &cli)).is_none());
@@ -1259,6 +1303,116 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A `#[cfg(test)]` module is a TEST, and after `a-test-only-module-is-not-an-algorithm` it
+    /// migrates as one — `role: test`, not `role: algorithm`.
+    ///
+    /// This is the write path that produced the two mis-roled records. `migrate-crate` hardcoded
+    /// `--role algorithm` for every module it lifted, so `llm--http-it.rs` (405 lines of localhost
+    /// mock-HTTP integration test) and `bsc-ui--test-store.rs` both landed claiming to be production
+    /// logic. Nothing broke — `moduleAttrs` still gate them out at materialization — but every
+    /// consumer that surveys or ranks implementations counted test code as production logic.
+    #[test]
+    fn a_cfg_test_declaration_migrates_as_role_test() {
+        // Built through `module_decls` rather than a struct literal, so the test drives the same
+        // parse the migration does.
+        let decls = module_decls(
+            "//! demo\n\
+             pub mod cli;\n\
+             #[cfg(test)]\n\
+             mod surface_tests;\n\
+             #[ cfg ( test ) ]\n\
+             mod spaced_tests;\n\
+             #[cfg(feature = \"duckdb-store\")]\n\
+             pub mod meta;\n",
+        );
+        let role = |n: &str| role_for(decls.iter().find(|d| d.name == n).expect("declared"));
+
+        assert_eq!(role("surface_tests"), "test");
+        // Whitespace inside the attribute is not significant — a record must not change role because
+        // somebody reformatted the declaration.
+        assert_eq!(role("spaced_tests"), "test");
+        // A FEATURE gate is not a test gate. `crates/data` gates three modules on
+        // `#[cfg(feature = "duckdb-store")]`; those are production logic that happens to be optional.
+        assert_eq!(role("meta"), "algorithm");
+        // And a plain declaration is production, which is every other module in the workspace.
+        assert_eq!(role("cli"), "algorithm");
+    }
+
+    /// The MIRROR IMAGE of the mis-roling: a `*_test.rs` / `*_tests.rs` module used to be refused
+    /// outright, so no record could be created and the file could not be retired. That refusal is gone
+    /// — `bsc-json-store`'s `surface_tests` and `bsc-graph`'s `rust_test` are both migratable shapes.
+    ///
+    /// The refusal was never wrong about ITS crate, it was wrong about the RULE: it read a filename as
+    /// a verdict. `crates/bsc-graph/src/rust_test.rs` is production logic (nine `pub fn` and a
+    /// `pub struct` — the Rust half of `bsc graph test`) that the suffix called a test.
+    /// The MIGRATION ITSELF sends `--role test`, not merely `role_for` returning it.
+    ///
+    /// `a_cfg_test_declaration_migrates_as_role_test` pins the derivation and CANNOT see this: reverting
+    /// the call site to a hardcoded `"algorithm"` leaves it green, which was measured while resolving
+    /// the merge with `graph-materialize-takes-nested-modules-and-mod-rs`. The hardcoded constant at
+    /// this exact call site is the original defect, so it is the thing that has to be pinned — and it
+    /// travels through `delegate`, a free function no test can capture, which is why the argv is built
+    /// by `impl_set_argv` instead of inline.
+    #[test]
+    fn the_migration_sends_the_role_it_derived() {
+        let pair = |argv: &[String], flag: &str| {
+            argv.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone()).unwrap_or_default()
+        };
+
+        let mut test_node = node(&["surface_tests"], "surface_tests.rs", Some("#[test]\nfn t() {}\n"));
+        test_node.decl.attrs = vec!["#[cfg(test)]".into()];
+        let argv = impl_set_argv("demo--surface-tests.rs", &test_node);
+        assert_eq!(pair(&argv, "--role"), "test", "a `#[cfg(test)]` module is SENT as a test: {argv:?}");
+        assert_eq!(pair(&argv, "--name"), "surface_tests");
+        assert_eq!(pair(&argv, "--id"), "demo--surface-tests.rs");
+
+        // …and an ordinary module is still sent as production, so the pin cannot be satisfied by
+        // hardcoding the other constant.
+        let plain = node(&["cli"], "cli.rs", Some("pub fn run() {}\n"));
+        assert_eq!(pair(&impl_set_argv("demo--cli.rs", &plain), "--role"), "algorithm");
+    }
+
+    /// The DRY RUN says a module will land as a test, before `--apply` writes anything.
+    #[test]
+    fn the_dry_run_names_the_role_a_test_module_will_land_with() {
+        let root = std::env::temp_dir().join(format!("bsc-migrate-role-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src = root.join("crates").join("demo").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(root.join("crates/demo/Cargo.toml"), "[package]\nname = \"demo\"\nedition = \"2021\"\n").unwrap();
+        std::fs::write(src.join("lib.rs"), "//! demo\npub mod cli;\n#[cfg(test)]\nmod surface_tests;\n").unwrap();
+        std::fs::write(src.join("cli.rs"), "pub fn run() {}\n").unwrap();
+        std::fs::write(src.join("surface_tests.rs"), "#[test]\nfn t() {}\n").unwrap();
+
+        let mut out: Vec<u8> = Vec::new();
+        run(&["demo".into(), "--root".into(), root.to_string_lossy().to_string()], &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        assert!(text.contains("src/surface_tests.rs  ->  record demo--surface-tests.rs  (role: test)"), "{text}");
+        // An ordinary module carries no role suffix — naming the default on every line would be noise.
+        assert!(text.contains("src/cli.rs  ->  record demo--cli.rs\n"), "{text}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_test_named_module_no_longer_refuses_the_crate() {
+        // Both real shapes, at BOTH depths develop's `module_tree` now walks: `surface_tests` is the
+        // genuinely test-only module that was blocked, `rust_test` the production module the suffix
+        // libelled, and `cli::inner_tests` the same question one level down — a nested `*_tests` must
+        // not refuse the crate either, or the tree walk simply relocates the blocker.
+        let modules = vec![
+            node(&["cli"], "cli.rs", Some("pub fn run() {}\n")),
+            node(&["cli", "inner_tests"], "cli/inner_tests.rs", Some("#[test]\nfn t() {}\n")),
+            node(&["surface_tests"], "surface_tests.rs", Some("#[test]\nfn t() {}\n")),
+            node(&["rust_test"], "rust_test.rs", Some("pub fn crate_name() {}\n")),
+        ];
+        assert_eq!(
+            refuse_reason(&shape("[package]\nedition = \"2021\"\n", &modules)),
+            None,
+            "a *_test/*_tests module must not refuse the crate, at any depth — the filename is not evidence"
+        );
+    }
     /// THE WHOLE TREE, through the REAL `run`, in BOTH shapes Rust allows for a directory module —
     /// `cli.rs` beside `cli/` (what `plandb` uses) and `signals/mod.rs` (what `bsc-news`,
     /// `bsc-lan-core` and `research` use). Three levels deep, because two-level nesting can be

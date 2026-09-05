@@ -4481,7 +4481,7 @@ fn help(prog: &str) -> String {
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
-         {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest EVERY module, at every depth, as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has its own build.rs, declares a module with no matching file, or declares a *_test/*_tests module harvest skips — and VERIFIES with a real build before it finishes\n\n\
+         {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest EVERY module, at every depth, as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has its own build.rs, declares a module with no matching file — and VERIFIES with a real build before it finishes\n\n\
          {prog} unmaterialize [--apply] [--root <dir>]   # the ROLLBACK for files-to-zero: write every committed-store record whose `src` has NO file on disk back to that path, restoring the crate to an ordinary file tree (25 crates compile from the graph today; 60 records have no file). NOT `emit`, whose contract is the opposite — `emit` never writes over the shared `src` a record was lifted from, and that is exactly what a rollback must do. DRY BY DEFAULT, because the paths it writes are the ones a migration deleted and an accidental run would resurrect a second live copy of every module. REFUSES a record whose file still EXISTS (it is a function lifted out of a live file, not the file), and REFUSES a `src` claimed by more than one record rather than letting the last write win — the data-loss the `scripts/graph-unmaterialize.mjs` this replaces had, where six records contest two paths
          {prog} reseed [--id a,b] [--all] [--check] [--root <dir>]   # the SEED → RUNTIME STORE direction, the exact inverse of `promote --seed`. The per-user runtime store is the AUTHORING copy, and it can fall BEHIND what ships: after a refactor lands in the packaged seed, a machine that did not author it keeps serving the old body — and an impl's `provides` BEATS the platform registry, so the stale copy is handed to the page even when the bundle is perfectly correct. NO GATE CAN SEE THIS: tsc and vitest read `.bsc-records/`, emitted FROM the seed, so every gate reads a copy that is right and the only wrong one is on the user's disk. `--check` reports and exits non-zero. There is deliberately NO bare form — this OVERWRITES authoring, so name `--id a,b` or say `--all`
          {prog} promote [--id a,b] [--check] [--seed] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — or, with --seed, into the PACKAGED seed at src-tauri/data/knowledge/algorithms.json (what SHIPS and what a fresh install reconciles against; a record can legitimately be in one and not the other). --seed projects to the 15 fields the seed actually carries, normalises a file EXTENSION found in `tech` (`ts` -> `typescript`), prunes a `composes` target that is not an impl, and DECLINES any record whose promotion would stop a specifier something still imports from resolving — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
@@ -4682,28 +4682,34 @@ mod tests {
     /// So the lock is not test hygiene. A reviewer re-adding one bare `set_var` restores a defect that
     /// corrupts the user's authoring copy and blinds the promote gate, and neither symptom points back
     /// here. That is why this is pinned in the source rather than left to review.
+    ///
+    /// # It reads the crate's source WHEREVER THAT SOURCE LIVES
+    ///
+    /// This crate has not migrated into the graph yet, and when it does, `src/` empties to a `lib.rs`
+    /// holding one `include!(concat!(env!("OUT_DIR"), "/crate.rs"))`. A guard that only walked
+    /// `CARGO_MANIFEST_DIR/src` would then scan nothing, find no offenders, and PASS — the exact
+    /// silently-stopped-matching failure the population floor below exists to catch. So it reads BOTH:
+    /// every `.rs` under `src/` (the shape today) and the materialized `$OUT_DIR/crate.rs` (the shape
+    /// after migration), which is split back into its records on the `// record \`<id>\`` header
+    /// `crates/graph-materialize/build.rs` writes above each module body. An offender is then named by
+    /// its RECORD ID, which is what a reader has to edit — the file is gone.
+    ///
+    /// Both sources, not either: during migration the two coexist, and a site that moved into the store
+    /// while a copy lingered on disk must be caught in whichever one still holds it.
     #[test]
     fn every_store_env_mutation_is_inside_the_store_lock() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let units = store_lock_scan_units();
         let mut offenders: Vec<String> = Vec::new();
-        let mut scanned = 0usize;
         let mut mutating = 0usize;
-        for entry in std::fs::read_dir(&root).expect("the crate has a src/ dir") {
-            let path = entry.expect("readable dir entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
-            let src = std::fs::read_to_string(&path).expect("readable source");
-            let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            scanned += 1;
-            for site in store_env_sites(&src) {
+        for (origin, src) in &units {
+            for site in store_env_sites(src) {
                 mutating += 1;
                 if !site.locked {
-                    offenders.push(format!("{name}:{} — fn {}", site.line, site.func));
+                    offenders.push(format!("{origin}:{} — fn {}", site.line, site.func));
                 }
             }
         }
-        assert!(scanned > 0, "the source scan found no .rs files under {}", root.display());
+        assert!(!units.is_empty(), "the source scan found nothing to scan — neither src/*.rs nor $OUT_DIR/crate.rs");
         // A scan that stopped MATCHING would report zero offenders and read as a pass, which is the
         // failure mode this whole item is about. So the population is asserted too.
         assert!(
@@ -4718,6 +4724,165 @@ mod tests {
              `test_support::store_lock()` — and HOLD it for the test's lifetime. An unlocked write \
              resolves the DEFAULT store and corrupts ~/.base-studio-code/knowledge/algorithms.json.",
             offenders.join("\n  "),
+        );
+    }
+
+    /// The header `crates/graph-materialize/build.rs` writes above each materialized module body.
+    ///
+    /// Pinned as a shared constant so the splitter below and the emitter cannot drift silently — see
+    /// `the_materialized_record_marker_is_what_build_rs_emits`, which asserts the emitter still writes
+    /// it. A splitter that stopped matching would collapse `crate.rs` into one unit, mis-attribute
+    /// every offender, and — because the population floor counts SITES, not units — still pass.
+    const RECORD_MARKER: &str = "// record `";
+
+    /// Every `(origin, source)` this crate's store-lock scan covers: the files under `src/`, plus the
+    /// materialized `$OUT_DIR/crate.rs` split back into its records.
+    ///
+    /// `option_env!` because `OUT_DIR` exists only once this crate has a build script. It has none
+    /// today, so that half contributes nothing yet and the guard still runs on `src/`.
+    fn store_lock_scan_units() -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        if let Ok(entries) = std::fs::read_dir(&src_dir) {
+            let mut paths: Vec<std::path::PathBuf> =
+                entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+            paths.sort();
+            for path in paths {
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                let Ok(src) = std::fs::read_to_string(&path) else { continue };
+                out.push((path.file_name().unwrap().to_string_lossy().into_owned(), src));
+            }
+        }
+        if let Some(dir) = option_env!("OUT_DIR") {
+            if let Ok(src) = std::fs::read_to_string(std::path::Path::new(dir).join("crate.rs")) {
+                out.extend(split_materialized(&src));
+            }
+        }
+        out
+    }
+
+    /// Split a materialized `crate.rs` into `(record id, body)` per record.
+    ///
+    /// The generated file is a concatenation of `mod <name> { // record `<id>` … }` blocks, so a scan
+    /// over the whole thing would attribute every offender to "crate.rs" — useless, because the file a
+    /// reader would open does not exist. The id is what they edit (`bsc graph impl get <id>`).
+    ///
+    /// The leading preamble before the first marker is dropped: it is the generated header comment.
+    fn split_materialized(src: &str) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let mut current: Option<(String, String)> = None;
+        for line in src.lines() {
+            if let Some(rest) = line.trim_start().strip_prefix(RECORD_MARKER) {
+                if let Some(done) = current.take() {
+                    out.push(done);
+                }
+                let id = rest.split('`').next().unwrap_or("").to_string();
+                current = Some((id, String::new()));
+                continue;
+            }
+            if let Some((_, body)) = current.as_mut() {
+                body.push_str(line);
+                body.push('\n');
+            }
+        }
+        out.extend(current);
+        out
+    }
+
+    /// The repointed guard sees a site that lives in the STORE, and names it by its record id.
+    ///
+    /// The `src/` half of the scan is proved by the guard above going red when a bare `set_var` is
+    /// re-added to a file. This is the other half, and it is the one with no evidence behind it yet:
+    /// once this crate migrates, EVERY store-env site moves out of `src/` and into a record, reaching
+    /// the compiler only through `$OUT_DIR/crate.rs`. A scan that could not read that file would report
+    /// zero offenders on a crate full of them.
+    ///
+    /// The input is built with the same header `build.rs` writes — pinned against the emitter by
+    /// `the_materialized_record_marker_is_what_build_rs_emits`, so the two cannot drift apart in
+    /// silence.
+    #[test]
+    fn the_store_lock_scanner_reads_the_materialized_crate() {
+        let materialized = format!(
+            "// GENERATED by crates/graph-materialize/build.rs — do not edit;\n\
+             pub mod cli {{\n\
+             {RECORD_MARKER}bsc-graph--cli.rs` — line N here is line N-9 in the record.\n\
+             //! The CLI.\n\
+             fn locked_fixture(p: &Path) {{\n    \
+                 let _g = store_at(p);\n    \
+                 unsafe {{ std::env::set_var(\"BSC_GRAPH_STORE\", p) }};\n\
+             }}\n\
+             }}\n\
+             mod emit {{\n\
+             {RECORD_MARKER}bsc-graph--emit.rs` — line N here is line N-20 in the record.\n\
+             fn unlocked_fixture(p: &Path) {{\n    \
+                 unsafe {{ std::env::set_var(\"BSC_GRAPH_STORE\", p) }};\n\
+             }}\n\
+             }}\n"
+        );
+
+        let units = split_materialized(&materialized);
+        assert_eq!(
+            units.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            ["bsc-graph--cli.rs", "bsc-graph--emit.rs"],
+            "each record is its own unit — a whole-file scan would attribute every offender to a \
+             generated path the reader cannot open"
+        );
+        // The preamble before the first marker is dropped, and each body carries its own record only.
+        assert!(units[0].1.contains("locked_fixture") && !units[0].1.contains("unlocked_fixture"));
+        assert!(!units[0].1.contains("GENERATED by"));
+
+        let offenders: Vec<String> = units
+            .iter()
+            .flat_map(|(origin, src)| {
+                store_env_sites(src)
+                    .into_iter()
+                    .filter(|s| !s.locked)
+                    .map(move |s| format!("{origin} — fn {}", s.func))
+            })
+            .collect();
+        assert_eq!(
+            offenders,
+            ["bsc-graph--emit.rs — fn unlocked_fixture"],
+            "the unlocked site is caught inside the materialized file, and named by the RECORD ID a \
+             reader has to edit — `bsc graph impl get <id>`, because the file is gone"
+        );
+    }
+
+    /// The splitter and the EMITTER must agree on the marker, and neither can be changed alone.
+    ///
+    /// If the emitter's header changed, `split_materialized` would match nothing, collapse `crate.rs`
+    /// into a single unit, and still find every site — the population floor counts SITES, not units —
+    /// so the guard would keep passing while reporting offenders against a path that does not exist.
+    /// A silent mis-attribution is exactly the class this whole guard exists to refuse.
+    ///
+    /// It scans the graph-materialize CRATE rather than one file, and that is not laziness: the
+    /// renderer has already moved once. `graph-materialize-takes-nested-modules-and-mod-rs` lifted the
+    /// emit out of `build.rs` into the `include!`d `plan.rs`, which reddened this pin over a marker that
+    /// had not actually changed. The invariant worth pinning is the marker TEXT, not its address — so a
+    /// move inside the crate is quiet and an edit to the string is loud, which is the right way round.
+    #[test]
+    fn the_materialized_record_marker_is_what_the_emitter_writes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("graph-materialize");
+        let mut scanned: Vec<String> = Vec::new();
+        let mut emits = false;
+        for entry in std::fs::read_dir(&dir).expect("the graph-materialize crate is a sibling") {
+            let path = entry.expect("readable dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).expect("readable source");
+            scanned.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            emits |= src.contains(RECORD_MARKER);
+        }
+        assert!(!scanned.is_empty(), "scanned no Rust source under {}", dir.display());
+        assert!(
+            emits,
+            "no file in crates/graph-materialize/ emits `{RECORD_MARKER}` (scanned: {}) — the \
+             store-lock scanner splits the materialized crate on it, and a splitter that matches \
+             nothing reports offenders against a file nobody can open. Update RECORD_MARKER with it.",
+            scanned.join(", "),
         );
     }
 

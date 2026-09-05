@@ -84,9 +84,50 @@ pub fn graph_json() -> &'static str {
     text
 }
 
-/// The tiers an implementation may carry (#2863) — validated on `impl set`. A `primitive` is a LANGUAGE
-/// built-in (free-standing); an `algorithm` composes them up.
-pub const ROLES: [&str; 2] = ["primitive", "algorithm"];
+/// What KIND of thing a record is (#2863) — validated on `impl set`.
+///
+/// A `primitive` is a LANGUAGE built-in, DESCRIBED by its std `ref` and never re-coded (#2972); an
+/// `algorithm` is production logic that composes primitives up; a **`test`** is a module whose whole
+/// purpose is to check other records (`a-test-only-module-is-not-an-algorithm`).
+///
+/// # What makes a record a test
+///
+/// Its DECLARATION gates it out of production builds — `#[cfg(test)]` on the `mod` line. That is the
+/// compiler's own statement that the module is in no shipped binary, which is what "not production
+/// logic" means; it is not a guess about the module's contents, and it is NEVER its filename.
+/// `crates/bsc-graph/src/rust_test.rs` is 358 lines of production logic that a `*_test.rs` suffix rule
+/// called a test, which is what settled that question.
+///
+/// The role is STORED, written once from the declaration by `migrate::role_for`, and the derivation is
+/// the AUDITOR rather than the definition: [`doctor`] reports a record whose `moduleAttrs` say
+/// `#[cfg(test)]` while its role says `algorithm` (`mis-roled-test`). Recomputing on every read would
+/// let a reformatted attribute silently reclassify a record, and would leave no way to label a
+/// test-support module that is deliberately not `#[cfg(test)]`-gated.
+///
+/// # Why a role rather than a boolean
+///
+/// Every consumer that already branches on `role != "algorithm"` to mean "not production logic to type,
+/// visualize, rank or survey" gets the right answer for a test record with no edit — [`doctor`]'s
+/// kind/viz loop is the one in this crate. A `testOnly` boolean would default to `false` at every one of
+/// those sites, which restates today's wrong answer until each is found and changed. And these are
+/// exclusive in fact — nothing is both a language built-in and a test — so a second axis would model a
+/// freedom that does not exist.
+pub const ROLES: [&str; 3] = ["primitive", "algorithm", "test"];
+
+/// Is this record's MODULE compiled out of production builds — `#[cfg(test)]` on its declaration?
+///
+/// The auditor's half of the test scheme (see [`ROLES`]). Whitespace-insensitive, because a record must
+/// not change classification because somebody reformatted the attribute. A FEATURE gate is not a test
+/// gate: `crates/data` gates three modules on `#[cfg(feature = "duckdb-store")]` and those are
+/// production logic that happens to be optional.
+pub fn module_is_cfg_test(im: &Value) -> bool {
+    im.get("moduleAttrs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|a| a.chars().filter(|c| !c.is_whitespace()).collect::<String>() == "#[cfg(test)]")
+}
 
 /// Parse the embedded packaged seed. Panics only if the packaged JSON is malformed — a build-time
 /// invariant the tests guard.
@@ -279,7 +320,7 @@ pub struct AlgoImpl {
     pub id: String,
     /// The language kit — `"typescript"` | `"rust"`.
     pub tech: String,
-    /// The tier (#2863) — `"primitive"` | `"algorithm"`.
+    /// What kind of record this is (#2863) — `"primitive"` | `"algorithm"` | `"test"`. See [`ROLES`].
     pub role: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1278,9 +1319,28 @@ pub fn doctor_with_entities(g: &Value, entities: &[String]) -> Vec<Finding> {
             }
         }
     }
+    // MIS-ROLED TEST (`a-test-only-module-is-not-an-algorithm`). The stored `role` is the definition;
+    // this is the DETECTOR for it disagreeing with the declaration the record carries. It is the shape
+    // `migrate-crate` left two records in by hardcoding `--role algorithm` for every module it lifted,
+    // and the shape a hand edit to `moduleAttrs` can put a record back into.
+    for im in implementations_of(g) {
+        if im.get("role").and_then(Value::as_str) == Some("algorithm") && module_is_cfg_test(&im) {
+            let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            out.push(Finding {
+                id: id.clone(),
+                category: "mis-roled-test",
+                detail: "declared `#[cfg(test)]` — the module is in no production build — yet the record \
+                         claims `role: algorithm`, so every survey and ranking counts it as production logic"
+                    .into(),
+                suggestion: Some(format!("`bsc graph impl set --id {id} --role test` (with its `--tech` and `--name`)")),
+            });
+        }
+    }
     for im in implementations_of(g) {
         if im.get("role").and_then(Value::as_str) != Some("algorithm") {
-            continue; // primitives describe a built-in — nothing to type or visualize
+            // A primitive DESCRIBES a built-in and a test CHECKS other records — neither has a
+            // manipulation kind or anything to visualize, so the diagnostics below do not apply.
+            continue;
         }
         let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
         let inferred = classify_kind(&im);
@@ -1839,6 +1899,11 @@ mod tests {
                 Some("algorithm") => assert!(
                     im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty()),
                     "algorithm '{id}' carries real code",
+                ),
+                // A test record carries code like an algorithm; what it must NOT do is claim to be one.
+                Some("test") => assert!(
+                    im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty()),
+                    "test '{id}' carries the test source",
                 ),
                 other => panic!("impl '{id}' has an unexpected role {other:?}"),
             }
@@ -2511,6 +2576,54 @@ mod tests {
         assert_eq!(t(algo("mystery2.ts", serde_json::json!({ "code": "swap(a,b)" }))), Some("sort"));
         // Truly opaque → None (never guesses).
         assert_eq!(t(algo("zzz.ts", serde_json::json!({ "code": "return 1" }))), None);
+    }
+
+    /// A record whose module is compiled out of production builds must not wear `role: algorithm`
+    /// (`a-test-only-module-is-not-an-algorithm`).
+    ///
+    /// The DEFINITION of test-ness is the stored `role`, written once at migration from the module's
+    /// declaration. This finding is the DETECTOR for the two disagreeing — which is the shape the two
+    /// mis-roled records were in, and the shape a hand edit to `moduleAttrs` could put a record back
+    /// into. Derivation is deliberately not the definition: recomputing the role from `moduleAttrs` on
+    /// every read would let reformatting an attribute silently reclassify a record, and would leave no
+    /// way to label a test-support module that is deliberately not `#[cfg(test)]`-gated.
+    #[test]
+    fn doctor_reports_an_algorithm_record_whose_module_is_cfg_test() {
+        let g = serde_json::json!({ "implementations": [
+            // The real shape of `llm--http-it.rs` before this item: 405 lines of localhost mock-HTTP
+            // integration test, `#[cfg(test)]` on the declaration, claiming to be production logic.
+            { "id": "llm--http-it.rs", "tech": "rust", "role": "algorithm", "name": "http_it",
+              "composes": [], "code": "fn t() {}", "kind": "transform", "vizCode": "function run(){}",
+              "moduleAttrs": ["#[cfg(test)]"] },
+            // Corrected: same attributes, honest role — and NOT re-reported.
+            { "id": "bsc-ui--test-store.rs", "tech": "rust", "role": "test", "name": "test_store",
+              "composes": [], "code": "fn t() {}", "moduleAttrs": ["#[cfg(test)]"] },
+            // A FEATURE gate is not a test gate — `crates/data` gates three production modules this way.
+            { "id": "data--meta.rs", "tech": "rust", "role": "algorithm", "name": "meta",
+              "composes": [], "code": "pub fn m() {}", "kind": "transform", "vizCode": "function run(){}",
+              "moduleAttrs": ["#[cfg(feature = \"duckdb-store\")]"] },
+        ]});
+        let fs = doctor(&g);
+        let by = |cat: &str| fs.iter().filter(|f| f.category == cat).map(|f| f.id.as_str()).collect::<Vec<_>>();
+
+        assert_eq!(
+            by("mis-roled-test"),
+            ["llm--http-it.rs"],
+            "only the record whose declaration gates it out of production while it claims to be an algorithm"
+        );
+        assert!(
+            fs.iter().find(|f| f.category == "mis-roled-test").unwrap().suggestion.as_deref().unwrap()
+                .contains("--role test"),
+            "the finding must be actionable — name the write that fixes it"
+        );
+
+        // A `role: test` record is NOT production logic, so the kind/viz diagnostics do not apply to it:
+        // a test module has no manipulation kind and nothing to visualize. Reporting them would be ~700
+        // findings of pure noise once the test tier is populated.
+        assert!(
+            !fs.iter().any(|f| f.id == "bsc-ui--test-store.rs"),
+            "a correctly-roled test record is clean, not `untyped` + `missing-viz`: {fs:?}"
+        );
     }
 
     #[test]
