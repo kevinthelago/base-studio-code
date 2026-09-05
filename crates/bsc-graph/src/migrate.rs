@@ -1585,12 +1585,12 @@ mod materialize_plan_tests {
         assert!(mod_rs >= 20, "only {mod_rs} mod.rs files under src-tauri/src");
     }
 
-    /// NOTHING ALREADY MIGRATED CHANGES SHAPE. Driven over the REAL committed store and the REAL 50
+    /// NOTHING ALREADY MIGRATED CHANGES SHAPE. Driven over the REAL committed store and the REAL 54
     /// opted-in crates: for each, the records `build.rs` selects and the file it renders must be
     /// byte-identical to what the previous flat scheme produced.
     ///
     /// The old scheme is reproduced inline (it is nine lines) rather than described, because "the output
-    /// is unchanged" is the only claim that matters when a single file is the build input for 50 crates.
+    /// is unchanged" is the only claim that matters when a single file is the build input for 54 crates.
     #[test]
     fn every_already_migrated_crate_renders_byte_identically_to_the_flat_scheme() {
         let root = repo();

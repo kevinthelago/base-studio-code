@@ -7,15 +7,17 @@
 //
 // # Why this is a second file next to a build script
 //
-// `crates/graph-materialize` is not a package (it is a bare `build.rs` that 50 crates point their
-// `build =` key at), so it has no test target and nothing here could ever be asserted. Every rule
+// `crates/graph-materialize` was not a package — a bare `build.rs` that 54 crates point their
+// `build =` key at — so it had no test target and nothing here could ever be asserted. Every rule
 // below — which file is which module, which id says "this record IS that file", and the line-offset
-// arithmetic that makes a compiler error inside a 12,609-line record navigable — was previously
-// observable only by compiling a crate and reading the output.
+// arithmetic that makes a compiler error inside a 12,609-line record navigable — was observable only
+// by compiling a crate and reading the output.
 //
-// So the rules live here and are `include!`d in TWO places: by `build.rs`, which is what the build
-// actually runs, and by `crates/bsc-graph/src/migrate.rs`'s tests, which drive THIS SOURCE rather than
-// a copy of it. A copy would be a restatement that can drift; an `include!` cannot.
+// IT IS A PACKAGE NOW (`graph-materialize-becomes-a-real-build-dependency`), so `src/tests.rs` asserts
+// these rules directly. The file split survives that for a different reason: `build.rs` — what the 54
+// existing adopters compile — and `src/lib.rs` — what a crate at another depth takes as a
+// build-dependency and calls — `include!` THIS FILE and `emit.rs` beside it, so both entry points run
+// one implementation rather than a copy that can drift.
 //
 // # The nesting scheme (`graph-materialize-takes-nested-modules-and-mod-rs`)
 //

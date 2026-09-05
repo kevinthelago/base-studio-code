@@ -598,10 +598,13 @@ fn find_workspace_root(start: &std::path::Path, explicit: bool) -> Result<std::p
 
 /// The workspace member paths, from the root `Cargo.toml`'s explicit `members` list.
 ///
-/// FROM THE MEMBERS LIST, NEVER A DIRECTORY LISTING. `crates/graph-materialize` is a directory in
-/// `crates/` holding only a `build.rs` — the shared build script other crates pull in via
-/// `build = "../graph-materialize/build.rs"`. It is not a package, has no name to key a node on, and
-/// a listing would wrongly give it one.
+/// FROM THE MEMBERS LIST, NEVER A DIRECTORY LISTING. The two disagree in both directions: `src-tauri`
+/// is a member and is not under `crates/` at all, so a listing of `crates/` drops the app; and a
+/// directory under `crates/` need not be a package. `crates/graph-materialize` was the standing
+/// witness for the second half — a directory holding only the shared `build.rs` other crates pull in
+/// via `build = "../graph-materialize/build.rs"` — until
+/// `graph-materialize-becomes-a-real-build-dependency` gave it a manifest and a `src/lib.rs` so a
+/// crate at another depth could CALL it. It is a member now, and `src-tauri` carries the invariant.
 fn workspace_members(root: &std::path::Path) -> Result<Vec<String>, String> {
     let txt = std::fs::read_to_string(root.join("Cargo.toml")).map_err(|e| e.to_string())?;
     let start = txt.find("members").ok_or("the workspace has no `members` list")?;
@@ -1375,15 +1378,19 @@ mod tests {
             "bsc-util must be PRESENT with no verbs — it is the crate the decision exists for"
         );
 
-        // `crates/graph-materialize` holds only a build.rs and is not a package. It is in the
-        // DIRECTORY listing and not in the members list, which is exactly why the roster reads the
-        // members list — a listing would mint a node with no package name to key on.
+        // `crates/graph-materialize` USED TO BE the witness here — a directory holding only a shared
+        // build.rs, present in the `crates/` listing and absent from the members list, so its ABSENCE
+        // proved the roster read the members list. `graph-materialize-becomes-a-real-build-dependency`
+        // made it a package, so a crate at a depth other than `crates/<name>` can take it as a
+        // build-dependency and call it. That FLIPS the assertion rather than deleting it: it is a
+        // member, so it must now be PRESENT with its package name resolved.
         assert!(
-            !rows.iter().any(|r| r.package == "graph-materialize"),
-            "graph-materialize is a build script, not a crate — the roster read a directory listing"
+            rows.iter().any(|r| r.package == "graph-materialize" && r.path == "crates/graph-materialize"),
+            "graph-materialize is a workspace member now — the roster lost a member it lists"
         );
-        // src-tauri is a member and its PACKAGE is `base-studio-code`, another place the directory
-        // name is not the key.
+        // …and the members-not-a-listing invariant now rides on `src-tauri`, which a listing of
+        // `crates/` cannot produce at all. Its PACKAGE is `base-studio-code`, another place the
+        // directory name is not the key.
         assert!(
             rows.iter().any(|r| r.package == "base-studio-code" && r.path == "src-tauri"),
             "the app crate must be in the roster under its package name"
