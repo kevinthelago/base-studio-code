@@ -741,7 +741,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["speak", "voices"]);
+        assert_eq!(names, vec!["speak", "devices", "voices"]);
     }
 
     #[test]
@@ -833,6 +833,25 @@ mod tests {
         let d = engine_detail(many.join("\n").as_bytes());
         assert!(d.contains("line8 / line9 / line10"), "tail, in order: {d}");
         assert!(!d.contains("line1 "), "the head is dropped: {d}");
+    }
+
+    /// The order matters and nothing else asserts it: a one-off `--device` must beat the
+    /// environment, and the environment must beat a choice remembered months ago. Getting this
+    /// backwards means a flag that appears to do nothing.
+    #[test]
+    fn an_explicit_device_beats_the_environment_which_beats_what_was_remembered() {
+        let a = Args { device: Some("explicit".into()), ..Args::default() };
+        std::env::set_var(DEVICE_ENV, "from-env");
+        assert_eq!(resolve_device(&a).as_deref(), Some("explicit"));
+
+        let bare = Args::default();
+        assert_eq!(resolve_device(&bare).as_deref(), Some("from-env"), "env is next");
+
+        std::env::remove_var(DEVICE_ENV);
+        // With neither, it falls through to the remembered file or the system default; both are
+        // acceptable here, and what matters is that it does not return the env value we just
+        // cleared.
+        assert_ne!(resolve_device(&bare).as_deref(), Some("from-env"));
     }
 
     #[test]
