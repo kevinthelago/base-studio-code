@@ -2992,29 +2992,105 @@ export const lbl = createStoreLabel;
     /// red because a genuine relative include was added, that is real signal about this crate's
     /// migration and not a test to relax.
     ///
-    /// The remaining blocker is elsewhere and named on the migration item: three guards in this
-    /// crate walk its own `src/` (`extract.rs`, `node_urn.rs`, `repo_store.rs` all root themselves at
-    /// `CARGO_MANIFEST_DIR`) and would need repointing before the files become records.
+    /// # It reads this crate's source WHEREVER THAT SOURCE LIVES
+    ///
+    /// `bsc graph migrate-crate bsc-graph` dry-runs clean at ten modules, and applying it empties
+    /// `src/` down to a `lib.rs` holding one `include!(concat!(env!("OUT_DIR"), "/crate.rs"))`. A walk
+    /// of `CARGO_MANIFEST_DIR/src` would then reach ONE file — MEASURED: eleven today, one after — and
+    /// the `>= 8` floor below is what turns that from a guard quietly checking a tenth of what it
+    /// claims into a loud failure. So the scan reads BOTH homes through
+    /// [`crate::cli::test_support::own_source_units`], the same units the store-lock guard scans: every
+    /// `.rs` under `src/`, plus the materialized `$OUT_DIR/crate.rs` split back into its records. An
+    /// offender is then named by its RECORD ID, which is what a reader has to edit — the file is gone.
     #[test]
     fn harvesting_this_crates_own_source_rewrites_nothing() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let units = crate::cli::test_support::own_source_units();
         let mut scanned = 0usize;
-        for entry in std::fs::read_dir(&src).expect("the crate has a src/") {
-            let path = entry.expect("readable entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
-            let text = std::fs::read_to_string(&path).expect("readable module");
+        for (origin, text) in &units {
+            // The path a rewrite would be derived FROM. For a file that is the file; for a record it is
+            // where the module's source lived and where the materializer puts it back — under
+            // `<manifest>/src/`, which is the directory `harvest_module` passed when the record was made.
+            // Only the DIRECTORY is read (the manifest walk and the prefix), never the file itself.
+            let path = src.join(origin);
             scanned += 1;
-            assert_eq!(
-                absolutize_includes(&text, &path),
-                text,
-                "{} holds no live relative include, so harvesting it must change nothing",
-                path.display(),
-            );
+            let rewritten = absolutize_includes(text, &path);
+            // The SITE, not the two modules. `assert_eq!` on 20,000-line sources prints both in full
+            // and buries the one line that differs — a red nobody can act on is most of the way to a
+            // red nobody looks at.
+            if rewritten != *text {
+                let at = text
+                    .char_indices()
+                    .zip(rewritten.char_indices())
+                    .find(|((_, a), (_, b))| a != b)
+                    .map_or(0, |((i, _), _)| i);
+                let line = text[..at].matches('\n').count() + 1;
+                let was = text[at..].lines().next().unwrap_or("");
+                let now = rewritten[at..].lines().next().unwrap_or("");
+                panic!(
+                    "{origin}:{line} holds a LIVE relative include, so harvesting it would rewrite the \
+                     module rather than store it verbatim:\n  was: …{was}\n  now: …{now}",
+                );
+            }
         }
+        // THE REWRITER IS LIVE, not merely returning its input. `absolutize_includes` gives back the
+        // source UNCHANGED when it finds no `Cargo.toml` above the file it is handed, so a path outside
+        // this crate would make every identity assertion above pass on a rewriter that did nothing — and
+        // that is exactly the shape a record's synthetic path could take. A control that MUST be
+        // rewritten, through the same path construction, is what rules it out.
+        assert_eq!(
+            absolutize_includes(
+                "const X: &str = include_str!(\"probe.json\");",
+                &src.join("bsc-graph--control.rs"),
+            ),
+            "const X: &str = include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/probe.json\"));",
+            "the path handed to the rewriter resolves to this crate's manifest",
+        );
         // The POPULATION, because a walk that silently found nothing reads exactly like a pass.
         assert!(scanned >= 8, "the walk reached this crate's modules, not an empty directory: {scanned}");
+    }
+
+    /// THE OTHER HALF OF THAT SCAN, which has no evidence behind it until this crate migrates: a
+    /// record reaches the compiler only through `$OUT_DIR/crate.rs`, and a scan that could not read
+    /// that file would report no rewrites on a crate full of them.
+    ///
+    /// The input carries the same header `crates/graph-materialize` writes — pinned against the
+    /// emitter by `the_materialized_record_marker_is_what_the_emitter_writes` over in `cli.rs`, so the
+    /// splitter and the emitter cannot drift apart in silence.
+    #[test]
+    fn the_harvest_identity_scan_reads_the_materialized_crate() {
+        let marker = crate::cli::test_support::RECORD_MARKER;
+        let materialized = format!(
+            "// GENERATED by crates/graph-materialize — do not edit;\n\
+             pub mod clean {{\n\
+             {marker}bsc-graph--clean.rs` — line N here is line N-9 in the record.\n\
+             const OK: &str = include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/already.json\"));\n\
+             }}\n\
+             pub mod dirty {{\n\
+             {marker}bsc-graph--dirty.rs` — line N here is line N-20 in the record.\n\
+             const BAD: &str = include_str!(\"live.json\");\n\
+             }}\n"
+        );
+
+        let units = crate::cli::test_support::split_materialized(&materialized);
+        assert_eq!(
+            units.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            ["bsc-graph--clean.rs", "bsc-graph--dirty.rs"],
+            "each record is its own unit — a whole-file scan would name a generated path nobody can open"
+        );
+
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let rewritten: Vec<&str> = units
+            .iter()
+            .filter(|(id, body)| absolutize_includes(body, &src.join(id)) != *body)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        assert_eq!(
+            rewritten,
+            ["bsc-graph--dirty.rs"],
+            "the already-absolutized record is identity and the LIVE relative include is caught inside \
+             the materialized file, named by the RECORD ID a reader has to edit"
+        );
     }
 
     /// THE ANSWER TO AN OPEN QUESTION on the migration record: the 15 `include_str!("../../fixtures/x")`

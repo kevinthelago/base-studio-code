@@ -4628,6 +4628,74 @@ pub(crate) mod test_support {
     pub(crate) fn store_lock() -> std::sync::MutexGuard<'static, ()> {
         super::STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    /// The header `crates/graph-materialize/build.rs` writes above each materialized module body.
+    ///
+    /// Pinned as a shared constant so the splitter below and the emitter cannot drift silently — see
+    /// `the_materialized_record_marker_is_what_build_rs_emits`, which asserts the emitter still writes
+    /// it. A splitter that stopped matching would collapse `crate.rs` into one unit, mis-attribute
+    /// every offender, and — because the population floor counts SITES, not units — still pass.
+    pub(crate) const RECORD_MARKER: &str = "// record `";
+
+    /// Every `(origin, source)` unit of THIS CRATE'S OWN Rust, wherever that Rust lives: the files
+    /// under `src/`, plus the materialized `$OUT_DIR/crate.rs` split back into its records.
+    ///
+    /// Shared rather than restated, because TWO guards scan this crate's own source — the store-lock
+    /// scan in `cli.rs` and the harvest-identity scan in `extract.rs` — and a second copy of the
+    /// splitter is a second thing that can stop matching the marker in silence.
+    ///
+    /// `option_env!` because `OUT_DIR` exists only once this crate has a build script. It has none
+    /// today, so that half contributes nothing yet and the guard still runs on `src/`.
+    pub(crate) fn own_source_units() -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        if let Ok(entries) = std::fs::read_dir(&src_dir) {
+            let mut paths: Vec<std::path::PathBuf> =
+                entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+            paths.sort();
+            for path in paths {
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                let Ok(src) = std::fs::read_to_string(&path) else { continue };
+                out.push((path.file_name().unwrap().to_string_lossy().into_owned(), src));
+            }
+        }
+        if let Some(dir) = option_env!("OUT_DIR") {
+            if let Ok(src) = std::fs::read_to_string(std::path::Path::new(dir).join("crate.rs")) {
+                out.extend(split_materialized(&src));
+            }
+        }
+        out
+    }
+
+    /// Split a materialized `crate.rs` into `(record id, body)` per record.
+    ///
+    /// The generated file is a concatenation of `mod <name> { // record `<id>` … }` blocks, so a scan
+    /// over the whole thing would attribute every offender to "crate.rs" — useless, because the file a
+    /// reader would open does not exist. The id is what they edit (`bsc graph impl get <id>`).
+    ///
+    /// The leading preamble before the first marker is dropped: it is the generated header comment.
+    pub(crate) fn split_materialized(src: &str) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let mut current: Option<(String, String)> = None;
+        for line in src.lines() {
+            if let Some(rest) = line.trim_start().strip_prefix(RECORD_MARKER) {
+                if let Some(done) = current.take() {
+                    out.push(done);
+                }
+                let id = rest.split('`').next().unwrap_or("").to_string();
+                current = Some((id, String::new()));
+                continue;
+            }
+            if let Some((_, body)) = current.as_mut() {
+                body.push_str(line);
+                body.push('\n');
+            }
+        }
+        out.extend(current);
+        out
+    }
 }
 
 /// Point `BSC_GRAPH_STORE` at `path` for the rest of THIS test, serialized against every other test
@@ -4667,6 +4735,8 @@ fn store_at(path: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
 
 #[cfg(test)]
 mod tests {
+    use super::test_support::{own_source_units, split_materialized, RECORD_MARKER};
+
 
     /// EVERY test that repoints a store env var must hold the store lock — asserted over the SOURCE,
     /// because nothing at run time can observe the absence of a lock.
@@ -4702,7 +4772,7 @@ mod tests {
     /// while a copy lingered on disk must be caught in whichever one still holds it.
     #[test]
     fn every_store_env_mutation_is_inside_the_store_lock() {
-        let units = store_lock_scan_units();
+        let units = own_source_units();
         let mut offenders: Vec<String> = Vec::new();
         let mut mutating = 0usize;
         for (origin, src) in &units {
@@ -4729,70 +4799,6 @@ mod tests {
              resolves the DEFAULT store and corrupts ~/.base-studio-code/knowledge/algorithms.json.",
             offenders.join("\n  "),
         );
-    }
-
-    /// The header `crates/graph-materialize/build.rs` writes above each materialized module body.
-    ///
-    /// Pinned as a shared constant so the splitter below and the emitter cannot drift silently — see
-    /// `the_materialized_record_marker_is_what_build_rs_emits`, which asserts the emitter still writes
-    /// it. A splitter that stopped matching would collapse `crate.rs` into one unit, mis-attribute
-    /// every offender, and — because the population floor counts SITES, not units — still pass.
-    const RECORD_MARKER: &str = "// record `";
-
-    /// Every `(origin, source)` this crate's store-lock scan covers: the files under `src/`, plus the
-    /// materialized `$OUT_DIR/crate.rs` split back into its records.
-    ///
-    /// `option_env!` because `OUT_DIR` exists only once this crate has a build script. It has none
-    /// today, so that half contributes nothing yet and the guard still runs on `src/`.
-    fn store_lock_scan_units() -> Vec<(String, String)> {
-        let mut out: Vec<(String, String)> = Vec::new();
-        let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        if let Ok(entries) = std::fs::read_dir(&src_dir) {
-            let mut paths: Vec<std::path::PathBuf> =
-                entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
-            paths.sort();
-            for path in paths {
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                let Ok(src) = std::fs::read_to_string(&path) else { continue };
-                out.push((path.file_name().unwrap().to_string_lossy().into_owned(), src));
-            }
-        }
-        if let Some(dir) = option_env!("OUT_DIR") {
-            if let Ok(src) = std::fs::read_to_string(std::path::Path::new(dir).join("crate.rs")) {
-                out.extend(split_materialized(&src));
-            }
-        }
-        out
-    }
-
-    /// Split a materialized `crate.rs` into `(record id, body)` per record.
-    ///
-    /// The generated file is a concatenation of `mod <name> { // record `<id>` … }` blocks, so a scan
-    /// over the whole thing would attribute every offender to "crate.rs" — useless, because the file a
-    /// reader would open does not exist. The id is what they edit (`bsc graph impl get <id>`).
-    ///
-    /// The leading preamble before the first marker is dropped: it is the generated header comment.
-    fn split_materialized(src: &str) -> Vec<(String, String)> {
-        let mut out: Vec<(String, String)> = Vec::new();
-        let mut current: Option<(String, String)> = None;
-        for line in src.lines() {
-            if let Some(rest) = line.trim_start().strip_prefix(RECORD_MARKER) {
-                if let Some(done) = current.take() {
-                    out.push(done);
-                }
-                let id = rest.split('`').next().unwrap_or("").to_string();
-                current = Some((id, String::new()));
-                continue;
-            }
-            if let Some((_, body)) = current.as_mut() {
-                body.push_str(line);
-                body.push('\n');
-            }
-        }
-        out.extend(current);
-        out
     }
 
     /// The repointed guard sees a site that lives in the STORE, and names it by its record id.
