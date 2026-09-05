@@ -5,12 +5,11 @@ pub(crate) mod workspace;
 /// deterministic markers of an injected instruction in a planner-authored artifact. Proved against
 /// the TypeScript it is ported from; see the module docs for the three engine differences it handles.
 //
-// NOTHING CALLS IT YET, and that is the method rather than an oversight: flipping the caller is a
-// separate item (`the-planner-provenance-gate-scans-in-rust`) so the derivation and the behaviour
-// change are revertible independently. `-D warnings` would otherwise fail a slice that is complete
-// by design. REMOVING THIS ATTRIBUTE IS PART OF THAT ITEM — it is the marker that says the
-// derivation is still orphaned, and leaving it afterwards would hide the next orphan.
-#[allow(dead_code)]
+// IT HAS A CALLER NOW (`the-planner-provenance-gate-scans-in-rust`): `injection_scan::
+// planner_injection_scan` is registered in `app::run`'s handler and `planInjection.ts` asks it. The
+// `#[allow(dead_code)]` that stood here while the derivation was orphaned is GONE WITH THE FLIP —
+// it was the marker that said so, and leaving it would hide the next orphan. Do not put it back to
+// quiet a warning: a dead-code warning on this module now means the frontend stopped asking.
 pub(crate) mod injection_scan;
 
 #[cfg(test)]

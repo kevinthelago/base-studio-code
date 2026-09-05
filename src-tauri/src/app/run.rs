@@ -376,6 +376,7 @@ pub fn run() {
             planner::workspace::setup_workspaces,
             planner::directives::planner_intro_prompt,
             planner::directives::planner_stage_directive,
+            planner::injection_scan::planner_injection_scan,
             crate::platform::config::export_config_bundle,
             crate::platform::config::import_config_bundle,
             crate::platform::config::get_config_files,
