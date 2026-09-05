@@ -1709,9 +1709,20 @@ mod materialize_plan_tests {
         // nothing. Measured 2026-09-04: 216 files, 30 nested, 4 mod.rs — and every one of those numbers
         // FALLS as crates migrate into the graph, so the floors are deliberately well under them and
         // exist to catch a walk that found nothing, not to pin a census.
+        //
+        // RE-MEASURED the same day, after `bsc-lan-core` migrated (it took `src/adapters/`, 9 nested
+        // files of which one was a `mod.rs`): 196 files, 21 nested, 3 mod.rs. The `mod_rs >= 4` floor
+        // was pinned at EXACTLY the measured value, which contradicts the "deliberately well under"
+        // policy the comment above states and made it fire on the first migration rather than on a
+        // broken walk. It is 1 here: the walk's anti-silence guard for this branch is `checked`, and the
+        // `mod.rs` id derivation is pinned AT STRENGTH by the `src-tauri` sibling test below
+        // (`mod_rs >= 20` against 24 present), which no crate migration can erode.
+        //
+        // `nested >= 20` now has a margin of ONE. The next nested crate to migrate will trip it the same
+        // way; that is a floor to lower when it fires, not a walk that has gone wrong.
         assert!(checked > 120, "the walk found only {checked} .rs files under crates/*/src");
         assert!(nested >= 20, "only {nested} nested files — the case this change exists for");
-        assert!(mod_rs >= 4, "only {mod_rs} mod.rs files");
+        assert!(mod_rs >= 1, "only {mod_rs} mod.rs files — the walk is not reaching the mod.rs case at all");
     }
 
     /// The same agreement for `src-tauri`, which is the reason this change matters: 136 files at depth
@@ -1752,6 +1763,8 @@ mod materialize_plan_tests {
         let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
 
         let mut crates = 0usize;
+        let mut compared = 0usize;
+        let mut skipped_nested: Vec<String> = Vec::new();
         for entry in std::fs::read_dir(root.join("crates")).expect("crates/") {
             let dir = entry.expect("entry").path();
             let Some(krate) = dir.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
@@ -1761,6 +1774,25 @@ mod materialize_plan_tests {
             }
             crates += 1;
             let prefix = format!("crates/{krate}/src/");
+
+            // A crate holding a NESTED record HAS NO FLAT PREDECESSOR TO BE IDENTICAL TO. The old scheme
+            // could only express direct children of `src/` — nesting was a `migrate-crate` REFUSAL until
+            // `graph-materialize-takes-nested-modules-and-mod-rs` lifted it — so such a crate was never
+            // rendered by it, and comparing one would assert that the new scheme reproduces output the old
+            // one could not have produced. `bsc-lan-core` is the first (2026-09-04, `src/adapters/`); the
+            // claim below still covers every flat crate, which is what "nothing already migrated changes
+            // shape" was ever about. The `compared` floor after the loop is what stops this skip from
+            // quietly swallowing the whole population.
+            if impls.iter().any(|i| {
+                i.get("src")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.strip_prefix(&prefix))
+                    .is_some_and(|rest| rest.contains('/'))
+            }) {
+                skipped_nested.push(krate.clone());
+                continue;
+            }
+            compared += 1;
 
             // The scheme as it was: direct children of src/ only, module = basename, id = the
             // underscore-to-hyphen swap of that basename, sorted by module name.
@@ -1839,6 +1871,14 @@ mod materialize_plan_tests {
         }
         // POPULATION. A loop that found no opted-in crate would pass in silence.
         assert!(crates >= 40, "only {crates} crates carry {} — the walk is wrong", super::MARKER);
+        // …and a SKIP that swallowed them all would pass just as silently, which is the failure mode a
+        // new exemption introduces. Assert what was actually COMPARED, not merely what was walked.
+        assert!(
+            compared >= 40,
+            "only {compared} of {crates} opted-in crates were compared against the flat scheme — \
+             skipped as nested: {skipped_nested:?}. The exemption is for crates the flat scheme could \
+             never have rendered; if it is now eating the population, the claim this test makes is gone."
+        );
     }
 
     /// Every `.rs` under `dir`, as a path relative to it, skipping dot-directories.
