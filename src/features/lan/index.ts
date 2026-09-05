@@ -22,6 +22,7 @@ export {
   ageLabel,
   emptyStateDiagnosis,
   staleBanner,
+  contributingSensors,
   NEVER_HEARD,
   HISTORY,
   MIN_RANGE_DB,

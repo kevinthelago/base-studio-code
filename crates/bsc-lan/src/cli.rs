@@ -14,9 +14,9 @@ use bsc_lan_sense::run::{RateLimit, SensorRun};
 use bsc_lan_sense::transport::Transport;
 use bsc_lan_sense::config::{Loaded, SensorConfig, SubscriberConfig};
 use bsc_lan_sense::receive::{MulticastReceiver, Tick};
-use bsc_lan_stream::crypto::{GroupKey, Sensor, Subscriber};
+use bsc_lan_stream::crypto::{GroupKey, Sensor};
 use bsc_lan_stream::liveness::{Cadence, Liveliness};
-use bsc_lan_stream::subscription::{Finding, Subscription};
+use bsc_lan_stream::subscription::{Finding, Fleet};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use std::collections::BTreeSet;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -527,7 +527,8 @@ pub fn unhex32(s: &str, what: &str) -> Result<[u8; 32], String> {
 pub struct ResolvedSubscriber {
     pub group: SocketAddrV4,
     pub iface: Ipv4Addr,
-    pub sensor_public_key: [u8; 32],
+    /// Every sensor this subscriber accepts, as `(name, public key)`.
+    pub roster: Vec<(String, [u8; 32])>,
     pub group_key: [u8; 32],
     /// One line naming the source of each part. PRINTED, never inferred by the
     /// reader: with two possible sources, "it did not work" is unanswerable
@@ -570,7 +571,7 @@ impl std::fmt::Debug for ResolvedSubscriber {
         f.debug_struct("ResolvedSubscriber")
             .field("group", &self.group)
             .field("iface", &self.iface)
-            .field("sensor_public_key", &"<public>")
+            .field("sensors", &self.roster.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>())
             .field("group_key", &"<redacted>")
             .field("provenance", &self.provenance)
             .finish()
@@ -644,8 +645,25 @@ where
     };
 
     let group = pick("--group", "<addr:port>, e.g. 239.10.20.30:5140", a.group.as_ref(), c.map(|c| c.group.clone()))?;
-    let pub_hex = pick("--sensor-public-key", "<hex> (the sensor's PUBLIC key, from `bsc lan keygen`)", a.sensor_public_key.as_ref(), c.map(|c| c.sensor_public_key.clone()))?;
     let group_hex = pick("--group-key", "<hex> (SECRET, shared by every subscriber)", a.group_key.as_ref(), c.map(|c| c.group_key.clone()))?;
+    // A ROSTER cannot come off a flag sensibly — a fleet is a list of name/key
+    // pairs, and cramming that into argv is how the key ends up on a command
+    // line again. `--sensor-public-key` still works for the one-sensor case a
+    // person is debugging with, and names that sensor `--sensor-public-key` so
+    // the output never claims an identity nobody configured.
+    let roster: Vec<(String, [u8; 32])> = match a.sensor_public_key.as_deref() {
+        Some(hex) => {
+            sources.0.push("--sensor-public-key".to_string());
+            vec![("--sensor-public-key".to_string(), unhex32(hex, "--sensor-public-key")?)]
+        }
+        None => {
+            let cfg = c.ok_or_else(|| {
+                format!("needs a sensor roster, or --sensor-public-key for a single one — {why}")
+            })?;
+            sources.1.push("sensors".to_string());
+            cfg.roster()?
+        }
+    };
     // Optional on both sides, so it never forces a load of its own.
     let iface_str = a.iface.clone().or_else(|| c.and_then(|c| c.iface.clone()));
 
@@ -655,7 +673,7 @@ where
             Some(v) => v.parse().map_err(|_| "iface must be an IPv4 address".to_string())?,
             None => Ipv4Addr::UNSPECIFIED,
         },
-        sensor_public_key: unhex32(&pub_hex, "--sensor-public-key")?,
+        roster,
         group_key: unhex32(&group_hex, "--group-key")?,
         provenance: render_provenance(&sources, &from),
     })
@@ -1148,8 +1166,12 @@ fn cmd_watch(a: &Args) -> Result<(), String> {
     // it prints is silence, and silence has too many causes to guess between.
     println!("{}", r.provenance);
 
-    let verifying = VerifyingKey::from_bytes(&r.sensor_public_key)
-        .map_err(|_| "the sensor public key is not a valid ed25519 public key".to_string())?;
+    let mut sensors: Vec<(String, VerifyingKey)> = Vec::new();
+    for (name, key) in &r.roster {
+        let vk = VerifyingKey::from_bytes(key)
+            .map_err(|_| format!("{name}'s public key is not a valid ed25519 public key"))?;
+        sensors.push((name.clone(), vk));
+    }
     let group_key = GroupKey::from_bytes(r.group_key);
 
     let timeout = Duration::from_millis(500);
@@ -1170,23 +1192,42 @@ fn cmd_watch(a: &Args) -> Result<(), String> {
         missed_snapshots_before_alert: 3,
     };
     let started = Instant::now();
-    let mut sub = Subscription::new(Subscriber::new(verifying, group_key), cadence, 0);
+    let mut fleet = Fleet::new(sensors, group_key, cadence, 0).map_err(|e| e.to_string())?;
+    println!("watching {} sensor(s): {}", r.roster.len(), fleet.names().collect::<Vec<_>>().join(", "));
     let deadline = a.for_seconds.map(Duration::from_secs);
 
     loop {
         let now_ms = started.elapsed().as_millis() as u64;
         // A timeout is a TICK, not an error: it is the only chance a watcher
         // gets to notice that the stream has stopped.
-        let findings = match rx.next_tick().map_err(|e| format!("receive failed: {e}"))? {
-            Tick::Datagram(d) => sub.receive(&d, now_ms),
-            Tick::Quiet => sub.poll(now_ms),
-        };
-        for f in &findings {
-            println!("{}", render_finding(f));
+        match rx.next_tick().map_err(|e| format!("receive failed: {e}"))? {
+            Tick::Datagram(d) => match fleet.receive(&d, now_ms) {
+                Some((who, findings)) => {
+                    for f in &findings {
+                        println!("{who:<12} {}", render_finding(f));
+                    }
+                }
+                None => {
+                    // Attributed to NOBODY rather than to a neighbour: a
+                    // finding filed against the wrong sensor sends a reaction
+                    // to the wrong place.
+                    fleet.reject_unattributed();
+                    if bsc_lan_sense::emitloop::SendLog::should_report(fleet.unattributed()) {
+                        println!(
+                            "{:<12} a datagram no configured sensor signed — {} so far. Somebody is \
+                             injecting into the group, or a sensor is missing from the roster.",
+                            "UNKNOWN",
+                            fleet.unattributed()
+                        );
+                    }
+                }
+            },
+            Tick::Quiet => {}
         }
-        // Poll on every turn, so liveness surfaces even during steady traffic.
-        for f in sub.poll(now_ms) {
-            println!("{}", render_finding(&f));
+        // Polled on every turn, and EACH SENSOR SEPARATELY, so one healthy
+        // sensor cannot mask another's silence.
+        for (who, f) in fleet.poll(now_ms) {
+            println!("{who:<12} {}", render_finding(&f));
         }
         if let Some(d) = deadline {
             if started.elapsed() >= d {
@@ -1442,9 +1483,19 @@ pub fn render_config(v: &serde_json::Value) -> String {
                             serde_json::Value::Null => "—".to_string(),
                             serde_json::Value::Bool(x) => x.to_string(),
                             serde_json::Value::Number(x) => x.to_string(),
-                            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-                                "<structured>".to_string()
-                            }
+                            // The ROSTER, rendered as a roster. `<structured>`
+                            // would hide the one thing this report exists to
+                            // show: which sensors this host accepts, and the
+                            // public keys an operator copies between machines.
+                            serde_json::Value::Array(items) => items
+                                .iter()
+                                .map(|it| match (it["name"].as_str(), it["publicKey"].as_str()) {
+                                    (Some(n), Some(k)) => format!("{n} {k}"),
+                                    _ => it.to_string(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n                         "),
+                            serde_json::Value::Object(_) => "<structured>".to_string(),
                         };
                         s.push_str(&format!("      {k:<18} {shown}\n"));
                     }
@@ -1752,14 +1803,14 @@ mod tests {
             (vec!["watch".to_string()], "--group"),
             (
                 vec!["watch".into(), "--group".into(), "239.1.2.3:5140".into()],
-                "--sensor-public-key",
+                "--group-key",
             ),
             (
                 vec![
                     "watch".into(), "--group".into(), "239.1.2.3:5140".into(),
-                    "--sensor-public-key".into(), "a".repeat(64),
+                    "--group-key".into(), "a".repeat(64),
                 ],
-                "--group-key",
+                "roster",
             ),
         ] {
             let a = parse_args(argv).expect("parses");
@@ -1784,7 +1835,10 @@ mod tests {
             value: SubscriberConfig {
                 group: "239.9.9.9:5140".into(),
                 iface: Some("10.0.0.7".into()),
-                sensor_public_key: PUBK.into(),
+                sensors: vec![bsc_lan_sense::config::SensorIdentity {
+                    name: "monitor-pi".into(),
+                    public_key: PUBK.into(),
+                }],
                 group_key: GK.into(),
             },
             path: std::path::PathBuf::from("/etc/bsc-lan/subscriber.json"),
@@ -1796,7 +1850,9 @@ mod tests {
         let r = resolve_subscriber_with(&Args::default(), a_subscriber_config).expect("resolves");
         assert_eq!(r.group.to_string(), "239.9.9.9:5140");
         assert_eq!(r.iface.to_string(), "10.0.0.7");
-        assert_eq!(r.sensor_public_key[0], 0x11);
+        assert_eq!(r.roster.len(), 1);
+        assert_eq!(r.roster[0].0, "monitor-pi", "the sensor's NAME must survive resolution");
+        assert_eq!(r.roster[0].1[0], 0x11);
         assert_eq!(r.group_key[0], 0x22);
         // Provenance is the whole point of printing it: a silent watcher has
         // several causes, and "which config did it open" must not be one of
@@ -1816,7 +1872,7 @@ mod tests {
         .unwrap();
         let r = resolve_subscriber_with(&a, a_subscriber_config).expect("resolves");
         assert_eq!(r.group.to_string(), "239.1.1.1:6000", "the flag must win");
-        assert_eq!(r.sensor_public_key[0], 0x11, "the rest still comes from the file");
+        assert_eq!(r.roster[0].1[0], 0x11, "the rest still comes from the file");
         assert!(r.provenance.contains("--group from flags"), "{}", r.provenance);
         assert!(r.provenance.contains("subscriber.json"), "{}", r.provenance);
     }
@@ -1864,7 +1920,10 @@ mod tests {
         let sub = UC {
             group: "239.9.9.9:5140".into(),
             iface: None,
-            sensor_public_key: PUBK.into(),
+            sensors: vec![bsc_lan_sense::config::SensorIdentity {
+                name: "monitor-pi".into(),
+                public_key: PUBK.into(),
+            }],
             group_key: GK.into(),
         };
         let sen = SC {

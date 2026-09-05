@@ -32,7 +32,7 @@ fn documents(signing: &SigningKey, public: &VerifyingKey, group: [u8; 32]) -> (S
         hex(&group)
     );
     let subscriber = format!(
-        r#"{{"group":"239.10.20.30:5140","sensorPublicKey":"{}","groupKey":"{}"}}"#,
+        r#"{{"group":"239.10.20.30:5140","sensors":[{{"name":"monitor-pi","publicKey":"{}"}}],"groupKey":"{}"}}"#,
         hex(&public.to_bytes()),
         hex(&group)
     );
@@ -56,7 +56,7 @@ fn a_matched_pair_of_documents_carries_a_real_datagram() {
         [1u8; 16],
     );
     let subscriber = Subscriber::new(
-        VerifyingKey::from_bytes(&sub.sensor_public_key_bytes().unwrap()).expect("a valid public key"),
+        VerifyingKey::from_bytes(&sub.roster().unwrap()[0].1).expect("a valid public key"),
         GroupKey::from_bytes(sub.group_key_bytes().unwrap()),
     );
 
@@ -85,7 +85,7 @@ fn a_subscriber_holding_the_wrong_public_half_is_refused_not_ignored() {
         [1u8; 16],
     );
     let subscriber = Subscriber::new(
-        VerifyingKey::from_bytes(&sub.sensor_public_key_bytes().unwrap()).unwrap(),
+        VerifyingKey::from_bytes(&sub.roster().unwrap()[0].1).unwrap(),
         GroupKey::from_bytes(sub.group_key_bytes().unwrap()),
     );
 
@@ -113,7 +113,7 @@ fn a_mismatched_group_key_is_refused_too() {
         [1u8; 16],
     );
     let subscriber = Subscriber::new(
-        VerifyingKey::from_bytes(&sub.sensor_public_key_bytes().unwrap()).unwrap(),
+        VerifyingKey::from_bytes(&sub.roster().unwrap()[0].1).unwrap(),
         GroupKey::from_bytes(sub.group_key_bytes().unwrap()),
     );
     let datagram = sensor.seal(Kind::Delta, 0, [3u8; 12], b"x").unwrap();
