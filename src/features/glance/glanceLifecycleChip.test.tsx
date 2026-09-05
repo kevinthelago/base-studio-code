@@ -75,7 +75,23 @@ describe("the L0 lifecycle chip (#4062)", () => {
 });
 
 describe("the lifecycle vocabulary is written down three times — keep them in lockstep", () => {
-  const rust = readFileSync(join(process.cwd(), "crates/plandb/src/validate.rs"), "utf8");
+  // `plandb` COMPILES FROM THE GRAPH now (`plandb-compiles-from-the-graph`), so
+  // `crates/plandb/src/validate.rs` no longer exists — the module is the record `plandb--validate.rs`
+  // in the repo store, which is what `crates/graph-materialize/build.rs` materializes for the
+  // compiler. Reading the store is the same evidence this assertion always wanted, taken one step
+  // closer to the source of truth; reading the file would now be reading nothing at all. Same move,
+  // and the same reasoning, as `recordResolvers.test.ts` made for `bsc-ui--emit.rs`.
+  const store = JSON.parse(
+    readFileSync(join(process.cwd(), "graph/algorithms.json"), "utf8"),
+  ) as { implementations?: { id?: string; code?: string }[] };
+  const impls = store.implementations ?? [];
+  // NON-VACUITY, twice over: a store that parsed to nothing, or a record that has been renamed, must
+  // fail LOUDLY here rather than leaving `rust` an empty string — which would make the LIFECYCLES
+  // regex below report "not found in validate.rs" and send the next reader hunting a deleted file.
+  expect(impls.length).toBeGreaterThan(100);
+  const validate = impls.find((i) => i.id === "plandb--validate.rs")?.code;
+  expect(validate, "no `plandb--validate.rs` record in graph/algorithms.json").toBeTypeOf("string");
+  const rust = validate as string;
   const directive = readFileSync(join(process.cwd(), "src-tauri/data/stages/discovery.json"), "utf8");
 
   it("the Rust validator accepts exactly the TS `LIFECYCLES`", () => {

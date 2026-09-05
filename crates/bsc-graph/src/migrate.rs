@@ -1583,12 +1583,24 @@ mod materialize_plan_tests {
         assert!(mod_rs >= 20, "only {mod_rs} mod.rs files under src-tauri/src");
     }
 
-    /// NOTHING ALREADY MIGRATED CHANGES SHAPE. Driven over the REAL committed store and the REAL 50
-    /// opted-in crates: for each, the records `build.rs` selects and the file it renders must be
-    /// byte-identical to what the previous flat scheme produced.
+    /// NOTHING ALREADY MIGRATED CHANGES SHAPE. Driven over the REAL committed store and the REAL
+    /// opted-in crates: for each FLAT one, the records `build.rs` selects and the file it renders must
+    /// be byte-identical to what the previous flat scheme produced.
     ///
     /// The old scheme is reproduced inline (it is nine lines) rather than described, because "the output
     /// is unchanged" is the only claim that matters when a single file is the build input for 50 crates.
+    ///
+    /// A NESTED crate is EXCLUDED from the byte-identity arm, and that exclusion is the point rather
+    /// than a concession: the flat scheme cannot express a nested module at all — it `continue`s on any
+    /// `src` containing a `/` — so demanding byte-identity there would forbid exactly what nested
+    /// materialization exists to do. `plandb` became the first such crate on 2026-09-04 and turned this
+    /// test red; the fix is to scope the claim, not to weaken it.
+    ///
+    /// Excluding them silently would be the real hazard, so a nested crate is still CHECKED, just for a
+    /// different property: every module the store holds for it must appear in the rendered output. That
+    /// is what catches a nested unit being dropped on the floor. Nesting itself is pinned on synthetic
+    /// input by `a_nested_directory_becomes_a_nested_mod_tree`, and at depth in the real emitted file by
+    /// the offset probes recorded on `plandb-compiles-from-the-graph`.
     #[test]
     fn every_already_migrated_crate_renders_byte_identically_to_the_flat_scheme() {
         let root = repo();
@@ -1598,6 +1610,8 @@ mod materialize_plan_tests {
         let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
 
         let mut crates = 0usize;
+        let mut flat_crates = 0usize;
+        let mut nested_crates = 0usize;
         for entry in std::fs::read_dir(root.join("crates")).expect("crates/") {
             let dir = entry.expect("entry").path();
             let Some(krate) = dir.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
@@ -1607,6 +1621,63 @@ mod materialize_plan_tests {
             }
             crates += 1;
             let prefix = format!("crates/{krate}/src/");
+
+            // Does the store hold a NESTED module for this crate? If so the flat scheme has nothing to
+            // compare against — it skips those records entirely — so this crate takes the other arm.
+            let nested_srcs: Vec<&str> = impls
+                .iter()
+                .filter_map(|i| i.get("src")?.as_str()?.strip_prefix(&prefix))
+                .filter(|rest| rest.contains('/'))
+                .collect();
+            if !nested_srcs.is_empty() {
+                nested_crates += 1;
+                let units: Vec<Unit> = impls
+                    .iter()
+                    .filter_map(|i| {
+                        let src = i.get("src")?.as_str()?;
+                        let rest = src.strip_prefix(&prefix)?;
+                        let path = module_path(rest)?;
+                        let id = i.get("id")?.as_str()?;
+                        if id != expected_id(&krate, rest) {
+                            return None;
+                        }
+                        let vis = match i.get("moduleVis").and_then(|v| v.as_str()) {
+                            Some("private") | Some("") => String::new(),
+                            Some(v) => format!("{v} "),
+                            None => "pub ".to_string(),
+                        };
+                        let attrs: Vec<String> = i
+                            .get("moduleAttrs")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                            .unwrap_or_default();
+                        Some(Unit { id: id.into(), path, code: i.get("code")?.as_str()?.into(), vis, attrs })
+                    })
+                    .collect();
+                let ids: Vec<String> = units.iter().map(|u| u.id.clone()).collect();
+                // EVERY NESTED RECORD MUST BE SELECTED. Checking only `units.len()` would not bite:
+                // a crate's flat modules alone outnumber its nested ones, so a `module_path` that
+                // returned None for every nested path would still leave a comfortably large `units`.
+                // Name each one instead.
+                for rest in &nested_srcs {
+                    let want_id = expected_id(&krate, rest);
+                    assert!(
+                        ids.contains(&want_id),
+                        "crates/{krate}: nested module {rest} (id {want_id}) was not selected for rendering"
+                    );
+                }
+                let got = render(units, &krate, PREAMBLE).unwrap_or_else(|e| panic!("crates/{krate}: {e}"));
+                // NO MODULE IS DROPPED ON THE WAY OUT. Every selected record must have written its
+                // offset header into the output — the failure a blind `continue` here would hide.
+                for id in &ids {
+                    assert!(
+                        got.contains(&format!("// record `{id}` — line N here is line N-")),
+                        "crates/{krate}: record {id} never reached the rendered output"
+                    );
+                }
+                continue;
+            }
+            flat_crates += 1;
 
             // The scheme as it was: direct children of src/ only, module = basename, id = the
             // underscore-to-hyphen swap of that basename, sorted by module name.
@@ -1683,8 +1754,14 @@ mod materialize_plan_tests {
             let got = render(units, &krate, PREAMBLE).unwrap_or_else(|e| panic!("crates/{krate}: {e}"));
             assert_eq!(got, want, "crates/{krate} must render exactly as it did before");
         }
-        // POPULATION. A loop that found no opted-in crate would pass in silence.
+        // POPULATION. A loop that found no opted-in crate would pass in silence, and so would one that
+        // routed every crate down the (weaker) nested arm.
         assert!(crates >= 40, "only {crates} crates carry {} — the walk is wrong", super::MARKER);
+        assert_eq!(flat_crates + nested_crates, crates, "every opted-in crate took exactly one arm");
+        // Measured 2026-09-04: 51 opted-in, 50 flat, 1 nested (plandb). `flat_crates` FALLS as crates
+        // migrate nested modules, so this floor is deliberately well under it — it exists to catch the
+        // byte-identity arm going empty, not to pin a census.
+        assert!(flat_crates >= 30, "only {flat_crates} flat crates — the byte-identity claim is thinning");
     }
 
     /// Every `.rs` under `dir`, as a path relative to it, skipping dot-directories.
