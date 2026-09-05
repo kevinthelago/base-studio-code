@@ -109,77 +109,8 @@ pub enum DebugResult {
     Frames { frames: Vec<FrameInfo> },
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_request_round_trips_through_the_shared_envelope() {
-        let dir = tempfile::tempdir().unwrap();
-        let req = DebugRequest::Hit { x: 412.0, y: 300.5 };
-        bsc_appchan::write_request(dir.path(), "a", KIND, 1, &req).unwrap();
-
-        let env = bsc_appchan::pending(dir.path()).unwrap().pop().unwrap();
-        assert_eq!(env.kind, KIND, "routes to the debug handler, not shot/navigate");
-        assert_eq!(serde_json::from_value::<DebugRequest>(env.payload).unwrap(), req);
-    }
-
-    #[test]
-    fn the_op_tag_is_on_the_wire_so_the_frontend_dispatches_without_guessing() {
-        // A tagged enum keeps "which inspection" explicit. An untagged shape would make `probe` with no
-        // selector indistinguishable from `frames`, and the frontend would have to infer intent.
-        let json = serde_json::to_string(&DebugRequest::Probe { selector: ".ds-frame".into(), all: true }).unwrap();
-        assert_eq!(json, r#"{"op":"probe","selector":".ds-frame","all":true}"#);
-        assert_eq!(serde_json::to_string(&DebugRequest::Frames).unwrap(), r#"{"op":"frames"}"#);
-    }
-
-    #[test]
-    fn a_covered_element_names_its_coverer() {
-        // The whole reason this verb exists: "the rect is right, so why is it dead?"
-        let info = ElementInfo {
-            label: "iframe#preview".into(),
-            rect: [0.0, 0.0, 384.0, 441.0],
-            styles: [("pointer-events".to_string(), "auto".to_string())].into_iter().collect(),
-            topmost_at_centre: false,
-            covered_by: Some("div.overlay-scrim".into()),
-        };
-        let round = serde_json::from_str::<ElementInfo>(&serde_json::to_string(&info).unwrap()).unwrap();
-        assert_eq!(round, info);
-        assert!(!round.topmost_at_centre && round.covered_by.is_some());
-    }
-
-    #[test]
-    fn an_engine_that_never_answers_is_distinct_from_one_reporting_not_listening() {
-        // Absent  ⇒ the script never ran (threw, or the srcdoc never loaded).
-        // listening:false ⇒ it ran and knows it failed. Different bugs, so the shapes stay distinct.
-        let silent = FrameInfo {
-            component: "invoicespage".into(),
-            element: ElementInfo {
-                label: "iframe".into(),
-                rect: [0.0; 4],
-                styles: Default::default(),
-                topmost_at_centre: true,
-                covered_by: None,
-            },
-            engine_requested: true,
-            engine_in_srcdoc: true,
-            engine: None,
-        };
-        let json = serde_json::to_string(&silent).unwrap();
-        assert!(!json.contains("\"engine\""), "a silent engine is OMITTED, not null: {json}");
-        assert_eq!(serde_json::from_str::<FrameInfo>(&json).unwrap(), silent);
-    }
-
-    #[test]
-    fn an_empty_probe_match_is_a_result_not_an_error() {
-        let empty = DebugResult::Probe { matched: vec![] };
-        let ok = bsc_appchan::Reply::ok("a", &empty, 1);
-        assert_eq!(bsc_appchan::take_payload::<DebugResult>(ok).unwrap(), empty);
-    }
-}
-
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/cli.rs does not exist — it is a record in the
+// src/cli.rs, src/tests.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get bsc-debug--<module>.rs

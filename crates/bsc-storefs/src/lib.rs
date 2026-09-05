@@ -104,47 +104,8 @@ pub fn merge_under(dest: &mut Tree, prefix: &str, tree: Tree) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn slug_maps_rather_than_rejects() {
-        // Grouping keys routinely hold ':' (pane ids) and '/' (folders). Rejecting them would
-        // silently drop a whole index directory.
-        assert_eq!(slug("design-studio:designer-react"), "design-studio-designer-react");
-        assert_eq!(slug("features/settings/pages"), "features-settings-pages");
-        assert_eq!(slug(""), "unspecified");
-        assert_eq!(slug("///"), "unspecified");
-    }
-
-    #[test]
-    fn id_is_safe_refuses_traversal() {
-        assert!(!id_is_safe("../../etc/passwd"));
-        assert!(!id_is_safe(".hidden"));
-        assert!(!id_is_safe(""));
-        assert!(id_is_safe("a-star.rs"));
-        assert!(id_is_safe("phase-0-linux-port-viability"));
-    }
-
-    #[test]
-    fn merge_under_prefixes_every_key() {
-        let mut dest = Tree::new();
-        let mut t = Tree::new();
-        t.insert("items/a/status".into(), "open\n".into());
-        merge_under(&mut dest, "plan", t);
-        assert_eq!(dest["plan/items/a/status"], "open\n");
-    }
-
-    #[test]
-    fn lines_terminates_and_empties_cleanly() {
-        assert_eq!(lines(&[]), "");
-        assert_eq!(lines(&["a".into(), "b".into()]), "a\nb\n");
-    }
-}
-
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/coord.rs, src/graph.rs, src/plan.rs, src/ui.rs do not exist — they are records in the
+// src/coord.rs, src/graph.rs, src/plan.rs, src/tests.rs, src/ui.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get bsc-storefs--<module>.rs
