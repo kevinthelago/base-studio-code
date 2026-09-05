@@ -74,9 +74,11 @@
     /// `graph/algorithms.json`: `crates/graph-materialize/build.rs` inlines each record as a `mod`
     /// block, the file is deleted, and `lib.rs` loses its `mod x;` line along with it. MEASURED
     /// 2026-09-04, **80 record `src` paths under `crates/` have no file on disk at all**. `src-tauri`
-    /// cannot adopt that mechanism yet (it owns its own `build.rs`, and the materializer assumes a
-    /// `crates/<name>` layout), so it still has 141 files and 0 records — but its guards are the ones
-    /// that break the day that changes, which is what this resolver exists for.
+    /// still has 141 files and 0 records, but the two reasons it COULD not adopt are gone
+    /// (`graph-materialize-becomes-a-real-build-dependency`): the materializer is a package its own
+    /// `build.rs` now calls as a fifth job, and the repo root and source prefix are derived rather
+    /// than assumed to be `crates/<name>`. So its guards are the ones that break the day a module
+    /// moves, which is what this resolver exists for.
     ///
     /// A guard that reaches the tree through `read_dir` does not FAIL when a module migrates. Its
     /// population silently shrinks and it keeps passing over whatever is left — this repo's signature

@@ -19,6 +19,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# GRAPH MATERIALIZATION, as a real build-dependency
+# (`graph-materialize-becomes-a-real-build-dependency`). A package gets exactly ONE build script and
+# this one already has its own doing four jobs, so the `build = "../graph-materialize/build.rs"` line
+# the other 54 crates use is not available here — the shared file has to be CALLED instead. `build.rs`
+# runs it as a fifth job. NOTE this manifest still has no `build` key: cargo auto-detects `build.rs`,
+# which is why the collision was invisible to anyone diffing manifests.
+graph-materialize = { path = "../crates/graph-materialize" }
 
 [dependencies]
 bsc-sandbox = { path = "../crates/bsc-sandbox" }

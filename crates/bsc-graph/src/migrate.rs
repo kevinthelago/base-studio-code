@@ -1459,11 +1459,11 @@ mod tests {
         for n in &tree {
             assert_eq!(
                 Some(n.path.clone()),
-                super::materialize_plan::module_path(&n.file),
+                graph_materialize::module_path(&n.file),
                 "migrate-crate and build.rs must agree on which module src/{} is",
                 n.file
             );
-            assert_eq!(n.record_id("demo"), super::materialize_plan::expected_id("demo", &n.file));
+            assert_eq!(n.record_id("demo"), graph_materialize::expected_id("demo", &n.file));
         }
         // The children a directory module's record must NOT keep.
         let cli = tree.iter().find(|n| n.file == "cli.rs").expect("cli");
@@ -1483,22 +1483,18 @@ mod tests {
     }
 }
 
-/// The PURE PLANNING CORE of `crates/graph-materialize/build.rs`, included VERBATIM.
+/// The PLANNING CORE of the materializer, reached as a real dependency.
 ///
-/// `crates/graph-materialize` is not a package — it is a bare `build.rs` (plus this `plan.rs`) that 50
-/// crates point their `build =` key at — so it has no test target and nothing in it could be asserted
-/// except by compiling a crate and reading the output. Including the source here rather than restating
-/// it is the point: a restatement can drift from what the build runs, and the drift would be invisible
-/// exactly where it matters — the id derivation this file's own `migrate-crate` has to agree with.
-#[cfg(test)]
-#[allow(dead_code)]
-mod materialize_plan {
-    include!("../../graph-materialize/plan.rs");
-}
-
+/// `crates/graph-materialize` used to be a bare `build.rs` (plus a `plan.rs`) that 54 crates pointed
+/// their `build =` key at, and not a package at all — so it had no test target and this module had to
+/// `include!("../../graph-materialize/plan.rs")` to assert anything about it.
+/// `graph-materialize-becomes-a-real-build-dependency` made it a package, so the `include!` is gone and
+/// these tests drive the SHIPPED symbols. The reason the coupling exists at all is unchanged: the id
+/// derivation the build selects on has to equal the one `migrate-crate` names what it writes with, and
+/// a restatement of either would drift invisibly.
 #[cfg(test)]
 mod materialize_plan_tests {
-    use super::materialize_plan::{expected_id, module_path, render, Unit, PREAMBLE};
+    use graph_materialize::{expected_id, module_path, render, Unit, PREAMBLE};
     use std::path::{Path, PathBuf};
 
     fn repo() -> PathBuf {
@@ -1531,6 +1527,7 @@ mod materialize_plan_tests {
                 unit("plandb--cli.rs", &["cli"], "pub fn run() {}", "pub "),
             ],
             "plandb",
+            "crates/plandb/src/",
             PREAMBLE,
         )
         .expect("a parent and its child render");
@@ -1577,6 +1574,7 @@ mod materialize_plan_tests {
                 unit("bsc-news--signals--framing.rs", &["signals", "framing"], "pub fn f() {}", "pub "),
             ],
             "bsc-news",
+            "crates/bsc-news/src/",
             PREAMBLE,
         )
         .expect("mod.rs is the directory module");
@@ -1604,6 +1602,7 @@ mod materialize_plan_tests {
                 unit("k--z.rs", &["z"], &body(3), "pub "),
             ],
             "k",
+            "crates/k/src/",
             PREAMBLE,
         )
         .expect("three levels render");
@@ -1633,6 +1632,7 @@ mod materialize_plan_tests {
         let err = render(
             vec![unit("plandb--cli--nouns.rs", &["cli", "nouns"], "pub fn n() {}", "pub ")],
             "plandb",
+            "crates/plandb/src/",
             PREAMBLE,
         )
         .expect_err("an orphan child cannot be placed");
@@ -1651,6 +1651,7 @@ mod materialize_plan_tests {
                 unit("k--cli-old.rs", &["cli"], "pub fn b() {}", "pub "),
             ],
             "k",
+            "crates/k/src/",
             PREAMBLE,
         )
         .expect_err("one module, two records");
@@ -1664,6 +1665,7 @@ mod materialize_plan_tests {
                 unit("k--render--nouns.rs", &["render", "nouns"], "", "pub "),
             ],
             "k",
+            "crates/k/src/",
             PREAMBLE,
         )
         .expect("two modules named `nouns` under different parents are not a collision");
@@ -1765,12 +1767,12 @@ mod materialize_plan_tests {
         assert!(mod_rs >= 20, "only {mod_rs} mod.rs files under src-tauri/src");
     }
 
-    /// NOTHING ALREADY MIGRATED CHANGES SHAPE. Driven over the REAL committed store and the REAL 50
+    /// NOTHING ALREADY MIGRATED CHANGES SHAPE. Driven over the REAL committed store and the REAL 54
     /// opted-in crates: for each, the records `build.rs` selects and the file it renders must be
     /// byte-identical to what the previous flat scheme produced.
     ///
     /// The old scheme is reproduced inline (it is nine lines) rather than described, because "the output
-    /// is unchanged" is the only claim that matters when a single file is the build input for 50 crates.
+    /// is unchanged" is the only claim that matters when a single file is the build input for 54 crates.
     ///
     /// **A crate holding a NESTED record is out of scope, not an exception being waved through.** The
     /// flat scheme could not express a module below `src/`, so "as it did before" has no referent for a
@@ -1865,31 +1867,15 @@ mod materialize_plan_tests {
                 want.push_str(&format!("{code}\n}}\n"));
             }
 
-            // …and the same crate through the scheme this change installs.
-            let units: Vec<Unit> = impls
-                .iter()
-                .filter_map(|i| {
-                    let src = i.get("src")?.as_str()?;
-                    let rest = src.strip_prefix(&prefix)?;
-                    let path = module_path(rest)?;
-                    let id = i.get("id")?.as_str()?;
-                    if id != expected_id(&krate, rest) {
-                        return None;
-                    }
-                    let vis = match i.get("moduleVis").and_then(|v| v.as_str()) {
-                        Some("private") | Some("") => String::new(),
-                        Some(v) => format!("{v} "),
-                        None => "pub ".to_string(),
-                    };
-                    let attrs: Vec<String> = i
-                        .get("moduleAttrs")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
-                        .unwrap_or_default();
-                    Some(Unit { id: id.into(), path, code: i.get("code")?.as_str()?.into(), vis, attrs })
-                })
-                .collect();
-            let got = render(units, &krate, PREAMBLE).unwrap_or_else(|e| panic!("crates/{krate}: {e}"));
+            // …and the same crate through the SHIPPED selection, reached as a dependency rather than
+            // reproduced here. `graph-materialize` is a package now
+            // (`graph-materialize-becomes-a-real-build-dependency`), so this side of the comparison is
+            // the code the build actually runs; before, it was a restatement that could drift from it
+            // in exactly the direction this test exists to rule out.
+            let plan = graph_materialize::plan_for(&dir, Some(&root)).unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(plan.src_prefix, prefix, "the derived prefix must equal the one hard-coded before");
+            let units: Vec<Unit> = plan.select(impls);
+            let got = render(units, &krate, &prefix, PREAMBLE).unwrap_or_else(|e| panic!("crates/{krate}: {e}"));
             assert_eq!(got, want, "crates/{krate} must render exactly as it did before");
         }
         // POPULATION. A loop that found no opted-in crate would pass in silence.

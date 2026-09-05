@@ -7,15 +7,17 @@
 //
 // # Why this is a second file next to a build script
 //
-// `crates/graph-materialize` is not a package (it is a bare `build.rs` that 50 crates point their
-// `build =` key at), so it has no test target and nothing here could ever be asserted. Every rule
+// `crates/graph-materialize` was not a package — a bare `build.rs` that 54 crates point their
+// `build =` key at — so it had no test target and nothing here could ever be asserted. Every rule
 // below — which file is which module, which id says "this record IS that file", and the line-offset
-// arithmetic that makes a compiler error inside a 12,609-line record navigable — was previously
-// observable only by compiling a crate and reading the output.
+// arithmetic that makes a compiler error inside a 12,609-line record navigable — was observable only
+// by compiling a crate and reading the output.
 //
-// So the rules live here and are `include!`d in TWO places: by `build.rs`, which is what the build
-// actually runs, and by `crates/bsc-graph/src/migrate.rs`'s tests, which drive THIS SOURCE rather than
-// a copy of it. A copy would be a restatement that can drift; an `include!` cannot.
+// IT IS A PACKAGE NOW (`graph-materialize-becomes-a-real-build-dependency`), so `src/tests.rs` asserts
+// these rules directly. The file split survives that for a different reason: `build.rs` — what the 54
+// existing adopters compile — and `src/lib.rs` — what a crate at another depth takes as a
+// build-dependency and calls — `include!` THIS FILE and `emit.rs` beside it, so both entry points run
+// one implementation rather than a copy that can drift.
 //
 // # The nesting scheme (`graph-materialize-takes-nested-modules-and-mod-rs`)
 //
@@ -133,7 +135,10 @@ pub fn expected_id(crate_dir: &str, rest: &str) -> String {
 /// * nothing selected at all, which the caller reports because it knows the prefix it searched.
 ///
 /// `header` is the generated file's preamble and is emitted FIRST, because the offsets below are line
-/// numbers in the finished file.
+/// numbers in the finished file. `src_prefix` is the crate's repo-relative source root
+/// (`crates/plandb/src/`, `src-tauri/src/`) and appears ONLY in the missing-parent error, which has to
+/// name a real file — it was hard-coded as `crates/<crate>/src/` until a crate could sit at another
+/// depth (`graph-materialize-becomes-a-real-build-dependency`).
 ///
 /// # The offset header, at every depth
 ///
@@ -142,7 +147,7 @@ pub fn expected_id(crate_dir: &str, rest: &str) -> String {
 /// `offset + 1` and the subtraction is exact — which is the ONLY thing making a compiler error inside a
 /// 12,609-line record navigable. Bodies are emitted at COLUMN 0, never indented to their nesting depth,
 /// because indenting would change the columns a compiler error points at and buy nothing.
-pub fn render(mut units: Vec<Unit>, crate_dir: &str, header: &str) -> Result<String, String> {
+pub fn render(mut units: Vec<Unit>, crate_dir: &str, src_prefix: &str, header: &str) -> Result<String, String> {
     units.sort_by(|a, b| a.path.cmp(&b.path));
     if let Some(dup) = units.windows(2).find(|w| w[0].path == w[1].path) {
         return Err(format!(
@@ -163,7 +168,7 @@ pub fn render(mut units: Vec<Unit>, crate_dir: &str, header: &str) -> Result<Str
                 return Err(format!(
                     "module `{}` of crate `{crate_dir}` has no record for its parent `{}` — a nested \
                      module cannot be placed without one. Harvest the directory module itself \
-                     (`crates/{crate_dir}/src/{}.rs` or `crates/{crate_dir}/src/{}/mod.rs`) and promote it.",
+                     (`{src_prefix}{}.rs` or `{src_prefix}{}/mod.rs`) and promote it.",
                     p.join("::"),
                     parent.join("::"),
                     parent.join("/"),
