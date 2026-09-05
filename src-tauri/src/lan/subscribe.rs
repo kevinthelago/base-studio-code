@@ -38,7 +38,7 @@
 use std::time::{Duration, Instant};
 
 use bsc_lan_sense::receive::{MulticastReceiver, Tick};
-use bsc_lan_stream::crypto::{GroupKey, Subscriber};
+use bsc_lan_stream::crypto::GroupKey;
 use bsc_lan_stream::frame::Event;
 use bsc_lan_stream::liveness::{Cadence, Liveliness};
 use bsc_lan_stream::subscription::{Finding, Fleet};
