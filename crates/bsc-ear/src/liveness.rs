@@ -88,8 +88,9 @@ fn fft(re: &mut [f32], im: &mut [f32]) {
     }
 }
 
-/// Energy in one band of one Hann-windowed frame.
-fn band_energy(frame: &[f32], sample_rate: u32, band: (f32, f32)) -> f32 {
+/// Energy in one band of one Hann-windowed frame. Public so the diarizer builds a spectral
+/// envelope on the same windowed FFT the liveness probe uses, rather than a second copy.
+pub fn band_energy(frame: &[f32], sample_rate: u32, band: (f32, f32)) -> f32 {
     let n = frame.len();
     let mut re: Vec<f32> = frame
         .iter()
