@@ -1153,11 +1153,27 @@ mod outcome_tests {
 
     /// The decode must match what `child_outcome` actually does — a second copy that drifts would
     /// pass while the shipped line is wrong.
+    ///
+    /// "The shipped source" is RESOLVED by [`crate::testutil::module_source`] rather than
+    /// `include_str!`'d: the file this module lives in is the one `bsc graph migrate-crate src-tauri`
+    /// deletes. Post-migration the resolver returns this module's section of the materialized
+    /// `$OUT_DIR/crate.rs`, which is a stronger reading of "shipped" than a file ever was.
+    ///
+    /// # It searches the SHIPPED half only, and that is a fix, not a detail
+    ///
+    /// This used to `contains` over the whole module. MEASURED while repointing it: with the shipped
+    /// `signal_from_code` deliberately changed to `(1..=63)`, this test **passed** — because `describe`
+    /// directly above is the very second copy it exists to police, and its unchanged text satisfied the
+    /// search. A guard that its own subject can satisfy is not evidence about the subject. Cutting at
+    /// the first `#[cfg(test)]` is the same trim
+    /// `no_raw_escape_byte_survives_in_a_line_typed_into_a_shell` already uses next door, and it makes
+    /// the assertion mean what the sentence above always claimed.
     #[test]
     fn the_shipped_decode_is_the_one_under_test() {
-        let src = include_str!("pump.rs");
+        let src = crate::testutil::module_source("console/pty/pump.rs");
+        let shipped = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
         assert!(
-            src.contains("code.checked_sub(128).filter(|n| (1..=64).contains(n))"),
+            shipped.contains("code.checked_sub(128).filter(|n| (1..=64).contains(n))"),
             "child_outcome's signal decode changed — update `describe` in this module to match",
         );
     }
@@ -1256,7 +1272,11 @@ mod cage_death_tests {
     /// about later — and the slices below stop well short of this module for the same reason.
     #[test]
     fn the_signal_decode_has_exactly_one_definition_and_every_consumer_calls_it() {
-        let src = include_str!("pump.rs");
+        // RESOLVED, not `include_str!`'d — this module's file is one `bsc graph migrate-crate
+        // src-tauri` deletes, and the resolver falls through to the materialized `$OUT_DIR/crate.rs`
+        // section once it does. The bounded slices below are unchanged and still stop well short of
+        // this test module, so the guard cannot match its own string literals either way.
+        let src = crate::testutil::module_source("console/pty/pump.rs");
         const DECODE: &str = "checked_sub(128).filter(|n| (1..=64).contains(n))";
         let body_of = |f: &str| {
             let at = src.find(f).unwrap_or_else(|| panic!("{f} is here"));

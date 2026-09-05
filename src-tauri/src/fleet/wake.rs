@@ -410,9 +410,14 @@ mod tests {
     /// failure this epic has hit three times — a flip whose test passed with the call site reverted,
     /// because it exercised the extracted function directly. `apply` needs a live `AppHandle`, so the
     /// wiring is asserted where it is visible: in the source that ships.
+    ///
+    /// "The source that ships" is RESOLVED by [`crate::testutil::module_source`], never
+    /// `include_str!`'d: this module's file is one `bsc graph migrate-crate src-tauri` deletes, and
+    /// after it does the resolver returns this module's section of the materialized
+    /// `$OUT_DIR/crate.rs` — literally the text the compiler compiled.
     #[test]
     fn apply_actually_consults_the_override_before_emitting() {
-        let src = include_str!("wake.rs");
+        let src = crate::testutil::module_source("fleet/wake.rs");
         let apply = src.split("pub fn apply(").nth(1).expect("apply exists");
         let body = apply.split("\nfn ").next().unwrap_or(apply);
         assert!(

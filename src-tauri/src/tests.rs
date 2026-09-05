@@ -372,6 +372,200 @@
         );
     }
 
+    /// Every way a module can read ITS OWN source, as needles built from its path.
+    ///
+    /// Two shapes, because the two behave completely differently under migration and only one of them
+    /// is visible to the tool:
+    ///
+    /// * `include_str!("<basename>")` — compile time. `bsc graph migrate-crate` REFUSES `--apply` over
+    ///   this one (`refuse_reason`, lexically, so prose about it does not count).
+    /// * the module's own repo-relative path as a string literal, which is how a runtime disk read
+    ///   spells it — `Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shot/mod.rs")`, and equally the
+    ///   absolutized `concat!(env!("CARGO_MANIFEST_DIR"), "/src/shot/mod.rs")` that harvest rewrites a
+    ///   relative include into. **`migrate-crate` cannot see this one at all**, which is exactly why
+    ///   this guard exists rather than trusting the refusal.
+    ///
+    /// The needles are BUILT rather than written, so this file does not match itself on them.
+    fn self_read_needles(rel: &str) -> [(String, &'static str); 2] {
+        // (the tuple below is the whole body; see `code_lines` for why matching is comment-blind)
+        let base = rel.rsplit('/').next().unwrap_or(rel);
+        [
+            (format!("include_str!(\"{base}\")"), "include_str!"),
+            (format!("\"src/{rel}\""), "a manifest-rooted disk read"),
+        ]
+    }
+
+    /// NO MODULE OF THIS CRATE MAY READ ITS OWN SOURCE by a path the graph migration deletes.
+    ///
+    /// Five did — `console/pty/launch.rs`, `console/pty/pump.rs` (twice), `fleet/wake.rs`,
+    /// `session/persona_use.rs` and `shot/mod.rs` — and together they were the last blocker in front of
+    /// the 136 modules and 55,843 lines of this crate
+    /// (`three-src-tauri-modules-read-their-own-source`). Every one of them is a real guarantee that
+    /// nothing at run time can observe: no raw ESC byte in a line typed into a shell, the signal decode
+    /// `child_outcome` actually ships, a call site a pure unit test cannot reach. None of them is
+    /// deleted here — they are RESOLVED through [`crate::testutil::module_source`], which reads the
+    /// file while there is one and the materialized `$OUT_DIR/crate.rs` section once there is not.
+    ///
+    /// # Why this is a gate and not a note
+    ///
+    /// The fix repairs five instances; nothing stopped the sixth. `migrate-crate`'s own refusal is not
+    /// that gate for two reasons: it is lexical over `include_str!`, so it never sees the disk-read
+    /// spelling (`shot/mod.rs` was invisible to it and was found by strace), and it fires only when
+    /// somebody runs the migration — long after the module was written.
+    ///
+    /// # The exclusions are the migration's own buckets, not a convenience
+    ///
+    /// `lib.rs` and `main.rs` are crate ROOTS, never modules. A `tests.rs` is a `mod tests` and has
+    /// nothing to lift. Those are precisely the files `migrate-crate` leaves unplanned
+    /// (`the_real_src_tauri_dry_runs_and_writes_nothing` pins the buckets), so a self-read in one of
+    /// them survives migration untouched — which is why `tests.rs`'s own `include_str!("tests.rs")`
+    /// below is correct and stays.
+    #[test]
+    fn no_module_reads_its_own_source_by_a_path_the_migration_deletes() {
+        let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
+
+        // COMMENT LINES ARE NOT CODE, and here that is load-bearing rather than tidy. Every one of the
+        // five repointed guards now explains in prose what it USED to read, quoting the old
+        // `include_str!("<file>")` verbatim — so a raw `contains` over the whole module would report
+        // all five as live self-reads and this guard would be a permanent, wrong red. It is the same
+        // trap `migrate-crate`'s own `refuse_reason` hit and fixed lexically
+        // (`text_about_an_include_str_is_not_a_live_call`); a line filter is the proportionate version
+        // here. Its LIMIT, stated rather than hidden: a needle inside a block comment or a raw string
+        // literal is missed. `migrate-crate`'s refusal is the backstop for the `include_str!` half —
+        // this guard's unique reach is the disk-read half, which nothing else can see at all.
+        let code_lines = |text: &str| {
+            text.lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // NON-VACUITY, and it is a real one rather than a count: run the needle builder against the
+        // ONE legitimate self-read left in the tree — this file's own — and require it to fire. A
+        // needle that stopped matching (a spelling change, a formatting change) would otherwise report
+        // zero offenders over 140 modules, which reads exactly like a pass.
+        let me = units.iter().find(|u| u.rel == "tests.rs").expect("this file is in the walk");
+        let my_code = code_lines(&me.text);
+        assert!(
+            self_read_needles("tests.rs").iter().any(|(n, _)| my_code.contains(n.as_str())),
+            "the self-read needles no longer match this file's own `include_str!` of its own name, so \
+             this guard is scanning 140 modules for a shape it can no longer recognise",
+        );
+
+        let mut offenders: Vec<String> = Vec::new();
+        for u in &units {
+            let base = u.rel.rsplit('/').next().unwrap_or(&u.rel);
+            if u.rel == "lib.rs" || u.rel == "main.rs" || base == "tests.rs" {
+                continue; // never planned by `migrate-crate` — see the doc comment
+            }
+            let code = code_lines(&u.text);
+            for (needle, how) in self_read_needles(&u.rel) {
+                if code.contains(needle.as_str()) {
+                    offenders.push(format!("{} reads its own source via {how} (`{needle}`)", u.rel));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "a module reads its OWN source by a path `bsc graph migrate-crate src-tauri` deletes. The \
+             record cannot read a file that no longer exists, so this blocks the migration of the \
+             whole crate — and the disk-read spelling is invisible to the tool's own refusal, so it \
+             would break AFTER `--apply` succeeded. Resolve through `crate::testutil::module_source(\
+             \"<path under src/>\")` instead, which reads the materialized `$OUT_DIR/crate.rs` once \
+             the file is gone:\n  {}",
+            offenders.join("\n  "),
+        );
+    }
+
+    /// [`crate::testutil::module_source`]'s RECORD half reads what `graph-materialize` really emits.
+    ///
+    /// # Why this test has to exist, and why it cannot be a fixture
+    ///
+    /// `module_source` has two homes: the file, and this crate's section of `$OUT_DIR/crate.rs`. Today
+    /// this crate owns ZERO records, so the second half is **dead code that no test can reach** — and
+    /// it is the half every self-scanning guard falls onto the moment
+    /// `bsc graph migrate-crate src-tauri --apply` runs. Shipping it unexercised would mean five
+    /// behaviour guards break at exactly the moment nobody is looking at them.
+    ///
+    /// So this drives the REAL emitter — `graph_materialize::emit_into`, the same call
+    /// `src-tauri/build.rs` makes — over a temp store, and asks the real resolver to split the result.
+    /// A hand-written `crate.rs` fixture would prove only that this file agrees with itself: the
+    /// failure mode being guarded is the emitter's marker changing shape, and a fixture cannot see
+    /// that. VERIFIED end to end once, additionally, by planting a record for a module with no file at
+    /// all in the committed `graph/algorithms.json`, building, and watching `module_source` resolve it
+    /// out of the real `$OUT_DIR/crate.rs`.
+    ///
+    /// # What the depth-3 shape pins
+    ///
+    /// `render` puts CHILDREN INSIDE the parent, after the parent's own body — so a section runs from
+    /// its own marker to the NEXT marker, and a directory module (`console/pty/mod.rs`, and in the
+    /// real tree `shot/mod.rs`) must still yield its whole body before its children begin. A splitter
+    /// that took everything to the closing brace would hand `shot/mod.rs`'s guard its children's source
+    /// as well.
+    #[test]
+    fn the_resolver_reads_what_graph_materialize_actually_emits() {
+        let root = crate::testutil::unique_dir("bsc-materialize", "resolver");
+        let manifest = root.join("src-tauri"); // the manifest DIRECTORY — `crate_dir` is its name
+        std::fs::create_dir_all(root.join("graph")).expect("temp repo");
+        std::fs::create_dir_all(&manifest).expect("temp crate dir");
+        let out = root.join("out");
+        std::fs::create_dir_all(&out).expect("temp out dir");
+
+        // A depth-3 leaf and both of its parents. `render` refuses a nested module whose parent has no
+        // record, which is the same rule the real migration follows.
+        let record = |rel: &str, code: &str| {
+            serde_json::json!({
+                "id": graph_materialize::expected_id("src-tauri", rel),
+                "src": format!("src-tauri/src/{rel}"),
+                "code": code,
+            })
+        };
+        let store = serde_json::json!({
+            "implementations": [
+                record("console/mod.rs", "pub const CONSOLE_BODY: &str = \"console\";"),
+                record("console/pty/mod.rs", "pub const PTY_BODY: &str = \"pty\";"),
+                record("console/pty/launch.rs", "pub const LAUNCH_BODY: &str = \"launch\";"),
+            ]
+        });
+        std::fs::write(
+            root.join("graph").join("algorithms.json"),
+            serde_json::to_string(&store).expect("serializes"),
+        )
+        .expect("temp store");
+
+        let n = graph_materialize::emit_into(
+            &manifest,
+            &out,
+            Some(&root),
+            graph_materialize::Adoption::Required,
+        )
+        .expect("the real materializer emits these three");
+        assert_eq!(n, 3, "all three records are this crate's modules");
+
+        let crate_rs =
+            std::fs::read_to_string(out.join("crate.rs")).expect("the materializer wrote crate.rs");
+        let section = |id: &str| crate::testutil::record_section(&crate_rs, id);
+
+        // THE LEAF, by the id `migrate-crate` prints for `src/console/pty/launch.rs`.
+        let leaf = section("src-tauri--console--pty--launch.rs").expect("the leaf resolves by id");
+        assert!(leaf.contains("LAUNCH_BODY"), "{leaf}");
+
+        // THE PARENT ENDS WHERE ITS CHILD BEGINS — the property `shot/mod.rs` depends on.
+        let parent = section("src-tauri--console--pty--mod.rs").expect("the directory module resolves");
+        assert!(parent.contains("PTY_BODY"), "the parent's own body: {parent}");
+        assert!(
+            !parent.contains("LAUNCH_BODY"),
+            "a directory module's section must stop at its child's marker, or every `mod.rs` guard \
+             scans its children too: {parent}"
+        );
+
+        // An id nothing emitted is `None`, never an empty string — `module_source` turns that into the
+        // panic that stops a guard from silently scanning nothing.
+        assert!(section("src-tauri--console--pty--nope.rs").is_none());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Does one source line embed something out of `data/` at compile time?
     fn embeds_data(line: &str) -> bool {
         (line.contains("include_str!(") || line.contains("include_dir!(")) && line.contains("/data")
