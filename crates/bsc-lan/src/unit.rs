@@ -120,6 +120,28 @@ pub fn render(cfg: &SensorConfig, spec: &UnitSpec) -> Result<String, String> {
     // sensor that still attests its posture, and that is strictly better than
     // no sensor. The reverse -- refusing to start -- would trade a partial
     // stream for none over a USB device that may simply be slow to enumerate.
+    // TIER 2 COSTS EXACTLY ONE CAPABILITY AND ONE ADDRESS FAMILY, and saying so
+    // is the point: this unit's whole claim is that it holds nothing. A radio
+    // configured means the sensor watches for disconnect frames, which needs an
+    // AF_PACKET raw socket, which needs CAP_NET_RAW. Nothing else is added, the
+    // bounding set still names exactly that one, and a sensor with no radio
+    // keeps the empty set it had.
+    //
+    // The trade is worth stating rather than burying: a deauth flood is jamming
+    // performed with entirely legal frames and radiates no excess energy, so the
+    // spectral tier is blind to it BY CONSTRUCTION. Without this the sensor
+    // cannot see the attack at all.
+    let (caps, families) = match &cfg.radio {
+        Some(_) => (
+            "         CapabilityBoundingSet=CAP_NET_RAW\n         AmbientCapabilities=CAP_NET_RAW\n",
+            "         RestrictAddressFamilies=AF_INET AF_PACKET\n",
+        ),
+        None => (
+            "         CapabilityBoundingSet=\n         AmbientCapabilities=\n",
+            "         RestrictAddressFamilies=AF_INET\n",
+        ),
+    };
+
     let radio_ordering = match &cfg.radio {
         Some(_) => format!(
             "After={RADIO_UNIT_NAME}.service\nWants={RADIO_UNIT_NAME}.service\n"
@@ -156,8 +178,7 @@ pub fn render(cfg: &SensorConfig, spec: &UnitSpec) -> Result<String, String> {
          # debugfs cannot persistently widen that. The capabilities go back:\n\
          # uid 0 reads those files by ownership, not by CAP_DAC_OVERRIDE.\n\
          User=root\n\
-         CapabilityBoundingSet=\n\
-         AmbientCapabilities=\n\
+{caps}\
          NoNewPrivileges=yes\n\
          \n\
          # Where emit-only stops being a claim this code makes about itself.\n\
@@ -169,7 +190,7 @@ pub fn render(cfg: &SensorConfig, spec: &UnitSpec) -> Result<String, String> {
          # this unit can exchange a packet with is the collector.\n\
          SocketBindDeny=any\n\
          SocketBindAllow=ipv4:udp\n\
-         RestrictAddressFamilies=AF_INET\n\
+{families}\
          IPAddressDeny=any\n\
          IPAddressAllow={allow}\n\
          \n\
@@ -196,6 +217,8 @@ pub fn render(cfg: &SensorConfig, spec: &UnitSpec) -> Result<String, String> {
         snapshot_ms = spec.snapshot_ms,
         allow = allow,
         radio_ordering = radio_ordering,
+        caps = caps,
+        families = families,
     ))
 }
 
@@ -433,6 +456,31 @@ pub mod tests {
         // a standard tool will actively complain about.
         let u = render(&cfg("10.99.2.118:45142"), &spec()).unwrap();
         assert!(!u.contains("man:"), "the unit points at a man page that does not exist:\n{u}");
+    }
+
+    #[test]
+    fn a_radio_costs_exactly_one_capability_and_one_address_family() {
+        // The unit's whole claim is that it holds nothing, so what tier 2 costs
+        // has to be visible and bounded rather than a quiet widening.
+        let u = render(&cfg_with_radio("wlan1", 6), &spec()).unwrap();
+        assert!(u.contains("CapabilityBoundingSet=CAP_NET_RAW"), "{u}");
+        assert!(u.contains("AmbientCapabilities=CAP_NET_RAW"), "{u}");
+        assert!(u.contains("RestrictAddressFamilies=AF_INET AF_PACKET"), "{u}");
+        // And NOTHING else came with it.
+        for over in ["CAP_NET_ADMIN", "CAP_SYS_ADMIN", "AF_NETLINK", "AF_UNIX"] {
+            assert!(!u.contains(over), "{over} was granted alongside: {u}");
+        }
+    }
+
+    #[test]
+    fn a_sensor_with_no_radio_keeps_the_empty_capability_set() {
+        // A box that only attests its posture must not pay for a tier it does
+        // not run.
+        let u = render(&cfg("10.99.2.118:45142"), &spec()).unwrap();
+        assert!(u.contains("CapabilityBoundingSet=\n"), "{u}");
+        assert!(!u.contains("CAP_NET_RAW"), "{u}");
+        assert!(u.contains("RestrictAddressFamilies=AF_INET\n"), "{u}");
+        assert!(!u.contains("AF_PACKET"), "{u}");
     }
 
     #[test]

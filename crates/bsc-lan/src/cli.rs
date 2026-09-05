@@ -540,6 +540,9 @@ pub struct ResolvedSensor {
     pub destination: SocketAddrV4,
     pub sensor_key: [u8; 32],
     pub group_key: [u8; 32],
+    /// The interface to watch for disconnect frames, when one is configured.
+    /// Tier 2 needs a NAME, not just a channel: the capture binds an interface.
+    pub radio_iface: Option<String>,
     pub provenance: String,
 }
 
@@ -580,6 +583,7 @@ impl std::fmt::Debug for ResolvedSensor {
             .field("destination", &self.destination)
             .field("sensor_key", &"<redacted>")
             .field("group_key", &"<redacted>")
+            .field("radio_iface", &self.radio_iface)
             .field("provenance", &self.provenance)
             .finish()
     }
@@ -703,6 +707,7 @@ where
         destination: to.parse().map_err(|_| format!("destination must be <ipv4-addr>:<port>, got {to:?}"))?,
         sensor_key: unhex32(&key_hex, "--sensor-key")?,
         group_key: unhex32(&group_hex, "--group-key")?,
+        radio_iface: c.and_then(|c| c.radio.as_ref().map(|r| r.iface.clone())),
         provenance: render_provenance(&sources, &from),
     })
 }
@@ -780,6 +785,7 @@ pub fn render_finding(f: &Finding) -> String {
 
 
 fn cmd_sense(a: &Args) -> Result<(), String> {
+    use crate::capture::{retain_window, MonitorCapture};
     use bsc_lan_sense::emit::{Emitter, SnapshotPolicy};
     use bsc_lan_sense::emitloop::{events_for, fits_one_datagram, SendLog};
     use bsc_lan_sense::spectrum::{discover, read_samples, trigger, Mode};
@@ -869,6 +875,35 @@ fn cmd_sense(a: &Args) -> Result<(), String> {
     // posture rides on it. An unattended sensor is precisely the case where
     // every subscriber joins late, so a delta-only loop would leave all of
     // them permanently incomplete.
+    // TIER 2, and it is the only tier that can see a deauth flood at all: the
+    // attack is performed with entirely legal frames and radiates no excess
+    // energy, so the spectral tier is blind to it by construction.
+    //
+    // Opened only when a radio is configured, and a failure is REPORTED AND
+    // SURVIVED rather than fatal — the same rule the socket and the spectral
+    // path already follow. A sensor that refuses to start because it lacks
+    // CAP_NET_RAW would also stop attesting its own posture, which is worse
+    // than running with one tier missing and saying so.
+    let deauth_policy = bsc_rf::deauth::Policy::sensible();
+    let capture = match r.radio_iface.as_deref() {
+        None => None,
+        Some(iface) => match MonitorCapture::open(iface) {
+            Ok(c) => {
+                println!("watching {iface} for disconnect frames (tier 2)");
+                Some(c)
+            }
+            Err(e) => {
+                println!(
+                    "cannot watch {iface} for disconnect frames ({e}) — continuing without tier 2. \
+                     A deauth flood radiates no excess energy, so the spectral tier cannot see one."
+                );
+                None
+            }
+        },
+    };
+    let mut frames: Vec<bsc_rf::deauth::FrameObservation> = Vec::new();
+    let (mut deauth_seen, mut deauth_alerts) = (0u64, 0u64);
+
     let snapshot_ms = a.snapshot_ms.unwrap_or(10_000);
     let mut em = Emitter::new(sensor, transport, SnapshotPolicy { interval_ms: snapshot_ms });
 
@@ -908,6 +943,32 @@ fn cmd_sense(a: &Args) -> Result<(), String> {
                     if let Some(line) = log.record(Err(std::io::Error::other(e.to_string()))) {
                         println!("{line}");
                     }
+                }
+            }
+        }
+
+        // Drained BEFORE the spectral sleep, so a busy channel's frames are
+        // taken in the same window they arrived in rather than being attributed
+        // to the next one.
+        if let Some(cap) = capture.as_ref() {
+            deauth_seen += cap.drain(now_ms, 4_000, &mut frames) as u64;
+            retain_window(&mut frames, now_ms, deauth_policy.window_ms);
+            let verdict = bsc_rf::deauth::assess(&frames, now_ms, deauth_policy);
+            if let Some(ev) = bsc_lan_sense::rf::wire_event(&verdict) {
+                if fits_one_datagram(&ev) {
+                    match em.emit_event(ev) {
+                        Ok(_) => {
+                            deauth_alerts += 1;
+                            log.record(Ok(()));
+                        }
+                        Err(err) => {
+                            if let Some(line) = log.record(Err(std::io::Error::other(err.to_string()))) {
+                                println!("{line}");
+                            }
+                        }
+                    }
+                } else {
+                    oversized += 1;
                 }
             }
         }
@@ -996,12 +1057,14 @@ fn cmd_sense(a: &Args) -> Result<(), String> {
         "snapshots": snapshots,
         "barren_windows": barren,
         "oversized_events": oversized,
+        "frames_seen": deauth_seen,
+        "deauth_alerts": deauth_alerts,
         "snapshot_interval_ms": snapshot_ms,
         "to": to.to_string(),
     });
     bsc_cli_util::emit(a.pretty, a.json, &out, || {
         format!(
-            "{w} window(s) → {} datagram(s) to {to}\n  {snapshots} snapshot(s) every {snapshot_ms} ms, carrying this host's attested posture\n  {barren} window(s) produced no samples and sent NOTHING (silence is the subscriber's to report)\n  {} send(s) failed — an absent collector is not a fault, and never stops the sensor",
+            "{w} window(s) → {} datagram(s) to {to}\n  {snapshots} snapshot(s) every {snapshot_ms} ms, carrying this host's attested posture\n  {barren} window(s) produced no samples and sent NOTHING (silence is the subscriber's to report)\n  {deauth_seen} frame(s) inspected, {deauth_alerts} disconnect alert(s)\n  {} send(s) failed — an absent collector is not a fault, and never stops the sensor",
             log.sent, log.failures
         )
     });
