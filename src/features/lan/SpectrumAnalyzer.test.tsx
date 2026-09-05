@@ -419,6 +419,41 @@ describe("the analyzer window", () => {
     expect(screen.getByText(/Nothing to report yet/)).toBeTruthy();
   });
 
+  // The y axis overflowed the graph past roughly -112s: 900 rows of history
+  // drawn into a box with no definite height, so the column grew to its content
+  // and the tick gutter beside it painted a label for every row whether or not
+  // it was on screen. jsdom has no layout, so neither of the two properties
+  // below can be checked by measuring anything — they are asserted as the
+  // structure that makes the browser clip, which is what was actually missing.
+
+  it("bounds the waterfall column so its overflow clip has something to bite on", () => {
+    // A box sized by its content cannot overflow. `overflow: hidden` was
+    // already on this element and did nothing for exactly that reason; the
+    // definite height is the fix.
+    const { container } = render(
+      <SpectrumAnalyzer rows={[row({}, 2), row({}, 1)]} liveness={healthy} />,
+    );
+    const band = container.querySelector('[title*="sweeps"]');
+    const column = band?.parentElement as HTMLElement;
+    expect(column.style.overflow).toBe("hidden");
+    expect(column.style.flex).not.toBe("");
+    expect(column.style.minHeight).toBe("0px");
+    // and its parent must be the column flex that gives it that height
+    const outer = column.parentElement as HTMLElement;
+    expect(outer.style.flexDirection).toBe("column");
+    expect(outer.style.height).toBe("100%");
+  });
+
+  it("clips the time gutter, so no label can name a row that is not drawn", () => {
+    const { container } = render(
+      <SpectrumAnalyzer rows={[row({}, 2), row({}, 1)]} liveness={healthy} />,
+    );
+    const now = screen.getByText("now");
+    const gutter = now.parentElement as HTMLElement;
+    expect(gutter.style.position).toBe("absolute");
+    expect(gutter.style.overflow).toBe("hidden");
+  });
+
   it("shows assistant notes when there are any", () => {
     render(
       <SpectrumAnalyzer rows={[row()]} liveness={healthy} notes={["2437 MHz is congested."]} />,

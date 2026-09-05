@@ -1838,6 +1838,7 @@ mod tests {
                 sensors: vec![bsc_lan_sense::config::SensorIdentity {
                     name: "monitor-pi".into(),
                     public_key: PUBK.into(),
+                    position: None,
                 }],
                 group_key: GK.into(),
             },
@@ -1923,6 +1924,7 @@ mod tests {
             sensors: vec![bsc_lan_sense::config::SensorIdentity {
                 name: "monitor-pi".into(),
                 public_key: PUBK.into(),
+                position: None,
             }],
             group_key: GK.into(),
         };
