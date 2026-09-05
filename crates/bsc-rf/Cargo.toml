@@ -15,6 +15,9 @@ name = "bsc_rf"
 # The radio is plugged into the monitor Pi, so the tool must run THERE — and the
 # unified `bsc` carries bundled DuckDB against a device with 1.1 GB free on its
 # SD card. Same precedent as bsc-lan; tests/lean.rs keeps it honest.
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 [[bin]]
 name = "bsc-rf"
 path = "src/main.rs"
