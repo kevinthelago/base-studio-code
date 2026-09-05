@@ -1053,8 +1053,10 @@ dependencies = [
  "bsc-cli-util",
  "bsc-lan-sense",
  "bsc-lan-stream",
+ "bsc-rf",
  "ed25519-dalek",
  "getrandom 0.4.2",
+ "libc",
  "serde",
  "serde_json",
 ]

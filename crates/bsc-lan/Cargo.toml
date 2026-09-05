@@ -26,6 +26,11 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 # Key material must come from the OS CSPRNG. Nothing else is acceptable here and
 # a test pins that two runs differ.
 getrandom = "0.4"
+# The monitor-mode capture socket (src/capture.rs). AF_PACKET has no std
+# equivalent; bsc-rf stays libc-free so its lean-closure test keeps holding.
+libc = "0.2"
+# What a captured frame MEANS — parsing only; this crate owns the socket.
+bsc-rf = { path = "../bsc-rf" }
 
 [lints.clippy]
 wildcard_enum_match_arm = "deny"
