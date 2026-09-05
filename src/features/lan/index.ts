@@ -27,6 +27,8 @@ export {
   extentOf,
   rangeDb,
   timeTicks,
+  axisTicks,
+  tickAnchor,
   ROW_PX,
   CHANNEL_WIDTH_MHZ,
   UNOBSERVED,
