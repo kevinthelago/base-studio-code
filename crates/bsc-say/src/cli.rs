@@ -552,6 +552,7 @@ fn speak_with_piper(
                 target.display()
             )
         })?;
+    announce_speaking(&target);
     let result =
         spawn(&voice::play_command(platform, player, &target.display().to_string(), device));
     // A temp wav is ours to clean up whether or not playback worked.
@@ -616,6 +617,7 @@ fn speak_with_kokoro(
         .iter()
         .find_map(|p| on_path(p, platform).map(|_| *p))
         .ok_or("nothing on this machine can play audio — use --out to keep the file")?;
+    announce_speaking(&target);
     let result =
         spawn(&voice::play_command(platform, player, &target.display().to_string(), device));
     let _ = std::fs::remove_file(&target);
@@ -681,6 +683,37 @@ fn cmd_voice(a: &Args) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Publish a speaking deadline so `bsc ear` declines to record what we are about to say.
+///
+/// DEMONSTRATED before this existed: one announcement produced five captured segments, two of which
+/// transcribed as the app's own words. Always-on capture plus a speaking app is a loop.
+///
+/// The deadline covers the audio PLUS a tail, because playback ends when the file ends and the room
+/// keeps ringing — the tail is exactly what gets captured as a stray fragment. Best-effort
+/// throughout: a failure to write it must never stop the app speaking.
+fn announce_speaking(wav: &std::path::Path) {
+    let Some(path) = bsc_util::speaking_flag_path() else { return };
+    let secs = hound::WavReader::open(wav)
+        .ok()
+        .map(|r| r.duration() as f64 / r.spec().sample_rate.max(1) as f64)
+        .unwrap_or(0.0);
+    let until = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+        + (secs * 1000.0) as i64
+        + REVERB_TAIL_MS;
+    let _ = std::fs::write(path, until.to_string());
+}
+
+/// How long the room keeps ringing after playback stops.
+///
+/// A GUESS WITH A MEASUREMENT BEHIND IT, and it should become a measured value: the Scarlett heard
+/// monitor output across the desk at peak 0.19, so the path is loud enough for a tail to matter.
+/// Too short and a fragment of our own voice still lands; too long and the user's first words after
+/// an announcement are swallowed.
+const REVERB_TAIL_MS: i64 = 400;
 
 fn cmd_voices(a: &Args) -> Result<(), String> {
     let platform = host_platform()?;

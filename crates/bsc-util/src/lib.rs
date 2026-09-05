@@ -84,6 +84,19 @@ pub fn bsc_base_dir() -> Option<PathBuf> {
     home_dir().map(|h| h.join(".base-studio-code"))
 }
 
+/// The file `bsc say` publishes a speaking deadline into, so `bsc ear` can decline to record it.
+///
+/// It lives here rather than in either crate because BOTH need it and neither should depend on the
+/// other: the ear would drag ONNX Runtime into its build for a path, and the mouth would drag ALSA
+/// into its own. A shared constant is the cheapest thing that keeps them agreeing.
+///
+/// The contents are a single Unix-millisecond deadline. A deadline rather than a lock, because a
+/// crashed or killed speaker must not leave the ear deaf forever — an expired deadline simply
+/// stops mattering, where a lock file would have to be cleaned up by the process least able to.
+pub fn speaking_flag_path() -> Option<PathBuf> {
+    bsc_base_dir().map(|b| b.join("say-speaking"))
+}
+
 /// Current Unix time in **seconds** (0 if the clock is before the epoch).
 pub fn now_secs() -> i64 {
     SystemTime::now()
