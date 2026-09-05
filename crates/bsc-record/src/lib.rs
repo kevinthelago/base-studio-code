@@ -354,6 +354,148 @@ pub fn log_value(id: &str, record: &Value) -> Value {
     Value::Object(m)
 }
 
+// ── the carried-test manifest (`tests[]`) — ONE merge for every store that carries one ─────────────
+//
+// A record carries its tests as DATA (`tests: [{ name, src, ext? }]`), and FOUR write paths land one:
+// `bsc graph tests set` (the runtime store), the same verb's `--seed` half, `bsc ui tests set` (the
+// component store) and `bsc ui tests adopt` (the component SEED file). Three of those four REPLACED the
+// array with the single entry they were writing, and each replacement destroyed every sibling the record
+// carried — silently, at exit 0, with no gate able to see it: requests #220 and #221 lost a 27,648-byte
+// and a 12,293-byte carried test whose src/ file no longer existed, so the record was the only copy.
+//
+// They disagreed because there were four implementations of "write a test onto a record". There is one
+// now, and it lives HERE for the same reason `merge_over` does: this crate is the shared, serde_json-shaped
+// record surface that both `bsc-graph` and `bsc-component`/`bsc-ui` already depend on, and `bsc-util`'s
+// contract is std-only.
+
+/// The carried-test manifest field, on every store that has one.
+pub const TESTS: &str = "tests";
+
+/// The `tests[]` entry for `contents` read from `path`, named `name`.
+///
+/// Carries the file's REAL extension when the emitter models it (see [`bsc_util::test_source_ext`]):
+/// a writer that just read the file knows it for free, and leaving the emitter to GUESS from the body
+/// re-emits a `.ts` file holding a TypeScript generic as `.tsx`. Building it in ONE place is what stopped
+/// `bsc graph tests set` carrying `ext` into the runtime store and dropping it on the `--seed` half
+/// (request #200) — the two halves were building the entry twice.
+pub fn test_entry(path: &std::path::Path, name: &str, contents: &str) -> Value {
+    let mut entry = serde_json::Map::new();
+    entry.insert("name".to_string(), Value::from(name));
+    entry.insert("src".to_string(), Value::from(contents));
+    if let Some(ext) = bsc_util::test_source_ext(path) {
+        entry.insert("ext".to_string(), Value::from(ext));
+    }
+    Value::Object(entry)
+}
+
+/// Upsert ONE entry into a record's `tests` array BY NAME, preserving every sibling.
+///
+/// `existing` is the record's CURRENT `tests` value (`None`, `Null` or a non-array all read as "carries
+/// none"). An entry whose `name` already appears is replaced IN PLACE — so a re-pair of the same test
+/// keeps its position — and a new name is appended. Never removes anything, which is the whole point:
+/// `--src`/`--name` name exactly ONE test, and a record legitimately carries several.
+pub fn upsert_test(existing: Option<&Value>, entry: Value) -> Value {
+    let mut arr: Vec<Value> =
+        existing.and_then(Value::as_array).cloned().unwrap_or_default();
+    let name = entry.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+    match arr.iter().position(|t| t.get("name").and_then(Value::as_str) == Some(name.as_str())) {
+        Some(at) => arr[at] = entry,
+        None => arr.push(entry),
+    }
+    Value::Array(arr)
+}
+
+/// One carried test a write would LOSE — dropped outright (`now` is `None`) or truncated (`now` is the
+/// shorter byte length).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestLoss {
+    /// The entry's `name`, which is what the merge keys on.
+    pub name: String,
+    /// The stored entry's `src` length in bytes.
+    pub was: usize,
+    /// The proposed entry's `src` length in bytes, or `None` when the entry is gone entirely.
+    pub now: Option<usize>,
+}
+
+impl std::fmt::Display for TestLoss {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.now {
+            None => write!(f, "'{}' ({} bytes) would be DROPPED", self.name, self.was),
+            Some(n) => write!(f, "'{}' would shrink from {} to {} bytes", self.name, self.was, n),
+        }
+    }
+}
+
+/// Every carried test `after` loses relative to `before` — compared by NAME and BYTE LENGTH.
+///
+/// BYTE LENGTH, not entry count, and that is the whole design. Both measured losses replaced one array
+/// with another array of length one, so a guard that counted entries would have reported "1 before,
+/// 1 after — fine" while a 27,648-byte body became 1,513 bytes. The two real losses were only ever
+/// caught by a human diffing carried entries by byte length afterwards; this is that diff, run before
+/// the write instead of weeks later.
+///
+/// Pure, and ordered by the stored array so a report reads in the record's own order.
+pub fn lost_tests(before: Option<&Value>, after: Option<&Value>) -> Vec<TestLoss> {
+    let Some(prior) = before.and_then(Value::as_array) else { return Vec::new() };
+    let next: &[Value] = after.and_then(Value::as_array).map(|a| a.as_slice()).unwrap_or(&[]);
+    let src_len = |t: &Value| t.get("src").and_then(Value::as_str).unwrap_or_default().len();
+    prior
+        .iter()
+        .filter_map(|old| {
+            let name = old.get("name").and_then(Value::as_str).unwrap_or_default();
+            let was = src_len(old);
+            // An entry that carried nothing has nothing to lose — reporting it would fire on the
+            // placeholder entries a fixture writes and train a reader to ignore the refusal.
+            if was == 0 {
+                return None;
+            }
+            match next.iter().find(|t| t.get("name").and_then(Value::as_str) == Some(name)) {
+                None => Some(TestLoss { name: name.to_string(), was, now: None }),
+                Some(new) if src_len(new) < was => {
+                    Some(TestLoss { name: name.to_string(), was, now: Some(src_len(new)) })
+                }
+                Some(_) => None,
+            }
+        })
+        .collect()
+}
+
+/// REFUSE a `tests` write that would lose bytes from a test it did NOT name — the guard every
+/// tests-write path runs immediately before it persists.
+///
+/// `written` is the set of entry names this write is actually authoring. The split is the whole
+/// contract, and both halves matter:
+///
+///   - A test the write NEVER MENTIONED losing bytes is the defect: requests #220 and #221, where a
+///     new entry replaced the array and took a 27,648-byte and a 12,293-byte carried test with it.
+///     [`upsert_test`] makes that impossible by construction, so in normal operation this never fires
+///     — which is exactly why it is here. Nothing at run time can observe the ABSENCE of a merge, and
+///     the four write paths this consolidates spent months disagreeing about whether they did one.
+///   - A test the write DOES name getting shorter is the caller's own edit — a re-pair against a file
+///     that genuinely shrank — so refusing it would make `tests set` unable to update a test. It is
+///     RETURNED instead, so the verb reports it and the truncation is never SILENT, which is the
+///     property the guard exists for.
+pub fn guard_no_test_loss(
+    id: &str,
+    before: Option<&Value>,
+    after: Option<&Value>,
+    written: &[&str],
+) -> Result<Vec<TestLoss>, String> {
+    let (named, unnamed): (Vec<TestLoss>, Vec<TestLoss>) = lost_tests(before, after)
+        .into_iter()
+        .partition(|l| written.contains(&l.name.as_str()));
+    if unnamed.is_empty() {
+        return Ok(named);
+    }
+    Err(format!(
+        "refusing to write '{id}': it would lose {} carried test(s) this write never named — {}. A \
+         record's `tests` array is UPSERTED by name, never replaced; to remove an entry, remove it \
+         explicitly rather than overwriting the array.",
+        unnamed.len(),
+        unnamed.iter().map(TestLoss::to_string).collect::<Vec<_>>().join("; "),
+    ))
+}
+
 // This crate's modules are IN THE GRAPH, not in this directory.
 // src/record_source.rs does not exist — it is a record in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.

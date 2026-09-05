@@ -486,6 +486,51 @@ pub fn set_edge(g: &mut Value, e: Value) -> Result<bool, String> {
     }
 }
 
+/// Confirm an edge write actually LANDED — `sent` is the payload `set_edge` was given, `after` is the
+/// store as RE-READ FROM DISK once the write was persisted.
+///
+/// Request #222: `edge set` reported `{"ok":true}` for writes that were not in the store immediately
+/// afterwards — 2 of 55 sequential calls, measured. The runtime store is one shared JSON document that
+/// every writer rewrites WHOLE, so a concurrent session's save silently discards everything added
+/// between its own read and its write. `impl set` and `tests set` both carry `--if-version` for exactly
+/// this; an edge has no `rev` to compare against and there is no `edge history` to read one from, so the
+/// guarantee that IS available is to look and to FAIL rather than to report a write that is not there.
+///
+/// Checks PRESENCE and then every key the write supplied. Presence alone is not enough: the losing half
+/// of the race is just as often "another session's version of this id is what survived", and an edge
+/// whose members are somebody else's is a coverage claim over the wrong records rather than a missing one.
+///
+/// Pure, so both failure branches are provable without a real race. Extracted here rather than inlined in
+/// the verb for that reason — a check that can only be exercised by losing a race is a check nobody can
+/// show works.
+pub fn verify_edge_write(sent: &Value, after: &Value) -> Result<(), String> {
+    let id = sent.get("id").and_then(Value::as_str).unwrap_or_default();
+    let Some(landed) = edges_of(after)
+        .into_iter()
+        .find(|x| x.get("id").and_then(Value::as_str) == Some(id))
+    else {
+        return Err(format!(
+            "edge '{id}' is NOT in the store after writing it — a concurrent writer overwrote the whole \
+             document. Nothing here was corrupted; re-run the same `edge set` command."
+        ));
+    };
+    // A null in the payload MEANS "remove this key", so an absent key on the landed edge is the write
+    // succeeding, not failing.
+    if let Some(obj) = sent.as_object() {
+        for (k, v) in obj {
+            let got = landed.get(k.as_str());
+            let ok = if v.is_null() { got.is_none() } else { got == Some(v) };
+            if !ok {
+                return Err(format!(
+                    "edge '{id}' landed WITHOUT the '{k}' this write supplied — a concurrent writer \
+                     overwrote it between the write and the read-back. Re-run the same `edge set` command."
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Delete an edge by id. Returns whether one was removed.
 pub fn remove_edge(g: &mut Value, id: &str) -> bool {
     let Some(arr) = g.get_mut("edges").and_then(Value::as_array_mut) else {
