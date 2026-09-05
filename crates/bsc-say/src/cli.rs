@@ -97,6 +97,11 @@ TEXT NEVER REACHES A SHELL. It is passed as a single argv element or on the chil
 voice name reaches PowerShell through the environment rather than the script. This is not incidental
 — an agent speaks whatever it was told to speak, so the text is the least trustworthy input here.
 
+A SUCCESSFUL EXIT MEANS AUDIO WAS WRITTEN, NOT THAT ANYONE HEARD IT. There is no way to probe
+whether a human was in earshot, so `bsc say` cannot tell you. It played to ALSA `default` and
+returned 0 while the sound went to an unworn headset — `bsc say devices` is how you choose where it
+comes out, and the choice is remembered.
+
 WHICH ENGINE ANSWERS IS PROBED, NOT CONFIGURED. Piper when its binary and a voice both resolve,
 otherwise the OS speech service, and if you named one with --provider it is honoured or refused —
 never quietly swapped for the other. `bsc say voices` reports what was found and what was not.",
