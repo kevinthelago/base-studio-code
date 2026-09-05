@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import {
   SpectrumAnalyzer, binFrequencyMhz, binEdgesMhz, binDbm, rampColor, strengthFraction,
   spanOf, pushRow, rowGradient, isCurrent, ageLabel, emptyStateDiagnosis,
-  NEVER_HEARD, HISTORY, RAMP_DB, UNOBSERVED,
+  extentOf, rangeDb, NEVER_HEARD, HISTORY, MIN_RANGE_DB, UNOBSERVED,
   type SpectrumBins, type Liveness, type Row,
 } from "@/features/lan/SpectrumAnalyzer";
 
@@ -51,29 +51,48 @@ describe("bin geometry", () => {
 });
 
 describe("signal strength", () => {
-  it("reads a bin as decibels ABOVE the reported noise floor", () => {
-    // ath9k gives a magnitude and a floor, not a calibrated power, so the
-    // estimate is anchored to the floor the sensor actually reported.
-    expect(binDbm(1, -95)).toBeCloseTo(-95, 6);
-    expect(binDbm(10, -95)).toBeCloseTo(-75, 6);
-    expect(binDbm(255, -95)).toBeCloseTo(-95 + 20 * Math.log10(255), 6);
+  it("measures dB above the magnitude the floor actually corresponds to", () => {
+    // MEASURED: on this radio the quietest bins sit near magnitude 85, not 1.
+    // Anchoring at 1 put every real bin 38–48 dB "above the noise", so the band
+    // drew as saturated red and most of the ramp was unreachable.
+    expect(binDbm(85, -95, 85)).toBeCloseTo(-95, 6);
+    expect(binDbm(170, -95, 85)).toBeCloseTo(-95 + 20 * Math.log10(2), 6);
+    // Anchored at 1 the same bin would read ~38 dB hot — the bug, pinned.
+    expect(binDbm(85, -95, 1)).toBeCloseTo(-95 + 20 * Math.log10(85), 6);
   });
 
-  it("treats a zero magnitude as the floor, not as negative infinity", () => {
-    expect(Number.isFinite(binDbm(0, -95))).toBe(true);
-    expect(binDbm(0, -95)).toBe(-95);
-    expect(binDbm(-3, -95)).toBe(-95);
+  it("treats anything at or below the floor as the floor, never negative infinity", () => {
+    for (const m of [0, -3, 40, 85]) {
+      expect(binDbm(m, -95, 85)).toBe(-95);
+      expect(Number.isFinite(binDbm(m, -95, 85))).toBe(true);
+    }
   });
 
-  it("spends the ramp on strength that is actually representable", () => {
-    // A byte of magnitude is 20*log10(255) ≈ 48 dB. A wider ramp would squash
-    // every real signal into the bottom of the scale.
-    expect(RAMP_DB).toBeGreaterThanOrEqual(40);
-    expect(RAMP_DB).toBeLessThanOrEqual(60);
-    expect(strengthFraction(-95, -95)).toBe(0);
-    expect(strengthFraction(-95 + RAMP_DB, -95)).toBe(1);
-    expect(strengthFraction(-200, -95)).toBe(0);
-    expect(strengthFraction(0, -95)).toBe(1);
+  it("takes its range from what was actually seen, by quantile not by extreme", () => {
+    // One dead bin or one saturated sample must not set an endpoint and flatten
+    // everything between.
+    const rows: Row[] = [];
+    for (let i = 0; i < 20; i++) rows.push(row({ binMax: bins(56, 100 + i) }));
+    rows.push(row({ binMax: [0, ...bins(55, 255)] }));
+    const e = extentOf(rows);
+    expect(e.floorMag).toBeGreaterThan(1);
+    expect(e.floorMag).toBeLessThan(e.ceilMag);
+  });
+
+  it("refuses to magnify a flat band's own noise into a picture", () => {
+    // Every bin identical: without a floor on the RANGE the quantisation noise
+    // would be stretched across the whole ramp and drawn as violent structure.
+    const flat = Array.from({ length: 30 }, () => row({ binMax: bins(56, 120) }));
+    expect(rangeDb(extentOf(flat))).toBe(MIN_RANGE_DB);
+  });
+
+  it("puts the observed floor at the bottom of the ramp and the ceiling at the top", () => {
+    const rows = [row({ binMax: bins(56, 85) }), row({ binMax: bins(56, 255) })];
+    const e = extentOf(rows);
+    expect(strengthFraction(-95, -95, e)).toBe(0);
+    expect(strengthFraction(-95 + rangeDb(e), -95, e)).toBe(1);
+    expect(strengthFraction(-200, -95, e)).toBe(0);
+    expect(strengthFraction(0, -95, e)).toBe(1);
   });
 
   it("is monotonic, so a stronger bin is never drawn cooler than a weaker one", () => {
@@ -125,7 +144,7 @@ describe("the history", () => {
 
 describe("rowGradient", () => {
   it("paints one hard-edged block per bin", () => {
-    const g = rowGradient(row(), spanOf([row()])!);
+    const g = rowGradient(row(), spanOf([row()])!, extentOf([row()]));
     expect(g.startsWith("linear-gradient(to right,")).toBe(true);
     // Two stops per bin — the pair is what makes an edge hard instead of a fade.
     const stops = g.split(",").filter((s) => /%/.test(s));
@@ -138,7 +157,7 @@ describe("rowGradient", () => {
     // never listened.
     const rows = [row({ freqMhz: 2412 }), row({ freqMhz: 2462 })];
     const span = spanOf(rows)!;
-    const g = rowGradient(rows[0], span);
+    const g = rowGradient(rows[0], span, extentOf(rows));
     expect(g).toContain(UNOBSERVED);
     // The observed half must still be painted.
     expect(g).toMatch(/rgb\(\d+,\d+,\d+\)/);
@@ -146,13 +165,14 @@ describe("rowGradient", () => {
 
   it("fills the whole width when one channel IS the whole span", () => {
     const rows = [row()];
-    const g = rowGradient(rows[0], spanOf(rows)!);
+    const g = rowGradient(rows[0], spanOf(rows)!, extentOf(rows));
     expect(g).not.toContain(UNOBSERVED);
   });
 
   it("never divides by a zero span", () => {
-    expect(rowGradient(row(), { loMhz: 2437, hiMhz: 2437 })).toBe(UNOBSERVED);
-    expect(rowGradient({ at: 0, bins: sample({ binMax: [] }) }, { loMhz: 2427, hiMhz: 2447 })).toBe(UNOBSERVED);
+    const e = extentOf([row()]);
+    expect(rowGradient(row(), { loMhz: 2437, hiMhz: 2437 }, e)).toBe(UNOBSERVED);
+    expect(rowGradient({ at: 0, bins: sample({ binMax: [] }) }, { loMhz: 2427, hiMhz: 2447 }, e)).toBe(UNOBSERVED);
   });
 });
 
@@ -215,6 +235,7 @@ describe("the analyzer window", () => {
     // A number that looks calibrated and is not will be read as calibrated.
     render(<SpectrumAnalyzer rows={[row()]} liveness={healthy} />);
     expect(screen.getByText(/ESTIMATED as dB above the reported noise floor/)).toBeTruthy();
+    expect(screen.getByText(/scaled to the range actually observed/)).toBeTruthy();
     expect(screen.getByText(/per-bin PEAK across each window \(not a mean\)/)).toBeTruthy();
   });
 

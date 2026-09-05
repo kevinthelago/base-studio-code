@@ -23,7 +23,9 @@ export {
   emptyStateDiagnosis,
   NEVER_HEARD,
   HISTORY,
-  RAMP_DB,
+  MIN_RANGE_DB,
+  extentOf,
+  rangeDb,
   CHANNEL_WIDTH_MHZ,
   UNOBSERVED,
   type SpectrumBins,
@@ -31,4 +33,5 @@ export {
   type LivenessState,
   type Row,
   type Span,
+  type Extent,
 } from "@/features/lan/SpectrumAnalyzer";
