@@ -240,3 +240,12 @@ windows = { version = "0.61", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
 ] }
+
+[dev-dependencies]
+# THE MODULE-ID DERIVATION, so `testutil::module_source` never restates it
+# (`three-src-tauri-modules-read-their-own-source`). This crate's self-scanning guards resolve a module
+# through the materialized `$OUT_DIR/crate.rs` once it is a record, and the section they want is named
+# by the id `graph-materialize` DERIVED when it emitted it. A second copy of that derivation here could
+# disagree with what was actually written, and the guard would report a module missing that is right
+# there. It is already a `[build-dependencies]` entry above, so nothing new is compiled for the host.
+graph-materialize = { path = "../crates/graph-materialize" }

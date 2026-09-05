@@ -1033,21 +1033,50 @@ pub fn refuse_reason(shape: &CrateShape<'_>, route: Route) -> Option<String> {
     // exactly the case `absolutize_includes` was written for, and refusing it would put back the blocker
     // that change removed. So the test is not "does it include anything", it is "does it include one of
     // the files this migration is about to delete".
+    // TWO THINGS THIS REPORT GETS RIGHT THAT IT USED NOT TO, and both were paid for on `src-tauri`.
+    //
+    // 1. IT NAMES THE REAL PATH OF THE DOOMED MODULE. It used to compose `src/` with the BASENAME —
+    //    so a self-read in `src/console/pty/launch.rs` was reported as "src/launch.rs is one of the
+    //    files this migration deletes", naming a path that does not exist. The match is by stem
+    //    (`doomed` holds every planned module), so the matching entry is right there; printing it
+    //    instead of re-deriving one costs nothing.
+    //
+    // 2. IT REPORTS EVERY OFFENDER, not the first. Returning on the first meant a 136-module crate
+    //    surrendered its blockers ONE PER FIX-AND-RERUN — and each rerun is a full plan of the crate.
+    //    `src-tauri` had FOUR, and the reader who fixed `launch.rs` on the strength of this message
+    //    would have believed they were done.
+    //
+    // What it still cannot see is a module that reads its own source WITHOUT `include_str!` — the
+    // `Path::new(env!("CARGO_MANIFEST_DIR")).join("src/<self>.rs")` spelling, which is a RUNTIME read
+    // and so invisible to any lexical scan of includes. `src-tauri/src/shot/mod.rs` was exactly that,
+    // and it is guarded on the crate's own side
+    // (`no_module_reads_its_own_source_by_a_path_the_migration_deletes`) rather than pretended about
+    // here.
     let doomed: Vec<&str> = decls.iter().map(|n| n.file.trim_end_matches(".rs")).collect();
+    let mut self_reads: Vec<String> = Vec::new();
     for node in decls {
         let Some(src) = node.source.as_deref() else { continue };
         for target in include_str_targets(src) {
+            if !target.ends_with(".rs") {
+                continue;
+            }
             let stem = target.trim_end_matches(".rs");
             let stem = stem.rsplit('/').next().unwrap_or(stem);
-            if target.ends_with(".rs") && doomed.iter().any(|d| *d == stem || d.ends_with(&format!("/{stem}"))) {
-                return Some(format!(
-                    "src/{} reads `{target}` with include_str!, and src/{stem}.rs is one of the \
-                     files this migration deletes — the record cannot read a file that no longer exists. \
-                     Rewrite that read (or move what it asserts onto the record) first",
-                    node.file
-                ));
-            }
+            let Some(hit) = doomed.iter().find(|d| **d == stem || d.ends_with(&format!("/{stem}")))
+            else {
+                continue;
+            };
+            self_reads.push(format!("src/{} reads `{target}`, which is src/{hit}.rs", node.file));
         }
+    }
+    if !self_reads.is_empty() {
+        return Some(format!(
+            "{} module(s) read a file this migration DELETES, with include_str! — a record cannot read \
+             a file that no longer exists. Rewrite each read (or move what it asserts onto the record) \
+             first:\n  {}",
+            self_reads.len(),
+            self_reads.join("\n  "),
+        ));
     }
     // A relative `include_str!` USED TO BE REFUSED HERE and was the single largest blocker (5 crates).
     // It is not one any more: `absolutize_includes` rewrites it at harvest to
@@ -2243,6 +2272,40 @@ mod tests {
         assert!(why.contains("include_str!"), "names the mechanism: {why}");
         assert!(why.contains("src/cli.rs"), "names the file that goes away: {why}");
 
+        // IT NAMES THE MODULE'S REAL PATH, not `src/` plus the basename.
+        //
+        // MEASURED on the real `src-tauri`: a self-read in `src/console/pty/launch.rs` was reported as
+        // "…and src/launch.rs is one of the files this migration deletes" — a path that does not exist
+        // anywhere in the tree. The reader of a refusal is looking for a file to open, and this is the
+        // one line they get, so a wrong path is the whole cost of the message.
+        //
+        // AND IT REPORTS EVERY OFFENDER. Returning on the first meant a 136-module crate gave up its
+        // blockers one per fix-and-rerun; `src-tauri` had four, and stopping at the first would have
+        // told the reader they were done when they were a quarter done.
+        let nested = vec![
+            node(
+                &["console", "pty", "launch"],
+                "console/pty/launch.rs",
+                Some("fn t() { let s = include_str!(\"launch.rs\"); }"),
+            ),
+            node(
+                &["console", "pty", "pump"],
+                "console/pty/pump.rs",
+                Some("fn t() { let s = include_str!(\"pump.rs\"); }"),
+            ),
+        ];
+        let deep = CrateShape {
+            cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, dep: DEP, modules: &nested,
+            unreadable: &[],
+        };
+        let why = refuse_reason(&deep, Route::Shared).expect("both self-reads must be refused");
+        assert!(
+            why.contains("src/console/pty/launch.rs") && why.contains("src/console/pty/pump.rs"),
+            "every offender is named by its REAL path: {why}"
+        );
+        assert!(!why.contains("src/launch.rs"), "never `src/` + the basename: {why}");
+        assert!(why.contains("2 module(s)"), "the count says how many are left to fix: {why}");
+
         // …and the case this must NOT catch: `bsc-agent` includes ../data/agent-instructions.md, which
         // SURVIVES the migration. Refusing that would restore the blocker `absolutize_includes` removed.
         let survives = vec![node(
@@ -3216,22 +3279,39 @@ mod tests {
             .collect();
 
         let mut out: Vec<u8> = Vec::new();
-        // The crate RESOLVES and is PLANNED. `--apply` would still refuse it, for a reason that has
-        // nothing to do with where the directory is: three of its modules (`console/pty/launch.rs`,
-        // `console/pty/pump.rs`, `tests.rs`) `include_str!` their OWN source, which a record cannot do
-        // because the file is the thing being retired. That is a real blocker and out of scope here —
-        // this item's deliverable is that the tool can TARGET src-tauri, and the plan below is that.
+        // The crate RESOLVES, is PLANNED, and IS NO LONGER REFUSED.
+        //
+        // It used to be, and this assertion is inverted on purpose rather than deleted. Four of its
+        // modules — `console/pty/launch.rs`, `console/pty/pump.rs`, `fleet/wake.rs` and
+        // `session/persona_use.rs` — `include_str!`'d their OWN source, which a record cannot do
+        // because the file is the thing being retired; `three-src-tauri-modules-read-their-own-source`
+        // repointed all four (and `shot/mod.rs`, whose self-read was a RUNTIME disk read that no
+        // lexical scan here could ever have seen) at `crate::testutil::module_source`, which reads the
+        // materialized `$OUT_DIR/crate.rs` once the file is gone.
+        //
+        // A green `Ok` here is what says the 55,843 lines are unblocked, so it is asserted rather than
+        // left implicit — and `src/tests.rs` needed nothing, because a `mod tests` is never planned
+        // (see the `test_mods` bucket below) and so its own `include_str!("tests.rs")` survives.
         let verdict = run(&["src-tauri".into(), "--root".into(), root.to_string_lossy().to_string()], &mut out);
         let text = String::from_utf8(out).unwrap();
 
         assert!(text.contains("would migrate src-tauri"), "{text}");
-        assert!(text.contains("DRY RUN — nothing was written"), "{text}");
-        let why = verdict.expect_err("the self-reads still refuse --apply");
-        assert!(why.contains("include_str!"), "the blocker is the self-read, not the layout: {why}");
+        // THE CLEAN ENDING, not the refusing one. `run` prints "…and --apply would refuse:" when it
+        // has a reason and "pass --apply to write." when it does not, so which of the two closes this
+        // 136-line plan is the single line that says whether the crate is unblocked.
+        assert!(text.ends_with("DRY RUN — pass --apply to write.\n"), "{text}");
         assert!(
-            !why.contains("has neither lib.rs nor main.rs"),
-            "the DIRECTORY must resolve — that failure is what this item removed: {why}"
+            !text.contains("--apply would refuse"),
+            "the dry run must not print a refusal any more: {text}"
         );
+        if let Err(why) = &verdict {
+            panic!(
+                "`bsc graph migrate-crate src-tauri --apply` is refused again, and this is the largest \
+                 un-migrated body in the repo. If a module has started reading its own source, \
+                 `no_module_reads_its_own_source_by_a_path_the_migration_deletes` in \
+                 `src-tauri/src/tests.rs` names it and says what to do:\n{why}"
+            );
+        }
 
         let planned: Vec<&str> = text
             .lines()

@@ -285,9 +285,13 @@ mod ack_wire_tests {
 
     /// The sibling ack is unaffected ONLY because its fields are single-word. Pinned so that adding a
     /// multi-word field to it fails here rather than silently dropping at runtime.
+    ///
+    /// The source is RESOLVED by [`crate::testutil::module_source`], never `include_str!`'d: this
+    /// module's file is one `bsc graph migrate-crate src-tauri` deletes, and the resolver reads the
+    /// materialized `$OUT_DIR/crate.rs` section once it has.
     #[test]
     fn the_sibling_ack_has_no_multi_word_field_to_lose() {
-        let src = include_str!("persona_use.rs");
+        let src = crate::testutil::module_source("session/persona_use.rs");
         let start = src.find("pub struct PersonaUseAck {").expect("struct present");
         let body = &src[start..start + src[start..].find('}').expect("closing brace")];
         let multi: Vec<&str> = body

@@ -464,11 +464,20 @@ mod window_source_tests {
     /// lookup was removed is itself flagged as a hard-coded lookup. A scanner that cannot tell its
     /// subject from its own text is not evidence about the subject.
     ///
-    /// Read from disk rather than `include_str!` so a moved file fails loudly instead of silently
-    /// scanning a stale embedded copy.
+    /// RESOLVED through [`crate::testutil::module_source`], not read from a hard-coded path.
+    ///
+    /// This one is the reason a grep for `include_str!` is not the measurement. It read
+    /// `CARGO_MANIFEST_DIR/src/shot/mod.rs` off disk, so `migrate-crate`'s refusal — which is lexical
+    /// over `include_str!` — could not see it at all: clearing the four `include_str!` self-reads
+    /// would have let `--apply` proceed and left these three guards panicking on a file that no longer
+    /// existed. It was found by running the lib suite under `strace -e trace=openat,write
+    /// --test-threads=1` and correlating each `openat` under this crate's own `src/` with the harness
+    /// `write` announcing the running test.
+    ///
+    /// The resolver keeps the property this comment already claimed — a module that is in NEITHER home
+    /// is a panic naming both, never a silent empty scan.
     fn source() -> String {
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shot/mod.rs");
-        let text = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()));
+        let text = crate::testutil::module_source("shot/mod.rs");
         let code = match text.find("#[cfg(test)]") {
             Some(i) => &text[..i],
             None => panic!("no test module found — the trim is silently scanning the whole file"),

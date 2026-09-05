@@ -244,9 +244,15 @@ mod tests {
     ///
     /// Asserted over the SOURCE because the defect is invisible in a diff: a raw ESC renders as
     /// nothing in most viewers, so it reads as a missing escape rather than a wrong one.
+    ///
+    /// The source is RESOLVED, not `include_str!`'d — see [`crate::testutil::module_source`]. It used
+    /// to read `include_str!("launch.rs")`, which named the one file `bsc graph migrate-crate
+    /// src-tauri` deletes, and was the blocker in front of 136 modules. The resolver reads the file
+    /// while there is one and the materialized `$OUT_DIR/crate.rs` section once there is not, so this
+    /// guarantee gets STRONGER: it then reads the exact text the compiler compiled.
     #[test]
     fn no_raw_escape_byte_survives_in_a_line_typed_into_a_shell() {
-        let src = include_str!("launch.rs");
+        let src = crate::testutil::module_source("console/pty/launch.rs");
         // Skip this test's own doc comment, which necessarily names the byte it forbids.
         let body = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
         assert!(
