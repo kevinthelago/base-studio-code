@@ -98,6 +98,10 @@ pub struct CaptureConfig {
     pub budget: Budget,
     /// Where segments are written.
     pub dir: PathBuf,
+    /// The transcript store, so the retention sweep knows whose words are already safe. `None`
+    /// means nothing is known to be saved, and the sweep then holds audio for the full grace period
+    /// — the safe direction, since an ear with no transcriber should keep words longer, not shorter.
+    pub transcripts: Option<PathBuf>,
     /// Touched periodically so `bsc ear status` can tell a live daemon from a stale pid file.
     pub heartbeat: Option<PathBuf>,
     /// Where the daemon publishes what it is actually hearing, so `status` can report a dead input
@@ -197,13 +201,40 @@ pub fn held_segments(dir: &Path) -> Vec<HeldSegment> {
     held_segments_with(dir, &|_| false)
 }
 
+/// The segments whose words are already saved, read from the transcript store.
+///
+/// Read fresh on each sweep rather than cached. A sweep happens once per closed segment — seconds
+/// apart at best — and the store is measured at 288 bytes a row, so re-reading it costs less than
+/// keeping a cache honest would. A STALE cache here would be the expensive mistake: it would either
+/// hold audio nobody needs, or delete words nobody saved.
+fn transcribed_set(store: Option<&Path>) -> Vec<String> {
+    let Some(p) = store else { return vec![] };
+    let Ok(raw) = std::fs::read_to_string(p) else { return vec![] };
+    crate::transcript::parse(&raw).0.into_iter().map(|t| t.segment).collect()
+}
+
 /// Apply the retention plan. Returns how many files went.
-pub fn sweep(dir: &Path, budget: &Budget, protect: Option<&str>) -> u64 {
-    let plan = retention::plan_eviction(now_ms(), &held_segments(dir), budget, protect);
+///
+/// `store` is the transcript file, when there is one. Its absence means nothing is known to be
+/// saved, and the sweep then holds audio for the full grace period before letting any of it go —
+/// the safe direction, because an ear with no transcriber should keep words longer, not shorter.
+pub fn sweep(dir: &Path, budget: &Budget, protect: Option<&str>, store: Option<&Path>) -> u64 {
+    let done = transcribed_set(store);
+    let held = held_segments_with(dir, &|name| done.iter().any(|d| d == name));
+    let plan = retention::plan_eviction(now_ms(), &held, budget, protect);
     let mut gone = 0;
     for e in &plan.delete {
         if std::fs::remove_file(dir.join(&e.name)).is_ok() {
             gone += 1;
+        }
+        if e.cause == retention::Cause::LostUntranscribed {
+            // A loss, not housekeeping. Said out loud, because the words are gone and the only
+            // thing worse than losing them is losing them quietly.
+            eprintln!(
+                "bsc ear: evicted {} WITHOUT a transcript — its words are gone. The transcriber is \
+                 not keeping up, or is not running.",
+                e.name
+            );
         }
     }
     gone
@@ -321,6 +352,8 @@ pub struct Recorder {
     written: u64,
     dir: PathBuf,
     budget: Budget,
+    /// The transcript store, consulted by the retention sweep.
+    store: Option<PathBuf>,
     progress: Progress,
     seq: u64,
 }
@@ -335,6 +368,16 @@ pub enum Recorded {
 
 impl Recorder {
     pub fn new(dir: PathBuf, vad: VadConfig, budget: Budget) -> Result<Self, String> {
+        Recorder::with_store(dir, vad, budget, None)
+    }
+
+    /// A recorder that tells the sweep where the transcripts are.
+    pub fn with_store(
+        dir: PathBuf,
+        vad: VadConfig,
+        budget: Budget,
+        store: Option<PathBuf>,
+    ) -> Result<Self, String> {
         vad.validate()?;
         std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
         let preroll = PreRoll::new(vad.preroll_ms);
@@ -345,6 +388,7 @@ impl Recorder {
             written: 0,
             dir,
             budget,
+            store,
             progress: Progress::default(),
             seq: 0,
         })
@@ -397,7 +441,7 @@ impl Recorder {
                     w.finalize().map_err(|e| format!("could not finalize {fname}: {e}"))?;
                     self.progress.kept += 1;
                     let ms = self.written_ms();
-                    self.progress.evicted += sweep(&self.dir, &self.budget, Some(&fname));
+                    self.progress.evicted += sweep(&self.dir, &self.budget, Some(&fname), self.store.as_deref());
                     Some(Recorded::Kept { name: fname, ms })
                 }
                 None => None,
@@ -535,7 +579,8 @@ pub fn run(
     stream.play().map_err(|e| format!("could not start '{name}': {e}"))?;
     on_event(format!("listening on '{name}' ({channels}ch @ {in_hz}Hz → mono @ {TARGET_HZ}Hz)"));
 
-    let mut rec = Recorder::new(cfg.dir.clone(), cfg.vad.clone(), cfg.budget)?;
+    let mut rec =
+        Recorder::with_store(cfg.dir.clone(), cfg.vad.clone(), cfg.budget, cfg.transcripts.clone())?;
     let mut pending: Vec<f32> = Vec::new();
     let flen = audio::frame_len(cfg.vad.frame_ms);
     let mut last_beat = std::time::Instant::now();
@@ -613,7 +658,7 @@ pub fn run(
     }
     let mut progress = rec.progress();
     drop(stream);
-    progress.evicted += sweep(&cfg.dir, &cfg.budget, None);
+    progress.evicted += sweep(&cfg.dir, &cfg.budget, None, cfg.transcripts.as_deref());
     Ok(progress)
 }
 
@@ -786,6 +831,66 @@ mod tests {
         assert!(held <= 200_000, "the bound must hold on disk, {held} bytes remain");
         assert!(!wavs(&t.0).is_empty(), "but it must not delete everything");
         assert!(r.progress().evicted > 0, "and it must say it evicted something");
+    }
+
+/// THE WIRING, not just the policy. `retention` knows a transcribed segment may go; this proves
+    /// the sweep actually READS the store to find out which those are. Without it the interlock is
+    /// correct and permanently pessimistic — it would hold every segment for the full grace period
+    /// forever, because nothing would ever be reported as saved.
+    #[test]
+    fn the_sweep_reads_the_transcript_store_to_learn_what_is_safe() {
+        use crate::retention::Budget;
+        use crate::transcript::Transcript;
+        let t = tmp("sweepstore");
+        std::fs::create_dir_all(&t.0).unwrap();
+        // Two segments, both well past a one-minute window.
+        let old = now_ms() - 60 * 60 * 1000;
+        for n in ["saved", "unsaved"] {
+            let name = format!("seg-{old}-{}.wav", if n == "saved" { "001" } else { "002" });
+            let mut w = hound::WavWriter::create(t.0.join(&name), spec()).unwrap();
+            for _ in 0..16_000 {
+                w.write_sample(0i16).unwrap();
+            }
+            w.finalize().unwrap();
+        }
+        let store = t.0.join("transcripts.jsonl");
+        let saved = Transcript {
+            segment: format!("seg-{old}-001.wav"),
+            started_unix_ms: old,
+            seconds: 1.0,
+            language: "en".into(),
+            text: "already written down".into(),
+            live: Some(true),
+        };
+        std::fs::write(&store, crate::transcript::render(&[&saved]).unwrap()).unwrap();
+
+        // Grace long enough that the unsaved one is still protected — the point is that the store
+        // is CONSULTED, not that grace expires. A short grace here would evict both and the test
+        // would pass for the wrong reason.
+        let budget =
+            Budget { max_bytes: u64::MAX, max_age_ms: 60_000, transcribe_grace_ms: 4 * 60 * 60 * 1000 };
+        let gone = sweep(&t.0, &budget, None, Some(&store));
+        let left: Vec<String> = wavs(&t.0);
+        assert_eq!(gone, 1, "exactly the transcribed one should go");
+        assert_eq!(left.len(), 1);
+        assert!(left[0].ends_with("-002.wav"), "the UNSAVED one must survive: {left:?}");
+    }
+
+    /// With no store, nothing is known to be saved and everything is held — the safe direction.
+    #[test]
+    fn without_a_store_the_sweep_holds_rather_than_deletes() {
+        use crate::retention::Budget;
+        let t = tmp("nostore");
+        std::fs::create_dir_all(&t.0).unwrap();
+        let old = now_ms() - 60 * 60 * 1000;
+        let mut w = hound::WavWriter::create(t.0.join(format!("seg-{old}-001.wav")), spec()).unwrap();
+        for _ in 0..16_000 {
+            w.write_sample(0i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let budget = Budget { max_bytes: u64::MAX, max_age_ms: 60_000, transcribe_grace_ms: 60 * 60 * 1000 };
+        assert_eq!(sweep(&t.0, &budget, None, None), 0, "an ear with no transcriber keeps its words");
+        assert_eq!(wavs(&t.0).len(), 1);
     }
 
     #[test]

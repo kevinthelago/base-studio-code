@@ -313,6 +313,7 @@ fn capture_config(a: &Args, p: &Paths, heartbeat: bool) -> CaptureConfig {
         vad: VadConfig::default(),
         budget: budget(a.window_min),
         dir: p.audio(),
+        transcripts: Some(transcript_path(p)),
         heartbeat: heartbeat.then(|| p.beat()),
         state: heartbeat.then(|| p.state()),
     }
