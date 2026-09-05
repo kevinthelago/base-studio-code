@@ -143,12 +143,28 @@ describe("the history", () => {
 });
 
 describe("rowGradient", () => {
-  it("paints one hard-edged block per bin", () => {
+  it("places one stop per measured bin CENTRE and interpolates between them", () => {
+    // The radio's resolution is 56 samples either way; drawing them as 17px
+    // blocks was a staircase, not more truth. Each measured value still lands
+    // exactly where it was measured.
     const g = rowGradient(row(), spanOf([row()])!, extentOf([row()]));
     expect(g.startsWith("linear-gradient(to right,")).toBe(true);
-    // Two stops per bin — the pair is what makes an edge hard instead of a fade.
-    const stops = g.split(",").filter((s) => /%/.test(s));
-    expect(stops.length).toBeGreaterThanOrEqual(56 * 2);
+    const stops = g.split(",").filter((x) => /%/.test(x));
+    // 56 centres plus the two edge anchors that carry the first and last value
+    // out to the channel boundary.
+    expect(stops.length).toBe(58);
+  });
+
+  it("keeps the unobserved margins HARD-edged rather than fading into them", () => {
+    // A fade would blur the boundary between "quiet" and "never looked at",
+    // which is the one distinction this display exists to keep.
+    const rows = [row({ freqMhz: 2412 }), row({ freqMhz: 2462 })];
+    const g = rowGradient(rows[0], spanOf(rows)!, extentOf(rows));
+    // The margin colour appears TWICE in a row — a pair of stops at the same
+    // colour is what makes an edge hard instead of a gradient.
+    const first = g.indexOf(UNOBSERVED);
+    const second = g.indexOf(UNOBSERVED, first + 1);
+    expect(second).toBeGreaterThan(first);
   });
 
   it("leaves frequency nobody looked at visibly UNOBSERVED, not quiet", () => {

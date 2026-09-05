@@ -1494,7 +1494,7 @@ fn cmd_unit(a: &Args) -> Result<(), String> {
             .parent()
             .map(|p| p.display().to_string())
             .ok_or("the sensor config has no parent directory")?,
-        interval_ms: a.interval_ms.unwrap_or(1000),
+        interval_ms: a.interval_ms.unwrap_or(crate::unit::DEFAULT_INTERVAL_MS),
         snapshot_ms: a.snapshot_ms.unwrap_or(10_000),
         ephemeral_ports: ephemeral_port_range(),
     };

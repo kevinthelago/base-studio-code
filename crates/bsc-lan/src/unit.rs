@@ -78,6 +78,19 @@ pub const DEFAULT_EPHEMERAL_PORTS: (u16, u16) = (32768, 60999);
 /// The unit's canonical name, without the `.service` suffix.
 pub const UNIT_NAME: &str = "bsc-lan-sense";
 
+/// How often the sensor aggregates a window and emits it, in milliseconds.
+///
+/// THIS NUMBER IS THE WATERFALL'S TIME RESOLUTION: one emitted window is one
+/// row, so a 1000 ms interval means every row is a second of air smeared
+/// together and a burst shorter than that cannot be told from a steady signal.
+///
+/// 250 ms costs almost nothing. The radio produces roughly 666 sweeps a second
+/// and the aggregation keeps the per-bin MAXIMUM, so a shorter window discards
+/// less rather than more; the wire is capped at 20 datagrams a second and this
+/// uses four. What it buys is four times the vertical resolution and a burst
+/// that survives aggregation instead of being averaged into its neighbours.
+pub const DEFAULT_INTERVAL_MS: u64 = 250;
+
 /// The companion oneshot that tunes the radio, without the `.service` suffix.
 pub const RADIO_UNIT_NAME: &str = "bsc-lan-radio";
 
@@ -307,7 +320,7 @@ pub mod tests {
         UnitSpec {
             binary: "/home/lan/.bsc-deploy/bsc-lan.current".into(),
             config_dir: "/etc/bsc-lan".into(),
-            interval_ms: 1000,
+            interval_ms: DEFAULT_INTERVAL_MS,
             snapshot_ms: 10_000,
             ephemeral_ports: DEFAULT_EPHEMERAL_PORTS,
         }
@@ -456,6 +469,20 @@ pub mod tests {
         // a standard tool will actively complain about.
         let u = render(&cfg("10.99.2.118:45142"), &spec()).unwrap();
         assert!(!u.contains("man:"), "the unit points at a man page that does not exist:\n{u}");
+    }
+
+    #[test]
+    fn the_emit_interval_is_the_waterfalls_time_resolution() {
+        // One emitted window is one row on the display, so this constant is not
+        // a tuning knob — it decides whether a burst can be told from a steady
+        // signal at all. Pinned so a later "quieter default" is a decision
+        // somebody makes rather than a regression nobody sees.
+        assert_eq!(DEFAULT_INTERVAL_MS, 250);
+        // Four a second against a wire capped at twenty: the headroom is the
+        // reason this is affordable.
+        assert!(1_000 / DEFAULT_INTERVAL_MS <= 20);
+        let u = render(&cfg("10.99.2.118:45142"), &spec()).unwrap();
+        assert!(u.contains("--interval 250"), "{u}");
     }
 
     #[test]
