@@ -135,11 +135,28 @@ fn installed_voice_files() -> Vec<String> {
         .collect()
 }
 
+/// Where espeak-ng lives — PATH first, then the copy piper bundles.
+///
+/// Kokoro needs a grapheme-to-phoneme step and piper already ships one, so on a machine with piper
+/// installed this costs nothing extra. Looked up rather than assumed, because the bundled copy is
+/// an implementation detail of a different provider and may not be there.
+fn find_espeak(platform: Platform) -> Option<(PathBuf, PathBuf)> {
+    if let Some(p) = on_path("espeak-ng", platform) {
+        let data = p.parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        return Some((p, data));
+    }
+    let bundled = bsc_util::home_dir()?.join(".local/share/piper");
+    let exe = bundled.join(if platform == Platform::Windows { "espeak-ng.exe" } else { "espeak-ng" });
+    exe.is_file().then_some((exe, bundled))
+}
+
 /// What actually resolved on this machine.
 struct Probed {
     considered: Vec<Availability>,
     /// (piper binary, model path) when both halves are present.
     piper: Option<(PathBuf, PathBuf)>,
+    /// (kokoro paths, the chosen voice file, espeak, espeak data) when the whole chain resolves.
+    kokoro: Option<(crate::kokoro::Paths, PathBuf, PathBuf, PathBuf)>,
     system: Option<PathBuf>,
 }
 
@@ -203,7 +220,70 @@ fn probe(platform: Platform, requested_voice: Option<&str>) -> Probed {
             },
         ),
     };
-    Probed { considered: vec![piper_avail, system_avail], piper, system }
+    // Kokoro needs four things and reports precisely which one is missing — "kokoro unavailable"
+    // with no reason is the class of message that sends someone looking in the wrong place.
+    let (kokoro, kokoro_avail) = probe_kokoro(platform, requested_voice);
+    Probed { considered: vec![kokoro_avail, piper_avail, system_avail], piper, kokoro, system }
+}
+
+type KokoroSetup = (crate::kokoro::Paths, PathBuf, PathBuf, PathBuf);
+
+fn probe_kokoro(platform: Platform, requested_voice: Option<&str>) -> (Option<KokoroSetup>, Availability) {
+    let unavailable = |detail: String| Availability { kind: ProviderKind::Kokoro, available: false, detail };
+    let Some(paths) = crate::kokoro::Paths::resolve() else {
+        return (None, unavailable("no home directory, so the model dir could not be resolved".into()));
+    };
+    if !paths.complete() {
+        let missing = [
+            (!paths.model.is_file()).then(|| format!("model.onnx at {}", paths.model.display())),
+            (!paths.tokenizer.is_file()).then(|| "tokenizer.json".to_string()),
+            (!paths.voices.is_dir()).then(|| "a voices/ directory".to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        return (None, unavailable(format!("kokoro is missing {}", missing.join(", "))));
+    }
+    let Some((espeak, data)) = find_espeak(platform) else {
+        return (
+            None,
+            unavailable("kokoro needs espeak-ng for phonemisation and none is on PATH or bundled with piper".into()),
+        );
+    };
+    let installed: Vec<String> = std::fs::read_dir(&paths.voices)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter(|n| n.ends_with(".bin"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let pick = match requested_voice {
+        Some(want) => installed.iter().find(|f| f.strip_suffix(".bin") == Some(want)).cloned(),
+        None => {
+            let mut v = installed.clone();
+            v.sort();
+            v.into_iter().next()
+        }
+    };
+    match pick {
+        Some(name) => {
+            let file = paths.voices.join(&name);
+            let detail = format!("kokoro with {}", file.display());
+            (
+                Some((paths, file, espeak, data)),
+                Availability { kind: ProviderKind::Kokoro, available: true, detail },
+            )
+        }
+        None => (
+            None,
+            unavailable(match requested_voice {
+                Some(v) if installed.is_empty() => format!("no voice '{v}', and no .bin voice at all"),
+                Some(v) => format!("no voice '{v}' (installed: {})", installed.join(", ")),
+                None => "the model is present but no .bin voice is installed".to_string(),
+            }),
+        ),
+    }
 }
 
 // ── Execution ─────────────────────────────────────────────────────────────────────────────────────
@@ -327,6 +407,11 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
             let (binary, model) = probed.piper.ok_or("piper resolved but its paths went missing")?;
             speak_with_piper(platform, &binary, &model, &req)
         }
+        Some(ProviderKind::Kokoro) => {
+            let (paths, voice, espeak, data) =
+                probed.kokoro.ok_or("kokoro resolved but its paths went missing")?;
+            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req)
+        }
         Some(ProviderKind::System) => {
             let cmd = voice::system_command(platform, &req)?;
             spawn(&cmd)
@@ -366,6 +451,61 @@ fn speak_with_piper(
         })?;
     let result = spawn(&voice::play_command(platform, player, &target.display().to_string()));
     // A temp wav is ours to clean up whether or not playback worked.
+    let _ = std::fs::remove_file(&target);
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn speak_with_kokoro(
+    platform: Platform,
+    paths: &crate::kokoro::Paths,
+    voice_file: &std::path::Path,
+    espeak: &std::path::Path,
+    espeak_data: &std::path::Path,
+    req: &SayRequest,
+) -> Result<(), String> {
+    use crate::kokoro;
+    let ipa = kokoro::phonemize(espeak, espeak_data, &req.text, "en-us")?;
+    let mut voice = kokoro::Voice::load(paths)?;
+    let (ids, _) = kokoro::tokenize(&ipa, voice.vocab());
+    let bytes = std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?;
+    let style = kokoro::style_for(&bytes, ids.len())?;
+    let (samples, missing) = voice.speak_ipa(&ipa, &style, voice::clamp_rate(req.rate))?;
+    if !missing.chars.is_empty() {
+        // Never silent: an unrepresentable phoneme is a mispronunciation, and a mispronunciation
+        // gets blamed on the model rather than on the mapping.
+        eprintln!(
+            "bsc say: {} phoneme(s) had no token and were dropped: {:?}",
+            missing.chars.len(),
+            missing.chars
+        );
+    }
+
+    let keep = req.out.is_some();
+    let target = match &req.out {
+        Some(p) => PathBuf::from(p),
+        None => std::env::temp_dir().join(format!("bsc-say-k-{}.wav", std::process::id())),
+    };
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: kokoro::SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&target, spec)
+        .map_err(|e| format!("could not write {}: {e}", target.display()))?;
+    for s in &samples {
+        w.write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16).map_err(|e| e.to_string())?;
+    }
+    w.finalize().map_err(|e| e.to_string())?;
+    if keep {
+        return Ok(());
+    }
+    let player = ["aplay", "pw-play", "afplay"]
+        .iter()
+        .find_map(|p| on_path(p, platform).map(|_| *p))
+        .ok_or("nothing on this machine can play audio — use --out to keep the file")?;
+    let result = spawn(&voice::play_command(platform, player, &target.display().to_string()));
     let _ = std::fs::remove_file(&target);
     result
 }

@@ -52,6 +52,10 @@ pub enum ProviderKind {
     /// Piper: neural (VITS over ONNX Runtime), MIT, offline, voices of 20-60MB that synthesize
     /// several times faster than realtime on CPU.
     Piper,
+    /// Kokoro-82M: Apache-2.0, 82M parameters against piper's few, and audibly better. Costs a
+    /// 311MB model and an ONNX Runtime, and takes phoneme ids rather than text — see
+    /// [`crate::kokoro`] for the chain that gets it there.
+    Kokoro,
 }
 
 impl ProviderKind {
@@ -59,6 +63,7 @@ impl ProviderKind {
         match self {
             ProviderKind::System => "system",
             ProviderKind::Piper => "piper",
+            ProviderKind::Kokoro => "kokoro",
         }
     }
 
@@ -66,7 +71,10 @@ impl ProviderKind {
         match s {
             "system" => Ok(ProviderKind::System),
             "piper" => Ok(ProviderKind::Piper),
-            other => Err(format!("unknown provider '{other}' — expected 'system' or 'piper'")),
+            "kokoro" => Ok(ProviderKind::Kokoro),
+            other => {
+                Err(format!("unknown provider '{other}' — expected 'kokoro', 'piper' or 'system'"))
+            }
         }
     }
 }
@@ -320,7 +328,7 @@ pub fn resolve(requested: Option<ProviderKind>, considered: Vec<Availability>) -
         };
     }
     // Preference order: the good voice when it is there, the floor when it is not.
-    for kind in [ProviderKind::Piper, ProviderKind::System] {
+    for kind in [ProviderKind::Kokoro, ProviderKind::Piper, ProviderKind::System] {
         if let Some(a) = find(kind) {
             if a.available {
                 let skipped: Vec<String> = considered
