@@ -250,13 +250,31 @@ wrongly rewritten only moved the staleness to the other side.
 
 ### The colocated test — either copy may run, but one of them must
 
-A retired module's tests have to keep **executing**. There are two ways to satisfy that, and the rule is
-only that you pick one:
+A **retired** module's tests have to keep **executing**. There are two ways to satisfy that, and the rule
+is only that you pick one:
 
 | | what runs | when to choose it |
 |---|---|---|
 | **keep the file** | `src/x/y.test.tsx`, its relative import rewritten to `@/…` | the record's carried copy is stale, mispaired, or the test is not about a single module |
-| **delete the file** | the record's `tests[]`, materialized into `.bsc-records/x/y.test.tsx` | the carried copy is the same test — the graph then holds the module *and* its test |
+| **delete the file** | the record's `tests[]`, materialized into `.bsc-records/x/y.test.tsx` | the carried copy is the same test **and the record is one the emitter will actually emit** — the graph then holds the module *and* its test |
+
+**THAT SECOND CONDITION IS NOT DECORATION, and "it is a duplicate" does not imply it.** Measured
+2026-09-05: fifteen test files under `src/` are byte-identical to a carried test, and for **fourteen** of
+them the carried copy can never be materialized, so deleting the file runs the assertions nowhere. The
+question is never "is this a duplicate" but **what runs this test after the file is gone**, and
+`crates/bsc-emit/src/plan.rs` answers it in two places:
+
+- **`collect_seeds` keys the seed map by `provides`, and takes only a specifier starting with `@/`.**
+  A record without one — a harvest that kept only its `src` provenance — is not in the map at all, so
+  nothing it carries is ever a candidate. That is 7 of the 15.
+- **`plan_records` then skips any spec whose module file is still under `src/`** ("the file is still
+  there and authoritative"), which takes the record's carried tests with it. That is the other 7 —
+  including the six `shared/lib/algorithms/*` modules that are permanent floor anyway.
+
+So the carried copy is reachable only once the module ITSELF is retired. `bsc-emit --plan --json`
+answers this directly rather than by inference: its **`shadowed`** bucket is exactly the set of records
+whose module is already a record and whose colocated test file is the only thing still shadowing the
+carried copy — i.e. exactly the files it is safe to delete. Read that bucket instead of comparing bytes.
 
 `emit-records.mjs` materializes carried tests beside the module they test, and `vitest.config.ts`
 includes `.bsc-records/**`, so the carried copy runs in the default gate against the record that actually
@@ -269,7 +287,10 @@ same assertions never run twice, and deleting the file is the entire handover.
 > missing executor, not a statement about where a test belongs.
 
 `retiredTests.test.ts` enforces that a retired record's tests execute **somewhere**, and asks
-`planRecords()` rather than re-deriving the answer so it cannot drift from the emitter.
+`planRecords()` rather than re-deriving the answer so it cannot drift from the emitter. It also carries
+the other half — the two states above, where the emitter can never help — so a carried test whose only
+executor is its colocated file cannot lose that file quietly. Each arm asserts its own population, since
+a scan that stopped matching and a tree with nothing to find look identical from outside.
 
 **Check the carried copy before deleting the file** — the two drift, and the file is usually the newer
 one. Of the first 48 candidates, 46 differed only in the import specifier (safe), and **2 had extra
