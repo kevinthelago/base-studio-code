@@ -88,6 +88,25 @@ fn fft(re: &mut [f32], im: &mut [f32]) {
     }
 }
 
+/// The FFT, for other measurements in this crate that need one. A second copy would be a second
+/// thing to get wrong.
+pub fn fft_public(re: &mut [f32], im: &mut [f32]) {
+    fft(re, im)
+}
+
+/// Magnitude spectrum of one Hann-windowed frame, up to Nyquist.
+pub fn magnitudes(frame: &[f32]) -> Vec<f32> {
+    let n = frame.len();
+    let mut re: Vec<f32> = frame
+        .iter()
+        .enumerate()
+        .map(|(i, s)| s * (0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos()))
+        .collect();
+    let mut im = vec![0.0f32; n];
+    fft(&mut re, &mut im);
+    (0..n / 2).map(|k| (re[k] * re[k] + im[k] * im[k]).sqrt()).collect()
+}
+
 /// Energy in one band of one Hann-windowed frame.
 fn band_energy(frame: &[f32], sample_rate: u32, band: (f32, f32)) -> f32 {
     let n = frame.len();
