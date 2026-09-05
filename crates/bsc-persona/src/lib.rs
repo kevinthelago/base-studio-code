@@ -12,60 +12,6 @@
 //! reconciled by the frontend, exactly like the user blueprint library.
 
 
-#[cfg(test)]
-mod tests {
-    use bsc_json_store::Store;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    /// A per-test unique suffix so parallel tests never share a base dir.
-    fn uniq() -> String {
-        static N: AtomicU64 = AtomicU64::new(0);
-        format!("{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed))
-    }
-
-    /// #2986 (epic #2982) regression: the persona store persists to a SQLite **`personas.db`**, NOT to
-    /// per-id `personas/<id>.json` files. #2983 migrated the shared `bsc-json-store` backend
-    /// JSON-files → SQLite transparently; `bsc-persona` rides it over `bsc_json_store::Store` with
-    /// segment `personas` / noun `persona` (the [`cli::SPEC`](crate::cli) config). This pins that a
-    /// round-trip write/read through the persona store leaves a `<base>/personas.db` and creates no
-    /// `<base>/personas/<id>.json`.
-    ///
-    /// The crate exposes no base-dir-injectable persona API (only the `bsc persona` CLI), so — per the
-    /// #2986 spec — it drives the shared `Store` directly with the persona store's own segment + noun.
-    #[test]
-    fn persona_store_persists_to_sqlite_not_json_files() {
-        // A fresh temp base — the `~/.base-studio-code` root the persona store lives under.
-        let base = std::env::temp_dir().join(format!("bsc-persona-sqlite-{}", uniq()));
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-
-        // The persona store exactly as its CLI configures it (mirrors `cli::SPEC.dir_segment` / `.noun`).
-        let store = Store::new(base.join("personas"), "persona");
-
-        // Round-trip: write a persona, read it back verbatim (and via list).
-        let persona = r#"{"id":"review-bot","name":"Review Bot","role":"reviewer"}"#;
-        store.set("review-bot", persona).unwrap();
-        assert_eq!(
-            store.get("review-bot").unwrap().as_deref(),
-            Some(persona),
-            "the persona reads back verbatim",
-        );
-        assert_eq!(store.list(), vec![persona.to_string()], "and lists from the db");
-
-        // The claim — SQLite, not files: the sibling `<base>/personas.db` exists after the write…
-        let db = base.join("personas.db");
-        assert!(db.is_file(), "personas.db exists after the write: {}", db.display());
-        // …and NO legacy per-id file (nor even the `personas/` dir) was created.
-        let legacy = base.join("personas").join("review-bot.json");
-        assert!(!legacy.exists(), "no per-id json file was written: {}", legacy.display());
-        assert!(
-            !base.join("personas").exists(),
-            "no file-based `personas/` store dir was created",
-        );
-
-        let _ = std::fs::remove_dir_all(&base);
-    }
-}
 
 use serde::{Deserialize, Serialize};
 
@@ -173,55 +119,8 @@ pub struct WhatamiResult {
     pub page_tab: Option<String>,
 }
 
-#[cfg(test)]
-mod view_tests {
-    use super::*;
-
-    /// The view fields are OPTIONAL on the wire, and that has to stay true.
-    ///
-    /// `whatami` answers a session that may be running against an older app (the CLI and the app are
-    /// separate binaries, and a `bsc` on PATH outlives the build that shipped it). An ack from an app
-    /// that predates these fields must still deserialize — otherwise adding an observability field
-    /// breaks the verb an agent uses to find out what it is, which is the worst possible thing to
-    /// break with a diagnostic.
-    #[test]
-    fn an_ack_without_the_view_still_deserializes() {
-        let old = r#"{"paneId":"p","role":"designer"}"#;
-        let res: WhatamiResult = serde_json::from_str(old).expect("an older app's ack must parse");
-        assert_eq!(res.role.as_deref(), Some("designer"));
-        assert!(res.viewing.is_none() && res.workspace.is_none() && res.page_tab.is_none());
-    }
-
-    /// ...and an absent view is OMITTED rather than serialized as null.
-    ///
-    /// `viewing: null` reads as "the app answered, and the answer is nothing"; an absent key reads as
-    /// "unknown". They are different states — a workspace with no tab selected yet is the first, a
-    /// stale app is the second — and the CLI prints the line only when it has something to say.
-    #[test]
-    fn an_absent_view_is_omitted_not_nulled() {
-        let json = serde_json::to_string(&WhatamiResult {
-            pane_id: "p".into(),
-            role: Some("designer".into()),
-            ..Default::default()
-        })
-        .unwrap();
-        assert!(!json.contains("viewing"), "absent view must not appear at all: {json}");
-        assert!(!json.contains("null"), "no field should serialize as null: {json}");
-    }
-
-    /// The wire name is `pageTab`, not `page_tab` — the frontend sends camelCase.
-    #[test]
-    fn the_tab_field_crosses_as_camel_case() {
-        let res: WhatamiResult =
-            serde_json::from_str(r#"{"paneId":"p","viewing":"Components — React","pageTab":"react"}"#)
-                .expect("the frontend's camelCase ack must parse");
-        assert_eq!(res.page_tab.as_deref(), Some("react"));
-        assert_eq!(res.viewing.as_deref(), Some("Components — React"));
-    }
-}
-
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/cli.rs, src/baseline.rs, src/floor.rs, src/packaged.rs do not exist — they are records in the
+// src/baseline.rs, src/cli.rs, src/floor.rs, src/packaged.rs, src/tests.rs, src/view_tests.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get bsc-persona--<module>.rs

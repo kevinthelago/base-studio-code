@@ -167,83 +167,8 @@ fn row_to_count(r: &rusqlite::Row) -> rusqlite::Result<EventCount> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ev(event: &str, props: Option<&str>, ts: i64) -> EventInput {
-        EventInput { event: event.into(), props: props.map(Into::into), ts }
-    }
-
-    #[test]
-    fn record_aggregates_by_event_name_and_counts() {
-        let s = Store::open_in_memory().unwrap();
-        let a = s.record(&ev("click", Some("{\"label\":\"save\"}"), 100)).unwrap();
-        assert_eq!(a.count, 1);
-        assert_eq!(a.first_seen, 100);
-        let b = s.record(&ev("click", Some("{\"label\":\"cancel\"}"), 200)).unwrap();
-        assert_eq!(b.count, 2, "a repeat bumps the count, not a new aggregate row");
-        assert_eq!(b.first_seen, 100, "first_seen is preserved");
-        assert_eq!(b.last_seen, 200);
-        assert_eq!(b.last_props.as_deref(), Some("{\"label\":\"cancel\"}"), "last_props refreshes");
-        // A different event is a distinct aggregate.
-        s.record(&ev("item_selected", None, 250)).unwrap();
-        assert_eq!(s.summary(None).unwrap().len(), 2);
-    }
-
-    #[test]
-    fn summary_ranks_most_fired_first() {
-        let s = Store::open_in_memory().unwrap();
-        s.record(&ev("rare", None, 1)).unwrap();
-        for i in 0..5 {
-            s.record(&ev("common", None, 10 + i)).unwrap();
-        }
-        let sum = s.summary(None).unwrap();
-        assert_eq!(sum[0].event, "common");
-        assert_eq!(sum[0].count, 5);
-        assert_eq!(sum[1].event, "rare");
-        // limit caps the rows.
-        assert_eq!(s.summary(Some(1)).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn occurrences_are_capped_per_event() {
-        let s = Store::open_in_memory().unwrap();
-        for i in 0..(EVENTS_PER_NAME_CAP + 10) {
-            s.record(&ev("flood", None, i)).unwrap();
-        }
-        let n: i64 =
-            s.conn.query_row("SELECT COUNT(*) FROM events WHERE event = 'flood'", [], |r| r.get(0)).unwrap();
-        assert_eq!(n, EVENTS_PER_NAME_CAP, "raw occurrences pruned to the cap");
-        assert_eq!(s.get("flood").unwrap().unwrap().count, EVENTS_PER_NAME_CAP + 10, "but the count is exact");
-    }
-
-    #[test]
-    fn list_filters_by_event_since_and_limit_newest_first() {
-        let s = Store::open_in_memory().unwrap();
-        s.record(&ev("a", None, 100)).unwrap();
-        s.record(&ev("b", None, 300)).unwrap();
-        s.record(&ev("a", None, 400)).unwrap();
-        assert_eq!(s.list(&Filter { event: Some("a".into()), ..Default::default() }).unwrap().len(), 2);
-        assert_eq!(s.list(&Filter { since: Some(250), ..Default::default() }).unwrap().len(), 2, "only ts >= 250");
-        let all = s.list(&Filter::default()).unwrap();
-        assert_eq!(all[0].ts, 400, "newest first");
-        assert_eq!(s.list(&Filter { limit: Some(1), ..Default::default() }).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn clear_empties_usage_and_events() {
-        let s = Store::open_in_memory().unwrap();
-        s.record(&ev("x", None, 1)).unwrap();
-        s.clear().unwrap();
-        assert!(s.summary(None).unwrap().is_empty());
-        let n: i64 = s.conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0)).unwrap();
-        assert_eq!(n, 0);
-    }
-}
-
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/cli.rs, src/schema.rs do not exist — they are records in the
+// src/cli.rs, src/schema.rs, src/tests.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get usagedb--<module>.rs

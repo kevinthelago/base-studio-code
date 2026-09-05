@@ -17,50 +17,8 @@
 //! `id@version` artifacts under `~/.base-studio-code/sound-kits/`, content-addressed by sha256 — what a
 //! blueprint PINS). The release store mirrors the UI-kit one (`bsc_ui::kit`, #2465) contract-for-contract.
 
-
-#[cfg(test)]
-mod tests {
-    use bsc_json_store::Store;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    /// A per-test unique suffix so parallel tests never share a base dir.
-    fn uniq() -> String {
-        static N: AtomicU64 = AtomicU64::new(0);
-        format!("{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed))
-    }
-
-    /// Regression (epic #2982 pattern, mirrors bsc-persona): the sound store persists to a SQLite
-    /// **`sounds.db`**, NOT to per-id `sounds/<id>.json` files. `bsc-sound` rides the shared
-    /// `bsc-json-store` backend over `bsc_json_store::Store` with segment `sounds` / noun `sound` (the
-    /// [`cli::SPEC`](crate::cli) config). Pins that a round-trip write/read leaves a `<base>/sounds.db`
-    /// and creates no `<base>/sounds/<id>.json`.
-    #[test]
-    fn sound_store_persists_to_sqlite_not_json_files() {
-        let base = std::env::temp_dir().join(format!("bsc-sound-sqlite-{}", uniq()));
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-
-        // The sound store exactly as its CLI configures it (mirrors `cli::SPEC.dir_segment` / `.noun`).
-        let store = Store::new(base.join("sounds"), "sound");
-
-        // Round-trip: write a kit, read it back verbatim (and via list).
-        let kit = r#"{"id":"signal","name":"Signal"}"#;
-        store.set("signal", kit).unwrap();
-        assert_eq!(store.get("signal").unwrap().as_deref(), Some(kit), "the kit reads back verbatim");
-        assert_eq!(store.list(), vec![kit.to_string()], "and lists from the db");
-
-        // SQLite, not files: the sibling `<base>/sounds.db` exists…
-        assert!(base.join("sounds.db").is_file(), "sounds.db exists after the write");
-        // …and NO legacy per-id file (nor the `sounds/` dir) was created.
-        assert!(!base.join("sounds").join("signal.json").exists(), "no per-id json file was written");
-        assert!(!base.join("sounds").exists(), "no file-based `sounds/` store dir was created");
-
-        let _ = std::fs::remove_dir_all(&base);
-    }
-}
-
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/cli.rs, src/release.rs do not exist — they are records in the
+// src/cli.rs, src/release.rs, src/tests.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get bsc-sound--<module>.rs

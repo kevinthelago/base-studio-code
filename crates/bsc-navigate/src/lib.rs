@@ -121,65 +121,8 @@ pub struct NavResult {
     pub dismissed: Option<Vec<String>>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_empty_request_is_a_read_not_a_no_op_write() {
-        assert!(NavRequest::default().is_read_only());
-        assert!(!NavRequest { component: Some("Heatmap".into()), ..Default::default() }.is_read_only());
-        assert!(!NavRequest { theme: Some("nord".into()), ..Default::default() }.is_read_only());
-        assert!(!NavRequest { state: Some("loading".into()), ..Default::default() }.is_read_only());
-    }
-
-    #[test]
-    fn the_request_round_trips_through_the_shared_envelope() {
-        let dir = tempfile::tempdir().unwrap();
-        let req = NavRequest {
-            kit: Some("react-d3".into()),
-            component: Some("Heatmap".into()),
-            ..Default::default()
-        };
-        bsc_appchan::write_request(dir.path(), "a", KIND, 1, &req).unwrap();
-
-        let env = bsc_appchan::pending(dir.path()).unwrap().pop().unwrap();
-        assert_eq!(env.kind, KIND, "routes to the navigate handler, not the shot one");
-        assert_eq!(serde_json::from_value::<NavRequest>(env.payload).unwrap(), req);
-    }
-
-    #[test]
-    fn absent_fields_are_omitted_so_the_app_can_tell_leave_alone_from_clear() {
-        // `{"component": null}` and `{}` must not be the same wire value — the first would read as
-        // "clear the selection", the second as "don't touch it".
-        let json = serde_json::to_string(&NavRequest { theme: Some("nord".into()), ..Default::default() }).unwrap();
-        assert_eq!(json, r#"{"theme":"nord"}"#);
-    }
-
-    #[test]
-    fn the_result_reports_what_landed_and_an_error_wins_over_it() {
-        let landed = NavResult {
-            workspace: "projects".into(),
-            page: Some("designs".into()),
-            kit: Some("react-d3".into()),
-            component: Some("Heatmap".into()),
-            theme: Some("default".into()),
-            state: Some("loading".into()),
-            declined: None,
-            mounted: Some("Heatmap".into()),
-            mount_error: None,
-            dismissed: None,
-        };
-        let ok = bsc_appchan::Reply::ok("a", &landed, 1);
-        assert_eq!(bsc_appchan::take_payload::<NavResult>(ok).unwrap(), landed);
-
-        let bad = bsc_appchan::Reply::err("a", "no such component: Nope", 1);
-        assert_eq!(bsc_appchan::take_payload::<NavResult>(bad).unwrap_err(), "no such component: Nope");
-    }
-}
-
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/cli.rs does not exist — it is a record in the
+// src/cli.rs, src/tests.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get bsc-navigate--<module>.rs
