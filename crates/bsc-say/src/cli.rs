@@ -29,6 +29,21 @@ fn device_file() -> Option<PathBuf> {
     bsc_util::bsc_base_dir().map(|b| b.join("say-device"))
 }
 
+fn voice_file() -> Option<PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("say-voice"))
+}
+
+fn remembered_voice() -> Option<String> {
+    let raw = std::fs::read_to_string(voice_file()?).ok()?;
+    let t = raw.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
+/// `--voice`, then the remembered choice, then whatever sorts first.
+fn resolve_voice(a: &Args) -> Option<String> {
+    a.voice.clone().or_else(remembered_voice)
+}
+
 fn remembered_device() -> Option<String> {
     let raw = std::fs::read_to_string(device_file()?).ok()?;
     let t = raw.trim();
@@ -106,6 +121,15 @@ to let a person choose once, and remember it.
 Precedence: --device, then $BSC_SAY_DEVICE, then the remembered choice, then the system default.",
     },
     CmdDoc {
+        name: "voice",
+        summary: "the voice speech uses by default — print it, or remember one",
+        usage: "\
+bsc say voice              # what is remembered
+bsc say voice am_puck      # remember it
+
+Precedence: --voice, then this, then whichever voice sorts first.",
+    },
+    CmdDoc {
         name: "voices",
         summary: "what this machine can actually speak with, and which provider would answer",
         usage: "\
@@ -127,6 +151,8 @@ directory this prints, and put the `piper` binary on PATH. Both are then found w
 #[derive(Default, Debug)]
 struct Args {
     all: bool,
+    ipa: bool,
+    lang: Option<String>,
     device: Option<String>,
     json: bool,
     pretty: bool,
@@ -141,6 +167,8 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let (mut a, positional) = args::walk(raw, Args::default(), |flag, a: &mut Args, rest| {
         match flag {
             "--all" => a.all = true,
+            "--ipa" => a.ipa = true,
+            "--lang" => a.lang = Some(rest.value("--lang needs an espeak language code, e.g. es or ja")?),
             "--device" => a.device = Some(rest.value("--device needs an output device name")?),
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
@@ -461,13 +489,14 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
     }
     let platform = host_platform()?;
     let requested = a.provider.as_deref().map(ProviderKind::parse).transpose()?;
-    let probed = probe(platform, a.voice.as_deref());
+    let chosen_voice = resolve_voice(a);
+    let probed = probe(platform, chosen_voice.as_deref());
     let device = resolve_device(a);
     let res = voice::resolve(requested, probed.considered.clone());
     let req = SayRequest {
         text,
         rate: a.rate.unwrap_or(1.0),
-        voice: a.voice.clone(),
+        voice: chosen_voice,
         out: a.out.clone(),
     };
     match res.chosen {
@@ -478,7 +507,7 @@ fn cmd_speak(a: &Args, text: String) -> Result<(), String> {
         Some(ProviderKind::Kokoro) => {
             let (paths, voice, espeak, data) =
                 probed.kokoro.ok_or("kokoro resolved but its paths went missing")?;
-            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref())
+            speak_with_kokoro(platform, &paths, &voice, &espeak, &data, &req, device.as_deref(), a.ipa, a.lang.as_deref().unwrap_or("en-us"))
         }
         Some(ProviderKind::System) => {
             let cmd = voice::system_command(platform, &req)?;
@@ -534,9 +563,15 @@ fn speak_with_kokoro(
     espeak_data: &std::path::Path,
     req: &SayRequest,
     device: Option<&str>,
+    literal_ipa: bool,
+    lang: &str,
 ) -> Result<(), String> {
     use crate::kokoro;
-    let ipa = kokoro::phonemize(espeak, espeak_data, &req.text, "en-us")?;
+    let ipa = if literal_ipa {
+        req.text.clone()
+    } else {
+        kokoro::phonemize(espeak, espeak_data, &req.text, lang)?
+    };
     let mut voice = kokoro::Voice::load(paths)?;
     let (ids, _) = kokoro::tokenize(&ipa, voice.vocab());
     let bytes = std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?;
@@ -623,6 +658,21 @@ fn cmd_devices(a: &Args) -> Result<(), String> {
     }
     if all.len() > shown.len() {
         println!("{} routing variant(s) hidden — `--all` shows them", all.len() - shown.len());
+    }
+    Ok(())
+}
+
+fn cmd_voice(a: &Args) -> Result<(), String> {
+    let path = voice_file().ok_or("no home directory, so nothing could be remembered")?;
+    match a.positional.get(1) {
+        Some(name) => {
+            std::fs::write(&path, name).map_err(|e| format!("could not write {}: {e}", path.display()))?;
+            println!("speech will use {name}");
+        }
+        None => match remembered_voice() {
+            Some(v) => println!("{v}"),
+            None => println!("no remembered voice — whichever sorts first is used"),
+        },
     }
     Ok(())
 }
@@ -720,6 +770,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
     }
     match a.positional.first().map(String::as_str) {
         Some("devices") => cmd_devices(&a),
+        Some("voice") => cmd_voice(&a),
         Some("voices") => cmd_voices(&a),
         Some("speak") if a.positional.len() == 1 => Err(SPEAK_ALONE.into()),
         Some("speak") => cmd_speak(&a, a.positional[1..].join(" ")),
@@ -741,7 +792,7 @@ mod tests {
             assert!(c.usage.contains(c.name), "{}'s usage does not name it", c.name);
         }
         let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["speak", "devices", "voices"]);
+        assert_eq!(names, vec!["speak", "devices", "voice", "voices"]);
     }
 
     #[test]
