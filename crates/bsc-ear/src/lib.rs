@@ -13,6 +13,7 @@
 pub mod audio;
 pub mod cli;
 pub mod capture;
+pub mod liveness;
 pub mod prosody;
 pub mod retention;
 pub mod segment;
