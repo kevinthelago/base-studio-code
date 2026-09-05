@@ -365,6 +365,9 @@ mod tests {
                 top_target: "ff:ff:ff:ff:ff:ff".into(),
                 distinct_targets: 3,
                 reasons: vec![7],
+                freq_mhz: 2437,
+                top_transmitter: "aa:bb:cc:dd:ee:ff".into(),
+                strongest_dbm: Some(-31),
             },
         ] {
             assert!(payload_for(&e, 0).is_none(), "{e:?} reached the analyzer");

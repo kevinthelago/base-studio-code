@@ -91,6 +91,14 @@ pub const UNIT_NAME: &str = "bsc-lan-sense";
 /// that survives aggregation instead of being averaged into its neighbours.
 pub const DEFAULT_INTERVAL_MS: u64 = 250;
 
+// Checked by the COMPILER: four emissions a second against a wire capped at
+// twenty is the headroom that makes this affordable, and a future edit that
+// outran the cap should not be buildable rather than caught on the next run.
+const _: () = {
+    assert!(1_000 / DEFAULT_INTERVAL_MS <= 20);
+    assert!(DEFAULT_INTERVAL_MS > 0);
+};
+
 /// The companion oneshot that tunes the radio, without the `.service` suffix.
 pub const RADIO_UNIT_NAME: &str = "bsc-lan-radio";
 
@@ -478,9 +486,6 @@ pub mod tests {
         // signal at all. Pinned so a later "quieter default" is a decision
         // somebody makes rather than a regression nobody sees.
         assert_eq!(DEFAULT_INTERVAL_MS, 250);
-        // Four a second against a wire capped at twenty: the headroom is the
-        // reason this is affordable.
-        assert!(1_000 / DEFAULT_INTERVAL_MS <= 20);
         let u = render(&cfg("10.99.2.118:45142"), &spec()).unwrap();
         assert!(u.contains("--interval 250"), "{u}");
     }
