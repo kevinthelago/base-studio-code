@@ -2,7 +2,12 @@
 name = "bsc-news"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Low-trust news ingestion for base-studio-code — poll a fixed roster of outlets over RSS/news-sitemaps, retain every fetched version, and derive the framing signals (corroboration with wire ancestry, term-choice matrix, agency deletion) mechanically. Deliberately NOT `research`: an Article is a claim to be corroborated, a Paper is a citable source, and no verb converts one into the other."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_news"

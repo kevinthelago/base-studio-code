@@ -16,15 +16,17 @@
 //! The constraint that shapes all of it: **every number is computed and carries the span that
 //! produced it.** No model runs in this crate.
 
-pub mod cli;
-pub mod engine;
-pub mod entities;
-pub mod gazetteer;
-pub mod http;
-pub mod outlets;
-pub mod signals;
-pub mod sources;
-pub mod store;
-pub mod types;
 
 pub use types::{ArticleVersion, Bloc, FeedItem, FeedKind, Outlet, OutletKind, Span};
+
+// This crate's modules are IN THE GRAPH, not in this directory.
+// src/cli.rs, src/engine.rs, src/entities.rs, src/gazetteer.rs, src/http.rs, src/outlets.rs, src/signals/mod.rs, src/signals/agency.rs, src/signals/corroborate.rs, src/signals/framing.rs, src/sources/mod.rs, src/sources/rss.rs, src/sources/sitemap.rs, src/store.rs, src/types.rs do not exist — they are records in the
+// committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
+// To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
+//     bsc graph impl get bsc-news--<module>.rs
+//     bsc graph impl set --id bsc-news--<module>.rs --code-file <f>
+//     bsc graph promote --id bsc-news--<module>.rs
+//
+// This header stays a file because include! refuses crate-level //! docs and #![…] inner
+// attributes (E0753 / "an inner attribute is not permitted in this context").
+include!(concat!(env!("OUT_DIR"), "/crate.rs"));
