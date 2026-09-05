@@ -31,9 +31,6 @@
 use plandb::PlanIssue;
 use render::{render_issue_body, with_provenance_label, BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR};
 
-/// Which ProjectV2 board a publish should land on (adopt-or-create) — the decision
-/// [`ensure_project_board`] does not currently make. See the module docs.
-pub mod board_choice;
 
 /// The GitHub calls publish needs. A trait so the orchestration can be tested against a fake: the
 /// rules above are all about WHICH calls happen in which order, which a network test could not pin
@@ -507,7 +504,7 @@ pub fn create_issues_for_repo(
 }
 
 // This crate's modules are IN THE GRAPH, not in this directory.
-// src/cli.rs, src/render.rs, src/token.rs do not exist — they are records in the
+// src/board_choice.rs, src/cli.rs, src/render.rs, src/token.rs do not exist — they are records in the
 // committed graph/algorithms.json, materialized into $OUT_DIR by the shared build script.
 // To change one, edit the RECORD and promote it; editing a file here would be editing nothing:
 //     bsc graph impl get bsc-publish--<module>.rs
