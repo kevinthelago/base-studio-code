@@ -140,6 +140,47 @@ rather than quietly presented as if it meant something.",
         summary: "how something was said: pitch, loudness, effort, rate — and arousal against the speaker's own habit",
     },
     CmdDoc {
+        name: "transcribe",
+        summary: "turn captured segments into words — one pass, batched, never blocking capture",
+        usage: "\
+bsc ear transcribe [--dir <path>] [--limit <n>]
+
+Transcribes everything captured but not yet stored, in ONE whisper invocation.
+
+BATCHED BECAUSE LOADING DOMINATES. Measured: a 7.5s segment costs 630ms to load the model and 249ms
+to transcribe it. whisper-cli takes many files and loads once — three files ran in 1.73s batched
+against 2.16s separately, and the gap widens with each extra file. That is also why there is no
+long-running server here, and none of the health-checking and restarting one would need.
+
+IT NEVER BLOCKS CAPTURE. This is a separate pass; the ear keeps recording whatever happens to it. A
+transcriber that is slow or stopped can only make words arrive LATE, because retention holds a
+segment past its expiry until its words are saved — see `bsc ear segments`.
+
+EMPTY SEGMENTS ARE NOT TRANSCRIBED. Five of twenty-three real segments held no voice, and ASR
+answers silence with a confident hallucination — 'Thank you.' is whisper's. Skipping them costs
+nothing and removes that whole class before it reaches the store rather than filtering it after.
+
+Each transcript records the DETECTED language, not an assumed one, and whether the voice was live or
+played through a speaker.",
+    },
+    CmdDoc {
+        name: "transcripts",
+        summary: "what was said, newest first",
+        usage: "\
+bsc ear transcripts [--dir <path>] [--limit <n>] [--json|--pretty]
+
+Reads the store: time, duration, language, whether it was a live voice, and the words.
+
+STORED AS APPEND-ONLY JSONL, NOT A DATABASE. Measured on real segments: 190 bytes of text, ~310 with
+metadata, so 200 segments a day is 60 KB/day and 21.6 MB/year. The AUDIO those came from is 855x the
+size of its own transcript, and the two-hour window already bounds the only large thing. SQLite and
+VACUUM management to bound 20 MB a year is more machinery than the problem deserves, and a line per
+record stays readable by grep.
+
+Bounded by BOTH rows and age: a talkative week would fill a row budget while a silent month would
+keep last year's words.",
+    },
+    CmdDoc {
         name: "segments",
         summary: "the audio currently held, newest first",
         usage: "\
@@ -153,6 +194,7 @@ is no second copy, and anything past the window is already gone.",
 #[derive(Default, Debug)]
 struct Args {
     all: bool,
+    limit: Option<usize>,
     live_dir: Option<String>,
     replay_dir: Option<String>,
     json: bool,
@@ -173,6 +215,13 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--pretty" => a.pretty = true,
             "--device" => a.device = Some(rest.value("--device needs a device name")?),
             "--dir" => a.dir = Some(rest.value("--dir needs a path")?),
+            "--limit" => {
+                a.limit = Some(
+                    rest.value("--limit needs a whole number")?
+                        .parse()
+                        .map_err(|_| "--limit needs a whole number".to_string())?,
+                );
+            }
             "--window" => {
                 a.window_min = Some(
                     rest.value("--window needs a whole number of minutes")?
@@ -697,6 +746,118 @@ fn cmd_prosody(a: &Args, p: &Paths) -> Result<(), String> {
     Ok(())
 }
 
+fn transcript_path(p: &Paths) -> PathBuf {
+    p.root.join("transcripts.jsonl")
+}
+
+fn load_transcripts(p: &Paths) -> (Vec<crate::transcript::Transcript>, usize) {
+    match std::fs::read_to_string(transcript_path(p)) {
+        Ok(raw) => crate::transcript::parse(&raw),
+        Err(_) => (vec![], 0),
+    }
+}
+
+fn cmd_transcribe(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::{transcribe, transcript};
+    let w = transcribe::Whisper::resolve()?;
+    let (existing, bad) = load_transcripts(p);
+    if bad > 0 {
+        println!("note: {bad} unreadable line(s) in the store were skipped");
+    }
+    let done: Vec<String> = existing.iter().map(|t| t.segment.clone()).collect();
+    let on_disk: Vec<String> = std::fs::read_dir(p.audio())
+        .map_err(|e| format!("could not read {}: {e}", p.audio().display()))?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+
+    // Skip the empty ones BEFORE spending ~900ms each on them. Five of twenty-three real segments
+    // held no voice, and ASR answers silence with a confident hallucination.
+    let mut work = Vec::new();
+    let mut skipped = 0usize;
+    for name in transcribe::pending(&on_disk, &done) {
+        let path = p.audio().join(&name);
+        let Ok((samples, sr)) = read_wav(&path) else { continue };
+        let pr = crate::prosody::measure(&crate::prosody::frames(&samples, sr), sr);
+        if pr.has_speech() {
+            work.push(name);
+        } else {
+            skipped += 1;
+        }
+        if a.limit.is_some_and(|l| work.len() >= l) {
+            break;
+        }
+    }
+    if skipped > 0 {
+        println!("skipped {skipped} segment(s) with no voice — ASR would only have hallucinated over them");
+    }
+    if work.is_empty() {
+        println!("nothing to transcribe");
+        return Ok(());
+    }
+
+    // Liveness, where this pairing has been calibrated. Unknown otherwise — never a guess.
+    let device = a.device.clone().unwrap_or_else(|| "default".into());
+    let cal: Option<crate::liveness::Calibration> =
+        std::fs::read_to_string(liveness_store(p, &device)).ok().and_then(|r| serde_json::from_str(&r).ok());
+    let audio_dir = p.audio();
+    let live_of = |name: &str| -> Option<bool> {
+        let (s, sr) = read_wav(&audio_dir.join(name)).ok()?;
+        match crate::liveness::judge(crate::liveness::liveness_ratio(&s, sr), cal.as_ref()) {
+            crate::liveness::Verdict::Live => Some(true),
+            crate::liveness::Verdict::Replayed => Some(false),
+            crate::liveness::Verdict::Unknown => None,
+        }
+    };
+
+    println!("transcribing {} segment(s) in one pass...", work.len());
+    let rows = transcribe::transcribe_batch(&w, &p.audio(), &work, &live_of)?;
+
+    let mut all = existing;
+    all.extend(rows.iter().cloned());
+    let budget = transcript::Budget::default();
+    let kept = transcript::retain(&all, now_ms(), &budget);
+    let dropped = all.len() - kept.len();
+    std::fs::write(transcript_path(p), transcript::render(&kept)?)
+        .map_err(|e| format!("could not write the store: {e}"))?;
+    for r in &rows {
+        println!("  {:<28} {:>5.1}s {:<4} {}", r.segment, r.seconds, r.language, r.text.chars().take(60).collect::<String>());
+    }
+    println!("stored {} new, {} held{}", rows.len(), kept.len(),
+        if dropped > 0 { format!(", {dropped} pruned past the bound") } else { String::new() });
+    Ok(())
+}
+
+fn cmd_transcripts(a: &Args, p: &Paths) -> Result<(), String> {
+    let (mut rows, bad) = load_transcripts(p);
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started_unix_ms));
+    if let Some(l) = a.limit {
+        rows.truncate(l);
+    }
+    if a.json || a.pretty {
+        let s = if a.pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
+        println!("{}", s.map_err(|e| format!("{e}"))?);
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("nothing transcribed yet — `bsc ear transcribe` reads what has been captured");
+        return Ok(());
+    }
+    for r in &rows {
+        let live = match r.live {
+            Some(true) => "live",
+            Some(false) => "replay",
+            None => "?",
+        };
+        println!("  {:>4} min ago {:>5.1}s {:<4} {:<6} {}", (now_ms() - r.started_unix_ms) / 60_000,
+            r.seconds, r.language, live, r.text);
+    }
+    let bytes = std::fs::metadata(transcript_path(p)).map(|m| m.len()).unwrap_or(0);
+    println!("\n{} transcript(s), store is {:.1} KB{}", rows.len(), bytes as f64 / 1024.0,
+        if bad > 0 { format!(", {bad} unreadable line(s) skipped") } else { String::new() });
+    Ok(())
+}
+
 fn cmd_segments(a: &Args, p: &Paths) -> Result<(), String> {
     let mut held = capture::held_segments(&p.audio());
     held.sort_by_key(|s| std::cmp::Reverse(s.started_unix_ms));
@@ -732,6 +893,8 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("listen") => cmd_listen(&a, &p, true),
         Some("levels") => cmd_levels(&a),
         Some("liveness") => cmd_liveness(&a, &p),
+        Some("transcribe") => cmd_transcribe(&a, &p),
+        Some("transcripts") => cmd_transcripts(&a, &p),
         Some("prosody") => cmd_prosody(&a, &p),
         Some("segments") => cmd_segments(&a, &p),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
@@ -753,7 +916,7 @@ mod tests {
             names,
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "prosody",
-                "segments"
+                "transcribe", "transcripts", "segments"
             ]
         );
     }
