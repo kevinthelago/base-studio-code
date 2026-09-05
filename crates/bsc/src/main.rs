@@ -139,7 +139,7 @@ const COMMANDS: &[Surface] = &[
     active("cad", "bsc-cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL", None),
     active("widget", "bsc-widget", "toggleable UI surfaces: one NODE per widget and the stream it subscribes to", Some("a closed set in code — an id selects a node, never a path")),
     active("ear", "bsc-ear", "always-on local capture: speech-only segments inside an enforced retention window (the listening half of `say`)", Some("audio + state under ~/.base-studio-code/ear")),
-    active("say", "bsc-say", "speak text aloud: the neural voice (piper) when installed, the OS voice when not (NOT `sound`, which is the synthesis kit store)", Some("no store — piper voices in ~/.base-studio-code/voices")),
+    active("say", "bsc-say", "speak text aloud: kokoro (neural, phoneme-level) when installed, then piper, then the OS voice (NOT `sound`, which is the synthesis kit store)", Some("no store — voices in ~/.base-studio-code/voices and models/kokoro")),
     active("lan", "bsc-lan", "the emit-only LAN sensor: what a host exposes · its keys · what it would send (NOT `network`, which is the user domain store)", Some("no store yet — keys are printed, never written")),
     active("deploy", "bsc-deploy", "ship a binary to a device and take it back: status · push · rollback (push-only; LAB has no egress)", Some("the device roster — deploy/devices.json")),
     active("capability", "bsc-capability", "the USE layer: what a network can DO right now, and how fresh each answer is", Some("derived — reads `bsc project network` + `bsc deploy`")),
