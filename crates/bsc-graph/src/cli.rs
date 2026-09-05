@@ -3151,14 +3151,44 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 crate::repo_store::content_of
             };
             let repo = crate::repo_store::read_at(&path)?.unwrap_or_else(crate::repo_store::empty);
-            let runtime = crate::implementations_of(&crate::load());
+            let g = crate::load();
+            let runtime = crate::implementations_of(&g);
+            // THE EDGE TIER (`integration-tests-become-graph-edges`). An edge lived ONLY in the
+            // per-user runtime store until this: `promote` read `implementations` and nothing else,
+            // `impl sync-seed` could update a seed edge but never add one, and `reconcile_seed` copies
+            // only implementations — so an edge authored on one box was invisible to a reviewer, to CI
+            // and to a fresh clone. Promoting it is what makes the tier durable at all.
+            let runtime_edges = crate::edges_of(&g);
 
             // No `--id` means "refresh what this store already tracks". A bare promote must never
             // ADOPT new records by itself — what the build compiles is an explicit decision.
-            let ids: Vec<String> = match flag_value(&args, "--id") {
+            let named: Vec<String> = match flag_value(&args, "--id") {
                 Some(s) => s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
-                None => crate::repo_store::tracked_ids(&repo),
+                None => {
+                    let mut v = crate::repo_store::tracked_ids(&repo);
+                    v.extend(crate::repo_store::tracked_edge_ids(&repo));
+                    v
+                }
             };
+            // WHICH TIER each id belongs to, resolved from what actually holds it. An id is an EDGE
+            // when the runtime store (or the committed store already) carries it as one and no
+            // implementation claims the same name. A name held by BOTH is refused rather than
+            // guessed — the same ambiguity `impl sync-seed` refuses, and for the same reason: picking
+            // a side silently would write one tier's content into the other's array.
+            let repo_edge_ids: std::collections::HashSet<String> =
+                crate::repo_store::tracked_edge_ids(&repo).into_iter().collect();
+            let has_impl = |id: &str| runtime.iter().any(|i| i.get("id").and_then(Value::as_str) == Some(id));
+            let has_edge = |id: &str| {
+                runtime_edges.iter().any(|e| e.get("id").and_then(Value::as_str) == Some(id))
+                    || repo_edge_ids.contains(id)
+            };
+            if let Some(both) = named.iter().find(|id| has_impl(id) && has_edge(id)) {
+                return Err(format!(
+                    "id '{both}' exists as BOTH an implementation and an edge — ambiguous promotion target"
+                ));
+            }
+            let (edge_ids, ids): (Vec<String>, Vec<String>) =
+                named.into_iter().partition(|id| has_edge(id));
 
             if check {
                 // THE CHECK READS THE RUNTIME STORE DIRECTLY, and this is what makes it usable as a
@@ -3184,11 +3214,22 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     crate::repo_store::impls_of(&direct).iter().map(project).collect();
                 let repo_impls: Vec<serde_json::Value> =
                     crate::repo_store::impls_of(&repo).iter().map(project).collect();
+                // The edge tier is checked the same way and through its OWN projection — see
+                // `repo_store::edge_content_of` for why `project` must not be reused here.
+                let upstream_edges: Vec<serde_json::Value> =
+                    crate::repo_store::edges_of(&direct).iter().map(crate::repo_store::edge_content_of).collect();
+                let repo_edges: Vec<serde_json::Value> =
+                    crate::repo_store::edges_of(&repo).iter().map(crate::repo_store::edge_content_of).collect();
                 let mut differs = Vec::new();
                 let mut absent = Vec::new();
                 let mut behind = Vec::new();
-                for id in &ids {
-                    match crate::repo_store::verdict_for(&upstream, &repo_impls, id) {
+                for id in ids.iter().chain(edge_ids.iter()) {
+                    let verdict = if edge_ids.iter().any(|e| e == id) {
+                        crate::repo_store::verdict_for(&upstream_edges, &repo_edges, id)
+                    } else {
+                        crate::repo_store::verdict_for(&upstream, &repo_impls, id)
+                    };
+                    match verdict {
                         crate::repo_store::Verdict::Differs => differs.push(id.clone()),
                         // NOT a failure. A machine whose runtime store lacks the record has no opinion
                         // about whether the committed one is stale, and failing here would redden the
@@ -3201,7 +3242,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     }
                 }
                 emit(&serde_json::json!({
-                    "checked": ids.len(), "drifted": differs, "notAuthoredHere": absent,
+                    "checked": ids.len() + edge_ids.len(), "checkedEdges": edge_ids.len(),
+                    "drifted": differs, "notAuthoredHere": absent,
                     "runtimeBehind": behind,
                     "store": path.to_string_lossy(), "ok": differs.is_empty(),
                 }))?;
@@ -3235,15 +3277,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // did inside `crates/bsc-graph/` when `verbs_match_the_dispatcher` invoked every verb. A
             // read-shaped no-op that writes a file into the source tree is a side effect nobody asked
             // for, so it now reports and returns.
-            if ids.is_empty() {
+            if ids.is_empty() && edge_ids.is_empty() {
                 return emit(&serde_json::json!({
                     "ok": true, "store": path.to_string_lossy(), "promoted": 0, "tracked": 0,
                     "note": "this repo store tracks no records yet — adopt one with `--id <id>`",
                 }));
             }
 
-            let (mut next, missing, refused) =
+            let (next, missing, refused) =
                 crate::repo_store::promote_into_with(&repo, &runtime, &ids, project);
+            // The EDGE tier, into the same document. Applied over `next` rather than `repo` so one
+            // `--id a,b` naming both tiers writes both in one pass — two sequential promotes would each
+            // start from the file and the second would drop the first's work.
+            let (edge_next, edge_missing, edge_refused) =
+                crate::repo_store::promote_edges_into(&next, &runtime_edges, &edge_ids);
+            let mut next = edge_next;
             // Only the seed carries the referential-integrity guard that rejects a dangling `composes`.
             let pruned = if to_seed {
                 crate::repo_store::prune_dangling_composes(&mut next)
@@ -3300,6 +3348,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // REFUSED, not skipped: the runtime copy is a subset of the committed one, so writing it
                 // would delete fields. Named so a caller sees a decision rather than a silent no-op.
                 "refusedWouldLoseFields": refused,
+                // The EDGE tier, counted separately: an edge and an implementation are different
+                // claims, and folding them into one number would hide a promote that moved neither.
+                "promotedEdges": edge_ids.len() - edge_missing.len() - edge_refused.len(),
+                "missingUpstreamEdges": edge_missing, "refusedEdges": edge_refused,
+                "trackedEdges": crate::repo_store::tracked_edge_ids(&next).len(),
                 "tracked": crate::repo_store::tracked_ids(&next).len(),
                 // Reported, never silent: a pruned edge is a claim the record made that the graph
                 // could not honour, and the author should see which.
@@ -4428,7 +4481,7 @@ fn help(prog: &str) -> String {
   \
          {prog} emit impl <id> <dir> | emit all <dir> | emit sync <dir>   # the store→FILE direction (#4192): write a record's code as stamped source; `sync` re-emits MANAGED files and skips hand-edited ones. One record = one file — NEVER written over the shared `src` it was lifted from
            {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\
-         {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest each top-level module as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has nested module directories, or declares a module with no matching file — and VERIFIES with a real build before it finishes\n\n\
+         {prog} migrate-crate <crate> [--apply] [--root <dir>]   # move ONE crate's source into the graph: harvest EVERY module, at every depth, as a record, record HOW it was declared (visibility + attributes), promote it into the committed store the build reads, then drop the `mod` lines, delete the files and opt the crate into the shared build script — so the crate compiles FROM the graph and its directory holds one file. DRY BY DEFAULT: without --apply it prints the plan and touches nothing, because the write path deletes source. REFUSES up front (naming the cause) for a crate that is already migrated, has its own build.rs, declares a module with no matching file — and VERIFIES with a real build before it finishes\n\n\
          {prog} unmaterialize [--apply] [--root <dir>]   # the ROLLBACK for files-to-zero: write every committed-store record whose `src` has NO file on disk back to that path, restoring the crate to an ordinary file tree (25 crates compile from the graph today; 60 records have no file). NOT `emit`, whose contract is the opposite — `emit` never writes over the shared `src` a record was lifted from, and that is exactly what a rollback must do. DRY BY DEFAULT, because the paths it writes are the ones a migration deleted and an accidental run would resurrect a second live copy of every module. REFUSES a record whose file still EXISTS (it is a function lifted out of a live file, not the file), and REFUSES a `src` claimed by more than one record rather than letting the last write win — the data-loss the `scripts/graph-unmaterialize.mjs` this replaces had, where six records contest two paths
          {prog} reseed [--id a,b] [--all] [--check] [--root <dir>]   # the SEED → RUNTIME STORE direction, the exact inverse of `promote --seed`. The per-user runtime store is the AUTHORING copy, and it can fall BEHIND what ships: after a refactor lands in the packaged seed, a machine that did not author it keeps serving the old body — and an impl's `provides` BEATS the platform registry, so the stale copy is handed to the page even when the bundle is perfectly correct. NO GATE CAN SEE THIS: tsc and vitest read `.bsc-records/`, emitted FROM the seed, so every gate reads a copy that is right and the only wrong one is on the user's disk. `--check` reports and exits non-zero. There is deliberately NO bare form — this OVERWRITES authoring, so name `--id a,b` or say `--all`
          {prog} promote [--id a,b] [--check] [--seed] [--root <dir>]   # move records from the per-user RUNTIME store into the COMMITTED, build-readable repo store at graph/algorithms.json — or, with --seed, into the PACKAGED seed at src-tauri/data/knowledge/algorithms.json (what SHIPS and what a fresh install reconciles against; a record can legitimately be in one and not the other). --seed projects to the 15 fields the seed actually carries, normalises a file EXTENSION found in `tech` (`ts` -> `typescript`), prunes a `composes` target that is not an impl, and DECLINES any record whose promotion would stop a specifier something still imports from resolving — the store a fresh clone, CI and every worktree agent compile from. Bare `promote` refreshes only what the store already TRACKS; `--id` adopts new records, because what the build compiles is an explicit decision. `--check` writes nothing and EXITS NON-ZERO naming the drifted ids — that is the gate. The repo store is read directly, never through the seed reconcile, or 676 packaged impls would be appended into the build's source of truth\n\n\
@@ -4797,25 +4850,39 @@ mod tests {
         );
     }
 
-    /// The splitter and `build.rs` must agree on the marker, and neither can be changed alone.
+    /// The splitter and the EMITTER must agree on the marker, and neither can be changed alone.
     ///
     /// If the emitter's header changed, `split_materialized` would match nothing, collapse `crate.rs`
     /// into a single unit, and still find every site — the population floor counts SITES, not units —
     /// so the guard would keep passing while reporting offenders against a path that does not exist.
     /// A silent mis-attribution is exactly the class this whole guard exists to refuse.
+    ///
+    /// It scans the graph-materialize CRATE rather than one file, and that is not laziness: the
+    /// renderer has already moved once. `graph-materialize-takes-nested-modules-and-mod-rs` lifted the
+    /// emit out of `build.rs` into the `include!`d `plan.rs`, which reddened this pin over a marker that
+    /// had not actually changed. The invariant worth pinning is the marker TEXT, not its address — so a
+    /// move inside the crate is quiet and an edit to the string is loud, which is the right way round.
     #[test]
-    fn the_materialized_record_marker_is_what_build_rs_emits() {
-        let build_rs = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("graph-materialize")
-            .join("build.rs");
-        let src = std::fs::read_to_string(&build_rs)
-            .unwrap_or_else(|e| panic!("cannot read {}: {e}", build_rs.display()));
+    fn the_materialized_record_marker_is_what_the_emitter_writes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("graph-materialize");
+        let mut scanned: Vec<String> = Vec::new();
+        let mut emits = false;
+        for entry in std::fs::read_dir(&dir).expect("the graph-materialize crate is a sibling") {
+            let path = entry.expect("readable dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).expect("readable source");
+            scanned.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            emits |= src.contains(RECORD_MARKER);
+        }
+        assert!(!scanned.is_empty(), "scanned no Rust source under {}", dir.display());
         assert!(
-            src.contains(RECORD_MARKER),
-            "crates/graph-materialize/build.rs no longer emits `{RECORD_MARKER}` — the store-lock \
-             scanner splits the materialized crate on it, and a splitter that matches nothing reports \
-             offenders against a file nobody can open. Update RECORD_MARKER with it."
+            emits,
+            "no file in crates/graph-materialize/ emits `{RECORD_MARKER}` (scanned: {}) — the \
+             store-lock scanner splits the materialized crate on it, and a splitter that matches \
+             nothing reports offenders against a file nobody can open. Update RECORD_MARKER with it.",
+            scanned.join(", "),
         );
     }
 
@@ -5248,6 +5315,77 @@ mod tests {
             !crate::repo_store::path_under(&dir).exists(),
             "a promote with nothing to promote must not create a store file",
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The EDGE tier reaches the COMMITTED store (`integration-tests-become-edges-lan-crates`).
+    ///
+    /// Before this, an edge existed only in the per-user runtime store: `promote` read
+    /// `implementations` and nothing else, `impl sync-seed` could update a seed edge but never add one,
+    /// and `reconcile_seed` copies only implementations. So the first five edges ever authored — the
+    /// bsc-lan integration tests — would have been invisible to a reviewer, to CI and to a fresh clone.
+    #[test]
+    fn promote_carries_the_edge_tier_into_the_committed_store() {
+        let dir = std::env::temp_dir()
+            .join(format!("bsc-promote-edge-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let runtime_store = dir.join("runtime.json");
+        std::fs::write(
+            &runtime_store,
+            serde_json::json!({
+                "implementations": [{
+                    "id": "dup", "tech": "rust", "role": "algorithm", "name": "dup", "code": "//\n",
+                }],
+                "edges": [
+                    {
+                        "id": "a--b", "members": ["a.rs", "b.rs"], "src": "crates/k/tests/t.rs",
+                        "tests": [{ "name": "t.rs", "src": "#[test]\nfn t() {}\n" }],
+                    },
+                    { "id": "dup", "members": ["a.rs", "b.rs"] },
+                ],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let _store = store_at(&runtime_store);
+        let root = dir.to_string_lossy().into_owned();
+
+        let args: Vec<String> =
+            ["promote", "--id", "a--b", "--root", &root].iter().map(|s| s.to_string()).collect();
+        run(args, "bsc graph").expect("an edge id promotes like an implementation id");
+
+        let repo = crate::repo_store::read_at(&crate::repo_store::path_under(&dir)).unwrap().unwrap();
+        assert_eq!(crate::repo_store::tracked_edge_ids(&repo), vec!["a--b".to_string()]);
+        let got = &crate::repo_store::edges_of(&repo)[0];
+        assert_eq!(
+            got.get("members").and_then(Value::as_array).map(Vec::len),
+            Some(2),
+            "the members are what make it an edge — a projection that drops them writes a claim of \
+             coverage over nothing",
+        );
+        assert!(got.get("tests").is_some(), "the carried test travels with the edge");
+        assert!(
+            crate::repo_store::impls_of(&repo).is_empty(),
+            "an edge must not land in the implementations array",
+        );
+
+        // A BARE promote refreshes what the store already tracks — edges included, or a committed edge
+        // could never be brought forward without naming it every time.
+        let bare: Vec<String> = ["promote", "--root", &root].iter().map(|s| s.to_string()).collect();
+        run(bare, "bsc graph").expect("a bare promote refreshes the tracked edge");
+        let again = crate::repo_store::read_at(&crate::repo_store::path_under(&dir)).unwrap().unwrap();
+        assert_eq!(crate::repo_store::tracked_edge_ids(&again), vec!["a--b".to_string()]);
+
+        // AMBIGUITY IS REFUSED, never guessed: the two tiers share one id space, so a name held by both
+        // has no correct destination and picking one silently writes into the wrong array.
+        let ambiguous: Vec<String> =
+            ["promote", "--id", "dup", "--root", &root].iter().map(|s| s.to_string()).collect();
+        let err = run(ambiguous, "bsc graph").expect_err("an id in BOTH tiers must be refused");
+        assert!(err.contains("ambiguous"), "the refusal must say why: {err}");
+
+        unsafe { std::env::remove_var("BSC_GRAPH_STORE") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 

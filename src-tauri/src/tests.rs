@@ -25,6 +25,17 @@
     }
 
     impl SourceUnit {
+        /// A CRATE ROOT (`lib.rs` / `main.rs`) rather than a module. Roots declare modules; they are
+        /// never declared themselves, and `graph-materialize` deliberately never materializes one —
+        /// `include!` refuses the crate-level `//!` docs and `#![…]` inner attributes they carry
+        /// (E0753), which is why every migrated crate keeps exactly this file.
+        fn is_crate_root(&self) -> bool {
+            matches!(
+                self.rel.rsplit('/').next(),
+                Some("lib.rs") | Some("main.rs")
+            )
+        }
+
         /// How to NAME this unit in a failure message. A reader told `platform/config.rs` will go
         /// looking for a file, and for a record that is a dead end — so a record says so.
         fn label(&self) -> String {
@@ -46,26 +57,6 @@
     /// The floor on `#[tauri::command]` declarations. Measured when the registration guard was
     /// written: 174 declared, 174 registered.
     const MIN_TAURI_COMMANDS: usize = 100;
-    /// The floor on bare `mod x;` declarations under `src-tauri/src`. MEASURED 2026-09-04: **138**.
-    /// That root owns its own `build.rs` and cannot migrate into the graph yet, so unlike `crates/`
-    /// below its population is stable and this floor only ever has to survive ordinary churn.
-    const MIN_SRC_TAURI_MODULE_DECLS: usize = 120;
-    /// The floor on bare `mod x;` declarations under `crates/`. MEASURED 2026-09-04: **255**.
-    ///
-    /// **THIS POPULATION SHRINKS BY DESIGN — the floor is not a ratchet.** Every crate that migrates
-    /// into the graph store deletes its module files *and* the `pub mod x;` lines in its `lib.rs`;
-    /// `graph-materialize/build.rs` regenerates those into `$OUT_DIR/crate.rs`, which is not on the
-    /// walk. So a migrated crate costs this count its entire module list — `logs` and `bsc-fleet`
-    /// together cost 26 — while [`source_units`] still resolves every one of them, as a record. The
-    /// resolution half of this test is unaffected; only the non-vacuity count moves.
-    ///
-    /// The single combined floor this replaced was **one declaration from red** when that batch
-    /// landed (401 against a floor of 400), because it had been set from a count that assumed records
-    /// contribute declarations. They do not: a migrated leaf module has no `mod x;` of its own, so the
-    /// 80 record-only units add ~0 here and the old `= 473` in this comment was never the number the
-    /// code produced. Set well below the measurement, exactly like the unit floors above — this
-    /// detects a parser that stopped MATCHING, and a parser that stopped matching reports ~0, not 250.
-    const MIN_CRATE_MODULE_DECLS: usize = 150;
 
     /// The repository root — `src-tauri`'s parent.
     fn repo_root() -> std::path::PathBuf {
@@ -258,10 +249,7 @@
     #[test]
     fn every_declared_module_resolves_to_a_file_or_a_record() {
         let mut unresolved = Vec::new();
-        for (rel_root, min, decl_floor) in [
-            ("src-tauri/src", MIN_SRC_TAURI_UNITS, MIN_SRC_TAURI_MODULE_DECLS),
-            ("crates", MIN_CRATE_UNITS, MIN_CRATE_MODULE_DECLS),
-        ] {
+        for (rel_root, min) in [("src-tauri/src", MIN_SRC_TAURI_UNITS), ("crates", MIN_CRATE_UNITS)] {
             let mut declared = 0usize;
             let units = source_units(rel_root, min);
             let present: std::collections::HashSet<&str> = units.iter().map(|u| u.rel.as_str()).collect();
@@ -295,10 +283,29 @@
             // root rather than over the sum, because a sum lets one root collapse to nothing while the
             // other carries the total over the line — and `crates/` shrinks on purpose as crates
             // migrate, so it is the root whose slack would have been spent hiding the other's.
+            // RELATIVE, NOT ABSOLUTE — and that is the whole point. An absolute floor here has to be
+            // re-lowered every migration wave (400 -> 180 -> 150 -> red at 144, twice in one day),
+            // and a floor lowered every wave is one nobody reads. Migration deletes a module's file
+            // AND the `mod x;` that declared it, so those two populations shrink TOGETHER: their
+            // relationship is stable while their magnitudes are not.
+            //
+            // MEASURED 2026-09-04, after 28 crates had migrated: `src-tauri/src` 139 declarations
+            // against 140 on-disk non-root files (0.99), `crates` 144 against 172 (0.84 — the
+            // denominator also counts `tests/` files and `mod.rs`, which declare nothing). Half is
+            // therefore slack of roughly two to one, and it does not erode as the remaining crates
+            // migrate.
+            //
+            // It still catches what this floor exists for: a parser that stops MATCHING reports ~0
+            // declarations while the module files are all still on disk, so the ratio goes to zero
+            // and this fails loudly. The COLLAPSE question is answered separately and
+            // migration-neutrally by the MIN_*_UNITS floors, which count files PLUS records.
+            let on_disk_modules = units.iter().filter(|u| !u.record_only && !u.is_crate_root()).count();
             assert!(
-                declared >= decl_floor,
-                "found only {declared} `mod x;` declarations under `{rel_root}` (floor {decl_floor}), \
-                 so the parser is matching almost nothing and this guard is inert over that root",
+                declared * 2 >= on_disk_modules,
+                "found only {declared} `mod x;` declaration(s) under `{rel_root}` against \
+                 {on_disk_modules} module file(s) still on disk — the parser is matching almost \
+                 nothing and this guard is inert over that root. (This floor is RELATIVE on purpose: \
+                 migration removes a file and its declaration together, so it must not need lowering.)",
             );
         }
         assert!(
