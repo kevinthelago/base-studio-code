@@ -936,20 +936,25 @@ pub fn marker_for(crate_dir: &str) -> String {
 /// `graph-materialize-becomes-a-real-build-dependency` added precisely so `src-tauri` — a package whose
 /// build script already does four other jobs — could materialize without giving up any of them. There
 /// is nothing to replace and nothing to fold, so refusing would be refusing an already-solved problem.
-/// COMMENTS ARE EXCLUDED, and that is not tidiness — a bare `contains` got a verdict WRONG.
+/// THE EVIDENCE IS LEXICAL, for the same reason `include_str_targets` above it is — a bare `contains`
+/// got a verdict WRONG here too, and the two bugs were found independently on the same day.
 ///
-/// `build_script_effects` beside this one is a deliberate text scan and says so, on the grounds that a
-/// directive inside a comment "over-reports into a message a human reads and never into a verdict".
-/// This one DOES feed a verdict, so the same looseness is not available to it. Measured: a bare
+/// `build_script_effects` beside this one is a deliberate RAW text scan and says so, on the grounds
+/// that a directive inside a comment "over-reports into a message a human reads and never into a
+/// verdict". This one DOES feed a verdict, so that looseness is not available to it. Measured: a bare
 /// `contains("graph_materialize::")` matched the phrase `calls as `graph_materialize::emit()`` in the
-/// SHARED script's own module docs, so `crates/graph-materialize` — whose `build.rs` is that script and
+/// SHARED script's own module docs, so `crates/graph-materialize` — whose `build.rs` IS that script and
 /// which calls nothing — silently changed refusal from "already has its own build script" to "declares
-/// no modules". Same exit code, different reason, and nothing would have said so.
+/// no modules". Same exit code, different reason, and nothing would have said so; only a diff of all 70
+/// crates against the previous binary caught it.
+///
+/// It reuses [`CodeMask`] rather than stripping comment lines itself. A line scan would have answered
+/// this case, and it would still have been a SECOND half-answer to a question the crate had just
+/// settled properly: the mask also knows string literals, nested `/* */`, and escapes, so a
+/// `graph_materialize::` inside a fixture string is not a call either.
 pub fn calls_materializer(build_src: &str) -> bool {
-    build_src.lines().any(|l| {
-        let t = l.trim_start();
-        !t.starts_with("//") && !t.starts_with('*') && t.contains("graph_materialize::")
-    })
+    let mask = CodeMask::of(build_src);
+    build_src.match_indices("graph_materialize::").any(|(at, _)| mask.is_code(at))
 }
 
 /// The crate root this crate declares its modules in — `main.rs` for a BINARY crate.
@@ -1569,7 +1574,7 @@ mod tests {
         let mut wrong: Vec<String> = Vec::new();
         for src in not_a_call {
             let modules = vec![node(&["cli"], "cli.rs", Some(src))];
-            let shape = CrateShape { cargo_toml: plain, build_rs: None, root_name: "lib.rs", modules: &modules };
+            let shape = CrateShape { cargo_toml: plain, build_rs: None, root_name: "lib.rs", marker: MARKER, modules: &modules };
             let targets = include_str_targets(src);
             if !targets.is_empty() {
                 wrong.push(format!("read {targets:?} out of TEXT: {src}"));
@@ -2085,6 +2090,10 @@ mod tests {
         let shared_docs = "//! a `[build-dependencies]` entry and calls as `graph_materialize::emit()` — runs this exact source\n\ninclude!(\"plan.rs\");\n\nfn main() {\n    emit();\n}\n";
         assert!(!calls_materializer(shared_docs), "a doc comment is not a call site");
         assert!(!calls_materializer("/*\n * graph_materialize::emit()\n */\nfn main() {}\n"), "nor a block comment");
+        // …nor a STRING LITERAL, which a line-based comment strip would have missed. This is what
+        // reusing `CodeMask` buys over the version this test was first written against.
+        assert!(!calls_materializer("fn main() { let s = \"graph_materialize::emit()\"; }\n"), "nor a string");
+        assert!(!calls_materializer("fn main() { let s = r#\"graph_materialize::emit()\"#; }\n"), "nor a raw string");
 
         // …and the REAL call site, verbatim from `src-tauri/build.rs`, still reads as one.
         let real = "//! runs the materializer as a fifth job\nfn main() {\n    tauri_build::build();\n    graph_materialize::emit_when_adopted();\n}\n";
