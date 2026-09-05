@@ -655,8 +655,9 @@ mod tests {
 //     bsc graph impl set --id bsc-studio--<module>.rs --code-file <f>
 //     bsc graph promote --id bsc-studio--<module>.rs
 //
-// This header stays a file because include! refuses crate-level //! docs and #![…] inner
-// attributes (E0753 / "an inner attribute is not permitted in this context").
+// This header is still a file because this root holds crate-level code of its own. A root
+// down to its //! docs and this include is migrated too: the docs become the
+// `bsc-studio--lib.rs` doc record and [lib] path points at crates/graph-materialize/crate_root.rs.
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));
 #[cfg(test)]
 mod coverage_tests {

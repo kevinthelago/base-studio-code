@@ -924,6 +924,8 @@ the one document
 //     bsc graph impl set --id bsc-agent--<module>.rs --code-file <f>
 //     bsc graph promote --id bsc-agent--<module>.rs
 //
-// This header stays a file because include! refuses crate-level //! docs and #![…] inner
-// attributes (E0753 / "an inner attribute is not permitted in this context").
+// This header is still a file because this root holds crate-level code of its own, and because
+// a BINARY root reaches the shared `crates/graph-materialize/crate_root.rs` through `[[bin]]
+// path`, which nothing wires yet. A library root down to its //! docs and this include is
+// migrated (`a-crate-root-is-shared-so-a-crate-is-one-file`).
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));

@@ -100,7 +100,13 @@ pub fn graph_json() -> &'static str {
 /// those sites, which restates today's wrong answer until each is found and changed. And these are
 /// exclusive in fact — nothing is both a language built-in and a test — so a second axis would model a
 /// freedom that does not exist.
-pub const ROLES: [&str; 3] = ["primitive", "algorithm", "test"];
+/// `doc` is the fourth because a CRATE ROOT'S PROSE is a record too
+/// (`a-crate-root-is-shared-so-a-crate-is-one-file`). It carries markdown rather than source, is
+/// materialized into `$OUT_DIR/crate_doc.md` by `graph-materialize` for the shared crate root's
+/// `#![doc = include_str!(…)]`, and is deliberately NOT an `algorithm`: `scripts/graph-rust-compile.mjs`
+/// would try to compile it as Rust and [`doctor`]'s kind/viz loop would demand a manipulation kind of
+/// a paragraph. Every consumer that already branches on `role != "algorithm"` gets that right for free.
+pub const ROLES: [&str; 4] = ["primitive", "algorithm", "test", "doc"];
 
 /// Is this record's MODULE compiled out of production builds — `#[cfg(test)]` on its declaration?
 ///
@@ -308,7 +314,7 @@ pub struct AlgoImpl {
     pub id: String,
     /// The language kit — `"typescript"` | `"rust"`.
     pub tech: String,
-    /// What kind of record this is (#2863) — `"primitive"` | `"algorithm"` | `"test"`. See [`ROLES`].
+    /// What kind of record this is (#2863) — `"primitive"` | `"algorithm"` | `"test"` | `"doc"`. See [`ROLES`].
     pub role: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1893,6 +1899,11 @@ mod tests {
                     im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty()),
                     "test '{id}' carries the test source",
                 ),
+                // A doc record carries a crate root's PROSE in `code` — markdown, not source.
+                Some("doc") => assert!(
+                    im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty()),
+                    "doc '{id}' carries the documentation",
+                ),
                 other => panic!("impl '{id}' has an unexpected role {other:?}"),
             }
         }
@@ -3060,6 +3071,7 @@ mod stale_write_tests {
 //     bsc graph impl set --id bsc-graph--<module>.rs --code-file <f>
 //     bsc graph promote --id bsc-graph--<module>.rs
 //
-// This header stays a file because include! refuses crate-level //! docs and #![…] inner
-// attributes (E0753 / "an inner attribute is not permitted in this context").
+// This header is still a file because this root holds crate-level code of its own. A root
+// down to its //! docs and this include is migrated too: the docs become the
+// `bsc-graph--lib.rs` doc record and [lib] path points at crates/graph-materialize/crate_root.rs.
 include!(concat!(env!("OUT_DIR"), "/crate.rs"));

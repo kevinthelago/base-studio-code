@@ -9,10 +9,11 @@
 //! build = "../graph-materialize/build.rs"
 //! ```
 //!
-//! and one line in `src/lib.rs`:
+//! and one more pointing the crate root at the SHARED one, so the crate owns no source file at all:
 //!
-//! ```ignore
-//! include!(concat!(env!("OUT_DIR"), "/crate.rs"));
+//! ```toml
+//! [lib]
+//! path = "../graph-materialize/crate_root.rs"
 //! ```
 //!
 //! **As a real build-dependency**, which is how a crate that ALREADY OWNS a build script reaches it —
@@ -37,9 +38,16 @@
 //!
 //! # What it materializes
 //!
-//! Every record in the committed store whose `src` sits under THIS crate's `src/` directory, except
-//! `lib.rs` — which stays a real file because `include!` refuses crate-level `//!` docs and `#![…]`
-//! inner attributes (E0753 / "an inner attribute is not permitted in this context", both measured).
+//! Every record in the committed store whose `src` sits under THIS crate's `src/` directory. The root
+//! (`lib.rs`) is not a module and is materialized SEPARATELY, into `$OUT_DIR/crate_doc.md`, by
+//! [`Plan::select_doc`] — it is the crate's own `//!` prose, and the shared
+//! `crates/graph-materialize/crate_root.rs` picks it up with
+//! `#![doc = include_str!(concat!(env!("OUT_DIR"), "/crate_doc.md"))]`.
+//!
+//! THE ROOT USED TO BE PERMANENT FLOOR HERE, "because `include!` refuses crate-level `//!` docs and
+//! `#![…]` inner attributes (E0753)". That refusal is about an INCLUDED file; the inner attribute
+//! above sits in the REAL root and is perfectly legal, so two adopters share one root file and still
+//! get different rustdoc. See `a-crate-root-is-shared-so-a-crate-is-one-file`.
 //!
 //! Nested directories are materialized as a `mod` tree mirroring the directory tree
 //! (`graph-materialize-takes-nested-modules-and-mod-rs`) — `src/cli/nouns.rs` becomes

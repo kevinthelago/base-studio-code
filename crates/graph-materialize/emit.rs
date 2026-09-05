@@ -143,7 +143,7 @@ pub fn plan_for(manifest: &Path, explicit_root: Option<&Path>) -> Result<Plan, S
     // this crate does not gain a watch on a path that will never change.
     let here = repo_root.join("crates").join("graph-materialize");
     let mut rerun = vec![store_path.clone()];
-    for f in ["build.rs", "plan.rs", "emit.rs"] {
+    for f in ["build.rs", "plan.rs", "emit.rs", "crate_root.rs"] {
         let p = here.join(f);
         if p.is_file() {
             rerun.push(p);
@@ -202,6 +202,39 @@ impl Plan {
         mine
     }
 
+    /// This crate's OWN crate-level documentation, from its doc record, as the markdown that
+    /// `crate_doc.md` holds.
+    ///
+    /// # Why the crate root's documentation is a record like everything else
+    ///
+    /// The crate root used to be the one file a migrated crate could not give up, and the stated
+    /// reason was that `include!` refuses crate-level `//!` docs (E0753). That is true of an INCLUDED
+    /// file and false of the real root: `#![doc = include_str!(concat!(env!("OUT_DIR"), "/crate_doc.md"))]`
+    /// is a legal inner attribute in `crate_root.rs`, and `include_str!` resolves out of `OUT_DIR`,
+    /// which is this script's to write. So the prose moves into the graph, where it dedupes and relates
+    /// like every other record, and the shared root still gives each adopter its own rustdoc.
+    ///
+    /// SELECTED BY THE DERIVATION THAT ALREADY EXISTS, not by a new field. The doc record's `src` is
+    /// the crate root's path (`crates/bsc-fin/src/lib.rs`) and its id is `expected_id` of that path
+    /// (`bsc-fin--lib.rs`) — the same "this record IS that whole file" statement every module record
+    /// makes. It can never be mistaken for a module because [`module_path`] already returns `None` for
+    /// `lib.rs`/`main.rs`, so [`Plan::select`] skips it without knowing it exists.
+    ///
+    /// `None` means the crate has authored no doc record, which is not an error: 48 crates still own a
+    /// real `lib.rs` and never read this file, and a crate mid-migration should get an empty rustdoc
+    /// rather than a failed build.
+    pub fn select_doc(&self, impls: &[serde_json::Value]) -> Option<String> {
+        let want_src = format!("{}lib.rs", self.src_prefix);
+        let want_id = expected_id(&self.crate_dir, "lib.rs");
+        impls
+            .iter()
+            .find(|i| {
+                i.get("src").and_then(|v| v.as_str()) == Some(want_src.as_str())
+                    && i.get("id").and_then(|v| v.as_str()) == Some(want_id.as_str())
+            })
+            .and_then(|i| i.get("code")?.as_str().map(str::to_string))
+    }
+
     /// The generated `crate.rs` body for this crate, given the store's raw JSON text.
     pub fn render_store(&self, raw: &str, adoption: Adoption) -> Result<Option<String>, String> {
         let store: serde_json::Value = serde_json::from_str(raw)
@@ -252,11 +285,31 @@ pub fn emit_into(
     }
     let raw = std::fs::read_to_string(&plan.store_path)
         .map_err(|e| format!("cannot read the committed graph store at {}: {e}", plan.store_path.display()))?;
+    // The crate's own documentation, ALWAYS written — `crate_root.rs` `include_str!`s it
+    // unconditionally, so a missing file is a compile error rather than an empty doc page, and a crate
+    // that has authored no doc record yet must still build. Written BEFORE the module render can bail,
+    // for the same reason.
+    write_crate_doc(&plan, &raw, out_dir)?;
     let Some(body) = plan.render_store(&raw, adoption)? else { return Ok(0) };
     let modules = body.lines().filter(|l| l.trim_start().starts_with("// record `")).count();
     let dest = out_dir.join("crate.rs");
     std::fs::write(&dest, body).map_err(|e| format!("cannot write {}: {e}", dest.display()))?;
     Ok(modules)
+}
+
+/// Write `$OUT_DIR/crate_doc.md` — the crate's own documentation, for the shared crate root's
+/// `#![doc = include_str!(…)]` to pick up.
+///
+/// The file is written even when the crate has no doc record, because the shared root includes it
+/// unconditionally; an absent record yields an empty page, never a broken build.
+fn write_crate_doc(plan: &Plan, raw: &str, out_dir: &Path) -> Result<(), String> {
+    let store: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", plan.store_path.display()))?;
+    let empty = Vec::new();
+    let impls = store.get("implementations").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let doc = plan.select_doc(impls).unwrap_or_default();
+    let dest = out_dir.join("crate_doc.md");
+    std::fs::write(&dest, doc).map_err(|e| format!("cannot write {}: {e}", dest.display()))
 }
 
 /// The build-script entry point for a crate whose `lib.rs` `include!`s the generated file.

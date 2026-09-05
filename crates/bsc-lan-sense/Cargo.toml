@@ -26,6 +26,15 @@ thiserror = "2"
 # Test-only: building a Sensor needs a signing key.
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
+[lints.rust]
+# NO UNSAFE, and it is FORBID rather than deny: this crate parses hostile-shaped text off the
+# network into a verdict, so nothing in it has any business reaching for a raw pointer, and
+# `forbid` cannot be lifted by an `#[allow]` further in. It lived as `#![forbid(unsafe_code)]` in
+# `src/lib.rs` until that file stopped existing (`a-crate-root-is-shared-so-a-crate-is-one-file`):
+# the crate root is SHARED by every adopter now, so a per-crate inner attribute has nowhere to sit
+# and the manifest — a file that stays regardless — is where cargo has read this since 1.74.
+unsafe_code = "forbid"
+
 [lints.clippy]
 wildcard_enum_match_arm = "deny"
 match_wildcard_for_single_variants = "deny"
