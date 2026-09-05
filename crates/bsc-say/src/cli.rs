@@ -579,10 +579,10 @@ fn speak_with_kokoro(
         kokoro::phonemize(espeak, espeak_data, &req.text, lang)?
     };
     let mut voice = kokoro::Voice::load(paths)?;
-    let (ids, _) = kokoro::tokenize(&ipa, voice.vocab());
     let bytes = std::fs::read(voice_file).map_err(|e| format!("{}: {e}", voice_file.display()))?;
-    let style = kokoro::style_for(&bytes, ids.len())?;
-    let (samples, missing) = voice.speak_ipa(&ipa, &style, voice::clamp_rate(req.rate))?;
+    // `speak`, not `speak_ipa`: it chunks to the model's ceiling. Measured before it existed — an
+    // ordinary paragraph is 805 phonemes against a 510 limit, and the surplus was dropped silently.
+    let (samples, missing) = voice.speak(&ipa, &bytes, voice::clamp_rate(req.rate))?;
     if !missing.chars.is_empty() {
         // Never silent: an unrepresentable phoneme is a mispronunciation, and a mispronunciation
         // gets blamed on the model rather than on the mapping.
