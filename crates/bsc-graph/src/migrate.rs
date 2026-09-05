@@ -1682,7 +1682,25 @@ mod materialize_plan_tests {
         let mut checked = 0usize;
         let mut nested = 0usize;
         let mut mod_rs = 0usize;
-        for entry in std::fs::read_dir(repo().join("crates")).expect("crates/") {
+        let root = repo();
+        let mut check = |krate: &str, file: &str| {
+            let full = format!("crates/{krate}/src/{file}");
+            assert_eq!(
+                expected_id(krate, file),
+                crate::extract::module_id(&full, "rs"),
+                "build.rs and extract::module_id must derive the SAME id for {full}"
+            );
+            if file.contains('/') {
+                nested += 1;
+            }
+            if file.ends_with("mod.rs") {
+                mod_rs += 1;
+            }
+            checked += 1;
+        };
+        // The modules still on disk…
+        let mut on_disk: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for entry in std::fs::read_dir(root.join("crates")).expect("crates/") {
             let dir = entry.expect("entry").path();
             let Some(krate) = dir.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
             let src = dir.join("src");
@@ -1690,39 +1708,38 @@ mod materialize_plan_tests {
                 continue;
             }
             for file in rs_files(&src, "") {
-                let full = format!("crates/{krate}/src/{file}");
-                assert_eq!(
-                    expected_id(&krate, &file),
-                    crate::extract::module_id(&full, "rs"),
-                    "build.rs and extract::module_id must derive the SAME id for {full}"
-                );
-                if file.contains('/') {
-                    nested += 1;
-                }
-                if file.ends_with("mod.rs") {
-                    mod_rs += 1;
-                }
-                checked += 1;
+                on_disk.insert(format!("crates/{krate}/src/{file}"));
+                check(&krate, &file);
             }
         }
+        // …AND the ones that are no longer files. A migrated crate's modules live in the committed
+        // store, and the id join this test guards is exactly what selects them at build time — so
+        // walking only the disk would quietly shrink the population every time a crate migrates,
+        // and would stop checking the ids that matter MOST, the ones a build.rs actually resolves.
+        // (`bsc-news` and `research` moved 13 nested modules and 3 `mod.rs` off disk in one commit,
+        // which is what first took this walk under its own floors.)
+        let store = crate::repo_store::read_at(&crate::repo_store::path_under(&root))
+            .expect("the committed store parses")
+            .expect("the committed store exists");
+        let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
+        for i in impls {
+            let Some(src) = i.get("src").and_then(|v| v.as_str()) else { continue };
+            if on_disk.contains(src) {
+                continue; // a record whose file also exists — counted once, above
+            }
+            let Some(rest) = src.strip_prefix("crates/") else { continue };
+            let Some((krate, file)) = rest.split_once("/src/") else { continue };
+            if !file.ends_with(".rs") || file == "lib.rs" || file == "main.rs" {
+                continue;
+            }
+            check(krate, file);
+        }
         // POPULATION, so a walker that silently stopped matching fails loudly rather than passing over
-        // nothing. Measured 2026-09-04: 216 files, 30 nested, 4 mod.rs — and every one of those numbers
-        // FALLS as crates migrate into the graph, so the floors are deliberately well under them and
-        // exist to catch a walk that found nothing, not to pin a census.
-        //
-        // RE-MEASURED the same day, after `bsc-lan-core` migrated (it took `src/adapters/`, 9 nested
-        // files of which one was a `mod.rs`): 196 files, 21 nested, 3 mod.rs. The `mod_rs >= 4` floor
-        // was pinned at EXACTLY the measured value, which contradicts the "deliberately well under"
-        // policy the comment above states and made it fire on the first migration rather than on a
-        // broken walk. It is 1 here: the walk's anti-silence guard for this branch is `checked`, and the
-        // `mod.rs` id derivation is pinned AT STRENGTH by the `src-tauri` sibling test below
-        // (`mod_rs >= 20` against 24 present), which no crate migration can erode.
-        //
-        // `nested >= 20` now has a margin of ONE. The next nested crate to migrate will trip it the same
-        // way; that is a floor to lower when it fires, not a walk that has gone wrong.
-        assert!(checked > 120, "the walk found only {checked} .rs files under crates/*/src");
-        assert!(nested >= 20, "only {nested} nested files — the case this change exists for");
-        assert!(mod_rs >= 1, "only {mod_rs} mod.rs files — the walk is not reaching the mod.rs case at all");
+        // nothing. Measured 2026-09-04: 216 modules, 30 nested, 4 mod.rs — counted across BOTH homes,
+        // so migrating a crate MOVES a module between them rather than deleting it from the census.
+        assert!(checked > 120, "the walk found only {checked} modules under crates/*/src");
+        assert!(nested >= 20, "only {nested} nested modules — the case this change exists for");
+        assert!(mod_rs >= 4, "only {mod_rs} mod.rs modules");
     }
 
     /// The same agreement for `src-tauri`, which is the reason this change matters: 136 files at depth
@@ -1754,6 +1771,12 @@ mod materialize_plan_tests {
     ///
     /// The old scheme is reproduced inline (it is nine lines) rather than described, because "the output
     /// is unchanged" is the only claim that matters when a single file is the build input for 50 crates.
+    ///
+    /// **A crate holding a NESTED record is out of scope, not an exception being waved through.** The
+    /// flat scheme could not express a module below `src/`, so "as it did before" has no referent for a
+    /// crate the flat scheme could never have migrated at all — the comparison would be against a
+    /// rendering that never existed. Those crates are counted separately and floored, so the skip can
+    /// never silently swallow the whole population.
     #[test]
     fn every_already_migrated_crate_renders_byte_identically_to_the_flat_scheme() {
         let root = repo();
@@ -1772,8 +1795,8 @@ mod materialize_plan_tests {
             if !cargo.contains(super::MARKER) {
                 continue;
             }
-            crates += 1;
             let prefix = format!("crates/{krate}/src/");
+            crates += 1;
 
             // A crate holding a NESTED record HAS NO FLAT PREDECESSOR TO BE IDENTICAL TO. The old scheme
             // could only express direct children of `src/` — nesting was a `migrate-crate` REFUSAL until
