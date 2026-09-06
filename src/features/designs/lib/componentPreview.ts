@@ -877,6 +877,10 @@ function siblingIndex(siblings: readonly ComponentRecord[]): SiblingIndex {
     const impl = ownImplSource(s);
     const sp = s.src?.trim();
     if (impl && sp) addOwner(idx.baseOwners, stripExt(sp), s.id);
+    // The sibling-by-id form (#3606), keyed into the SAME map as the `src`-based base above —
+    // `resolveInternalBase` reduces `@/components/<id>` to exactly this string, so one `hasSibBase` /
+    // `baseOwners` lookup answers both forms. See the twin in `componentPreviewFiles`.
+    if (impl) addOwner(idx.baseOwners, `components/${s.id}`, s.id);
     const spec = s.provides?.trim();
     const base = spec ? resolveInternalBase(spec, "") : null;
     if (spec && impl && base !== null) {
@@ -1050,6 +1054,16 @@ export function componentPreviewFiles(
     const source = ownImplSource(s);
     const sp = s.src?.trim();
     if (source && sp) sibByBase.set(stripExt(sp), { src: sp, source });
+    // `@/components/<id>` — the SIBLING-BY-ID form (#3606), independent of `src`. There is no physical
+    // `@/components/` dir (#1309); the runtime loader intercepts the specifier and vendors the sibling's
+    // source in its place, so a record may import a sibling by ID whether or not that sibling has a
+    // `src` path at all. Vendored at a synthetic `components/<id>.tsx` mem path so both
+    // `resolvesInternal`'s `sibByBase.has(base)` check and the transitive-closure walk below (which
+    // reads this same map) resolve it for free — `resolveInternalBase` already reduces the specifier to
+    // exactly `components/<id>`. This is the frontend twin of Rust `kit_targets`' synthetic
+    // `components/{id}.tsx` target (#3897, `graph_health.rs`); without it the preview refused to build a
+    // component `bsc ui doctor` reported as healthy.
+    if (source) sibByBase.set(`components/${s.id}`, { src: `components/${s.id}.tsx`, source });
   }
 
   const resolvesInternal = (spec: string, fromRel: string): boolean => {

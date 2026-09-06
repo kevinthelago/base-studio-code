@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>xterm-under-a-CSS-scale harness</title>
+    <style>
+      /* No page margin and no page scrolling: the spec maps a CELL to a viewport point, so any
+         layout shift between "where the harness thinks the terminal is" and "where Playwright
+         clicks" would silently become the thing under test. */
+      html, body { margin: 0; padding: 0; overflow: hidden; background: #111; }
+      /* The VIEWPORT — the clipping element, exactly as `useGraphViewport`'s `setVp` element. */
+      #vp { position: fixed; inset: 0; overflow: hidden; }
+      /* The WORLD LAYER, carrying `viewTransform()`. */
+      #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+      /* The morph ANCHOR — world-positioned, and carrying `counterScaleTransform()` when the
+         counter-scale is on. Zero-size on purpose, exactly as `GlanceStreamMorph` renders it. */
+      #anchor { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+      /* The CARD, in SCREEN px inside the anchor. */
+      #card { position: absolute; }
+    </style>
+  </head>
+  <body>
+    <div id="vp">
+      <div id="world">
+        <div id="anchor">
+          <div id="card"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./xtermScaleHarness.ts"></script>
+  </body>
+</html>

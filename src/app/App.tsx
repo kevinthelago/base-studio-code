@@ -40,6 +40,8 @@ import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
 import { useCoordSpeaker } from "@/app/a11y/useCoordSpeaker";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
+import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
+import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
 import { useNavHistory } from "@/shared/hooks/useNavHistory";
@@ -98,7 +100,12 @@ export default function App() {
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
-  useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
+  useWorkerAutoEnd(paneIdFor); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
+  // Reap idle, unfocused sessions (#849). MOUNTED HERE, not in ConsoleWorkspace: its own header
+  // claimed that mount for a long time and nothing ever made it — the hook was defined, registered as
+  // a module, and never called. The Console is opt-in anyway, so a reaper living there would only run
+  // while somebody was watching the Console, which is not a reaper.
+  useIdleReaper();
   useNotificationSounds(); // opt-in Signal-kit cues on fleet coord events (default off) (#3082)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
   useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
@@ -124,14 +131,10 @@ export default function App() {
   const projectsView = useAppStore((s) => s.projectsView);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
-  const showConsolePage = useAppStore((s) => s.showConsolePage);
 
-  // The legacy Console page is opt-in (#2372). When it's off, a persisted (or just-toggled-off)
-  // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`
-  // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
-  // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
-  // effectiveWorkspace (registry.ts) is the shared definition — useHotkeys gates on it too (#3575).
-  const activeWorkspace = effectiveWorkspace(rawActiveWorkspace, showConsolePage);
+  // effectiveWorkspace (registry.ts) is the shared indirection the rail, chrome and useHotkeys read;
+  // it is identity now that Console is a permanent workspace (the #2372 opt-in is gone).
+  const activeWorkspace = effectiveWorkspace(rawActiveWorkspace);
 
   // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
   // `app-repo` harvest root into a real path without awaiting.
@@ -205,16 +208,19 @@ export default function App() {
               would kill and relaunch that PTY every time. They were previously kept mounted INSIDE the
               Planner — leaving them as plain `activeWorkspace === x && <X />` would have quietly
               regressed that, and a killed-and-restarted session looks like a slow page, not a bug. */}
-          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />}>
+          {/* `label` tags the un-hide timing `bsc perf phases` can read
+              (`request-177-components-graph-real-app-instrumentation`) — real-app numbers for exactly
+              the visit KeptMountedPage exists to make cheap, instead of another synthetic-shell guess. */}
+          <KeptMountedPage active={activeWorkspace === "components"} fallback={<WorkspaceFallback />} label="components">
             <ComponentsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "algorithms"} fallback={<WorkspaceFallback />} label="algorithms">
             <AlgorithmsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "teams"} fallback={<WorkspaceFallback />} label="teams">
             <TeamsWorkspace />
           </KeptMountedPage>
-          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />}>
+          <KeptMountedPage active={activeWorkspace === "sounds"} fallback={<WorkspaceFallback />} label="sounds">
             <SoundsWorkspace />
           </KeptMountedPage>
           {/* Data is the one graph with no studio and no PTY, so it mounts only while active. */}

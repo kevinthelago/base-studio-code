@@ -1,0 +1,550 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch buildAgentEnv — do not hand-edit; see the .gen.test.ts",
+  "denyAllSentinel": "__bsc_deny_all__",
+  "cases": [
+    {
+      "label": "no role at all — an ungated pane is never scoped",
+      "role": null,
+      "writeGlobs": [],
+      "capability": null,
+      "scopeGlobs": null,
+      "scopes": null
+    },
+    {
+      "label": "role planner, no own globs",
+      "role": "planner",
+      "writeGlobs": [],
+      "capability": {
+        "role": "planner",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "*.md *.json prompts/*.md prompts/* discovery/*.md discovery/*",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role worker, no own globs",
+      "role": "worker",
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "scopeGlobs": null,
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role director, no own globs",
+      "role": "director",
+      "writeGlobs": [],
+      "capability": {
+        "role": "director",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "scopeGlobs": "*.md *.json prompts/*.md prompts/* discovery/*.md discovery/*",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role triage, no own globs",
+      "role": "triage",
+      "writeGlobs": [],
+      "capability": {
+        "role": "triage",
+        "writeGlobs": [],
+        "github": "write",
+        "git": "none",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "__bsc_deny_all__",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role tester, no own globs",
+      "role": "tester",
+      "writeGlobs": [],
+      "capability": {
+        "role": "tester",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "__bsc_deny_all__",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role reviewer, no own globs",
+      "role": "reviewer",
+      "writeGlobs": [],
+      "capability": {
+        "role": "reviewer",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "__bsc_deny_all__",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role issuer, no own globs",
+      "role": "issuer",
+      "writeGlobs": [],
+      "capability": {
+        "role": "issuer",
+        "writeGlobs": [],
+        "github": "write",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "__bsc_deny_all__",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role juror, no own globs",
+      "role": "juror",
+      "writeGlobs": [],
+      "capability": {
+        "role": "juror",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "__bsc_deny_all__",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role documentor, no own globs",
+      "role": "documentor",
+      "writeGlobs": [],
+      "capability": {
+        "role": "documentor",
+        "writeGlobs": [
+          "*.md",
+          "**/*.md",
+          "README*",
+          "**/README*",
+          "CHANGELOG*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "*.md **/*.md README* **/README* CHANGELOG*",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role designer, no own globs",
+      "role": "designer",
+      "writeGlobs": [],
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "scopeGlobs": "scratch/**",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"write\"}"
+    },
+    {
+      "label": "role architect, no own globs",
+      "role": "architect",
+      "writeGlobs": [],
+      "capability": {
+        "role": "architect",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "allow": [
+          "bsc teams",
+          "bsc persona",
+          "bsc plan brief",
+          "bsc plan requirement",
+          "bsc plan classify",
+          "bsc fleet director",
+          "bsc fleet directors",
+          "bsc session",
+          "bsc project new",
+          "bsc project link",
+          "bsc project architect",
+          "bsc project list",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ]
+      },
+      "scopeGlobs": "scratch/**",
+      "scopes": "{\"graph\":\"none\",\"ui\":\"none\"}"
+    },
+    {
+      "label": "role librarian, no own globs",
+      "role": "librarian",
+      "writeGlobs": [],
+      "capability": {
+        "role": "librarian",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "read",
+        "graph": "write",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc graph",
+          "bsc ui list",
+          "bsc ui get",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "scopeGlobs": "scratch/**",
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "role sound-designer, no own globs",
+      "role": "sound-designer",
+      "writeGlobs": [],
+      "capability": {
+        "role": "sound-designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "allow": [
+          "bsc sound",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "scopeGlobs": "scratch/**",
+      "scopes": "{\"graph\":\"none\",\"ui\":\"none\"}"
+    },
+    {
+      "label": "role marketer, no own globs",
+      "role": "marketer",
+      "writeGlobs": [],
+      "capability": {
+        "role": "marketer",
+        "writeGlobs": [
+          "marketing/**/*.md",
+          "marketing/**/*.mdx",
+          "content/**/*.md",
+          "content/**/*.mdx",
+          "README*",
+          "**/README*",
+          "CHANGELOG*",
+          "**/CHANGELOG*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "marketing/**/*.md marketing/**/*.mdx content/**/*.md content/**/*.mdx README* **/README* CHANGELOG* **/CHANGELOG*",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "worker with own write globs",
+      "role": "worker",
+      "writeGlobs": [
+        "src/**",
+        "docs/**"
+      ],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [
+          "src/**",
+          "docs/**"
+        ],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "scopeGlobs": "src/** docs/**",
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "worker with ONE glob",
+      "role": "worker",
+      "writeGlobs": [
+        "src/**"
+      ],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [
+          "src/**"
+        ],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "scopeGlobs": "src/**",
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "designer with own globs — a carve-out role keeps its scoped write",
+      "role": "designer",
+      "writeGlobs": [
+        "scratch/**"
+      ],
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "scopeGlobs": "scratch/**",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"write\"}"
+    },
+    {
+      "label": "triage with own globs — code:none WITHOUT a carve-out grants nothing",
+      "role": "triage",
+      "writeGlobs": [
+        "src/**"
+      ],
+      "capability": {
+        "role": "triage",
+        "writeGlobs": [
+          "src/**"
+        ],
+        "github": "write",
+        "git": "none",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "scopeGlobs": "__bsc_deny_all__",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "director with own globs — the commons carve-out",
+      "role": "director",
+      "writeGlobs": [
+        "docs/**"
+      ],
+      "capability": {
+        "role": "director",
+        "writeGlobs": [
+          "docs/**"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "scopeGlobs": "docs/**",
+      "scopes": "{\"graph\":\"read\",\"ui\":\"read\"}"
+    },
+    {
+      "label": "a glob containing a space-free path stays space-joined",
+      "role": "worker",
+      "writeGlobs": [
+        "a/**",
+        "b/**",
+        "c/**"
+      ],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [
+          "a/**",
+          "b/**",
+          "c/**"
+        ],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "scopeGlobs": "a/** b/** c/**",
+      "scopes": "{\"graph\":\"write\",\"ui\":\"read\"}"
+    }
+  ]
+}

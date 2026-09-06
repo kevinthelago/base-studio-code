@@ -1297,13 +1297,16 @@ describe("agent fleet store", () => {
     expect(st.paneProviders[directorPaneId("hb-key")]).toBe("bsc-agent");
     expect(st.paneProviders[fleetPaneId("hb-key", "auth-ui")]).toBe("bsc-agent");
 
-    // A local/ollama provider FORCES bsc-agent even with the harness toggle left on "claude" —
-    // Claude Code can't drive Ollama, so selecting it runs the whole fleet on the local model.
+    // A local/ollama provider does NOT override the toggle. It used to ("Claude Code can't drive
+    // Ollama, so selecting it runs the whole fleet on the local model"), and that is what put every
+    // studio, architect and un-designated fleet pane on the local model the moment ONE project was
+    // designated local. The provider says which model a bsc-agent session talks to; this toggle says
+    // whether a session is one, and it is set to claude here.
     useAppStore.setState({ fleetHarness: "claude", llmProvider: "ollama" });
     useAppStore.getState().fleetStartProject("HO", fleet, "ho-key");
     st = useAppStore.getState();
-    expect(st.paneProviders[directorPaneId("ho-key")]).toBe("bsc-agent");
-    expect(st.paneProviders[fleetPaneId("ho-key", "auth-ui")]).toBe("bsc-agent");
+    expect(st.paneProviders[directorPaneId("ho-key")]).toBe("claude");
+    expect(st.paneProviders[fleetPaneId("ho-key", "auth-ui")]).toBe("claude");
     useAppStore.setState({ llmProvider: "anthropic" }); // restore for sibling tests
   });
 

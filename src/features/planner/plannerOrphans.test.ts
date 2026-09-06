@@ -91,11 +91,26 @@ if (existsSync(APP_RECORDS)) {
 // ── implementation records ────────────────────────────────────────────────────
 const impls = JSON.parse(readFileSync(IMPLS, "utf8")) as {
   implementations: { provides?: string; code?: string; tests?: { src?: string }[] }[];
+  edges?: { src?: string; tests?: { src?: string }[] }[];
 };
 for (const n of impls.implementations) {
   if (!n.provides) continue;
   note(n.provides, n.code ?? "");
   noteCarriedTests(n.provides, n.tests);
+}
+
+// ── EDGE tests (`the-frontend-tests-are-records`) ──────────────────────────────
+//
+// The THIRD place a test can live, after `src/` and a record's `tests[]`: a test spanning several
+// records is carried on the EDGE between them. Its provenance `src` is the path it was migrated out
+// of, so `specOf` gives back exactly the `@/…/x.test` key a colocated file had — same root, same
+// meaning, no synthetic suffix needed. Missing this repeated the carried-test lesson one tier up:
+// migrating `plannerSync.test.ts` onto an edge made `@/features/planner/lib/plannerSync/bridge` read
+// as an orphan on the very next run, when its only importer had simply moved stores.
+for (const e of impls.edges ?? []) {
+  const spec = specOf(e?.src ?? "");
+  if (!spec) continue;
+  for (const t of e.tests ?? []) if (t?.src) note(spec, t.src);
 }
 
 /**
@@ -115,6 +130,86 @@ function noteCarriedTests(spec: string, tests: { src?: string }[] | undefined) {
 
 const isPlanner = (s: string) => s === "@/features/planner" || s.includes("/features/planner/");
 const isTest = (s: string) => /\.(test|spec)$/.test(s);
+
+/** Everything reachable by following imports from `roots`. */
+function reachableFrom(roots: string[]): Set<string> {
+  const seen = new Set<string>();
+  const stack = [...roots];
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const e of graph.get(cur) ?? []) if (!seen.has(e)) stack.push(e);
+  }
+  return seen;
+}
+
+/**
+ * THE PLANNER MODULES NOTHING THAT SHIPS CAN REACH — pinned, because there are 58 of them.
+ *
+ * The sweep above roots at "outside the planner, OR any test", and a record's carried test registers
+ * as a synthetic `<spec>.test` root. So a DEAD module that carries a test roots ITSELF — and, worse,
+ * everything it imports. That is not a hypothetical: `publish-steps.ts` has seven exports and no
+ * caller (its sequence was ported to `crates/bsc-publish`), `gh-structure.ts`, `gh-progress.ts`,
+ * `project-pane-data.ts` and `pull-into-plan.ts` are the same, and every one of them carries a test
+ * that holds it and its imports up. The sweep reported ZERO orphans over that cluster.
+ *
+ * Rooting at PRODUCTION only — outside the planner, tests excluded — answers the different and more
+ * useful question: can anything the user runs get here? MEASURED 2026-09-03: 58 of 123.
+ *
+ * IT IS A RATCHET, NOT A WALL, and that is deliberate. Failing on all 58 would demote the gate the
+ * first time someone needed to land something, and whether a gate starts failing the build is a
+ * MAINTAINER decision, not a branch's. Pinning the SET (not the count — a count lets one appear as
+ * another is deleted) makes a new one fail immediately while the existing debt stays visible and
+ * countable. Shrink the list as modules are deleted or wired; the test tells you which way it moved.
+ */
+const TEST_ONLY_REACHABLE: string[] = [
+  "@/features/planner/blueprints/blueprintCatalog",
+  "@/features/planner/blueprints/blueprintEdit",
+  "@/features/planner/blueprints/blueprintMcp",
+  "@/features/planner/blueprints/blueprintShare",
+  "@/features/planner/fleet/fleetAssignee",
+  "@/features/planner/github/roadmapGantt",
+  "@/features/planner/issues/planFeatures",
+  "@/features/planner/issues/recoverIssues",
+  "@/features/planner/lib/dropFiles",
+  "@/features/planner/lib/integrationGaps",
+  "@/features/planner/lib/mcpContext",
+  "@/features/planner/lib/mcpPaneData",
+  "@/features/planner/lib/planExtensions",
+  "@/features/planner/lib/planInjection",
+  "@/features/planner/lib/plannerSync/bridge",
+  "@/features/planner/lib/repoReadme",
+  "@/features/planner/lib/repoScaffold",
+  "@/features/planner/lib/runtimeFault",
+  "@/features/planner/lib/sourceDiscovery",
+  "@/features/planner/lib/stackTopics",
+  "@/features/planner/list/blueprintLibrary.helpers",
+  "@/features/planner/list/drafts",
+  "@/features/planner/list/localPublished",
+  "@/features/planner/list/projectModes",
+  "@/features/planner/list/projectScan",
+  "@/features/planner/list/projectsFilter",
+  "@/features/planner/list/projectsSummaryDerive",
+  "@/features/planner/list/reopenProject",
+  "@/features/planner/preview/previewBundle",
+  "@/features/planner/preview/registry",
+  "@/features/planner/preview/renderPreview",
+  "@/features/planner/preview/renderers/canvasRenderer",
+  "@/features/planner/preview/renderers/gltfRenderer",
+  "@/features/planner/preview/renderers/htmlRenderer",
+  "@/features/planner/preview/stageCommands",
+  "@/features/planner/preview/streamingRuntime",
+  "@/features/planner/preview/types",
+  "@/features/planner/session/draftTitle",
+  "@/features/planner/session/planAutopilot",
+  "@/features/planner/session/plannerIntro",
+  "@/features/planner/session/plannerLaunch",
+  "@/features/planner/session/plannerSandbox",
+  "@/features/planner/session/renameProject",
+  "@/features/planner/stages/confirmReconcile",
+  "@/features/planner/stages/planStageDerive",
+];
 
 describe("the planner leaves nothing unreachable behind", () => {
   it("finds a graph to sweep at all", () => {
@@ -139,6 +234,24 @@ describe("the planner leaves nothing unreachable behind", () => {
         `reader will mistake for live code, and no other gate can see it:\n  ${orphans
           .map((s) => `${onDisk.has(s) ? "file  " : "record"} ${s}`)
           .join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("no planner module becomes unreachable-from-production that was not already", () => {
+    const live = reachableFrom([...graph.keys()].filter((s) => !isPlanner(s) && !isTest(s)));
+    const testOnly = [...graph.keys()].filter((s) => isPlanner(s) && !isTest(s) && !live.has(s)).sort();
+    const added = testOnly.filter((s) => !TEST_ONLY_REACHABLE.includes(s));
+    const removed = TEST_ONLY_REACHABLE.filter((s) => !testOnly.includes(s));
+    expect(
+      added,
+      `these planner modules cannot be reached from anything that SHIPS — only from a test. A test ` +
+        `whose subject nothing runs is a test with no subject, and the sweep above cannot see it ` +
+        `because a carried test roots its own module:\n  ${added.join("\n  ")}`,
+    ).toEqual([]);
+    expect(
+      removed,
+      `good news, and the list needs updating: these are reachable from production now (or gone). ` +
+        `Remove them from TEST_ONLY_REACHABLE so the ratchet keeps its grip:\n  ${removed.join("\n  ")}`,
     ).toEqual([]);
   });
 

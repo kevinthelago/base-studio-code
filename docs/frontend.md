@@ -136,18 +136,30 @@ features/<x>/
 
 ### The planner (flagship)
 
-`features/planner/` is by far the largest feature — a vertical slice with many sub-areas:
+`features/planner/` is **DOMAIN ONLY — there is no planner UI.** The pitch-to-plan screen was deleted
+(`delete-the-planner-ui-keep-the-planner`), and with it `Planning.tsx`, `ProjectsList.tsx`,
+`ProjectPane.tsx`, `FocusedShell.tsx`, `FocusedBodies.tsx`, `ProjectsSummary.tsx` and the whole
+`bodies/` per-stage body set. **None of those exists as a file or as a record** — verified 2026-09-03;
+do not go looking for them. Planning is the architect's and director's job now, driven through
+`bsc plan`.
 
-| Sub-dir | Holds |
-|---|---|
-| `session/` | the live planning session: **`Planning.tsx`** (the big page, now a layout/composition shell) + its extracted **`use*` hooks** (`usePlanningSession` + `usePlanningModals` (the clear/restart/blueprint-switch FSM + modal state, #1642), `usePlanGates`, `usePlanPublish` (its 6-step GitHub publish decomposed into the testable, React-free **`publishSteps.ts`**, #1749), `usePlanSectionPoll`, `usePlannerTagStream`, `usePlannerRepoManagement`, `usePlanMcpDownloads`, `usePlanSkillsManagement`, `usePlannerBlueprint`, plus the #1775 batch — `usePlanningTitle`, `usePlanConfirmations`, `usePlannerMessages`, `useCtxRequired`, `useSetupSignature`) + the autopilot (`planAutopilot*`), parsing (`planningParse.ts`), and the planner-conductor. |
-| `list/` | the project list + blueprint-library rail — **`ProjectsList.tsx`** (thin composer) split into `BlueprintLibrary.tsx` + `PublishedProjects.tsx` (#1641); **`ProjectsSummary.tsx`** split into `projectsSummaryQueries`/`projectsSummaryDerive` + chart sub-components (`IterationBurnDown`, `CrossProjectActivity`, #1705). |
-| `pane/` | the focused project pane (`ProjectPane.tsx`, `FocusedShell.tsx`, `FocusedBodies.tsx` — now just the `FocusedPhaseBody` dispatcher after the per-body split, 1129→159 LOC #1757, `focusedPlan.ts`) — one phase at a time, a stepper, gate pill, advance bar (#652). |
-| `stages/` | the planning-stage model: `blueprints.ts` (lifecycle templates), `planStages.ts`, `planTopics.ts` (the discovery topics, renamed from `planSections`, #1615). |
-| `blueprints/` | the blueprint editor (`BlueprintEditor.tsx`) + `blueprintSkills.ts`. |
-| `bodies/` | per-stage body components rendered in the focused pane, over the shared `bodyPrimitives.tsx` + `bodyStyles.ts` (#1635). The per-phase `Focused*Body` components (Repos/Context/Mcp/Features/Plan/Permissions/Streams/Authoring/Skills/Automations) live here too, split out of `pane/FocusedBodies.tsx` (#1757). The big data bodies are also split: `DeployView` → `deployTargetSection`/`deployShipSections`/`deployPrimitives` (#1636); `FocusedSourceBody` → the `connectorForm` renderer + the `sourceConnection` FSM hook (#1637). |
-| `fleet/` | the agent-fleet model: `agentFlow.ts` (autonomy + push policy, #297), `directorDrive.ts`. |
-| `issues/` · `relationship/` · `preview/` · `data/` · `github/` · `lib/` | granular issues, the relationship/topology graph, render-preview, canonical Data Models, the GitHub board views (Issues/Insights/ProjectBoard/Roadmap — sharing `useActiveProjectGithub` + `<QueryBanner>` for the active-project + ProjectsV2 fetch lifecycle, #1754) + GitHub-structure cards, and a large `lib/` of pure planning domain — `plannerCore/`, `plannerSync/`, the deploy/source/integration config (each split into focused modules behind a barrel: `deployConfig` → `deployPlatforms`/`deployServices`/`deployEnv`/`deployCoerce` #1639; `sourceConfig` → `sourceCatalog`/`sourceSpecs`/`sourceGate`/`dataModelDerivation`/… #1638/#1712), `repoScaffold` → `repoReadme`/`stackTopics` (#1710), and the lint/readiness/injection scanners. |
+What remains is the plan MODEL, and most of it ships as RECORDS rather than files (see
+[`records.md`](records.md)) — `ls src/features/planner/` shows only `blueprints/ data/ lib/ preview/
+stages/`, while the store holds ~180 planner records under the paths below.
+
+| Sub-area | Holds | on disk? |
+|---|---|---|
+| `stages/` | the planning-stage model: `blueprints.ts` (lifecycle templates), `planStages.ts`, `planTopics.ts` (discovery topics, renamed from `planSections`, #1615). | files + records |
+| `blueprints/` | `blueprintSkills.ts` and the blueprint model. The blueprint EDITOR UI is gone with the rest of the screen. | files + records |
+| `lib/` | the large pure planning domain — `plannerCore/`, `plannerSync/`, the deploy/source/integration config (`deployConfig` → `deployPlatforms`/`deployServices`/`deployEnv`/`deployCoerce` #1639; `sourceConfig` → `sourceCatalog`/`sourceSpecs`/`sourceGate`/`dataModelDerivation`/… #1638/#1712), `repoScaffold` → `repoReadme`/`stackTopics` (#1710), and the lint/readiness/injection scanners. | files + records |
+| `preview/` · `data/` | render-preview and the canonical Data Models. | files + records |
+| `fleet/` · `issues/` · `session/` · `list/` · `github/` · `relationship/` | the agent-fleet model (`agentFlow.ts` — autonomy + push policy, #297 — is a record at `@/features/planner/fleet/agentFlow`), granular issues, session/list domain helpers, GitHub-structure derivation, and the relationship/topology model (whose records moved to Rust). | RECORDS ONLY — no directory |
+
+**The barrel is domain-only too.** Eleven modules outside the feature import through
+`@/features/planner`, and the #1545 lint lets them reach nothing else — so a UI export creeping back
+would pull React into the store's type graph and into Glance. If it imports react, it does not belong
+there.
+
 
 A blueprint seeds a project's plan (ordered stages, each with a prompt module, pipelines, a declarative gate, attached skills). Built-ins are code-owned and refreshed from code on every load (`refreshBuiltIns` in the store's `onRehydrateStorage`); user blueprints persist to an on-disk dir. See the root `CLAUDE.md` "Project Planning" section for the full planner workflow.
 
@@ -195,7 +207,7 @@ Highlights:
 - **`StatusDot`** — the shared status indicator (state → `--state-*` color, `currentColor` default) (#1777).
 - `Avatar`, `ConfirmButton`, `LabelChip`, `Chip` (the consolidated color-mix pill, #1713), **`Toggle`** (now with an `accent`/`success` `tone`, #1780), and **`charts/`** (the SVG chart set + the shared analytics `Kpi` + `StackedDayBars`, #1740).
 
-Settings screens share **`features/settings/SettingsControls.tsx`** — `SettingsCardHead` / `SettingsRow` / `SettingsSelect` / `settingsBtn` (#1745).
+Settings screens share **`features/settings/pages/SettingsControls.tsx`** (a RECORD, not a file) — `SettingsCardHead` / `SettingsRow` / `SettingsSelect` / `settingsBtn` (#1745).
 
 > Consolidation caveat (#1781/#1783): many *apparent* pill/tag/segmented "duplicates" are intentional sized/scoped variants — verify pixel-for-pixel before folding. `Chip.tsx`'s header documents which variants are deliberately kept separate.
 

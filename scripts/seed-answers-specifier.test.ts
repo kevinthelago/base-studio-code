@@ -3,9 +3,9 @@
 // Importers keep writing `@/x/y`; once the file is gone the only thing that can answer them is a
 // shipped record. Two real failures in one slice came from nobody checking:
 //
-//   * five modules were retired while `promote-records` had SKIPPED their seed write — deleted, with
+//   * five modules were retired while `bsc ui promote-seed` had SKIPPED their seed write — deleted, with
 //     the old preview-shaped derivative still shipping. The recovery is worse than the bug, because
-//     `promote-records` iterates FILES: once the file is gone the stale seed can never be adopted.
+//     `bsc ui promote-seed` iterates FILES: once the file is gone the stale seed can never be adopted.
 //   * `pageheader` whose seed said `@/shared/ui/pages/PageHeader` against a `pageHeader.tsx` file.
 //
 // NEITHER WAS CAUGHT BY ANYTHING — tsc resolves case-insensitively on Windows, `vite build` passed and
@@ -22,7 +22,7 @@ describe("seedAnswersSpecifier", () => {
   });
 
   it("REFUSES when nothing provides it — the skipped-seed case", () => {
-    // `promote-records` declined the write, so the seed still holds the old derivative with no
+    // `bsc ui promote-seed` declined the write, so the seed still holds the old derivative with no
     // `provides` at all. Retiring here deletes the module and leaves importers with nothing.
     const r = seedAnswersSpecifier({ spec: "@/shared/ui/layout/Slot", seedProvides: ["@/shared/ui/data/LabelChip"] });
     expect(r.ok).toBe(false);

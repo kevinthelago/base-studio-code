@@ -1,0 +1,790 @@
+{
+  "note": "GENERATED from @/features/mcp/lib/mcpServers + sessionLaunch mcpReachableFrom — do not hand-edit; see the .gen.test.ts",
+  "builtins": [
+    {
+      "id": "builtin-research",
+      "name": "Research",
+      "transport": "stdio",
+      "command": "bsc-research-mcp",
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "builtin-compliance",
+      "name": "Compliance",
+      "transport": "stdio",
+      "command": "bsc-compliance-mcp",
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "builtin-channel-mock",
+      "name": "Channel (mock)",
+      "transport": "stdio",
+      "command": "bsc-channel-mock-mcp",
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": false
+    }
+  ],
+  "stored": [
+    {
+      "id": "s-enabled",
+      "name": "Stored Enabled",
+      "transport": "stdio",
+      "command": "/bin/thing",
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "s-disabled",
+      "name": "Stored Disabled",
+      "transport": "stdio",
+      "command": "/bin/thing",
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": false
+    },
+    {
+      "id": "s-http",
+      "name": "Stored Http",
+      "transport": "http",
+      "command": null,
+      "args": "",
+      "url": "https://example/mcp",
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "s-http-nourl",
+      "name": "Stored Http No Url",
+      "transport": "http",
+      "command": null,
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "s-stdio-nocmd",
+      "name": "Stored Stdio No Command",
+      "transport": "stdio",
+      "command": null,
+      "args": "",
+      "url": null,
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "s-args",
+      "name": "Stored With Args",
+      "transport": "stdio",
+      "command": "/bin/thing",
+      "args": "  --flag   value  ",
+      "url": null,
+      "env": [],
+      "enabled": true
+    },
+    {
+      "id": "s-env",
+      "name": "Stored With Env",
+      "transport": "stdio",
+      "command": "/bin/thing",
+      "args": "",
+      "url": null,
+      "env": [
+        [
+          "K",
+          "V"
+        ],
+        [
+          "K2",
+          "V2"
+        ]
+      ],
+      "enabled": true
+    }
+  ],
+  "cases": [
+    {
+      "label": "no persona servers — ambient built-ins only",
+      "personaMcp": [],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries an ENABLED stored server",
+      "personaMcp": [
+        "s-enabled"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Stored Enabled",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Stored Enabled",
+          "command": "/bin/thing",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries a DISABLED stored server — intent beats the toggle",
+      "personaMcp": [
+        "s-disabled"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-disabled"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-disabled"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Stored Disabled",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Stored Disabled",
+          "command": "/bin/thing",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries an http server",
+      "personaMcp": [
+        "s-http"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-http"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-http"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Stored Http",
+          "transport": "http",
+          "args": [],
+          "url": "https://example/mcp",
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries a HALF-CONFIGURED http server — skipped",
+      "personaMcp": [
+        "s-http-nourl"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries a stdio server with NO command — skipped",
+      "personaMcp": [
+        "s-stdio-nocmd"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries several",
+      "personaMcp": [
+        "s-enabled",
+        "s-args",
+        "s-env"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled",
+        "s-args",
+        "s-env"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled",
+        "s-args",
+        "s-env"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Stored Enabled",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Stored With Args",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [
+            "--flag",
+            "value"
+          ],
+          "env": []
+        },
+        {
+          "name": "Stored With Env",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [],
+          "env": [
+            [
+              "K",
+              "V"
+            ],
+            [
+              "K2",
+              "V2"
+            ]
+          ]
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Stored Enabled",
+          "command": "/bin/thing",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Stored With Args",
+          "command": "/bin/thing",
+          "args": [
+            "--flag",
+            "value"
+          ],
+          "env": {}
+        },
+        {
+          "name": "Stored With Env",
+          "command": "/bin/thing",
+          "args": [],
+          "env": {
+            "K": "V",
+            "K2": "V2"
+          }
+        }
+      ]
+    },
+    {
+      "label": "a persona names an id that does not exist",
+      "personaMcp": [
+        "nope"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries the same id twice",
+      "personaMcp": [
+        "s-enabled",
+        "s-enabled"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Stored Enabled",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Stored Enabled",
+          "command": "/bin/thing",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries the DISABLED built-in builtin-channel-mock",
+      "personaMcp": [
+        "builtin-channel-mock"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "builtin-channel-mock"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "builtin-channel-mock"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Channel (mock)",
+          "transport": "stdio",
+          "command": "bsc-channel-mock-mcp",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Channel (mock)",
+          "command": "bsc-channel-mock-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "a persona carries an ALREADY-ambient built-in builtin-research",
+      "personaMcp": [
+        "builtin-research"
+      ],
+      "sandboxed": false,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "reachableIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "payloads": [
+        {
+          "name": "Research",
+          "transport": "stdio",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": []
+        },
+        {
+          "name": "Compliance",
+          "transport": "stdio",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Research",
+          "command": "bsc-research-mcp",
+          "args": [],
+          "env": {}
+        },
+        {
+          "name": "Compliance",
+          "command": "bsc-compliance-mcp",
+          "args": [],
+          "env": {}
+        }
+      ]
+    },
+    {
+      "label": "SANDBOXED — built-ins are dropped",
+      "personaMcp": [],
+      "sandboxed": true,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance"
+      ],
+      "reachableIds": [],
+      "payloads": [],
+      "bscAgent": []
+    },
+    {
+      "label": "SANDBOXED with a carried stored server — it survives",
+      "personaMcp": [
+        "s-enabled"
+      ],
+      "sandboxed": true,
+      "resolvedIds": [
+        "builtin-research",
+        "builtin-compliance",
+        "s-enabled"
+      ],
+      "reachableIds": [
+        "s-enabled"
+      ],
+      "payloads": [
+        {
+          "name": "Stored Enabled",
+          "transport": "stdio",
+          "command": "/bin/thing",
+          "args": [],
+          "env": []
+        }
+      ],
+      "bscAgent": [
+        {
+          "name": "Stored Enabled",
+          "command": "/bin/thing",
+          "args": [],
+          "env": {}
+        }
+      ]
+    }
+  ]
+}

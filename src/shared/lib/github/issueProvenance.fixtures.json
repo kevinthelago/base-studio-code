@@ -1,0 +1,92 @@
+{
+  "note": "GENERATED from the live TypeScript — see issueProvenance.fixtures.gen.test.ts",
+  "label": "bsc-generated",
+  "labelColor": "1f6feb",
+  "withProvenanceLabel": [
+    {
+      "label": "empty",
+      "input": [],
+      "output": [
+        "bsc-generated"
+      ]
+    },
+    {
+      "label": "one unrelated label",
+      "input": [
+        "bug"
+      ],
+      "output": [
+        "bug",
+        "bsc-generated"
+      ]
+    },
+    {
+      "label": "already stamped — idempotent",
+      "input": [
+        "bsc-generated"
+      ],
+      "output": [
+        "bsc-generated"
+      ]
+    },
+    {
+      "label": "already stamped, not last — must not move or duplicate",
+      "input": [
+        "bsc-generated",
+        "bug"
+      ],
+      "output": [
+        "bsc-generated",
+        "bug"
+      ]
+    },
+    {
+      "label": "order is preserved and the stamp is APPENDED",
+      "input": [
+        "zeta",
+        "alpha",
+        "mid"
+      ],
+      "output": [
+        "zeta",
+        "alpha",
+        "mid",
+        "bsc-generated"
+      ]
+    },
+    {
+      "label": "a near-miss label does not count as stamped",
+      "input": [
+        "bsc-generated-x",
+        "BSC-GENERATED"
+      ],
+      "output": [
+        "bsc-generated-x",
+        "BSC-GENERATED",
+        "bsc-generated"
+      ]
+    },
+    {
+      "label": "duplicates in the input are left alone",
+      "input": [
+        "bug",
+        "bug"
+      ],
+      "output": [
+        "bug",
+        "bug",
+        "bsc-generated"
+      ]
+    }
+  ],
+  "triageIssueListArgs": [
+    {
+      "restrictToBsc": true,
+      "args": "--state open --label bsc-generated --limit 100"
+    },
+    {
+      "restrictToBsc": false,
+      "args": "--state open --limit 100"
+    }
+  ]
+}

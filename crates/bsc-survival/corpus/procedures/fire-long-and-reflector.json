@@ -1,0 +1,40 @@
+{
+  "id": "fire-long-and-reflector",
+  "category": "fire",
+  "name": "Long fire and reflector",
+  "summary": "A fire as long as you are, with a wall behind it and a shelter behind you — the difference between a fire you sit at and a night you sleep through.",
+  "time": "1-2 hours to build, then feeding through the night",
+  "materials": [
+    { "item": "fuel wood", "substitutes": ["logs", "branches", "split wood", "deadfall"] },
+    { "item": "green logs or stones for the reflector", "substitutes": ["green logs", "rocks", "stones", "earth bank", "packed snow"] },
+    { "item": "stakes", "substitutes": ["stakes", "stout sticks", "saplings"], "optional": true },
+    { "item": "insulating bedding", "substitutes": ["boughs", "leaf litter", "grass", "sleeping mat", "spruce branches"] },
+    { "item": "an established fire", "substitutes": ["fire", "coals"] }
+  ],
+  "steps": [
+    { "text": "Understand the problem first: a campfire radiates. You get hot on one side and lose heat off the other into the dark, and to the GROUND, which takes more than the air does." },
+    { "text": "Build the fire LONG — a trench or line of fire roughly your own body length, not a cone. A point source warms a point; a line warms a line." },
+    { "text": "Raise a REFLECTOR wall on the far side: green logs stacked between two pairs of driven stakes, or rocks, or an earth bank. Lean it slightly toward the fire.", "why": "Radiant heat that would have gone into the night comes back across the fire to you. It roughly doubles what reaches your side and it shelters the fire from wind." },
+    { "text": "Sleep on the near side, with your shelter or a second reflector behind YOU so heat is trapped between two surfaces." },
+    { "text": "Put a thick bed of boughs or litter under you — a hand-span compressed. This matters MORE than the fire.", "why": "Conduction into cold ground outpaces radiant gain from the flames. People with a good fire and no bedding still get hypothermic, all night, every year." },
+    { "text": "Set the fire an arm's length away — close enough to feel it on your face, far enough that a spark does not land on you." },
+    { "text": "Feed it with big pieces laid ALONG the line rather than across, so it burns down the length rather than out into a heap." }
+  ],
+  "verify": [
+    "Lie down where you intend to sleep and check the heat reaches your feet as well as your chest. If it does not, the fire is not long enough.",
+    "Put a hand between your bedding and the ground after twenty minutes. If the ground is cold there, you need more under you, not more fire.",
+    "The reflector should be warm to the touch on its fire side after half an hour."
+  ],
+  "limits": [
+    "A long fire eats fuel — plan on gathering several times what a cooking fire needs, and gather it BEFORE dark.",
+    "It is a heat source, not a shelter. In wind or rain it needs both a reflector and something over you.",
+    "Nobody sleeps straight through beside a fire. Expect to wake and feed it; that is the design, not a failure."
+  ],
+  "cautions": [
+    "Rocks from a riverbed or any waterlogged stone can EXPLODE when heated — trapped water turns to steam. Use dry rock from high ground, and never put your face over a fresh rock ring.",
+    "A reflector of green logs will eventually dry and catch. Check it.",
+    "Sparks and a synthetic sleeping bag are a bad pairing; a hole burns through in an instant and the fill melts.",
+    "Do not build a long fire over roots or deep duff — it can travel underground and surface hours later."
+  ],
+  "tags": ["fire", "long fire", "reflector", "hypothermia", "sleeping", "shelter"]
+}

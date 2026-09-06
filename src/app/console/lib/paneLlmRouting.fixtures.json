@@ -1,0 +1,302 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch paneLlmConfig — do not hand-edit; see the .gen.test.ts",
+  "tierModelIds": [
+    "haiku-4.5",
+    "sonnet-4.5",
+    "opus-4.5"
+  ],
+  "cases": [
+    {
+      "label": "rule 1: no pane model at all",
+      "paneModel": null,
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      }
+    },
+    {
+      "label": "rule 1: paneModels present but not for THIS pane",
+      "paneModel": null,
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      }
+    },
+    {
+      "label": "rule 1: paneModels missing entirely — the launch-path shape",
+      "paneModel": null,
+      "global": {
+        "provider": "ollama",
+        "model": "qwen3-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "qwen3-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      }
+    },
+    {
+      "label": "rule 2: pane model is the shipped tier haiku-4.5",
+      "paneModel": "haiku-4.5",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      }
+    },
+    {
+      "label": "rule 2: pane model is the shipped tier sonnet-4.5",
+      "paneModel": "sonnet-4.5",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      }
+    },
+    {
+      "label": "rule 2: pane model is the shipped tier opus-4.5",
+      "paneModel": "opus-4.5",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      }
+    },
+    {
+      "label": "rule 3: ollama provider keeps its endpoint, takes the pane model",
+      "paneModel": "qwen2.5-coder",
+      "global": {
+        "provider": "ollama",
+        "model": "qwen3-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      }
+    },
+    {
+      "label": "rule 3: local provider likewise",
+      "paneModel": "qwen2.5-coder",
+      "global": {
+        "provider": "local",
+        "model": "qwen3-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      },
+      "expected": {
+        "provider": "local",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      }
+    },
+    {
+      "label": "rule 3: ollama with NO base url configured",
+      "paneModel": "qwen2.5-coder",
+      "global": {
+        "provider": "ollama",
+        "model": "qwen3-coder",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": ""
+      }
+    },
+    {
+      "label": "rule 3: numCtx rides along",
+      "paneModel": "qwen2.5-coder",
+      "global": {
+        "provider": "ollama",
+        "model": "qwen3-coder",
+        "apiKey": "",
+        "baseUrl": "",
+        "numCtx": 65536
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": "",
+        "numCtx": 65536
+      }
+    },
+    {
+      "label": "rule 4 (#173): non-tier model on anthropic re-routes to ollama",
+      "paneModel": "qwen2.5-coder",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "label": "rule 4 (#173): the api key must NOT survive the reroute",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "openai",
+        "model": "",
+        "apiKey": "sk-o",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "label": "rule 4 (#173): gemini too",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "gemini",
+        "model": "",
+        "apiKey": "sk-g",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "label": "rule 4: configured local endpoint is used when present",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": "http://box:11434/v1"
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      }
+    },
+    {
+      "label": "rule 4: NO local endpoint configured — the default must appear",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "label": "rule 4: numCtx survives the reroute",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": "",
+        "numCtx": 32768
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1",
+        "numCtx": 32768
+      }
+    },
+    {
+      "label": "EDGE: empty-string base url",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": ""
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "label": "EDGE: whitespace-only base url — falsy vs trim",
+      "paneModel": "llama3.1",
+      "global": {
+        "provider": "anthropic",
+        "model": "",
+        "apiKey": "sk-a",
+        "baseUrl": "   "
+      },
+      "expected": {
+        "provider": "ollama",
+        "model": "llama3.1",
+        "apiKey": "",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    }
+  ]
+}

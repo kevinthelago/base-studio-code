@@ -1,0 +1,2025 @@
+{
+  "note": "GENERATED from the live TypeScript — see paneIdentity.fixtures.gen.test.ts",
+  "mints": {
+    "positional": [
+      {
+        "tabIdx": 0,
+        "paneIdx": 0,
+        "id": "t0p0"
+      },
+      {
+        "tabIdx": 12,
+        "paneIdx": 3,
+        "id": "t12p3"
+      },
+      {
+        "tabIdx": 10,
+        "paneIdx": 20,
+        "id": "t10p20"
+      }
+    ],
+    "manual": [
+      {
+        "tabId": "tab_abc",
+        "paneIdx": 2,
+        "id": "man:tab_abc:p2"
+      },
+      {
+        "tabId": "tab-with-dashes",
+        "paneIdx": 0,
+        "id": "man:tab-with-dashes:p0"
+      },
+      {
+        "tabId": "a:b",
+        "paneIdx": 3,
+        "id": "man:a:b:p3"
+      }
+    ],
+    "fleet": [
+      {
+        "projectKey": "studio-code",
+        "streamId": "api",
+        "id": "studio-code:api"
+      },
+      {
+        "projectKey": "alpha",
+        "streamId": "web",
+        "id": "alpha:web"
+      }
+    ],
+    "director": [
+      {
+        "projectKey": "studio-code",
+        "id": "studio-code:director"
+      },
+      {
+        "projectKey": "alpha",
+        "id": "alpha:director"
+      }
+    ],
+    "triage": [
+      {
+        "projectKey": "studio-code",
+        "repo": "owner/name",
+        "id": "studio-code:owner/name:triage"
+      },
+      {
+        "projectKey": "alpha",
+        "repo": "repo",
+        "id": "alpha:repo:triage"
+      }
+    ]
+  },
+  "ids": [
+    {
+      "id": "t0p0",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "positional",
+        "raw": "t0p0",
+        "tabIdx": 0,
+        "paneIdx": 0
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "t12p3",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "positional",
+        "raw": "t12p3",
+        "tabIdx": 12,
+        "paneIdx": 3
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "t10p20",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "positional",
+        "raw": "t10p20",
+        "tabIdx": 10,
+        "paneIdx": 20
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "man:tab_abc:p2",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "manual",
+        "raw": "man:tab_abc:p2",
+        "tabId": "tab_abc",
+        "paneIdx": 2
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "man:tab-with-dashes:p0",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "manual",
+        "raw": "man:tab-with-dashes:p0",
+        "tabId": "tab-with-dashes",
+        "paneIdx": 0
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "man:tab_abc:p007",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "manual",
+        "raw": "man:tab_abc:p007",
+        "tabId": "tab_abc",
+        "paneIdx": 7
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code:api",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "worker",
+        "raw": "studio-code:api",
+        "projectKey": "studio-code",
+        "streamId": "api"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code:director",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "director",
+        "raw": "studio-code:director",
+        "projectKey": "studio-code"
+      },
+      "cwdRecovery": {
+        "cmd": "project_dir_path",
+        "args": {
+          "projectKey": "studio-code"
+        }
+      }
+    },
+    {
+      "id": "studio-code:owner/name:triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "triage",
+        "raw": "studio-code:owner/name:triage",
+        "projectKey": "studio-code",
+        "repo": "owner/name"
+      },
+      "cwdRecovery": {
+        "cmd": "repo_dir_path",
+        "args": {
+          "projectKey": "studio-code",
+          "repo": "owner/name"
+        }
+      }
+    },
+    {
+      "id": "alpha:web",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "worker",
+        "raw": "alpha:web",
+        "projectKey": "alpha",
+        "streamId": "web"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "alpha:repo:triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "triage",
+        "raw": "alpha:repo:triage",
+        "projectKey": "alpha",
+        "repo": "repo"
+      },
+      "cwdRecovery": {
+        "cmd": "repo_dir_path",
+        "args": {
+          "projectKey": "alpha",
+          "repo": "repo"
+        }
+      }
+    },
+    {
+      "id": "planning_studio-code",
+      "isManual": false,
+      "isPlanning": true,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "planning_alpha",
+      "isManual": false,
+      "isPlanning": true,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code:triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "worker",
+        "raw": "studio-code:triage",
+        "projectKey": "studio-code",
+        "streamId": "triage"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code:director:extra",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "worker",
+        "raw": "studio-code:director:extra",
+        "projectKey": "studio-code",
+        "streamId": "director:extra"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code:a:b:triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "triage",
+        "raw": "studio-code:a:b:triage",
+        "projectKey": "studio-code",
+        "repo": "a:b"
+      },
+      "cwdRecovery": {
+        "cmd": "repo_dir_path",
+        "args": {
+          "projectKey": "studio-code",
+          "repo": "a:b"
+        }
+      }
+    },
+    {
+      "id": "man:a:b:p3",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "manual",
+        "raw": "man:a:b:p3",
+        "tabId": "a:b",
+        "paneIdx": 3
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "man:tab:p",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "worker",
+        "raw": "man:tab:p",
+        "projectKey": "man",
+        "streamId": "tab:p"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "man:",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "man:a:p1:p2",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "manual",
+        "raw": "man:a:p1:p2",
+        "tabId": "a:p1",
+        "paneIdx": 2
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "man::p0",
+      "isManual": true,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "worker",
+        "raw": "man::p0",
+        "projectKey": "man",
+        "streamId": ":p0"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": ":director",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code:",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code::",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": {
+        "kind": "worker",
+        "raw": "studio-code::",
+        "projectKey": "studio-code",
+        "streamId": ":"
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": ":triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "::triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": ":",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "studio-code::triage",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "triage",
+        "raw": "studio-code::triage",
+        "projectKey": "studio-code",
+        "repo": ""
+      },
+      "cwdRecovery": null
+    },
+    {
+      "id": "scratch",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "t0p",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "tp0",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": false,
+      "parsed": null,
+      "cwdRecovery": null
+    },
+    {
+      "id": "debug-studio:req-7",
+      "isManual": false,
+      "isPlanning": false,
+      "needsGate": true,
+      "parsed": {
+        "kind": "worker",
+        "raw": "debug-studio:req-7",
+        "projectKey": "debug-studio",
+        "streamId": "req-7"
+      },
+      "cwdRecovery": null
+    }
+  ],
+  "sandbox": [
+    {
+      "id": "studio-code:api",
+      "distro": "bsc-agent-sandbox",
+      "user": "studio-code:api"
+    },
+    {
+      "id": "studio-code:director",
+      "distro": "bsc-agent-sandbox",
+      "user": "studio-code:director"
+    },
+    {
+      "id": "studio-code:owner/name:triage",
+      "distro": "bsc-agent-sandbox",
+      "user": null
+    },
+    {
+      "id": "man:tab_abc:p2",
+      "distro": "bsc-agent-sandbox",
+      "user": null
+    },
+    {
+      "id": "t0p0",
+      "distro": "bsc-agent-sandbox",
+      "user": null
+    },
+    {
+      "id": "planning_studio-code",
+      "distro": "bsc-agent-sandbox",
+      "user": null
+    },
+    {
+      "id": "scratch",
+      "distro": "bsc-agent-sandbox",
+      "user": null
+    },
+    {
+      "id": "studio-code:api",
+      "distro": null,
+      "user": null
+    },
+    {
+      "id": "studio-code:api",
+      "distro": "",
+      "user": null
+    },
+    {
+      "id": "studio-code:director",
+      "distro": null,
+      "user": null
+    }
+  ],
+  "layouts": [
+    {
+      "layout": "1×1",
+      "count": 1
+    },
+    {
+      "layout": "2×1",
+      "count": 2
+    },
+    {
+      "layout": "2×2",
+      "count": 4
+    },
+    {
+      "layout": "3×2",
+      "count": 6
+    },
+    {
+      "layout": "4×4",
+      "count": 16
+    },
+    {
+      "layout": "not-a-layout",
+      "count": 1
+    },
+    {
+      "layout": "",
+      "count": 1
+    },
+    {
+      "layout": "2",
+      "count": 2
+    },
+    {
+      "layout": "×",
+      "count": 1
+    },
+    {
+      "layout": "0×3",
+      "count": 3
+    },
+    {
+      "layout": "2×0",
+      "count": 2
+    }
+  ],
+  "idFor": [
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "t0p0"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "t2p0"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "t0p1"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "t2p1"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "t0p2"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "t2p2"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "t0p3"
+    },
+    {
+      "tabLabel": "legacy id-less",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "t2p3"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "man:tab_abc:p0"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "man:tab_abc:p0"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "man:tab_abc:p1"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "man:tab_abc:p1"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "man:tab_abc:p2"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "man:tab_abc:p2"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "man:tab_abc:p3"
+    },
+    {
+      "tabLabel": "manual with stable id",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "man:tab_abc:p3"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "t0p0"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "t2p0"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "t0p1"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "t2p1"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "t0p2"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "t2p2"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "t0p3"
+    },
+    {
+      "tabLabel": "build kind, no mints",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "t2p3"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "studio-code:director"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "studio-code:director"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "studio-code:api"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "studio-code:api"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "t0p2"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "t2p2"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "t0p3"
+    },
+    {
+      "tabLabel": "build kind with mints",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "t2p3"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "t0p0"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "t2p0"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "alpha:repo:triage"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "alpha:repo:triage"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "t0p2"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "t2p2"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "t0p3"
+    },
+    {
+      "tabLabel": "triage kind, sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "t2p3"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "man:tab_m2:p0"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "man:tab_m2:p0"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "studio-code:api"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "studio-code:api"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "man:tab_m2:p2"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "man:tab_m2:p2"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "man:tab_m2:p3"
+    },
+    {
+      "tabLabel": "manual with sparse mints",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "man:tab_m2:p3"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "man:tab_bad:p0"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "man:tab_bad:p0"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "man:tab_bad:p1"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "man:tab_bad:p1"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "man:tab_bad:p2"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "man:tab_bad:p2"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "man:tab_bad:p3"
+    },
+    {
+      "tabLabel": "malformed layout",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "man:tab_bad:p3"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "man:tab_one:p0"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 2,
+      "paneIdx": 0,
+      "id": "man:tab_one:p0"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 0,
+      "paneIdx": 1,
+      "id": "man:tab_one:p1"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 2,
+      "paneIdx": 1,
+      "id": "man:tab_one:p1"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "man:tab_one:p2"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 2,
+      "paneIdx": 2,
+      "id": "man:tab_one:p2"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 0,
+      "paneIdx": 3,
+      "id": "man:tab_one:p3"
+    },
+    {
+      "tabLabel": "one-cell layout",
+      "tabIdx": 2,
+      "paneIdx": 3,
+      "id": "man:tab_one:p3"
+    }
+  ],
+  "idForNoTab": [
+    {
+      "tabIdx": 0,
+      "paneIdx": 0,
+      "id": "t0p0"
+    },
+    {
+      "tabIdx": 0,
+      "paneIdx": 2,
+      "id": "t0p2"
+    },
+    {
+      "tabIdx": 3,
+      "paneIdx": 0,
+      "id": "t3p0"
+    },
+    {
+      "tabIdx": 3,
+      "paneIdx": 2,
+      "id": "t3p2"
+    }
+  ],
+  "membership": [
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "legacy id-less",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": true
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "manual with stable id",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "build kind, no mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": true
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": true
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": true
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": true
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "build kind with mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "triage kind, sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": true
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "manual with sparse mints",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "malformed layout",
+      "belongs": false
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": true
+    },
+    {
+      "paneId": "t0p0",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "t2p1",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": true
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "man:tab_abc:p2",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:api",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "studio-code:director",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "alpha:repo:triage",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "planning_alpha",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 0,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    },
+    {
+      "paneId": "scratch",
+      "tabIdx": 2,
+      "tabLabel": "one-cell layout",
+      "belongs": false
+    }
+  ],
+  "rollups": [
+    {
+      "label": "empty map is idle",
+      "tabIdx": 0,
+      "layout": "2×1",
+      "statuses": {},
+      "disabled": {},
+      "state": "idle"
+    },
+    {
+      "label": "any run dominates",
+      "tabIdx": 0,
+      "layout": "2×1",
+      "statuses": {
+        "t0p0": "idle",
+        "t0p1": "run"
+      },
+      "disabled": {},
+      "state": "run"
+    },
+    {
+      "label": "on without run",
+      "tabIdx": 0,
+      "layout": "2×1",
+      "statuses": {
+        "t0p0": "on",
+        "t0p1": "idle"
+      },
+      "disabled": {},
+      "state": "on"
+    },
+    {
+      "label": "disabled run is excluded",
+      "tabIdx": 0,
+      "layout": "2×1",
+      "statuses": {
+        "t0p0": "run",
+        "t0p1": "on"
+      },
+      "disabled": {
+        "t0p0": true
+      },
+      "state": "on"
+    },
+    {
+      "label": "all disabled is idle",
+      "tabIdx": 0,
+      "layout": "2×1",
+      "statuses": {
+        "t0p0": "run",
+        "t0p1": "run"
+      },
+      "disabled": {
+        "t0p0": true,
+        "t0p1": true
+      },
+      "state": "idle"
+    },
+    {
+      "label": "out-of-grid status ignored",
+      "tabIdx": 0,
+      "layout": "not-a-layout",
+      "statuses": {
+        "t0p0": "idle",
+        "t0p1": "run",
+        "t0p5": "run"
+      },
+      "disabled": {},
+      "state": "idle"
+    },
+    {
+      "label": "manual tab rolls up by man: id",
+      "tabIdx": 3,
+      "layout": "2×2",
+      "statuses": {
+        "man:tab_abc:p0": "on",
+        "man:tab_abc:p3": "run"
+      },
+      "disabled": {},
+      "state": "run"
+    },
+    {
+      "label": "minted build ids roll up",
+      "tabIdx": 1,
+      "layout": "2×2",
+      "statuses": {
+        "studio-code:director": "on",
+        "studio-code:api": "run"
+      },
+      "disabled": {},
+      "state": "run"
+    },
+    {
+      "label": "minted id disabled",
+      "tabIdx": 1,
+      "layout": "2×2",
+      "statuses": {
+        "studio-code:api": "run"
+      },
+      "disabled": {
+        "studio-code:api": true
+      },
+      "state": "idle"
+    },
+    {
+      "label": "sparse mints: hole falls through to positional",
+      "tabIdx": 2,
+      "layout": "2×1",
+      "statuses": {
+        "t2p0": "run",
+        "alpha:repo:triage": "idle"
+      },
+      "disabled": {},
+      "state": "run"
+    }
+  ],
+  "clears": [
+    {
+      "label": "drops own positional, keeps another tab's",
+      "tabIdx": 0,
+      "statuses": {
+        "t0p0": "run",
+        "t0p1": "on",
+        "t1p0": "run",
+        "t2p3": "on"
+      },
+      "remaining": {
+        "t1p0": "run",
+        "t2p3": "on"
+      }
+    },
+    {
+      "label": "drops own manual, keeps a different manual tab's",
+      "tabIdx": 3,
+      "statuses": {
+        "man:tab_abc:p0": "run",
+        "man:tab_other:p0": "on",
+        "t3p0": "run"
+      },
+      "remaining": {
+        "man:tab_other:p0": "on"
+      }
+    },
+    {
+      "label": "drops minted ids it owns, keeps a minted id it does not",
+      "tabIdx": 1,
+      "statuses": {
+        "studio-code:director": "run",
+        "studio-code:api": "on",
+        "alpha:web": "run"
+      },
+      "remaining": {
+        "alpha:web": "run"
+      }
+    },
+    {
+      "label": "keeps everything when nothing belongs",
+      "tabIdx": 5,
+      "statuses": {
+        "man:tab_other:p1": "run",
+        "alpha:web": "on"
+      },
+      "remaining": {
+        "man:tab_other:p1": "run",
+        "alpha:web": "on"
+      }
+    },
+    {
+      "label": "empty map stays empty",
+      "tabIdx": 0,
+      "statuses": {},
+      "remaining": {}
+    },
+    {
+      "label": "an unparseable id is never anyone's, so it survives",
+      "tabIdx": 0,
+      "statuses": {
+        "t0p0": "run",
+        "scratch": "on",
+        "": "idle"
+      },
+      "remaining": {
+        "scratch": "on",
+        "": "idle"
+      }
+    }
+  ]
+}

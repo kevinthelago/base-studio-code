@@ -1,0 +1,931 @@
+{
+  "note": "GENERATED from scripts/lib/recordSource.mjs — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "plain code, untouched",
+      "source": "export const a = 1;\n",
+      "norm": "export const a = 1;",
+      "blankComments": "export const a = 1;\n",
+      "stripComments": "export const a = 1;\n",
+      "codeOnly": "export const a = 1;"
+    },
+    {
+      "label": "a line comment",
+      "source": "const a = 1; // why\nconst b = 2;\n",
+      "norm": "const a = 1; // why\nconst b = 2;",
+      "blankComments": "const a = 1;       \nconst b = 2;\n",
+      "stripComments": "const a = 1; \nconst b = 2;\n",
+      "codeOnly": "const a = 1; const b = 2;"
+    },
+    {
+      "label": "a block comment on one line",
+      "source": "const a = /* why */ 1;\n",
+      "norm": "const a = /* why */ 1;",
+      "blankComments": "const a =           1;\n",
+      "stripComments": "const a =  1;\n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "a block comment spanning lines",
+      "source": "/*\n * why\n */\nconst a = 1;\n",
+      "norm": "/*\n * why\n */\nconst a = 1;",
+      "blankComments": "  \n      \n   \nconst a = 1;\n",
+      "stripComments": "\n\n\nconst a = 1;\n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "a JSDoc opener — the splitPreamble case",
+      "source": "/**\n * why\n */\nexport function f() {}\n",
+      "norm": "/**\n * why\n */\nexport function f() {}",
+      "blankComments": "   \n      \n   \nexport function f() {}\n",
+      "stripComments": "\n\n\nexport function f() {}\n",
+      "codeOnly": "export function f() {}"
+    },
+    {
+      "label": "`//` inside a double-quoted string is not a comment",
+      "source": "const u = \"https://example.com/x\";\nconst a = 1;\n",
+      "norm": "const u = \"https://example.com/x\";\nconst a = 1;",
+      "blankComments": "const u = \"https://example.com/x\";\nconst a = 1;\n",
+      "stripComments": "const u = \"https://example.com/x\";\nconst a = 1;\n",
+      "codeOnly": "const u = \"https://example.com/x\"; const a = 1;"
+    },
+    {
+      "label": "`//` inside a single-quoted string is not a comment",
+      "source": "const u = 'http://x//y';\nconst a = 1;\n",
+      "norm": "const u = 'http://x//y';\nconst a = 1;",
+      "blankComments": "const u = 'http://x//y';\nconst a = 1;\n",
+      "stripComments": "const u = 'http://x//y';\nconst a = 1;\n",
+      "codeOnly": "const u = 'http://x const a = 1;"
+    },
+    {
+      "label": "`/*` inside a string is not a comment",
+      "source": "const s = \"/* not a comment */\";\nconst a = 1;\n",
+      "norm": "const s = \"/* not a comment */\";\nconst a = 1;",
+      "blankComments": "const s = \"/* not a comment */\";\nconst a = 1;\n",
+      "stripComments": "const s = \"/* not a comment */\";\nconst a = 1;\n",
+      "codeOnly": "const s = \" \"; const a = 1;"
+    },
+    {
+      "label": "a template literal protects both markers",
+      "source": "const t = `// not\\n/* not */`;\nconst a = 1;\n",
+      "norm": "const t = `// not\\n/* not */`;\nconst a = 1;",
+      "blankComments": "const t = `// not\\n/* not */`;\nconst a = 1;\n",
+      "stripComments": "const t = `// not\\n/* not */`;\nconst a = 1;\n",
+      "codeOnly": "const t = ` const a = 1;"
+    },
+    {
+      "label": "an escaped quote does not end the string",
+      "source": "const s = \"a\\\"// still string\";\nconst a = 1;\n",
+      "norm": "const s = \"a\\\"// still string\";\nconst a = 1;",
+      "blankComments": "const s = \"a\\\"// still string\";\nconst a = 1;\n",
+      "stripComments": "const s = \"a\\\"// still string\";\nconst a = 1;\n",
+      "codeOnly": "const s = \"a\\\" const a = 1;"
+    },
+    {
+      "label": "a comment containing a quote does not open a string",
+      "source": "// it's fine\nconst a = 1;\n",
+      "norm": "// it's fine\nconst a = 1;",
+      "blankComments": "            \nconst a = 1;\n",
+      "stripComments": "\nconst a = 1;\n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "a comment containing a block opener",
+      "source": "// see /* this\nconst a = 1;\n",
+      "norm": "// see /* this\nconst a = 1;",
+      "blankComments": "              \nconst a = 1;\n",
+      "stripComments": "\nconst a = 1;\n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "an unterminated block comment runs to the end",
+      "source": "const a = 1;\n/* never closed\nconst b = 2;\n",
+      "norm": "const a = 1;\n/* never closed\nconst b = 2;",
+      "blankComments": "const a = 1;\n               \n            \n",
+      "stripComments": "const a = 1;\n\n\n",
+      "codeOnly": "const a = 1; /* never closed const b = 2;"
+    },
+    {
+      "label": "an unterminated string",
+      "source": "const s = \"never closed\nconst a = 1;\n",
+      "norm": "const s = \"never closed\nconst a = 1;",
+      "blankComments": "const s = \"never closed\nconst a = 1;\n",
+      "stripComments": "const s = \"never closed\nconst a = 1;\n",
+      "codeOnly": "const s = \"never closed const a = 1;"
+    },
+    {
+      "label": "a lone slash is not a comment",
+      "source": "const half = 6 / 2;\n",
+      "norm": "const half = 6 / 2;",
+      "blankComments": "const half = 6 / 2;\n",
+      "stripComments": "const half = 6 / 2;\n",
+      "codeOnly": "const half = 6 / 2;"
+    },
+    {
+      "label": "empty input",
+      "source": "",
+      "norm": "",
+      "blankComments": "",
+      "stripComments": "",
+      "codeOnly": ""
+    },
+    {
+      "label": "whitespace only",
+      "source": "   \n\t\n",
+      "norm": "",
+      "blankComments": "   \n\t\n",
+      "stripComments": "   \n\t\n",
+      "codeOnly": ""
+    },
+    {
+      "label": "CRLF line endings",
+      "source": "const a = 1;\r\nconst b = 2;\r\n",
+      "norm": "const a = 1;\nconst b = 2;",
+      "blankComments": "const a = 1;\r\nconst b = 2;\r\n",
+      "stripComments": "const a = 1;\r\nconst b = 2;\r\n",
+      "codeOnly": "const a = 1; const b = 2;"
+    },
+    {
+      "label": "trailing whitespace and blank lines",
+      "source": "const a = 1;\n\n   \n",
+      "norm": "const a = 1;",
+      "blankComments": "const a = 1;\n\n   \n",
+      "stripComments": "const a = 1;\n\n   \n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "collapsible interior whitespace",
+      "source": "const   a\t=\n\n1;\n",
+      "norm": "const   a\t=\n\n1;",
+      "blankComments": "const   a\t=\n\n1;\n",
+      "stripComments": "const   a\t=\n\n1;\n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "a comment with an astral character",
+      "source": "// 🎉 party\nconst a = 1;\n",
+      "norm": "// 🎉 party\nconst a = 1;",
+      "blankComments": "           \nconst a = 1;\n",
+      "stripComments": "\nconst a = 1;\n",
+      "codeOnly": "const a = 1;"
+    },
+    {
+      "label": "a comment with a BMP non-ascii character",
+      "source": "// em — dash\nconst a = 1;\n",
+      "norm": "// em — dash\nconst a = 1;",
+      "blankComments": "            \nconst a = 1;\n",
+      "stripComments": "\nconst a = 1;\n",
+      "codeOnly": "const a = 1;"
+    }
+  ],
+  "pairs": [
+    {
+      "label": "the file's first line anchors the split",
+      "recordSrc": "// AS GRAPH SOURCE\n// why this record exists\nexport function f() {}\n",
+      "fileSrc": "export function f() {}\n",
+      "preamble": "// AS GRAPH SOURCE\n// why this record exists",
+      "body": "export function f() {}\n"
+    },
+    {
+      "label": "a file OPENING with JSDoc — the case that held six records back",
+      "recordSrc": "// AS GRAPH SOURCE\n/**\n * doc\n */\nexport function f() {}\n",
+      "fileSrc": "/**\n * doc\n */\nexport function f() {}\n",
+      "preamble": "// AS GRAPH SOURCE",
+      "body": "/**\n * doc\n */\nexport function f() {}\n"
+    },
+    {
+      "label": "no preamble at all",
+      "recordSrc": "export function f() {}\n",
+      "fileSrc": "export function f() {}\n",
+      "preamble": "",
+      "body": "export function f() {}\n"
+    },
+    {
+      "label": "no shared line — falls through to the whole record as body",
+      "recordSrc": "export const totallyDifferent = 1;\n",
+      "fileSrc": "export function f() {}\n",
+      "preamble": "",
+      "body": "export const totallyDifferent = 1;\n"
+    },
+    {
+      "label": "a short shared line cannot anchor the heuristic",
+      "recordSrc": "// preamble\n}\nexport const somethingLongEnough = 1;\n",
+      "fileSrc": "}\nexport const somethingLongEnough = 1;\n",
+      "preamble": "// preamble",
+      "body": "}\nexport const somethingLongEnough = 1;\n"
+    }
+  ],
+  "exports": [
+    {
+      "label": "a function declaration",
+      "source": "export function f() {}\n",
+      "names": [
+        "f"
+      ]
+    },
+    {
+      "label": "a const",
+      "source": "export const a = 1;\n",
+      "names": [
+        "a"
+      ]
+    },
+    {
+      "label": "default plus async",
+      "source": "export default async function go() {}\n",
+      "names": [
+        "go"
+      ]
+    },
+    {
+      "label": "a class, an interface, a type and an enum",
+      "source": "export class C {}\nexport interface I {}\nexport type T = 1;\nexport enum E { A }\n",
+      "names": [
+        "C",
+        "E",
+        "I",
+        "T"
+      ]
+    },
+    {
+      "label": "a brace clause",
+      "source": "export { a, b };\n",
+      "names": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "a type re-export COUNTS",
+      "source": "export type { TreeNodeData } from \"./tree\";\n",
+      "names": [
+        "TreeNodeData"
+      ]
+    },
+    {
+      "label": "a renamed export takes the module-side name",
+      "source": "export { a as b };\n",
+      "names": [
+        "b"
+      ]
+    },
+    {
+      "label": "an inline-type member inside a clause",
+      "source": "export { type A, b };\n",
+      "names": [
+        "A",
+        "b"
+      ]
+    },
+    {
+      "label": "a multi-line clause",
+      "source": "export {\n  a,\n  b,\n};\n",
+      "names": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "label": "a star re-export makes the set unknowable",
+      "source": "export * from \"./everything\";\n",
+      "names": null
+    },
+    {
+      "label": "a non-exported declaration",
+      "source": "function hidden() {}\nconst x = 1;\n",
+      "names": []
+    },
+    {
+      "label": "`export` inside a comment is not an export",
+      "source": "// export function ghost() {}\nexport const real = 1;\n",
+      "names": [
+        "real"
+      ]
+    },
+    {
+      "label": "`export` inside a string is not an export",
+      "source": "const s = \"export const ghost = 1;\";\nexport const real = 1;\n",
+      "names": [
+        "real"
+      ]
+    },
+    {
+      "label": "nothing at all",
+      "source": "const a = 1;\n",
+      "names": []
+    }
+  ],
+  "siblings": [
+    {
+      "label": "a sibling-by-id import",
+      "source": "import { X } from \"@/components/glance-session-log\";\n",
+      "any": true,
+      "specifiers": [
+        "@/components/glance-session-log"
+      ]
+    },
+    {
+      "label": "two of them, deduped",
+      "source": "import { A } from \"@/components/a\";\nimport { B } from \"@/components/a\";\nimport { C } from \"@/components/c\";\n",
+      "any": true,
+      "specifiers": [
+        "@/components/a",
+        "@/components/c"
+      ]
+    },
+    {
+      "label": "single quotes",
+      "source": "import { X } from '@/components/x';\n",
+      "any": true,
+      "specifiers": [
+        "@/components/x"
+      ]
+    },
+    {
+      "label": "an ordinary alias is not one",
+      "source": "import { Card } from \"@/shared/ui/data/Card\";\n",
+      "any": false,
+      "specifiers": []
+    },
+    {
+      "label": "a relative import is not one",
+      "source": "import { X } from \"./x\";\n",
+      "any": false,
+      "specifiers": []
+    },
+    {
+      "label": "no imports at all",
+      "source": "export const a = 1;\n",
+      "any": false,
+      "specifiers": []
+    }
+  ],
+  "entries": [
+    {
+      "label": "main.tsx imports it statically",
+      "relSpecifier": "app/console/ConsoleGraphHost",
+      "files": {
+        "app/main.tsx": "import { ConsoleGraphHost } from \"@/app/console/ConsoleGraphHost\"\n",
+        "app/App.tsx": "export const App = 1;\n"
+      },
+      "importedBy": [
+        "app/main.tsx"
+      ]
+    },
+    {
+      "label": "both entries import it",
+      "relSpecifier": "shared/ui/Card",
+      "files": {
+        "app/main.tsx": "import { Card } from \"@/shared/ui/Card\"\n",
+        "app/App.tsx": "import { Card } from \"@/shared/ui/Card\"\n"
+      },
+      "importedBy": [
+        "app/main.tsx",
+        "app/App.tsx"
+      ]
+    },
+    {
+      "label": "neither does",
+      "relSpecifier": "features/sounds/index",
+      "files": {
+        "app/main.tsx": "import { X } from \"@/x\"\n",
+        "app/App.tsx": "export const App = 1;\n"
+      },
+      "importedBy": []
+    },
+    {
+      "label": "a MENTION in a comment is not a static import",
+      "relSpecifier": "app/console/TerminalHost",
+      "files": {
+        "app/main.tsx": "// see \"@/app/console/TerminalHost\" for why\nexport const m = 1;\n",
+        "app/App.tsx": "export const App = 1;\n"
+      },
+      "importedBy": []
+    },
+    {
+      "label": "a REAL import line, semicolon and all",
+      "relSpecifier": "app/console/ConsoleGraphHost",
+      "files": {
+        "app/main.tsx": "export const m = 1;\n",
+        "app/App.tsx": "import { ConsoleGraphHost } from \"@/app/console/ConsoleGraphHost\";\nexport const App = 1;\n"
+      },
+      "importedBy": [
+        "app/App.tsx"
+      ]
+    },
+    {
+      "label": "a semicolon BEFORE `from` is not a match",
+      "relSpecifier": "shared/ui/Card",
+      "files": {
+        "app/main.tsx": "const a = 1; import { Card } from \"@/shared/ui/Card\";\n"
+      },
+      "importedBy": []
+    },
+    {
+      "label": "a missing entry file is skipped, not an error",
+      "relSpecifier": "shared/ui/Card",
+      "files": {
+        "app/main.tsx": "import { Card } from \"@/shared/ui/Card\"\n"
+      },
+      "importedBy": [
+        "app/main.tsx"
+      ]
+    }
+  ],
+  "seedFile": [
+    {
+      "label": "the file's first line anchors the split",
+      "seedSrcText": "// AS GRAPH SOURCE\n// why this record exists\nexport function f() {}\n",
+      "fileSrc": "export function f() {}\n",
+      "ok": true
+    },
+    {
+      "label": "a file OPENING with JSDoc — the case that held six records back",
+      "seedSrcText": "// AS GRAPH SOURCE\n/**\n * doc\n */\nexport function f() {}\n",
+      "fileSrc": "/**\n * doc\n */\nexport function f() {}\n",
+      "ok": true
+    },
+    {
+      "label": "no preamble at all",
+      "seedSrcText": "export function f() {}\n",
+      "fileSrc": "export function f() {}\n",
+      "ok": true
+    },
+    {
+      "label": "no shared line — falls through to the whole record as body",
+      "seedSrcText": "export const totallyDifferent = 1;\n",
+      "fileSrc": "export function f() {}\n",
+      "ok": false
+    },
+    {
+      "label": "a short shared line cannot anchor the heuristic",
+      "seedSrcText": "// preamble\n}\nexport const somethingLongEnough = 1;\n",
+      "fileSrc": "}\nexport const somethingLongEnough = 1;\n",
+      "ok": true
+    }
+  ],
+  "adoptions": [
+    {
+      "label": "an identical seed is KEPT",
+      "input": {
+        "seedSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "keep",
+      "reason": "the seed already matches the file, provides included",
+      "lost": []
+    },
+    {
+      "label": "a seed differing ONLY by a trailing newline is still KEPT",
+      "input": {
+        "seedSrcText": "export function f() {\\n  return 1;\\n}\\n\n\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "keep",
+      "reason": "the seed already matches the file, provides included",
+      "lost": []
+    },
+    {
+      "label": "a prose preamble does not make a matching seed stale",
+      "input": {
+        "seedSrcText": "// AS GRAPH SOURCE\n// why\nexport function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "keep",
+      "reason": "the seed already matches the file, provides included",
+      "lost": []
+    },
+    {
+      "label": "a preamble containing CODE makes it stale, not a match",
+      "input": {
+        "seedSrcText": "import { X } from \"@/x\";\nconst LocalPageFallback = () => null;\nexport function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/f → @/x/f",
+      "lost": []
+    },
+    {
+      "label": "a differing `provides` alone makes it stale",
+      "input": {
+        "seedSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "seedProvides": "@/x/old",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/old → @/x/f",
+      "lost": []
+    },
+    {
+      "label": "adopting that would DROP an export is REFUSED, and the export is named",
+      "input": {
+        "seedSrcText": "export function f() {}\nexport const keepMe = 1;\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {}\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "refuse",
+      "reason": "adopting would drop export(s) keepMe",
+      "lost": [
+        "keepMe"
+      ]
+    },
+    {
+      "label": "an unknowable record export set declines to judge rather than reporting everything lost",
+      "input": {
+        "seedSrcText": "export function f() {}\nexport const other = 1;\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export * from \"./all\";\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/f → @/x/f",
+      "lost": []
+    },
+    {
+      "label": "a plain stale seed is ADOPTED",
+      "input": {
+        "seedSrcText": "export function f() { return 0; }\n",
+        "seedProvides": "@/x/f",
+        "recordSrcText": "export function f() {\\n  return 1;\\n}\\n",
+        "recordProvides": "@/x/f",
+        "fileSrc": "export function f() {\\n  return 1;\\n}\\n"
+      },
+      "verdict": "adopt",
+      "reason": "provides @/x/f → @/x/f",
+      "lost": []
+    }
+  ],
+  "specs": [
+    {
+      "label": "an exact match",
+      "spec": "@/shared/ui/Card",
+      "seedProvides": [
+        "@/shared/ui/Card",
+        "@/other"
+      ],
+      "ok": true,
+      "nearMiss": []
+    },
+    {
+      "label": "whitespace around a seed entry is trimmed",
+      "spec": "@/shared/ui/Card",
+      "seedProvides": [
+        "  @/shared/ui/Card  "
+      ],
+      "ok": true,
+      "nearMiss": []
+    },
+    {
+      "label": "a CASE-only difference is a near miss, not a match",
+      "spec": "@/shared/ui/pages/pageHeader",
+      "seedProvides": [
+        "@/shared/ui/pages/PageHeader"
+      ],
+      "ok": false,
+      "nearMiss": [
+        "@/shared/ui/pages/PageHeader"
+      ]
+    },
+    {
+      "label": "absent entirely",
+      "spec": "@/nowhere",
+      "seedProvides": [
+        "@/shared/ui/Card"
+      ],
+      "ok": false,
+      "nearMiss": []
+    },
+    {
+      "label": "nothing seeded at all",
+      "spec": "@/nowhere",
+      "seedProvides": [],
+      "ok": false,
+      "nearMiss": []
+    }
+  ],
+  "imports": [
+    {
+      "label": "one relative import",
+      "source": "import { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "import { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a parent-relative import",
+      "source": "import { X } from \"../ui/X\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "../ui/X"
+      ],
+      "absolutized": "import { X } from \"@/features/ui/X\";\n"
+    },
+    {
+      "label": "a deep parent walk",
+      "source": "import { X } from \"../../shared/X\";\n",
+      "fromRel": "features/a/b/c.ts",
+      "specifiers": [
+        "../../shared/X"
+      ],
+      "absolutized": "import { X } from \"@/features/shared/X\";\n"
+    },
+    {
+      "label": "an index specifier",
+      "source": "import { X } from \"./sub\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./sub"
+      ],
+      "absolutized": "import { X } from \"@/features/a/sub\";\n"
+    },
+    {
+      "label": "an already-aliased import is left alone",
+      "source": "import { X } from \"@/shared/X\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "import { X } from \"@/shared/X\";\n"
+    },
+    {
+      "label": "a package import is left alone",
+      "source": "import React from \"react\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "import React from \"react\";\n"
+    },
+    {
+      "label": "THREE relative imports rewritten together",
+      "source": "import { A } from \"./a\";\nimport { B } from \"../b\";\nimport { C } from \"./c/d\";\n",
+      "fromRel": "features/x/y.ts",
+      "specifiers": [
+        "./a",
+        "../b",
+        "./c/d"
+      ],
+      "absolutized": "import { A } from \"@/features/x/a\";\nimport { B } from \"@/features/b\";\nimport { C } from \"@/features/x/c/d\";\n"
+    },
+    {
+      "label": "a bare relative side-effect import",
+      "source": "import \"./styles\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./styles"
+      ],
+      "absolutized": "import \"@/features/a/styles\";\n"
+    },
+    {
+      "label": "a dynamic import is rewritten too",
+      "source": "const m = await import(\"./lazy\");\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./lazy"
+      ],
+      "absolutized": "const m = await import(\"@/features/a/lazy\");\n"
+    },
+    {
+      "label": "a vi.mock target is rewritten",
+      "source": "vi.mock(\"./dep\");\n",
+      "fromRel": "features/a/b.test.ts",
+      "specifiers": [
+        "./dep"
+      ],
+      "absolutized": "vi.mock(\"@/features/a/dep\");\n"
+    },
+    {
+      "label": "a relative specifier in a LINE comment is not an import",
+      "source": "// see \"./ghost\" for why\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "// see \"./ghost\" for why\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a relative specifier in a BLOCK comment is not an import",
+      "source": "/* lifted from \"./ghost\" */\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "/* lifted from \"./ghost\" */\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a COMMENTED-OUT import inside a block comment is not an import",
+      "source": "/*\nimport { Ghost } from \"./ghost\";\n*/\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "/*\nimport { Ghost } from \"./ghost\";\n*/\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a commented-out import on a `//` line is not one either",
+      "source": "// import { Ghost } from \"./ghost\";\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "// import { Ghost } from \"./ghost\";\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a require() inside a doc comment is prose, not a dependency",
+      "source": " * `require(\"./example\")` shows the shape\nimport { X } from \"./x\";\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": " * `require(\"./example\")` shows the shape\nimport { X } from \"@/features/a/x\";\n"
+    },
+    {
+      "label": "a source that is ONLY prose mentioning a specifier is untouched",
+      "source": "// see \"./ghost\" for why\nexport const a = 1;\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "// see \"./ghost\" for why\nexport const a = 1;\n"
+    },
+    {
+      "label": "a specifier inside a STRING is not an import",
+      "source": "const s = \"./notanimport\";\nexport const a = 1;\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "const s = \"./notanimport\";\nexport const a = 1;\n"
+    },
+    {
+      "label": "a NON-ASCII comment before an import — the offset-coordinate case",
+      "source": "// Public API barrel — cross-feature consumers import ONLY from here.\nimport { X } from \"./x\";\n",
+      "fromRel": "features/sounds/index.ts",
+      "specifiers": [
+        "./x"
+      ],
+      "absolutized": "// Public API barrel — cross-feature consumers import ONLY from here.\nimport { X } from \"@/features/sounds/x\";\n"
+    },
+    {
+      "label": "several non-ascii comments before several imports",
+      "source": "// one — dash\nimport { A } from \"./a\";\n// two — dash\nimport { B } from \"../b\";\n",
+      "fromRel": "features/x/y.ts",
+      "specifiers": [
+        "./a",
+        "../b"
+      ],
+      "absolutized": "// one — dash\nimport { A } from \"@/features/x/a\";\n// two — dash\nimport { B } from \"@/features/b\";\n"
+    },
+    {
+      "label": "nothing relative at all",
+      "source": "export const a = 1;\n",
+      "fromRel": "features/a/b.ts",
+      "specifiers": [],
+      "absolutized": "export const a = 1;\n"
+    }
+  ],
+  "assets": [
+    {
+      "label": "a css import goes",
+      "source": "import \"./styles.css\";\nexport const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    },
+    {
+      "label": "a bare svg import goes",
+      "source": "import \"./icon.svg\";\nexport const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    },
+    {
+      "label": "a BOUND asset import stays — it binds a value someone uses",
+      "source": "import icon from \"./icon.svg\";\nexport const a = icon;\n",
+      "dropped": "import icon from \"./icon.svg\";\nexport const a = icon;\n"
+    },
+    {
+      "label": "several asset kinds go",
+      "source": "import \"./a.scss\";\nimport \"./b.png\";\nimport \"./c.webp\";\nexport const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    },
+    {
+      "label": "a code import STAYS",
+      "source": "import { X } from \"./x\";\nexport const a = 1;\n",
+      "dropped": "import { X } from \"./x\";\nexport const a = 1;\n"
+    },
+    {
+      "label": "a .ts import stays",
+      "source": "import { X } from \"./x.ts\";\nexport const a = 1;\n",
+      "dropped": "import { X } from \"./x.ts\";\nexport const a = 1;\n"
+    },
+    {
+      "label": "nothing to drop",
+      "source": "export const a = 1;\n",
+      "dropped": "export const a = 1;\n"
+    }
+  ],
+  "aliases": [
+    {
+      "label": "a sibling",
+      "fromDir": "features/a",
+      "spec": "./b",
+      "forDir": "@/features/a/b",
+      "forFile": "@/features/a/b"
+    },
+    {
+      "label": "a parent walk",
+      "fromDir": "features/a/b",
+      "spec": "../c",
+      "forDir": "@/features/a/c",
+      "forFile": "@/features/a/c"
+    },
+    {
+      "label": "two parents up",
+      "fromDir": "features/a/b/c",
+      "spec": "../../d",
+      "forDir": "@/features/a/d",
+      "forFile": "@/features/a/d"
+    },
+    {
+      "label": "a `src/` prefix is stripped",
+      "fromDir": "src/features/a",
+      "spec": "./b",
+      "forDir": "@/features/a/b",
+      "forFile": "@/features/a/b"
+    },
+    {
+      "label": "a dot segment collapses",
+      "fromDir": "features/a",
+      "spec": "./././b",
+      "forDir": "@/features/a/b",
+      "forFile": "@/features/a/b"
+    },
+    {
+      "label": "from the root",
+      "fromDir": "",
+      "spec": "./b",
+      "forDir": "@/b",
+      "forFile": "@/b"
+    }
+  ],
+  "runtime": [
+    {
+      "label": "a plain import",
+      "source": "import { X } from \"./x\";\n",
+      "imports": [
+        "./x"
+      ]
+    },
+    {
+      "label": "an all-inline-type clause yields nothing",
+      "source": "import { type A, type B } from \"./ab\";\n",
+      "imports": []
+    },
+    {
+      "label": "a MIXED clause still counts",
+      "source": "import { type A, b } from \"./ab\";\n",
+      "imports": [
+        "./ab"
+      ]
+    },
+    {
+      "label": "a statement-level `import type` yields nothing",
+      "source": "import type { T } from \"./t\";\n",
+      "imports": []
+    },
+    {
+      "label": "a bare side-effect import counts",
+      "source": "import \"./a.css\";\n",
+      "imports": [
+        "./a.css"
+      ]
+    },
+    {
+      "label": "a re-export counts",
+      "source": "export { A } from \"./a\";\n",
+      "imports": [
+        "./a"
+      ]
+    },
+    {
+      "label": "a default import counts",
+      "source": "import React from \"react\";\n",
+      "imports": [
+        "react"
+      ]
+    },
+    {
+      "label": "an import in a comment does not",
+      "source": "// import { X } from \"./ghost\";\nexport const a = 1;\n",
+      "imports": []
+    }
+  ]
+}

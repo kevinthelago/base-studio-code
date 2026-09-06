@@ -28,33 +28,66 @@
  * verdict. Same species as everything else this feature guards against: not a wrong answer, a
  * narrower one presented as the whole.
  */
+/// Each leg carries a stable `key` and a `stage` alongside its human `label`, and the two are separate
+/// on purpose. The LABEL is prose and moves ("vitest" vs "vitest (--changed: module-graph affected)");
+/// the KEY is what a recorded measurement is filed under, so a scoped run and a full run of the same
+/// leg land in ONE history rather than two that can never be compared. `stage` maps the leg onto the
+/// existing fault taxonomy rather than inventing a "gate" stage for it.
 export function gateCommands(plan, base) {
   const c = [];
+  // A RECORD MUST NOT CLAIM A MODULE IT IS NOT — and this leg is UNCONDITIONAL, in both tiers, which
+  // is the whole point of it.
+  //
+  // Every other leg is scoped by what THIS branch changed. That is exactly wrong here, because the
+  // drift this catches is not caused by a changed file: `detachedwindow` was re-claimed by a designer
+  // session writing to ~/.base-studio-code/components.db, touching nothing in the repo. It stubbed
+  // `@/store`, `TerminalHost` and the `lazyWorkspaces` barrel to make the preview build (rev 10), then
+  // republished the specifier "so App and other composers can import" it (rev 12) — re-breaking what
+  // revs 3 and 7 had each already fixed. No changed-file scope would ever have selected it, and there
+  // is no record of it in the packaged seed to diff against, so a seed-only check is blind too.
+  // docs/records.md names this as the case no gate observes.
+  //
+  // `bsc ui census` is REUSED rather than reimplemented: it already classifies WHY a pair disagrees
+  // (`preview-derivative` vs `newer-truth`), already reads the runtime stores, and already honours a
+  // record's `srcDivergence` note, so an adjudicated multi-component module like `ui-charts` is not
+  // reported as drift. A hand-rolled path-matching script gets all three wrong — mine did, and called
+  // four divergences where there are two. It exits non-zero on disagreement, so it gates as-is.
+  //
+  // Affordable unconditionally: MEASURED 0.15-0.18s and ~90 MB, cheaper than deciding whether to run it.
+  c.push({ label: "records (no record claims a module it is not)", key: "graph-claim-census", stage: "test", cmd: "bsc", args: ["ui", "census"] });
   if (plan.full) {
-    c.push({ label: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
-    c.push({ label: "lint", cmd: "npm", args: ["run", "lint"] });
-    c.push({ label: "vitest", cmd: "npx", args: ["vitest", "run"] });
-    c.push({ label: "clippy", cmd: "cargo", args: ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"] });
-    c.push({ label: "nextest", cmd: "cargo", args: ["nextest", "run", "--workspace", "--no-fail-fast"] });
+    c.push({ label: "typecheck", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
+    c.push({ label: "lint", key: "lint", stage: "lint", cmd: "npm", args: ["run", "lint"] });
+    c.push({ label: "vitest", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] });
+    c.push({ label: "clippy", key: "clippy", stage: "lint", cmd: "cargo", args: ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"] });
+    c.push({ label: "nextest", key: "nextest", stage: "test", cmd: "cargo", args: ["nextest", "run", "--workspace", "--no-fail-fast"] });
+    // DOCTESTS, which `nextest` structurally does not run. They were guarded by a static scan for
+    // untagged ``` fences, and that scan could not see an INDENTED code block — which rustdoc compiles
+    // as Rust just the same, and which cannot be tagged because there is nowhere to write `text` on it.
+    // Three doctests were failing on develop behind a green gate. Running the real thing needs no
+    // heuristic and cannot report a private item that could never have run: MEASURED at 7.53s warm for
+    // the whole workspace, cheaper than clippy.
+    c.push({ label: "doctest", key: "doctest", stage: "test", cmd: "cargo", args: ["test", "--workspace", "--doc"] });
     c.push(...graphCommands());
     return c;
   }
-  if (plan.runTsc) c.push({ label: "typecheck (whole-program — never scoped)", cmd: "npm", args: ["run", "typecheck"] });
+  if (plan.runTsc) c.push({ label: "typecheck (whole-program — never scoped)", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
   if (plan.frontendFiles.length) {
-    c.push({ label: "lint (changed files)", cmd: "npx", args: ["eslint", ...plan.frontendFiles] });
+    c.push({ label: "lint (changed files)", key: "lint", stage: "lint", cmd: "npx", args: ["eslint", ...plan.frontendFiles] });
   }
   if (plan.runVitest) {
     // A record-store change runs the suite UNSCOPED: `--changed` walks the module graph, and there is no
     // edge from a JSON blob to the modules `emit:records` materializes out of it. Scoping there would
     // report a green gate over tests it never selected.
     c.push(plan.vitestUnscoped
-      ? { label: "vitest (unscoped — a record store changed)", cmd: "npx", args: ["vitest", "run"] }
-      : { label: "vitest (--changed: module-graph affected)", cmd: "npx", args: ["vitest", "run", "--changed", base] });
+      ? { label: "vitest (unscoped)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run"] }
+      : { label: "vitest (--changed: module-graph affected)", key: "vitest", stage: "test", cmd: "npx", args: ["vitest", "run", "--changed", base] });
   }
   if (plan.rustCrates.length) {
     const p = plan.rustCrates.flatMap((x) => ["-p", x]);
-    c.push({ label: "clippy (scoped)", cmd: "cargo", args: ["clippy", ...p, "--all-targets", "--", "-D", "warnings"] });
-    c.push({ label: "nextest (scoped)", cmd: "cargo", args: ["nextest", "run", ...p, "--no-fail-fast"] });
+    c.push({ label: "clippy (scoped)", key: "clippy", stage: "lint", cmd: "cargo", args: ["clippy", ...p, "--all-targets", "--", "-D", "warnings"] });
+    c.push({ label: "nextest (scoped)", key: "nextest", stage: "test", cmd: "cargo", args: ["nextest", "run", ...p, "--no-fail-fast"] });
+    c.push({ label: "doctest (scoped)", key: "doctest", stage: "test", cmd: "cargo", args: ["test", ...p, "--doc"] });
   }
   if (plan.runGraph) c.push(...graphCommands());
   return c;
@@ -88,9 +121,15 @@ export function gateCommands(plan, base) {
  */
 export function graphCommands() {
   return [
-    { label: "graph (rust nodes compile)", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
-    { label: "graph (repo store is current)", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
-    { label: "graph (the kits agree)", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
+    { label: "graph (rust nodes compile)", key: "graph-rust-compile", stage: "compile", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
+    { label: "graph (repo store is current)", key: "graph-promote-check", stage: "compile", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
+    { label: "graph (the kits agree)", key: "graph-cross-kit", stage: "test", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
+    // The Rust EDGE tier's two-copy invariant (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`).
+    // A carried Rust test is a real cargo test target now, so it CAN silently stop running: delete the
+    // file, forget the `[[test]]` entry, and nextest reports all-passing with 8 fewer tests in it
+    // (measured, 67 -> 59). This is the only thing that looks. It also catches the record and the file
+    // it was lifted from drifting apart, which it found on its FIRST run.
+    { label: "graph (rust test edges)", key: "graph-rust-tests", stage: "test", cmd: "node", args: ["scripts/graph-rust-tests.mjs"] },
   ];
 }
 
@@ -181,11 +220,15 @@ export function isRecordStorePath(file) {
  * store at all, has to reach the second without touching the first.
  */
 export function isGraphSourcePath(file) {
+  // A crate's OWN manifest decides whether a graph-carried `[[test]]` target is compiled at all, so
+  // editing one can stop a test running without touching a line of source.
+  if (/^crates\/[^/]+\/Cargo\.toml$/.test(file)) return true;
   return file.startsWith("graph/")
     || file.startsWith("src-tauri/data/knowledge/")
     || file.startsWith("crates/bsc-graph/")
     || file === "scripts/graph-rust-compile.mjs"
     || file === "scripts/graph-cross-kit.mjs"
+    || file === "scripts/graph-rust-tests.mjs"
     // The cross-kit CONTRACT: adding a case must re-run the agreement check that reads it.
     || file === "src/features/algorithms/lib/crossKit.fixtures.json";
 }
@@ -314,6 +357,26 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
   // disk go unnoticed. So a record-store change runs the suite UNSCOPED rather than pretending the diff
   // told us which tests are affected.
   const touchedRecordStore = files.some(isRecordStorePath);
+  // ...AND A DELETION, for a DIFFERENT blind spot that composes with that one. `--changed` selects tests
+  // by walking the module graph FROM the changed files, and a deleted file has no edges in the new graph —
+  // nothing imports it, because it is gone — so it selects NOTHING. The tests that actually break are the
+  // ones that read from DISK rather than importing (`*.gen.test.ts`), which no import walk could have
+  // reached anyway.
+  //
+  // MEASURED: retiring `src/features/skills/index.tsx` passed the scoped gate (60 files, 750 tests) and
+  // then failed 4 tests in `reactUiKit.gen.test.ts`, because deleting it changed the packaged kit's
+  // closure. That was the FIFTH stale packaged kit in one session and three of them reached `develop`.
+  //
+  // The record-store rule does not cover this: that change touches `src/` only, so it never fires.
+  const deletedFrontend = touchedFrontend.filter((f) => !exists(f));
+
+  // WHICH trigger fired, so the printed scope can say. Two rules reach the same decision for different
+  // reasons, and "vitest runs unscoped" without the why is the kind of note a reader learns to skip.
+  const unscopedReason = touchedRecordStore
+    ? "a record store changed — `--changed` cannot see from a JSON blob to the modules emit:records materializes from it"
+    : deletedFrontend.length
+      ? `${deletedFrontend.length} frontend file(s) DELETED (${deletedFrontend.slice(0, 3).join(", ")}) — a deleted file has no module-graph edges, so \`--changed\` selects nothing`
+      : null;
 
   return {
     full: false,
@@ -322,7 +385,8 @@ export function planGate({ files, graph, dirToCrate, force = false, exists = () 
     frontendFiles,
     runVitest: touchedFrontend.length > 0,
     runTsc: touchedFrontend.length > 0,
-    vitestUnscoped: touchedRecordStore,
+    vitestUnscoped: Boolean(unscopedReason),
+    unscopedReason,
     runGraph: files.some(isGraphSourcePath),
   };
 }

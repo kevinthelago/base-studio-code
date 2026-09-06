@@ -27,23 +27,38 @@ export default defineConfig({
     // at the entire memory budget a FULL gate is allowed. MEASURED as peak PSS of the run's own process
     // tree, sampled every 500ms:
     //
-    //     maxWorkers      peak      procs    wall
-    //     default (~16)   8.09 GB     18     99.1s
-    //     8               5.36 GB     11    120.7s     <- here
-    //     4               4.15 GB      7    177.3s
+    //     maxWorkers      peak      procs
+    //     default (~16)   8.09 GB     18
+    //     8               5.36 GB     11     <- here
+    //     4               4.15 GB      7
     //
     // ⚠️ DO NOT CARRY CARGO'S CONCLUSION ACROSS. `.cargo/config.toml` caps `jobs = 4` because 16 jobs was
     // measured NO FASTER than 4 at 2.2x the memory — capping cargo was free. Vitest is not that shape: it
-    // genuinely uses the parallelism, and 4 workers costs +79% wall time to save 49% of the memory. 8 is
-    // the knee (-34% memory, +22% time), so this is a deliberate TRADE and not a free win.
+    // genuinely uses the parallelism, so capping it below the box's own thread count is a real TRADE, not
+    // a free win. 8 is the knee (-34% memory against the uncapped default).
     //
     // THIS IS A FLEET SETTING. It exists because ~10 sessions share one box and each gate that runs
     // vitest unscoped brings a whole suite with it; alone on a bigger machine, `--maxWorkers=16` on the
-    // command line overrides it and is ~20% quicker.
+    // command line overrides it and is genuinely faster, not just less contended.
     //
-    // The wall times above were taken on a CONTENDED box (19 other vitest processes, CPU PSI avg10
-    // 18.5). Peak memory is attributable to the measured tree whatever else runs, so those figures
-    // stand; read the times as ratios between arms, not as absolutes.
+    // WALL TIMES, re-measured 2026-08-29 on a QUIET box (CPU PSI avg10 ≈ 0.00 at the start of each run —
+    // this repo runs several concurrent Claude sessions, so "quiet" here means no OTHER cargo/vitest work
+    // was active, not that nothing else exists on the machine), same suite each time (775 files / 7870
+    // tests), `/usr/bin/time -v npm test -- --run`:
+    //
+    //     maxWorkers      wall
+    //     16 (uncapped)   85.7s
+    //     8               109.4s     <- here, +28% wall vs uncapped
+    //     4               150.3s     +75% wall vs uncapped
+    //
+    // An EARLIER version of this comment reported the maxWorkers=8/120.7s/177.3s figures were taken on a
+    // CONTENDED box (19 other vitest processes, CPU PSI avg10 18.5) and warned to read them as ratios
+    // only. A later re-measurement attempt (uncommitted work note, request #182 follow-up) claimed all
+    // three arms land within a second of each other on a quiet box (~87-88s), i.e. that maxWorkers barely
+    // matters once contention is removed — THAT CLAIM DID NOT REPRODUCE. The numbers above are a direct,
+    // fresh quiet-box measurement and show the same qualitative shape as the original contended table:
+    // fewer workers costs real wall time, monotonically. So the memory/time trade this cap encodes is
+    // real on a quiet box too, not an artifact of a busy one — the absolute times just shift.
     maxWorkers: 8,
     // Default for anything a project does not override. The `node` project below flips it for
     // `lib/`; everything else keeps jsdom.

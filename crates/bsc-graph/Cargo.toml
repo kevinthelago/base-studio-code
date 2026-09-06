@@ -2,6 +2,7 @@
 name = "bsc-graph"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The Algorithms knowledge graph (#2760/#2761) — the curated concept ontology, queryable from `bsc graph`."
 
 [dependencies]
@@ -41,3 +42,21 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tree-sitter = "0.26"
 tree-sitter-typescript = "0.23"
 tree-sitter-rust = "0.24"
+
+[dev-dependencies]
+# The MATERIALIZER, as a real package rather than an `include!` of its source
+# (`graph-materialize-becomes-a-real-build-dependency`). `migrate-crate` names what it writes with
+# `extract::module_id`, and the build SELECTS on `plan::expected_id`; the two must agree exactly, and
+# `materialize_plan_tests` is where that is proved over every real path in the tree. Depending on the
+# crate means those tests drive the SHIPPED symbols — a restatement could drift, and the drift would be
+# invisible precisely where it matters.
+graph-materialize = { path = "../graph-materialize" }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
+[lib]
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"

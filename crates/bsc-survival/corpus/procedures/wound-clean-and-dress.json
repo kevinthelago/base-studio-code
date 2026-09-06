@@ -1,0 +1,35 @@
+{
+  "id": "wound-clean-and-dress",
+  "category": "medical",
+  "name": "Clean and dress a wound",
+  "summary": "Irrigate the wound with the cleanest water you have, cover it, and watch it — infection is what kills days after the injury.",
+  "time": "10 minutes, then a look every day",
+  "materials": [
+    { "item": "clean water", "substitutes": ["boiled water", "disinfected water", "drinking water"] },
+    { "item": "container to squirt from", "substitutes": ["bottle", "bag with a pinhole", "syringe"], "optional": true },
+    { "item": "clean cloth", "substitutes": ["gauze", "bandana", "shirt", "sphagnum moss"] },
+    { "item": "cordage or tape to hold the dressing", "substitutes": ["tape", "strip of cloth", "cordage", "bandage"] }
+  ],
+  "steps": [
+    { "text": "Stop the bleeding first — see `bleeding-direct-pressure`. A wound that is still bleeding cannot be assessed." },
+    { "text": "Irrigate: flush the wound with a hard stream of clean water until visible dirt is gone. Volume and pressure do the work.", "why": "Contamination left in a wound is the infection. Antiseptics poured on top of grit do very little." },
+    { "text": "Leave deeply embedded objects where they are — bandage around them." },
+    { "text": "Cover with the cleanest dry material available and secure it without cutting off circulation." },
+    { "text": "Change the dressing daily, or whenever it is soaked or filthy, and look at the wound each time." }
+  ],
+  "verify": [
+    "Fingers or toes beyond the dressing stay warm, pink, and feel normal — otherwise it is too tight.",
+    "Daily check: spreading redness, heat, swelling, pus, a red streak running toward the body, or a fever means infection is winning."
+  ],
+  "limits": [
+    "Irrigation reduces the bacterial load. It does not sterilize a wound and it does not treat an infection that has already set in.",
+    "A wound that needs closing needs a clinician. Closing a contaminated wound in the field traps the infection inside.",
+    "No plant preparation in this corpus is a substitute for antibiotics in an established infection."
+  ],
+  "cautions": [
+    "Do not pour strong antiseptics (undiluted iodine, hydrogen peroxide, alcohol) into open tissue — they kill the tissue trying to heal alongside the bacteria.",
+    "Animal and human bites, puncture wounds and anything from dirty water carry a high infection risk and are a reason to seek care rather than manage in place.",
+    "Tetanus is a real risk from any dirty wound."
+  ],
+  "tags": ["wound", "infection", "irrigation", "dressing"]
+}

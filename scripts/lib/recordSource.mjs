@@ -1,5 +1,5 @@
 // How a FILE's source compares to a RECORD's — the normalizations both the census
-// (`retirement-candidates.mjs`) and the refresh (`refresh-drifted-seeds.mjs`) must apply identically.
+// (`bsc ui retirable`) and the refresh (`bsc ui refresh-seed`) must apply identically.
 //
 // It is one module rather than two copies because this session has now watched a mirrored helper drift
 // three separate times (the e2e harness's copied resolver, twice; the four-resolver split). A census that
@@ -12,8 +12,8 @@ export const norm = (s) => s.replace(/\r\n/g, "\n").trimEnd();
 
 // ── relative specifiers ───────────────────────────────────────────────────────────────────────────
 // ONE definition of "a relative specifier a record carries", shared by the guard that rejects them
-// (`platformBoundary.test.ts`), the sweep that repairs them (`check-record-imports.mjs`), the
-// retirement that must not create new ones (`retire-module.mjs`) and the refresh that absolutizes a
+// (`platformBoundary.test.ts`), the sweep that repairs them (`bsc ui imports`), the
+// retirement that must not create new ones (`bsc ui retire`) and the refresh that absolutizes a
 // file into record form (`absolutizeImports`, below). Four readers, one regex — for the same reason
 // this module exists at all: a guard that reads imports differently from the fix is worse than either
 // being wrong alone.
@@ -292,7 +292,7 @@ export function exportedNames(rawSrc) {
  * promoted record's import cannot resolve. A promotion tool that reads imports differently from the guard
  * is wrong in whichever direction it differs: more permissive and it packages a record that breaks the
  * suite; STRICTER and it silently refuses records that were always fine, which is what happened —
- * `promote-records.mjs` had its own loose regex and blocked 170 modules on two false positives:
+ * `bsc ui promote-seed` had its own loose regex and blocked 170 modules on two false positives:
  *
  *   `import type { AppStore } from "@/store/types"` — erases at compile time and emits NO require. A
  *   mixed `import { type A, B }` still requires, so only the whole-statement form is skipped.
@@ -313,7 +313,50 @@ export function exportedNames(rawSrc) {
  * code. Anchoring cannot see this — only removing the prose can.
  */
 export function runtimeImports(src) {
-  return [...new Set([...stripComments(src).matchAll(/^\s*(?:import|export)\s+(?!type\s)[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]))];
+  const text = stripComments(src);
+  const out = [];
+  // Clause imports/re-exports. `(?!type\s)` drops a STATEMENT-level `import type`; the clause itself is
+  // captured so an ALL-inline-type one can be dropped too — see below.
+  for (const m of text.matchAll(/^\s*(?:import|export)\s+(?!type\s)([^"']*)from\s+["']([^"']+)["']/gm)) {
+    if (!clauseHasValueBinding(m[1])) continue;
+    out.push(m[2]);
+  }
+  // Bare side-effect imports — `import "./a.css"`. A real `require` at runtime with no `from` clause for
+  // the pattern above to match, so it was invisible: a guard that MISSES a dependency is the failure this
+  // family of checks exists to prevent (#the-fourth-import-scanner-is-measured-against-the-canonical-one).
+  for (const m of text.matchAll(/^\s*import\s+["']([^"']+)["']/gm)) out.push(m[1]);
+  return [...new Set(out)];
+}
+
+/**
+ * Does an import CLAUSE bind anything that survives to runtime?
+ *
+ * `import { type A, type B } from "x"` erases entirely and emits no `require`, so counting it is the
+ * exact mistake `platformBoundary.test.ts` was written to correct: #3858 measured the boundary as broken
+ * — 5 of 92 records short by three specifiers — and the guard showed it a FALSE ALARM, because all six
+ * occurrences were type-only and the analysis had counted them as runtime deps. The guard fixed the
+ * STATEMENT form (`import type {…}`) and left the inline form carrying the same error.
+ *
+ * A MIXED clause still counts, and that is deliberate rather than an oversight: `import { type A, b }`
+ * really does require the module for `b`, and `recordBoundary.test.ts` documents it as matching the
+ * eslint rule's `allowTypeImports` — "the file-side rule rather than inventing a stricter one".
+ *
+ * Anything that is not a brace clause — a default, a namespace, `export * from` — binds a value by
+ * construction, so it counts.
+ */
+function clauseHasValueBinding(clause) {
+  const open = clause.indexOf("{");
+  const close = clause.lastIndexOf("}");
+  if (open === -1 || close < open) return true; // default / namespace / `export *` — a value either way
+  const before = clause.slice(0, open).trim();
+  if (before && before !== ",") return true; // `React, { … }` — the default binding is a value
+  const members = clause
+    .slice(open + 1, close)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (!members.length) return false; // `import {} from "x"` binds nothing
+  return members.some((m) => !/^type\s/.test(m));
 }
 
 /**
@@ -360,7 +403,7 @@ export function stripComments(src) {
 /**
  * Should a promotion REPLACE the seed already sitting at its path?
  *
- * `promote-records.mjs` never overwrites a seed — seven curated ones were clobbered before that guard
+ * `bsc ui promote-seed` never overwrites a seed — seven curated ones were clobbered before that guard
  * existed. This is the one narrow inversion of it, and it is a rule rather than a judgement: the guard
  * protects a curated seed from a worse record, and here the seed is the WORSE copy. A record only
  * reaches the write loop once its body has been proven to match the file, so when the seed does not,
@@ -409,7 +452,7 @@ export function seedAdoption({ seedSrcText = "", seedProvides = null, recordSrcT
  *
  * The precondition for deleting anything. Importers keep writing `@/x/y`; once the file is gone the
  * only thing that can answer them is a shipped record. Two real failures came from nobody checking:
- * five modules retired while `promote-records` had SKIPPED their seed write (deleted, with the old
+ * five modules retired while `bsc ui promote-seed` had SKIPPED their seed write (deleted, with the old
  * derivative still shipping), and `pageheader` whose seed said `@/shared/ui/pages/PageHeader` against a
  * `pageHeader.tsx` file.
  *
@@ -434,7 +477,7 @@ export function seedAnswersSpecifier({ spec, seedProvides }) {
  * `seedAnswersSpecifier` asks whether anything will respond to `@/x/y`. That is necessary and NOT
  * sufficient: a seed record can answer the specifier while holding different code, and retiring the
  * file then ships the RECORD's behaviour under the file's name — silently, because it still compiles.
- * That is the BODY-DIFFERS hazard `promote-records` refuses to promote through, and the retire step had
+ * That is the BODY-DIFFERS hazard `bsc ui promote-seed` refuses to promote through, and the retire step had
  * no equivalent, so a divergent record that happened to be seeded sailed past.
  *
  * It cost ten test failures in one sweep: `Dialog`, `ModalCard`, `ModalScrim` and `a11y` are all
@@ -454,7 +497,7 @@ export function seedAnswersSpecifier({ spec, seedProvides }) {
  *  `.bsc-records/` and imported through the normal bundle resolution it is simply missing —
  *  "Cannot find package '@/components/algorithms-kit-graph'".
  *
- *  This is the real reason `promote-records.mjs` refuses `role: page` wholesale, and it is worth stating
+ *  This is the real reason `bsc ui promote-seed` refuses `role: page` wholesale, and it is worth stating
  *  as its own predicate: the refusal is not about pages being special, it is about this import form.
  *
  *  Learned the hard way — teaching `seedMatchesFile` that `@/components/glance-canvas` and
@@ -480,7 +523,7 @@ export function seedMatchesFile({ seedSrcText, fileSrc }) {
  * and `vite build` all green, because only a real boot observes it. `ConsoleGraphHost` was retired and
  * restored for exactly this, and `dev-boot-check.mjs` was the only thing that noticed.
  *
- * ONE definition, shared by the tool that DELETES (`retire-module.mjs`) and the census that GRADES
+ * ONE definition, shared by the tool that DELETES (`bsc ui retire`) and the census that GRADES
  * (`retirement-candidates.mjs`). They disagreed before this existed: the census offered four candidates
  * — `useAppBoot`, `ConsoleGraphHost`, `TerminalHost`, `features/sounds/index` — that the tool refused,
  * every one for this rule. A census that grades differently from the tool that acts is worse than either

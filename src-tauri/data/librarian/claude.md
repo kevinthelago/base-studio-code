@@ -169,7 +169,23 @@ reflects it:
   Run it over EACH tree you curated from (`src`, `crates`, `src-tauri`), because the pairing is resolved
   relative to the scanned root. A TypeScript impl pairs with its sibling `<name>.test.ts`; a RUST impl
   pairs with its OWN file, since its tests are an inline `#[cfg(test)] mod tests` (#4146). An impl with
-  no test is left alone — never given an empty `tests`.
+  no test is left alone — never given an empty `tests`. `--id a,b` scopes a harvest to specific impls,
+  so re-pairing ONE record's test does not rewrite every sibling that shares its `src` (#123). An `--id`
+  the store does not hold is NAMED back to you in `unknownIds` rather than passing silently — a typo
+  would otherwise report `paired: 0`, which reads as "that record has no test".
+
+  **A test harvested onto a record whose module already RETIRED never reaches the packaged seed on its
+  own.** `tests harvest` only writes the per-user RUNTIME store — the packaged seed the app ships
+  (`src-tauri/data/knowledge/algorithms.json`) is a SEPARATE file, and `bsc ui promote-seed` promotes a
+  record into it only while the record's FILE still exists. For an id that is already seeded (the module
+  is gone, only the graph record remains), sync the tests across explicitly:
+
+  ```
+  bsc graph tests promote --id <id> --apply
+  ```
+
+  Without `--apply` it reports what it would do and writes nothing. It refuses an id the packaged seed
+  does not already carry — that would be a full record promotion, not a test sync (#123).
 - `bsc graph impl get <id>` — **read ONE implementation's whole record**: its code, kind, summary,
   `composes`, tests, domain. This is the read you reach for once `list` has told you the id — `list` is
   the index, `get` is the entry, and `dump` is neither (it is the whole graph, and almost never what you
@@ -190,6 +206,14 @@ reflects it:
 - `bsc graph impl revert <id> [--to <rev>]` — restore a previous `code`. Defaults to undoing the last
   source-moving write. It REFUSES rather than landing on a nearer revision when the target has aged past
   the retained rungs, and names which revisions are still reachable.
+- `bsc graph impl refresh <id>=<src-relative-path>… [--apply]` — refresh an EXISTING record's
+  `code` from the file it claims to be. The file is the authority here deliberately: it is the copy
+  `tsc`, `lint`, `vitest` and `vite build` all validate, and such a record claims to BE it. BY ID,
+  never a harvest — `bsc graph harvest --module --apply` derives the id from the FILE STEM, and
+  several feature barrels all derive `index.ts`, so applying them in turn writes them over one
+  another under one id. A dry run is the default. It reports the exports a refresh RESTORES, and
+  WARNS when one would REMOVE an export the record had — that means the record holds something the
+  file does not, which is a judgement call for you rather than a sync to apply.
 - `bsc graph impl sync-seed <id>… --seed-dir <dir> [--only <field>] [--apply] [--pretty]` — a write here
   is to the RUNTIME store; the PACKAGED seed (`src-tauri/data/knowledge/algorithms.json`) is a checked-in
   file that only reaches git through this verb. Reach for it after a write you want to land on a branch:
@@ -201,6 +225,24 @@ reflects it:
 
 Steward toward one accurate, non-duplicated library: one algorithm per id, honest roles, real
 `composes` edges rooted in the language's primitives.
+
+## Before you author: ask whether the library already holds it
+
+The cheapest duplicate is the one never written, and you cannot answer this from memory — the library
+is far larger than a conversation.
+
+- `bsc graph similar --sig "(xs: T[], key: (t: T) => string) => Map<string, T[]>"` — does anything
+  already have this shape? It takes a SIGNATURE rather than an id precisely because the thing you are
+  about to write has no id yet, which is the whole difference between this and the sweeps below.
+- `bsc graph similar <id>` — the same question for something already stored, ranked by how much of the
+  contract overlaps.
+
+Read the score. **A match at 1.00 means read that record instead of writing a new one; an empty result
+means write it.** The ranking is floored, so "nothing like this exists" comes back as nothing at all
+rather than as a tail of weak matches — an empty answer is an answer, not a failure.
+
+A close match may still be the wrong thing: same shape, different meaning is common and legitimate.
+This proposes; you decide.
 
 ## Author a COMPLETE algorithm — code + kind + visualization
 
@@ -298,11 +340,39 @@ The library is only useful if it stays lean, and that is a set of TOOLS, not han
 - `bsc graph used-by <id>` — the composes-INVERSE: which implementations compose `<id>` (and how many).
   `bsc graph used-by --all` ranks every impl by usage. This is how you tell a load-bearing primitive
   from an orphan — the measure step before you decide what to combine or prune.
-- `bsc graph merge <from-id> <into-id>` — when two implementations do the same job, fold one INTO the
-  other in ONE step: it repoints every impl's `composes` from→into (deduped) then removes `<from>`.
-  Decide the survivor with `used-by`: **merge the LESS-used into the more-used**, so the one everything
-  builds on stays. Reach for it whenever `harvest`/`curate` surface a duplicate of something already in
-  the library — never leave two impls for the same algorithm.
+- `bsc graph doctor --dedup` — **the sweep over your own library.** Groups implementations that are
+  duplicates of each other and says WHICH EVIDENCE found each group. Run it as part of the doctor pass
+  above; duplicates used to reach you only by accident, when a `harvest` happened to collide with
+  something already stored.
+- `bsc graph dupes <dir>` — the same question asked of a whole SOURCE TREE rather than the store
+  (`bsc graph dupes crates`, `bsc graph dupes src`). This is where harvest candidates come from: a
+  shape repeated across files is a thing that wants to be one record. It reports a path and a line per
+  member, biggest groups first, and it keeps no index, so just run it.
+- `bsc graph merge <from-id> <into-id>` — fold one implementation INTO another in ONE step: it
+  repoints every impl's `composes` from→into (deduped) then removes `<from>`. Decide the survivor with
+  `used-by`: **merge the LESS-used into the more-used**, so the one everything builds on stays —
+  **unless one of them OWNS a seed module**, which outranks usage. `seedAlgorithms.gen.test.ts` maps
+  each seed file under `src/shared/lib/algorithms/` to the one node id that answers for it; fold that
+  node away and the file is orphaned and the gate goes red, however few impls composed it. `used-by`
+  cannot see that binding, so check it before you decide the survivor rather than after.
+- `bsc graph impl suppress <from-id> --superseded-by <into-id> --seed` — **the second half of every
+  merge, and `merge` will not tell you it is missing.** `merge` removes `<from>` from the runtime store
+  only; the PACKAGED SEED still carries it, the reconcile re-adds it, and the seed is the copy that gets
+  emitted — so a fold you do not follow with this undoes itself. The `--seed` form retires the id from
+  the packaged seed and `--superseded-by` records what replaced it, on the tombstone, which is the one
+  field the reconcile never overwrites.
+
+**Read the SIGNAL before you act on a group — merge is the right answer to only one of them.**
+
+| the group shares | what that means | what to do |
+|---|---|---|
+| the same **body**, or the same **shape** (identical under renaming) | it is one implementation stored more than once | `merge` the less-used into the more-used |
+| only the same **contract** (they agree about their inputs and outputs, and their bodies merely corroborate it) | it is a PATTERN repeated, not one implementation | extract what is common and leave each caller its own function — **do not merge** |
+
+Folding a contract-only group deletes a real caller: two implementations that take the same arguments
+and do different things with them are not the same algorithm, however alike they look from outside.
+The tool states this per group in its own suggestion; when it says extract, extracting is the whole
+job and there is nothing to merge.
 
 ## What you never do
 

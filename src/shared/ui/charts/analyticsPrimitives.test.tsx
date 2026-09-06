@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { StatCard, StackedDayBars, type StackedDay } from "./index";
+import { StatCard, StackedDayBars, type StackedDay } from "@/shared/ui/charts";
 
 describe("StatCard", () => {
   it("renders label (k), value (v) and sub", () => {

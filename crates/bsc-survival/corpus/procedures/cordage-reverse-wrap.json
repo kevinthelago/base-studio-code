@@ -1,0 +1,32 @@
+{
+  "id": "cordage-reverse-wrap",
+  "category": "tools",
+  "name": "Reverse-wrap cordage",
+  "summary": "Two-ply cord twisted from plant fibre — the enabling material for shelter, traps, a bow drill and a pack.",
+  "time": "1-2 hours for a few metres",
+  "materials": [
+    { "item": "long plant fibre", "substitutes": ["dogbane", "nettle", "milkweed", "yucca", "cattail leaf", "inner bark of basswood or cedar", "dried grass"] },
+    { "item": "water to soften", "substitutes": ["water"], "optional": true }
+  ],
+  "steps": [
+    { "text": "Collect stalks that have died and dried standing — dogbane and nettle in autumn, or the inner bark of a fallen basswood." },
+    { "text": "Crush the stalk and strip out the long outer fibres, then work them between your hands to break away the woody pith." },
+    { "text": "Take a bundle and twist it until it kinks and folds back on itself. That fold is the start." },
+    { "text": "Hold the fold. Twist the FAR strand away from you, then cross it over the near strand toward you. Repeat.", "why": "The two plies are twisted one way and wrapped the other, so each ply's own tension locks the wrap. That opposition is the entire reason the cord holds." },
+    { "text": "Splice in new fibre by feathering the ends and laying the new bundle into a ply about 3 cm before the old one runs out — never let both plies run out together." },
+    { "text": "For thicker cord, reverse-wrap two finished cords together the same way." }
+  ],
+  "verify": [
+    "The cord holds its twist when you let it go slack. If it unwinds, the plies were twisted too little before wrapping.",
+    "Splices should be invisible by feel — a lump is a weak point."
+  ],
+  "limits": [
+    "Plant cordage is a fraction of the strength of manufactured line and degrades wet. Do not trust it with body weight.",
+    "Grass cord is weak and short-lived; use it for lashing, not for load."
+  ],
+  "cautions": [
+    "Positively identify the plant before handling it in quantity — a great many fibre plants have irritant sap, and dogbane in particular is toxic if eaten.",
+    "Wet fibre is easier to work but the finished cord must be dried, or it rots."
+  ],
+  "tags": ["cordage", "fibre", "rope", "tools"]
+}

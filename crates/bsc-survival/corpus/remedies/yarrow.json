@@ -1,0 +1,48 @@
+{
+  "id": "yarrow",
+  "name": "Yarrow",
+  "latin": "Achillea millefolium",
+  "functions": ["hemostatic", "antiseptic", "anti_inflammatory"],
+  "regions": ["north-america", "europe", "asia", "australasia"],
+  "habitat": "Disturbed sunny ground — roadsides, meadows, pasture, old fields, gravel. One of the most widespread temperate plants there is.",
+  "parts": ["leaf", "flower"],
+  "identify": [
+    "Leaves finely divided into many tiny segments — feathery, almost fern-like; the species name means 'thousand-leaved'.",
+    "Leaves are strongly aromatic when crushed — a sharp, medicinal, slightly sweet smell.",
+    "Flat-topped cluster of small white (occasionally pink) flower heads on a single stiff stem, 30-60 cm.",
+    "Stem is round and hairy, NOT hollow, and has no purple blotching."
+  ],
+  "lookalikes": [
+    {
+      "name": "Poison hemlock",
+      "latin": "Conium maculatum",
+      "danger": "Lethal. Ingestion causes ascending paralysis and respiratory failure; there is no field treatment.",
+      "tell": "Hemlock has a HOLLOW stem with distinct PURPLE BLOTCHES, is hairless, grows much taller (up to 2-3 m), has broader lacy leaves, and smells foul and mousy rather than sweet and medicinal. Yarrow's stem is solid, hairy, unblotched."
+    },
+    {
+      "name": "Water hemlock",
+      "latin": "Cicuta spp.",
+      "danger": "Among the most poisonous plants in North America; a mouthful of root can be fatal.",
+      "tell": "Grows in wet ground, has a stout chambered rootstock and broad toothed leaflets — nothing like yarrow's feathery foliage."
+    },
+    {
+      "name": "Queen Anne's lace / wild carrot",
+      "latin": "Daucus carota",
+      "danger": "Not deadly, but confusing it means you are in the carrot family and one step from hemlock.",
+      "tell": "Carrot-scented, has a single dark floret at the centre of the umbel and bracts below it; yarrow's flower cluster has no bracts and smells medicinal."
+    }
+  ],
+  "preparations": [
+    { "form": "poultice", "method": "Chew or crush fresh leaf and press it directly onto the wound; hold with a dressing.", "for_use": "Slowing bleeding from a minor cut or graze; the traditional battlefield use behind the old name 'soldier's woundwort'." },
+    { "form": "dried powder", "method": "Dry leaf and flower, crumble to powder, keep dry.", "for_use": "Packing a shallow bleeding wound when nothing else is available." },
+    { "form": "infusion", "method": "Steep a handful of dried leaf in hot water for 10 minutes.", "for_use": "A wound wash, or drunk for fever." }
+  ],
+  "cautions": [
+    "The look-alike risk is the main danger here, and it is a fatal one — see the tells above before you touch it.",
+    "Asteraceae family: people allergic to ragweed, chrysanthemum or daisy can react to yarrow.",
+    "Avoid in pregnancy; it has traditional emmenagogue use.",
+    "Prolonged skin contact plus sun causes photosensitivity in some people.",
+    "It is a styptic for MINOR bleeding. It does not substitute for direct pressure on a serious wound."
+  ],
+  "evidence": "Long and consistent traditional use as a styptic across Europe and North America; laboratory work supports antibacterial and anti-inflammatory activity. Clinical evidence for wound use is thin."
+}

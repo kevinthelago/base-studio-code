@@ -1,0 +1,36 @@
+{
+  "id": "water-improvised-filter",
+  "category": "water",
+  "name": "Improvised layered filter",
+  "summary": "A bottle packed with charcoal, sand and gravel that clears cloudy water into something worth disinfecting — a PRE-treatment, never the treatment.",
+  "time": "20 minutes to build, then slow",
+  "materials": [
+    { "item": "plastic bottle or hollow container", "substitutes": ["bottle", "jug", "tube of birch bark", "trouser leg", "sock"] },
+    { "item": "charcoal from a wood fire", "substitutes": ["charcoal", "char", "burnt hardwood"] },
+    { "item": "clean sand", "substitutes": ["sand", "fine grit"] },
+    { "item": "gravel or small stones", "substitutes": ["gravel", "pebbles", "small stones"] },
+    { "item": "cloth", "substitutes": ["bandana", "shirt", "grass", "moss"] },
+    { "item": "container to catch the output", "substitutes": ["pot", "cup", "bottle", "can"] }
+  ],
+  "steps": [
+    { "text": "Cut the bottom off the bottle and invert it, neck down, over the catch container. If the neck is open, plug it loosely with cloth or grass." },
+    { "text": "Pack the layers from the neck upward: cloth, then charcoal crushed to coarse grit, then fine sand, then coarse sand, then gravel, with a cloth on top.", "why": "Water meets coarse material first and fine material last, so the big particles are caught before they blind the fine layers. Charcoal sits at the outlet because adsorption is the slowest step and wants the most contact time." },
+    { "text": "Pour water gently onto the top cloth so it does not dig a channel through the layers." },
+    { "text": "Discard the first pass or two — they carry loose charcoal dust and unwashed sand." },
+    { "text": "BOIL or otherwise disinfect the output. This is the step the filter exists to make possible, not one it replaces." }
+  ],
+  "verify": [
+    "The output runs clear and the flow is slow. Fast output means water is channelling down the side of the container instead of through the media.",
+    "When output turns cloudy again or tastes of the source, the media is spent — repack it."
+  ],
+  "limits": [
+    "THIS DOES NOT MAKE WATER SAFE. It removes turbidity, sediment, and some taste and odour. Bacteria, viruses and protozoan cysts pass through it freely — the pores are orders of magnitude too large.",
+    "Wood charcoal is not activated carbon. It adsorbs some organics and much less than the commercial product it is standing in for.",
+    "It removes no dissolved salt and no dissolved metal."
+  ],
+  "cautions": [
+    "Never use charcoal from a fire that burned treated lumber, painted wood, plywood, particle board or rubbish — you are adding the contamination you are trying to remove.",
+    "Clear water is the most dangerous water in this corpus, because it looks finished."
+  ],
+  "tags": ["water", "filter", "charcoal", "turbidity", "pre-treatment"]
+}

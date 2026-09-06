@@ -1,0 +1,251 @@
+{
+  "note": "GENERATED from @/app/console/lib/resumeClaude — do not hand-edit; see the .gen.test.ts",
+  "continueOrFresh": "claude --continue 2>/dev/null || claude",
+  "continueOrFreshBscAgent": "bsc-agent --continue 2>/dev/null || bsc-agent",
+  "cases": [
+    {
+      "label": "nothing set — a clean quit resumes NOTHING",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": ""
+    },
+    {
+      "label": "signal 1: an explicit fleet/triage resume",
+      "args": {
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "signal 2: the crash banner's Restore click",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": true,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": true
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "signal 3: silent auto-resume after an unclean shutdown",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": true,
+        "autoResumeClaude": true,
+        "wasUncleanShutdown": true,
+        "restoreRequested": false
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "continueSession WITHOUT paneWasClaude — the 77-of-78 case",
+      "args": {
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "restoreRequested WITHOUT paneWasClaude — still gated on it",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": true
+      },
+      "cmd": ""
+    },
+    {
+      "label": "auto-resume WITHOUT paneWasClaude",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": true,
+        "wasUncleanShutdown": true,
+        "restoreRequested": false
+      },
+      "cmd": ""
+    },
+    {
+      "label": "auto-resume armed but the shutdown was CLEAN",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": true,
+        "autoResumeClaude": true,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": ""
+    },
+    {
+      "label": "unclean shutdown but auto-resume NOT armed",
+      "args": {
+        "continueSession": false,
+        "paneWasClaude": true,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": true,
+        "restoreRequested": false
+      },
+      "cmd": ""
+    },
+    {
+      "label": "placeholder `claude`, NOT resuming — returned verbatim",
+      "args": {
+        "explicit": "claude",
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude"
+    },
+    {
+      "label": "placeholder `claude`, RESUMING — becomes the resume form",
+      "args": {
+        "explicit": "claude",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "placeholder `bsc-agent`, RESUMING — #173, must NOT become claude",
+      "args": {
+        "explicit": "bsc-agent",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "bsc-agent --continue 2>/dev/null || bsc-agent"
+    },
+    {
+      "label": "placeholder `bsc-agent`, not resuming",
+      "args": {
+        "explicit": "bsc-agent",
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "bsc-agent"
+    },
+    {
+      "label": "placeholder with surrounding whitespace, resuming",
+      "args": {
+        "explicit": "  claude  ",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "a real override with flags, resuming — wins untouched",
+      "args": {
+        "explicit": "aider --message go",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "aider --message go"
+    },
+    {
+      "label": "a real override, not resuming",
+      "args": {
+        "explicit": "./my-wrapper.sh",
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "./my-wrapper.sh"
+    },
+    {
+      "label": "an override that merely CONTAINS the harness name",
+      "args": {
+        "explicit": "claude --model opus",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude --model opus"
+    },
+    {
+      "label": "a startup prompt wins over a resume",
+      "args": {
+        "startupPrompt": "do the thing",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": ""
+    },
+    {
+      "label": "an EMPTY startup prompt falls THROUGH to the resume",
+      "args": {
+        "startupPrompt": "",
+        "continueSession": true,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "claude --continue 2>/dev/null || claude"
+    },
+    {
+      "label": "an empty startup prompt with no resume signal",
+      "args": {
+        "startupPrompt": "",
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": ""
+    },
+    {
+      "label": "a startup prompt AND an explicit override — explicit is checked first",
+      "args": {
+        "explicit": "aider --message go",
+        "startupPrompt": "kickoff",
+        "continueSession": false,
+        "paneWasClaude": false,
+        "autoResumeClaude": false,
+        "wasUncleanShutdown": false,
+        "restoreRequested": false
+      },
+      "cmd": "aider --message go"
+    }
+  ]
+}

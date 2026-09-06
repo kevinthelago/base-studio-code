@@ -4,8 +4,18 @@ version = "0.1.0"
 edition = "2021"
 description = "Canonical Data Model store (DuckDB) + connector framework for the base-studio-code data platform (#781/#784)."
 
+[build-dependencies]
+# GRAPH MATERIALIZATION, as a real build-dependency. A package gets exactly ONE build
+# script and this crate already has its own, so the `build = "../graph-materialize/
+# build.rs"` line the other adopters use is not available here — the shared file has to
+# be CALLED instead. build.rs runs it as one more job.
+graph-materialize = { path = "../graph-materialize" }
+
 [lib]
 name = "bsc_data"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [features]
 # DuckDB-backed store is on by default. The schema / DDL / connector / coercion

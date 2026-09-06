@@ -2,14 +2,25 @@
 name = "bsc-ui"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The `bsc ui` CLI — the ONE UI-design-surface command (#2469): the spec-first SDK's KitNode contract (embedded from src-tauri/data/ui/kit-nodes.json, the ONE source of truth shared with the frontend SDK) + structural validator + theme registry (#1852), with the component-library store verbs (list/get/set/remove · kit · eslint-preset · usage, #2281) mounted from bsc-component."
 
 # Tauri-free, SQLite-free: a tiny CLI over an embedded JSON contract. The hyphenated package name maps
 # to the `bsc_ui` crate name.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "bsc_ui"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
+# `bsc ui emit records` is the agent-facing door onto the record emitter; the lean `bsc-emit`
+# binary is the build tree's. Same library, so the two cannot describe the same run differently.
+bsc-emit = { path = "../bsc-emit" }
 # Shared CLI scaffold (#1762): CmdDoc help catalog + help dispatch.
 bsc-cli-util = { path = "../bsc-cli-util" }
 # Base-dir resolution for the default released-kit store root (~/.base-studio-code/kits, #2465).
@@ -20,7 +31,11 @@ bsc-component = { path = "../bsc-component" }
 # The verbatim-JSON-per-id store (#2158) backing the designer-writable THEME collection (#2488):
 # `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json.
 bsc-json-store = { path = "../bsc-json-store" }
-serde_json = "1"
+# Named directly (not just via bsc-component) because `record_source` is re-exported from here.
+bsc-record = { path = "../bsc-record" }
+# preserve_order: the packaged algorithms.json is REWRITTEN by `refresh-seed`, and a BTreeMap would
+# re-sort every key in a 6.6 MB file — a one-record change arriving as a 22,500-line diff.
+serde_json = { version = "1", features = ["preserve_order"] }
 # Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.
 # Same pinned versions bsc-graph already locks, so this adds no new workspace dependency.
 tree-sitter = "0.26"
@@ -28,3 +43,12 @@ tree-sitter-typescript = "0.23"
 # Content hashing for the kit store's id@version integrity (#2465). Same version the app crate
 # already locks, so this adds no new dependency to the workspace graph.
 sha2 = "0.11"
+# The import-rewrite cluster ported from `scripts/lib/recordSource.mjs` — three multiline patterns
+# whose JS semantics are a translation rather than a re-derivation. Already in the workspace lock via
+# `bsc-agent` and `llm`, so it costs no new compile.
+regex = "1"
+# `bsc ui census` reads BOTH record stores — the components here and the algorithm impls there —
+# because a record can claim a module from either. bsc-graph takes bsc-data with default-features off,
+# so this does NOT drag the DuckDB amalgamation back into `cargo check -p bsc-ui` (2m28s vs 20.8s,
+# measured — see bsc-graph's own Cargo.toml for why that dependency is pinned off).
+bsc-graph = { path = "../bsc-graph" }

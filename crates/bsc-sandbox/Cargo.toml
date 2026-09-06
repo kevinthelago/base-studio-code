@@ -15,10 +15,15 @@ name = "bsc_sandbox"
 # The RENDER itself stays string-building over std — that half is what keeps this crate out of the
 # DuckDB-shaped part of the workspace (see CLAUDE.md on which crates pay for that) and keeps
 # `cargo check -p bsc-sandbox` a couple of seconds rather than a couple of minutes. `cli` pulls in
-# the two leaf crates every `bsc-*` CLI already pays for.
+# the two leaf crates every `bsc-*` CLI already pays for. serde_json is free here — bsc-cli-util
+# already carries it as a real (non-build) dependency, so this adds no new unit to the build.
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 [dependencies]
 bsc-cli-util = { path = "../bsc-cli-util" }
 bsc-util = { path = "../bsc-util" }
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"

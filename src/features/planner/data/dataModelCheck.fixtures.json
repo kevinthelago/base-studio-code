@@ -1,0 +1,648 @@
+{
+  "$comment": "GENERATED from the live `@/features/planner/data/dataModel` by dataModelCheck.fixtures.test.ts — never hand-authored. Read by crates/data/src/schema.rs to prove DataModel::check reports the same problems, in the same ORDER, as checkDataModel. `problems` is the WHOLE ordered list per case. Rust renders interpolated identifiers in backticks where this side uses double quotes (the house style in schema.rs); the Rust test normalizes that ONE character and asserts the normalization is not inert. `identSamples` pins the SAFE_IDENT predicate against ddl::quote_ident's, which must agree character-class for character-class. Regenerate: UPDATE_DATA_MODEL_FIXTURES=1 npx vitest run dataModelCheck.fixtures",
+  "cases": [
+    {
+      "name": "seeded_crm_is_valid",
+      "model": {
+        "id": "dm-crm",
+        "name": "CRM Core",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "Account",
+            "identity": [
+              "id"
+            ],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string",
+                "required": true
+              },
+              {
+                "key": "name",
+                "type": "string",
+                "required": true
+              },
+              {
+                "key": "industry",
+                "type": "string"
+              },
+              {
+                "key": "annual_revenue",
+                "type": "money"
+              }
+            ]
+          },
+          {
+            "key": "contact",
+            "label": "Contact",
+            "identity": [
+              "id"
+            ],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string",
+                "required": true
+              },
+              {
+                "key": "full_name",
+                "type": "string",
+                "required": true
+              },
+              {
+                "key": "email",
+                "type": "string"
+              },
+              {
+                "key": "account",
+                "type": "ref",
+                "ref": "account"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": []
+    },
+    {
+      "name": "empty_model_is_valid",
+      "model": {
+        "id": "x",
+        "name": "Untitled model",
+        "version": 1,
+        "entities": []
+      },
+      "problems": []
+    },
+    {
+      "name": "leading_underscore_key_is_safe",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "_x9",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": []
+    },
+    {
+      "name": "entity_key_empty",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "an entity has an empty key"
+      ]
+    },
+    {
+      "name": "entity_key_whitespace_only",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "   ",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "an entity has an empty key"
+      ]
+    },
+    {
+      "name": "entity_key_whitespace_padded",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": " account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \" account\" is not a safe identifier"
+      ]
+    },
+    {
+      "name": "entity_key_trailing_space",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account ",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"account \" is not a safe identifier"
+      ]
+    },
+    {
+      "name": "entity_key_hyphen",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "a-b",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"a-b\" is not a safe identifier"
+      ]
+    },
+    {
+      "name": "entity_key_leading_digit",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "1abc",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"1abc\" is not a safe identifier"
+      ]
+    },
+    {
+      "name": "entity_key_sql_injection",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "droptable; --",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"droptable; --\" is not a safe identifier"
+      ]
+    },
+    {
+      "name": "entity_key_non_ascii_letter",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "café",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"café\" is not a safe identifier"
+      ]
+    },
+    {
+      "name": "field_key_empty",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "account: a field has an empty key"
+      ]
+    },
+    {
+      "name": "field_key_whitespace_only",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "  ",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "account: a field has an empty key"
+      ]
+    },
+    {
+      "name": "field_key_whitespace_padded",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": " id",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "account. id: not a safe identifier"
+      ]
+    },
+    {
+      "name": "field_key_hyphen",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "ref-bad",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "account.ref-bad: not a safe identifier"
+      ]
+    },
+    {
+      "name": "field_key_leading_digit",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "9lives",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "account.9lives: not a safe identifier"
+      ]
+    },
+    {
+      "name": "entity_unsafe_and_duplicate_orders_key_first",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "a-b",
+            "label": "",
+            "identity": [],
+            "fields": []
+          },
+          {
+            "key": "a-b",
+            "label": "",
+            "identity": [],
+            "fields": []
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"a-b\" is not a safe identifier",
+        "entity key \"a-b\" is not a safe identifier",
+        "duplicate entity key \"a-b\""
+      ]
+    },
+    {
+      "name": "field_unsafe_and_duplicate_orders_key_first",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "a-b",
+                "type": "string"
+              },
+              {
+                "key": "a-b",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "account.a-b: not a safe identifier",
+        "account.a-b: not a safe identifier",
+        "account: duplicate field key \"a-b\""
+      ]
+    },
+    {
+      "name": "empty_entity_key_prefixes_its_field_messages",
+      "model": {
+        "id": "m",
+        "name": "M",
+        "version": 1,
+        "entities": [
+          {
+            "key": "",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "an entity has an empty key",
+        ": a field has an empty key"
+      ]
+    },
+    {
+      "name": "all_rules_together",
+      "model": {
+        "id": "m",
+        "name": "bad",
+        "version": 1,
+        "entities": [
+          {
+            "key": "a-b",
+            "label": "",
+            "identity": [
+              "missing"
+            ],
+            "fields": [
+              {
+                "key": "id",
+                "type": "string"
+              },
+              {
+                "key": "id",
+                "type": "string"
+              },
+              {
+                "key": "ref-bad",
+                "type": "ref",
+                "ref": "ghost"
+              },
+              {
+                "key": "owner",
+                "type": "ref"
+              },
+              {
+                "key": "",
+                "type": "string"
+              }
+            ]
+          },
+          {
+            "key": "a-b",
+            "label": "",
+            "identity": [],
+            "fields": []
+          },
+          {
+            "key": "account",
+            "label": "",
+            "identity": [],
+            "fields": [
+              {
+                "key": "acct",
+                "type": "ref",
+                "ref": "account"
+              }
+            ]
+          }
+        ]
+      },
+      "problems": [
+        "entity key \"a-b\" is not a safe identifier",
+        "a-b: duplicate field key \"id\"",
+        "a-b.ref-bad: not a safe identifier",
+        "a-b.ref-bad: ref to unknown entity \"ghost\"",
+        "a-b.owner: ref field has no target entity",
+        "a-b: a field has an empty key",
+        "a-b: identity field \"missing\" is not a field",
+        "entity key \"a-b\" is not a safe identifier",
+        "duplicate entity key \"a-b\""
+      ]
+    }
+  ],
+  "identSamples": [
+    {
+      "ident": "account",
+      "safe": true
+    },
+    {
+      "ident": "_x9",
+      "safe": true
+    },
+    {
+      "ident": "A",
+      "safe": true
+    },
+    {
+      "ident": "_",
+      "safe": true
+    },
+    {
+      "ident": "a0",
+      "safe": true
+    },
+    {
+      "ident": "z_9Z",
+      "safe": true
+    },
+    {
+      "ident": "",
+      "safe": false
+    },
+    {
+      "ident": " ",
+      "safe": false
+    },
+    {
+      "ident": "  ",
+      "safe": false
+    },
+    {
+      "ident": " a",
+      "safe": false
+    },
+    {
+      "ident": "a ",
+      "safe": false
+    },
+    {
+      "ident": "a-b",
+      "safe": false
+    },
+    {
+      "ident": "1abc",
+      "safe": false
+    },
+    {
+      "ident": "droptable; --",
+      "safe": false
+    },
+    {
+      "ident": "café",
+      "safe": false
+    },
+    {
+      "ident": "a.b",
+      "safe": false
+    },
+    {
+      "ident": "a b",
+      "safe": false
+    },
+    {
+      "ident": "0",
+      "safe": false
+    },
+    {
+      "ident": "$x",
+      "safe": false
+    },
+    {
+      "ident": "a\tb",
+      "safe": false
+    }
+  ]
+}

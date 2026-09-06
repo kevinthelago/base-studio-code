@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runtimeImports, stripComments } from "./lib/recordSource.mjs";
 
 // `runtimeImports` is the ONE definition of "what specifiers does this record need at runtime", shared
-// by `promote-records.mjs` and by `platformBoundary.test.ts`. A false positive here does not fail
+// by `bsc ui promote-seed` and by `platformBoundary.test.ts`. A false positive here does not fail
 // loudly — it silently refuses a promotion, with an error naming a specifier the module never imports.
 describe("runtimeImports", () => {
   it("reads a plain import and a re-export", () => {

@@ -41,11 +41,9 @@ describe("ambient declarations survive retirement (#3604)", () => {
     // typechecking the moment this line is gone, which is what made the failure look unrelated.
     expect(all).toMatch(/\/\/\/\s*<reference\s+types=["']vite\/client["']\s*\/>/);
   });
-
-  it("the retirement census refuses to grade a .d.ts as a candidate", () => {
-    // The census is the thing that hands files to the retire script, so the exclusion has to live there
-    // rather than in a caller that could be bypassed.
-    const census = readFileSync(resolve(SRC, "../scripts/retirement-candidates.mjs"), "utf8");
-    expect(census).toMatch(/\\\.d\\\.ts\$/);
-  });
+    // The `.d.ts` exclusion moved with the census itself: it is now `bsc ui retirable`, and the rule is
+    // asserted BEHAVIOURALLY in `bsc-ui`'s `retirable::tests` — a synthetic repo whose only seeded
+    // candidate is a `.d.ts`, which must come back with no candidates at all. That is a stronger guard
+    // than this was: it grepped the implementation's SOURCE for a regex, which passes for a rule that is
+    // present but unreachable.
 });

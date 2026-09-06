@@ -1,0 +1,1673 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch sessionDeniedCommands + its two helpers — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "no role, no profile, no flow — only the user's own denies",
+      "role": null,
+      "flowPush": null,
+      "userDenies": [
+        "rm -rf /"
+      ],
+      "surfaceCatalog": null,
+      "writeGlobs": [],
+      "capability": null,
+      "denied": [
+        "rm -rf /"
+      ]
+    },
+    {
+      "label": "no role at all — an ungated pane gets no role denies",
+      "role": null,
+      "flowPush": null,
+      "userDenies": [
+        "curl"
+      ],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": null,
+      "denied": [
+        "curl"
+      ]
+    },
+    {
+      "label": "a worker role, empty catalog — denies nothing EXTRA by design",
+      "role": "worker",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": null,
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a worker role with the catalog — the surface complement appears",
+      "role": "worker",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a triage role (git:none, github:write)",
+      "role": "triage",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "triage",
+        "writeGlobs": [],
+        "github": "write",
+        "git": "none",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "denied": [
+        "git",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a director role",
+      "role": "director",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "director",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a planner role",
+      "role": "planner",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "planner",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "denied": [
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a documentor role",
+      "role": "documentor",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "documentor",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "denied": [
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a designer role — the most restricted",
+      "role": "designer",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "denied": [
+        "bsc plan",
+        "bsc skill",
+        "bsc org",
+        "git",
+        "gh",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ]
+    },
+    {
+      "label": "worker + auto-pr flow: the two pushes are granted back",
+      "role": "worker",
+      "flowPush": "auto-pr",
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "worker + push-confirm flow: same two",
+      "role": "worker",
+      "flowPush": "push-confirm",
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "worker + commit-only flow: grants nothing",
+      "role": "worker",
+      "flowPush": "commit-only",
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "worker + none flow: grants nothing",
+      "role": "worker",
+      "flowPush": "none",
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "worker + NO flow: the default is `local`, which grants nothing",
+      "role": "worker",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "director + auto-pr",
+      "role": "director",
+      "flowPush": "auto-pr",
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "director",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "a null catalog — the field can genuinely be absent on a store snapshot",
+      "role": "worker",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": null,
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "user denies come FIRST and are never filtered by the flow",
+      "role": "worker",
+      "flowPush": "auto-pr",
+      "userDenies": [
+        "git push"
+      ],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "git push",
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    },
+    {
+      "label": "role write-globs are passed through to the capability",
+      "role": "worker",
+      "flowPush": null,
+      "userDenies": [],
+      "surfaceCatalog": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "writeGlobs": [
+        "src/**"
+      ],
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [
+          "src/**"
+        ],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "denied": [
+        "bsc skill",
+        "bsc org",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "bsc request",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename"
+      ]
+    }
+  ],
+  "deniableSurfaces": [
+    {
+      "label": "all three statuses",
+      "rows": [
+        {
+          "name": "plan"
+        },
+        {
+          "name": "skill",
+          "status": "active"
+        },
+        {
+          "name": "org",
+          "status": "deprecated"
+        },
+        {
+          "name": "hook",
+          "status": "internal"
+        },
+        {
+          "name": "serve",
+          "status": "internal"
+        }
+      ],
+      "names": [
+        "plan",
+        "skill",
+        "org"
+      ]
+    },
+    {
+      "label": "absent status means ACTIVE (the catalog omits it for the common case)",
+      "rows": [
+        {
+          "name": "plan"
+        }
+      ],
+      "names": [
+        "plan"
+      ]
+    },
+    {
+      "label": "deprecated IS deniable — an alias serves the same store as its live surface",
+      "rows": [
+        {
+          "name": "org",
+          "status": "deprecated"
+        }
+      ],
+      "names": [
+        "org"
+      ]
+    },
+    {
+      "label": "internal is NEVER deniable — denying `bsc hook` breaks the deny mechanism itself",
+      "rows": [
+        {
+          "name": "hook",
+          "status": "internal"
+        }
+      ],
+      "names": []
+    },
+    {
+      "label": "an unknown status is not active and not deprecated",
+      "rows": [
+        {
+          "name": "x",
+          "status": "experimental"
+        }
+      ],
+      "names": []
+    },
+    {
+      "label": "empty",
+      "rows": [],
+      "names": []
+    },
+    {
+      "label": "null",
+      "rows": null,
+      "names": []
+    }
+  ],
+  "flowGrants": [
+    {
+      "label": "undefined — DEFAULT_FLOW.push is `local`",
+      "flow": null,
+      "granted": []
+    },
+    {
+      "label": "auto-pr",
+      "flow": {
+        "push": "auto-pr"
+      },
+      "granted": [
+        "git push",
+        "gh pr create"
+      ]
+    },
+    {
+      "label": "push-confirm",
+      "flow": {
+        "push": "push-confirm"
+      },
+      "granted": [
+        "git push",
+        "gh pr create"
+      ]
+    },
+    {
+      "label": "local",
+      "flow": {
+        "push": "local"
+      },
+      "granted": []
+    },
+    {
+      "label": "commit-only",
+      "flow": {
+        "push": "commit-only"
+      },
+      "granted": []
+    },
+    {
+      "label": "none",
+      "flow": {
+        "push": "none"
+      },
+      "granted": []
+    },
+    {
+      "label": "an unknown push value falls back to the default",
+      "flow": {
+        "push": "nonsense"
+      },
+      "granted": []
+    }
+  ]
+}

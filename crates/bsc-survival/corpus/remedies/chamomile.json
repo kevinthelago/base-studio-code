@@ -1,0 +1,39 @@
+{
+  "id": "chamomile",
+  "name": "Chamomile",
+  "latin": "Matricaria chamomilla / Chamaemelum nobile",
+  "functions": ["anti_inflammatory", "digestive", "antiseptic"],
+  "regions": ["europe", "north-america", "asia", "worldwide"],
+  "habitat": "Sunny disturbed ground, field margins, tracks, gravel, waste ground.",
+  "parts": ["flower head"],
+  "identify": [
+    "Small white-rayed daisy heads about 2 cm across with a raised YELLOW CONE at the centre.",
+    "German chamomile's central cone is hollow when you cut it lengthways — the key separation from the useless look-alikes.",
+    "Finely divided feathery leaves.",
+    "Crushed flowers smell sweetly of apple."
+  ],
+  "lookalikes": [
+    {
+      "name": "Scentless mayweed / stinking chamomile",
+      "latin": "Tripleurospermum inodorum / Anthemis cotula",
+      "danger": "Low, but useless — and stinking chamomile is a skin irritant.",
+      "tell": "Smell them. Real chamomile smells of apple; scentless mayweed smells of nothing and stinking chamomile smells acrid. The mayweed's centre is solid, not hollow."
+    },
+    {
+      "name": "Ox-eye daisy and other daisies",
+      "latin": "Leucanthemum vulgare",
+      "danger": "Low.",
+      "tell": "Much larger flower heads on a single stem, with broad toothed spoon-shaped leaves rather than feathery ones."
+    }
+  ],
+  "preparations": [
+    { "form": "infusion", "method": "Steep a good handful of flower heads in hot water, covered, for 10 minutes.", "for_use": "Settling the gut, calming, and a cooled wash for inflamed eyes and skin. Covering it matters — the active volatile oils leave with the steam." },
+    { "form": "compress", "method": "Soak cloth in the cooled strong infusion.", "for_use": "Inflamed skin, sties, and irritated grazes." }
+  ],
+  "cautions": [
+    "Asteraceae family: real anaphylaxis has been reported in people with severe ragweed allergy.",
+    "Mildly anticoagulant in quantity — take care alongside blood thinners.",
+    "It soothes. It does not treat an infection."
+  ],
+  "evidence": "Extensively used and reasonably well studied for topical inflammation and gut spasm; the anti-inflammatory constituents (bisabolol, chamazulene) are well characterised."
+}

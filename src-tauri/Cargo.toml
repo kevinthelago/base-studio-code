@@ -19,9 +19,22 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# GRAPH MATERIALIZATION, as a real build-dependency
+# (`graph-materialize-becomes-a-real-build-dependency`). A package gets exactly ONE build script and
+# this one already has its own doing four jobs, so the `build = "../graph-materialize/build.rs"` line
+# the other 54 crates use is not available here — the shared file has to be CALLED instead. `build.rs`
+# runs it as a fifth job. NOTE this manifest still has no `build` key: cargo auto-detects `build.rs`,
+# which is why the collision was invisible to anyone diffing manifests.
+graph-materialize = { path = "../crates/graph-materialize" }
 
 [dependencies]
 bsc-sandbox = { path = "../crates/bsc-sandbox" }
+# The skills + MCP resolution, moved out of this binary so a pure decision over serde-able data
+# stops costing a rebuild and a restarted window (the-resolution-decisions-live-in-the-app-binary-not-a-crate).
+bsc-resolve = { path = "../crates/bsc-resolve" }
+# The session PERMISSION DERIVATION, moved out of `src-tauri/src/session/` so that changing which
+# commands a role may run no longer costs a new binary and a restarted window (#the-session-permission-derivation-lives-in-a-crate-not-src-tauri).
+bsc-perms = { path = "../crates/bsc-perms" }
 # The store projections a sandboxed session reads instead of running `bsc` (which would mean
 # binding a writable database into the cage). See `project_stores_for`.
 bsc-storefs = { path = "../crates/bsc-storefs" }
@@ -37,6 +50,10 @@ tauri-plugin-single-instance = "2"
 # `std` enables `set_boxed_logger` for the custom `GraphLogger` (#1389) — previously pulled in
 # transitively by `tauri-plugin-log`, which we replaced.
 log = { version = "0.4", features = ["std"] }
+# The prompt-injection scanner (`planner::injection_scan`) ports seven JavaScript regexes, and a
+# hand-rolled matcher would be exactly the second parser that port exists to remove. Already in
+# Cargo.lock via bsc-agent and llm, so this adds an edge, not a new external dependency.
+regex = "1"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -78,6 +95,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # and every `bsc-*` CLI agree on which on-disk store they read/write. `platform/paths.rs`
 # delegates `home_dir`/`bsc_base_dir` here.
 bsc-util = { path = "../crates/bsc-util" }
+# The imagination feed model + its on-disk format; the app only READS it.
+bsc-imagine = { path = "../crates/bsc-imagine" }
 # The GitHub REST/GraphQL transport, extracted so `bsc` can reach it too
 # (`extract-a-tauri-free-github-transport-crate`). `github/api.rs` is now thin shims over this.
 bsc-github = { path = "../crates/bsc-github" }
@@ -86,6 +105,16 @@ bsc-github = { path = "../crates/bsc-github" }
 bsc-shot = { path = "../crates/bsc-shot" }
 # The ONE bsc→app request channel + the navigate verb (#3274, epic #3260).
 bsc-appchan = { path = "../crates/bsc-appchan" }
+bsc-lan = { path = "../crates/bsc-lan" }
+# The app subscribes to the sensor's stream itself (src/lan/subscribe.rs): the
+# webview cannot bind a UDP socket, and putting the group key inside it would
+# be worse if it could.
+bsc-lan-sense = { path = "../crates/bsc-lan-sense" }
+bsc-lan-stream = { path = "../crates/bsc-lan-stream" }
+bsc-incident = { path = "../crates/bsc-incident" }
+bsc-notify = { path = "../crates/bsc-notify" }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+bsc-widget = { path = "../crates/bsc-widget" }
 bsc-navigate = { path = "../crates/bsc-navigate" }
 # Real fleet liveness over the shared channel (#4098) — the app owns PtyState, so only it can answer.
 bsc-fleet = { path = "../crates/bsc-fleet" }
@@ -177,6 +206,18 @@ bsc-component = { path = "../crates/bsc-component" }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Linux capture (`bsc shot`): the app runs on WebKitGTK here, and `webkit_web_view_get_snapshot` is the
+# sibling of the Windows `CapturePreview` — a RENDER of the webview, not an OS window grab. Both crates
+# are already in the tree via tauri/wry; declaring them makes them reachable, and pins `cairo-rs` to the
+# version webkit2gtk hands back from the snapshot callback so the two `Surface` types are one type.
+#
+# `png` is cairo's own encoder (`Surface::write_to_png`, gated behind that feature). Encoding by hand
+# from the surface bytes instead would mean undoing cairo's PREMULTIPLIED alpha on ARGB32 — a real
+# correctness trap for no gain, since cairo ships the encoder for exactly this.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2.0"
+cairo-rs = { version = "0.18", features = ["png"] }
+
 # Windows-only: Job Object APIs so a PTY's whole process tree (shell + claude +
 # any grandchildren) dies with the session on pty_kill / app exit. Without this,
 # `portable_pty::Child::kill()` only terminates the immediate shell and leaves
@@ -203,3 +244,12 @@ windows = { version = "0.61", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
 ] }
+
+[dev-dependencies]
+# THE MODULE-ID DERIVATION, so `testutil::module_source` never restates it
+# (`three-src-tauri-modules-read-their-own-source`). This crate's self-scanning guards resolve a module
+# through the materialized `$OUT_DIR/crate.rs` once it is a record, and the section they want is named
+# by the id `graph-materialize` DERIVED when it emitted it. A second copy of that derivation here could
+# disagree with what was actually written, and the guard would report a module missing that is right
+# there. It is already a `[build-dependencies]` entry above, so nothing new is compiled for the host.
+graph-materialize = { path = "../crates/graph-materialize" }

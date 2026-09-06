@@ -374,14 +374,19 @@ function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 }
 
 /**
- * Keep only TRIAGED projects (#2541) — the drafted→triaged gate. A project appears on the Glance
- * network ONLY once its triage/fleet has been launched (its key is in `triaged`), so a mere draft or a
- * published-but-never-worked hub is filtered out. "Once the nodes are here, it's because they're
- * working." Pure + exported for direct testing.
+ * THE TRIAGED GATE IS GONE (#2541 retired). It used to keep only projects whose triage or fleet had
+ * been launched — "once the nodes are here, it's because they're working" — and the cost of that
+ * sentence was that a project you had just created, filed into a network and wired up was invisible
+ * in the one place you would look for it, with no error and nothing to read.
+ *
+ * It could not be repaired either, only worked around: the marker it read is not persisted, so it is
+ * empty on every boot, and a grandfather backfill re-seeded it from whatever hubs happened to be
+ * published. The comment on {@link filterArchived} records 13 `bsc project triaged clear` calls that
+ * all "succeeded" and all came back with one identical timestamp.
+ *
+ * ARCHIVED is the hide now, and it is a better one because it is DURABLE and DELIBERATE: a project
+ * leaves the network when somebody says it should, not when a marker nobody set happens to be absent.
  */
-export function filterTriaged(projects: ProjectLite[], triaged: Record<string, number>): ProjectLite[] {
-  return projects.filter((p) => triaged[p.id] !== undefined);
-}
 
 /** The durable lifecycle state that hides a project from the network — see {@link filterArchived}. */
 export const ARCHIVED_STATE = "archived";
@@ -410,7 +415,6 @@ export function filterArchived(projects: ProjectLite[], archived: ReadonlySet<st
 
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
-  const triagedProjects = useAppStore((s) => s.triagedProjects);
   // Running-agent signals (#2551): the launched roster + authoritative pane statuses → the `building`
   // activity. A project with a live agent pane reads `building`; nothing running → it rests at `idle`.
   // Launched-tab membership (#3429) — the same pruned "this session exists" signal the L1 overlay reads
@@ -559,7 +563,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       applyDormantHealth(
         applyRunningActivity(
           applyLiveness(
-            filterArchived(filterTriaged(
+            filterArchived(
               mergeGlanceProjects(effectiveDrafts, effectivePublished, localPublished).map((p) => ({
                 ...p,
                 appType: planClassification[p.id]?.appType, // #3786/#3802 — the contract endpoint-type discriminator (absent ⇒ plain)
@@ -573,9 +577,7 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
                 // unfiled: the project appears in `All projects` and in no network tab, which is the
                 // honest answer rather than filing it somewhere it was never put.
                 network: networkByKey[p.id],
-              })),
-              triagedProjects,
-            ), archivedKeys),
+              })), archivedKeys),
             liveKeys,
           ),
           buildingKeys,
@@ -586,6 +588,6 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
       activeKeys,
       openIssueKeys,
     ), projectProgress),
-    [effectiveDrafts, effectivePublished, localPublished, triagedProjects, archivedKeys, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, architectByKey, openIssueKeys, projectProgress],
+    [effectiveDrafts, effectivePublished, localPublished, archivedKeys, liveKeys, buildingKeys, activeKeys, curatedKeys, planClassification, architectByKey, networkByKey, openIssueKeys, projectProgress],
   );
 }

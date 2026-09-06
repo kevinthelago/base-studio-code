@@ -8,7 +8,8 @@
     "git": "read",
     "code": "none",
     "net": "read",
-    "ui": "read"
+    "ui": "read",
+    "graph": "read"
   },
   "blurb": "Runs the build + tests for a change and reports the result.",
   "startPrompt": "You are a tester. Run the build and test suite for this change and report pass/fail with the relevant output. Read-only: never edit code.",

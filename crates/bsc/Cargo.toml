@@ -2,12 +2,13 @@
 name = "bsc"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The unified base-studio-code CLI (#1877): one binary, `bsc <command>` dispatching to every state store / tool that used to be its own `bsc-*` sidecar."
 
 # Single binary named `bsc` — the one sidecar bundled into the app.
 [[bin]]
 name = "bsc"
-path = "src/main.rs"
+path = "../graph-materialize/crate_root.rs"
 
 [features]
 # `bsc data …` (the DuckDB canonical model) is on by default for the shipped app; a lean build can
@@ -27,12 +28,33 @@ bsc-project = { path = "../bsc-project" }
 skilldb = { path = "../skilldb" }
 compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
+bsc-fin = { path = "../bsc-fin" }
+bsc-rf = { path = "../bsc-rf" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-secret = { path = "../bsc-secret" }
+bsc-mem = { path = "../bsc-mem" }
+# The WORK loop (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it) — the seam
+# between a branch's git state and its plan record.
+bsc-work = { path = "../bsc-work" }
+bsc-self = { path = "../bsc-self" }
+# `bsc github` — the read-only derived-rules surface (`the-github-domains-pure-logic-lives-in-bsc-github`).
+# The crate was already a transitive dependency through bsc-publish; this makes it a DIRECT one so the
+# dispatch arm can name it.
+bsc-github = { path = "../bsc-github" }
+bsc-resolve = { path = "../bsc-resolve" }
+bsc-perms = { path = "../bsc-perms" }
+bsc-disk = { path = "../bsc-disk" }
 # The relational feature-inventory corpus (bsc atlas).
 atlasdb = { path = "../atlasdb" }
+# `bsc llm` — what the LOCAL model runtime was actually granted, as opposed to what it was asked for.
+llm = { path = "../llm", package = "bsc-llm" }
 bsc-mcp = { path = "../bsc-mcp" }
 bsc-sound = { path = "../bsc-sound" }
+# `bsc say` — speech as a command surface, so an agent/hook/automation can speak and not only the UI.
+bsc-say = { path = "../bsc-say" }
+# `bsc ear` — the listening half of the local voice loop.
+bsc-ear = { path = "../bsc-ear" }
+bsc-imagine = { path = "../bsc-imagine" }
 bsc-teams = { path = "../bsc-teams" }
 bsc-network = { path = "../bsc-network" }
 # `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state.
@@ -63,6 +85,10 @@ bsc-runtime = { path = "../bsc-runtime" }
 bsc-graph = { path = "../bsc-graph" }
 # `bsc cad` — the Rust-native mesh/SDF geometry kernel (#3387, kernel #2621): mesh an op-tree spec to STL.
 bsc-cad = { path = "../bsc-cad" }
+bsc-deploy = { path = "../bsc-deploy" }
+bsc-capability = { path = "../bsc-capability" }
+bsc-lan = { path = "../bsc-lan" }
+bsc-widget = { path = "../bsc-widget" }
 plandb = { path = "../plandb" }
 # `bsc publish` — push a plan's GitHub structure with no frontend involved
 # (`headless-publish-so-the-ui-is-not-the-only-publisher`). It sits ABOVE plandb + bsc-github rather
@@ -82,8 +108,20 @@ research = { path = "../research" }
 channel = { path = "../channel" }
 # `bsc cve` + `bsc mcp cve` — the OSV.dev vulnerability data layer (#3797, supply-chain #2433): scan a
 # lockfile / check a package / advisory detail, the data layer the install-time `bsc-supply` hook builds on.
-cve = { path = "../cve" }
+bsc-security = { path = "../bsc-security" }
+# `bsc news` — the LOW-TRUST news layer. Deliberately separate from `research`: that crate holds
+# citable sources, this one holds claims, and no verb converts between them.
+bsc-news = { path = "../bsc-news" }
+# The caveman network's offline survival corpus — procedures + natural remedies (#the-caveman-network).
+bsc-survival = { path = "../bsc-survival" }
 mcp-rpc = { path = "../mcp-rpc" }
 # `bsc config` — read/adopt verbs for the runtime config-seed mirror diverging from the packaged seed
 # (#168): status (classify + diff) and reset (adopt the packaged copy).
 bsc-config = { path = "../bsc-config" }
+# `bsc app` — the APP's own lifecycle: status (is the built app behind main), promote (fast-forward
+# main to develop at the repo root), rebuild, release, hooks.
+bsc-app = { path = "../bsc-app" }
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"

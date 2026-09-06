@@ -2,10 +2,18 @@
 name = "bsc-fleet"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Ask the RUNNING app which fleet panes are actually alive (#4098): the `bsc fleet` CLI + its request/result contract. `bsc-fleet` (the shell helper) reads a LAUNCH MANIFEST and can only report coord.log activity, so a pane whose process exited an hour ago printed the same as a live one; this reports real liveness. Tauri-free; rides the shared bsc-appchan transport."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_fleet"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -27,3 +35,21 @@ bsc-project = { path = "../bsc-project" }
 # `maintain` event, and this crate already owns the one parser for that file. Cheap: its heaviest dep
 # is the bundled rusqlite `plandb` already pulls in here.
 logs = { path = "../logs" }
+# `bsc fleet launch-config` derives the provider command from `llm::launch_cmd`. The derivation lives
+# there because it already used `routing::LlmConfig` and `session_env::aider_model_arg`; this crate
+# only exposes it as a verb.
+llm = { path = "../llm", package = "bsc-llm" }
+# `doctor --fix` repairs a caged hook floor through the SAME `rewrite_guest_hooks` the launch path
+# runs (`console/pty`), so a manual repair and an automatic one cannot rewrite a file two different
+# ways. Cheap: bsc-sandbox's only deps are bsc-util + bsc-cli-util + serde_json, all already here.
+bsc-sandbox = { path = "../bsc-sandbox" }
+
+# `ledger` + `warden-sweep` probe liveness and reap a process GROUP. `setsid` makes pgid == pid, so
+# `killpg(-pid)` is the same mechanism `PtyJob::drop` and the boot reconcile already use — this crate
+# is where that one definition now lives, so a sweep run from `bsc` and a reap run from the app cannot
+# drift into two different ideas of what killing a session means.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }

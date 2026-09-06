@@ -1,0 +1,35 @@
+[package]
+name = "bsc-ear"
+version = "0.1.0"
+edition = "2021"
+description = "`bsc ear` — always-on local capture: segments a live microphone into speech-only audio within a retention bound it enforces rather than documents."
+
+[lib]
+name = "bsc_ear"
+
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Cross-platform capture. On Linux this is the ALSA backend, which is why libasound2-dev is a build
+# prerequisite for this crate and for nothing else in the workspace.
+cpal = "0.15"
+# WAV read/write. Segments are wav rather than raw so they are inspectable with any player and
+# readable by whisper tooling without a decoder of our own.
+hound = "3.5"
+# For silencing ALSA's own diagnostics at the fd level while enumerating. Already in the tree via
+# cpal -> alsa, so this makes a transitive dependency direct rather than adding one.
+libc = "0.2"
+# Learned speech denoiser (pure-Rust RNNoise port): no model download, no C, no ort. Handles the
+# non-stationary rain/handling noise that spectral subtraction cannot. RNNoise operates at 48kHz.
+nnnoiseless = "0.5"
+# DeepFilterNet3 clarity engine: ort runs the fused ONNX graph (same runtime as bsc-say/Kokoro);
+# realfft does the 960-point real STFT the model requires (not a power of two, so the crate radix-2
+# FFT cannot; realfft is what libDF itself uses).
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
+realfft = "3"
+
+[lints.clippy]
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"

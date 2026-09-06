@@ -1,0 +1,818 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch buildAgentEnv — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "role planner with a token",
+      "role": "planner",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "planner",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role worker with a token",
+      "role": "worker",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role director with a token",
+      "role": "director",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "director",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role triage with a token",
+      "role": "triage",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "triage",
+        "writeGlobs": [],
+        "github": "write",
+        "git": "none",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role tester with a token",
+      "role": "tester",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "tester",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role reviewer with a token",
+      "role": "reviewer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "reviewer",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role issuer with a token",
+      "role": "issuer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "issuer",
+        "writeGlobs": [],
+        "github": "write",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role juror with a token",
+      "role": "juror",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "juror",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role documentor with a token",
+      "role": "documentor",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "documentor",
+        "writeGlobs": [
+          "*.md",
+          "**/*.md",
+          "README*",
+          "**/README*",
+          "CHANGELOG*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role designer with a token",
+      "role": "designer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": "/repo\n/base/projects",
+      "stream_env": null
+    },
+    {
+      "label": "role architect with a token",
+      "role": "architect",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "architect",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "allow": [
+          "bsc teams",
+          "bsc persona",
+          "bsc plan brief",
+          "bsc plan requirement",
+          "bsc plan classify",
+          "bsc fleet director",
+          "bsc fleet directors",
+          "bsc session",
+          "bsc project new",
+          "bsc project link",
+          "bsc project architect",
+          "bsc project list",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role librarian with a token",
+      "role": "librarian",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "librarian",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "read",
+        "graph": "write",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc graph",
+          "bsc ui list",
+          "bsc ui get",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": "/repo\n/base/projects",
+      "stream_env": null
+    },
+    {
+      "label": "role sound-designer with a token",
+      "role": "sound-designer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "sound-designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "allow": [
+          "bsc sound",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "role marketer with a token",
+      "role": "marketer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "marketer",
+        "writeGlobs": [
+          "marketing/**/*.md",
+          "marketing/**/*.mdx",
+          "content/**/*.md",
+          "content/**/*.mdx",
+          "README*",
+          "**/README*",
+          "CHANGELOG*",
+          "**/CHANGELOG*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "no role at all — an ungated pane keeps its token",
+      "role": null,
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": null,
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "no token supplied — nothing to place",
+      "role": "worker",
+      "token": "",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "empty token string is falsy — nothing to place",
+      "role": "worker",
+      "token": "",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "a WORKER owning a stream is scoped to it",
+      "role": "worker",
+      "token": "ghp_testtoken",
+      "stream": "kernel",
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": "kernel"
+    },
+    {
+      "label": "a REVIEWER owning a stream is NOT scoped — it judges across streams",
+      "role": "reviewer",
+      "token": "ghp_testtoken",
+      "stream": "kernel",
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "reviewer",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "a JUROR owning a stream is NOT scoped",
+      "role": "juror",
+      "token": "ghp_testtoken",
+      "stream": "kernel",
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "juror",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "a DIRECTOR owning a stream is NOT scoped",
+      "role": "director",
+      "token": "ghp_testtoken",
+      "stream": "kernel",
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "director",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "a worker with NO stream is unscoped",
+      "role": "worker",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "designer resolves BOTH harvest tokens",
+      "role": "designer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": "/repo\n/base/projects",
+      "stream_env": null
+    },
+    {
+      "label": "designer with NO appRepoRoot — that token contributes nothing",
+      "role": "designer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": "/base/projects",
+      "stream_env": null
+    },
+    {
+      "label": "designer with NO bscBaseDir — the projects token contributes nothing",
+      "role": "designer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "",
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": "/repo",
+      "stream_env": null
+    },
+    {
+      "label": "designer with NEITHER path — the variable is unset entirely",
+      "role": "designer",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "",
+      "bscBaseDir": "",
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "ghToken": null,
+      "harvestRoots": null,
+      "stream_env": null
+    },
+    {
+      "label": "a worker declares no harvest roots",
+      "role": "worker",
+      "token": "ghp_testtoken",
+      "stream": null,
+      "appRepoRoot": "/repo",
+      "bscBaseDir": "/base",
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "ghToken": "ghp_testtoken",
+      "harvestRoots": null,
+      "stream_env": null
+    }
+  ]
+}

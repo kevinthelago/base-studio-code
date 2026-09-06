@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, filterArchived, ARCHIVED_STATE } from "./useGlanceProjects";
+import { useGlanceProjects, applyModifyingHealth, mergeGlanceProjects, mergeDbIntoDrafts, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterArchived, ARCHIVED_STATE } from "./useGlanceProjects";
 import type { DbProject } from "@/features/planner";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
@@ -69,22 +69,6 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
   });
 });
 
-describe("filterTriaged — only triaged/working projects render (#2541)", () => {
-  const projects: ProjectLite[] = [
-    { id: "worked", name: "Worked", health: "off", activity: "building" },
-    { id: "just-a-draft", name: "Draft", health: "off", activity: "planning" },
-  ];
-
-  it("keeps a project whose key is marked triaged and drops one that is not", () => {
-    const out = filterTriaged(projects, { worked: 1720000000000 });
-    expect(out.map((p) => p.id)).toEqual(["worked"]);
-  });
-
-  it("empty triaged set ⇒ empty graph (a plan/draft never shows until worked)", () => {
-    expect(filterTriaged(projects, {})).toEqual([]);
-  });
-});
-
 describe("filterArchived — an archived project leaves the network", () => {
   const projects: ProjectLite[] = [
     { id: "live-one", name: "Live", health: "off", activity: "idle" },
@@ -99,12 +83,12 @@ describe("filterArchived — an archived project leaves the network", () => {
     expect(filterArchived(projects, new Set())).toEqual(projects);
   });
 
-  it("archiving is INDEPENDENT of triaged: a triaged project can still be archived away", () => {
-    // The whole point of the marker. `triaged` cannot express "hide this" — it is re-stamped from the
-    // published inventory on every boot — so the two filters must compose rather than overlap.
-    const triaged = filterTriaged(projects, { "live-one": 1, shelved: 1 });
-    expect(triaged.map((p) => p.id)).toEqual(["live-one", "shelved"]);
-    expect(filterArchived(triaged, new Set(["shelved"])).map((p) => p.id)).toEqual(["live-one"]);
+  it("is the ONLY thing that hides a project — nothing else filters the network", () => {
+    // The triaged gate used to sit in front of this and is gone (#2541 retired). Archiving is now the
+    // whole hiding mechanism, which is why it has to be deliberate and durable: a project leaves the
+    // network when somebody says so, never because a marker nobody set happens to be absent.
+    expect(filterArchived(projects, new Set()).map((p) => p.id)).toEqual(["live-one", "shelved"]);
+    expect(filterArchived(projects, new Set(["shelved"])).map((p) => p.id)).toEqual(["live-one"]);
   });
 
   it("ARCHIVED_STATE is the exact string the durable row carries", () => {
@@ -114,22 +98,38 @@ describe("filterArchived — an archived project leaves the network", () => {
   });
 });
 
-describe("useGlanceProjects — hides a non-triaged draft (#2541)", () => {
+describe("useGlanceProjects — a draft appears WITHOUT a triage marker (#2541 retired)", () => {
   beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: {} }));
 
-  it("a drafted-but-never-triaged project does NOT appear on the network", () => {
+  it("a project that has never been triaged DOES appear on the network", () => {
+    // This is the inverse of the guard that used to live here, and it is the bug that retired the
+    // gate: a project created, filed into a network and fully wired was invisible in the one place
+    // anybody would look for it — with no error, and nothing to read that would explain it.
     useAppStore.setState({ localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } } });
     const { result } = renderHook(() => useGlanceProjects());
-    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(false);
+    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(true);
   });
 
-  it("the SAME project appears once it is marked triaged", () => {
+  it("an EMPTY triaged marker set hides nothing at all", () => {
+    // The marker is not persisted, so it is empty on every boot. Under the old gate that meant the
+    // whole network vanished until a backfill re-seeded it, which is why the backfill existed.
     useAppStore.setState({
-      localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } },
-      triagedProjects: { "fresh-draft": 1 },
+      localDraftProjects: {
+        a: { title: "A", pitch: "", createdAt: 1 },
+        b: { title: "B", pitch: "", createdAt: 2 },
+      },
+      triagedProjects: {},
     });
     const { result } = renderHook(() => useGlanceProjects());
-    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(true);
+    expect(result.current.map((p) => p.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("carries the NETWORK through, so a filed project lands in its tab", () => {
+    // The network is what scopes a tab. A node drawn with no network is drawn in no tab, which reads
+    // exactly like the project not existing.
+    useAppStore.setState({ localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } } });
+    const { result } = renderHook(() => useGlanceProjects());
+    expect(result.current.find((p) => p.id === "fresh-draft")).toBeDefined();
   });
 });
 

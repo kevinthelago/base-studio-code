@@ -1,6 +1,13 @@
 // Import FIRST: self-installs a pure-DOM crash overlay so even module-eval / pre-React failures in
 // this window are visible (a detached window's logs may never reach the Tauri sink — #tab-tearoff).
 import "@/app/safety/fatalOverlay";
+// Import + install BEFORE React, for the same reason the overlay above is first: a render loop is
+// most likely during mount, and the capture only sees errors raised after it is installed. React
+// names the responsible component in the error's COMPONENT STACK, and vite's client forwards only the
+// message while WebKitGTK offers no inspector — so without this the culprit is unreachable. Measured
+// 2026-08-31: a loop took the renderer to 27.5 GB in about two minutes and the box to 0.6 GB free.
+import { installRenderLoopCapture } from "@/app/safety/renderLoopCapture";
+installRenderLoopCapture();
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";

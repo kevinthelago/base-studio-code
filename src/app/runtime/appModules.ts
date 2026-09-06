@@ -735,7 +735,7 @@ export function registerPlatformModules(): void {
   for (const [specifier, mod] of Object.entries(PLATFORM)) registerAppModule(specifier, mod);
   // The six feature surfaces that had NO runtime caller (record-links-is-red-on-develop). They were
   // registered only inside two tests, so `platform-modules.json` and `platformBoundary.test.ts` both
-  // believed in specifiers the app never held — and `promote-records.mjs` reads that manifest as the
+  // believed in specifiers the app never held — and `bsc ui promote-seed` reads that manifest as the
   // definition of "resolvable", which is how 24 records carrying imports that resolve to nothing got
   // packaged. One caller, at boot, is what makes those three agree with the runtime.
   registerDebugPlatform();

@@ -13,6 +13,9 @@ serde_json = "1"
 
 [lib]
 name = "bsc_shot"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -32,3 +35,6 @@ bsc-json-store = { path = "../bsc-json-store" }
 
 [dev-dependencies]
 tempfile = "3"
+# Backdates a capture's mtime so the retention sweep is tested against a CHOSEN age rather than
+# by sleeping. Already in the lockfile (0.2.29, via notify), so this pulls nothing new.
+filetime = "0.2"

@@ -1,0 +1,37 @@
+{
+  "id": "food-acorn-leaching",
+  "category": "food",
+  "name": "Leach and eat acorns",
+  "summary": "Boil the tannins out of acorns until they stop tasting bitter — one of the few wild staples that yields real calories for the effort.",
+  "time": "2-5 hours of changes, or 2 days in cold water",
+  "materials": [
+    { "item": "acorns", "substitutes": ["oak nuts", "acorn"] },
+    { "item": "metal container", "substitutes": ["pot", "can", "billy"] },
+    { "item": "water", "substitutes": ["stream water", "clean water"] },
+    { "item": "cloth or fine bag", "substitutes": ["bandana", "shirt", "mesh bag"], "optional": true },
+    { "item": "fire", "substitutes": ["fire", "stove", "coals"] }
+  ],
+  "steps": [
+    { "text": "Gather acorns without holes — a hole means a weevil got there first. Float-test them: the ones that float are usually hollow or bad." },
+    { "text": "Shell them and discard any that are mouldy, black or rubbery." },
+    { "text": "Chop or crush the nutmeats coarsely.", "why": "Tannin leaches out of the surface. Whole nuts can take days; coarse grit takes hours; flour leaches fastest but washes away with the water." },
+    { "text": "HOT LEACH: boil in plenty of water, and every time the water turns tea-brown, pour it off and refill with water that is already boiling.", "why": "Dropping leached acorn into cold water sets the remaining tannin and it will never fully leach. Keep the temperature up across changes." },
+    { "text": "COLD LEACH: tie the crushed nuts in cloth and hang them in a cold stream for a day or two. Slower, and it keeps the starch that hot leaching would gelatinize." },
+    { "text": "Taste one at each change. When the bitterness and the mouth-drying pucker are gone, it is done." },
+    { "text": "Dry the mash by the fire and grind it into flour, or eat it as porridge." }
+  ],
+  "verify": [
+    "The test is your tongue: no bitterness, and no astringent drying feeling on the roof of your mouth.",
+    "The rinse water runs clear rather than tea-coloured."
+  ],
+  "limits": [
+    "This is calories and starch. It is not a complete diet, and it is low in the protein and fat you need most.",
+    "White-oak-group acorns are far lower in tannin and much less work than red-oak-group acorns; the method is the same but the number of changes is not."
+  ],
+  "cautions": [
+    "Do NOT eat acorns unleached. Tannic acid in quantity causes severe gut irritation and, sustained, kidney damage.",
+    "Positively identify the tree as an oak. Horse chestnut and buckeye look superficially similar in the hand, grow in the same places, and are poisonous — an oak nut sits in a scaled cup, a buckeye comes out of a thick husk and has no cup.",
+    "Introduce it to an empty stomach slowly; a sudden large starch load after fasting is its own problem."
+  ],
+  "tags": ["food", "acorn", "oak", "tannin", "calories"]
+}

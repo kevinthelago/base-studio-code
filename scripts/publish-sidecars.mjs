@@ -28,7 +28,7 @@
 // destination is open for execution; there the previous copy simply stands and boot staging (which has
 // a park-and-replace fallback for exactly that) catches up on the next restart.
 import { execFileSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, renameSync, rmSync, statSync, utimesSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,6 +66,26 @@ export function publishDecision(verdict, { handshakes }) {
 export function stagingPathFor(dst, pid) {
   const name = dst.split(/[\\/]/).pop();
   return join(dirname(dst), `.${name}.publishing-${pid}`);
+}
+
+/**
+ * Copy `src` onto `tmp` and give the copy `src`'s OWN mtime — `copyFileSync` does not preserve it, so
+ * without this every published binary reads as built at PUBLISH time rather than the time it was
+ * actually compiled (request #187, `bsc request get 187`). That is not cosmetic: the boot-side
+ * `stage_dev_sidecars` (`src-tauri/src/console/pty/env.rs`) compares `target/<profile>/bsc`'s mtime
+ * against THIS staged copy's, so a copy that reads even a few seconds newer than its own source is
+ * indistinguishable from a genuinely newer build, and the next boot refuses to re-stage a
+ * byte-identical rebuild as a "downgrade". Measured on a clean build: `target/debug/bsc` at 16:44:44,
+ * the staged copy at 16:44:53 — nine seconds of pure copy time.
+ *
+ * Exported so the preservation is unit-testable on its own, without exercising the whole publish loop.
+ */
+export function copyPreservingMtime(src, tmp) {
+  copyFileSync(src, tmp);
+  // The mode is set BEFORE the rename, so the published path is never briefly unrunnable.
+  if (process.platform !== "win32") chmodSync(tmp, 0o755);
+  const { atime, mtime } = statSync(src);
+  utimesSync(tmp, atime, mtime);
 }
 
 function statOf(a) {
@@ -109,9 +129,7 @@ function main(argv) {
     const tmp = stagingPathFor(dst, process.pid);
     try {
       rmSync(tmp, { force: true });
-      copyFileSync(artifact.path, tmp);
-      // The mode is set BEFORE the rename, so the published path is never briefly unrunnable.
-      if (process.platform !== "win32") chmodSync(tmp, 0o755);
+      copyPreservingMtime(artifact.path, tmp);
       renameSync(tmp, dst);
       published += 1;
     } catch (e) {

@@ -71,7 +71,7 @@ afterEach(cleanup);
 const launch = () => {
   const call = vi.mocked(invoke).mock.calls.find((c) => c[0] === "pty_create");
   return call?.[1] as
-    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean }
+    | { startupPrompt?: string; initCmd?: string; cwd?: string; continueSession?: boolean; startupPromptFreshOnly?: boolean; restoreRequested?: boolean; startupPromptIsErrand?: boolean; paneInitCmd?: string; paneWasClaude?: boolean; autoResumeClaude?: boolean; providerIsClaude?: boolean; roleCapability?: { role?: string; git?: string; github?: string } | null; streamId?: string; env?: Record<string, string> }
     | undefined;
 };
 
@@ -95,6 +95,14 @@ describe("a studio woken to serve an ask", () => {
     // BACKEND dropped it, because `fresh_only && has_history` suppresses a startup prompt and every
     // one of those panes had history. A studio ALWAYS has history — its pane id is stable so it
     // resumes — so a fresh-only errand would be suppressed on every launch that matters.
+    //
+    // The frontend no longer sends that answer (`the-launch-derives-its-own-fresh-only-instead-of-
+    // receiving-it`): it sends `startupPromptIsErrand`, and the backend's carve-out is what keeps the
+    // errand. THIS ASSERTION USED TO READ `p!.startupPromptFreshOnly ?? false`, and that `?? false`
+    // is why it has to change here rather than simply passing: with the key gone it would have kept
+    // passing while checking nothing at all — the vacuous-green shape this repo keeps getting caught
+    // by. A studio IS in the registry, so without the errand fact the backend derives fresh-only TRUE
+    // and drops the errand; this is the one payload field standing between the two.
     useAppStore.getState().setStudioPendingDirective(DEF.id, ERRAND);
     render(<TerminalHost><StudioSessionMount studio={DEF.id} /></TerminalHost>);
 
@@ -102,9 +110,65 @@ describe("a studio woken to serve an ask", () => {
       const p = launch();
       expect(p?.startupPrompt).toBeTruthy();
       expect(
-        p!.startupPromptFreshOnly ?? false,
-        "a fresh-only errand is dropped whenever the studio has a prior conversation, which is always",
-      ).toBe(false);
+        p!.startupPromptIsErrand,
+        "a studio always has a prior conversation, so only the errand fact keeps its errand alive",
+      ).toBe(true);
+      expect(
+        p!.startupPromptFreshOnly,
+        "the computed flag must not come back — the backend derives it now",
+      ).toBeUndefined();
+    });
+  });
+
+  /// THE PAYLOAD, for the init command this time
+  /// (`the-launch-resolves-its-own-resume-command-instead-of-receiving-it`). The backend resolves
+  /// `initCmd` alongside the renderer and logs a disagreement; it can only do that if the RAW signals
+  /// reach it, and nothing else in the suite would notice if they stopped.
+  ///
+  /// This is the same gap that made the role-gate flip inert for months
+  /// (`the-role-gate-flip-never-reached-the-wire`): a backend argument that is accepted and never
+  /// sent takes the `None` branch on every real launch, and every test on that flip passed because
+  /// each one called the Tauri command directly with the argument the wire never carried.
+  it("sends the raw resume signals so the backend can resolve the init command itself", async () => {
+    render(<TerminalHost><StudioSessionMount studio={DEF.id} /></TerminalHost>);
+    await waitFor(() => {
+      const p = launch();
+      expect(p, "pty_create was never called").toBeTruthy();
+      // The pane's OWN command, before the resolver turned it into a resume form — the `explicit` the
+      // backend's rule reads. Sending the RESOLVED one instead would compare a value against itself.
+      expect(p!.paneInitCmd, "the raw pane command must be sent, not the resolved one").not.toBeUndefined();
+      expect(typeof p!.paneWasClaude).toBe("boolean");
+      expect(typeof p!.autoResumeClaude).toBe("boolean");
+      // Which branch `resolveEffectiveInitCmd` took. Without it the backend compares against the
+      // branch it does not model and warns on every non-Claude launch.
+      expect(p!.providerIsClaude, "a studio runs claude").toBe(true);
+      // `wasUncleanShutdown` is deliberately NOT here — the backend owns it (`app::recovery`), and
+      // the store field is a copy read back from it. Sending it would route a Rust fact through the
+      // renderer and back.
+      expect(p, "wasUncleanShutdown must not be sent").not.toHaveProperty("wasUncleanShutdown");
+    });
+  });
+
+  /// THE ACCESS ENV IS GATED BY THE BACKEND, so it has to be told the role
+  /// (`the-launch-derives-its-own-access-env-instead-of-receiving-it`).
+  ///
+  /// A studio is the case the credential gate exists for: `none` on every axis, so it cannot run git
+  /// or gh at all and a GitHub credential in its environment widens nothing and risks everything.
+  /// The renderer already withholds it; the backend's removal is the SECOND, independent refusal, and
+  /// it can only run if `roleCapability` arrives.
+  it("sends the role capability so the backend can gate the access env", async () => {
+    render(<TerminalHost><StudioSessionMount studio={DEF.id} /></TerminalHost>);
+    await waitFor(() => {
+      const p = launch();
+      expect(p, "pty_create was never called").toBeTruthy();
+      expect(p!.roleCapability, "the backend cannot gate a credential without the role").toBeTruthy();
+      expect(p!.roleCapability?.git).toBe("none");
+      expect(p!.roleCapability?.github).toBe("none");
+      // The renderer's own half of the AND: it never placed one to begin with.
+      expect(p!.env?.GH_TOKEN, "a studio is denied on both axes").toBeUndefined();
+      // The token is NOT sent as a separate argument. The backend reads it out of `env`, which is
+      // what makes its pass remove-only — it cannot place a credential the renderer withheld.
+      expect(p, "the token must not travel a second time").not.toHaveProperty("ghToken");
     });
   });
 

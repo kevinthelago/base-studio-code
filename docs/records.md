@@ -69,7 +69,7 @@ tree, which is what the compilers resolve against. So:
 - A record that exists only in your **store** cannot retire its file. It has to be **promoted** into the
   seed first, or the module vanishes for everyone else.
 - The two drift, in both directions. A designer edits the store; a merge moves the file. Never assume one
-  is authoritative — `scripts/retirement-candidates.mjs` grades the three-way (seed vs store vs file), and
+  is authoritative — `bsc ui retirable` grades the three-way (seed vs store vs file), and
   that grade is the whole safety story.
 
 `reconcileSeed` pushes a changed seed into a pristine store copy on boot, and keeps a user-edited copy with
@@ -123,7 +123,7 @@ had. Every one of these has cost a real failure:
   Vite bundles its own config *before* any plugin runs — so `vite/bscRecords.ts` is not installed yet,
   `.bsc-records/` cannot serve it, and there is no `@/` alias out there either (the config sits outside
   `src/` and imports by relative path). `tsc`, `lint` and all 742 vitest files went green after that
-  module was retired; only `npx vite build` failed. `retire-module.mjs` now refuses one, reading the
+  module was retired; only `npx vite build` failed. `bsc ui retire` now refuses one, reading the
   importer list from the configs rather than a hard-coded name.
 
 **`@data/*.json` used to be on that list and no longer is.** The platform registry serves those
@@ -150,8 +150,8 @@ And two whole categories of module must stay files:
 
 ```bash
 npm test -- src/app/runtime/recordImports.test.ts   # the SEED — in git, runs on a fresh clone
-node scripts/check-record-imports.mjs               # the STORE — per-machine; exit 1 on any finding
-node scripts/check-record-imports.mjs --fix         # ...and repair it
+bsc ui imports                                     # the STORE — per-machine; exit 1 on any finding
+bsc ui imports --fix                               # ...and repair it
 ```
 
 `makeRequire` routes a specifier to the registry under its **literal key**, so `./useDockBack` needs a
@@ -163,7 +163,7 @@ neighbour was still a file a bundler could resolve.
 from the store, not the seed, so that is where a bad specifier is visible — and a test reading
 `~/.base-studio-code` would be vacuous on a fresh clone. Hence two runners over one scanner
 (`relativeSpecifiers` in `scripts/lib/recordSource.mjs`, shared with `emit-records.mjs` and
-`retire-module.mjs` so the guard and the tools that rewrite cannot disagree).
+`bsc ui retire` so the guard and the tools that rewrite cannot disagree).
 
 Measured the first time both ran: the seed was clean, the store held **57 relative specifiers across 24
 records**, and every gate was green. `platformBoundary.test.ts` had rejected the rule since #4232 but
@@ -204,8 +204,8 @@ specifier goes back to resolving against the registry.
 ## Retiring a file
 
 ```bash
-node scripts/retirement-candidates.mjs          # the census — grades every candidate
-node scripts/retirement-candidates.mjs --all    # ...including the ones that are NOT safe
+bsc ui retirable                               # the census — grades every candidate
+bsc ui retirable --all                         # ...including the ones that are NOT safe
 ```
 
 The census is the authority. Only `same` and `reformatted` are safe; `BODY-DIFFERS` means retiring would
@@ -215,18 +215,17 @@ When the record is behind and nobody edited it, refresh it from the file. When t
 record wins and you adjudicate by hand:
 
 ```bash
-node scripts/refresh-drifted-seeds.mjs --store <ui-dump> --impls <impl-dump> [--apply]
-node scripts/lift-component-module.mjs <src-relative-path>… [--apply]   # a .tsx → a module-shaped record
-node scripts/promote-records.mjs --store <ui-dump> --impls <impl-dump> [--apply] [--adopt-seed]
-node scripts/retire-module.mjs <src-relative-path>
-node scripts/sync-shadow-catalogue.mjs          # a catalogued page must become `file: null`
-node scripts/fix-stale-mocks.mjs                # see below
-node scripts/check-record-imports.mjs           # the RECORD half — `retire-module.mjs` runs this too
+bsc ui refresh-seed [--apply] [--only <src-path>]
+bsc ui lift <src-relative-path>… [--apply]              # a .tsx → a module-shaped record
+bsc ui promote-seed [--apply] [--adopt-seed] [--limit N] [--only <path>]
+bsc ui retire <src-relative-path> [--dry]
+bsc ui shadow                                  # a catalogued page must become `file: null`
+bsc ui imports                                 # the RECORD half — `bsc ui retire` runs this too
 node scripts/dev-boot-check.mjs                 # boots vite + Chromium; catches what no test does
 ```
 
 **READ THE PROMOTION'S OUTPUT BEFORE RETIRING.** A `SKIPPED (a seed already occupies that path)` line
-means the seed still holds the OLD record, and retiring anyway is unrecoverable in place: this script
+means the seed still holds the OLD record, and retiring anyway is unrecoverable in place: the sweep
 iterates FILES, so once the file is gone the module is no longer a candidate and the stale seed can never
 be adopted. Recovery is restore-from-git → re-promote with `--adopt-seed` → re-retire. `--adopt-seed`
 replaces a stale seed with the store record, and refuses when doing so would drop an export the seed
@@ -235,13 +234,13 @@ declares.
 ### The SIX downstream obligations, in this order
 
 ```bash
-node scripts/sync-shadow-catalogue.mjs                                                   # 3
+bsc ui shadow                                                                            # 3
 UPDATE_KITS=1    npx vitest run src/features/designs/lib/platformModules.gen.test.ts     # 5
 UPDATE_KITS=1    npx vitest run src/features/designs/lib/reactUiKit.gen.test.ts          # 4  ← kit LAST
 UPDATE_RECORDS=1 npx vitest run src/features/glance/glancepageRecord.gen.test.ts         # 6  ← then this
 ```
 
-(1 and 2 — rewriting importers and keeping the colocated test — are what `retire-module.mjs` itself does.)
+(1 and 2 — rewriting importers and keeping the colocated test — are what `bsc ui retire` itself does.)
 
 **The ORDER is load-bearing.** `react-ui.json` VENDORS the transitive sources its components import, so
 any later source edit re-fires the kit regeneration — regenerating the kit and *then* fixing an importer
@@ -251,13 +250,31 @@ wrongly rewritten only moved the staleness to the other side.
 
 ### The colocated test — either copy may run, but one of them must
 
-A retired module's tests have to keep **executing**. There are two ways to satisfy that, and the rule is
-only that you pick one:
+A **retired** module's tests have to keep **executing**. There are two ways to satisfy that, and the rule
+is only that you pick one:
 
 | | what runs | when to choose it |
 |---|---|---|
 | **keep the file** | `src/x/y.test.tsx`, its relative import rewritten to `@/…` | the record's carried copy is stale, mispaired, or the test is not about a single module |
-| **delete the file** | the record's `tests[]`, materialized into `.bsc-records/x/y.test.tsx` | the carried copy is the same test — the graph then holds the module *and* its test |
+| **delete the file** | the record's `tests[]`, materialized into `.bsc-records/x/y.test.tsx` | the carried copy is the same test **and the record is one the emitter will actually emit** — the graph then holds the module *and* its test |
+
+**THAT SECOND CONDITION IS NOT DECORATION, and "it is a duplicate" does not imply it.** Measured
+2026-09-05: fifteen test files under `src/` are byte-identical to a carried test, and for **fourteen** of
+them the carried copy can never be materialized, so deleting the file runs the assertions nowhere. The
+question is never "is this a duplicate" but **what runs this test after the file is gone**, and
+`crates/bsc-emit/src/plan.rs` answers it in two places:
+
+- **`collect_seeds` keys the seed map by `provides`, and takes only a specifier starting with `@/`.**
+  A record without one — a harvest that kept only its `src` provenance — is not in the map at all, so
+  nothing it carries is ever a candidate. That is 7 of the 15.
+- **`plan_records` then skips any spec whose module file is still under `src/`** ("the file is still
+  there and authoritative"), which takes the record's carried tests with it. That is the other 7 —
+  including the six `shared/lib/algorithms/*` modules that are permanent floor anyway.
+
+So the carried copy is reachable only once the module ITSELF is retired. `bsc-emit --plan --json`
+answers this directly rather than by inference: its **`shadowed`** bucket is exactly the set of records
+whose module is already a record and whose colocated test file is the only thing still shadowing the
+carried copy — i.e. exactly the files it is safe to delete. Read that bucket instead of comparing bytes.
 
 `emit-records.mjs` materializes carried tests beside the module they test, and `vitest.config.ts`
 includes `.bsc-records/**`, so the carried copy runs in the default gate against the record that actually
@@ -270,7 +287,10 @@ same assertions never run twice, and deleting the file is the entire handover.
 > missing executor, not a statement about where a test belongs.
 
 `retiredTests.test.ts` enforces that a retired record's tests execute **somewhere**, and asks
-`planRecords()` rather than re-deriving the answer so it cannot drift from the emitter.
+`planRecords()` rather than re-deriving the answer so it cannot drift from the emitter. It also carries
+the other half — the two states above, where the emitter can never help — so a carried test whose only
+executor is its colocated file cannot lose that file quietly. Each arm asserts its own population, since
+a scan that stopped matching and a tree with nothing to find look identical from outside.
 
 **Check the carried copy before deleting the file** — the two drift, and the file is usually the newer
 one. Of the first 48 candidates, 46 differed only in the import specifier (safe), and **2 had extra
@@ -285,14 +305,76 @@ Two things the emitter refuses, loudly rather than silently:
   emitted, and a test that fails is reported with the import that disqualified it.
 - **An unrewritten relative import.** A carried test says `./LabelChip`; emitted into `.bsc-records/`
   that reaches nothing when `LabelChip` is still a file, because the two trees are not bridged
-  relatively. They are rewritten to `@/…` on emit — the same rewrite `retire-module.mjs` applies to the
+  relatively. They are rewritten to `@/…` on emit — the same rewrite `bsc ui retire` applies to the
   file copy, so both copies of a test resolve identically.
+
+### A test that is not ABOUT one module — the edge tier
+
+`the-frontend-tests-are-records`. Most of what is left under `src/` is tests, and most of those are not
+the colocated test of a single module: they reach across several records at once. Those have a home of
+their own, and the rule that picks between the two is mechanical.
+
+**Resolve the test's `@/…` imports to the records that answer them, and count the distinct ids.**
+
+| distinct records | home | verb |
+|---|---|---|
+| 1 | that record's `tests[]` | `bsc graph tests set --id <id> --src <file>` (`bsc ui tests set` for a component) |
+| 2 or more | an **edge** whose `members` are exactly those ids | `bsc graph edge set --id <id> --members a,b --src <file>` |
+
+Both are emitted into `.bsc-records/` and run in the default gate, so the file is deleted in the same
+change — the whole point is that there is one copy.
+
+**An edge is the mechanically safer of the two.** `bsc-emit` writes an edge test back at its ORIGINAL
+relative path, so its filename, its directory and therefore its vitest project all survive. A node test
+is re-addressed to the RECORD's path and numbered (`sessionRoles.1.test.ts`), which means it can cross
+the `/lib/` boundary the `node`/`dom` projects split on and silently change environment. **So a node test
+moves only when the record keeps it on the same side of that boundary**, and only when its relative
+imports still resolve from the record's directory — `componentBridge.previewErrors.test.ts` imported
+`./componentBridge` and its one record lives in `shared/lib/core`, so the emitter refused it. Read
+`bsc-emit --plan --json` before deleting anything: `unresolvable` and `edgeUnresolvable` name exactly
+these, and they are the cheap version of finding out.
+
+**A member must be an ALGORITHM impl id.** `bsc-graph`'s `seed_parses_impl_only_and_is_primitives_rooted`
+asserts every packaged edge member is an id in `implementations[]`, and `bsc graph edge set` does not
+check it — so a component-record member reaches the seed and reddens a Rust leg three gates later. The
+frontend's records live in two stores, so a test spanning a component AND an impl has no legal edge
+today: of 55 candidates, 49 were all-impl, 12 had to drop a component member, and 7 fell below two
+members and could not move at all.
+
+Four categories are NOT edge material, and saying so is the point rather than a gap:
+
+- **A test whose module is still a FILE.** It is that file's colocated test; there is no record yet.
+- **A `*.gen.test.ts`.** A generator writes that path; moving it puts the generator and the test in
+  different trees.
+- **A guard OVER the record system** (`src/app/runtime/*`). It reads the seed to judge the emitted
+  tree; emitting it into that tree is circular.
+- **A whole-tree guard** — a test that resolves to 5, 7, 10 records is not evidence about an edge
+  between a few of them, and an id naming ten members is not readable. Those want a different home.
+
+Two write hazards, both measured and both filed:
+
+- **`bsc graph tests set --seed` REPLACES the seed record's `tests` array** while the store half
+  appends, so it silently drops whatever the record already carried. Write the store, then
+  `bsc graph impl sync-seed <id> --seed-dir src-tauri/data/knowledge --only tests --apply`.
+- **`bsc ui tests set` / `bsc ui tests adopt` replace too**, on both copies — so a component record
+  that already carries a test cannot yet gain a second one.
+
+A third: a `bsc-graph` cli fixture squats on the real `session-roles.ts` id and reconciles the packaged
+seed into its temp store, so adding a carried test to THAT record fails a Rust test.
+
+And the store you sync FROM may be BEHIND the seed: syncing `session-roles.ts` regressed the packaged
+`scopeWriteGlobs` test by 876 bytes of assertions, because the runtime copy predated a carve-out the
+seed had. Diff the parsed seed by record id, keyed on each carried test's `name` + length, and check
+that every entry that was there is still there.
 
 ### Traps that cost real time
 
 - **`vi.mock("./x")` breaks silently.** A mock keys on the resolved module. While the file exists, a
   consumer's `@/a/b` and a test's `./b` are the same module; retire it and they stop agreeing, so the mock
-  stops applying and the test runs against the real module — still passing, just weaker.
+  stops applying and the test runs against the real module — still passing, just weaker. `bsc ui retire`
+  rewrites `vi.mock`/`vi.doMock`/`vi.unmock` in the same pass as the import forms, so a retirement fixes its
+  own mocks and there is no separate step to remember. (The one-off sweep that cleaned up mocks retired
+  before that was true is gone — its backlog reached zero.)
 - **The deletion gate is the BUNDLE.** `typecheck`, `lint` and `vitest` all go green with a live worker
   entry deleted. Only `vite build` sees `new URL('./x.ts', import.meta.url)`.
 - **A module id comes from the FILE STEM.** `store/types/plan.ts` and `store/slices/plan.ts` collide, and
@@ -305,10 +387,10 @@ Two things the emitter refuses, loudly rather than silently:
 ## Retiring a file — the PRECONDITIONS
 
 A file may be deleted only once the thing that **ships** answers what its importers ask for. Both halves
-of that are checked by `retire-module.mjs`, and each was learned by shipping the bug first:
+of that are checked by `bsc ui retire`, and each was learned by shipping the bug first:
 
 - **The packaged SEED must provide the specifier**, matched EXACTLY, case included. Five modules were
-  retired while `promote-records` had printed `SKIPPED (a seed already occupies that path)` — deleted,
+  retired while `bsc ui promote-seed` had printed `SKIPPED (a seed already occupies that path)` — deleted,
   with the old derivative still shipping. And `pageheader`'s seed said `@/shared/ui/pages/PageHeader`
   against a `pageHeader.tsx` file: Windows resolves that case-insensitively, so tsc, `vite build` and the
   whole suite stayed green while a case-sensitive filesystem would have resolved to nothing.
@@ -349,20 +431,20 @@ did silently — it kept whichever came last, so `telemetrypanel` became the who
 `@/components/splitbar` would have got a module whose export pick is not that component. Three records
 reached the seed that way before the adopt guard caught the rest.
 
-Author a **new** module record beside them (`scripts/lift-component-module.mjs`, id `<stem>-module`,
+Author a **new** module record beside them (`bsc ui lift`, id `<stem>-module`,
 `role: composite`). The components keep answering `@/components/<id>`; the module record answers
 `@/features/x/Y`. Nothing is overwritten, so no component record loses an export it declares.
 
 ## Where this stops — and why the floor is where it is
 
-`src/` is at **69 non-test modules**, from 225. The harvest is finished: `retire-module --dry` was run
+`src/` is at **69 non-test modules**, from 225. The harvest is finished: `bsc ui retire --dry` was run
 against **every remaining module** and **none** is retirable. Each of the 69 refuses for a named
 mechanical reason, listed below.
 
 > Counts drift and a stale one is worse than none. Re-measure:
 > `git ls-files src | grep -E '\.tsx?$' | grep -vcE '\.(test|spec)\.|\.d\.ts$'`
 > And re-derive the floor rather than trusting this table — ask the tool that deletes:
-> `for f in …; do node scripts/retire-module.mjs "$f" --dry; done`
+> `for f in …; do bsc ui retire "$f" --dry; done`
 
 | count | class | why a record cannot stand for it |
 |---|---|---|
@@ -428,7 +510,8 @@ shortened the text would corrupt every offset after the first comment.
 
 ### The two guards that stand outside the gate
 
-- **`npm run census:claims`** — `providesMatchesItsFile.test.ts` asks the right question and structurally
+- **The `provides` claim census** (the `npm run census:claims` target is GONE; the check now lives
+  only in the test named next) — `providesMatchesItsFile.test.ts` asks the right question and structurally
   cannot answer it where it matters: it globs the packaged SEED, because a vitest run has no store. But
   `provides` is resolved at RUNTIME against the STORE, so seed-clean + store-divergent is green everywhere
   and still breaks the running app. Run this before trusting that overrides are sane.
@@ -449,7 +532,8 @@ shortened the text would corrupt every offset after the first comment.
   is nothing to disagree with. `--dir` / `--repo` point it at a fixture store, which is how it was proved
   to FIRE rather than merely to report zero.
 
-  (It supersedes `scripts/audit-store-provides.mjs`, which asked only whether a record claimed EXACTLY its
-  own file's implied specifier — that reported "store OK" while the broader class went unmeasured.)
+  (It superseded `audit-store-provides.mjs`, since deleted, which asked only whether a record claimed
+  EXACTLY its own file's implied specifier — that reported "store OK" while the broader class went
+  unmeasured. Named without a path because there is no such file to open.)
 - **`npm run test:e2e -- graphPages`** — the static gate cannot prove a page RENDERS. It is deliberately
   outside the default gate (CLAUDE.md), so a page can sit un-mountable while everything is green.

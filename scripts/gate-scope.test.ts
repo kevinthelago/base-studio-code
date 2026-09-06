@@ -131,9 +131,28 @@ describe("gate scope", () => {
     expect(nxScoped?.args).toEqual(["nextest", "run", "-p", "bsc", "-p", "bsc-ui", "--no-fail-fast"]);
   });
 
+  it("runs doctests in BOTH tiers — nextest structurally cannot", () => {
+    // `cargo nextest` does not run doctests at all. That property used to be defended by a static scan
+    // for untagged ``` fences in src-tauri/src/tests.rs, which could not see an INDENTED code block —
+    // rustdoc compiles those as Rust just the same, and there is nowhere to write ```text on one. Three
+    // doctests were failing on develop behind a green gate, and a naive widening of that scan reported
+    // three false positives out of five, because rustdoc never collects a doctest on a private item.
+    //
+    // So the gate runs the real thing instead of guessing about it: no heuristic, no false positives,
+    // and MEASURED at 7.53s warm for the whole workspace — cheaper than clippy. This test is what keeps
+    // the leg from quietly disappearing again.
+    const full = gateCommands(plan([], true), "develop");
+    expect(full.find((c) => c.key === "doctest")?.args).toEqual(["test", "--workspace", "--doc"]);
+
+    const scoped = gateCommands(plan(["crates/bsc-ui/src/kit.rs"]), "develop");
+    expect(scoped.find((c) => c.key === "doctest")?.args).toEqual(["test", "-p", "bsc", "-p", "bsc-ui", "--doc"]);
+  });
+
   it("builds the scoped frontend commands against the base", () => {
     const cmds = gateCommands(plan(["src/features/x/lib/y.ts"]), "develop");
-    expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["typecheck", "lint", "vitest"]);
+    // `records` leads because the claim census is unconditional — it is not scoped by what changed, so
+    // it is present for every plan. The three that follow ARE the scoped frontend set this test is about.
+    expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["records", "typecheck", "lint", "vitest"]);
     expect(cmds.find((c) => c.label.startsWith("vitest"))?.args).toEqual([
       "vitest", "run", "--changed", "develop",
     ]);
@@ -179,6 +198,58 @@ describe("gate scope", () => {
 
   it("defaults to assuming every file exists, so a caller with no fs behaves as before", () => {
     expect(plan(["src/features/x/lib/y.ts"]).frontendFiles).toEqual(["src/features/x/lib/y.ts"]);
+  });
+});
+
+
+// ── a DELETION forces vitest unscoped ────────────────────────────────────────────────────────────
+//
+// `vitest --changed` selects tests by walking the module graph FROM the changed files. A DELETED file has
+// no edges in the new graph — nothing imports it, because it is gone — so it selects NOTHING, and the
+// tests that actually break are the ones reading from DISK rather than importing (`*.gen.test.ts`).
+//
+// MEASURED: retiring `src/features/skills/index.tsx` passed the scoped gate (60 files, 750 tests) and then
+// failed 4 tests in `reactUiKit.gen.test.ts`, because the deletion changed the packaged kit's closure.
+// Fifth stale packaged kit in one session; three reached `develop`.
+describe("a frontend DELETION runs vitest unscoped", () => {
+  const planWith = (files: string[], exists: (f: string) => boolean) =>
+    planGate({ files, graph, dirToCrate, exists });
+
+  it("forces the unscoped run, and NAMES the deletion as the trigger", () => {
+    const p = planWith(["src/features/skills/index.tsx"], () => false);
+    expect(p.vitestUnscoped).toBe(true);
+    expect(p.unscopedReason).toContain("DELETED");
+    expect(p.unscopedReason).toContain("src/features/skills/index.tsx");
+    // ...and the plan actually RUNS vitest, so the trigger is not moot.
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("does NOT abandon the narrowing for an ordinary edit", () => {
+    const p = planWith(["src/features/skills/index.tsx"], () => true);
+    expect(p.vitestUnscoped).toBe(false);
+    expect(p.unscopedReason).toBeNull();
+    expect(p.runVitest).toBe(true);
+  });
+
+  it("names the RECORD STORE trigger when that is the one that fired", () => {
+    // Two rules reach the same decision; the note has to say which, or a reader learns to skip it.
+    const p = planWith(["src-tauri/data/components/app/x.json"], () => true);
+    expect(p.vitestUnscoped).toBe(true);
+    expect(p.unscopedReason).toContain("record store");
+    expect(p.unscopedReason).not.toContain("DELETED");
+  });
+
+  it("the emitted vitest command really is unscoped — no --changed", () => {
+    const cmds = gateCommands(planWith(["src/a/Gone.tsx"], () => false), "HEAD");
+    const vitest = cmds.find((c) => c.key === "vitest");
+    expect(vitest?.args).toEqual(["vitest", "run"]);
+    expect(vitest?.args).not.toContain("--changed");
+  });
+
+  it("a deletion makes it a HEAVY gate, so it queues for a slot like --full", () => {
+    // The slot follows the COST, not the tier: an unscoped vitest is the expensive half.
+    expect(needsGateSlot(planWith(["src/a/Gone.tsx"], () => false))).toBe(true);
+    expect(needsGateSlot(planWith(["src/a/Here.tsx"], () => true))).toBe(false);
   });
 });
 
@@ -265,12 +336,45 @@ describe("graph step", () => {
     expect(without.some((l) => l.startsWith("graph ("))).toBe(false);
   });
 
-  it("carries all three halves — nodes compile, the repo store is current, the kits agree", () => {
+  // A crate's OWN manifest decides whether a graph-carried `[[test]]` target is compiled at all, so
+  // editing one can stop a test running without touching a line of source
+  // (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). Measured: dropping the entry left
+  // nextest reporting 59 passed where it had run 67, all green.
+  it("runs when a crate manifest moves — that is what decides if a carried test is compiled", () => {
+    expect(plan(["crates/bsc-lan-stream/Cargo.toml"]).runGraph).toBe(true);
+    expect(plan(["scripts/graph-rust-tests.mjs"]).runGraph).toBe(true);
+    // A crate's SOURCE still does not, so the rule stayed a rule rather than becoming "any crate file".
+    expect(plan(["crates/plandb/src/lib.rs"]).runGraph).toBe(false);
+  });
+
+  it("carries all four halves — nodes compile, the repo store is current, the kits agree, the rust test edges run", () => {
     const cmds = graphCommands();
-    expect(cmds).toHaveLength(3);
+    expect(cmds).toHaveLength(4);
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
     expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
+    expect(cmds[3].args).toContain("scripts/graph-rust-tests.mjs");
+  });
+
+  // THE CLAIM CENSUS IS NOT SCOPED, and that is deliberate — see the comment on it in gateScope.mjs.
+  // Every other leg asks "could what I changed have broken this?"; this one catches a record re-claiming
+  // a specifier from a store no branch touches, so scoping it by changed files would make it blind to
+  // its own reason for existing. `detachedwindow` was re-claimed with zero repo files changed.
+  it("runs the claim census in BOTH tiers, whatever changed", () => {
+    const scoped = gateCommands(plan(["README.md"]), "develop");
+    const full = gateCommands({ ...plan(["README.md"]), full: true }, "develop");
+    for (const [name, cmds] of [["scoped", scoped], ["full", full]] as const) {
+      const leg = cmds.find((c) => c.key === "graph-claim-census");
+      expect(leg, `the claim census must run in the ${name} tier`).toBeDefined();
+      expect(leg!.cmd).toBe("bsc");
+      expect(leg!.args).toEqual(["ui", "census"]);
+    }
+  });
+
+  // It is NOT one of the graph legs — those are scoped by `runGraph`, which is the scoping this one
+  // must not inherit. Pinned so a future tidy-up does not fold it back in.
+  it("is not folded into the scoped graph legs", () => {
+    expect(graphCommands().some((c) => c.key === "graph-claim-census")).toBe(false);
   });
 
   // Adding a case to the contract must re-run the check that reads it, or the vector grows while
@@ -339,5 +443,44 @@ describe("needsGateSlot", () => {
     expect(plan.full).toBe(false);
     expect(plan.vitestUnscoped).toBe(true);
     expect(needsGateSlot(plan), "a scoped plan running the whole suite must queue").toBe(true);
+  });
+});
+
+// Every leg is MEASURED, and the id it is measured under has to be stable — see `gateCommands`.
+describe("gate legs carry a stable measurement key", () => {
+  const full = gateCommands({ full: true }, "develop");
+  const scoped = gateCommands(
+    { full: false, runTsc: true, frontendFiles: ["src/a.ts"], runVitest: true, vitestUnscoped: false,
+      rustCrates: ["bsc-util"], runGraph: true },
+    "develop",
+  );
+
+  it("gives EVERY leg a key and a stage, so none is silently unmeasured", () => {
+    for (const leg of [...full, ...scoped]) {
+      expect(leg.key, `no key on "${leg.label}"`).toBeTruthy();
+      expect(leg.stage, `no stage on "${leg.label}"`).toBeTruthy();
+    }
+  });
+
+  it("uses only stages the fault taxonomy already knows", () => {
+    // A stage `errordb` does not recognise is refused by `bsc errors run`, which would turn a measured
+    // leg into a failed one — the gate breaking on its own instrumentation.
+    const KNOWN = ["install", "compile", "typecheck", "lint", "test", "build", "package", "deploy", "launch", "runtime", "supply"];
+    for (const leg of [...full, ...scoped]) expect(KNOWN).toContain(leg.stage);
+  });
+
+  // THE POINT OF SPLITTING key FROM label. The label moves between a scoped and a full run ("vitest"
+  // vs "vitest (--changed: module-graph affected)"); filing measurements under it would split one
+  // surface into two histories that can never be compared, which is what makes a trend worthless.
+  it("keys a scoped leg and its full-run twin identically, even though the labels differ", () => {
+    const pair = (key: string) => [full, scoped].map((set) => set.find((l) => l.key === key));
+    for (const key of ["vitest", "clippy", "nextest", "typecheck", "lint"]) {
+      const [f, sc] = pair(key);
+      expect(f, `full run has no ${key}`).toBeTruthy();
+      expect(sc, `scoped run has no ${key}`).toBeTruthy();
+      expect(f!.key).toBe(sc!.key);
+      expect(f!.stage).toBe(sc!.stage);
+    }
+    expect(scoped.find((l) => l.key === "vitest")!.label).not.toBe(full.find((l) => l.key === "vitest")!.label);
   });
 });

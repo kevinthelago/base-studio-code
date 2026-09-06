@@ -1,0 +1,1433 @@
+{
+  "note": "GENERATED from @/app/console/lib/sessionLaunch buildSessionSettings — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "UNGATED — no role, no profile",
+      "paneId": "p1",
+      "role": null,
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": null,
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role planner",
+      "paneId": "p1",
+      "role": "planner",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "planner",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "allowedCommands": [],
+      "allowToolRules": [
+        "Edit(*.md)",
+        "Edit(*.json)",
+        "Edit(prompts/*.md)",
+        "Edit(prompts/*)",
+        "Edit(discovery/*.md)",
+        "Edit(discovery/*)"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(deploy.md)",
+        "Edit(deploy.json)",
+        "Edit(phases.json)",
+        "Edit(issues.json)",
+        "Edit(fleet.json)",
+        "Edit(repos.json)",
+        "Edit(features.json)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role worker",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role director",
+      "paneId": "p1",
+      "role": "director",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "director",
+        "writeGlobs": [
+          "*.md",
+          "*.json",
+          "prompts/*.md",
+          "prompts/*",
+          "discovery/*.md",
+          "discovery/*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "surfaces": [
+          "plan",
+          "fleet",
+          "errors",
+          "publish",
+          "teams",
+          "persona",
+          "logs",
+          "request"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [
+        "Edit(*.md)",
+        "Edit(*.json)",
+        "Edit(prompts/*.md)",
+        "Edit(prompts/*)",
+        "Edit(discovery/*.md)",
+        "Edit(discovery/*)"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(deploy.md)",
+        "Edit(deploy.json)",
+        "Edit(phases.json)",
+        "Edit(issues.json)",
+        "Edit(fleet.json)",
+        "Edit(repos.json)",
+        "Edit(features.json)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role triage",
+      "paneId": "p1",
+      "role": "triage",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "triage",
+        "writeGlobs": [],
+        "github": "write",
+        "git": "none",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit",
+        "Write",
+        "NotebookEdit",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role reviewer",
+      "paneId": "p1",
+      "role": "reviewer",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "reviewer",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit",
+        "Write",
+        "NotebookEdit",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role juror",
+      "paneId": "p1",
+      "role": "juror",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "juror",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit",
+        "Write",
+        "NotebookEdit",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role documentor",
+      "paneId": "p1",
+      "role": "documentor",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "documentor",
+        "writeGlobs": [
+          "*.md",
+          "**/*.md",
+          "README*",
+          "**/README*",
+          "CHANGELOG*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "allowedCommands": [],
+      "allowToolRules": [
+        "Edit(*.md)",
+        "Edit(**/*.md)",
+        "Edit(README*)",
+        "Edit(**/README*)",
+        "Edit(CHANGELOG*)"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "role designer",
+      "paneId": "p1",
+      "role": "designer",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "allowedCommands": [
+        "bsc ui",
+        "bsc component",
+        "bsc shot preview",
+        "bsc loop new",
+        "bsc loop say",
+        "bsc loop watch",
+        "bsc loop show",
+        "bsc loop list",
+        "bsc request new",
+        "bsc request list",
+        "bsc session ask",
+        "bsc session reply",
+        "bsc request get",
+        "bsc persona whatami"
+      ],
+      "allowToolRules": [
+        "Edit(scratch/**)",
+        "Read"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "WebFetch",
+        "WebSearch",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": true,
+      "bypass": false
+    },
+    {
+      "label": "role architect",
+      "paneId": "p1",
+      "role": "architect",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "architect",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "allow": [
+          "bsc teams",
+          "bsc persona",
+          "bsc plan brief",
+          "bsc plan requirement",
+          "bsc plan classify",
+          "bsc fleet director",
+          "bsc fleet directors",
+          "bsc session",
+          "bsc project new",
+          "bsc project link",
+          "bsc project architect",
+          "bsc project list",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ]
+      },
+      "allowedCommands": [
+        "bsc teams",
+        "bsc persona",
+        "bsc plan brief",
+        "bsc plan requirement",
+        "bsc plan classify",
+        "bsc fleet director",
+        "bsc fleet directors",
+        "bsc session",
+        "bsc project new",
+        "bsc project link",
+        "bsc project architect",
+        "bsc project list",
+        "bsc request new",
+        "bsc request list",
+        "bsc request get"
+      ],
+      "allowToolRules": [
+        "Edit(scratch/**)",
+        "Read"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "WebFetch",
+        "WebSearch",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": true,
+      "bypass": false
+    },
+    {
+      "label": "role librarian",
+      "paneId": "p1",
+      "role": "librarian",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "librarian",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "read",
+        "graph": "write",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc graph",
+          "bsc ui list",
+          "bsc ui get",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "allowedCommands": [
+        "bsc graph",
+        "bsc ui list",
+        "bsc ui get",
+        "bsc request new",
+        "bsc request list",
+        "bsc session ask",
+        "bsc session reply",
+        "bsc request get",
+        "bsc persona whatami"
+      ],
+      "allowToolRules": [
+        "Edit(scratch/**)",
+        "Read"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "WebFetch",
+        "WebSearch",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": true,
+      "bypass": false
+    },
+    {
+      "label": "role marketer",
+      "paneId": "p1",
+      "role": "marketer",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "marketer",
+        "writeGlobs": [
+          "marketing/**/*.md",
+          "marketing/**/*.mdx",
+          "content/**/*.md",
+          "content/**/*.mdx",
+          "README*",
+          "**/README*",
+          "CHANGELOG*",
+          "**/CHANGELOG*"
+        ],
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read"
+      },
+      "allowedCommands": [],
+      "allowToolRules": [
+        "Edit(marketing/**/*.md)",
+        "Edit(marketing/**/*.mdx)",
+        "Edit(content/**/*.md)",
+        "Edit(content/**/*.mdx)",
+        "Edit(README*)",
+        "Edit(**/README*)",
+        "Edit(CHANGELOG*)",
+        "Edit(**/CHANGELOG*)"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "a profile but no role",
+      "paneId": "p1",
+      "role": null,
+      "hasProfile": true,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": null,
+      "allowedCommands": [
+        "cargo test"
+      ],
+      "allowToolRules": [
+        "Read",
+        "Edit(src/**)"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Write",
+        "Edit(**/*.env)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "ask",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "a worker with a profile",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": true,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [
+        "cargo test"
+      ],
+      "allowToolRules": [
+        "Read",
+        "Edit(src/**)"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Write",
+        "Edit(**/*.env)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "ask",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "a designer — a RESTRICTED role with its own allow list",
+      "paneId": "p1",
+      "role": "designer",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "allowedCommands": [
+        "bsc ui",
+        "bsc component",
+        "bsc shot preview",
+        "bsc loop new",
+        "bsc loop say",
+        "bsc loop watch",
+        "bsc loop show",
+        "bsc loop list",
+        "bsc request new",
+        "bsc request list",
+        "bsc session ask",
+        "bsc session reply",
+        "bsc request get",
+        "bsc persona whatami"
+      ],
+      "allowToolRules": [
+        "Edit(scratch/**)",
+        "Read"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "WebFetch",
+        "WebSearch",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": true,
+      "bypass": false
+    },
+    {
+      "label": "worker + push auto-pr",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "auto-pr",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push self-merge",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "self-merge",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push push-confirm",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "push-confirm",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push local",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "local",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push commit-only",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "commit-only",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push none",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "none",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push a-policy-nobody-added-yet",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "a-policy-nobody-added-yet",
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push-confirm with a SOFT gate",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "push-confirm",
+      "gate": "soft",
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "worker + push-confirm with a HARD gate",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": "push-confirm",
+      "gate": "hard",
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task"
+      ],
+      "askToolRules": [
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "no flow at all — the default push is `local`",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "BYPASS: global off, ordinary role",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": false
+    },
+    {
+      "label": "BYPASS: global ON, ordinary role — follows the toggle",
+      "paneId": "p1",
+      "role": "worker",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": true,
+      "capability": {
+        "role": "worker",
+        "writeGlobs": [],
+        "github": "read",
+        "git": "write",
+        "code": "write",
+        "net": "read",
+        "ui": "read",
+        "graph": "write",
+        "surfaces": [
+          "plan",
+          "graph",
+          "ui",
+          "files",
+          "errors"
+        ]
+      },
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Edit(package.json)",
+        "Edit(package-lock.json)",
+        "Edit(Cargo.toml)",
+        "Edit(Cargo.lock)",
+        "Edit(pnpm-lock.yaml)",
+        "Edit(yarn.lock)",
+        "Task",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": true
+    },
+    {
+      "label": "BYPASS: global off, RESTRICTED role — never bypass",
+      "paneId": "p1",
+      "role": "designer",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "allowedCommands": [
+        "bsc ui",
+        "bsc component",
+        "bsc shot preview",
+        "bsc loop new",
+        "bsc loop say",
+        "bsc loop watch",
+        "bsc loop show",
+        "bsc loop list",
+        "bsc request new",
+        "bsc request list",
+        "bsc session ask",
+        "bsc session reply",
+        "bsc request get",
+        "bsc persona whatami"
+      ],
+      "allowToolRules": [
+        "Edit(scratch/**)",
+        "Read"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "WebFetch",
+        "WebSearch",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": true,
+      "bypass": false
+    },
+    {
+      "label": "BYPASS: global ON, RESTRICTED role — still never bypass",
+      "paneId": "p1",
+      "role": "designer",
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": true,
+      "capability": {
+        "role": "designer",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "write",
+        "graph": "read",
+        "harvestRoots": [
+          "app-repo",
+          "projects"
+        ],
+        "allow": [
+          "bsc ui",
+          "bsc component",
+          "bsc shot preview",
+          "bsc loop new",
+          "bsc loop say",
+          "bsc loop watch",
+          "bsc loop show",
+          "bsc loop list",
+          "bsc request new",
+          "bsc request list",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc request get",
+          "bsc persona whatami"
+        ]
+      },
+      "allowedCommands": [
+        "bsc ui",
+        "bsc component",
+        "bsc shot preview",
+        "bsc loop new",
+        "bsc loop say",
+        "bsc loop watch",
+        "bsc loop show",
+        "bsc loop list",
+        "bsc request new",
+        "bsc request list",
+        "bsc session ask",
+        "bsc session reply",
+        "bsc request get",
+        "bsc persona whatami"
+      ],
+      "allowToolRules": [
+        "Edit(scratch/**)",
+        "Read"
+      ],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "WebFetch",
+        "WebSearch",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": true,
+      "bypass": false
+    },
+    {
+      "label": "BYPASS: the standing debug session — ALWAYS bypass",
+      "paneId": "debug-studio:debugger",
+      "role": null,
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": null,
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": true
+    },
+    {
+      "label": "BYPASS: a per-request debug session — always bypass too",
+      "paneId": "debug-studio:req-7",
+      "role": null,
+      "hasProfile": false,
+      "push": null,
+      "gate": null,
+      "globalBypass": false,
+      "capability": null,
+      "allowedCommands": [],
+      "allowToolRules": [],
+      "denyToolRules": [
+        "Edit(.claude/**)",
+        "Bash(git push *)",
+        "Bash(gh pr create *)"
+      ],
+      "askToolRules": [],
+      "bashPosture": "allow",
+      "restrictedAllow": false,
+      "bypass": true
+    }
+  ]
+}

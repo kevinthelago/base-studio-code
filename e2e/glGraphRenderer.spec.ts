@@ -280,3 +280,62 @@ test("the label takes the THEME's text colour, so it stays legible on the card",
   expect(w.contrast, "near-white on a light card is the bug — it must contrast far less").toBeLessThan(d.contrast);
   console.log(`  label contrast: themed ${d.contrast} vs hardcoded-near-white ${w.contrast} on a light card`);
 });
+
+test("a lost WebGL context is observed, and drawing resumes once it is restored (request 179)", async () => {
+  // The only way to see `webglcontextlost`/`webglcontextrestored` without an actual GPU/driver reset —
+  // jsdom has no WebGL at all, and there is no way to force a real context loss outside a browser. This
+  // is the regression test the acceptance criteria on `a-lost-webgl-context-is-never-rebuilt-so-the-
+  // graph-stays-dead` call for: force loss and restore through WEBGL_lose_context, then assert the graph
+  // draws again — the SAME thing it drew before, not just SOMETHING.
+  test.setTimeout(600_000);
+  const r = await page.evaluate(() => window.__glGraphHarness!.contextLossRoundTrip());
+  expect(typeof r, `expected a result, got ${JSON.stringify(r)}`).not.toBe("string");
+  const result = r as {
+    hasExtension: boolean;
+    litBefore: number;
+    lostFired: boolean;
+    contextLostWhileLost: boolean;
+    drawWhileLostThrew: boolean;
+    litWhileLost: number;
+    restoredFired: boolean;
+    contextLostAfterRestore: boolean;
+    litAfterRestore: number;
+    nodeCountAfterRestore: number;
+    edgeCountAfterRestore: number;
+    borderBefore: number[];
+    borderAfterRestore: number[];
+  };
+  if (!result.hasExtension) {
+    // Headless Chromium always exposes it; a real WebKitGTK/driver combination might not, and reporting
+    // that is more honest than failing a test that never exercised the thing it claims to.
+    console.log("  WEBGL_lose_context is not available on this renderer — round trip not exercised");
+    return;
+  }
+
+  expect(result.litBefore, "the initial draw must have put something on screen").toBeGreaterThan(0);
+
+  // `webglcontextlost` fires, and the renderer must be told about it — this is the bug: nothing observed
+  // the event, so nothing ever set a flag or told a caller.
+  expect(result.lostFired, "webglcontextlost never reached onContextLost").toBe(true);
+  expect(result.contextLostWhileLost, "renderer.contextLost must be true once the context is lost").toBe(true);
+  // Every later GL call is a no-op against a dead context; `draw()` must not throw over it.
+  expect(result.drawWhileLostThrew, "draw() must not throw while the context is lost").toBe(false);
+
+  // `webglcontextrestored` fires, and the renderer rebuilds and comes back reporting it.
+  expect(result.restoredFired, "webglcontextrestored never reached onContextRestored — check preventDefault()").toBe(true);
+  expect(result.contextLostAfterRestore, "renderer.contextLost must clear once restored").toBe(false);
+
+  // A restored context starts EMPTY. These are the load-bearing assertions: the geometry and the
+  // per-instance SELECTION state were re-uploaded, not just remembered as numbers.
+  expect(result.nodeCountAfterRestore).toBe(1);
+  expect(result.edgeCountAfterRestore).toBe(1);
+  expect(result.litAfterRestore, "the restored draw must show the card again, not a blank canvas").toBeGreaterThan(0);
+  expect(
+    result.borderAfterRestore,
+    `border ${JSON.stringify(result.borderAfterRestore)} should still read as SELECTED, matching ${JSON.stringify(result.borderBefore)} before the loss`,
+  ).toEqual(result.borderBefore);
+
+  console.log(
+    `  context loss round trip: lit ${result.litBefore} -> ${result.litWhileLost} (lost) -> ${result.litAfterRestore} (restored)`,
+  );
+});

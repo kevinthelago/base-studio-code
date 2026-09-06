@@ -1,0 +1,347 @@
+{
+  "note": "GENERATED from @/shared/lib/core/llmConfig — do not hand-edit; see the .gen.test.ts",
+  "cases": [
+    {
+      "label": "provider anthropic, keyed",
+      "config": {
+        "provider": "anthropic",
+        "model": "opus-4.5",
+        "apiKey": "sk-secret",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_API_KEY": "sk-secret"
+      },
+      "aider": {
+        "ANTHROPIC_API_KEY": "sk-secret"
+      },
+      "aiderModel": "anthropic/opus-4.5"
+    },
+    {
+      "label": "provider openai, keyed",
+      "config": {
+        "provider": "openai",
+        "model": "opus-4.5",
+        "apiKey": "sk-secret",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "openai",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_API_KEY": "sk-secret"
+      },
+      "aider": {
+        "OPENAI_API_KEY": "sk-secret"
+      },
+      "aiderModel": "opus-4.5"
+    },
+    {
+      "label": "provider gemini, keyed",
+      "config": {
+        "provider": "gemini",
+        "model": "opus-4.5",
+        "apiKey": "sk-secret",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "gemini",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_API_KEY": "sk-secret"
+      },
+      "aider": {
+        "GEMINI_API_KEY": "sk-secret"
+      },
+      "aiderModel": "gemini/opus-4.5"
+    },
+    {
+      "label": "provider local, keyed",
+      "config": {
+        "provider": "local",
+        "model": "opus-4.5",
+        "apiKey": "sk-secret",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "local",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_API_KEY": "sk-secret"
+      },
+      "aider": {
+        "OPENAI_API_KEY": "sk-secret"
+      },
+      "aiderModel": "openai/opus-4.5"
+    },
+    {
+      "label": "provider ollama, keyed",
+      "config": {
+        "provider": "ollama",
+        "model": "opus-4.5",
+        "apiKey": "sk-secret",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "ollama",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_API_KEY": "sk-secret"
+      },
+      "aider": {
+        "OPENAI_API_KEY": "sk-secret"
+      },
+      "aiderModel": "openai/opus-4.5"
+    },
+    {
+      "label": "provider anthropic, NO key",
+      "config": {
+        "provider": "anthropic",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "opus-4.5"
+      },
+      "aider": {},
+      "aiderModel": "anthropic/opus-4.5"
+    },
+    {
+      "label": "provider openai, NO key",
+      "config": {
+        "provider": "openai",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "openai",
+        "BSC_AGENT_MODEL": "opus-4.5"
+      },
+      "aider": {},
+      "aiderModel": "opus-4.5"
+    },
+    {
+      "label": "provider gemini, NO key",
+      "config": {
+        "provider": "gemini",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "gemini",
+        "BSC_AGENT_MODEL": "opus-4.5"
+      },
+      "aider": {},
+      "aiderModel": "gemini/opus-4.5"
+    },
+    {
+      "label": "provider local, NO key",
+      "config": {
+        "provider": "local",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "local",
+        "BSC_AGENT_MODEL": "opus-4.5"
+      },
+      "aider": {
+        "OPENAI_API_KEY": "sk-local-none"
+      },
+      "aiderModel": "openai/opus-4.5"
+    },
+    {
+      "label": "provider ollama, NO key",
+      "config": {
+        "provider": "ollama",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "ollama",
+        "BSC_AGENT_MODEL": "opus-4.5"
+      },
+      "aider": {
+        "OPENAI_API_KEY": "sk-local-none"
+      },
+      "aiderModel": "openai/opus-4.5"
+    },
+    {
+      "label": "a local endpoint with a base URL",
+      "config": {
+        "provider": "ollama",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": "http://box:11434/v1"
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "ollama",
+        "BSC_AGENT_MODEL": "qwen2.5-coder",
+        "BSC_AGENT_BASE_URL": "http://box:11434/v1"
+      },
+      "aider": {
+        "OPENAI_API_BASE": "http://box:11434/v1",
+        "OPENAI_API_KEY": "sk-local-none"
+      },
+      "aiderModel": "openai/qwen2.5-coder"
+    },
+    {
+      "label": "a local endpoint with NO base URL",
+      "config": {
+        "provider": "ollama",
+        "model": "qwen2.5-coder",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "ollama",
+        "BSC_AGENT_MODEL": "qwen2.5-coder"
+      },
+      "aider": {
+        "OPENAI_API_KEY": "sk-local-none"
+      },
+      "aiderModel": "openai/qwen2.5-coder"
+    },
+    {
+      "label": "a local endpoint WITH a key too",
+      "config": {
+        "provider": "local",
+        "model": "llama3",
+        "apiKey": "sk-x",
+        "baseUrl": "http://box:11434/v1"
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "local",
+        "BSC_AGENT_MODEL": "llama3",
+        "BSC_AGENT_API_KEY": "sk-x",
+        "BSC_AGENT_BASE_URL": "http://box:11434/v1"
+      },
+      "aider": {
+        "OPENAI_API_BASE": "http://box:11434/v1",
+        "OPENAI_API_KEY": "sk-x"
+      },
+      "aiderModel": "openai/llama3"
+    },
+    {
+      "label": "numCtx ABSENT — say nothing, let the runtime use its packaged ceiling",
+      "config": {
+        "provider": "anthropic",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "opus-4.5"
+      },
+      "aider": {},
+      "aiderModel": "anthropic/opus-4.5"
+    },
+    {
+      "label": "numCtx 0 — a real instruction meaning DO NOT set num_ctx",
+      "config": {
+        "provider": "anthropic",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": "",
+        "numCtx": 0
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_NUM_CTX": "0"
+      },
+      "aider": {},
+      "aiderModel": "anthropic/opus-4.5"
+    },
+    {
+      "label": "numCtx 1 — the smallest truthy value",
+      "config": {
+        "provider": "anthropic",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": "",
+        "numCtx": 1
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_NUM_CTX": "1"
+      },
+      "aider": {},
+      "aiderModel": "anthropic/opus-4.5"
+    },
+    {
+      "label": "numCtx 65536",
+      "config": {
+        "provider": "anthropic",
+        "model": "opus-4.5",
+        "apiKey": "",
+        "baseUrl": "",
+        "numCtx": 65536
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "opus-4.5",
+        "BSC_AGENT_NUM_CTX": "65536"
+      },
+      "aider": {},
+      "aiderModel": "anthropic/opus-4.5"
+    },
+    {
+      "label": "numCtx 0 on a local provider",
+      "config": {
+        "provider": "ollama",
+        "model": "q",
+        "apiKey": "",
+        "baseUrl": "http://b:1/v1",
+        "numCtx": 0
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "ollama",
+        "BSC_AGENT_MODEL": "q",
+        "BSC_AGENT_BASE_URL": "http://b:1/v1",
+        "BSC_AGENT_NUM_CTX": "0"
+      },
+      "aider": {
+        "OPENAI_API_BASE": "http://b:1/v1",
+        "OPENAI_API_KEY": "sk-local-none"
+      },
+      "aiderModel": "openai/q"
+    },
+    {
+      "label": "an already-namespaced model passes through",
+      "config": {
+        "provider": "anthropic",
+        "model": "vendor/some-model",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "anthropic",
+        "BSC_AGENT_MODEL": "vendor/some-model"
+      },
+      "aider": {},
+      "aiderModel": "vendor/some-model"
+    },
+    {
+      "label": "a model with surrounding whitespace",
+      "config": {
+        "provider": "openai",
+        "model": "  gpt-4o  ",
+        "apiKey": "",
+        "baseUrl": ""
+      },
+      "bscAgent": {
+        "BSC_AGENT_PROVIDER": "openai",
+        "BSC_AGENT_MODEL": "  gpt-4o  "
+      },
+      "aider": {},
+      "aiderModel": "gpt-4o"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "pine-resin",
+  "name": "Pine resin (pitch)",
+  "latin": "Pinus spp.",
+  "functions": ["antiseptic", "hemostatic", "burn"],
+  "regions": ["north-america", "europe", "asia", "boreal"],
+  "habitat": "Anywhere pines grow. Look for hardened amber beads on trunk wounds and old branch scars.",
+  "parts": ["resin", "inner bark", "needle"],
+  "identify": [
+    "True pines carry needles in BUNDLES held by a papery sheath at the base — 2, 3 or 5 to a bundle depending on species.",
+    "Woody cones with stiff scales.",
+    "Resin is sticky, amber to white, and smells strongly of turpentine."
+  ],
+  "lookalikes": [
+    {
+      "name": "Yew",
+      "latin": "Taxus spp.",
+      "danger": "Lethal. Every part except the red aril flesh is highly toxic; there is no antidote and death can be sudden. Yew needle 'tea' has killed people.",
+      "tell": "Yew needles are SINGLE, flat and soft with a pointed tip, attached individually in two flat rows — never in bundles with a sheath. Yew bears a soft red berry-like aril, not a woody cone, and the bark is flaky red-brown."
+    },
+    {
+      "name": "Norfolk Island pine, Australian 'pines', podocarps",
+      "latin": null,
+      "danger": "Not a pine; do not assume pine properties or edibility.",
+      "tell": "No bundled needles with a basal sheath."
+    }
+  ],
+  "preparations": [
+    { "form": "raw resin", "method": "Warm a bead of hardened resin between the fingers until it softens, and dab it directly onto a small clean wound.", "for_use": "Sealing and disinfecting a small cut or crack; it also seals a blister that has torn." },
+    { "form": "pitch salve", "method": "Melt resin gently with about twice its volume of animal fat or oil; strain out bark through cloth; add a little beeswax to firm it. Never boil it over open flame.", "for_use": "A keeping antiseptic dressing for cuts, cracked skin and small burns." },
+    { "form": "needle infusion", "method": "Steep chopped GREEN needles in hot (not boiling) water for 10 minutes.", "for_use": "Vitamin C; a warming drink. Identify the tree first — this is the preparation the yew confusion kills people with." },
+    { "form": "fire", "method": "Resin-soaked wood (fatwood) shaves into tinder that lights wet.", "for_use": "Ignition — see `fire-tinder-bundle`." }
+  ],
+  "cautions": [
+    "Identify the tree before making ANY needle preparation. Yew is the fatal error and it grows in the same landscapes.",
+    "Pregnant women should avoid pine needle preparations; some species are associated with abortion in livestock.",
+    "Resin on a deep or dirty wound seals contamination in. Clean and irrigate first — see `wound-clean-and-dress`.",
+    "Take resin from existing wounds on the tree; cutting a tree to bleed it wounds it for your convenience."
+  ],
+  "evidence": "Resin's antibacterial activity is well documented, and a standardized spruce-resin salve has been trialled clinically for wound healing. The needle-tea vitamin C content is real but modest."
+}

@@ -9,6 +9,7 @@
     "code": "write",
     "net": "read",
     "ui": "read",
+    "graph": "write",
     "surfaces": [
       "plan",
       "graph",
@@ -24,6 +25,7 @@
   "skills": [],
   "responsibilities": [
     "Implement one assigned issue to spec in your own worktree",
+    "Instrument and watch your owned glob's logging and performance, not just its correctness",
     "Open a PR and keep working through your owned issues",
     "Escalate blockers to the director; never merge or close your own PR"
   ]

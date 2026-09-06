@@ -11,13 +11,15 @@
  * narrowing has to be temporary AND visible. This prints the plan every time for that second reason.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { acquireGateSlot } from "./gateLock.mjs";
 import { planGate, parsePorcelain, gateCommands, isRecordStorePath, needsGateSlot } from "./gateScope.mjs";
 import { decideGateTree, devPortFrom } from "./gate-tree-guard.mjs";
 import { classifyBuildFailure, failingPackage } from "./build-artifact-plan.mjs";
+import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -79,14 +81,90 @@ function workspace() {
   return { graph, dirToCrate };
 }
 
-function run(label, cmd, args) {
+/**
+ * Run one gate leg, and RECORD WHAT IT COST.
+ *
+ * The gate is the one command every worktree agent runs, and it is where the expensive builds actually
+ * happen — cargo, vitest, tsc. It has always printed each leg's seconds and thrown them away, so this
+ * project has hand-measured build figures written into CLAUDE.md and no history behind any of them.
+ * Now every leg lands a row, and `bsc mem build --source gate:clippy` is a trend rather than a memory.
+ *
+ * MEASURE-ONLY, and that is the whole reason this is safe to do here. `CLAUDE.md` is explicit that the
+ * gate must not file faults — ten worktree agents gating in parallel would pin every project node red
+ * and destroy the signal — so the wrapper records cost and files nothing. It also INHERITS stdio
+ * rather than piping, so cargo's live progress survives; a gate that looks frozen is a gate people
+ * stop running.
+ *
+ * Through `record-run.mjs`, not `bsc` directly, for its degrade: on a fresh clone there is no usable
+ * binary yet (the gate may be what builds it), and there the wrapper runs the command plainly and
+ * records nothing. A gate that could not run without a working `bsc` would be a worse trade than
+ * missing measurements.
+ */
+/** Where the machine-readable verdict lands, for anything that needs the RESULT rather than the log.
+ *
+ *  Under `target/` because it is per-worktree build output, never committed: two worktrees gate
+ *  independently and must not overwrite each other's answer.
+ *
+ *  IT EXISTS SO NOTHING HAS TO PARSE THE HUMAN OUTPUT. `run` streams each leg with `stdio: "inherit"`
+ *  precisely so cargo's live progress survives, which means the interesting result is interleaved with
+ *  megabytes of compiler chatter and is not recoverable afterwards. A reader that scraped `PASS`/`FAIL`
+ *  lines out of that would break the first time a leg's own output contained one.
+ *  (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it)
+ */
+const RESULT_PATH = join(REPO, "target", "gate-result.json");
+
+/** Write the verdict. Best-effort by design: a gate that FAILED because it could not write its own
+ *  report would be a worse trade than a missing report, and the exit code below is still the truth. */
+function writeResult(payload) {
+  try {
+    mkdirSync(dirname(RESULT_PATH), { recursive: true });
+    writeFileSync(RESULT_PATH, `${JSON.stringify(payload, null, 2)}\n`);
+  } catch {
+    /* the exit code is still correct; a reader that finds no artifact says so rather than inventing one */
+  }
+}
+
+/**
+ * The tests nextest reports as failed, as `<classname>::<name>` — `plandb::validate::tests::foo`.
+ *
+ * Only for the nextest leg; every other leg leaves `failures` empty and is excused leg-level as
+ * before (`tsc` reports a program, `eslint` a file set — neither can enumerate).
+ *
+ * Returns [] on ANY problem rather than throwing. A gate that dies because a report was missing would
+ * be worse than one that cannot name a failure — and `classify` treats empty as unknown and refuses
+ * to excuse, so the safe direction is already the default.
+ */
+function nextestFailures(key) {
+  if (key !== "nextest") return [];
+  try {
+    const xml = readFileSync(join(REPO, "target", "nextest", "default", "junit.xml"), "utf8");
+    const out = [];
+    for (const chunk of xml.split("<testcase ").slice(1)) {
+      const body = chunk.slice(0, chunk.indexOf("</testcase>") + 1 || chunk.indexOf("/>") + 1);
+      if (!body.includes("<failure") && !body.includes("<error")) continue;
+      const name = /name="([^"]*)"/.exec(chunk)?.[1];
+      const cls = /classname="([^"]*)"/.exec(chunk)?.[1];
+      if (name) out.push(cls ? `${cls}::${name}` : name);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function run(label, cmd, args, leg = {}) {
   process.stdout.write(`\n── ${label}\n   ${cmd} ${args.join(" ")}\n`);
   const t = Date.now();
-  const r = spawnSync(cmd, args, { stdio: "inherit", shell: process.platform === "win32" });
+  const measured = leg.key
+    ? [process.execPath, [join(REPO, "scripts", "record-run.mjs"),
+        "--measure-only", "--stage", leg.stage ?? "build", "--source", `gate:${leg.key}`,
+        "--", cmd, ...args]]
+    : [cmd, args];
+  const r = spawnSync(measured[0], measured[1], { stdio: "inherit", shell: process.platform === "win32" });
   const secs = ((Date.now() - t) / 1000).toFixed(1);
   const ok = r.status === 0;
   process.stdout.write(`   ${ok ? "PASS" : "FAIL"} (${secs}s)\n`);
-  return ok;
+  return { ok, seconds: Number(secs) };
 }
 
 const files = changedFiles();
@@ -114,8 +192,9 @@ if (!plan.full) {
     : "";
   process.stdout.write(`  frontend files: ${plan.frontendFiles.length}${lintNote}\n`);
   if (plan.vitestUnscoped) {
-    process.stdout.write(`  note: a record store changed, so vitest runs UNSCOPED — --changed cannot see\n`);
-    process.stdout.write(`        from a JSON blob to the modules emit:records materializes from it.\n`);
+      // NAME THE TRIGGER: two different rules reach this — a record store, or a DELETION — and a note
+      // that does not say which one teaches the reader to skip it.
+      process.stdout.write(`  note: vitest runs UNSCOPED — ${plan.unscopedReason}.\n`);
     // Say it here, BEFORE the wait. This plan calls itself scoped and is about to queue like a full one;
     // without a line saying why, the pause reads as a hang in the one tier nobody expects to wait.
     process.stdout.write(`        this makes it a HEAVY gate, so it takes a fleet slot like --full does.\n`);
@@ -168,12 +247,41 @@ if (!plan.full) {
 // Sweep this tree's build garbage before the heavy steps. The gate is the ONE command every worktree
 // agent runs, and until this line existed the sweeps hung off `build:plan` — i.e. off `tauri dev` —
 // so the only tree ever collected was the one where the app gets launched, and no worktree had been
-// swept once (#the-gc-never-runs-where-the-garbage-is). `gc` day-stamps itself, so this is ~0ms on
+// swept once (#the-gc-never-runs-where-the-garbage-is). `gc` stamps the tree, so this is ~0ms on
 // repeat runs during iteration, and it can never fail: it swallows everything and exits 0.
+//
+// NOW A `bsc` VERB (#the-disk-and-worktree-surface-moves-into-a-rust-crate). It is resolved through
+// `bscBinary.mjs` — the build tree's own answer to "where is a usable bsc", already used by
+// `record-run.mjs` two steps below for the same reason. Existence is not enough: a ZERO-BYTE `bsc`
+// (what `target/debug/bsc` IS for the seconds it is being linked) execs through bash as an empty
+// script and exits 0 printing nothing, which is indistinguishable from a clean sweep.
+//
+// A MISSING OR UNUSABLE bsc DEGRADES TO NO SWEEP, deliberately, and this is the same trade
+// `record-run` already makes one step away: a gate that could not run without a working `bsc` would
+// be a worse deal than a tree that goes uncollected for one run. The cost is bounded — the next gate
+// with a usable binary collects everything this one skipped, because eligibility is a function of
+// mtime, not of having been offered before.
 try {
-  const gcScript = fileURLToPath(new URL("./gc.mjs", import.meta.url));
-  const gc = spawnSync(process.execPath, [gcScript, "--quiet"], { encoding: "utf8" });
-  if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
+  const bsc = pickUsable(candidatePaths(REPO, homedir(), join), {
+    statSize: (p) => {
+      try {
+        return statSync(p).size;
+      } catch {
+        return null;
+      }
+    },
+    run: (p) => {
+      try {
+        return { status: 0, stdout: execFileSync(p, ["version"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] }) };
+      } catch (err) {
+        return { status: err.status ?? 1, stdout: String(err.stdout ?? "") };
+      }
+    },
+  });
+  if (bsc) {
+    const gc = spawnSync(bsc.path, ["disk", "gc", "--quiet"], { encoding: "utf8" });
+    if (gc.stdout?.trim()) process.stdout.write(`${gc.stdout.trim()}\n`);
+  }
 } catch {
   // a janitor must never redden a gate
 }
@@ -194,13 +302,31 @@ const releaseSlot = needsGateSlot(plan)
 // EVERY step runs, even after one fails. A gate that stops at the first failure hands back a partial
 // verdict, and the whole point here is that the reader can trust what was covered.
 const results = [];
-for (const { label, cmd, args } of gateCommands(plan, base)) {
-  results.push([label, run(label, cmd, args)]);
+for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
+  const { ok, seconds } = run(label, cmd, args, { key, stage });
+  // WHICH TESTS FAILED, so a known-red declaration can excuse the failure it NAMES rather than every
+  // failure in the leg it lives in. Read off nextest's JUnit report (`.config/nextest.toml`) rather
+  // than off stdout, because `run` inherits stdio on purpose and piping would cost cargo's live
+  // progress. Empty means UNKNOWN — `bsc-work`'s `classify` fails closed on it.
+  const failures = ok ? [] : nextestFailures(key);
+  // `key` is the leg's STABLE id — the same one `record-run.mjs` measures under as `gate:<key>`, so a
+  // scoped and a full run of one leg share an identity instead of splitting into two that can never be
+  // compared. It is what a change record's gate evidence is filed under; `label` is prose and may be
+  // reworded ("lint" vs "lint (changed files)") without breaking a reader.
+  results.push({ key: key ?? label, label, ok, seconds, failures });
 }
 
 releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet
 
-const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
+const failed = results.filter((r) => !r.ok).map((r) => r.label);
+writeResult({
+  version: 1,
+  mode: plan.full ? "full" : "scoped",
+  reason: plan.reason,
+  finishedAt: new Date().toISOString(),
+  passed: failed.length === 0,
+  legs: results,
+});
 process.stdout.write(`\n${failed.length ? `GATE FAILED: ${failed.join(", ")}` : "gate passed"}\n`);
 // A failing RUST step may be an artifact problem wearing a compiler error's clothes — an
 // `undefined hidden symbol` link failure passes `cargo check` and looks nothing like a stale

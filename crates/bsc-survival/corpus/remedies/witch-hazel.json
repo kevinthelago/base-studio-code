@@ -1,0 +1,38 @@
+{
+  "id": "witch-hazel",
+  "name": "Witch hazel",
+  "latin": "Hamamelis virginiana",
+  "functions": ["astringent", "hemostatic", "anti_inflammatory"],
+  "regions": ["north-america-east"],
+  "habitat": "Understorey shrub of eastern North American deciduous woodland, often on stream banks and slopes.",
+  "parts": ["bark", "leaf", "twig"],
+  "identify": [
+    "Large shrub or small tree with wavy-toothed, asymmetric oval leaves — the leaf base is noticeably lopsided.",
+    "THE MARK: spidery yellow flowers with four narrow crinkled straps, opening in LATE AUTUMN or winter, often on bare branches. Almost nothing else flowers then.",
+    "Woody seed capsules that split and fling their seeds several metres."
+  ],
+  "lookalikes": [
+    {
+      "name": "Hazel",
+      "latin": "Corylus spp.",
+      "danger": "Low; a harmless and unrelated shrub.",
+      "tell": "Hazel has rounded, doubly-toothed, symmetric leaves, spring catkins and edible nuts. The late-autumn strap-petalled flower is unique to witch hazel."
+    },
+    {
+      "name": "Alder",
+      "latin": "Alnus spp.",
+      "danger": "Low.",
+      "tell": "Alder carries small woody cone-like fruits and grows in wetter ground; the leaf base is symmetric."
+    }
+  ],
+  "preparations": [
+    { "form": "decoction", "method": "Simmer chopped bark and twigs 20 minutes, strain, and cool.", "for_use": "An astringent wash for grazes, bruising, haemorrhoids and insect bites — it tightens tissue and slows capillary ooze." },
+    { "form": "compress", "method": "Soak cloth in the cooled decoction.", "for_use": "Bruises, sprains and swollen skin." }
+  ],
+  "cautions": [
+    "Topical use is the well-attested one. Internal use of strong tannin preparations irritates the gut and, sustained, the kidneys.",
+    "The commercial distillate contains almost no tannin — it is not the same preparation as a bark decoction, whatever the label suggests.",
+    "It is a capillary astringent, not a treatment for a wound that is bleeding freely."
+  ],
+  "evidence": "A long-standing official topical astringent, with pharmacopoeia monographs and reasonable evidence for skin inflammation. The distillate/decoction distinction is real and often ignored."
+}

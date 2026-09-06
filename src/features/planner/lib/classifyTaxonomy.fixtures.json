@@ -1,0 +1,25 @@
+{
+  "note": "GENERATED from the live TypeScript — see classifyTaxonomy.fixtures.gen.test.ts",
+  "appTypes": [
+    "application",
+    "api",
+    "serverless",
+    "static",
+    "desktop",
+    "mobile",
+    "cli",
+    "library",
+    "mcp-server"
+  ],
+  "lifecycles": [
+    "greenfield",
+    "transform",
+    "harden",
+    "maintain",
+    "harvest"
+  ],
+  "systemSources": [
+    "studio",
+    "own"
+  ]
+}
