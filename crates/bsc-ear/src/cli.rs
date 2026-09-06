@@ -301,6 +301,27 @@ Needs a whisper binary: `$BSC_WHISPER_BIN` / `$BSC_WHISPER_MODEL`, or `whisper-c
 model under the models dir. Naming a speaker (which one is you) is a later step; this labels them 0,
 1, 2 in the order they first speak.",
     },
+    CmdDoc {
+        name: "clean",
+        summary: "strip handling thumps and stationary noise (rain/hiss) from a recording",
+        usage: "\
+bsc ear clean <wav>... [--out <dir>] [--json|--pretty]
+
+Removes two kinds of noise so transcription and speaker extraction work on a better signal:
+ · TRANSIENT low-frequency — a phone set down, handling bumps — via a high-pass filter (a thump is
+   almost all sub-80Hz, below the voice).
+ · STATIONARY — rain, hiss, hum — via spectral subtraction: the steady noise spectrum is estimated
+   from the QUIET frames and subtracted, with a floor on every bin so nothing is zeroed (zeroing is
+   what makes 'musical noise').
+
+Writes '<name>.clean.wav' beside each input, or into --out <dir>. Reports the before/after RMS and
+the sub-80Hz energy fraction — the number a set-down thump inflates — so the cleaning is MEASURED,
+not trusted.
+
+IT DOES NOT SEPARATE OVERLAPPING SPEAKERS. Two voices share the same frequencies at the same time,
+so no filter can pull them apart — that is target-speaker extraction, a separate model-driven step.
+This is the model-free clean-up that comes first.",
+    },
 ];
 
 #[derive(Default, Debug)]
@@ -909,6 +930,71 @@ fn labelled_from(dir: &std::path::Path) -> Result<Vec<(String, crate::classify::
         ));
     }
     Ok(out)
+}
+
+fn cmd_clean(a: &Args) -> Result<(), String> {
+    use crate::clean::{self, Options};
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass one or more wav files to clean".into());
+    }
+    let opts = Options::default();
+    let out_dir = a.out.as_ref().map(PathBuf::from);
+    if let Some(d) = &out_dir {
+        std::fs::create_dir_all(d).map_err(|e| format!("could not create {}: {e}", d.display()))?;
+    }
+
+    let mut rows = Vec::new();
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        let cleaned = clean::clean(&samples, sr, &opts);
+        let dest = match &out_dir {
+            Some(d) => d.join(format!(
+                "{}.clean.wav",
+                f.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+            )),
+            None => f.with_extension("clean.wav"),
+        };
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: sr,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&dest, spec).map_err(|e| format!("{e}"))?;
+        for x in &cleaned {
+            w.write_sample(crate::audio::to_i16(*x)).map_err(|e| format!("{e}"))?;
+        }
+        w.finalize().map_err(|e| format!("{e}"))?;
+        rows.push((
+            f.clone(),
+            dest,
+            clean::rms(&samples),
+            clean::rms(&cleaned),
+            clean::low_freq_fraction(&samples, sr, opts.highpass_hz),
+            clean::low_freq_fraction(&cleaned, sr, opts.highpass_hz),
+        ));
+    }
+
+    if a.json || a.pretty {
+        let v: Vec<_> = rows
+            .iter()
+            .map(|(f, dest, r0, r1, l0, l1)| {
+                json!({ "file": f.file_name().and_then(|s| s.to_str()),
+                        "out": dest.file_name().and_then(|s| s.to_str()),
+                        "rms_before": r0, "rms_after": r1,
+                        "low_freq_fraction_before": l0, "low_freq_fraction_after": l1 })
+            })
+            .collect();
+        return print_json(&v, a.pretty);
+    }
+    for (f, dest, r0, r1, l0, l1) in &rows {
+        println!("{}", f.file_name().and_then(|s| s.to_str()).unwrap_or("?"));
+        println!("  → {}", dest.display());
+        println!("  rms           {r0:.5} → {r1:.5}");
+        println!("  <{:.0}Hz energy  {:.1}% → {:.1}%   (handling/rumble removed)", opts.highpass_hz, l0 * 100.0, l1 * 100.0);
+    }
+    Ok(())
 }
 
 fn cmd_classify(a: &Args, p: &Paths) -> Result<(), String> {
@@ -1522,6 +1608,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("features") => cmd_features(&a),
         Some("floor") => cmd_floor(&a, &p),
         Some("classify") => cmd_classify(&a, &p),
+        Some("clean") => cmd_clean(&a),
         Some("transcribe") => cmd_transcribe(&a, &p),
         Some("transcripts") => cmd_transcripts(&a, &p),
         Some("prosody") => cmd_prosody(&a, &p),
@@ -1548,7 +1635,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute"
+                "diarize", "attribute", "clean"
             ]
         );
     }

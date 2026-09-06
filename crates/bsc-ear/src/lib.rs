@@ -14,6 +14,7 @@ pub mod audio;
 pub mod cli;
 pub mod capture;
 pub mod chain;
+pub mod clean;
 pub mod classify;
 pub mod liveness;
 pub mod prosody;
