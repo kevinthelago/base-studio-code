@@ -117,6 +117,74 @@ it toward the live class and produce a confident wrong answer in exactly the cas
 since a phone is the mobile-tunnel case. An uncalibrated pairing is reported as unknown.",
     },
     CmdDoc {
+        name: "floor",
+        summary: "measure the capture chain from its own silence — the mic and room, not the device name",
+        usage: "\
+bsc ear floor [--device <dev>] [--window <seconds>]   # measure and store
+bsc ear floor show [--device <dev>]
+bsc ear floor compare <wav>...
+bsc ear floor sweep --out <playback device>            # what the chain does to a played sound
+
+THE DEVICE NAME IS NOT THE CHAIN. The system can say 'Scarlett Solo USB'. It cannot say there is an
+AT2020 condenser on it, where the gain knob sits, whether the pad or phantom is engaged, or what the
+room sounds like. Two identical interfaces — one on a condenser, one on a dynamic — produce entirely
+different signals under an identical name.
+
+So the chain is measured by what it does when nothing is happening. Self-noise plus room tone has a
+shape: a condenser hisses differently from a laptop microphone, and HVAC prints on the low bands. It
+costs nothing and needs no reference signal.
+
+SHAPE AND LEVEL ARE STORED SEPARATELY, and that is the point. Turning a gain knob moves the level and
+leaves the shape alone, so a knob cannot masquerade as a swapped microphone — a single number would
+make every gain change look like different hardware.
+
+A RECORDING THAT IS NOT SILENCE IS REFUSED. A floor taken over a sound is a signature of the sound,
+and every measurement later normalised against it would be wrong in the same direction with nothing
+saying so. Measured: real speech sits at spectral flux ~1.0 against silence's ~0.6.",
+    },
+    CmdDoc {
+        name: "classify",
+        summary: "what KIND of sound this is — learned from labelled examples, not written down",
+        usage: "\
+bsc ear classify <wav>...
+bsc ear classify train --live-dir <dir>   # one SUBDIRECTORY per class, each holding wavs
+bsc ear classify show
+
+Nearest-centroid over robustly-scaled acoustic features. MEASURED on 319 ESC-50 clips against real
+speech: speech modulates more than every machine class — a vacuum cleaner is three times LOUDER than
+speech while modulating a third as much, which is exactly the case loudness alone cannot see.
+
+LEARNED, NOT HARDCODED. The rule that fell out of those measurements (flux > 0.90 and crest < 12,
+which found 12/12 speech at 1.6% false positives) is a good rule, and writing it down would mean
+editing source to add a class. Learning it means adding recordings.
+
+THREE FEATURES ARE LOGGED because they span orders of magnitude — rms 0.001 to 0.2, crest 4 to 28,
+centroid 1300 to 2800. On a linear scale two quiet sounds would round to identical while two loud
+ones looked far apart, and the classifier would quietly be measuring loudness.
+
+IT ANSWERS `unknown` FREELY. A sound unlike anything it was shown is not forced into the nearest
+bucket: the point of classifying is deciding what to keep, and a confident wrong label is worse for
+that than an admitted gap.",
+    },
+    CmdDoc {
+        name: "features",
+        summary: "the raw acoustic measurements behind classification — level, modulation, crest, flux, centroid",
+        usage: "\
+bsc ear features <wav>... [--json|--pretty]
+
+Prints what each recording measures, before any class is assigned to it.
+
+MODULATION IS THE ONE TO WATCH. It is the fraction of envelope energy at the syllable rate, 2 to 8
+Hz. A talking mouth opens and closes about four times a second; a fan does not modulate at all, a
+keystroke is transient with no envelope, and music modulates on a beat rather than a syllable. That
+number separates 'someone is talking' from 'the room is noisy' far better than loudness, which is
+what the ear currently decides on.
+
+It exists as its own verb because a class should never be assigned before its features have been
+looked at on real recordings. That is how the liveness threshold was found, and it is why liveness
+needed no model.",
+    },
+    CmdDoc {
         name: "prosody",
         usage: "\
 bsc ear prosody [<wav>...] [--dir <path>] [--json|--pretty]
@@ -194,6 +262,7 @@ is no second copy, and anything past the window is already gone.",
 #[derive(Default, Debug)]
 struct Args {
     all: bool,
+    out: Option<String>,
     limit: Option<usize>,
     live_dir: Option<String>,
     replay_dir: Option<String>,
@@ -209,6 +278,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     let (mut a, positional) = args::walk(raw, Args::default(), |flag, a: &mut Args, rest| {
         match flag {
             "--all" => a.all = true,
+            "--out" => a.out = Some(rest.value("--out needs a playback device for the sweep")?),
             "--live-dir" => a.live_dir = Some(rest.value("--live-dir needs a directory of live recordings")?),
             "--replay-dir" => a.replay_dir = Some(rest.value("--replay-dir needs a directory of replayed recordings")?),
             "--json" => a.json = true,
@@ -586,6 +656,320 @@ fn ratios_of(files: &[std::path::PathBuf]) -> Result<Vec<f32>, String> {
     Ok(out)
 }
 
+fn chain_store(p: &Paths, device: &str) -> PathBuf {
+    let safe: String = device
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+    p.root.join("chains").join(format!("{safe}.json"))
+}
+
+/// Record `secs` from a capture device via arecord.
+///
+/// Shelled out rather than opened in-process: the capture path here is a one-shot measurement, and
+/// borrowing the daemon's cpal stream would mean contending with a running ear for the device.
+fn record_wav(device: &str, secs: u32, out: &std::path::Path) -> Result<(), String> {
+    let st = std::process::Command::new("arecord")
+        .args(["-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-d", &secs.to_string()])
+        .arg(out)
+        .output()
+        .map_err(|e| format!("could not run arecord: {e}"))?;
+    if !st.status.success() {
+        return Err(format!(
+            "arecord failed on '{device}': {}",
+            String::from_utf8_lossy(&st.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn cmd_floor(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::chain;
+    let device = a.device.clone().unwrap_or_else(|| "default".into());
+    let store = chain_store(p, &device);
+    let sub = a.positional.get(1).map(String::as_str);
+
+    if sub == Some("show") {
+        let raw = std::fs::read_to_string(&store)
+            .map_err(|_| format!("no floor measured for '{device}' — run `bsc ear floor`"))?;
+        let sig: chain::Signature = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+        println!("device   {}   (what the SYSTEM calls it — not the chain)", sig.device);
+        println!("level    {:.5} rms   ({:.1}s sample)", sig.level, sig.seconds);
+        println!("shape    (fraction of noise energy per band)");
+        for ((lo, hi), v) in chain::BANDS.iter().zip(&sig.shape) {
+            let bar = "#".repeat((v * 60.0).round() as usize);
+            println!("  {:>5}-{:<5}Hz {:>7.4}  {bar}", *lo as u32, *hi as u32, v);
+        }
+        return Ok(());
+    }
+
+    if let Some("compare") = sub {
+        let raw = std::fs::read_to_string(&store)
+            .map_err(|_| format!("no floor measured for '{device}' — run `bsc ear floor` first"))?;
+        let known: chain::Signature = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+        let files: Vec<PathBuf> = a.positional[2..].iter().map(PathBuf::from).collect();
+        if files.is_empty() {
+            return Err("pass wav files to compare against the stored floor".into());
+        }
+        for f in &files {
+            let (s, sr) = read_wav(f)?;
+            let name = f.file_name().and_then(|x| x.to_str()).unwrap_or("?");
+            match chain::signature(&device, &s, sr) {
+                Ok(sig) => {
+                    let d = chain::distance(&known, &sig);
+                    println!(
+                        "  {name:<32} distance {d:.3}  {}",
+                        if d <= chain::SAME_CHAIN { "same chain" } else { "DIFFERENT chain" }
+                    );
+                }
+                Err(why) => println!("  {name:<32} not usable as a floor — {why}"),
+            }
+        }
+        return Ok(());
+    }
+
+    if sub == Some("sweep") {
+        return cmd_sweep(a, p, &device, &store);
+    }
+
+    // Measure.
+    let secs = a.window_min.map(|m| m as u32).unwrap_or(5);
+    println!("recording {secs}s of silence on '{device}' — stay quiet");
+    let tmp = std::env::temp_dir().join(format!("bsc-ear-floor-{}.wav", std::process::id()));
+    record_wav(&device, secs, &tmp)?;
+    let (samples, sr) = read_wav(&tmp)?;
+    let _ = std::fs::remove_file(&tmp);
+    let sig = chain::signature(&device, &samples, sr).map_err(|e| e.to_string())?;
+    if let Some(dir) = store.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
+    }
+    // If a floor already exists, say whether this is the same chain — a swapped microphone or a
+    // moved gain knob is exactly what this is for noticing.
+    if let Ok(prev) = std::fs::read_to_string(&store).and_then(|r| {
+        serde_json::from_str::<chain::Signature>(&r).map_err(std::io::Error::other)
+    }) {
+        let d = chain::distance(&prev, &sig);
+        let gain_db = 20.0 * (sig.level / prev.level.max(1e-9)).log10();
+        println!(
+            "  previous floor: distance {d:.3} ({}), level moved {gain_db:+.1} dB",
+            if d <= chain::SAME_CHAIN { "same chain" } else { "DIFFERENT chain — something was swapped" }
+        );
+    }
+    std::fs::write(&store, serde_json::to_string_pretty(&sig).map_err(|e| format!("{e}"))?)
+        .map_err(|e| format!("could not write {}: {e}", store.display()))?;
+    println!("  level {:.5} rms over {:.1}s", sig.level, sig.seconds);
+    println!("  stored at {}", store.display());
+    Ok(())
+}
+
+/// Play a known sweep, record it, and store what the chain did to it.
+fn cmd_sweep(a: &Args, _p: &Paths, device: &str, store: &std::path::Path) -> Result<(), String> {
+    use crate::chain;
+    let out = a.out.clone().ok_or(
+        "sweep needs an output device: --out <alsa device>. `bsc say devices` lists them, and it \
+         must be one you can actually hear — a sweep played into a disconnected port measures \
+         nothing and would report the chain as deaf",
+    )?;
+    let secs = a.window_min.map(|m| m as f32).unwrap_or(6.0);
+    let sr = 16_000u32;
+    let signal = chain::sweep(secs, sr, 30.0, 7000.0);
+    if signal.is_empty() {
+        return Err("that sweep has no content".into());
+    }
+    let tmp_play = std::env::temp_dir().join(format!("bsc-sweep-{}.wav", std::process::id()));
+    let tmp_rec = std::env::temp_dir().join(format!("bsc-sweep-rec-{}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: sr,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&tmp_play, spec).map_err(|e| format!("{e}"))?;
+    for x in &signal {
+        w.write_sample(crate::audio::to_i16(*x)).map_err(|e| format!("{e}"))?;
+    }
+    w.finalize().map_err(|e| format!("{e}"))?;
+
+    println!("playing a {secs:.0}s sweep on {out}, recording on {device} — silence please");
+    let rec_secs = (secs + 2.0) as u32;
+    let mut child = std::process::Command::new("arecord")
+        .args(["-D", device, "-f", "S16_LE", "-r", "16000", "-c", "1", "-d", &rec_secs.to_string()])
+        .arg(&tmp_rec)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("could not run arecord: {e}"))?;
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    let _ = std::process::Command::new("aplay")
+        .args(["-q", "-D", &out])
+        .arg(&tmp_play)
+        .status();
+    let _ = child.wait();
+
+    let (recorded, rsr) = read_wav(&tmp_rec)?;
+    let _ = std::fs::remove_file(&tmp_play);
+    let _ = std::fs::remove_file(&tmp_rec);
+
+    let src_bands = chain::band_energy(&signal, sr);
+    let rec_bands = chain::band_energy(&recorded, rsr);
+    let resp = chain::response_db(&src_bands, &rec_bands)?;
+
+    println!("\nwhat the chain does to a played sound (dB, relative to its own mean):");
+    for ((lo, hi), d) in chain::BANDS.iter().zip(&resp) {
+        if d.is_finite() {
+            let n = ((d + 20.0).clamp(0.0, 40.0)) as usize;
+            println!("  {:>5}-{:<5}Hz {:>+7.1} {}#", *lo as u32, *hi as u32, d, " ".repeat(n.min(40)));
+        } else {
+            println!("  {:>5}-{:<5}Hz  {:>7} (the sweep did not come back in this band)", *lo as u32, *hi as u32, "--");
+        }
+    }
+    // Attach to the stored floor if there is one, so a chain carries both halves.
+    if let Ok(raw) = std::fs::read_to_string(store) {
+        if let Ok(mut sig) = serde_json::from_str::<chain::Signature>(&raw) {
+            sig.response_db = Some(resp);
+            std::fs::write(store, serde_json::to_string_pretty(&sig).map_err(|e| format!("{e}"))?)
+                .map_err(|e| format!("{e}"))?;
+            println!("\nattached to the stored floor for '{device}'");
+        }
+    } else {
+        println!("\nno stored floor for '{device}' yet — run `bsc ear floor` to keep this with it");
+    }
+    Ok(())
+}
+
+fn model_path(p: &Paths) -> PathBuf {
+    p.root.join("classify.json")
+}
+
+/// Labelled examples from a directory of per-class subdirectories.
+fn labelled_from(dir: &std::path::Path) -> Result<Vec<(String, crate::classify::Features)>, String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+        let e = e.map_err(|e| format!("{e}"))?;
+        if !e.path().is_dir() {
+            continue;
+        }
+        let class = e.file_name().to_string_lossy().to_string();
+        for f in std::fs::read_dir(e.path()).map_err(|e| format!("{e}"))? {
+            let f = f.map_err(|e| format!("{e}"))?.path();
+            if f.extension().is_some_and(|x| x == "wav") {
+                let (s, sr) = read_wav(&f)?;
+                out.push((class.clone(), crate::classify::measure(&s, sr)));
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!(
+            "no labelled audio under {} — expected one SUBDIRECTORY per class, each holding wavs",
+            dir.display()
+        ));
+    }
+    Ok(out)
+}
+
+fn cmd_classify(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::classify;
+    let store = model_path(p);
+    let sub = a.positional.get(1).map(String::as_str);
+
+    if sub == Some("train") {
+        let dir = a.live_dir.clone().ok_or(
+            "training needs labelled audio: --live-dir <dir>, holding one subdirectory per class",
+        )?;
+        let labelled = labelled_from(std::path::Path::new(&dir))?;
+        let reject = a.window_min.map(|m| m as f32).unwrap_or(3.0);
+        let model = classify::train(&labelled, reject)?;
+        std::fs::write(&store, serde_json::to_string_pretty(&model).map_err(|e| format!("{e}"))?)
+            .map_err(|e| format!("could not write {}: {e}", store.display()))?;
+        println!("learned {} class(es) from {} example(s):", model.profiles.len(), labelled.len());
+        for pr in &model.profiles {
+            println!("  {:<20} {:>4} examples", pr.class, pr.examples);
+        }
+        println!("rejecting anything beyond scaled distance {reject}");
+        return Ok(());
+    }
+
+    if sub == Some("show") {
+        let raw = std::fs::read_to_string(&store)
+            .map_err(|_| "no model yet — run `bsc ear classify train --live-dir <dir>`".to_string())?;
+        let m: classify::Model = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+        println!("{:<20} {:>5}  {}", "class", "n", classify::FEATURE_NAMES.join("  "));
+        for pr in &m.profiles {
+            let cells: Vec<String> = pr.centre.iter().map(|c| format!("{c:>7.3}")).collect();
+            println!("{:<20} {:>5}  {}", pr.class, pr.examples, cells.join(" "));
+        }
+        println!("\nscale (per feature): {:?}", m.scale.iter().map(|s| (s * 1000.0).round() / 1000.0).collect::<Vec<_>>());
+        println!("reject beyond: {}", m.reject_beyond);
+        return Ok(());
+    }
+
+    let raw = std::fs::read_to_string(&store)
+        .map_err(|_| "no model yet — run `bsc ear classify train --live-dir <dir>`".to_string())?;
+    let m: classify::Model = serde_json::from_str(&raw).map_err(|e| format!("{e}"))?;
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass one or more wav files to classify".into());
+    }
+    let mut rows = Vec::new();
+    for f in &files {
+        let (s, sr) = read_wav(f)?;
+        rows.push((f.clone(), classify::classify(&classify::measure(&s, sr), &m)));
+    }
+    if a.json || a.pretty {
+        let v: Vec<_> = rows
+            .iter()
+            .map(|(f, v)| json!({ "file": f.file_name().and_then(|s| s.to_str()), "verdict": v }))
+            .collect();
+        let s = if a.pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+        println!("{}", s.map_err(|e| format!("{e}"))?);
+        return Ok(());
+    }
+    for (f, v) in &rows {
+        let name = f.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+        match &v.class {
+            Some(c) => println!(
+                "  {name:<30} {c:<18} d={:.2}{}",
+                v.distance,
+                v.runner_up
+                    .as_ref()
+                    .map(|(r, d)| format!("   (next: {r} at {d:.2})"))
+                    .unwrap_or_default()
+            ),
+            None => println!("  {name:<30} {:<18} d={:.2} — nothing was close enough to claim", "unknown", v.distance),
+        }
+    }
+    Ok(())
+}
+
+fn cmd_features(a: &Args) -> Result<(), String> {
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass one or more wav files".into());
+    }
+    let rows: Vec<_> = files
+        .iter()
+        .filter_map(|f| read_wav(f).ok().map(|(s, sr)| (f.clone(), crate::classify::measure(&s, sr))))
+        .collect();
+    if a.json || a.pretty {
+        let v: Vec<_> = rows
+            .iter()
+            .map(|(f, m)| json!({ "file": f.file_name().and_then(|s| s.to_str()), "features": m }))
+            .collect();
+        let s = if a.pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+        println!("{}", s.map_err(|e| format!("{e}"))?);
+        return Ok(());
+    }
+    println!("{:<30} {:>7} {:>7} {:>6} {:>6} {:>7} {:>9}", "file", "rms", "modul", "crest", "flux", "centr", "fund");
+    for (f, m) in &rows {
+        println!(
+            "{:<30} {:>7.4} {:>7.3} {:>6.1} {:>6.3} {:>7.0} {:>9.2}",
+            f.file_name().and_then(|s| s.to_str()).unwrap_or("?"),
+            m.rms, m.modulation, m.crest, m.flux, m.centroid, m.fundamental_ratio
+        );
+    }
+    Ok(())
+}
+
 fn cmd_liveness(a: &Args, p: &Paths) -> Result<(), String> {
     use crate::liveness;
     let device = a.device.clone().unwrap_or_else(|| "default".into());
@@ -894,6 +1278,9 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("listen") => cmd_listen(&a, &p, true),
         Some("levels") => cmd_levels(&a),
         Some("liveness") => cmd_liveness(&a, &p),
+        Some("features") => cmd_features(&a),
+        Some("floor") => cmd_floor(&a, &p),
+        Some("classify") => cmd_classify(&a, &p),
         Some("transcribe") => cmd_transcribe(&a, &p),
         Some("transcripts") => cmd_transcripts(&a, &p),
         Some("prosody") => cmd_prosody(&a, &p),
@@ -916,7 +1303,8 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "devices", "start", "stop", "status", "listen", "levels", "liveness", "prosody",
+                "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
+                "classify", "features", "prosody",
                 "transcribe", "transcripts", "segments"
             ]
         );
