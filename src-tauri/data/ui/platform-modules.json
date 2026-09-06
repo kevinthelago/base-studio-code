@@ -515,7 +515,6 @@
   "@data/components/app/features/settings/cards/settings-achievementscard.json",
   "@data/components/app/features/settings/cards/settings-agentscard.json",
   "@data/components/app/features/settings/cards/settings-connectgithubcard.json",
-  "@data/components/app/features/settings/cards/settings-consolepagecard.json",
   "@data/components/app/features/settings/cards/settings-defaultmodelcard.json",
   "@data/components/app/features/settings/cards/settings-demostatecard.json",
   "@data/components/app/features/settings/cards/settings-diagnosticscard.json",
