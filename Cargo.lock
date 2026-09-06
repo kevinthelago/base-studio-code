@@ -1245,6 +1245,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-notify"
+version = "0.1.0"
+dependencies = [
+ "bsc-incident",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-perms"
 version = "0.1.0"
 dependencies = [
