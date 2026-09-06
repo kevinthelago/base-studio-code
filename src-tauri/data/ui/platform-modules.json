@@ -589,6 +589,7 @@
   "@data/components/app/features/teams/teams-inspector.json",
   "@data/components/app/features/teams/teams-org-legend.json",
   "@data/components/app/features/teams/teams-overview.json",
+  "@data/components/app/features/teams/teamsgraphhost.json",
   "@data/components/app/features/teams/teamspage.json",
   "@data/components/app/features/tunnel/tunnelsettings.json",
   "@data/components/app/misc/teams-canvas-module.json",
