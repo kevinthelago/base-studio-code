@@ -23,6 +23,7 @@
 import { describe, it, expect } from "vitest";
 import { relativeImportSpecifiers } from "@/shared/lib/runtime/shadow/pageBinding";
 import { planRecords } from "../../../scripts/emit-records.mjs";
+import { blankComments } from "../../../scripts/lib/recordSource.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -323,5 +324,96 @@ describe("a carried test the emitter can never emit still needs its colocated fi
         `point — the colocated file is the only executor there is:\n  ${gaps.join("\n  ")}`,
     ).toEqual([]);
     expect(checked, "the guard examined at least one provides-less record carrying tests").toBeGreaterThan(0);
+  });
+});
+
+
+// ── A MIGRATED NODE TEST'S FILE MAY NOT COME BACK EITHER (`…-tranche-two`) ──────────────────────────
+//
+// The edge arm above has `edgeShadowed` to read, because an edge names the `src` file it was migrated
+// out of. A NODE test carries no such provenance — `tests: [{ name, ext, src }]` and nothing more — so
+// "this record's test used to be a file" is not a question the store can answer, and `plan.shadowed`
+// only sees a file sitting at the record's OWN specifier (`SpectrumAnalyzer.test.tsx`), never one at
+// the name it actually had (`nextTabName.test.ts` → `@/app/chrome/Tabstrip`).
+//
+// What IS mechanical is the content. A migration copies the file's bytes onto the record and deletes
+// the file, so a file whose text is byte-identical to a test the emitter MATERIALIZES is that same
+// test running twice — once from `src/`, once from `.bsc-records/` — with two copies free to drift.
+// That is the failure records exist to remove, and it needs no hand-maintained list of what moved.
+//
+// ⚠️ RESTRICTED TO `plan.tests`, deliberately. `docs/records.md` records fifteen `src/` files that ARE
+// byte-identical to a carried test and MUST keep their file, because `collect_seeds`/`plan_records`
+// can never materialize the record's copy. Those are not in `plan.tests`, so they are not duplicates
+// in the sense that matters: nothing else runs them.
+describe("a migrated node test's file has not come back", () => {
+  /** Every test file under `src/`, as raw text. */
+  const srcTests = import.meta.glob<string>("/src/**/*.{test,spec}.{ts,tsx}", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  });
+
+  it("no file under src/ duplicates a carried test the emitter materializes — that is two live copies", () => {
+    const plan = planRecords();
+    const byText = new Map<string, string>();
+    for (const t of plan.tests as { spec: string; rel: string; src: string }[]) {
+      byText.set(t.src, `${t.spec} → .bsc-records/${t.rel}`);
+    }
+    const dupes: string[] = [];
+    for (const [path, text] of Object.entries(srcTests)) {
+      const where = byText.get(text);
+      if (where) dupes.push(`${path.replace(/^\//, "")} is byte-identical to ${where}`);
+    }
+    expect(
+      dupes,
+      "these files were migrated onto a record and have come back. The record's copy is emitted into " +
+        "`.bsc-records/` and runs there, so the file is a SECOND live copy of the same assertions — " +
+        "delete it, or drop the carried test, but not both:\n  " + dupes.join("\n  "),
+    ).toEqual([]);
+    // Non-vacuity, both sides: a glob that stopped matching and a plan with no emitted tests each look
+    // exactly like a clean sweep from here.
+    expect(Object.keys(srcTests).length, "test files scanned under src/").toBeGreaterThan(100);
+    expect(byText.size, "carried tests the emitter materializes").toBeGreaterThan(100);
+  });
+
+  // ── AND IT MAY NOT SILENTLY CHANGE ENVIRONMENT ──────────────────────────────────────────────────
+  //
+  // `bsc-emit` re-addresses a node test to its RECORD's path, so a test written under jsdom can land
+  // under `**/lib/**` — which `vitest.config.ts` gives to the `node` project. That is the whole reason
+  // the migration rule says a node test moves only when the record keeps it on the same side of the
+  // boundary. The hazard is not the move; it is the move being SILENT.
+  //
+  // `vitest.config.ts` already documents the cure — "a file that genuinely needs a DOM despite living
+  // under `lib/` says so ITSELF, with a `@vitest-environment jsdom` docblock, which takes precedence
+  // over the project's environment" — so this makes that the enforced form: a materialized test that
+  // lands in `node` and reaches for a DOM must DECLARE it. An edge test needs no such arm, because
+  // `bsc-emit` writes an edge back at its original relative path and its project cannot change.
+  it("a carried test emitted into the `node` project either needs no DOM, or declares jsdom", () => {
+    // The `node` project's include, restated: `.bsc-records/**/lib/**/*.test.{ts,tsx}`.
+    const NODE_PROJECT = /(^|\/)lib\//;
+    // A DOM reach that would throw (or quietly assert nothing) with `environment: "node"`.
+    const NEEDS_DOM = /@testing-library\/|\bdocument\.|\bwindow\.|\bscreen\.|[^\w.]render\(/;
+    const DECLARES = /@vitest-environment\s+jsdom\b/;
+    const undeclared: string[] = [];
+    let inNode = 0;
+    for (const t of planRecords().tests as { spec: string; rel: string; src: string }[]) {
+      if (!NODE_PROJECT.test(t.rel)) continue;
+      inNode++;
+      // SCAN A COMMENT-BLANKED COPY. Prose about a rule trips the rule — `docs/records.md` records
+      // four scanners caught by it in one day, and this one made five: `roleModel.test.ts` says
+      // "contradictory instructions in one context window." and `\bwindow\.` matched the full stop.
+      // The DECLARATION is read from the original, because a docblock IS a comment.
+      if (NEEDS_DOM.test(blankComments(t.src)) && !DECLARES.test(t.src)) {
+        undeclared.push(`${t.spec} → .bsc-records/${t.rel} reaches for a DOM the \`node\` project has not got`);
+      }
+    }
+    expect(
+      undeclared,
+      "these carried tests are materialized under `lib/`, which the `node` project claims, and they " +
+        "touch the DOM. Put `// @vitest-environment jsdom` at the top of the test (the mechanism " +
+        "`vitest.config.ts` documents), or move the test to a record on the other side of the " +
+        "boundary:\n  " + undeclared.join("\n  "),
+    ).toEqual([]);
+    expect(inNode, "carried tests materialized into the `node` project").toBeGreaterThan(50);
   });
 });
