@@ -99,6 +99,20 @@ export const SHADOW_PAGES: ShadowPageDef[] = [
     ensurePlatform: () => import("@/features/lan"),
   },
   {
+    pageId: "imaginationwidget",
+    label: "Imagination",
+    // Authored RECORD-FIRST, like the analyzer above: `file: null` is the
+    // designed end state reached at birth rather than at the end of a
+    // migration.
+    rendersFrom: "graph",
+    modules: [{ recordId: "imaginationwidget", file: null }],
+    // An APP SCREEN in the same sense the analyzer is: the shell renders it in
+    // a detached window (`?detach=widget&section=imagination`) rather than the
+    // main one. Its feature composes only shared primitives, so importing the
+    // barrel is what makes the record resolvable to the binding walk.
+    ensurePlatform: () => import("@/features/imagination"),
+  },
+  {
     pageId: "accessibilitypage",
     label: "Accessibility",
     // The ONLY file-rendered entry, and deliberately so. Settings was rolled back to files (#3758) and its

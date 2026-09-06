@@ -545,6 +545,7 @@ dependencies = [
  "bsc-github",
  "bsc-graph",
  "bsc-graph-layout",
+ "bsc-imagine",
  "bsc-lan",
  "bsc-lan-sense",
  "bsc-lan-stream",
@@ -791,6 +792,7 @@ dependencies = [
  "bsc-fleet",
  "bsc-github",
  "bsc-graph",
+ "bsc-imagine",
  "bsc-lan",
  "bsc-llm",
  "bsc-loop",
@@ -1096,6 +1098,10 @@ dependencies = [
 name = "bsc-imagine"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.0",
+ "bsc-cli-util",
+ "bsc-util",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
 ]
