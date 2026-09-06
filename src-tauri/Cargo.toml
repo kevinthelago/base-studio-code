@@ -109,6 +109,8 @@ bsc-lan = { path = "../crates/bsc-lan" }
 # be worse if it could.
 bsc-lan-sense = { path = "../crates/bsc-lan-sense" }
 bsc-lan-stream = { path = "../crates/bsc-lan-stream" }
+bsc-incident = { path = "../crates/bsc-incident" }
+bsc-notify = { path = "../crates/bsc-notify" }
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 bsc-widget = { path = "../crates/bsc-widget" }
 bsc-navigate = { path = "../crates/bsc-navigate" }
