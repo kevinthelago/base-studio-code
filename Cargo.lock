@@ -568,11 +568,14 @@ dependencies = [
  "bsc-github",
  "bsc-graph",
  "bsc-graph-layout",
+ "bsc-imagine",
+ "bsc-incident",
  "bsc-lan",
  "bsc-lan-sense",
  "bsc-lan-stream",
  "bsc-llm",
  "bsc-navigate",
+ "bsc-notify",
  "bsc-perms",
  "bsc-persona",
  "bsc-project",
@@ -814,6 +817,7 @@ dependencies = [
  "bsc-fleet",
  "bsc-github",
  "bsc-graph",
+ "bsc-imagine",
  "bsc-lan",
  "bsc-llm",
  "bsc-loop",
@@ -1119,6 +1123,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-imagine"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.0",
+ "bsc-cli-util",
+ "bsc-util",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-incident"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-json-store"
 version = "0.1.0"
 dependencies = [
@@ -1258,6 +1282,16 @@ dependencies = [
  "reqwest 0.12.28",
  "roxmltree",
  "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-notify"
+version = "0.1.0"
+dependencies = [
+ "bsc-incident",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
 ]

@@ -54,6 +54,7 @@ bsc-sound = { path = "../bsc-sound" }
 bsc-say = { path = "../bsc-say" }
 # `bsc ear` — the listening half of the local voice loop.
 bsc-ear = { path = "../bsc-ear" }
+bsc-imagine = { path = "../bsc-imagine" }
 bsc-teams = { path = "../bsc-teams" }
 bsc-network = { path = "../bsc-network" }
 # `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state.
