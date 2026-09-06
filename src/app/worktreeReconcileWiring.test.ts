@@ -7,12 +7,27 @@
 // So this asserts the WIRING — and specifically the PAYLOAD, because a test that only checks the
 // command fired would still pass if the argument were accepted and never sent.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import algorithmsSeed from "@data/knowledge/algorithms.json";
 
-const bootSrc = readFileSync(join(__dirname, "useAppBoot.ts"), "utf8");
+/** `useAppBoot` is a RECORD now (`the-frontend-modules-that-are-still-files-become-records`), so its
+ *  source is the seed's `code`, not a file. FILE FIRST and record second, which is the same "src wins"
+ *  rule the emitter follows — a source-asserting test must read whichever copy is live, or it asserts
+ *  about a body nobody runs. Reading NEITHER is a hard failure: an empty string satisfies every
+ *  `not.toContain` below, so a silent miss would read as a pass. */
+function moduleSource(file: string, provides: string): string {
+  const onDisk = join(__dirname, file);
+  if (existsSync(onDisk)) return readFileSync(onDisk, "utf8");
+  const rec = (algorithmsSeed as { implementations: { provides?: string; code?: string }[] })
+    .implementations.find((i) => i.provides === provides);
+  if (!rec?.code) throw new Error(`no file ${onDisk} and no seed record providing ${provides}`);
+  return rec.code;
+}
+
+const bootSrc = moduleSource("useAppBoot.ts", "@/app/useAppBoot");
 
 /** The exact call the boot effect makes, replayed against the real `safeInvoke`. Driving the hook
  *  itself would need the whole app shell mounted; this exercises the same seam the effect uses. */
