@@ -13,6 +13,9 @@ graph-materialize = { path = "../graph-materialize" }
 
 [lib]
 name = "bsc_data"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [features]
 # DuckDB-backed store is on by default. The schema / DDL / connector / coercion

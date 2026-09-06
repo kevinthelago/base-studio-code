@@ -11,7 +11,7 @@ serde_json = "1"
 
 [lib]
 name = "bsc_record"
-path = "src/lib.rs"
+path = "../graph-materialize/crate_root.rs"
 
 # serde_json only. This is deliberately NOT in `bsc-util`: that crate's contract is "std only, no
 # dependencies, so any CLI can pull it in for free", and adding serde_json would quietly break it.

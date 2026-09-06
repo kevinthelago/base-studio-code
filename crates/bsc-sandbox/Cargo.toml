@@ -17,6 +17,9 @@ name = "bsc_sandbox"
 # `cargo check -p bsc-sandbox` a couple of seconds rather than a couple of minutes. `cli` pulls in
 # the two leaf crates every `bsc-*` CLI already pays for. serde_json is free here — bsc-cli-util
 # already carries it as a real (non-build) dependency, so this adds no new unit to the build.
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 [dependencies]
 bsc-cli-util = { path = "../bsc-cli-util" }
 bsc-util = { path = "../bsc-util" }

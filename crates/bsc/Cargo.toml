@@ -8,7 +8,7 @@ description = "The unified base-studio-code CLI (#1877): one binary, `bsc <comma
 # Single binary named `bsc` — the one sidecar bundled into the app.
 [[bin]]
 name = "bsc"
-path = "src/main.rs"
+path = "../graph-materialize/crate_root.rs"
 
 [features]
 # `bsc data …` (the DuckDB canonical model) is on by default for the shipped app; a lean build can

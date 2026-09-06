@@ -9,7 +9,7 @@ build = "../graph-materialize/build.rs"
 # like bsc-plan.
 [[bin]]
 name = "bsc-agent"
-path = "src/main.rs"
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 # Shared leaf utilities (#1646): base dir + epoch clock + civil-date formatting.

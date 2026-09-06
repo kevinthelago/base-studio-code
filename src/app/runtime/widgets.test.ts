@@ -9,7 +9,24 @@ import { WIDGETS, widgetById } from "./widgets";
 // Paths are resolved from the repo root (vitest's cwd) rather than from
 // import.meta.url: this file runs under jsdom, where import.meta.url is not a
 // file: URL and readFileSync refuses it.
-const rustSrc = readFileSync("crates/bsc-widget/src/lib.rs", "utf8");
+//
+// AND THE RUST SIDE IS A RECORD, not a file. `crates/bsc-widget/src/lib.rs` no
+// longer exists (`the-crate-root-implementations-move-into-the-graph`): the crate
+// root is a record in the committed store, which is what
+// `crates/graph-materialize/build.rs` materializes for the compiler. So this still
+// reads the OTHER SIDE'S OWN SOURCE — it reads it from where that source now lives.
+// Same pattern as `recordResolvers.test.ts`, keyed on `src` because that is the path
+// this test used to open and is what says "the same module".
+const rustSrc = ((): string => {
+  const store = JSON.parse(readFileSync("graph/algorithms.json", "utf8")) as {
+    implementations?: { src?: string; code?: string }[];
+  };
+  const rec = (store.implementations ?? []).find((i) => i.src === "crates/bsc-widget/src/lib.rs");
+  // NON-VACUITY: a store that parsed to nothing, or a record whose `src` moved, must fail LOUDLY
+  // here rather than as an empty catalogue that reads like the ids were deleted.
+  if (!rec?.code) throw new Error("no record in graph/algorithms.json has src crates/bsc-widget/src/lib.rs");
+  return rec.code;
+})();
 
 /** Ids declared in the Rust catalogue, read from its source. */
 function rustWidgetIds(): string[] {
