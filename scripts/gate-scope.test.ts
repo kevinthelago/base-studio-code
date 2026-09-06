@@ -150,7 +150,9 @@ describe("gate scope", () => {
 
   it("builds the scoped frontend commands against the base", () => {
     const cmds = gateCommands(plan(["src/features/x/lib/y.ts"]), "develop");
-    expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["typecheck", "lint", "vitest"]);
+    // `records` leads because the claim census is unconditional — it is not scoped by what changed, so
+    // it is present for every plan. The three that follow ARE the scoped frontend set this test is about.
+    expect(cmds.map((c) => c.label.split(" ")[0])).toEqual(["records", "typecheck", "lint", "vitest"]);
     expect(cmds.find((c) => c.label.startsWith("vitest"))?.args).toEqual([
       "vitest", "run", "--changed", "develop",
     ]);
@@ -334,12 +336,45 @@ describe("graph step", () => {
     expect(without.some((l) => l.startsWith("graph ("))).toBe(false);
   });
 
-  it("carries all three halves — nodes compile, the repo store is current, the kits agree", () => {
+  // A crate's OWN manifest decides whether a graph-carried `[[test]]` target is compiled at all, so
+  // editing one can stop a test running without touching a line of source
+  // (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`). Measured: dropping the entry left
+  // nextest reporting 59 passed where it had run 67, all green.
+  it("runs when a crate manifest moves — that is what decides if a carried test is compiled", () => {
+    expect(plan(["crates/bsc-lan-stream/Cargo.toml"]).runGraph).toBe(true);
+    expect(plan(["scripts/graph-rust-tests.mjs"]).runGraph).toBe(true);
+    // A crate's SOURCE still does not, so the rule stayed a rule rather than becoming "any crate file".
+    expect(plan(["crates/plandb/src/lib.rs"]).runGraph).toBe(false);
+  });
+
+  it("carries all four halves — nodes compile, the repo store is current, the kits agree, the rust test edges run", () => {
     const cmds = graphCommands();
-    expect(cmds).toHaveLength(3);
+    expect(cmds).toHaveLength(4);
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
     expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
+    expect(cmds[3].args).toContain("scripts/graph-rust-tests.mjs");
+  });
+
+  // THE CLAIM CENSUS IS NOT SCOPED, and that is deliberate — see the comment on it in gateScope.mjs.
+  // Every other leg asks "could what I changed have broken this?"; this one catches a record re-claiming
+  // a specifier from a store no branch touches, so scoping it by changed files would make it blind to
+  // its own reason for existing. `detachedwindow` was re-claimed with zero repo files changed.
+  it("runs the claim census in BOTH tiers, whatever changed", () => {
+    const scoped = gateCommands(plan(["README.md"]), "develop");
+    const full = gateCommands({ ...plan(["README.md"]), full: true }, "develop");
+    for (const [name, cmds] of [["scoped", scoped], ["full", full]] as const) {
+      const leg = cmds.find((c) => c.key === "graph-claim-census");
+      expect(leg, `the claim census must run in the ${name} tier`).toBeDefined();
+      expect(leg!.cmd).toBe("bsc");
+      expect(leg!.args).toEqual(["ui", "census"]);
+    }
+  });
+
+  // It is NOT one of the graph legs — those are scoped by `runGraph`, which is the scoping this one
+  // must not inherit. Pinned so a future tidy-up does not fold it back in.
+  it("is not folded into the scoped graph legs", () => {
+    expect(graphCommands().some((c) => c.key === "graph-claim-census")).toBe(false);
   });
 
   // Adding a case to the contract must re-run the check that reads it, or the vector grows while

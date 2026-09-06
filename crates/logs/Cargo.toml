@@ -2,11 +2,19 @@
 name = "logs"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Unified log-query engine for base-studio-code (#1607) — reads the app's per-session event streams (tools/skills/mcp/hooks/cost/coord/activity) and powers the `bsc-logs` CLI + the desktop observability commands."
 
 # The core engine (no Tauri) so the CLI + the desktop app share one reader.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "logs"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 # Shared leaf utilities (#1646): the one home-dir resolver + civil-date parsing.

@@ -292,7 +292,16 @@ base-studio-code/
 ├── src-tauri/               # Rust backend (Tauri v2)
 │   ├── Cargo.toml           # workspace root
 │   ├── tauri.conf.json
-│   └── src/                 # ONE FOLDER PER SUBSYSTEM — the folder tree IS the architecture
+│   └── src/                 # ONE FOLDER PER SUBSYSTEM — but the FOLDERS ARE RECORDS, NOT DIRECTORIES
+│                            #   (`src-tauri-compiles-from-the-graph`). 138 modules moved into
+│                            #   `graph/algorithms.json`; `src-tauri/src/` holds FOUR files — lib.rs,
+│                            #   main.rs, tests.rs and one undeclared orphan. A record's module path
+│                            #   IS its old file path, so every path below still names where a module
+│                            #   BELONGS and `crate::console::pty` still resolves — you just open it
+│                            #   with `bsc graph impl get src-tauri--console--pty--mod.rs` rather than
+│                            #   with an editor. build.rs calls `graph_materialize::emit_when_adopted()`
+│                            #   as a fifth job (a package gets exactly ONE build script, and this one
+│                            #   was taken), which writes `$OUT_DIR/crate.rs` for lib.rs to `include!`.
 │       ├── main.rs          #   binary entry → app::run()
 │       ├── lib.rs           #   crate root: module decls + the leaf-helper prelude (#1918; no module aliases)
 │       ├── prelude.rs        #   the crate's named leaf-helper prelude (paths/git/shell/fs/…), `use crate::prelude::*`
@@ -315,6 +324,11 @@ base-studio-code/
 │   ├── skilldb/             #   global skills + task-groups store (SQLite) + bsc skill CLI
 │   ├── logs/                #   unified log/perf/cost engine + bsc logs CLI (#1607)
 │   ├── compliance/          #   compliance-standards store + bsc compliance CLI & bsc mcp compliance server
+│   ├── bsc-security/        #   the SECURITY surface (bsc security), widened from `cve`: vulnerable dependencies
+│   │                        #   (OSV.dev) + leaked credentials (working tree AND git history), emitted as ONE
+│   │                        #   normalized Finding so detectors rank against each other. A secret is redacted at
+│   │                        #   construction and NEVER stored raw — findings reach append-only plan notes. `bsc cve`
+│   │                        #   is a deprecated alias whose exit-code contract still gates CI and the install hook.
 │   ├── research/            #   literature research + bsc mcp research server
 │   ├── bsc-news/            #   LOW-TRUST news layer (bsc news): poll a fixed outlet roster over RSS/news-sitemaps,
 │   │                        #   retain EVERY fetched version (so a stealth edit stays observable), compute the framing
@@ -324,6 +338,20 @@ base-studio-code/
 │   │                        #   PERSON / PLACE / CIRCUMSTANCE (gazetteer places match demonyms + cities; a circumstance
 │   │                        #   FAMILY expands to its members), and `entities` ranks what is in the store so a filter is
 │   │                        #   reachable without already knowing the name.
+│   ├── bsc-say/             #   SPEECH OUT (bsc say): a provider trait over Kokoro-82M (neural, ONNX via `ort`,
+│   │                        #   Apache-2.0, 55 voices), piper, and the OS speech service as an always-present floor.
+│   │                        #   Resolution is CAPABILITY-PROBED, never configured — the best engine that actually
+│   │                        #   resolves wins, and an explicit `--provider` is honoured or refused but never silently
+│   │                        #   swapped. Kokoro takes PHONEMES, not text, so the crate owns the whole chain:
+│   │                        #   text → IPA (espeak-ng, 133 languages) → token ids → ONNX → 24kHz. `--ipa` hands it
+│   │                        #   phonemes directly, which is the `<phoneme>` capability Amazon's SSML sells.
+│   ├── bsc-ear/             #   SPEECH IN (bsc ear): always-on capture — NOT push-to-talk and NOT wake-word, because
+│   │                        #   the value is catching the half-formed thought you did not know to record. cpal →
+│   │                        #   voiced-segment detection → bounded wav segments. Everything that DECIDES anything is
+│   │                        #   pure and needs no microphone to test: `segment` (hysteresis, hangover, pre-roll, a
+│   │                        #   noise floor frozen while recording), `retention` (the window is a FUNCTION, not a
+│   │                        #   README paragraph) and `prosody` (pitch/effort/rate → arousal as a z-score against the
+│   │                        #   SPEAKER's own habit; it deliberately does not classify emotion).
 │   ├── llm/                 #   model-agnostic LlmProvider abstraction (pkg bsc-llm)
 │   ├── bsc-agent/           #   model-agnostic agent runtime
 │   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI
@@ -674,8 +702,62 @@ Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)
 Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc/`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
 
-**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`; `bsc teams model <team> <node> <tier>` overrides ONE placement's model, where `bsc persona model` moves an identity's default everywhere it is placed), `bsc project` (project-hub list/published), and `bsc files` (file tree + `read`, the root-confined file-text
+**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`; `bsc teams model <team> <node> <tier>` overrides ONE placement's model, where `bsc persona model` moves an identity's default everywhere it is placed), `bsc project` (project-hub list/published), `bsc say` (speech OUT — the neural voice, an output device it remembers, and `--ipa` for phoneme-level control), `bsc ear` (speech IN — always-on capture, `levels` to find a device that actually hears, `prosody` for arousal), and `bsc files` (file tree + `read`, the root-confined file-text
 verb a session reaches for when neither harvest lifts a module — #4161). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
+
+### The voice loop — it speaks, it listens, and none of it leaves the machine
+
+`bsc say` and `bsc ear` are the two halves. Maintainer's decisions, which are settled and should not
+be relitigated: **fully local always** (no transcript or sample reaches a third party on any default
+path), **always-on rather than push-to-talk or a wake word** — the value is catching the half-formed
+thought you did not know to record, and a wake word means you had already decided to record it — and
+a **short rolling audio window**, so a stretch can be re-transcribed by a better model later without
+keeping an indefinite recording of the room.
+
+**MEASURED on this machine (RX 9070 XT, RDNA4), because the numbers decide the design:**
+
+| | |
+|---|---|
+| Whisper `large-v3-turbo`, CPU | 2.4× realtime — *slower than realtime on shorter clips* |
+| Whisper `large-v3-turbo`, **Vulkan** | **37.7× realtime** (encode step 43× faster) |
+| Kokoro-82M TTS, CPU | 4.5× realtime |
+
+**The GPU path is VULKAN, not ROCm.** ROCm is not installed and does not need to be; RADV picked up
+`GFX1201` with fp16, and Mesa was already present. whisper.cpp needs `cmake`, `libvulkan-dev`,
+`glslc` and `spirv-headers` to build that backend. A model that cannot keep up with realtime is
+disqualifying for always-on capture — you fall permanently behind — so this is what makes the best
+model usable rather than a tradeoff against `base.en`.
+
+**Four traps, each of which cost real time to find:**
+
+- **A device being PRESENT says nothing about it being connected to a human**, and this bites on both
+  sides. `bsc ear levels` exists because enumeration cannot distinguish a live capture device from a
+  dead one — measured here, the system *default*, the USB interface and the headset all delivered
+  digital silence while only the onboard input was live, and an ear pointed at a silent device
+  reports LISTENING forever, looking exactly like a quiet room. On the output side there is no
+  equivalent probe, because you cannot measure whether a human heard something: `bsc say` exits 0
+  whether or not anyone was in earshot, so it lets you choose an output once and remembers it.
+- **ALSA presents four physical inputs as 27 devices** — `hw:`, `plughw:`, `front:`, `surround*:`,
+  `iec958:`, `dsnoop:` and `sysdefault:CARD=` are routing variants of the same card, not choices. It
+  also writes its own diagnostics straight to stderr while enumerating. Both are filtered. And
+  probing a ROUTED node takes the hardware with it, hiding the hardware node from the rest of a
+  sweep, so hardware is probed first.
+- **Whisper hallucinates on non-speech**, characteristically as "Thank you." — and `prosody` finds
+  those same segments have no voiced content. Two independent measurements agreeing nothing was said
+  is a free hallucination filter, and worth keeping rather than smoothing over.
+- **Cleaning for ASR and cleaning for prosody are not the same chain.** The 70–900 Hz band-limiting
+  that makes pitch detection work would destroy the zero-crossing-rate feature that stands in for
+  spectral tilt, so pitch reads a filtered copy while loudness and effort read the raw signal.
+
+**What arousal is and is not.** `bsc ear prosody` measures pitch, pitch range, loudness, effort and
+rate, and combines them into a z-score **against the speaker's own habit** — a quiet person at their
+most animated may never reach a loud person's resting level, and a per-speaker baseline is also the
+only thing immune to preamp gain. It deliberately does **not** classify emotion: categorical models
+benchmark near 70% on *acted* corpora, collapse on spontaneous speech, and emit a label nothing can
+argue with. Valence is absent for the same reason — it is the dimension acoustic models are worst at,
+and the transcript carries it better. Measured against a real 23-segment corpus, the composite tracks
+f0 range at r=+0.77 and **loudness at r=−0.06**, so the loudness weight is spent on mic distance
+rather than affect and should be revisited against a second speaker.
 
 ### GitHub-readiness (#297 S1)
 - **GitHub-readiness probe**: on launch each claude-launching pane probes `gh`/`git` on PATH + `gh auth`; if not ready it shows a dismissible amber banner in the pane so the gap surfaces before the agent hits it mid-task.

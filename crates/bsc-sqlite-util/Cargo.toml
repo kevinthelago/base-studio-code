@@ -2,11 +2,19 @@
 name = "bsc-sqlite-util"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Shared helpers for the base-studio-code SQLite CLI+lib trio (plandb/skilldb/logs and their bsc-* binaries) — JSON value-list (de)serialization, home-dir resolution, JSON printing, and object-or-array stdin reads (#1621)."
 
 # Lib only — no binaries. The hyphenated package name maps to the `bsc_sqlite_util` crate name.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "bsc_sqlite_util"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [features]
 # `conn` pulls in rusqlite and the shared connection PLUMBING (open + busy_timeout, `:memory:`-aware

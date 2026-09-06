@@ -2,10 +2,18 @@
 name = "bsc-mem"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "The MEMORY surface (`bsc mem`) — app heap and build cost, the counterpart to `bsc perf`."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_mem"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 # The shared CLI scaffold: CmdDoc help, emit(), resolve_store_path.

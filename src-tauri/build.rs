@@ -4,7 +4,49 @@ fn main() {
     ensure_sidecar_placeholder();
     stage_config_seed();
     ensure_bundled_seeds();
+    materialize_graph_modules();
     tauri_build::build()
+}
+
+/// Materialize this crate's graph records into `$OUT_DIR/crate.rs`, the fifth job of a build script
+/// that already had four.
+///
+/// ## Why this is a CALL and not a `build =` key
+///
+/// The other 54 migrated crates opt in with one line — `build = "../graph-materialize/build.rs"` —
+/// pointing at a shared FILE. A package gets exactly ONE build script, and this one already has its
+/// own (`ensure_sidecar_placeholder`, `stage_config_seed`, `ensure_bundled_seeds`,
+/// `tauri_build::build`), so that route was closed. `graph-materialize` is now a real package as well
+/// as a shared file — `build.rs` and `src/lib.rs` there `include!` the same `plan.rs` and `emit.rs` —
+/// so calling it runs the identical source the other 54 compile, and this crate emits by exactly the
+/// same rules.
+///
+/// Note this manifest has no `build` key at all; cargo auto-detects `build.rs`. That is why the
+/// collision was invisible to anyone comparing manifests.
+///
+/// ## Why `emit_when_adopted` and not `emit`
+///
+/// `emit()` is a hard error when a crate opted in and owns no record, which is right for a crate whose
+/// `lib.rs` `include!`s the result — an empty module would surface as a wall of unresolved paths
+/// several steps downstream. `src-tauri` owns ZERO records today and its `lib.rs` `include!`s nothing,
+/// so it is wired AHEAD of its first record: the selection is empty, nothing is written, and the build
+/// is unaffected. The day a module is harvested into the store, this call starts emitting it.
+///
+/// ## What it costs, measured
+///
+/// It puts `graph/algorithms.json` on this crate's `rerun-if-changed` list — which it must, because
+/// `stage_config_seed` above already prints rerun directives, and the first one printed REPLACES
+/// cargo's default "re-run when anything in the package changes"; without this the first record ever
+/// authored here would not re-run this script and nothing would say so.
+///
+/// The fear is that a record edit anywhere then re-links the app, which is the most expensive link in
+/// the workspace. MEASURED 2026-09-04 in a warm worktree, BEFORE this call existed: `touch
+/// graph/algorithms.json && cargo build -p base-studio-code` already recompiled 33 of this crate's
+/// path dependencies and re-linked the app — 23.7s / 11.6s / 15.1s over three runs, ~1.64 GB peak RSS.
+/// A third of the app's dependency tree materializes from that store, so the link was already being
+/// paid on every record edit; what this adds is one build-script run.
+fn materialize_graph_modules() {
+    graph_materialize::emit_when_adopted();
 }
 
 /// The seeds shipped as bundle RESOURCES, mirroring `bsc_util::packaged::RUNTIME_SEEDS`.
@@ -158,6 +200,20 @@ fn stage_config_seed() {
     if let Err(e) = fs::create_dir_all(&dest) {
         panic!("could not create the staged config seed at {}: {e}", dest.display());
     }
+
+    // WATCH THE DATA ROOT ITSELF, not only the dirs inside it.
+    //
+    // The per-dir watches below are emitted for each directory THIS RUN SAW, so a directory that did
+    // not exist on the previous run is in nobody's watch list: cargo does not re-run this script, the
+    // staged tree keeps its old contents, and `EMBEDDED` has no entry for the new dir. Cargo re-runs
+    // when a watched DIRECTORY's entries change, so watching the root is what makes a newly added
+    // subdir visible the first time.
+    //
+    // MEASURED on `data/steward/`: `load_str("steward/claude.md")` returned empty for a file plainly on
+    // disk, and the error read "seed is missing or empty" — a missing FILE, not a stale build. The
+    // author usually stumbles into a rebuild and never sees it; a CLEAN checkout does not, which is how
+    // this reached `.promote-gate` and blocked a promote while the authoring worktree stayed green.
+    println!("cargo:rerun-if-changed={}", src.display());
 
     let entries = match fs::read_dir(&src) {
         Ok(e) => e,

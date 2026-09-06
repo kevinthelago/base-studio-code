@@ -19,40 +19,59 @@
 //! is kept in the source as documentation of intent -- and would start being
 //! enforced for free if rustdoc ever stabilises the check -- but it is NOT
 //! what makes the guarantee hold. This test is.
+//!
+//! ## Where the source it scans lives
+//!
+//! This crate's modules are RECORDS in `graph/algorithms.json`, not files under
+//! `src/`. So the scan reads what the COMPILER actually reads: the materialized
+//! `$OUT_DIR/crate.rs` emitted by `graph-materialize/build.rs`, plus the one
+//! module that stays a real file (`src/lib.rs`). Walking `src/` after the
+//! migration would find one file and report zero findings, which reads as a
+//! pass -- the exact silent-scanner failure the population floors below exist
+//! to make impossible.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            rust_sources(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
+/// Every module of this crate, as `(name, source text)`.
+///
+/// The materialized file is split on the marker `graph-materialize` emits at
+/// the head of every module (`// record `<id>` — line N here is …`), so an
+/// offender is named by its RECORD id rather than by a filename that no longer
+/// exists. Nested modules (`adapters::*`) get their own section, because the
+/// marker is emitted per unit at every depth.
+fn crate_sections() -> Vec<(String, String)> {
+    let materialized = Path::new(env!("OUT_DIR")).join("crate.rs");
+    let text = std::fs::read_to_string(&materialized).unwrap_or_else(|e| {
+        panic!("cannot read the materialized crate at {}: {e}", materialized.display())
+    });
+
+    let mut sections: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        if let Some(id) =
+            line.trim_start().strip_prefix("// record `").and_then(|r| r.split('`').next())
+        {
+            sections.push((id.to_string(), String::new()));
+        } else if let Some(last) = sections.last_mut() {
+            last.1.push_str(line);
+            last.1.push('\n');
         }
     }
+
+    // The crate root stays a real file; scan it alongside the records.
+    let lib = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("lib.rs");
+    sections.push((
+        "src/lib.rs".to_string(),
+        std::fs::read_to_string(&lib).expect("crate root is readable"),
+    ));
+
+    sections
 }
 
 /// The `use` lines inside every ```` ```compile_fail ```` fence in this crate,
-/// paired with the file they came from.
+/// paired with the module they came from.
 fn imports_inside_compile_fail_fences() -> Vec<(String, String)> {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut files = Vec::new();
-    rust_sources(&src, &mut files);
-    files.sort();
-
     let mut found = Vec::new();
-    for file in files {
-        let text = std::fs::read_to_string(&file).expect("source file is readable");
-        let name = file
-            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .unwrap_or(&file)
-            .display()
-            .to_string();
-
+    for (name, text) in crate_sections() {
         let mut inside = false;
         for line in text.lines() {
             // Doc-comment fences are `/// ```…` or `//! ```…`; strip the
@@ -86,11 +105,25 @@ fn imports_inside_compile_fail_fences() -> Vec<(String, String)> {
 
 #[test]
 fn every_compile_fail_doctest_imports_this_crate_by_its_real_name() {
+    let sections = crate_sections();
+
+    // FLOOR ONE: the scanner is reading the crate at all. A materialized file
+    // that failed to emit, or a marker whose format drifted, yields zero
+    // sections -- and a scan of nothing finds nothing, which reads as a pass.
+    assert!(
+        sections.len() >= 15,
+        "found only {} module section(s) to scan, so this scanner is not reading \
+         the crate and its silence means nothing. This crate's modules are records \
+         in graph/algorithms.json, materialized into $OUT_DIR/crate.rs by \
+         graph-materialize/build.rs; the split marker is `// record `<id>``. Found: {:?}",
+        sections.len(),
+        sections.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+    );
+
     let imports = imports_inside_compile_fail_fences();
 
-    // A scanner that silently stopped matching reports zero findings, which
-    // reads as a pass. Assert the population first, so the guard fails loudly
-    // if the fence syntax or the doc-comment style ever changes underneath it.
+    // FLOOR TWO: the fence parser still matches. A scanner that silently
+    // stopped matching reports zero findings, which also reads as a pass.
     assert!(
         imports.len() >= 2,
         "found only {} `use` line(s) inside compile_fail fences, expected at least 2 \

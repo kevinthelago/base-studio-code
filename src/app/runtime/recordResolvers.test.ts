@@ -16,7 +16,8 @@
 //   e2e/vite.config.ts     its OWN config, outside the root tsconfig. Retiring `Spacer` broke the whole
 //                          Playwright harness because this one was missed.
 //   reactUiKit.gen.test.ts the kit generator walks the import graph itself.
-//   crates/bsc-ui/src/emit.rs  the RUST closure walker (`bsc ui emit`). The SEVENTH, and the only one
+//   graph/algorithms.json  the RUST closure walker (`bsc ui emit`), record `bsc-ui--emit.rs`. The
+//                          SEVENTH, and the only one
 //                          outside the TS build: it vendors an alias-free tree by resolving each `@/…`
 //                          against the packaged kit artifact overlaid with the store, so a module that
 //                          exists only as a record still has to be reachable. When it was not, an alias
@@ -65,7 +66,21 @@ describe("record resolvers (#3604)", () => {
   // dropped, the emit walker goes back to being watched by a single-component test that a retired module
   // in some OTHER closure would slip straight past.
   it("the Rust emit walker still has its whole-kit closure guard", () => {
-    const emit = read("crates/bsc-ui/src/emit.rs");
+    // `bsc-ui` COMPILES FROM THE GRAPH now, so `crates/bsc-ui/src/emit.rs` no longer exists — the
+    // module is the record `bsc-ui--emit.rs` in the repo store, which is the file
+    // `crates/graph-materialize/build.rs` actually materializes for the compiler. Reading the store is
+    // therefore the same evidence this assertion always wanted, taken one step closer to the source of
+    // truth; reading the file would now be reading nothing at all.
+    const store = JSON.parse(read("graph/algorithms.json")) as {
+      implementations?: { id?: string; code?: string }[];
+    };
+    const impls = store.implementations ?? [];
+    // NON-VACUITY, twice over: a store that parsed to nothing, or a record id that has been renamed,
+    // must fail LOUDLY here. A `?? ""` fallback would turn either into a silent `toContain` failure
+    // that reads as "the guard was dropped" and sends the next reader to the wrong place.
+    expect(impls.length).toBeGreaterThan(100);
+    const emit = impls.find((i) => i.id === "bsc-ui--emit.rs")?.code;
+    expect(emit, "no `bsc-ui--emit.rs` record in graph/algorithms.json").toBeTypeOf("string");
     expect(emit).toContain("fn the_whole_packaged_kit_plans_an_alias_free_closure");
     expect(emit).toContain("unvendored_aliases");
   });

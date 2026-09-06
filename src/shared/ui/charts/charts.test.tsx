@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StatCard, fmt } from "./";
+import { LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StatCard, fmt } from "@/shared/ui/charts";
 
 describe("chart primitives smoke", () => {
   it("LineArea renders an svg with a path per series", () => {

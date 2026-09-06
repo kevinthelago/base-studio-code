@@ -1,0 +1,36 @@
+[package]
+name = "bsc-imagine"
+version = "0.1.0"
+edition = "2021"
+build = "../graph-materialize/build.rs"
+description = "The imagination feed — what the ear heard, as pictures. One entry is a thought: the transcript that arrived, the scene inferred from it, and the image rendered for that scene. Pure: the tier ladder, what is worth drawing, and the bound on how long a thought is kept. Rendering and the transcript tail wrap this crate; they never live inside it."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
+[lib]
+name = "bsc_imagine"
+# PURE. No I/O, no clock, no GPU, no model, no microphone — time and the feed's contents are
+# arguments, so every rule is answerable from a constructed sequence. The renderer and the
+# transcript tail wrap this crate.
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# The feed is append-only JSONL beside its images — see the `store` module.
+serde_json = "1"
+# The CLI half: the renderer and the scene model are separate processes this crate talks to.
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-util = { path = "../bsc-util" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+base64 = "0.23"
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints.clippy]
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"

@@ -2,10 +2,25 @@
 name = "bsc-rf"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "`bsc rf` — DEFENSIVE RF monitoring: detect radio jamming and RF denial-of-service against 2.4/5 GHz WiFi from a commodity adapter. Reads the radio's own telemetry (nl80211 survey occupancy, monitor-mode radiotap frame statistics) and fuses several weak signals into a verdict that carries its evidence. Nothing here transmits — there is no injection, no deauth and no active probing path, and a test asserts it."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
 
 [lib]
 name = "bsc_rf"
+
+# The radio is plugged into the monitor Pi, so the tool must run THERE — and the
+# unified `bsc` carries bundled DuckDB against a device with 1.1 GB free on its
+# SD card. Same precedent as bsc-lan; tests/lean.rs keeps it honest.
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
+[[bin]]
+name = "bsc-rf"
+path = "src/main.rs"
 
 [dependencies]
 # The shared CLI scaffold (#1762): CmdDoc help catalog + the emit/absent-marker conventions every
@@ -13,3 +28,5 @@ name = "bsc_rf"
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Proc-macro only: no runtime weight, and tests/lean.rs still pins the closure.
+thiserror = "2"

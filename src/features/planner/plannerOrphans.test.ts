@@ -91,11 +91,26 @@ if (existsSync(APP_RECORDS)) {
 // ── implementation records ────────────────────────────────────────────────────
 const impls = JSON.parse(readFileSync(IMPLS, "utf8")) as {
   implementations: { provides?: string; code?: string; tests?: { src?: string }[] }[];
+  edges?: { src?: string; tests?: { src?: string }[] }[];
 };
 for (const n of impls.implementations) {
   if (!n.provides) continue;
   note(n.provides, n.code ?? "");
   noteCarriedTests(n.provides, n.tests);
+}
+
+// ── EDGE tests (`the-frontend-tests-are-records`) ──────────────────────────────
+//
+// The THIRD place a test can live, after `src/` and a record's `tests[]`: a test spanning several
+// records is carried on the EDGE between them. Its provenance `src` is the path it was migrated out
+// of, so `specOf` gives back exactly the `@/…/x.test` key a colocated file had — same root, same
+// meaning, no synthetic suffix needed. Missing this repeated the carried-test lesson one tier up:
+// migrating `plannerSync.test.ts` onto an edge made `@/features/planner/lib/plannerSync/bridge` read
+// as an orphan on the very next run, when its only importer had simply moved stores.
+for (const e of impls.edges ?? []) {
+  const spec = specOf(e?.src ?? "");
+  if (!spec) continue;
+  for (const t of e.tests ?? []) if (t?.src) note(spec, t.src);
 }
 
 /**
