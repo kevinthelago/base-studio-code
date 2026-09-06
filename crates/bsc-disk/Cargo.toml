@@ -29,3 +29,18 @@ serde_json = "1"
 # THE SHARED CRATE ROOT — this crate owns no source file at all. See
 # crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
 path = "../graph-materialize/crate_root.rs"
+
+# THE TEST SOURCE IS IN THE GRAPH, not in this directory
+# (`the-integration-test-targets-become-edges`). `tests/real_trees_parity.rs` does not exist: the
+# whole file is the `bsc-disk-pool-prune-unit-dedupe--realTreesParity` EDGE in graph/algorithms.json,
+# which also records the four member records it spans. The shared build script materializes it into
+# `$OUT_DIR/tests/real_trees_parity.rs` and the shared root below `include!`s it, so `cargo nextest`
+# compiles and runs it as an ordinary integration test — from OUTSIDE the crate, against the public
+# API, which is what a `tests/` target is for.
+#
+# `tests/real-trees.parity.json` DOES stay on disk: it is the corpus, not a target, and the record
+# reaches it with `concat!(env!("CARGO_MANIFEST_DIR"), "/tests/…")` — a bare relative `include_str!`
+# would resolve against `$OUT_DIR/tests/` once materialized and find nothing.
+[[test]]
+name = "real_trees_parity"
+path = "../graph-materialize/test_root.rs"
