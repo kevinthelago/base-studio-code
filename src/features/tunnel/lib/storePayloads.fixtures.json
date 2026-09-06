@@ -269,6 +269,51 @@
             "ghost"
           ],
           "composes": []
+        },
+        {
+          "id": "c2",
+          "name": "StatusCard",
+          "kitId": "react-ui",
+          "role": "composite",
+          "version": "2.1.0",
+          "used": 3,
+          "tags": [
+            "surface"
+          ],
+          "variants": [],
+          "composes": [
+            "c1"
+          ],
+          "spec": {
+            "type": "Card",
+            "children": [
+              {
+                "type": "Stack",
+                "props": {
+                  "gap": 8
+                },
+                "children": [
+                  {
+                    "type": "Text",
+                    "props": {
+                      "tone": "accent"
+                    },
+                    "children": "Status"
+                  },
+                  {
+                    "type": "Button",
+                    "props": {
+                      "kind": "ghost"
+                    },
+                    "actions": {
+                      "onClick": "refresh"
+                    },
+                    "children": "Refresh"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ],
       "usage": [
