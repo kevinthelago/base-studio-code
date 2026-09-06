@@ -647,3 +647,106 @@ fn the_shared_crate_root_is_one_file_that_carries_both_halves() {
         .collect();
     assert!(stray.is_empty(), "crate_root.rs is copied into: {stray:?}");
 }
+
+// ---------------------------------------------------------------------------------------------
+// DERIVED `use` LINES. The composes graph is authoritative; no `use` is hand-written.
+// (`imports-are-derived-from-the-composes-graph`)
+// ---------------------------------------------------------------------------------------------
+
+/// `derive_uses` is the whole Rust rule set in one pure function, so it is tested as one: a named
+/// single, a named group (author order preserved INSIDE the braces), a namespace glob, and the three
+/// shapes that must produce NOTHING — an empty `from`, an empty symbol list that is not a glob, and a
+/// spec whose only symbols are blank. The output is sorted and de-duplicated, which is what keeps the
+/// block byte-deterministic regardless of the order `imports` arrives in.
+#[test]
+fn derive_uses_covers_every_shape_and_is_deterministic() {
+    let spec = |from: &str, syms: &[&str], kind: &str| ImportSpec {
+        from: from.to_string(),
+        symbols: syms.iter().map(|s| s.to_string()).collect(),
+        type_only: false,
+        kind: kind.to_string(),
+    };
+    let uses = derive_uses(&[
+        spec("serde", &["Serialize", "Deserialize"], "named"),
+        spec("crate::plan", &["Unit"], "named"),
+        spec("std::collections", &[], "namespace"),
+        spec("", &["Nope"], "named"),            // no path              → nothing
+        spec("dead::end", &[], "named"),         // no symbols, no glob  → nothing
+        spec("blank::syms", &["", ""], "named"), // only blank symbols   → nothing
+    ]);
+    assert_eq!(
+        uses,
+        vec![
+            "    use crate::plan::Unit;".to_string(),
+            "    use serde::{Serialize, Deserialize};".to_string(),
+            "    use std::collections::*;".to_string(),
+        ],
+        "sorted, deduped, blanks dropped, and a group keeps the author's order inside the braces"
+    );
+
+    // `type_only` is IGNORED on the Rust side — one `use` carries a type exactly as it carries a value,
+    // because Rust has no `import type`. This is the sharpest place the TS-shaped field and Rust differ.
+    let t = derive_uses(&[ImportSpec {
+        from: "crate::x".into(),
+        symbols: vec!["T".into()],
+        type_only: true,
+        kind: "named".into(),
+    }]);
+    assert_eq!(t, vec!["    use crate::x::T;".to_string()], "no `import type` in Rust");
+}
+
+/// The composes graph reaches the GENERATED FILE, and injecting the `use` lines does not corrupt the
+/// per-record offset header — the property everything downstream (a panic's line number, a `bsc` jump
+/// into a record) leans on. The header is computed from the LIVE line count, so the `use` lines pushed
+/// ahead of it simply move it down and the record's own code still reports the right in-record line.
+#[test]
+fn imports_reach_the_generated_file_and_the_offset_header_stays_exact() {
+    let root = scratch("imports-rt");
+    std::fs::create_dir_all(root.join("graph")).expect("graph/");
+    let store = serde_json::json!({
+        "implementations": [{
+            "id": "mine--thing.rs",
+            "src": "crates/mine/src/thing.rs",
+            "code": "pub fn t() -> Foo {\n    Foo::default()\n}",
+            "imports": [
+                { "from": "crate::foo", "symbols": ["Foo"], "kind": "named" },
+                { "from": "serde", "symbols": ["Serialize", "Deserialize"], "kind": "named" }
+            ]
+        }]
+    });
+    std::fs::write(
+        root.join("graph").join("algorithms.json"),
+        serde_json::to_string(&store).unwrap(),
+    )
+    .expect("store");
+
+    let out = scratch("imports-rt-out");
+    let n = emit_into(&root.join("crates").join("mine"), &out, None, Adoption::Required).expect("emits");
+    assert_eq!(n, 1, "one module, and the use lines must not be counted as records");
+    let crate_rs = std::fs::read_to_string(out.join("crate.rs")).expect("crate.rs");
+
+    // The derived `use` lines are present, inside the module.
+    assert!(crate_rs.contains("    use crate::foo::Foo;"), "derived crate:: use missing:\n{crate_rs}");
+    assert!(
+        crate_rs.contains("    use serde::{Serialize, Deserialize};"),
+        "derived external use missing:\n{crate_rs}"
+    );
+
+    // They sit BEFORE the offset header — the top of the module body — so they are the module's
+    // imports, never part of the record's code.
+    let lines: Vec<&str> = crate_rs.lines().collect();
+    let use_at = lines.iter().position(|l| l.contains("use crate::foo::Foo;")).unwrap();
+    let header_at = lines.iter().position(|l| l.contains("line N here is line N-")).unwrap();
+    assert!(use_at < header_at, "the use lines must precede the offset header:\n{crate_rs}");
+
+    // OFFSET ARITHMETIC. The header claims "line N here is line N-K". The record's code line 1
+    // ("pub fn t() …") is the line right after the header, so its 1-indexed output line minus K must be
+    // exactly 1 — the invariant a hand-written `use` block above the code would have broken.
+    let k: usize = {
+        let h = lines[header_at];
+        let tail = h.split("line N-").nth(1).unwrap();
+        tail.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap()
+    };
+    let code_line_1 = lines.iter().position(|l| l.contains("pub fn t() -> Foo {")).unwrap() + 1;
+    assert_eq!(code_line_1 - k, 1, "record line 1 must still map to in-record line 1 after use-injection");
+}
