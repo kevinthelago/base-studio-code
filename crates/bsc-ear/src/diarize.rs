@@ -299,19 +299,42 @@ pub fn attribute(
     phrases: &[crate::transcribe::TimedPhrase],
     turns: &[(u64, u64, Option<usize>)],
 ) -> Vec<AttributedPhrase> {
+    let spans: Vec<(u64, u64)> = turns.iter().map(|&(s, e, _)| (s, e)).collect();
+    phrase_turns(phrases, &spans)
+        .into_iter()
+        .zip(phrases)
+        .map(|(ti, (pf, pt, text))| AttributedPhrase {
+            start_ms: *pf,
+            end_ms: *pt,
+            speaker: ti.and_then(|i| turns[i].2),
+            text: text.clone(),
+        })
+        .collect()
+}
+
+/// For each phrase, the INDEX of the turn it overlaps most, or `None` when it overlaps no turn.
+///
+/// The one place phrase-to-turn overlap is computed, so `attribute` (which maps the index to a
+/// cluster label) and the maintainer-aware path (which maps it to `You`/anonymous) align phrases
+/// identically. A phrase belongs to whoever said the majority of it; zero overlap is a phrase in a
+/// gap between turns and is left unassigned rather than snapped to the nearest.
+pub fn phrase_turns(
+    phrases: &[crate::transcribe::TimedPhrase],
+    spans: &[(u64, u64)],
+) -> Vec<Option<usize>> {
     phrases
         .iter()
-        .map(|(pf, pt, text)| {
-            let mut best_overlap = 0u64;
-            let mut speaker = None;
-            for &(ts, te, spk) in turns {
+        .map(|(pf, pt, _)| {
+            let mut best = 0u64;
+            let mut which = None;
+            for (i, &(ts, te)) in spans.iter().enumerate() {
                 let overlap = (*pt).min(te).saturating_sub((*pf).max(ts));
-                if overlap > best_overlap {
-                    best_overlap = overlap;
-                    speaker = spk;
+                if overlap > best {
+                    best = overlap;
+                    which = Some(i);
                 }
             }
-            AttributedPhrase { start_ms: *pf, end_ms: *pt, speaker, text: text.clone() }
+            which
         })
         .collect()
 }

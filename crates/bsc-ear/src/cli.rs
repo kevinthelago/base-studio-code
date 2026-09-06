@@ -298,8 +298,71 @@ overlaps no speech turn — something whisper heard in a stretch the detector ca
 shown as unattributed rather than pinned to the nearest voice.
 
 Needs a whisper binary: `$BSC_WHISPER_BIN` / `$BSC_WHISPER_MODEL`, or `whisper-cli` on PATH with a
-model under the models dir. Naming a speaker (which one is you) is a later step; this labels them 0,
-1, 2 in the order they first speak.",
+model under the models dir.
+
+IF YOU HAVE IMPRINTED YOUR VOICE (`bsc ear imprint`), your turns are labelled 'You' and everyone
+else stays anonymous. Otherwise every voice is an anonymous Speaker N.",
+    },
+    CmdDoc {
+        name: "imprint",
+        summary: "teach the app YOUR voice, so it can tell your speech from everyone else's",
+        usage: "\
+bsc ear imprint <wav>...          # learn your voice from these clips (adds to what it knows)
+bsc ear imprint show              # what has been learned
+bsc ear imprint forget            # discard the imprint and start over
+
+Learns ONE voice — yours — so `attribute` can mark your turns 'You' and keep everyone else
+anonymous. This is deliberately the opposite of a name directory: the app knows exactly one person
+and protects the rest by never identifying them.
+
+IT LEARNS, it is not set once. Each `imprint <wav>` ADDS reference voiceprints rather than replacing
+them, and a turn is judged against the nearest — so more clips only sharpen the recognition, and the
+always-on ear will later add high-confidence matches on its own, tracking your voice across days.
+
+IMPRINT FROM THE SAME KIND OF MICROPHONE you want recognised. The voiceprint is somewhat sensitive
+to the capture chain, so a headset imprint will not reliably find you in a phone recording — give it
+a few seconds of just you, recorded the way the real audio is.
+
+It rides on the same cheap voiceprint as `diarize`, so it recognises you only as well as that
+fingerprint separates voices: a similar-sounding friend can be mistaken for you. The reliability
+upgrade is the neural embedding model; this is the first cut that measures whether it is needed.",
+    },
+    CmdDoc {
+        name: "embed",
+        summary: "speaker-embedding cosine distances between clips (ECAPA-TDNN via ort) — the recognition validator",
+        usage: "\
+bsc ear embed <wav>...
+
+Embeds each 16kHz clip with the ECAPA-TDNN speaker model and prints the pairwise cosine distances.
+Small distance = same voice; large = different. This is how we check the embedding recognises a
+voice ACROSS sessions, which the cheap voiceprint could not. Needs the model under
+~/.base-studio-code/models/speaker-embedding.",
+    },
+    CmdDoc {
+        name: "clean",
+        summary: "strip handling thumps and stationary noise (rain/hiss) from a recording",
+        usage: "\
+bsc ear clean <wav>... [--engine spectral|rnnoise|deepfilter] [--out <dir>] [--json|--pretty]
+
+Removes two kinds of noise so transcription and speaker extraction work on a better signal:
+ · TRANSIENT low-frequency — a phone set down, handling bumps — via a high-pass filter (a thump is
+   almost all sub-80Hz, below the voice).
+ · STATIONARY — rain, hiss, hum — via spectral subtraction: the steady noise spectrum is estimated
+   from the QUIET frames and subtracted, with a floor on every bin so nothing is zeroed (zeroing is
+   what makes 'musical noise').
+
+Writes '<name>.clean.wav' beside each input, or into --out <dir>. Reports the before/after RMS and
+the sub-80Hz energy fraction — the number a set-down thump inflates — so the cleaning is MEASURED,
+not trusted.
+
+ENGINES, weakest to strongest: `spectral` (model-free high-pass + spectral subtraction; only
+stationary noise), `rnnoise` (pure-Rust RNNoise; strong but can leave a metallic residue), and
+`deepfilter` (DeepFilterNet3 via ort — best clarity, removes non-stationary noise while keeping the
+voice natural; needs its models under ~/.base-studio-code/models/deepfilternet and 48kHz input).
+
+IT DOES NOT SEPARATE OVERLAPPING SPEAKERS. Two voices share the same frequencies at the same time,
+so no filter can pull them apart — that is target-speaker extraction, a separate model-driven step.
+This is the model-free clean-up that comes first.",
     },
 ];
 
@@ -307,6 +370,7 @@ model under the models dir. Naming a speaker (which one is you) is a later step;
 struct Args {
     all: bool,
     out: Option<String>,
+    engine: Option<String>,
     limit: Option<usize>,
     live_dir: Option<String>,
     replay_dir: Option<String>,
@@ -323,6 +387,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         match flag {
             "--all" => a.all = true,
             "--out" => a.out = Some(rest.value("--out needs a playback device for the sweep")?),
+            "--engine" => a.engine = Some(rest.value("--engine needs a value: spectral or rnnoise")?),
             "--live-dir" => a.live_dir = Some(rest.value("--live-dir needs a directory of live recordings")?),
             "--replay-dir" => a.replay_dir = Some(rest.value("--replay-dir needs a directory of replayed recordings")?),
             "--json" => a.json = true,
@@ -385,6 +450,25 @@ impl Paths {
     fn log(&self) -> PathBuf {
         self.root.join("ear.log")
     }
+    /// Where the maintainer's imprint is learned and kept. One file — there is exactly one person
+    /// the app knows by voice, and everyone else is anonymous by design.
+    fn imprint(&self) -> PathBuf {
+        self.root.join("imprint.json")
+    }
+}
+
+/// Read the maintainer's imprint if one has been learned; an absent or unreadable one is simply
+/// "nobody imprinted yet", not an error — attribution just leaves every voice anonymous.
+/// The speaker-embedding ONNX, if it has been downloaded. Its presence is what switches recognition
+/// from the session-bound voiceprint to session-invariant embeddings.
+fn speaker_model_path() -> Option<PathBuf> {
+    let p = bsc_util::bsc_base_dir()?.join("models").join("speaker-embedding").join("ecapa-tdnn512.onnx");
+    p.is_file().then_some(p)
+}
+
+fn load_imprint(p: &Paths) -> Option<crate::imprint::Imprint> {
+    let raw = std::fs::read_to_string(p.imprint()).ok()?;
+    serde_json::from_str(&raw).ok()
 }
 
 fn now_ms() -> i64 {
@@ -911,6 +995,113 @@ fn labelled_from(dir: &std::path::Path) -> Result<Vec<(String, crate::classify::
     Ok(out)
 }
 
+fn cmd_embed(a: &Args) -> Result<(), String> {
+    use crate::embed::{cosine_distance, Embedder};
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.len() < 2 {
+        return Err("pass at least two wav files to compare".into());
+    }
+    let model = bsc_util::bsc_base_dir()
+        .map(|d| d.join("models").join("speaker-embedding").join("ecapa-tdnn512.onnx"))
+        .ok_or("no home directory")?;
+    let mut emb = Embedder::load(&model)?;
+    let mut vecs = Vec::new();
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        vecs.push((f.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string(), emb.embed(&samples, sr)?));
+    }
+    println!("pairwise cosine distance (0 = same voice, ~1 = unrelated):");
+    for i in 0..vecs.len() {
+        for j in i + 1..vecs.len() {
+            println!("  {:.3}   {}  vs  {}", cosine_distance(&vecs[i].1, &vecs[j].1), vecs[i].0, vecs[j].0);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_clean(a: &Args) -> Result<(), String> {
+    use crate::clean::{self, Options};
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass one or more wav files to clean".into());
+    }
+    let opts = Options::default();
+    // `deepfilter` runs the DeepFilterNet3 ONNX pipeline from its model dir; the others are the
+    // in-crate DSP/rnnoise engines.
+    let deepfilter = a.engine.as_deref() == Some("deepfilter");
+    let engine = match a.engine.as_deref() {
+        None | Some("spectral") => clean::Engine::Spectral,
+        Some("rnnoise") => clean::Engine::Rnnoise,
+        Some("deepfilter") => clean::Engine::Spectral, // unused; deepfilter is routed separately
+        Some(other) => {
+            return Err(format!("unknown --engine '{other}': use spectral, rnnoise or deepfilter"))
+        }
+    };
+    let df_dir = bsc_util::bsc_base_dir()
+        .map(|d| d.join("models").join("deepfilternet"))
+        .ok_or("no home directory")?;
+    let out_dir = a.out.as_ref().map(PathBuf::from);
+    if let Some(d) = &out_dir {
+        std::fs::create_dir_all(d).map_err(|e| format!("could not create {}: {e}", d.display()))?;
+    }
+
+    let mut rows = Vec::new();
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        let cleaned = if deepfilter {
+            crate::deepfilternet::denoise(&samples, sr, &df_dir)?
+        } else {
+            clean::clean_with(&samples, sr, engine, &opts)?
+        };
+        let dest = match &out_dir {
+            Some(d) => d.join(format!(
+                "{}.clean.wav",
+                f.file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+            )),
+            None => f.with_extension("clean.wav"),
+        };
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: sr,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&dest, spec).map_err(|e| format!("{e}"))?;
+        for x in &cleaned {
+            w.write_sample(crate::audio::to_i16(*x)).map_err(|e| format!("{e}"))?;
+        }
+        w.finalize().map_err(|e| format!("{e}"))?;
+        rows.push((
+            f.clone(),
+            dest,
+            clean::rms(&samples),
+            clean::rms(&cleaned),
+            clean::low_freq_fraction(&samples, sr, opts.highpass_hz),
+            clean::low_freq_fraction(&cleaned, sr, opts.highpass_hz),
+        ));
+    }
+
+    if a.json || a.pretty {
+        let v: Vec<_> = rows
+            .iter()
+            .map(|(f, dest, r0, r1, l0, l1)| {
+                json!({ "file": f.file_name().and_then(|s| s.to_str()),
+                        "out": dest.file_name().and_then(|s| s.to_str()),
+                        "rms_before": r0, "rms_after": r1,
+                        "low_freq_fraction_before": l0, "low_freq_fraction_after": l1 })
+            })
+            .collect();
+        return print_json(&v, a.pretty);
+    }
+    for (f, dest, r0, r1, l0, l1) in &rows {
+        println!("{}", f.file_name().and_then(|s| s.to_str()).unwrap_or("?"));
+        println!("  → {}", dest.display());
+        println!("  rms           {r0:.5} → {r1:.5}");
+        println!("  <{:.0}Hz energy  {:.1}% → {:.1}%   (handling/rumble removed)", opts.highpass_hz, l0 * 100.0, l1 * 100.0);
+    }
+    Ok(())
+}
+
 fn cmd_classify(a: &Args, p: &Paths) -> Result<(), String> {
     use crate::classify;
     let store = model_path(p);
@@ -1226,61 +1417,189 @@ fn voiceprints_of(
         .collect()
 }
 
-/// Diarize a file into speaker-labelled turns: `(start_ms, end_ms, speaker)`. The shared half of
-/// `diarize` and `attribute` — segment, fingerprint, cluster — so the two verbs agree by construction.
-fn speaker_turns(samples: &[f32], sr: u32) -> Result<Vec<(u64, u64, Option<usize>)>, String> {
-    let spans = turns_of(samples)?;
-    let prints = voiceprints_of(samples, sr, &spans);
-    let labels = crate::diarize::cluster(&prints, crate::diarize::SAME_SPEAKER);
-    Ok(spans.iter().zip(labels).map(|(&(s, e), l)| (s, e, l)).collect())
-}
 
-fn cmd_attribute(a: &Args) -> Result<(), String> {
-    use crate::{diarize, transcribe};
+fn cmd_attribute(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::{diarize, imprint, transcribe};
     let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
     if files.is_empty() {
         return Err("pass one or more wav files to attribute".into());
     }
     let whisper = transcribe::Whisper::resolve()?;
+    let me = load_imprint(p); // None until the maintainer's voice is imprinted
 
-    let mut out = Vec::new();
+    // Per phrase: (start_ms, display label, text). A `None` label is an unattributed phrase.
+    type Line = (u64, Option<String>, String);
+    let mut out: Vec<(PathBuf, String, Vec<Line>)> = Vec::new();
     for f in &files {
         let (samples, sr) = read_wav(f)?;
-        let turns = speaker_turns(&samples, sr)?;
+        let spans = turns_of(&samples)?;
+        let prints = voiceprints_of(&samples, sr, &spans);
+        let labels = diarize::cluster(&prints, diarize::SAME_SPEAKER);
+
+        // A display label per TURN: 'You' / 'Speaker N' when a voice is imprinted, else the raw
+        // (already first-appearance-numbered) cluster id. Recognition prefers EMBEDDINGS (session
+        // invariant) when the imprint holds them and the model is present; otherwise the voiceprint.
+        let who: Option<Vec<Option<imprint::Who>>> = match &me {
+            Some(me) if me.has_embeddings() => {
+                match speaker_model_path().and_then(|m| crate::embed::Embedder::load(&m).ok()) {
+                    Some(mut emb) => {
+                        let turn_embs: Vec<Option<Vec<f32>>> = spans
+                            .iter()
+                            .map(|&(s, e)| {
+                                let lo = (s * sr as u64 / 1000) as usize;
+                                let hi = ((e * sr as u64 / 1000) as usize).min(samples.len());
+                                (hi > lo).then(|| emb.embed(&samples[lo..hi], sr).ok()).flatten()
+                            })
+                            .collect();
+                        Some(imprint::label_embeddings(&turn_embs, &labels, me, imprint::IS_ME_COSINE))
+                    }
+                    None => Some(imprint::label(&prints, &labels, me, imprint::IS_ME)),
+                }
+            }
+            Some(me) => Some(imprint::label(&prints, &labels, me, imprint::IS_ME)),
+            None => None,
+        };
+        let turn_label: Vec<Option<String>> = match who {
+            Some(who) => who
+                .into_iter()
+                .map(|w| {
+                    w.map(|w| match w {
+                        imprint::Who::You => "You".to_string(),
+                        imprint::Who::Other(n) => format!("Speaker {n}"),
+                    })
+                })
+                .collect(),
+            None => labels.iter().map(|l| l.map(|c| format!("Speaker {c}"))).collect(),
+        };
+
         let (lang, phrases) = transcribe::timed_transcript(&whisper, f)?;
-        let lines = diarize::attribute(&phrases, &turns);
-        let speakers = turns.iter().filter_map(|t| t.2).collect::<std::collections::BTreeSet<_>>().len();
-        out.push((f.clone(), lang, speakers, lines));
+        let lines = diarize::phrase_turns(&phrases, &spans)
+            .into_iter()
+            .zip(&phrases)
+            .map(|(ti, (pf, _, text))| {
+                (*pf, ti.and_then(|i| turn_label[i].clone()), text.clone())
+            })
+            .collect();
+        out.push((f.clone(), lang, lines));
     }
 
     if a.json || a.pretty {
         let v: Vec<_> = out
             .iter()
-            .map(|(f, lang, speakers, lines)| {
-                json!({ "file": f.file_name().and_then(|s| s.to_str()), "language": lang, "speakers": speakers, "lines": lines })
+            .map(|(f, lang, lines)| {
+                let ls: Vec<_> = lines
+                    .iter()
+                    .map(|(start, who, text)| json!({ "start_ms": start, "speaker": who, "text": text }))
+                    .collect();
+                json!({ "file": f.file_name().and_then(|s| s.to_str()), "language": lang, "lines": ls })
             })
             .collect();
         return print_json(&v, a.pretty);
     }
 
-    for (f, lang, speakers, lines) in &out {
-        println!("\n{}  ({lang}, {speakers} voice(s))", f.file_name().and_then(|s| s.to_str()).unwrap_or("?"));
-        // Group consecutive phrases by the same speaker into one block, the way a transcript reads.
+    let imprinted = me.as_ref().map(|m| m.name.clone());
+    for (f, lang, lines) in &out {
+        let named: std::collections::BTreeSet<_> = lines.iter().filter_map(|(_, w, _)| w.clone()).collect();
+        println!(
+            "\n{}  ({lang}, {} voice label(s){})",
+            f.file_name().and_then(|s| s.to_str()).unwrap_or("?"),
+            named.len(),
+            imprinted.as_deref().map(|_| ", your voice marked You").unwrap_or("")
+        );
+        // Group consecutive phrases sharing a label into one block, the way a transcript reads.
         let mut i = 0;
         while i < lines.len() {
-            let spk = lines[i].speaker;
-            let start = lines[i].start_ms;
+            let (start, who, _) = &lines[i];
+            let label = who.clone();
             let mut text = String::new();
-            while i < lines.len() && lines[i].speaker == spk {
+            while i < lines.len() && lines[i].1 == label {
                 if !text.is_empty() {
                     text.push(' ');
                 }
-                text.push_str(&lines[i].text);
+                text.push_str(&lines[i].2);
                 i += 1;
             }
-            let who = spk.map(|s| format!("Speaker {s}")).unwrap_or_else(|| "(unattributed)".into());
-            println!("  [{}] {who}: {text}", fmt_ms(start));
+            let shown = label.unwrap_or_else(|| "(unattributed)".into());
+            println!("  [{}] {shown}: {text}", fmt_ms(*start));
         }
+    }
+    if imprinted.is_none() {
+        println!("\nNo voice imprinted — every speaker is anonymous. `bsc ear imprint <your-voice.wav>` to have your own turns marked 'You'.");
+    }
+    Ok(())
+}
+
+fn cmd_imprint(a: &Args, p: &Paths) -> Result<(), String> {
+    use crate::imprint::Imprint;
+    let sub = a.positional.get(1).map(String::as_str);
+
+    if sub == Some("show") {
+        return match load_imprint(p) {
+            Some(m) => {
+                println!("imprint '{}': {} reference print(s) learned", m.name, m.prints.len());
+                for (i, vp) in m.prints.iter().enumerate() {
+                    let f0 = vp.f0.map(|f| format!("{f:.0}Hz")).unwrap_or_else(|| "—".into());
+                    println!("  {i:>2}  pitch {f0}  {:.1}s  voiced {:.0}%", vp.seconds, vp.voiced_fraction * 100.0);
+                }
+                Ok(())
+            }
+            None => {
+                println!("nothing imprinted yet — `bsc ear imprint <your-voice.wav>` to teach it your voice");
+                Ok(())
+            }
+        };
+    }
+    if sub == Some("forget") {
+        let _ = std::fs::remove_file(p.imprint());
+        println!("imprint forgotten — every voice is anonymous again");
+        return Ok(());
+    }
+
+    // Otherwise: learn from the given clips, ADDING to whatever is already known.
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.is_empty() {
+        return Err("pass wav clip(s) of your voice to learn from, or `show` / `forget`".into());
+    }
+    let mut me = load_imprint(p).unwrap_or_else(|| Imprint::new("you"));
+    // Prefer the embedding path (session-invariant recognition) when the model is present; fall back
+    // to the voiceprint otherwise.
+    let mut embedder = speaker_model_path().and_then(|m| crate::embed::Embedder::load(&m).ok());
+    let (before_e, before_v) = (me.embeddings.len(), me.prints.len());
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        if let Some(emb) = embedder.as_mut() {
+            match emb.embed(&samples, sr) {
+                Ok(v) => me.learn_embedding(v),
+                Err(e) => eprintln!("  skipped {}: {e}", f.display()),
+            }
+        } else {
+            let vp = crate::diarize::voiceprint(&samples, sr);
+            if vp.f0.is_none() && vp.voiced_fraction >= crate::diarize::MIN_VOICED_FRACTION {
+                eprintln!("  skipped {}: no voiced speech to learn from", f.display());
+                continue;
+            }
+            me.learn(vp);
+        }
+    }
+    let (new_e, new_v) = (me.embeddings.len() - before_e, me.prints.len() - before_v);
+    if new_e == 0 && new_v == 0 {
+        return Err("learned nothing — none of those clips could be embedded or held voiced speech".into());
+    }
+    std::fs::create_dir_all(p.root.join(""))
+        .and_then(|_| std::fs::write(p.imprint(), serde_json::to_string_pretty(&me).unwrap()))
+        .map_err(|e| format!("could not write imprint: {e}"))?;
+    if me.has_embeddings() {
+        println!(
+            "learned {new_e} new clip(s); imprint '{}' now holds {} speaker embedding(s) (session-invariant recognition)",
+            me.name,
+            me.embeddings.len()
+        );
+    } else {
+        println!(
+            "learned {new_v} new clip(s) as VOICEPRINTS (no embedding model found — recognition will not cross sessions); imprint '{}' holds {}",
+            me.name,
+            me.prints.len()
+        );
     }
     Ok(())
 }
@@ -1522,12 +1841,15 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("features") => cmd_features(&a),
         Some("floor") => cmd_floor(&a, &p),
         Some("classify") => cmd_classify(&a, &p),
+        Some("clean") => cmd_clean(&a),
         Some("transcribe") => cmd_transcribe(&a, &p),
         Some("transcripts") => cmd_transcripts(&a, &p),
         Some("prosody") => cmd_prosody(&a, &p),
         Some("segments") => cmd_segments(&a, &p),
         Some("diarize") => cmd_diarize(&a),
-        Some("attribute") => cmd_attribute(&a),
+        Some("attribute") => cmd_attribute(&a, &p),
+        Some("imprint") => cmd_imprint(&a, &p),
+        Some("embed") => cmd_embed(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -1548,7 +1870,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute"
+                "diarize", "attribute", "imprint", "embed", "clean"
             ]
         );
     }
