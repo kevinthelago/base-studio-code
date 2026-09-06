@@ -483,9 +483,17 @@ fn no_adopter_has_regrown_a_private_crate_root() {
     // would find zero crates and report a clean pass over nothing — the exact green-that-sees-less
     // this repo keeps paying for.
     // 11 BEFORE `the-crate-body-is-a-record-not-only-its-children`, 16 after — the five crates whose
-    // whole implementation was their root and which `migrate-crate` could not see at all. The number
-    // is what makes this red against the pre-change tree rather than merely unchanged.
-    assert!(at_floor >= 16, "only {at_floor} crate(s) are at the floor; 16 have been migrated");
+    // whole implementation was their root and which `migrate-crate` could not see at all. 61 after
+    // `the-crate-root-implementations-move-into-the-graph`, which applied that same unmodified verb to
+    // every remaining root. The number is what makes this red against the pre-change tree rather than
+    // merely unchanged: at 16 this passed over a tree with 45 unmigrated roots in it.
+    //
+    // THIS ONE ONLY EVER RISES, which is the opposite of the population floors in
+    // `bsc-graph::migration_ratchet` and `bsc-graph::crate_root_tests` — those count what is still on
+    // DISK and fall as the migration proceeds, this counts what has REACHED the floor. Raise it when
+    // crates land; never lower it to quiet a red, because a crate leaving the floor means a root grew
+    // back.
+    assert!(at_floor >= 61, "only {at_floor} crate(s) are at the floor; 61 have been migrated");
 }
 
 /// The floor test, restated where this crate can see it.

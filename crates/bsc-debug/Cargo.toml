@@ -11,6 +11,9 @@ serde_json = "1"
 
 [lib]
 name = "bsc_debug"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 # The shared bsc→app request channel (#3274) — the SAME one `shot` and `navigate` use, routed by KIND.
