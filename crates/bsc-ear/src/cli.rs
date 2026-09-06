@@ -459,6 +459,13 @@ impl Paths {
 
 /// Read the maintainer's imprint if one has been learned; an absent or unreadable one is simply
 /// "nobody imprinted yet", not an error — attribution just leaves every voice anonymous.
+/// The speaker-embedding ONNX, if it has been downloaded. Its presence is what switches recognition
+/// from the session-bound voiceprint to session-invariant embeddings.
+fn speaker_model_path() -> Option<PathBuf> {
+    let p = bsc_util::bsc_base_dir()?.join("models").join("speaker-embedding").join("ecapa-tdnn512.onnx");
+    p.is_file().then_some(p)
+}
+
 fn load_imprint(p: &Paths) -> Option<crate::imprint::Imprint> {
     let raw = std::fs::read_to_string(p.imprint()).ok()?;
     serde_json::from_str(&raw).ok()
@@ -1430,9 +1437,30 @@ fn cmd_attribute(a: &Args, p: &Paths) -> Result<(), String> {
         let labels = diarize::cluster(&prints, diarize::SAME_SPEAKER);
 
         // A display label per TURN: 'You' / 'Speaker N' when a voice is imprinted, else the raw
-        // (already first-appearance-numbered) cluster id.
-        let turn_label: Vec<Option<String>> = match &me {
-            Some(me) => imprint::label(&prints, &labels, me, imprint::IS_ME)
+        // (already first-appearance-numbered) cluster id. Recognition prefers EMBEDDINGS (session
+        // invariant) when the imprint holds them and the model is present; otherwise the voiceprint.
+        let who: Option<Vec<Option<imprint::Who>>> = match &me {
+            Some(me) if me.has_embeddings() => {
+                match speaker_model_path().and_then(|m| crate::embed::Embedder::load(&m).ok()) {
+                    Some(mut emb) => {
+                        let turn_embs: Vec<Option<Vec<f32>>> = spans
+                            .iter()
+                            .map(|&(s, e)| {
+                                let lo = (s * sr as u64 / 1000) as usize;
+                                let hi = ((e * sr as u64 / 1000) as usize).min(samples.len());
+                                (hi > lo).then(|| emb.embed(&samples[lo..hi], sr).ok()).flatten()
+                            })
+                            .collect();
+                        Some(imprint::label_embeddings(&turn_embs, &labels, me, imprint::IS_ME_COSINE))
+                    }
+                    None => Some(imprint::label(&prints, &labels, me, imprint::IS_ME)),
+                }
+            }
+            Some(me) => Some(imprint::label(&prints, &labels, me, imprint::IS_ME)),
+            None => None,
+        };
+        let turn_label: Vec<Option<String>> = match who {
+            Some(who) => who
                 .into_iter()
                 .map(|w| {
                     w.map(|w| match w {
@@ -1533,30 +1561,46 @@ fn cmd_imprint(a: &Args, p: &Paths) -> Result<(), String> {
         return Err("pass wav clip(s) of your voice to learn from, or `show` / `forget`".into());
     }
     let mut me = load_imprint(p).unwrap_or_else(|| Imprint::new("you"));
-    let before = me.prints.len();
+    // Prefer the embedding path (session-invariant recognition) when the model is present; fall back
+    // to the voiceprint otherwise.
+    let mut embedder = speaker_model_path().and_then(|m| crate::embed::Embedder::load(&m).ok());
+    let (before_e, before_v) = (me.embeddings.len(), me.prints.len());
     for f in &files {
         let (samples, sr) = read_wav(f)?;
-        let vp = crate::diarize::voiceprint(&samples, sr);
-        if vp.f0.is_none() && vp.voiced_fraction >= crate::diarize::MIN_VOICED_FRACTION {
-            // Enough frames to have voicing but none found — likely not speech. Refuse rather than
-            // learn a reference off noise, which would poison every future match.
-            eprintln!("  skipped {}: no voiced speech to learn from", f.display());
-            continue;
+        if let Some(emb) = embedder.as_mut() {
+            match emb.embed(&samples, sr) {
+                Ok(v) => me.learn_embedding(v),
+                Err(e) => eprintln!("  skipped {}: {e}", f.display()),
+            }
+        } else {
+            let vp = crate::diarize::voiceprint(&samples, sr);
+            if vp.f0.is_none() && vp.voiced_fraction >= crate::diarize::MIN_VOICED_FRACTION {
+                eprintln!("  skipped {}: no voiced speech to learn from", f.display());
+                continue;
+            }
+            me.learn(vp);
         }
-        me.learn(vp);
     }
-    if me.prints.len() == before {
-        return Err("learned nothing — none of those clips held voiced speech".into());
+    let (new_e, new_v) = (me.embeddings.len() - before_e, me.prints.len() - before_v);
+    if new_e == 0 && new_v == 0 {
+        return Err("learned nothing — none of those clips could be embedded or held voiced speech".into());
     }
     std::fs::create_dir_all(p.root.join(""))
         .and_then(|_| std::fs::write(p.imprint(), serde_json::to_string_pretty(&me).unwrap()))
         .map_err(|e| format!("could not write imprint: {e}"))?;
-    println!(
-        "learned {} new clip(s); imprint '{}' now holds {} reference print(s)",
-        me.prints.len() - before,
-        me.name,
-        me.prints.len()
-    );
+    if me.has_embeddings() {
+        println!(
+            "learned {new_e} new clip(s); imprint '{}' now holds {} speaker embedding(s) (session-invariant recognition)",
+            me.name,
+            me.embeddings.len()
+        );
+    } else {
+        println!(
+            "learned {new_v} new clip(s) as VOICEPRINTS (no embedding model found — recognition will not cross sessions); imprint '{}' holds {}",
+            me.name,
+            me.prints.len()
+        );
+    }
     Ok(())
 }
 

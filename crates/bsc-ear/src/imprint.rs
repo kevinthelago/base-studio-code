@@ -35,11 +35,17 @@ pub struct Imprint {
     /// the NEAREST of them, so adding a print can only make a genuine match easier to find, never
     /// harder. This is what makes the imprint able to learn.
     pub prints: Vec<Voiceprint>,
+    /// The accumulated speaker EMBEDDINGS (ECAPA-TDNN, L2-normalised). These are the recognition
+    /// path: unlike `prints`, an embedding is session/channel invariant, so a turn matches the
+    /// maintainer across recordings, not only within one. Empty on a voiceprint-only imprint; when
+    /// present, recognition uses these and ignores `prints`.
+    #[serde(default)]
+    pub embeddings: Vec<Vec<f32>>,
 }
 
 impl Imprint {
     pub fn new(name: &str) -> Self {
-        Imprint { name: name.to_string(), prints: Vec::new() }
+        Imprint { name: name.to_string(), prints: Vec::new(), embeddings: Vec::new() }
     }
 
     /// Learn from another reference clip. Additive on purpose — see [`Imprint::prints`].
@@ -47,11 +53,39 @@ impl Imprint {
         self.prints.push(print);
     }
 
+    /// Learn a reference EMBEDDING (the recognition path). Additive, like [`Imprint::learn`].
+    pub fn learn_embedding(&mut self, embedding: Vec<f32>) {
+        self.embeddings.push(embedding);
+    }
+
+    /// Whether this imprint recognises by embedding (has at least one) rather than by voiceprint.
+    pub fn has_embeddings(&self) -> bool {
+        !self.embeddings.is_empty()
+    }
+
+    /// Cosine distance to the NEAREST enrolled embedding, or `None` if none learned.
+    pub fn cosine_to(&self, embedding: &[f32]) -> Option<f32> {
+        self.embeddings
+            .iter()
+            .map(|e| crate::embed::cosine_distance(e, embedding))
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+    }
+
     /// How far this turn is from the imprint: the distance to the NEAREST reference print, or `None`
     /// when nothing has been learned yet (an empty imprint matches no one rather than everyone).
     pub fn distance_to(&self, turn: &Voiceprint) -> Option<f32> {
         self.prints.iter().map(|p| distance(p, turn)).min_by(|a, b| a.partial_cmp(b).unwrap()).filter(|_| !self.prints.is_empty())
     }
+}
+
+/// A turn is the maintainer's if its embedding is within this COSINE distance of a reference. Set
+/// from the measurement: same-speaker-across-sessions landed at 0.35–0.57 and a different speaker at
+/// 0.88–1.07, so 0.65 sits in the clean gap between them. Tuned against real clips, not reasoned out.
+pub const IS_ME_COSINE: f32 = 0.65;
+
+/// Is this turn the maintainer, by embedding? `false` for an imprint with no embeddings.
+pub fn identify_embedding(embedding: &[f32], me: &Imprint, threshold: f32) -> bool {
+    me.cosine_to(embedding).is_some_and(|d| d <= threshold)
 }
 
 /// A turn is the maintainer's if it lands within this scaled distance of the imprint. Same distance
@@ -94,10 +128,34 @@ pub fn label(
     me: &Imprint,
     threshold: f32,
 ) -> Vec<Option<Who>> {
-    // Anonymous ids: remap the cluster ids of NON-maintainer turns to 0.. by first appearance.
-    let mut remap: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    let present: Vec<bool> = prints.iter().map(|p| p.is_some()).collect();
     let is_me: Vec<bool> =
         prints.iter().map(|p| p.as_ref().is_some_and(|vp| identify(vp, me, threshold))).collect();
+    label_core(&present, &is_me, labels)
+}
+
+/// Label every turn as the maintainer or an anonymous stranger, by EMBEDDING — the recognition path
+/// that generalises across sessions. `turn_embeddings` is one per turn (`None` for an unplaceable
+/// turn); a turn is the maintainer if its embedding is within `threshold` cosine of a reference.
+pub fn label_embeddings(
+    turn_embeddings: &[Option<Vec<f32>>],
+    labels: &[Option<usize>],
+    me: &Imprint,
+    threshold: f32,
+) -> Vec<Option<Who>> {
+    let present: Vec<bool> = turn_embeddings.iter().map(|e| e.is_some()).collect();
+    let is_me: Vec<bool> = turn_embeddings
+        .iter()
+        .map(|e| e.as_ref().is_some_and(|emb| identify_embedding(emb, me, threshold)))
+        .collect();
+    label_core(&present, &is_me, labels)
+}
+
+/// The shared labelling: `You` for a maintainer turn, an anonymous `Other(n)` for the rest (cluster
+/// ids remapped 0.. by first appearance), `None` for an absent turn. The matching method — voiceprint
+/// or embedding — is the caller's; this only turns per-turn is-me + cluster ids into labels.
+fn label_core(present: &[bool], is_me: &[bool], labels: &[Option<usize>]) -> Vec<Option<Who>> {
+    let mut remap: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
     for (i, lab) in labels.iter().enumerate() {
         if is_me[i] {
             continue;
@@ -107,11 +165,9 @@ pub fn label(
             remap.entry(*cid).or_insert(next);
         }
     }
-    prints
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            if p.is_none() {
+    (0..present.len())
+        .map(|i| {
+            if !present[i] {
                 return None;
             }
             if is_me[i] {
