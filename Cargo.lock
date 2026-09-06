@@ -1017,6 +1017,8 @@ dependencies = [
  "hound",
  "libc",
  "nnnoiseless",
+ "ort",
+ "realfft",
  "serde",
  "serde_json",
 ]

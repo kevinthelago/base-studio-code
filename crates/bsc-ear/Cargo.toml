@@ -24,6 +24,11 @@ libc = "0.2"
 # Learned speech denoiser (pure-Rust RNNoise port): no model download, no C, no ort. Handles the
 # non-stationary rain/handling noise that spectral subtraction cannot. RNNoise operates at 48kHz.
 nnnoiseless = "0.5"
+# DeepFilterNet3 clarity engine: ort runs the fused ONNX graph (same runtime as bsc-say/Kokoro);
+# realfft does the 960-point real STFT the model requires (not a power of two, so the crate radix-2
+# FFT cannot; realfft is what libDF itself uses).
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
+realfft = "3"
 
 [lints.clippy]
 wildcard_enum_match_arm = "deny"

@@ -305,7 +305,7 @@ model under the models dir. Naming a speaker (which one is you) is a later step;
         name: "clean",
         summary: "strip handling thumps and stationary noise (rain/hiss) from a recording",
         usage: "\
-bsc ear clean <wav>... [--out <dir>] [--json|--pretty]
+bsc ear clean <wav>... [--engine spectral|rnnoise|deepfilter] [--out <dir>] [--json|--pretty]
 
 Removes two kinds of noise so transcription and speaker extraction work on a better signal:
  · TRANSIENT low-frequency — a phone set down, handling bumps — via a high-pass filter (a thump is
@@ -317,6 +317,11 @@ Removes two kinds of noise so transcription and speaker extraction work on a bet
 Writes '<name>.clean.wav' beside each input, or into --out <dir>. Reports the before/after RMS and
 the sub-80Hz energy fraction — the number a set-down thump inflates — so the cleaning is MEASURED,
 not trusted.
+
+ENGINES, weakest to strongest: `spectral` (model-free high-pass + spectral subtraction; only
+stationary noise), `rnnoise` (pure-Rust RNNoise; strong but can leave a metallic residue), and
+`deepfilter` (DeepFilterNet3 via ort — best clarity, removes non-stationary noise while keeping the
+voice natural; needs its models under ~/.base-studio-code/models/deepfilternet and 48kHz input).
 
 IT DOES NOT SEPARATE OVERLAPPING SPEAKERS. Two voices share the same frequencies at the same time,
 so no filter can pull them apart — that is target-speaker extraction, a separate model-driven step.
@@ -941,11 +946,20 @@ fn cmd_clean(a: &Args) -> Result<(), String> {
         return Err("pass one or more wav files to clean".into());
     }
     let opts = Options::default();
+    // `deepfilter` runs the DeepFilterNet3 ONNX pipeline from its model dir; the others are the
+    // in-crate DSP/rnnoise engines.
+    let deepfilter = a.engine.as_deref() == Some("deepfilter");
     let engine = match a.engine.as_deref() {
         None | Some("spectral") => clean::Engine::Spectral,
         Some("rnnoise") => clean::Engine::Rnnoise,
-        Some(other) => return Err(format!("unknown --engine '{other}': use spectral or rnnoise")),
+        Some("deepfilter") => clean::Engine::Spectral, // unused; deepfilter is routed separately
+        Some(other) => {
+            return Err(format!("unknown --engine '{other}': use spectral, rnnoise or deepfilter"))
+        }
     };
+    let df_dir = bsc_util::bsc_base_dir()
+        .map(|d| d.join("models").join("deepfilternet"))
+        .ok_or("no home directory")?;
     let out_dir = a.out.as_ref().map(PathBuf::from);
     if let Some(d) = &out_dir {
         std::fs::create_dir_all(d).map_err(|e| format!("could not create {}: {e}", d.display()))?;
@@ -954,7 +968,11 @@ fn cmd_clean(a: &Args) -> Result<(), String> {
     let mut rows = Vec::new();
     for f in &files {
         let (samples, sr) = read_wav(f)?;
-        let cleaned = clean::clean_with(&samples, sr, engine, &opts)?;
+        let cleaned = if deepfilter {
+            crate::deepfilternet::denoise(&samples, sr, &df_dir)?
+        } else {
+            clean::clean_with(&samples, sr, engine, &opts)?
+        };
         let dest = match &out_dir {
             Some(d) => d.join(format!(
                 "{}.clean.wav",
