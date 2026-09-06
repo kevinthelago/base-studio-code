@@ -1093,6 +1093,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-imagine"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-incident"
 version = "0.1.0"
 dependencies = [
