@@ -67,6 +67,20 @@ pub const PREAMBLE: &str = "\
 // A compiler error below points at THIS file; each module header gives the line offset back\n\
 // to its record.\n\n";
 
+/// One import a record declares, so the materializer GENERATES its `use` line instead of the author
+/// hand-writing it (`imports-are-derived-from-the-composes-graph`). RUST interpretation: `from` is the
+/// use-path prefix already resolved at population time — `crate::<module_path>` for a record-internal
+/// target (crate::-ABSOLUTE, so a record move needs no importer edits) or an external path
+/// (`serde`, `std::collections`). `symbols` are the items pulled from it; `kind == "namespace"` emits a
+/// glob (`::*`). `type_only` carries the TS shape across and is IGNORED for Rust (no `import type`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ImportSpec {
+    pub from: String,
+    pub symbols: Vec<String>,
+    pub type_only: bool,
+    pub kind: String,
+}
+
 /// One record selected for materialization, with its module path already resolved from its `src`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -80,6 +94,10 @@ pub struct Unit {
     pub vis: String,
     /// Outer attributes, emitted above the declaration in the order the author wrote them.
     pub attrs: Vec<String>,
+    /// Imports this module declares; the materializer GENERATES the `use` lines from them. Empty ⇒
+    /// nothing generated and the record's hand-written `use` lines stand (backward-compat during the
+    /// migration).
+    pub imports: Vec<ImportSpec>,
 }
 
 /// The crate ROOT's record, split into the two halves the shared root wants.
@@ -290,6 +308,40 @@ pub fn render(
     Ok(out)
 }
 
+/// Turn a module's `imports` into the `use` lines the materializer writes at the top of its body,
+/// so the composes graph is authoritative and no `use` is hand-written
+/// (`imports-are-derived-from-the-composes-graph`). RUST rules, and where they DIFFER from the TS side:
+///
+/// - `kind == "namespace"` ⇒ a glob (`use from::*;`). TS emits `import * as ns from …`, which BINDS a
+///   name; Rust's glob binds none, so a namespace import that was REFERENCED through its binding in TS
+///   (`ns.foo`) has no Rust equivalent here and must be modelled as named symbols instead. This function
+///   cannot detect that — it is a population-time concern, noted on the epic.
+/// - `type_only` is IGNORED. Rust has no `import type`; a type and a value share one `use`.
+/// - a spec with no symbols and no glob emits nothing (an empty `use from::{};` is illegal).
+/// - lines are de-duplicated and sorted, so the block is deterministic regardless of `imports` order —
+///   byte-determinism is the property the whole migration leans on.
+fn derive_uses(imports: &[ImportSpec]) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for spec in imports {
+        if spec.from.is_empty() {
+            continue;
+        }
+        if spec.kind == "namespace" {
+            lines.push(format!("    use {}::*;", spec.from));
+            continue;
+        }
+        let syms: Vec<&str> = spec.symbols.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+        match syms.len() {
+            0 => continue,
+            1 => lines.push(format!("    use {}::{};", spec.from, syms[0])),
+            _ => lines.push(format!("    use {}::{{{}}};", spec.from, syms.join(", "))),
+        }
+    }
+    lines.sort();
+    lines.dedup();
+    lines
+}
+
 /// Emit every unit whose path is `prefix + [one more segment]`, recursing into each.
 ///
 /// `units` is sorted by path, so a parent immediately precedes its subtree; the recursion still scans
@@ -312,6 +364,13 @@ fn emit_level(out: &mut String, units: &[Unit], depth: usize, prefix: &[String])
             out.push('\n');
         }
         out.push_str(&format!("{}mod {} {{\n", u.vis, u.path[depth]));
+        // Derived `use` lines go BEFORE `body_starts_at` is read, so the offset header self-corrects:
+        // it is computed from the live line count, so any lines added here just push it down and the
+        // record's code still reports the right in-record line numbers.
+        for use_line in derive_uses(&u.imports) {
+            out.push_str(&use_line);
+            out.push('\n');
+        }
         let body_starts_at = out.lines().count() + 1; // the body begins after the header line below
         out.push_str(&format!("    // record `{}` — line N here is line N-{body_starts_at} in the record.\n", u.id));
         out.push_str(&format!("{}\n", u.code));

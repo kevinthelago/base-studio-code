@@ -193,7 +193,37 @@ impl Plan {
                     .and_then(|v| v.as_array())
                     .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
                     .unwrap_or_default();
-                Some(Unit { id: id.to_string(), path, code: i.get("code")?.as_str()?.to_string(), vis, attrs })
+                // The composes graph, carried on the record as the `imports` field the shared core added
+                // (`imports-are-derived-from-the-composes-graph`). `render`/`emit_level` turn each entry
+                // into a `use` line. Absent or empty ⇒ nothing generated and the record's own `use` lines
+                // stand — the backward-compatible path every un-migrated record is still on.
+                let imports: Vec<ImportSpec> = i
+                    .get("imports")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|e| {
+                                let from = e.get("from").and_then(|v| v.as_str())?.to_string();
+                                let symbols = e
+                                    .get("symbols")
+                                    .and_then(|v| v.as_array())
+                                    .map(|s| s.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                                    .unwrap_or_default();
+                                let type_only = e.get("typeOnly").and_then(|v| v.as_bool()).unwrap_or(false);
+                                let kind = e.get("kind").and_then(|v| v.as_str()).unwrap_or("named").to_string();
+                                Some(ImportSpec { from, symbols, type_only, kind })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some(Unit {
+                    id: id.to_string(),
+                    path,
+                    code: i.get("code")?.as_str()?.to_string(),
+                    vis,
+                    attrs,
+                    imports,
+                })
             })
             .collect();
         // Deterministic order: cargo reruns this on every store change and a shuffled output would
