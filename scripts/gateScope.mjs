@@ -35,6 +35,26 @@
 /// existing fault taxonomy rather than inventing a "gate" stage for it.
 export function gateCommands(plan, base) {
   const c = [];
+  // A RECORD MUST NOT CLAIM A MODULE IT IS NOT — and this leg is UNCONDITIONAL, in both tiers, which
+  // is the whole point of it.
+  //
+  // Every other leg is scoped by what THIS branch changed. That is exactly wrong here, because the
+  // drift this catches is not caused by a changed file: `detachedwindow` was re-claimed by a designer
+  // session writing to ~/.base-studio-code/components.db, touching nothing in the repo. It stubbed
+  // `@/store`, `TerminalHost` and the `lazyWorkspaces` barrel to make the preview build (rev 10), then
+  // republished the specifier "so App and other composers can import" it (rev 12) — re-breaking what
+  // revs 3 and 7 had each already fixed. No changed-file scope would ever have selected it, and there
+  // is no record of it in the packaged seed to diff against, so a seed-only check is blind too.
+  // docs/records.md names this as the case no gate observes.
+  //
+  // `bsc ui census` is REUSED rather than reimplemented: it already classifies WHY a pair disagrees
+  // (`preview-derivative` vs `newer-truth`), already reads the runtime stores, and already honours a
+  // record's `srcDivergence` note, so an adjudicated multi-component module like `ui-charts` is not
+  // reported as drift. A hand-rolled path-matching script gets all three wrong — mine did, and called
+  // four divergences where there are two. It exits non-zero on disagreement, so it gates as-is.
+  //
+  // Affordable unconditionally: MEASURED 0.15-0.18s and ~90 MB, cheaper than deciding whether to run it.
+  c.push({ label: "records (no record claims a module it is not)", key: "graph-claim-census", stage: "test", cmd: "bsc", args: ["ui", "census"] });
   if (plan.full) {
     c.push({ label: "typecheck", key: "typecheck", stage: "typecheck", cmd: "npm", args: ["run", "typecheck"] });
     c.push({ label: "lint", key: "lint", stage: "lint", cmd: "npm", args: ["run", "lint"] });
@@ -104,6 +124,12 @@ export function graphCommands() {
     { label: "graph (rust nodes compile)", key: "graph-rust-compile", stage: "compile", cmd: "node", args: ["scripts/graph-rust-compile.mjs"] },
     { label: "graph (repo store is current)", key: "graph-promote-check", stage: "compile", cmd: "node", args: ["scripts/graph-promote-check.mjs"] },
     { label: "graph (the kits agree)", key: "graph-cross-kit", stage: "test", cmd: "node", args: ["scripts/graph-cross-kit.mjs"] },
+    // The Rust EDGE tier's two-copy invariant (`a-rust-record-test-runs-and-an-edge-reaches-the-seed`).
+    // A carried Rust test is a real cargo test target now, so it CAN silently stop running: delete the
+    // file, forget the `[[test]]` entry, and nextest reports all-passing with 8 fewer tests in it
+    // (measured, 67 -> 59). This is the only thing that looks. It also catches the record and the file
+    // it was lifted from drifting apart, which it found on its FIRST run.
+    { label: "graph (rust test edges)", key: "graph-rust-tests", stage: "test", cmd: "node", args: ["scripts/graph-rust-tests.mjs"] },
   ];
 }
 
@@ -194,11 +220,15 @@ export function isRecordStorePath(file) {
  * store at all, has to reach the second without touching the first.
  */
 export function isGraphSourcePath(file) {
+  // A crate's OWN manifest decides whether a graph-carried `[[test]]` target is compiled at all, so
+  // editing one can stop a test running without touching a line of source.
+  if (/^crates\/[^/]+\/Cargo\.toml$/.test(file)) return true;
   return file.startsWith("graph/")
     || file.startsWith("src-tauri/data/knowledge/")
     || file.startsWith("crates/bsc-graph/")
     || file === "scripts/graph-rust-compile.mjs"
     || file === "scripts/graph-cross-kit.mjs"
+    || file === "scripts/graph-rust-tests.mjs"
     // The cross-kit CONTRACT: adding a case must re-run the agreement check that reads it.
     || file === "src/features/algorithms/lib/crossKit.fixtures.json";
 }

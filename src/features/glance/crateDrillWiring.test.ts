@@ -30,9 +30,58 @@ describe("a crate node's click drills instead of trying to expand a session", ()
   });
 
   it("the second layer wins over the fleet graph when it is open", () => {
-    expect(src).toContain("const model = crateModel ?? fleetModel ?? projectModel;");
+    // The FEATURE layer joined this chain (`clicking-a-feature-node-is-a-dead-click`). Both inner
+    // layers sit inside a project drill and are mutually exclusive in practice — a feature node and a
+    // crate node cannot both be open — but the order is still written down rather than left to luck.
+    expect(src).toContain("const model = crateModel ?? featureModel ?? fleetModel ?? projectModel;");
     // …and everything downstream reads the same graph, or the sidebar and the canvas disagree.
-    expect(src).toContain("const data = crateData ?? liveFleetData ?? projectData;");
+    expect(src).toContain("const data = crateData ?? featureData ?? liveFleetData ?? projectData;");
+  });
+
+  // THE FEATURE LAYER — the same wiring, one band over, and it shipped broken for the same reason the
+  // crate layer did: a feature owns no pane, so `expandNode` computed `fleetPaneId(drill,
+  // "feature:<slug>")` and the click did nothing at all.
+  describe("a feature node's click drills into its streams", () => {
+    it("routes BEFORE the expandNode catch-all", () => {
+      const drillAt = src.indexOf("else if (isFeatureNodeId(id)) setFeatureNode(id);");
+      const expandAt = src.indexOf("else expandNode(id);");
+      expect(drillAt, "the feature branch is missing — the click is dead again").toBeGreaterThan(-1);
+      expect(drillAt).toBeLessThan(expandAt);
+    });
+
+    it("builds the drill from the SAME rosters the band counted", () => {
+      // A drill fed from a second read could disagree with the card that was clicked.
+      expect(src).toContain("featureDrill(row, planStreams, storeOfRecord)");
+      expect(src).toContain("planFeatures.find((f) => f.slug === slug)");
+    });
+
+    it("steps out one layer at a time, and cannot strand", () => {
+      expect(src).toContain("if (featureNode) {");
+      expect(src).toContain("setFeatureNode(null);");
+      expect(src).toContain("if (!drill && featureNode) setFeatureNode(null);");
+    });
+
+    it("a stream opens its SESSION; a required record selects", () => {
+      // A stream carries the fleet's own node id, so `expandNode` resolves the same pane whichever
+      // graph the user came through. A required record is shared library code with nothing to run.
+      expect(src).toContain('else if (featureNode && id.startsWith("freq:")) pickNode(id);');
+      expect(src).toContain("else if (featureNode) expandNode(id);");
+      const selectAt = src.indexOf('else if (featureNode && id.startsWith("freq:"))');
+      const expandAt = src.indexOf("else if (featureNode) expandNode(id);");
+      // Order matters exactly as it does for the crate branch: the catch-all must come last, or a
+      // required record would try to open a pane that cannot exist.
+      expect(selectAt).toBeLessThan(expandAt);
+    });
+
+    it("names the layer you are in on the way back", () => {
+      expect(src).toContain('featureNode ? "← features"');
+    });
+
+    it("keys the fit on the feature graph being DISPLAYED, not on the intent", () => {
+      // Same trap the crate layer hit: keying on the click lands a render before the graph swaps, so
+      // the viewport frames the graph that is about to be replaced.
+      expect(src).toContain("featureData ? `feature:${featureNode}`");
+    });
   });
 
   it("steps out one layer at a time", () => {
@@ -81,7 +130,10 @@ describe("a crate node's click drills instead of trying to expand a session", ()
     // One copy of what an operator or a maintainer is. Editing the persona changes every session
     // started afterwards; a second description here would drift from it.
     expect(src).toContain('["persona", "get", personaId]');
-    expect(src).toContain("surfaceCharter(assignment, persona.startPrompt as string)");
+    // The DRILL DOC rides along too (`a-session-is-taught-its-surface`): the charter lists the noun's
+    // verbs as literal command lines rather than sending the session to discover them, and `crateDoc`
+    // is the copy already in hand at launch.
+    expect(src).toContain("surfaceCharter(assignment, persona.startPrompt as string, crateDoc)");
   });
 
   it("refuses to launch with no charter rather than starting an unbriefed agent", () => {
@@ -128,14 +180,20 @@ describe("a crate node's click drills instead of trying to expand a session", ()
   it("keys the fit on which graph is displayed", () => {
     expect(src).toContain("}, [shownGraph, fit, page, restoreView, hasUserMoved, setGlanceView]);");
     // derived from crateDATA — the graph genuinely on screen — never from crateNode, the intent
-    expect(src).toContain("const shownGraph = crateData ? `crate:${crateNode}` : drill ? `drill:${drill}` : \"network\";");
+    expect(src).toContain("const shownGraph = crateData ? `crate:${crateNode}` : featureData ? `feature:${featureNode}` : drill ? `drill:${drill}` : \"network\";");
   });
 
   it("the crate graph clears in the SAME render the layer closes", () => {
     // `crateDoc` is cleared by an effect, which runs AFTER the render where `crateNode` became null. For
     // that one render the layer was closed while the model still held the crate graph, and that stale
     // render is what the viewport was framed against on the way out.
-    expect(src).toContain("() => (crateNode && crateDoc ? crateDrillGraph(crateDoc) : null),");
-    expect(src).toContain("[crateNode, crateDoc],");
+    //
+    // The GUARD is what this pins, not the call. It was written against the literal
+    // `crateDrillGraph(crateDoc)` and so went red when the crate drill gained its liveness overlay
+    // (`the-crate-drill-shows-its-sessions-live`) — a green-to-red on a change that preserved the
+    // property exactly. Asserting the condition keeps the claim and stops the test owning which fold
+    // the memo calls, which is a different test's business.
+    expect(src).toContain("crateNode && crateDoc ?");
+    expect(src).toMatch(/\[crateNode, crateDoc[,\]]/);
   });
 });

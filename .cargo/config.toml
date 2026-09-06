@@ -80,3 +80,11 @@ jobs = 4
 # What is left is (a) linking a prebuilt libduckdb via DUCKDB_LIB_DIR/DUCKDB_INCLUDE_DIR — which changes
 # what the installer ships, so it is a decision rather than a patch — and (b) not paying for `-O2` on a
 # dependency nobody debugs, which is the override in the root `Cargo.toml` and is portable.
+
+# Cross-compiling the sensor for the monitor Pi (aarch64). Recorded here rather
+# than left as an environment variable a person has to know: `bsc deploy` ships
+# an aarch64 artifact to that device, and a deploy path that only works when you
+# remember an incantation is not a deploy path.
+#   apt-get install gcc-aarch64-linux-gnu
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"

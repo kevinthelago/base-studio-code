@@ -12,9 +12,11 @@
     "juror",
     "librarian",
     "marketer",
+    "operator",
     "planner",
     "reviewer",
     "sound-designer",
+    "steward",
     "tester",
     "triage",
     "worker"
@@ -44,6 +46,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -71,6 +74,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -107,6 +111,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -121,6 +126,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -149,6 +155,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -186,6 +193,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -200,6 +208,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -265,6 +274,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -279,6 +289,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -346,6 +357,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -360,6 +372,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [
           "bsc ui",
@@ -422,6 +435,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -436,6 +450,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -501,6 +516,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -515,6 +531,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [
           "bsc ui",
@@ -581,6 +598,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -595,6 +613,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -664,6 +683,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -678,6 +698,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -726,6 +747,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -740,6 +762,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -794,6 +817,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -808,6 +832,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -856,6 +881,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -870,6 +896,7 @@
         "code": "write",
         "net": "read",
         "ui": "write",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -924,6 +951,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "write"
       }
     },
@@ -938,6 +966,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -1001,6 +1030,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1015,6 +1045,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1080,6 +1111,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1094,6 +1126,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -1162,6 +1195,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1176,6 +1210,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1246,6 +1281,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "write"
       }
     },
@@ -1260,6 +1296,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -1357,6 +1394,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1371,6 +1409,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1460,6 +1499,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1474,6 +1514,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -1573,6 +1614,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1587,6 +1629,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1678,6 +1721,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1692,6 +1736,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "**/*.md",
@@ -1771,6 +1816,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1785,6 +1831,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -1858,6 +1905,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1872,6 +1920,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "**/*.md",
@@ -1951,6 +2000,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -1965,6 +2015,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2038,6 +2089,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2052,6 +2104,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -2072,6 +2125,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -2110,6 +2164,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2124,6 +2179,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2145,6 +2201,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -2183,6 +2240,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2197,6 +2255,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -2260,6 +2319,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2274,6 +2334,7 @@
         "code": "none",
         "net": "read",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2338,6 +2399,7 @@
         ]
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -2352,6 +2414,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2408,6 +2471,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2422,6 +2486,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2481,6 +2546,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2495,6 +2561,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2551,6 +2618,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2565,6 +2633,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2624,6 +2693,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2638,6 +2708,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2727,6 +2798,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2741,6 +2813,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -2833,6 +2906,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2847,6 +2921,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -2936,6 +3011,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -2950,6 +3026,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3042,6 +3119,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3056,6 +3134,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -3122,6 +3201,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3136,6 +3216,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3204,6 +3285,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3218,6 +3300,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -3288,6 +3371,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3302,6 +3386,7 @@
         "code": "none",
         "net": "none",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3374,6 +3459,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -3388,6 +3474,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "marketing/**/*.md",
           "marketing/**/*.mdx",
@@ -3473,6 +3560,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3487,6 +3575,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3560,6 +3649,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3574,6 +3664,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "marketing/**/*.md",
           "marketing/**/*.mdx",
@@ -3659,6 +3750,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3673,6 +3765,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3746,6 +3839,519 @@
         "deny": []
       },
       "scopes": {
+        "graph": "read",
+        "ui": "read"
+      }
+    },
+    {
+      "role": "operator",
+      "surfaces": "none",
+      "globs": "none",
+      "capability": {
+        "role": "operator",
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "writeGlobs": [],
+        "allow": [
+          "bsc help",
+          "bsc surface",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get",
+          "bsc request note",
+          "bsc errors run",
+          "bsc mem",
+          "bsc perf",
+          "bsc logs",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc persona whatami"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "read",
+        "ui": "read"
+      }
+    },
+    {
+      "role": "operator",
+      "surfaces": "none",
+      "globs": "owned",
+      "capability": {
+        "role": "operator",
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "writeGlobs": [
+          "src/**/*.ts",
+          "contracts/**/*.json"
+        ],
+        "allow": [
+          "bsc help",
+          "bsc surface",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get",
+          "bsc request note",
+          "bsc errors run",
+          "bsc mem",
+          "bsc perf",
+          "bsc logs",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc persona whatami"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "read",
+        "ui": "read"
+      }
+    },
+    {
+      "role": "operator",
+      "surfaces": "catalog",
+      "globs": "none",
+      "capability": {
+        "role": "operator",
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "writeGlobs": [],
+        "allow": [
+          "bsc help",
+          "bsc surface",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get",
+          "bsc request note",
+          "bsc errors run",
+          "bsc mem",
+          "bsc perf",
+          "bsc logs",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc persona whatami"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "bsc ui",
+        "bsc plan",
+        "bsc graph",
+        "bsc teams",
+        "bsc fleet",
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "read",
+        "ui": "read"
+      }
+    },
+    {
+      "role": "operator",
+      "surfaces": "catalog",
+      "globs": "owned",
+      "capability": {
+        "role": "operator",
+        "github": "read",
+        "git": "read",
+        "code": "none",
+        "net": "read",
+        "ui": "read",
+        "graph": "read",
+        "writeGlobs": [
+          "src/**/*.ts",
+          "contracts/**/*.json"
+        ],
+        "allow": [
+          "bsc help",
+          "bsc surface",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get",
+          "bsc request note",
+          "bsc errors run",
+          "bsc mem",
+          "bsc perf",
+          "bsc logs",
+          "bsc session ask",
+          "bsc session reply",
+          "bsc persona whatami"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "bsc ui",
+        "bsc plan",
+        "bsc graph",
+        "bsc teams",
+        "bsc fleet",
+        "git push",
+        "git commit",
+        "git merge",
+        "git rebase",
+        "git reset",
+        "git revert",
+        "git cherry-pick",
+        "git tag",
+        "git am",
+        "git apply",
+        "gh issue create",
+        "gh issue edit",
+        "gh issue close",
+        "gh issue reopen",
+        "gh issue comment",
+        "gh issue delete",
+        "gh issue lock",
+        "gh issue transfer",
+        "gh issue pin",
+        "gh pr create",
+        "gh pr merge",
+        "gh pr close",
+        "gh pr edit",
+        "gh pr comment",
+        "gh pr ready",
+        "gh pr review",
+        "gh label create",
+        "gh label edit",
+        "gh label delete",
+        "gh release create",
+        "gh release edit",
+        "gh release delete",
+        "gh repo create",
+        "gh repo edit",
+        "gh repo delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method PUT",
+        "gh api --method DELETE",
+        "gh api -X POST",
+        "gh api -X PATCH",
+        "gh api -X PUT",
+        "gh api -X DELETE",
+        "bsc ui set",
+        "bsc ui remove",
+        "bsc ui kit set",
+        "bsc ui kit remove",
+        "bsc component set",
+        "bsc component remove",
+        "bsc component kit set",
+        "bsc component kit remove",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3760,6 +4366,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -3849,6 +4456,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3863,6 +4471,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -3944,6 +4553,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -3958,6 +4568,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "*.md",
           "*.json",
@@ -4047,6 +4658,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4061,6 +4673,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4142,6 +4755,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4156,6 +4770,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -4245,6 +4860,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4259,6 +4875,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4351,6 +4968,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4365,6 +4983,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -4454,6 +5073,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4468,6 +5088,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4560,6 +5181,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4574,6 +5196,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -4593,6 +5216,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -4632,6 +5256,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -4646,6 +5271,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4666,6 +5292,7 @@
         "gh",
         "bsc ui",
         "bsc component",
+        "bsc graph",
         "tee",
         "dd",
         "truncate",
@@ -4706,6 +5333,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -4720,6 +5348,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "scratch/**"
         ],
@@ -4783,6 +5412,7 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -4797,6 +5427,7 @@
         "code": "none",
         "net": "none",
         "ui": "none",
+        "graph": "none",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -4862,6 +5493,373 @@
         "deny": []
       },
       "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "none",
+      "globs": "none",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "git",
+        "gh",
+        "bsc ui",
+        "bsc component",
+        "bsc graph",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "none",
+      "globs": "owned",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "src/**/*.ts",
+          "contracts/**/*.json"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "git",
+        "gh",
+        "bsc ui",
+        "bsc component",
+        "bsc graph",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "catalog",
+      "globs": "none",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "scratch/**"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "bsc ui",
+        "bsc graph",
+        "bsc persona",
+        "bsc teams",
+        "git",
+        "gh",
+        "bsc component",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
+        "ui": "none"
+      }
+    },
+    {
+      "role": "steward",
+      "surfaces": "catalog",
+      "globs": "owned",
+      "capability": {
+        "role": "steward",
+        "github": "none",
+        "git": "none",
+        "code": "none",
+        "net": "none",
+        "ui": "none",
+        "graph": "none",
+        "writeGlobs": [
+          "src/**/*.ts",
+          "contracts/**/*.json"
+        ],
+        "allow": [
+          "bsc network list",
+          "bsc network get",
+          "bsc project list",
+          "bsc project network",
+          "bsc project progress",
+          "bsc project published",
+          "bsc capability",
+          "bsc deploy devices",
+          "bsc deploy status",
+          "bsc fleet list",
+          "bsc fleet directors",
+          "bsc plan list",
+          "bsc plan get",
+          "bsc plan summary",
+          "bsc plan requirement",
+          "bsc logs",
+          "bsc mem",
+          "bsc request new",
+          "bsc request list",
+          "bsc request get"
+        ],
+        "surfaces": null
+      },
+      "deniedCommands": [
+        "bsc ui",
+        "bsc graph",
+        "bsc persona",
+        "bsc teams",
+        "git",
+        "gh",
+        "bsc component",
+        "tee",
+        "dd",
+        "truncate",
+        "install",
+        "cp",
+        "mv",
+        "ln",
+        "patch",
+        "sponge",
+        "sed -i",
+        "sed --in-place",
+        "perl -i",
+        "vi",
+        "vim",
+        "nano",
+        "emacs",
+        "ed",
+        "ex",
+        "bsc persona set",
+        "bsc persona remove",
+        "bsc persona rename",
+        "python",
+        "python3",
+        "node",
+        "jq",
+        "perl",
+        "ruby"
+      ],
+      "deniedTools": [
+        "WebFetch",
+        "WebSearch"
+      ],
+      "writeRules": {
+        "allow": [],
+        "deny": [
+          "Edit",
+          "Write",
+          "NotebookEdit"
+        ]
+      },
+      "scopes": {
+        "graph": "none",
         "ui": "none"
       }
     },
@@ -4876,6 +5874,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -4965,6 +5964,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -4979,6 +5979,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5071,6 +6072,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5085,6 +6087,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5174,6 +6177,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5188,6 +6192,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5280,6 +6285,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5294,6 +6300,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5341,6 +6348,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5355,6 +6363,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5405,6 +6414,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5419,6 +6429,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [],
         "allow": [],
         "surfaces": null
@@ -5466,6 +6477,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5480,6 +6492,7 @@
         "code": "none",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5530,6 +6543,7 @@
         ]
       },
       "scopes": {
+        "graph": "read",
         "ui": "read"
       }
     },
@@ -5544,6 +6558,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": [
@@ -5616,6 +6631,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -5630,6 +6646,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5708,6 +6725,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -5722,6 +6740,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [],
         "allow": [],
         "surfaces": [
@@ -5798,6 +6817,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     },
@@ -5812,6 +6832,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "writeGlobs": [
           "src/**/*.ts",
           "contracts/**/*.json"
@@ -5894,6 +6915,7 @@
         ]
       },
       "scopes": {
+        "graph": "write",
         "ui": "read"
       }
     }

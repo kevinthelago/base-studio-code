@@ -1,0 +1,40 @@
+{
+  "id": "self-heal",
+  "name": "Self-heal",
+  "latin": "Prunella vulgaris",
+  "functions": ["astringent", "antiseptic", "hemostatic"],
+  "regions": ["north-america", "europe", "asia", "worldwide"],
+  "habitat": "Short grass everywhere — lawns, meadows, path edges, woodland clearings. It survives mowing by flowering low.",
+  "parts": ["whole plant above ground"],
+  "identify": [
+    "SQUARE stem — roll it between your fingers and you can feel the four edges. It is a mint-family plant.",
+    "Leaves in opposite pairs, oval, on short stalks.",
+    "A dense, blunt, oblong flower head at the stem tip with hooded violet-blue two-lipped flowers emerging from brownish bracts.",
+    "Low-growing, often only 10-20 cm in mown grass.",
+    "No smell of mint despite the family."
+  ],
+  "lookalikes": [
+    {
+      "name": "Bugle",
+      "latin": "Ajuga reptans",
+      "danger": "Low — also a harmless mint-family plant.",
+      "tell": "Bugle's flowers are spaced in whorls up a leafy spike rather than packed into one blunt terminal head, and it spreads by obvious runners."
+    },
+    {
+      "name": "Ground ivy",
+      "latin": "Glechoma hederacea",
+      "danger": "Low.",
+      "tell": "Ground ivy has scalloped kidney-shaped leaves and a strong aromatic smell when crushed; self-heal's leaves are plain ovals and it barely smells."
+    }
+  ],
+  "preparations": [
+    { "form": "poultice", "method": "Crush the fresh plant and press onto the wound.", "for_use": "The name is the traditional use — a styptic and wound herb for shallow cuts and grazes." },
+    { "form": "infusion", "method": "Steep the dried aerial parts 10 minutes.", "for_use": "A gargle for sore throat and mouth ulcers, and a wound wash." }
+  ],
+  "cautions": [
+    "Taken from lawns, so the contamination question matters more than the plant does — avoid sprayed or dog-walked ground.",
+    "Mildly anticoagulant activity is reported; caution alongside blood thinners.",
+    "A minor styptic. Direct pressure remains the answer for real bleeding."
+  ],
+  "evidence": "Widespread traditional use in both European and Chinese medicine; laboratory antiviral and antibacterial activity is reported. Clinical evidence is thin."
+}

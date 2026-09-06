@@ -124,6 +124,34 @@ function writeResult(payload) {
   }
 }
 
+/**
+ * The tests nextest reports as failed, as `<classname>::<name>` — `plandb::validate::tests::foo`.
+ *
+ * Only for the nextest leg; every other leg leaves `failures` empty and is excused leg-level as
+ * before (`tsc` reports a program, `eslint` a file set — neither can enumerate).
+ *
+ * Returns [] on ANY problem rather than throwing. A gate that dies because a report was missing would
+ * be worse than one that cannot name a failure — and `classify` treats empty as unknown and refuses
+ * to excuse, so the safe direction is already the default.
+ */
+function nextestFailures(key) {
+  if (key !== "nextest") return [];
+  try {
+    const xml = readFileSync(join(REPO, "target", "nextest", "default", "junit.xml"), "utf8");
+    const out = [];
+    for (const chunk of xml.split("<testcase ").slice(1)) {
+      const body = chunk.slice(0, chunk.indexOf("</testcase>") + 1 || chunk.indexOf("/>") + 1);
+      if (!body.includes("<failure") && !body.includes("<error")) continue;
+      const name = /name="([^"]*)"/.exec(chunk)?.[1];
+      const cls = /classname="([^"]*)"/.exec(chunk)?.[1];
+      if (name) out.push(cls ? `${cls}::${name}` : name);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function run(label, cmd, args, leg = {}) {
   process.stdout.write(`\n── ${label}\n   ${cmd} ${args.join(" ")}\n`);
   const t = Date.now();
@@ -276,11 +304,16 @@ const releaseSlot = needsGateSlot(plan)
 const results = [];
 for (const { label, cmd, args, key, stage } of gateCommands(plan, base)) {
   const { ok, seconds } = run(label, cmd, args, { key, stage });
+  // WHICH TESTS FAILED, so a known-red declaration can excuse the failure it NAMES rather than every
+  // failure in the leg it lives in. Read off nextest's JUnit report (`.config/nextest.toml`) rather
+  // than off stdout, because `run` inherits stdio on purpose and piping would cost cargo's live
+  // progress. Empty means UNKNOWN — `bsc-work`'s `classify` fails closed on it.
+  const failures = ok ? [] : nextestFailures(key);
   // `key` is the leg's STABLE id — the same one `record-run.mjs` measures under as `gate:<key>`, so a
   // scoped and a full run of one leg share an identity instead of splitting into two that can never be
   // compared. It is what a change record's gate evidence is filed under; `label` is prose and may be
   // reworded ("lint" vs "lint (changed files)") without breaking a reader.
-  results.push({ key: key ?? label, label, ok, seconds });
+  results.push({ key: key ?? label, label, ok, seconds, failures });
 }
 
 releaseSlot(); // before the exit below, and before printing — a held slot blocks the fleet

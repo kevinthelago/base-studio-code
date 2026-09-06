@@ -1,0 +1,49 @@
+{
+  "id": "tinder-fungus",
+  "name": "Tinder fungus (amadou, hoof fungus)",
+  "latin": "Fomes fomentarius",
+  "functions": ["hemostatic", "antiseptic", "astringent"],
+  "regions": ["north-america", "europe", "asia", "boreal"],
+  "habitat": "A hard bracket on dead and dying broadleaf trees — birch above all, also beech, maple and poplar. Boreal and temperate forest.",
+  "parts": ["inner flesh (the trama, worked into amadou)", "whole bracket"],
+  "identify": [
+    "A hard, hoof-shaped or humped bracket fixed flat to the trunk, grey to grey-brown, 5-25 cm across.",
+    "Concentric ridges and furrows banding the upper surface like growth rings on a hoof.",
+    "The underside is a flat pore surface — fine pinholes, not gills.",
+    "Cut it open: under the hard crust is a suede-like tan-brown layer. That layer is the amadou, and it is why the fungus is worth carrying.",
+    "Woody and unyielding. It does not squash."
+  ],
+  "lookalikes": [
+    {
+      "name": "Artist's conk",
+      "latin": "Ganoderma applanatum",
+      "danger": "Low — not toxic, but it makes poor amadou and poor tinder, so mistaking it wastes the effort.",
+      "tell": "Artist's conk has a flat white pore surface that BRUISES BROWN when you scratch it (which is what it is named for); Fomes does not mark that way, and it is hoof-humped rather than flat-shelfed."
+    },
+    {
+      "name": "Red-belted conk",
+      "latin": "Fomitopsis pinicola",
+      "danger": "Low, but it is a conifer species with a different structure and it will not process into amadou.",
+      "tell": "A distinct red-orange to red-brown BAND at the growing margin, and a sticky, resinous crust that melts under a flame. Grows mostly on conifers; Fomes is on birch and hardwood."
+    },
+    {
+      "name": "Birch polypore",
+      "latin": "Fomitopsis betulina",
+      "danger": "Low — it is also useful, as a plaster and a strop, but it is not this.",
+      "tell": "Soft, pale, kidney-shaped with a smooth rolled edge and a fine white pore surface. It gives to a thumb; Fomes is stone-hard."
+    }
+  ],
+  "preparations": [
+    { "form": "amadou", "method": "Cut away the hard crust and the tough pore layer, keep the suede-brown trama, slice it thin, and pound it until it is soft and felted. Traditionally then soaked in wood-ash lye or urine, dried, and pounded again.", "for_use": "A styptic pad pressed onto a bleeding wound — it is absorbent and clings, and this is exactly what it was sold to dentists and barber-surgeons for. The SAME material is the classic spark-catching tinder and an ember bed for `fire-bank-and-carry`." },
+    { "form": "raw tinder", "method": "Shave or scrape the trama into fluff; it takes a spark from flint and steel directly.", "for_use": "Ignition — see `fire-flint-and-steel`. Otzi carried this with him five thousand years ago." },
+    { "form": "ember carry", "method": "A dry lump smoulders slowly without flaming.", "for_use": "Carrying fire — see `fire-bank-and-carry`." }
+  ],
+  "cautions": [
+    "It is a DRESSING, not a treatment. It presses and absorbs; direct pressure is still what stops a serious bleed — see `bleeding-direct-pressure`.",
+    "Raw fungus off a trunk is not sterile. Dry it, and keep a cloth barrier between it and open tissue where you can.",
+    "Do not eat it — it is far too tough to be food and it is not used internally.",
+    "Cutting brackets off living trees damages them; take from dead standing birch.",
+    "The traditional lye or urine soak is for making it soft and quick to catch, not for making it clean."
+  ],
+  "evidence": "Documented as both tinder and a wound styptic for millennia — carried by the Tyrolean iceman, and sold commercially as a surgical haemostat into the nineteenth century. Modern clinical evidence is essentially absent; the absorbency and adherence are the mechanism, not a pharmacology."
+}

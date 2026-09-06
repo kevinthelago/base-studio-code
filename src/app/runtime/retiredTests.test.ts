@@ -23,14 +23,18 @@
 import { describe, it, expect } from "vitest";
 import { relativeImportSpecifiers } from "@/shared/lib/runtime/shadow/pageBinding";
 import { planRecords } from "../../../scripts/emit-records.mjs";
-import { existsSync } from "node:fs";
+import { blankComments } from "../../../scripts/lib/recordSource.mjs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Every packaged seed, as the record objects the app would load. */
-const seeds = import.meta.glob<{ id?: string; provides?: string; tests?: { name?: string; src?: string }[] }>(
-  "@data/components/app/**/*.json",
-  { eager: true, import: "default" },
-);
+const seeds = import.meta.glob<{
+  id?: string;
+  provides?: string;
+  /** Provenance — the file the record was harvested FROM. Present on records with no `provides`. */
+  src?: string;
+  tests?: { name?: string; src?: string }[];
+}>("@data/components/app/**/*.json", { eager: true, import: "default" });
 
 /** Every file under `src/`, keyed the way a specifier addresses it (`@/x/y` → `x/y`). */
 const srcFiles = new Set(
@@ -50,6 +54,13 @@ const isOwnSpecifier = (spec: string) =>
   ["@/app/", "@/features/", "@/shared/", "@/store/", "@/styles/"].some((p) => spec.startsWith(p));
 
 const countAssertions = (src: string) => (src.match(/^\s*(it|test)\(/gm) ?? []).length;
+
+/** Every packaged algorithm implementation, beside the component records globbed above. */
+const allImpls = (
+  JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8")) as {
+    implementations?: (typeof seeds)[string][];
+  }
+).implementations;
 
 describe("a retired module keeps its tests in the gate", () => {
   it("every RETIRED record that carries tests has them EXECUTED — from src/, or from the emitted record", () => {
@@ -172,5 +183,237 @@ describe("an edge test is executed, not merely stored", () => {
     for (const t of planRecords().edgeTests) {
       expect(t.members.length, `${t.id} spans 2+ records — one is a node test`).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  // ── A MIGRATED TEST'S FILE MAY NOT COME BACK (`the-frontend-tests-are-records`) ──────────────────
+  //
+  // `plan_records` puts an edge in `edgeShadowed` when its `src` file still exists: "the file still
+  // exists ⇒ IT is the copy that runs". Nothing was asserting that bucket, so a re-added file was a
+  // SILENT second copy of the assertions — coverage intact, and two copies free to drift, which is
+  // the exact failure records exist to remove. It is not hypothetical: the migration deletes the file
+  // and the store keeps the test, so any later `git checkout`, revert or merge that resurrects the
+  // path re-creates the pair.
+  //
+  // Unlike a node test, an edge is never MIRRORED — `bsc graph edge set --src` is the migration verb,
+  // not a harvest — so a populated `edgeShadowed` has no legitimate reading. Reads the packaged SEED,
+  // not the shared runtime store, so a half-finished migration in someone else's session cannot
+  // redden this for everyone; only a COMMITTED one can.
+  it("no edge test's file has come back to src/ — a shadowed edge is a second copy of the assertions", () => {
+    const plan = planRecords();
+    const seedEdges: { id?: string; src?: string; tests?: unknown[] }[] =
+      (JSON.parse(readFileSync(join(process.cwd(), "src-tauri/data/knowledge/algorithms.json"), "utf8"))
+        .edges ?? []) as { id?: string; src?: string; tests?: unknown[] }[];
+    const srcOf = new Map(seedEdges.map((e) => [e.id ?? "", e.src ?? "(no src)"]));
+    expect(
+      plan.edgeShadowed.map((id: string) => `${id} — ${srcOf.get(id)} is back on disk`),
+      "these edges carry a test AND the file they were migrated out of exists again. Delete the file " +
+        "(the store copy is emitted into `.bsc-records/` and runs there), or drop the edge — but not both.",
+    ).toEqual([]);
+    // Non-vacuity: an empty seed and a seed nothing matched look identical from here.
+    const withTests = seedEdges.filter((e) => (e.tests ?? []).length > 0).length;
+    expect(withTests, "packaged edges carrying tests").toBeGreaterThanOrEqual(50);
+  });
+
+  // The node half of the same reappearance. `plan_records` shadows a record's WHOLE `tests` manifest
+  // on one colocated file — `test_file_exists(repo, spec)` is a single check, not a per-entry one — so
+  // re-adding `src/<spec>.test.ts` beside a record carrying five tests stops FOUR of them running while
+  // the fifth reads as the file that replaced them. Measured on `session-roles.ts`, which carries five.
+  it("no record carrying several tests has a colocated file — one file shadows the whole manifest", () => {
+    // FLAT, exactly as `test_file_exists` in `crates/bsc-emit/src/plan.rs` is — `<spec><ext>`, never
+    // the barrel form the guard below accepts. A looser check here would report a shadow the emitter
+    // does not actually apply.
+    const colocated = (base: string) =>
+      [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"].some((e) => srcFiles.has(base + e));
+    const carriers = [...Object.values(seeds), ...(allImpls ?? [])].filter(
+      (r) => (r.tests ?? []).length > 1 && (r.provides ?? "").startsWith("@/"),
+    );
+    const shadowedWhole = carriers
+      .filter((r) => colocated((r.provides as string).slice(2)))
+      .map((r) => `${r.provides} — ${(r.tests ?? []).length} carried, all shadowed by one file`);
+    expect(
+      shadowedWhole,
+      "a colocated test file shadows EVERY test its record carries, not just the matching one",
+    ).toEqual([]);
+    expect(carriers.length, "records carrying more than one test").toBeGreaterThanOrEqual(20);
+  });
+});
+
+
+// ── A module that is STILL A FILE also carries tests, and only the file runs them ───────────────────
+//
+// (`fifteen-test-files-duplicate-a-carried-test`.) The guard at the top of this file deliberately skips
+// a record whose module is still present — "not retired, nothing to preserve yet". That is true of the
+// MODULE and false of the TEST, and the gap is the whole of that item's finding: 15 test files under
+// `src/` are byte-identical to a test carried on a record, and for FOURTEEN of them the emitter can
+// never materialize the carried copy. Two independent reasons, both in `crates/bsc-emit/src/plan.rs`:
+//
+//   collect_seeds  keys the seed map by `provides` and takes ONLY a specifier starting with `@/`.
+//                  A record without one is never in the map, so its tests are unreachable — 7 of the 15.
+//   plan_records   then SKIPS any spec whose module file is still under `src/` ("the file is still
+//                  there and authoritative"), which takes the carried tests with it — the other 7.
+//
+// So a record in either state holds assertions that execute from exactly ONE place: the colocated file.
+// Deleting it because it "duplicates the record" runs those assertions nowhere, on a green gate — this
+// repo's signature failure, and precisely the mistake a by-content duplicate census invites.
+//
+// Each arm asserts its own POPULATION, because "no record is in this state" and "the scan quietly
+// stopped matching" are indistinguishable from a passing result.
+describe("a carried test the emitter can never emit still needs its colocated file", () => {
+  /** Every packaged algorithm implementation, beside the component records globbed above. */
+  const impls = allImpls;
+
+  const TEST_EXT = [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"];
+  /** Is a colocated test running this module?
+   *
+   *  TWO SHAPES, and the second was found by this guard rather than reasoned out. The flat one is
+   *  `x/y.ts` beside `x/y.test.ts`. The other is a BARREL: `@/shared/ui/charts` resolves through
+   *  `shared/ui/charts/index.ts`, and its colocated test is `shared/ui/charts/charts.test.tsx` —
+   *  named for the DIRECTORY, not for `index`. A flat-only check calls that record untested and
+   *  reports a gap that is not there, so a barrel accepts any test sitting directly inside it.
+   *  (docs/records.md, "A barrel is addressed THREE ways".) */
+  const IN_DIR = /^[^/]+\.(?:test|spec)\.tsx?$/;
+  const hasTestFile = (base: string) =>
+    TEST_EXT.some((e) => srcFiles.has(base + e)) ||
+    [...srcFiles].some((f) => f.startsWith(base + "/") && IN_DIR.test(f.slice(base.length + 1)));
+  const carriedAssertions = (rec: { tests?: { src?: string }[] }) =>
+    (rec.tests ?? []).reduce((n, t) => n + countAssertions(t.src ?? ""), 0);
+
+  it("a record whose MODULE is still a file keeps its colocated test — the record's copy is not emitted", () => {
+    const gaps: string[] = [];
+    let checked = 0;
+    for (const rec of [...Object.values(seeds), ...(impls ?? [])]) {
+      const spec = typeof rec?.provides === "string" ? rec.provides.trim() : "";
+      if (!spec.startsWith("@/") || !isOwnSpecifier(spec)) continue;
+      const base = spec.slice(2);
+      if (!hasFile(base)) continue; // retired — the guard at the top of this file owns it
+      const carried = carriedAssertions(rec);
+      if (!carried) continue;
+      checked++;
+      if (!hasTestFile(base)) gaps.push(`${spec} — ${carried} assertion(s) stored, and no file runs them`);
+    }
+    expect(
+      gaps,
+      `these records carry tests that NOTHING executes. The module is still a file, so ` +
+        `\`plan_records\` skips the record and its carried copy is never emitted — the colocated test ` +
+        `file is the only executor there is:\n  ${gaps.join("\n  ")}`,
+    ).toEqual([]);
+    expect(checked, "the guard examined at least one still-a-file record carrying tests").toBeGreaterThan(0);
+  });
+
+  it("a record with NO `@/` provides keeps its colocated test — `collect_seeds` never keys it at all", () => {
+    const gaps: string[] = [];
+    let checked = 0;
+    for (const rec of [...Object.values(seeds), ...(impls ?? [])]) {
+      const spec = typeof rec?.provides === "string" ? rec.provides.trim() : "";
+      if (spec.startsWith("@/")) continue; // the arm above
+      const from = typeof rec?.src === "string" ? rec.src.trim() : "";
+      if (!from.startsWith("src/")) continue; // no provenance under src/ — no position to check
+      const base = from.slice("src/".length).replace(/\.(tsx?|jsx?)$/, "");
+      if (!hasFile(base)) continue; // the provenance file is gone; nothing colocated is expressible
+      const carried = carriedAssertions(rec);
+      if (!carried) continue;
+      checked++;
+      if (!hasTestFile(base)) {
+        gaps.push(`${rec.id ?? from} — ${carried} assertion(s) stored, and no file runs them`);
+      }
+    }
+    expect(
+      gaps,
+      `these records carry tests that NOTHING executes. Without an \`@/\` specifier \`collect_seeds\` ` +
+        `never puts the record in the seed map, so the emitter cannot materialize its test at any ` +
+        `point — the colocated file is the only executor there is:\n  ${gaps.join("\n  ")}`,
+    ).toEqual([]);
+    expect(checked, "the guard examined at least one provides-less record carrying tests").toBeGreaterThan(0);
+  });
+});
+
+
+// ── A MIGRATED NODE TEST'S FILE MAY NOT COME BACK EITHER (`…-tranche-two`) ──────────────────────────
+//
+// The edge arm above has `edgeShadowed` to read, because an edge names the `src` file it was migrated
+// out of. A NODE test carries no such provenance — `tests: [{ name, ext, src }]` and nothing more — so
+// "this record's test used to be a file" is not a question the store can answer, and `plan.shadowed`
+// only sees a file sitting at the record's OWN specifier (`SpectrumAnalyzer.test.tsx`), never one at
+// the name it actually had (`nextTabName.test.ts` → `@/app/chrome/Tabstrip`).
+//
+// What IS mechanical is the content. A migration copies the file's bytes onto the record and deletes
+// the file, so a file whose text is byte-identical to a test the emitter MATERIALIZES is that same
+// test running twice — once from `src/`, once from `.bsc-records/` — with two copies free to drift.
+// That is the failure records exist to remove, and it needs no hand-maintained list of what moved.
+//
+// ⚠️ RESTRICTED TO `plan.tests`, deliberately. `docs/records.md` records fifteen `src/` files that ARE
+// byte-identical to a carried test and MUST keep their file, because `collect_seeds`/`plan_records`
+// can never materialize the record's copy. Those are not in `plan.tests`, so they are not duplicates
+// in the sense that matters: nothing else runs them.
+describe("a migrated node test's file has not come back", () => {
+  /** Every test file under `src/`, as raw text. */
+  const srcTests = import.meta.glob<string>("/src/**/*.{test,spec}.{ts,tsx}", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  });
+
+  it("no file under src/ duplicates a carried test the emitter materializes — that is two live copies", () => {
+    const plan = planRecords();
+    const byText = new Map<string, string>();
+    for (const t of plan.tests as { spec: string; rel: string; src: string }[]) {
+      byText.set(t.src, `${t.spec} → .bsc-records/${t.rel}`);
+    }
+    const dupes: string[] = [];
+    for (const [path, text] of Object.entries(srcTests)) {
+      const where = byText.get(text);
+      if (where) dupes.push(`${path.replace(/^\//, "")} is byte-identical to ${where}`);
+    }
+    expect(
+      dupes,
+      "these files were migrated onto a record and have come back. The record's copy is emitted into " +
+        "`.bsc-records/` and runs there, so the file is a SECOND live copy of the same assertions — " +
+        "delete it, or drop the carried test, but not both:\n  " + dupes.join("\n  "),
+    ).toEqual([]);
+    // Non-vacuity, both sides: a glob that stopped matching and a plan with no emitted tests each look
+    // exactly like a clean sweep from here.
+    expect(Object.keys(srcTests).length, "test files scanned under src/").toBeGreaterThan(100);
+    expect(byText.size, "carried tests the emitter materializes").toBeGreaterThan(100);
+  });
+
+  // ── AND IT MAY NOT SILENTLY CHANGE ENVIRONMENT ──────────────────────────────────────────────────
+  //
+  // `bsc-emit` re-addresses a node test to its RECORD's path, so a test written under jsdom can land
+  // under `**/lib/**` — which `vitest.config.ts` gives to the `node` project. That is the whole reason
+  // the migration rule says a node test moves only when the record keeps it on the same side of the
+  // boundary. The hazard is not the move; it is the move being SILENT.
+  //
+  // `vitest.config.ts` already documents the cure — "a file that genuinely needs a DOM despite living
+  // under `lib/` says so ITSELF, with a `@vitest-environment jsdom` docblock, which takes precedence
+  // over the project's environment" — so this makes that the enforced form: a materialized test that
+  // lands in `node` and reaches for a DOM must DECLARE it. An edge test needs no such arm, because
+  // `bsc-emit` writes an edge back at its original relative path and its project cannot change.
+  it("a carried test emitted into the `node` project either needs no DOM, or declares jsdom", () => {
+    // The `node` project's include, restated: `.bsc-records/**/lib/**/*.test.{ts,tsx}`.
+    const NODE_PROJECT = /(^|\/)lib\//;
+    // A DOM reach that would throw (or quietly assert nothing) with `environment: "node"`.
+    const NEEDS_DOM = /@testing-library\/|\bdocument\.|\bwindow\.|\bscreen\.|[^\w.]render\(/;
+    const DECLARES = /@vitest-environment\s+jsdom\b/;
+    const undeclared: string[] = [];
+    let inNode = 0;
+    for (const t of planRecords().tests as { spec: string; rel: string; src: string }[]) {
+      if (!NODE_PROJECT.test(t.rel)) continue;
+      inNode++;
+      // SCAN A COMMENT-BLANKED COPY. Prose about a rule trips the rule — `docs/records.md` records
+      // four scanners caught by it in one day, and this one made five: `roleModel.test.ts` says
+      // "contradictory instructions in one context window." and `\bwindow\.` matched the full stop.
+      // The DECLARATION is read from the original, because a docblock IS a comment.
+      if (NEEDS_DOM.test(blankComments(t.src)) && !DECLARES.test(t.src)) {
+        undeclared.push(`${t.spec} → .bsc-records/${t.rel} reaches for a DOM the \`node\` project has not got`);
+      }
+    }
+    expect(
+      undeclared,
+      "these carried tests are materialized under `lib/`, which the `node` project claims, and they " +
+        "touch the DOM. Put `// @vitest-environment jsdom` at the top of the test (the mechanism " +
+        "`vitest.config.ts` documents), or move the test to a record on the other side of the " +
+        "boundary:\n  " + undeclared.join("\n  "),
+    ).toEqual([]);
+    expect(inNode, "carried tests materialized into the `node` project").toBeGreaterThan(50);
   });
 });

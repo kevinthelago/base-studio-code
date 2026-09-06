@@ -1,0 +1,34 @@
+{
+  "id": "fire-tinder-bundle",
+  "category": "fire",
+  "name": "Tinder bundle and fire lay",
+  "summary": "The structure that turns an ember or a spark into a fire — a bird's nest of fine dry fibre inside a graded stack of fuel.",
+  "time": "20-30 minutes of gathering before you strike anything",
+  "materials": [
+    { "item": "fine dry tinder", "substitutes": ["birch bark", "cedar bark", "dry grass", "cattail down", "cotton", "char cloth", "fatwood shavings"] },
+    { "item": "kindling", "substitutes": ["pencil-thick twigs", "split wood", "dead standing branches"] },
+    { "item": "fuel wood", "substitutes": ["logs", "branches", "split wood"] },
+    { "item": "a dry base", "substitutes": ["bark slab", "flat stone", "dry log"] }
+  ],
+  "steps": [
+    { "text": "Gather everything BEFORE you light anything: three graded piles — hair-fine tinder, pencil-thick kindling, thumb-thick and up. Gather twice what you think you need.", "why": "The commonest way a fire dies is running out of the next size up while the flame is still fragile." },
+    { "text": "Take dead wood from standing trees, not from the ground. Snap it: it should crack, not bend." },
+    { "text": "Work the tinder between your palms until it is a mass of loose fibre, then shape it into a nest with a hollow in the middle." },
+    { "text": "Build the lay on a dry base — a bark slab or flat stone — so the ground does not wick heat and damp out of it." },
+    { "text": "Drop the ember into the nest, fold it loosely closed, hold it up and breathe long and steady through it until it flames." },
+    { "text": "Set the flaming nest under the kindling and feed it upward in size, never smothering the flame with a piece it cannot catch." }
+  ],
+  "verify": [
+    "Tinder is ready when it is fibre, not shavings — it should look like a bird's nest and light from a single spark.",
+    "The fire is established when thumb-thick wood burns without your attention."
+  ],
+  "limits": [
+    "A perfect ignition source cannot rescue bad tinder or a wet lay. Preparation is the part that actually determines whether you get fire.",
+    "This is the structure only — it presumes a separate ignition source (`fire-bow-drill`, `fire-ferro-rod`, a lighter)."
+  ],
+  "cautions": [
+    "Clear the ground to bare earth and mind overhanging branches and roots — a fire can travel underground through duff and root mats.",
+    "Never build a fire under a snow-loaded branch."
+  ],
+  "tags": ["fire", "tinder", "kindling", "lay"]
+}

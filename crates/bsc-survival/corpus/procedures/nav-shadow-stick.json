@@ -1,0 +1,33 @@
+{
+  "id": "nav-shadow-stick",
+  "category": "navigation",
+  "name": "Shadow-stick direction",
+  "summary": "Two shadow tips fifteen minutes apart give you a west-east line anywhere on Earth, with no compass and no clock.",
+  "time": "15-30 minutes",
+  "materials": [
+    { "item": "a straight stick about a metre long", "substitutes": ["stick", "pole", "trekking pole", "branch"] },
+    { "item": "two markers", "substitutes": ["pebbles", "twigs", "scratches in the dirt"] },
+    { "item": "level open sunlit ground", "substitutes": ["flat ground", "clearing", "sand"] }
+  ],
+  "steps": [
+    { "text": "Push the stick upright into level ground where its shadow falls clearly." },
+    { "text": "Mark the very TIP of the shadow with a pebble. That mark is WEST.", "why": "The sun tracks westward across the sky, so the shadow tip tracks eastward — the first mark is always the western one, in either hemisphere." },
+    { "text": "Wait 15-30 minutes — longer gives a longer, more accurate baseline." },
+    { "text": "Mark the new shadow tip. That mark is EAST." },
+    { "text": "The line joining the two marks runs west-east. Stand with the first mark under your left foot and the second under your right: you are facing NORTH." }
+  ],
+  "verify": [
+    "Cross-check with the sun's own arc: it rises in the eastern half of the sky and sets in the western half everywhere on Earth.",
+    "In the northern hemisphere the midday sun sits to the south; in the southern hemisphere, to the north. The result should agree."
+  ],
+  "limits": [
+    "It gives DIRECTION, not position. Knowing which way is north does not tell you where you are or where help is.",
+    "Accuracy is roughly good enough to walk a straight line by — not good enough to navigate to a point.",
+    "It needs sun and reasonably level ground; on a steep slope the geometry distorts.",
+    "It is least accurate near the equinoxes at high latitude and around local noon, when the shadow moves fast and short."
+  ],
+  "cautions": [
+    "Knowing north is only useful with a decision about where to go. In most lost-person cases, staying put and signalling is the better one."
+  ],
+  "tags": ["navigation", "sun", "shadow", "direction", "no-compass"]
+}

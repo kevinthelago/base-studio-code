@@ -1,0 +1,33 @@
+{
+  "id": "fire-battery-short",
+  "category": "fire",
+  "name": "Battery ignition",
+  "summary": "A battery shorted through fine steel wool or a wire — the fastest fire in the corpus if you happen to be carrying a dead torch.",
+  "time": "seconds",
+  "materials": [
+    { "item": "battery", "substitutes": ["9V battery", "AA batteries", "phone battery", "power bank", "car battery", "headlamp cells"] },
+    { "item": "fine steel wool or thin wire", "substitutes": ["steel wool", "0000 steel wool", "thin wire", "foil gum wrapper", "wire from an earbud"] },
+    { "item": "tinder bundle", "substitutes": ["tinder", "bird's nest", "dry grass"] }
+  ],
+  "steps": [
+    { "text": "Tease the steel wool out into a loose, airy pad and nest it in the tinder bundle BEFORE you touch it to anything." },
+    { "text": "9V: press both terminals directly onto the wool. It lights instantly." },
+    { "text": "AA/AAA: run a short length of wire, or a foil strip cut narrow in the middle, from + to −. The narrow waist is where it heats.", "why": "The thin section has the highest resistance, so that is where the heat concentrates. A uniformly wide strip just gets warm and drains the cell." },
+    { "text": "Steel wool burns fast and hot but briefly — blow gently and feed it fine tinder immediately." },
+    { "text": "A LITHIUM phone or power-bank cell will do this too, and violently. Treat it as a last resort, not a technique." }
+  ],
+  "verify": [
+    "The wool glows orange and the glow spreads on its own. If it only warms, the wool is too coarse or the cell is too flat."
+  ],
+  "limits": [
+    "It burns out in seconds — this is an ignition source, not a fire. Without prepared tinder underneath it you get a bright flash and nothing.",
+    "It depends entirely on carrying the right two manufactured things. It is the top of the ladder, not the bottom.",
+    "Coarse steel wool (the kind in a kitchen) works poorly. It wants the fine grade."
+  ],
+  "cautions": [
+    "PUNCTURING OR SHORTING A LITHIUM CELL can cause a vent-with-flame and toxic smoke, and it is not controllable once started. Do it outdoors, downwind, and never in a shelter or a pack.",
+    "Steel wool in a pack beside a battery is a fire waiting to happen. Store them apart — this has burned through rucksacks.",
+    "A shorted battery gets hot enough to burn your hand."
+  ],
+  "tags": ["fire", "battery", "steel wool", "improvised", "modern"]
+}

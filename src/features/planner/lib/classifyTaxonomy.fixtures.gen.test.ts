@@ -3,7 +3,8 @@
 // ## This is not a port — both copies already exist
 //
 // `APP_TYPES`, `LIFECYCLES` and `SYSTEM_SOURCES` are declared twice: here, and as `pub const` arrays
-// in `crates/plandb/src/validate.rs`, where `validate_classify_config` REJECTS any value outside
+// in the record `plandb--validate.rs` (plandb compiles from the graph — there is no
+// `crates/plandb/src/validate.rs` file), where `validate_classify_config` REJECTS any value outside
 // them. So the Rust copy is a GATE, not documentation. They are byte-identical today and nothing
 // checks that they stay so.
 //

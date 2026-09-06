@@ -1,0 +1,33 @@
+{
+  "id": "fire-flint-and-steel",
+  "category": "fire",
+  "name": "Flint and steel",
+  "summary": "A hard stone edge shaving burning steel off a striker onto char — the method that worked for six hundred years and still works when the ferro rod is gone.",
+  "time": "seconds, given char and a prepared bundle",
+  "materials": [
+    { "item": "high-carbon steel striker", "substitutes": ["steel striker", "old file", "carbon steel knife spine", "hacksaw blade"] },
+    { "item": "hard sharp stone", "substitutes": ["flint", "chert", "quartz", "quartzite", "jasper", "agate", "obsidian"] },
+    { "item": "char cloth", "substitutes": ["char", "charred punk wood", "amadou", "tinder fungus"] },
+    { "item": "tinder bundle", "substitutes": ["tinder", "bird's nest"] }
+  ],
+  "steps": [
+    { "text": "Hold a piece of char on top of the stone, pinched under your thumb, right at the striking edge." },
+    { "text": "Strike DOWN along the stone's edge with the steel at a shallow angle, as though shaving a curl off it.", "why": "The spark is a shaving of steel, heated to burning by the friction of being cut off. The stone is not the thing that burns — it is the blade doing the cutting." },
+    { "text": "Aim the shower so it lands ON the char, not near it." },
+    { "text": "When the char catches, a red ring spreads across it. Fold it into the tinder bundle and blow steadily." },
+    { "text": "If the sparks are weak, freshen the stone edge by knocking a flake off — a rounded edge stops cutting steel." }
+  ],
+  "verify": [
+    "Orange sparks that ARC rather than flash, and a red ring that spreads across the char once one lands.",
+    "Stainless steel will not work. If you get nothing at all, the striker is the suspect before the stone is."
+  ],
+  "limits": [
+    "It cannot ignite raw tinder. Without char (or true amadou) this method does essentially nothing, which is why `fire-char-cloth` is its prerequisite rather than an accessory.",
+    "It is far slower and fussier than a ferro rod. Its virtue is that both halves are findable or forgeable and never run out."
+  ],
+  "cautions": [
+    "Stainless steel and modern knife steels are the usual reason this fails — you need HIGH CARBON steel, which is why an old file is the classic striker.",
+    "Struck stone throws sharp flakes. Mind your eyes and the hand holding the char."
+  ],
+  "tags": ["fire", "flint and steel", "char cloth", "sparks", "traditional"]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "chaga",
+  "name": "Chaga",
+  "latin": "Inonotus obliquus",
+  "functions": ["antiseptic", "astringent", "digestive"],
+  "regions": ["north-america", "europe", "asia", "boreal"],
+  "habitat": "Almost exclusively on living birch in cold northern forest. It is a long-lived infection of the tree, not a fruiting body on a dead one.",
+  "parts": ["sclerotium (the black mass)"],
+  "identify": [
+    "A black, cracked, charcoal-like mass bursting out of a birch trunk — it looks far more like burnt wood or a canker than like a mushroom.",
+    "THE TEST: break it open. The inside is a bright rusty orange-brown, granular and corky. Black outside, rust orange inside is the pairing nothing else offers.",
+    "On LIVING birch, usually well up the trunk, often at an old wound.",
+    "Hard and dense; it has to be chopped or levered out."
+  ],
+  "lookalikes": [
+    {
+      "name": "Burl or canker",
+      "latin": null,
+      "danger": "Low — you have hacked at a lump of wood for nothing.",
+      "tell": "A burl is WOOD: bark-covered, and pale wood-grained inside. Chaga is black and crumbling outside and rust-orange and granular inside, with no grain."
+    },
+    {
+      "name": "Black knot",
+      "latin": "Apiosporina morbosa",
+      "danger": "Low, but it is a different fungus entirely and has none of the tradition.",
+      "tell": "Black knot grows on CHERRY and plum, not birch, and forms an elongated swelling wrapped around a twig rather than a bursting mass on a trunk."
+    },
+    {
+      "name": "Fire scar / old burn",
+      "latin": null,
+      "danger": "Low.",
+      "tell": "Charred bark is thin and flakes off to reveal wood underneath. Chaga is a deep mass with orange flesh several centimetres in."
+    }
+  ],
+  "preparations": [
+    { "form": "decoction", "method": "Break into chunks and simmer LONG — an hour or more, never a hard boil — until the water runs dark red-brown. The same chunks re-brew several times.", "for_use": "A dark, mild, coffee-ish drink; traditionally taken for gut complaints and as a general tonic across northern Europe and Siberia. A brief steep extracts almost nothing — this one genuinely needs the long simmer." },
+    { "form": "ember carry", "method": "A dry lump takes a coal and smoulders for hours without flaming.", "for_use": "Carrying fire — see `fire-bank-and-carry`. This is the use with the least ambiguity attached to it." },
+    { "form": "tinder", "method": "The orange interior, dried and shredded, takes a spark.", "for_use": "Ignition — see `fire-flint-and-steel`." },
+    { "form": "wash", "method": "The cooled decoction.", "for_use": "An astringent rinse for skin and mouth." }
+  ],
+  "cautions": [
+    "Chaga is high in OXALATES. Sustained heavy use has been linked to oxalate nephropathy and kidney failure, including at least one well-documented case. Do not drink it daily for months.",
+    "It has anticoagulant activity and can lower blood sugar — a real problem alongside blood thinners, diabetes medication, or surgery.",
+    "The health claims made for it commercially run far ahead of the evidence. It is a pleasant drink and a superb ember bed; treat the rest as unproven.",
+    "It grows slowly over years and harvesting kills the patch — take part of a mass and leave the base, and never take it all.",
+    "Take only from living birch. A mass on a dead or fallen tree has usually degraded."
+  ],
+  "evidence": "Long traditional use in Siberia and northern Europe as a tea; substantial laboratory interest and very little clinical evidence in humans. The oxalate kidney risk, by contrast, is documented in case reports — which is why the caution is more concrete than the benefit."
+}

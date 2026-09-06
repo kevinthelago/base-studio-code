@@ -1,0 +1,41 @@
+{
+  "id": "fire-in-the-wet",
+  "category": "fire",
+  "name": "Fire when everything is soaked",
+  "summary": "Rain does not reach the inside of a standing dead branch. Getting at that dry core — by height, by splitting, by feathering — is the whole technique.",
+  "time": "45-90 minutes, most of it gathering",
+  "materials": [
+    { "item": "standing dead wood", "substitutes": ["dead branch still on the tree", "deadfall off the ground", "standing snag", "leaning deadfall"] },
+    { "item": "knife or edge", "substitutes": ["knife", "axe", "sharp stone", "machete"] },
+    { "item": "baton stick", "substitutes": ["stick", "club", "heavy branch"], "optional": true },
+    { "item": "fatwood or birch bark", "substitutes": ["fatwood", "pitch wood", "birch bark", "resinous stump", "conifer sap"], "optional": true },
+    { "item": "an ignition source", "substitutes": ["lighter", "ferro rod", "matches", "flint and steel"] },
+    { "item": "dry base", "substitutes": ["bark slab", "flat stone", "split log", "green log platform"] }
+  ],
+  "steps": [
+    { "text": "NEVER take wood off the ground. Ground wood is a sponge and it is rotten. Take dead branches still attached to a standing tree — snap-test them: they should CRACK, not bend." },
+    { "text": "Go UP. The higher a dead branch is, the drier it is, and the small dead twigs low on a conifer trunk under the living canopy are often bone dry in steady rain." },
+    { "text": "BATON to the heart. Split a wrist-thick piece by driving your knife through it with a club. The outer centimetre is wet; the heartwood inside is dry, and that dry core is your kindling.", "why": "This is the whole insight. In a rain-soaked forest the dry wood is not somewhere else — it is INSIDE the wet wood, a few millimetres in." },
+    { "text": "FEATHER STICKS. Take a split dry stave and shave long thin curls down its length, leaving them attached in a shaggy head. Three or four good ones will take a flame where loose shavings blow away." },
+    { "text": "Shave the curls THIN and keep the blade at a shallow angle, riding the grain. A thick curl is kindling; a paper-thin one is tinder." },
+    { "text": "Look for FATWOOD — resin-saturated heartwood at the stump or knots of dead conifers. It is heavy, smells strongly of turpentine and lights wet. Birch bark does the same and peels off a living tree in sheets." },
+    { "text": "Build ON a dry platform of split wood or bark, never on wet ground, and build a lean-to or hold your body over it to keep rain off while it establishes." },
+    { "text": "Once it burns, stack wet wood AROUND the fire to dry for the next hour's fuel." }
+  ],
+  "verify": [
+    "A snapped branch cracks sharply and shows pale dry wood at the break. A dull thud and a damp dark break means put it back.",
+    "Feather curls that stay springy and translucent when you bend them are dry; ones that flop and stay bent are not.",
+    "The fire keeps burning without you shielding it — before that, it is not established, whatever it looks like."
+  ],
+  "limits": [
+    "It buys you dry FUEL. It cannot compensate for a bad tinder bundle, a wet lay, or an ignition source you cannot work with cold hands.",
+    "In sustained rain with no shelter over the fire, an established fire can still be drowned. Roof it before you need to.",
+    "It needs an edge. Without a knife or axe, batoning and feathering are both off the table and you are down to whatever is already dry."
+  ],
+  "cautions": [
+    "Batoning with a folding knife can break it. Use a fixed blade if you have one, strike the SPINE over the widest part, and never near the lock.",
+    "Cold, wet hands lose fine motor control fast — do the knife work early, while you can still feel your fingers.",
+    "Do not strip bark all the way around a living birch; it girdles and kills the tree. Take from fallen trunks or in patches."
+  ],
+  "tags": ["fire", "wet", "rain", "batoning", "feather stick", "fatwood", "birch bark"]
+}

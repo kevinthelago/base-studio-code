@@ -1,0 +1,30 @@
+{
+  "id": "water-boil",
+  "category": "water",
+  "name": "Boil water",
+  "summary": "The one method that reliably kills every pathogen — bring it to a rolling boil.",
+  "time": "as long as the fire takes, plus a minute at the boil",
+  "materials": [
+    { "item": "metal container", "substitutes": ["pot", "tin can", "canteen cup", "billy", "kettle"] },
+    { "item": "fire or stove", "substitutes": ["fire", "stove", "coals", "hot rocks"] },
+    { "item": "cloth for pre-filtering", "substitutes": ["shirt", "bandana", "coffee filter"], "optional": true }
+  ],
+  "steps": [
+    { "text": "Let cloudy water settle, then pour off the clear top, or strain it through cloth.", "why": "Sediment does not stop the boil working, but it carries taste and it fouls a container." },
+    { "text": "Bring the water to a ROLLING boil — a full, tumbling, continuous boil, not the first bubbles." },
+    { "text": "Hold the rolling boil for one minute. Above roughly 2,000 m of altitude, hold it for three." },
+    { "text": "Cover and let it cool in the same container you boiled it in.", "why": "Pouring hot clean water into a dirty vessel recontaminates every bit of it." }
+  ],
+  "verify": [
+    "A rolling boil is a visual check you cannot fake — the surface tumbles continuously.",
+    "If you have no container that can take direct heat, drop fire-heated rocks into a bark, hide or wooden vessel until the water boils; rocks from a riverbed can burst, so use dry rocks."
+  ],
+  "limits": [
+    "Boiling kills bacteria, viruses, protozoa and their cysts. It removes NOTHING dissolved — no salt, no heavy metals, no pesticides, no chemical runoff, and no toxin from a cyanobacteria bloom. It concentrates them, because water leaves as steam and the contaminant stays.",
+    "Water from a mine tailing, an industrial site, a road ditch, or a pond with a blue-green surface scum is not made drinkable by boiling."
+  ],
+  "cautions": [
+    "Getting to a boil is the safe way to think about it — the pasteurization temperature is lower, but you cannot measure temperature and you can see a boil."
+  ],
+  "tags": ["water", "purification", "disinfection", "boiling"]
+}

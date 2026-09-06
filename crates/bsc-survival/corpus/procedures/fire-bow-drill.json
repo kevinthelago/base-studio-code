@@ -1,0 +1,38 @@
+{
+  "id": "fire-bow-drill",
+  "category": "fire",
+  "name": "Bow drill",
+  "summary": "Friction ignition from materials on the ground — the highest-effort, lowest-equipment way to an ember.",
+  "time": "1-3 hours to make the set, minutes to run it",
+  "materials": [
+    { "item": "spindle of dry softwood", "substitutes": ["willow", "cedar", "cottonwood", "basswood", "yucca stalk"] },
+    { "item": "fireboard of the same or softer wood", "substitutes": ["cedar board", "cottonwood", "willow"] },
+    { "item": "bow", "substitutes": ["curved branch", "stiff green stick"] },
+    { "item": "cordage for the bowstring", "substitutes": ["paracord", "bootlace", "rawhide", "twisted plant fibre"] },
+    { "item": "bearing block", "substitutes": ["hardwood block", "stone with a hollow", "bone", "green wood"] },
+    { "item": "ember pan", "substitutes": ["bark", "leaf", "thin wood chip"] },
+    { "item": "tinder bundle", "substitutes": ["tinder", "bird's nest"] }
+  ],
+  "steps": [
+    { "text": "Everything must be BONE DRY. Damp wood makes dust that will not hold an ember, whatever your technique." },
+    { "text": "Carve a spindle about 20 cm long and thumb-thick — pointed at the top, blunt and rounded at the bottom.", "why": "A narrow top point minimises friction where you do not want heat; a wide blunt base maximises it where you do." },
+    { "text": "Burn a shallow socket into the fireboard with the spindle, then cut a V-notch from the edge into about one eighth of the socket, all the way through the board." },
+    { "text": "Set the ember pan under the notch. Load the spindle into the bowstring with one twist so it sits outside the string." },
+    { "text": "Kneel with your shin locked against your wrist, press down with the bearing block, and saw the full length of the bow, slow and long at first." },
+    { "text": "When black dust fills the notch and smoke rises on its own, give it ten fast hard strokes, then stop and do not move." },
+    { "text": "Let the dust pile smoke by itself, fan it gently, then tip it into the tinder bundle and blow it to flame." }
+  ],
+  "verify": [
+    "The dust is fine, black and powdery — brown, coarse dust means too little pressure or too slow a speed.",
+    "Smoke that continues rising for 10-20 seconds after you have stopped drilling is an ember."
+  ],
+  "limits": [
+    "This is genuinely difficult and physically hard. Expect it to fail many times while you learn, which is a reason to learn it before you need it.",
+    "Wet weather, wet wood, or exhaustion beat it. It is the last resort, not the plan."
+  ],
+  "cautions": [
+    "Blisters on your bearing hand will end your attempt — use a bearing block that actually spins freely, and grease the socket with anything oily.",
+    "Do not lean over the ember to blow it. Cup it and breathe steadily from the side."
+  ],
+  "tags": ["fire", "friction", "bow drill", "primitive"]
+}

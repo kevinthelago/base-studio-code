@@ -30,8 +30,12 @@ function mountSource(): string {
 describe("the auto-spawn off switch is wired into the mount", () => {
   const src = mountSource();
 
+  // UPDATED (`debug-sessions-have-a-global-off-switch`): the pause is now read THROUGH the combined
+  // gate. `bsc request sessions --json` resolves the policy AND the pause in Rust and returns
+  // `allowed`, so there is one read and the app combines nothing. The assertions below are unchanged
+  // in intent — the switch is read, read BEFORE claiming, and degrades open.
   it("reads the switch at all — and NOT as a hardcoded literal", () => {
-    expect(src).toContain(`["request", "paused", "--json"]`);
+    expect(src).toContain(`["request", "sessions", "--json"]`);
     expect(src).toContain("enabled: !paused");
     // The regression this exists to prevent, stated as an assertion rather than a comment.
     expect(src).not.toContain("enabled: true");
@@ -41,7 +45,7 @@ describe("the auto-spawn off switch is wired into the mount", () => {
     // Order is the whole correctness. `claim` turns `open` into `claimed`, and `claimed` is what gets a
     // session — so reading the flag afterwards would leave a paused cycle having permanently taken work
     // off the open queue while starting nothing. That is worse than not pausing at all.
-    const readAt = src.indexOf(`["request", "paused", "--json"]`);
+    const readAt = src.indexOf(`["request", "sessions", "--json"]`);
     const claimAt = src.indexOf(`["request", "claim", "--json"]`);
     expect(readAt).toBeGreaterThan(-1);
     expect(claimAt).toBeGreaterThan(-1);
@@ -55,6 +59,6 @@ describe("the auto-spawn off switch is wired into the mount", () => {
 
   it("degrades to ACTIVE when the read fails, never to paused", () => {
     // A failed `bsc` call must not silently stop the debug fleet; a pause has to have been asked for.
-    expect(src).toContain("{ paused: false }");
+    expect(src).toContain("{ allowed: true }");
   });
 });

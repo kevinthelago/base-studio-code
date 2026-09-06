@@ -1,0 +1,35 @@
+{
+  "id": "fire-solar-lens",
+  "category": "fire",
+  "name": "Solar ignition",
+  "summary": "Sunlight focused to a point that smokes — no fuel, no consumables, and it works with things that are not lenses.",
+  "time": "seconds to minutes, given sun",
+  "materials": [
+    { "item": "a lens or focusing surface", "substitutes": ["magnifying glass", "reading glasses", "camera lens", "clear water bottle", "clear plastic bag of water", "condom filled with water", "block of clear ice", "polished can bottom", "headlight reflector", "flashlight reflector"] },
+    { "item": "strong direct sun", "substitutes": ["sun", "sunlight"] },
+    { "item": "fine dark tinder", "substitutes": ["char cloth", "punk wood", "dry grass", "birch bark", "cattail down", "tinder fungus"] }
+  ],
+  "steps": [
+    { "text": "Set the tinder on a stable base out of the wind, with a dark surface if you have one.", "why": "Dark absorbs; pale reflects. Char cloth ignites under a lens far faster than dry grass for exactly this reason." },
+    { "text": "Move the lens toward and away from the tinder until the bright spot is as SMALL and as SHARP as you can make it — a hard point, not a bright blur." },
+    { "text": "Hold it dead still. Brace your wrists against your knees; a hand-held wobble spreads the spot and it never gets there." },
+    { "text": "WATER BOTTLE: fill a clear smooth bottle, hold it upright, and use the curved side as a cylindrical lens. It focuses to a line rather than a point — a clear round bottle works far better than a ribbed or crumpled one." },
+    { "text": "ICE LENS: shape clear (not cloudy) ice into a thick disc, thin at the edges and fat in the middle, and polish it with the warmth of your hands." },
+    { "text": "REFLECTOR: a parabolic headlight or flashlight reflector focuses to a point about where the bulb sat. Push the tinder into the bulb hole from behind." },
+    { "text": "When it smokes, keep the focus on it until there is a live coal, then transfer to the tinder bundle." }
+  ],
+  "verify": [
+    "A smoking black spot that keeps growing after you take the light off it.",
+    "If the spot is bright but nothing happens, it is not small enough — or the sun is too low."
+  ],
+  "limits": [
+    "NO SUN, NO FIRE. It is useless at night, under overcast, in haze and in deep forest shade, and it weakens sharply within a couple of hours of sunrise and sunset.",
+    "It gives you a coal, not a flame — the tinder bundle still does the rest of the work.",
+    "It needs a genuinely clear focusing medium. Cloudy ice, scratched plastic and coloured bottles all fail."
+  ],
+  "cautions": [
+    "Never look at the focused spot; it is bright enough to hurt your eyes.",
+    "A lens left in the sun in a pack has started fires unattended. Store it covered."
+  ],
+  "tags": ["fire", "solar", "lens", "ice lens", "no-consumables"]
+}

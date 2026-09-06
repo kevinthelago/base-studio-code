@@ -64,6 +64,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -155,6 +156,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -247,7 +249,8 @@
         "git": "none",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "denied": [
         "git",
@@ -318,6 +321,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "surfaces": [
           "plan",
           "fleet",
@@ -422,7 +426,8 @@
         "git": "read",
         "code": "write",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "denied": [
         "git push",
@@ -516,7 +521,8 @@
         "git": "read",
         "code": "none",
         "net": "read",
-        "ui": "read"
+        "ui": "read",
+        "graph": "read"
       },
       "denied": [
         "git push",
@@ -629,6 +635,7 @@
         "code": "none",
         "net": "none",
         "ui": "write",
+        "graph": "read",
         "harvestRoots": [
           "app-repo",
           "projects"
@@ -720,6 +727,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -812,6 +820,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -904,6 +913,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -997,6 +1007,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1090,6 +1101,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1183,6 +1195,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "read",
         "surfaces": [
           "plan",
           "fleet",
@@ -1266,6 +1279,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1359,6 +1373,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",
@@ -1456,6 +1471,7 @@
         "code": "write",
         "net": "read",
         "ui": "read",
+        "graph": "write",
         "surfaces": [
           "plan",
           "graph",

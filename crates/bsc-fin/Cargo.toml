@@ -1,0 +1,24 @@
+[package]
+name = "bsc-fin"
+version = "0.1.0"
+edition = "2021"
+build = "../graph-materialize/build.rs"
+description = "Personal finance store + statement ingest for base-studio-code. A LOCAL store: statements are parsed on this machine, amounts are integer minor units, and no verb sends anything anywhere."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
+[lib]
+name = "bsc_fin"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
+
+[dependencies]
+bsc-cli-util = { path = "../bsc-cli-util" }
+bsc-sqlite-util = { path = "../bsc-sqlite-util" }
+bsc-util = { path = "../bsc-util" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

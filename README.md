@@ -22,9 +22,9 @@ The platform isn't locked to one vendor. Alongside Claude Code, it ships **`bsc-
 
 ## Project Blueprints
 
-*A core feature of the platform.* A **Blueprint** is a reusable planning template — an ordered list of planning **stages** (context, deployment, features, UI design, structure, integrations, …), each with its own prompt module, a declarative completion **gate**, and optional attached **skills**. The packaged greenfield built-ins are **Default** (a trimmed, foolproof path) and **Complete** (every advanced stage — MCP servers, automations, skills); you can also **author your own blueprint** in the planner and publish it to a gist to share. It seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
+*A core feature of the platform.* A **Blueprint** is a reusable planning template — an ordered list of planning **stages** (context, deployment, features, UI design, structure, integrations, …), each with its own prompt module, a declarative completion **gate**, and optional attached **skills**. The packaged set is **Default** (the blank/general route) plus the domain routes **CRM · ERP · Helpdesk/ITSM · HR/HCM · Project Management**. A blueprint is **frozen at project creation** — there is no in-place switching, and the from-scratch author was removed; instead a completed, triaged project is **promoted** into a new reusable blueprint. It seeds every new project's planning session: which stages run, what Claude is told in each, and what happens to each stage's output. Stages are gated and dependency-aware — a stage stays locked until its prerequisites are met, and the planning progress bar tracks the state.
 
-A standout capability is the **live UI preview**: the UI stage's generated screen skeletons are bundled with `esbuild-wasm` and rendered as an interactive **2D/3D walkthrough** in a sandboxed iframe, right inside the planning page — no preview server, no leaving the app. Approve screens one at a time to advance the stage.
+A standout capability is the **live UI preview**: the UI stage's generated screen skeletons are bundled with `esbuild-wasm` and rendered as an interactive **2D/3D walkthrough** in a sandboxed iframe — no preview server, no leaving the app. It lives in the **Design Studio** now; the standalone planning page was removed. Approve screens one at a time to advance the stage.
 
 The planning arc: **pitch → plan, stage by stage → live preview → gate checks → publish to GitHub → launch the fleet.**
 
@@ -41,24 +41,38 @@ The planning arc: **pitch → plan, stage by stage → live preview → gate che
 - **GitHub integration** — OAuth/PAT auth, repo overview, Actions workflows, webhook management, and a richer publish (repo description, stack topics, a plan-driven README)
 - **Extensions (MCP)** — attach Model Context Protocol servers per project, pre-trusted into every agent session
 - **Live state, reachable from any session** — every app store (the plan, skills, the canonical data model, logs, compliance, blueprints, projects) is exposed to a running agent through bundled `bsc-*` CLIs, so an agent can read or drive project state directly from its own shell
-- **Custom blueprints** — author a reusable planning template in the planner and publish it to a gist
+- **Custom blueprints** — promote a completed, triaged project into a reusable planning template (`bsc blueprint`)
 - **Automations** — cron-scheduled commands dispatched across panes
 - **Log management** — view, filter, limit, clear, and export every log stream from **Settings → Logs**
 - **Canonical data model** — a DuckDB-backed schema layer (`crates/data`, `bsc data`) a migration source maps into; **connectors are authored by the planner agent** as validated manifests (probe → validate → try) and captured as reusable skills — no native per-vendor code
 - **Persist & restore** — workspace layout, pane names, and working directories survive restarts
 
-### The app, screen by screen
+### The app, workspace by workspace
 
-Eight surfaces, reached from the left rail:
+**The rail is the graphs.** Each destination is a Workspace whose tabs are its own axis — Components
+and Algorithms by technology, Teams by team, Sounds by kit, Data by language.
 
-- **Console** — the execution surface where planned work runs. Tabbed workspaces, each a configurable grid of terminal panes; every pane is a real PTY running an agent, with swappable views for the terminal, files, branches, diffs, the session log, and live tokens/cost
-- **Projects** — the flagship planner: pitch → staged plan → live UI preview → publish to GitHub → launch the fleet, alongside a live **Fleet** board (one worker per stream, coordinated by a director)
-- **Skills** — the injectable-context library: searchable skills and task groups, attachable per session, with invocation telemetry and per-project lessons
-- **Automations** — cron-scheduled commands dispatched into console panes, with armed status and run history
-- **MCP** — install, configure, and update Model Context Protocol servers (including built-in sidecars) and event-triggered hooks
-- **GitHub** — organization and per-repo analytics plus the Projects v2 board: branches, the PR queue, CI status, and contributors, behind OAuth or a PAT
-- **Security** — the least-privilege control room: a role and profile per session (write-path scope, network, command policy), enforced at launch via a **deny-list model** (sessions auto-run, gated by always-on hooks; the allow-list stays as an opt-in posture toggle), with an opt-in **model-agnostic OS sandbox** that runs sessions inside a **sealed WSL2 distro** (no Windows-drive mount, no interop — the cage is the *environment*, so any LLM is confined), plus a live audit feed of every tool attempt
-- **Settings** — providers/keys, mobile-tunnel pairing, appearance, diagnostics, performance, logs, and storage
+- **Console** *(opt-in)* — the execution surface where planned work runs. Tabbed workspaces, each a
+  configurable grid of terminal panes; every pane is a real PTY running an agent, with swappable views
+  for the terminal, files, branches, diffs, the session log, and live tokens/cost
+- **Glance** — the cockpit: the project graph and its fleet, the architect beside the projects, and
+  every command surface as a node you can drill into
+- **Components** — the Design Studio: author pages, components and animations against the packaged kit
+  and see them rendered live by the preview chain
+- **Teams** — the persona-relationship graph: agent identities, the skills paired with them, their MCP
+  servers, and the capability floor each one carries
+- **Algorithms** — the knowledge graph of implementations, per language kit
+- **Data** — the canonical DuckDB data model and its agent-authored connectors
+- **Sounds** — the sound-kit pillar
+- **Logs** — the unified log, perf and cost engine
+- **Settings** — providers/keys, GitHub, security posture and sandbox, mobile-tunnel pairing,
+  appearance, diagnostics, performance, logs, and storage
+
+**Two surfaces deliberately have no screen.** *Planning* is the architect's and director's job, driven
+through `bsc plan` — the planner screen was removed, the plan model was not. *GitHub* still runs
+publish and readiness, and an account is still connected in **Settings → GitHub**; only the analytics
+screen is gone. Skills and MCP moved onto the Teams page rather than keeping rail destinations of
+their own.
 
 ## Tech Stack
 
@@ -126,7 +140,9 @@ base-studio-code/
 │   ├── app/            # the shell — main/App, chrome (Rail · Titlebar · Tabstrip), and the
 │   │                   #   console execution surface (ConsoleScreen + panes/ + lib/)
 │   ├── features/       # one folder per feature = UI + lib/ (pure domain) + store.ts + index.ts:
-│   │                   #   planner (flagship) · skills · mcp · automations · github · tunnel · agents · settings
+│   │                   #   the graph workspaces designs · teams · algorithms · data · sounds ·
+│   │                   #   glance, plus planner (DOMAIN ONLY, no UI) · skills · mcp ·
+│   │                   #   automations · github (slice only) · tunnel · logs · personas · settings
 │   ├── shared/         # feature-agnostic (lint-enforced: no @/features or @/app value imports):
 │   │                   #   lib/ (core · session · fleet · github · security), hooks/, ui/ (Avatar ·
 │   │                   #   LabelChip · Chip · Dialog · charts), data/

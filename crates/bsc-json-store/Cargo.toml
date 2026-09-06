@@ -2,13 +2,21 @@
 name = "bsc-json-store"
 version = "0.1.0"
 edition = "2021"
+build = "../graph-materialize/build.rs"
 description = "Shared verbatim-JSON-per-id user store + CLI scaffold (#2158) for base-studio-code. bsc-blueprint and bsc-persona were byte-identical stores with a byte-identical `bsc <noun>` CLI; this is their single home, so each is a thin shim over one implementation. Backed by SQLite (#2983, one `<segment>.db` per store) with a one-time import of the legacy `<segment>/<id>.json` files; the public API + CLI are unchanged."
 
 # The core lib (no Tauri — SQLite-backed record CRUD + a small CLI dispatch) so the tiny wrapper
 # crates reuse it without dragging the desktop app in. The hyphenated package name maps to the
 # `bsc_json_store` crate name.
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
 [lib]
 name = "bsc_json_store"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 # Shared leaf utilities (#1646): the one cross-platform home-dir / `~/.base-studio-code` resolver, so

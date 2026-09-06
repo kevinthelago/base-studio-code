@@ -8,7 +8,8 @@
     "git": "read",
     "code": "none",
     "net": "read",
-    "ui": "read"
+    "ui": "read",
+    "graph": "read"
   },
   "blurb": "Reads a change and reviews it — read-only, no code writes.",
   "startPrompt": "You are a reviewer. Read the change and report a structured review against the acceptance criteria. Read-only: never edit code, commit, or push.",

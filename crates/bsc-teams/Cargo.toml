@@ -13,6 +13,9 @@ serde_json = "1"
 
 [lib]
 name = "bsc_teams"
+# THE SHARED CRATE ROOT — this crate owns no source file at all. See
+# crates/graph-materialize/crate_root.rs; the crate's own docs come from its record.
+path = "../graph-materialize/crate_root.rs"
 
 [dependencies]
 # The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
@@ -24,5 +27,10 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 # The ONE home-dir resolver (#1646) — AND the canonical model-tier registry `model` validates
 # against, so a tier this CLI accepts is one the harness can launch.
 bsc-util = { path = "../bsc-util" }
+# `model` validates a non-tier name against what the LOCAL RUNTIME has installed — THE ONE RULE
+# lives in `llm::cli::verify_model`, beside the blocking probe it needs, rather than being restated
+# here. The placement is the per-NODE level of the precedence chain and was the only level not
+# calling it (`a-node-cannot-carry-a-local-model`).
+bsc-llm = { path = "../llm" }
 # `model` patches ONE position of the stored team without re-serializing a typed model.
 serde_json = "1"
