@@ -24,3 +24,4 @@ pub mod transcribe;
 pub mod transcript;
 pub mod segment;
 pub mod diarize;
+pub mod imprint;
