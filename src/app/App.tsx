@@ -51,7 +51,7 @@ import {
   SettingsWorkspace,
   LogsWorkspace, GlanceWorkspace, WorkspaceFallback,
   ComponentsWorkspace, TeamsWorkspace, AlgorithmsWorkspace, DataWorkspace, SoundsWorkspace,
-  CredentialsWorkspace, UseWorkspace,
+  CredentialsWorkspace,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -131,14 +131,10 @@ export default function App() {
   const projectsView = useAppStore((s) => s.projectsView);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
-  const showConsolePage = useAppStore((s) => s.showConsolePage);
 
-  // The legacy Console page is opt-in (#2372). When it's off, a persisted (or just-toggled-off)
-  // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`
-  // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
-  // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
-  // effectiveWorkspace (registry.ts) is the shared definition — useHotkeys gates on it too (#3575).
-  const activeWorkspace = effectiveWorkspace(rawActiveWorkspace, showConsolePage);
+  // effectiveWorkspace (registry.ts) is the shared indirection the rail, chrome and useHotkeys read;
+  // it is identity now that Console is a permanent workspace (the #2372 opt-in is gone).
+  const activeWorkspace = effectiveWorkspace(rawActiveWorkspace);
 
   // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
   // `app-repo` harvest root into a real path without awaiting.
@@ -238,7 +234,6 @@ export default function App() {
                 store is edited from OUTSIDE the app (a session running `bsc secret`), so a kept-mounted
                 copy would show a stale answer to the one question this screen exists to answer. */}
             {activeWorkspace === "credentials" && <CredentialsWorkspace />}
-            {activeWorkspace === "use"         && <UseWorkspace />}
           </Suspense>
           </ErrorBoundary>
           </Box>
