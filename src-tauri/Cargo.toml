@@ -95,6 +95,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # and every `bsc-*` CLI agree on which on-disk store they read/write. `platform/paths.rs`
 # delegates `home_dir`/`bsc_base_dir` here.
 bsc-util = { path = "../crates/bsc-util" }
+# The imagination feed model + its on-disk format; the app only READS it.
+bsc-imagine = { path = "../crates/bsc-imagine" }
 # The GitHub REST/GraphQL transport, extracted so `bsc` can reach it too
 # (`extract-a-tauri-free-github-transport-crate`). `github/api.rs` is now thin shims over this.
 bsc-github = { path = "../crates/bsc-github" }
