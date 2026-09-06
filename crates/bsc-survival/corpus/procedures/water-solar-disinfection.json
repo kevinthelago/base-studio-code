@@ -1,0 +1,34 @@
+{
+  "id": "water-solar-disinfection",
+  "category": "water",
+  "name": "Solar disinfection (SODIS)",
+  "summary": "Clear water in a clear PET bottle, laid in full sun for six hours, comes out biologically much safer — the method for when there is no fuel.",
+  "time": "6 hours of strong sun, or 2 consecutive days if overcast",
+  "materials": [
+    { "item": "clear PET plastic bottle up to 2 litres", "substitutes": ["clear plastic bottle", "water bottle", "clear glass bottle"] },
+    { "item": "strong sunlight", "substitutes": ["sun", "sunlight"] },
+    { "item": "cloth for pre-filtering", "substitutes": ["shirt", "bandana", "filter"], "optional": true },
+    { "item": "dark or reflective surface to lay it on", "substitutes": ["corrugated metal roof", "dark rock", "foil"], "optional": true }
+  ],
+  "steps": [
+    { "text": "Pre-filter or settle the water until you can read text through the full bottle.", "why": "UV has to reach the organism. Turbidity shades it, and above about 30 NTU the method stops working." },
+    { "text": "Fill the bottle three-quarters, shake it hard for 20 seconds to oxygenate, then top it up and cap it.", "why": "Dissolved oxygen drives the photo-oxidative half of the kill, alongside the UV-A itself." },
+    { "text": "Lay the bottle ON ITS SIDE in full sun — on a dark or metal surface if you have one — for at least 6 hours." },
+    { "text": "In overcast weather give it two consecutive days. If it has rained all day, the dose is not there." },
+    { "text": "Drink from the bottle it was treated in." }
+  ],
+  "verify": [
+    "You can read printed text through the filled bottle before you start — that is the turbidity check.",
+    "The bottle has had 6 hours of genuinely direct sun, not 6 hours of daylight in shade."
+  ],
+  "limits": [
+    "SODIS greatly reduces bacteria, viruses and protozoa. It is a field-grade reduction, not a sterilization, and its dose depends on weather you do not control.",
+    "It removes nothing chemical or dissolved.",
+    "It fails on turbid water, in deep shade, and through glass windows or coloured/scratched bottles that block UV-A."
+  ],
+  "cautions": [
+    "Use PET (drink bottles), not PVC. Scratched or cloudy bottles pass less UV and should be replaced.",
+    "Boiling is better whenever you have fuel. This is the fallback."
+  ],
+  "tags": ["water", "solar", "sodis", "uv", "disinfection", "no-fuel"]
+}

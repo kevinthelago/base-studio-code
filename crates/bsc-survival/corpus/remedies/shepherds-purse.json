@@ -1,0 +1,40 @@
+{
+  "id": "shepherds-purse",
+  "name": "Shepherd's purse",
+  "latin": "Capsella bursa-pastoris",
+  "functions": ["hemostatic", "astringent"],
+  "regions": ["worldwide"],
+  "habitat": "Disturbed ground everywhere — gardens, waste ground, cracks in pavement, field margins. One of the most common weeds on Earth.",
+  "parts": ["whole plant above ground"],
+  "identify": [
+    "THE MARK: flat, heart-shaped or triangular seed pods held out from the stem on little stalks, like tiny purses. Unmistakable once seen.",
+    "Basal rosette of deeply lobed dandelion-ish leaves; stem leaves clasp the stem and are much smaller.",
+    "Tiny white four-petalled flowers at the top of the stem while pods ripen below — flowers and pods are on the plant at the same time.",
+    "30-40 cm tall, single slender stem."
+  ],
+  "lookalikes": [
+    {
+      "name": "Field pennycress",
+      "latin": "Thlaspi arvense",
+      "danger": "Low — also a mustard, not toxic in passing contact, but a different plant with different action.",
+      "tell": "Pennycress pods are ROUND and flat like coins, notched at the top; shepherd's purse pods are triangular hearts."
+    },
+    {
+      "name": "Other white-flowered mustards",
+      "latin": null,
+      "danger": "Low; the mustard family holds no deadly members in temperate regions, which makes this an unusually forgiving plant to learn.",
+      "tell": "The purse-shaped pod is diagnostic. Without pods, wait until it fruits."
+    }
+  ],
+  "preparations": [
+    { "form": "poultice", "method": "Crush the fresh whole plant and press onto the bleeding area.", "for_use": "Slowing bleeding from a shallow wound or a nosebleed." },
+    { "form": "infusion", "method": "Steep the fresh or recently dried plant in hot water 10 minutes.", "for_use": "The traditional internal styptic — used in European and Chinese medicine for heavy menstrual and postpartum bleeding." }
+  ],
+  "cautions": [
+    "The hemostatic activity is strongly reduced by drying and storage; old dried material is close to inert. Fresh is what the tradition uses.",
+    "Avoid in pregnancy — it is a traditional uterine stimulant.",
+    "Reported to raise blood pressure and to interact with sedatives, thyroid medication, and anticoagulants.",
+    "For a serious bleed the answer is pressure, not a plant."
+  ],
+  "evidence": "Long documented use as a styptic in both European and East Asian traditions, and it remains a listed herbal medicine in several pharmacopoeias. Modern controlled evidence is limited and mixed."
+}

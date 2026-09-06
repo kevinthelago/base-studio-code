@@ -1,0 +1,41 @@
+{
+  "id": "plantain",
+  "name": "Broadleaf plantain",
+  "latin": "Plantago major / Plantago lanceolata",
+  "functions": ["antiseptic", "anti_inflammatory", "insect", "astringent"],
+  "regions": ["worldwide"],
+  "habitat": "Compacted ground — footpaths, lawns, driveways, playing fields, the edge of any trail. It follows human traffic, which is why it is nearly always within reach of where you got hurt.",
+  "parts": ["leaf"],
+  "identify": [
+    "Basal rosette of oval (P. major) or narrow lance-shaped (P. lanceolata) leaves, flat to the ground.",
+    "Three to seven PARALLEL veins running the length of the leaf — unusual for a broadleaf plant and the surest mark.",
+    "Pull a leaf slowly apart and the veins string out like tiny threads.",
+    "A leafless flower stalk carrying a dense narrow spike of tiny brownish flowers.",
+    "No milky sap, no smell."
+  ],
+  "lookalikes": [
+    {
+      "name": "Common dock / sorrel seedlings",
+      "latin": "Rumex spp.",
+      "danger": "Harmless, but it is not plantain and does not do the same job.",
+      "tell": "Dock leaves have a single strong midrib with branching side veins, not parallel veins, and often a papery sheath at the leaf base."
+    },
+    {
+      "name": "Hosta and other ornamental rosettes",
+      "latin": null,
+      "danger": "Harmless to handle; some ornamentals are toxic if eaten.",
+      "tell": "Garden setting, much larger fleshy leaves, and no flower spike of the plantain type."
+    }
+  ],
+  "preparations": [
+    { "form": "spit poultice", "method": "Chew a clean leaf to a pulp and press it on the spot; cover with a whole leaf and hold.", "for_use": "Stings, bites, nettle rash, splinters and small infected-looking wounds — the classic drawing poultice." },
+    { "form": "wash", "method": "Simmer a good handful of leaf in water for 10 minutes and cool.", "for_use": "Rinsing a graze or an irritated eye area." },
+    { "form": "food", "method": "Young leaves eaten raw; older leaves cooked (they get stringy).", "for_use": "Emergency greens." }
+  ],
+  "cautions": [
+    "Do not harvest from roadside verges, sprayed lawns, or ground fouled by animals — plantain grows precisely where traffic and spray are heaviest.",
+    "A poultice is comfort and mild antisepsis, not treatment for an established infection.",
+    "Rare allergic reactions; the pollen is a known allergen."
+  ],
+  "evidence": "Very widespread traditional use for stings and minor wounds; laboratory support for anti-inflammatory and antibacterial constituents (aucubin, allantoin). Human trials are limited."
+}

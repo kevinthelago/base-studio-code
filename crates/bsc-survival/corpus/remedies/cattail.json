@@ -1,0 +1,41 @@
+{
+  "id": "cattail",
+  "name": "Cattail (bulrush / reedmace)",
+  "latin": "Typha spp.",
+  "functions": ["nutrition", "burn", "antiseptic", "hemostatic"],
+  "regions": ["worldwide", "north-america", "europe", "asia"],
+  "habitat": "Standing fresh water and its margins — pond edges, ditches, marshes, slow river backwaters. It grows in dense single-species stands.",
+  "parts": ["rhizome", "young shoot", "pollen", "leaf base gel", "seed head down"],
+  "identify": [
+    "The brown cigar-shaped seed head on a tall stiff stem is unmistakable and persists through winter.",
+    "Long strap-like leaves, 1-3 cm wide, flat, rising from the base with no midrib, arranged in a flattened fan.",
+    "Growing in water or saturated ground, in a dense colony.",
+    "A clear thick gel sits between the leaf bases at the bottom of the plant."
+  ],
+  "lookalikes": [
+    {
+      "name": "Yellow flag iris",
+      "latin": "Iris pseudacorus",
+      "danger": "Toxic — the rhizome causes severe gastrointestinal illness, and the sap is a skin irritant. It grows in exactly the same water margins and its young leaves look very like cattail.",
+      "tell": "Iris leaves have a raised MIDRIB down the centre and are held in a flat fan of overlapping bases; cattail leaves have no midrib and are more rounded across the back. Iris never bears the brown cigar seed head — check for last year's stems in the stand before you dig anything."
+    },
+    {
+      "name": "Sweet flag",
+      "latin": "Acorus calamus",
+      "danger": "Low in passing, but it is not cattail and some strains carry beta-asarone.",
+      "tell": "Sweet flag has a crimped wavy leaf edge, a distinct midrib, and smells strongly sweet and spicy when crushed. Cattail has no smell."
+    }
+  ],
+  "preparations": [
+    { "form": "leaf-base gel", "method": "Peel back the outer leaves at the base of the plant and scrape out the clear gel.", "for_use": "A cooling dressing for burns, sunburn, blisters and small wounds; traditionally used as a mild antiseptic and to slow ooze." },
+    { "form": "rhizome starch", "method": "Dig the rhizome, wash it, crush it in water, let the starch settle, pour off the water and dry the starch.", "for_use": "Carbohydrate — the highest-calorie part of the plant." },
+    { "form": "pollen", "method": "Bend the male flower spike into a bag in early summer and shake.", "for_use": "A protein-rich flour extender." },
+    { "form": "down", "method": "The seed-head fluff, kept dry.", "for_use": "Tinder and insulation — see `fire-tinder-bundle`." }
+  ],
+  "cautions": [
+    "Cattail concentrates whatever is in its water. It is used deliberately in effluent treatment, so a stand below a farm, a road or an industrial site is holding that runoff in its tissue. Harvest only from clean water.",
+    "Positively identify by the seed head, not by the leaf. The iris confusion is the one that hurts people.",
+    "The gel is not sterile and is not a substitute for cleaning a wound."
+  ],
+  "evidence": "Extremely well attested as a food plant across the northern hemisphere. The burn and wound use of the gel is traditional; laboratory evidence is limited."
+}

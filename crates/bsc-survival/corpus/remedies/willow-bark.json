@@ -1,0 +1,41 @@
+{
+  "id": "willow-bark",
+  "name": "Willow bark",
+  "latin": "Salix spp.",
+  "functions": ["analgesic", "anti_inflammatory", "astringent"],
+  "regions": ["north-america", "europe", "asia", "boreal"],
+  "habitat": "Wet ground — riverbanks, lake margins, ditches, damp thickets. Willows follow water, which makes them a landscape sign as well as a medicine.",
+  "parts": ["inner bark", "young twig"],
+  "identify": [
+    "Long narrow leaves, usually with fine teeth, often paler or silvery underneath.",
+    "Slender flexible twigs that bend right around without snapping.",
+    "Buds are covered by a SINGLE cap-like scale — a reliable winter mark unique to willows.",
+    "Catkins in spring; bark bitter to taste."
+  ],
+  "lookalikes": [
+    {
+      "name": "Poplar and aspen",
+      "latin": "Populus spp.",
+      "danger": "Low — poplars are close relatives and carry the same salicylates, so a mix-up is not dangerous.",
+      "tell": "Poplar leaves are broad and often triangular with flattened leaf stalks that make them tremble; buds have several scales, not one."
+    },
+    {
+      "name": "Oleander",
+      "latin": "Nerium oleander",
+      "danger": "Lethal. Every part is highly cardiotoxic and a very small amount can kill.",
+      "tell": "Oleander is an evergreen shrub of warm and Mediterranean climates with thick leathery leaves in whorls of three and showy pink or white flowers; willow leaves are thin, alternate, deciduous and its flowers are catkins. Oleander is a shrub of gardens and roadsides, not of wet riverbanks."
+    }
+  ],
+  "preparations": [
+    { "form": "decoction", "method": "Simmer a small handful of scraped inner bark from young twigs in water for 15-20 minutes. It will be very bitter.", "for_use": "Pain and fever — the salicin it carries is the compound aspirin was derived from." },
+    { "form": "chewed twig", "method": "Chew the inner bark of a green twig.", "for_use": "Mild toothache and headache in the field." },
+    { "form": "withies", "method": "Green willow rods, soaked and bent.", "for_use": "Basketry, frames, fish traps, shelter hoops." }
+  ],
+  "cautions": [
+    "It is aspirin's ancestor and carries aspirin's contraindications: anyone allergic to aspirin, anyone on anticoagulants, and anyone with a stomach ulcer or bleeding risk should avoid it.",
+    "NEVER give it to a child or teenager with a viral illness — the Reye's syndrome risk that applies to aspirin applies here.",
+    "The dose in a field decoction is uncontrolled and varies with species, season and how much bark you used.",
+    "It is a mild analgesic. It will not touch severe pain."
+  ],
+  "evidence": "Salicin content is well established, and standardised willow bark extracts have been trialled for low back pain with modest positive results. A field decoction is far less predictable than those extracts."
+}

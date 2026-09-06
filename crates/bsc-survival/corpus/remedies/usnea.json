@@ -1,0 +1,38 @@
+{
+  "id": "usnea",
+  "name": "Usnea (old man's beard)",
+  "latin": "Usnea spp.",
+  "functions": ["antiseptic", "astringent", "antifungal"],
+  "regions": ["worldwide"],
+  "habitat": "Hanging from the branches of trees in clean, humid air — conifers especially. It is an air-quality indicator and will not grow where pollution is heavy.",
+  "parts": ["whole lichen"],
+  "identify": [
+    "Pale grey-green, shrubby or hair-like lichen hanging from bark.",
+    "THE TEST: gently pull a strand apart. Usnea has a white ELASTIC CORD running through the centre, like a tiny bungee inside the sheath. Nothing else does.",
+    "Dry and brittle when dry, softening and going rubbery when wet."
+  ],
+  "lookalikes": [
+    {
+      "name": "Spanish moss",
+      "latin": "Tillandsia usneoides",
+      "danger": "Not toxic, but it is a flowering plant, not a lichen, and has none of the usnic acid.",
+      "tell": "No white inner cord; it is uniformly grey and scaly and grows mainly on southern US oaks and cypress."
+    },
+    {
+      "name": "Alectoria, Bryoria and other beard lichens",
+      "latin": null,
+      "danger": "Some, such as Bryoria tortuosa, carry vulpinic acid and are toxic.",
+      "tell": "Again the cord test: pull a strand. No white elastic core means it is not Usnea. Bryoria is typically brown to black rather than grey-green."
+    }
+  ],
+  "preparations": [
+    { "form": "dressing", "method": "Pack dried, clean lichen against a wound inside a cloth barrier.", "for_use": "An absorbent, mildly antiseptic field dressing." },
+    { "form": "decoction / tincture", "method": "Usnic acid is barely water-soluble — simmer long and hot for a weak wash, or extract properly in strong alcohol over weeks.", "for_use": "A wash for skin infections and fungal complaints. A water infusion is much weaker than a tincture." }
+  ],
+  "cautions": [
+    "Concentrated usnic acid taken INTERNALLY has caused severe liver injury, including fatalities from weight-loss supplements. Do not eat it or take concentrated extracts.",
+    "Lichens accumulate heavy metals and fallout from the air over decades. Do not gather near roads, industry, or known contamination.",
+    "Take fallen material after wind rather than stripping living lichen; it grows a few millimetres a year."
+  ],
+  "evidence": "Usnic acid has well-documented in-vitro antibacterial activity, particularly against gram-positive bacteria. Topical traditional use is long-standing; internal use is genuinely dangerous."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "fire-bank-and-carry",
+  "category": "fire",
+  "name": "Bank a fire and carry an ember",
+  "summary": "Smother the coals so they smoulder till morning, or wrap one in bark and walk with it — so you only ever have to win ignition once.",
+  "time": "10 minutes to bank; an ember carries 2-12 hours",
+  "materials": [
+    { "item": "an established fire", "substitutes": ["fire", "coals", "embers"] },
+    { "item": "ash and soil", "substitutes": ["ash", "earth", "sand", "dry dirt"] },
+    { "item": "hardwood logs", "substitutes": ["logs", "dense wood", "green log"] },
+    { "item": "bark tube or metal tin for carrying", "substitutes": ["birch bark", "punk wood", "tinder fungus", "chaga", "horn", "tin can", "clay pot"], "optional": true },
+    { "item": "dry moss or punk", "substitutes": ["punk wood", "moss", "tinder fungus", "dry rot", "cattail down"], "optional": true }
+  ],
+  "steps": [
+    { "text": "BANKING, at bedtime: burn down to a deep bed of coals, rake them into a compact pile, and lay one or two dense hardwood logs across it." },
+    { "text": "Cover the pile with a layer of its own ash, then a little soil — enough to choke the air down to a trickle, not enough to smother it dead.", "why": "Fire needs air. You are not putting it out, you are throttling it: starve it to a slow smoulder so it consumes fuel over eight hours instead of one." },
+    { "text": "In the morning rake the ash off, find the orange, feed it fine tinder and blow. A well-banked fire relights in a minute." },
+    { "text": "CARRYING: take one good coal and nest it in punk wood, dry rot, or true tinder fungus inside a bark tube or a tin, with a plug of moss at each end." },
+    { "text": "Leave a small air gap. Sealed tight it dies; wide open it burns through. Check it every half hour and blow gently if it has faded.", "why": "The whole trick is metering oxygen — enough to keep the coal alive, too little for it to consume its bed." },
+    { "text": "TINDER FUNGUS and CHAGA are the traditional ember beds because they smoulder for hours without flaming — see the remedy records for identification." }
+  ],
+  "verify": [
+    "A banked fire: warm ash in the morning with orange underneath when you rake it. Cold grey all the way down means you buried it too deep.",
+    "A carried ember: a wisp of smoke from the tube, and warmth through the bark. No smoke and it is gone."
+  ],
+  "limits": [
+    "Banking needs a real bed of COALS. A fire of thin sticks makes ash, not coals, and it will not survive the night whatever you cover it with.",
+    "A carried ember is unreliable in wind and rain and dies if you seal it or drop it. Treat it as a bonus over your ignition kit, never a replacement for it."
+  ],
+  "cautions": [
+    "A banked fire is a live fire. Never bank one inside a shelter, on peat, or over roots and duff — it can travel underground for hours and surface somewhere else.",
+    "Carrying an ember in a container puts a hot smouldering object against your body or in your pack. Suspend it outside the pack.",
+    "Carbon monoxide is odourless. A smouldering ember in an enclosed space — a tent, a snow shelter, a closed vehicle — can kill you in your sleep."
+  ],
+  "tags": ["fire", "banking", "ember", "fire carry", "overnight", "amadou"]
+}

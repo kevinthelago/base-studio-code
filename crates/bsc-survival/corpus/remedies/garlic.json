@@ -1,0 +1,46 @@
+{
+  "id": "garlic",
+  "name": "Garlic and wild garlic",
+  "latin": "Allium sativum / Allium ursinum / Allium spp.",
+  "functions": ["antiseptic", "antifungal", "digestive"],
+  "regions": ["worldwide", "europe", "north-america", "asia"],
+  "habitat": "Cultivated everywhere. Wild ramsons carpet damp deciduous woodland in spring across Europe; wild onions and ramps occupy similar ground in North America.",
+  "parts": ["bulb", "leaf"],
+  "identify": [
+    "THE ONE TEST THAT MATTERS: crush a leaf. If it does not smell unmistakably of onion or garlic, it is NOT an Allium — put it down.",
+    "Wild garlic (ramsons): broad soft lance-shaped leaves rising singly from the ground, a rounded starburst of white six-petalled flowers, in damp shady woodland in spring.",
+    "Wild onion: hollow round grass-like leaves and a bulb with a papery coat."
+  ],
+  "lookalikes": [
+    {
+      "name": "Lily of the valley",
+      "latin": "Convallaria majalis",
+      "danger": "Highly toxic — cardiac glycosides. It grows in exactly the same spring woodland as ramsons and people are poisoned this way most years.",
+      "tell": "NO garlic smell when crushed. Its leaves come in pairs from a single sheath and the flowers are nodding white bells on an arching stem."
+    },
+    {
+      "name": "Autumn crocus / meadow saffron",
+      "latin": "Colchicum autumnale",
+      "danger": "Lethal. Colchicine poisoning has no antidote and mimics gastroenteritis until it is too late.",
+      "tell": "No garlic smell. Leaves are broader, glossier and appear without flowers in spring; the flowers come alone from bare ground in autumn."
+    },
+    {
+      "name": "Death camas",
+      "latin": "Toxicoscordion / Zigadenus spp.",
+      "danger": "Lethal, and it grows among wild onions in western North America.",
+      "tell": "No onion smell, and the bulb has no papery onion-skin coat. Smell every single bulb, not just the first one of a patch."
+    }
+  ],
+  "preparations": [
+    { "form": "crushed clove", "method": "Crush and leave to stand 10 minutes before use.", "for_use": "Allicin forms only when the tissue is damaged, and it is what carries the antimicrobial action. Applied briefly to a small wound, or eaten." },
+    { "form": "oil infusion", "method": "Steep crushed garlic in warm oil — use it fresh and refrigerated, never stored at room temperature.", "for_use": "Skin and fungal complaints, earache in tradition." },
+    { "form": "food", "method": "Eaten raw or cooked.", "for_use": "Flavour, and the traditional systemic use." }
+  ],
+  "cautions": [
+    "The look-alikes here are among the most lethal plants in temperate woodland, and the smell test is what separates them. If there is no smell, there is no meal.",
+    "Raw garlic held against skin causes chemical burns — do not tape a crushed clove to a wound and leave it.",
+    "It has genuine anticoagulant effect in quantity; avoid heavy use around surgery or with blood thinners.",
+    "Cooking destroys most of the allicin, which is why the traditional antimicrobial use is raw."
+  ],
+  "evidence": "Allicin's in-vitro antibacterial and antifungal activity is well documented. Clinical evidence for treating an established infection with garlic is weak; the topical burn risk is well documented."
+}

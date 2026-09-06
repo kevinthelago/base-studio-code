@@ -1,0 +1,34 @@
+{
+  "id": "fire-char-cloth",
+  "category": "fire",
+  "name": "Make char cloth",
+  "summary": "Natural fabric cooked without air until it will catch a single spark and hold it — the thing that makes flint and steel work at all.",
+  "time": "15-25 minutes plus cooling",
+  "materials": [
+    { "item": "100% natural fabric", "substitutes": ["cotton", "linen", "denim", "old t-shirt", "canvas", "punk wood", "tinder fungus"] },
+    { "item": "small metal tin with a lid", "substitutes": ["tobacco tin", "shoe polish tin", "small can", "mint tin"] },
+    { "item": "fire", "substitutes": ["fire", "coals", "stove"] },
+    { "item": "nail or knife tip to pierce the lid", "substitutes": ["nail", "knife", "awl"], "optional": true }
+  ],
+  "steps": [
+    { "text": "Punch ONE small hole in the tin's lid. One, not several." },
+    { "text": "Cut the fabric into palm-sized squares and pack them loosely in the tin. Loose, so gas can get out around them." },
+    { "text": "Set the tin in the coals. A jet of smoke will stream from the hole.", "why": "That smoke is the fabric's volatiles being driven off. What is left behind is nearly pure carbon, which is what takes a spark." },
+    { "text": "When the smoke jet STOPS, pull the tin out immediately." },
+    { "text": "Plug the hole with a twig or press it into earth, and let the tin cool fully before opening — twenty minutes at least.", "why": "Air reaching hot char burns it to ash. Every impatient opening costs you the whole batch." },
+    { "text": "Good char is uniformly matte black, holds its weave, and flakes rather than crumbles." }
+  ],
+  "verify": [
+    "A spark landing on it grows a spreading orange ring rather than a dot that dies.",
+    "Brown or stiff patches were undercooked — run those squares again. Grey powder was overcooked."
+  ],
+  "limits": [
+    "Char cloth catches a spark; it does NOT make flame. It has to go into a tinder bundle to become fire — see `fire-tinder-bundle`.",
+    "It is fragile and it absorbs damp from the air. Keep it in the sealed tin and it lasts years; leave it out overnight in humidity and it will not take."
+  ],
+  "cautions": [
+    "Synthetic fabric does not char — it melts, and the fumes are toxic. Burn-test an unknown fabric first: cotton turns to ash and smells of paper, synthetics ball up and smell of plastic.",
+    "The tin is hot far longer than it looks."
+  ],
+  "tags": ["fire", "char cloth", "tinder", "flint and steel", "amadou"]
+}

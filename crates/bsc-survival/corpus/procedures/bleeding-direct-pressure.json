@@ -1,0 +1,35 @@
+{
+  "id": "bleeding-direct-pressure",
+  "category": "medical",
+  "name": "Stop severe bleeding",
+  "summary": "Hard, uninterrupted direct pressure on the wound, escalating to a tourniquet for a limb that will not stop.",
+  "time": "10 minutes of held pressure before you reassess",
+  "materials": [
+    { "item": "cloth", "substitutes": ["shirt", "bandana", "gauze", "clean fabric", "sanitary pad"], "optional": true },
+    { "item": "your hands", "substitutes": ["hand", "palm", "fingers"] },
+    { "item": "windlass tourniquet", "substitutes": ["belt", "strap", "triangular bandage and a stick", "CAT tourniquet"], "optional": true }
+  ],
+  "steps": [
+    { "text": "Get the wound above the level of the heart if the injury allows it, and expose it — you cannot press on what you cannot see." },
+    { "text": "Press hard, directly on the bleeding point, with the heel of your hand and a cloth if you have one.", "why": "Pressure works by holding the vessel shut long enough for a clot to form. Pressure spread over a wide area does not close a vessel." },
+    { "text": "Hold for a full ten minutes by the clock without lifting to look.", "why": "Every peek tears the forming clot off and restarts the ten minutes." },
+    { "text": "If blood soaks through, add cloth ON TOP and keep pressing. Do not remove the soaked layer." },
+    { "text": "For a limb still bleeding heavily despite pressure, apply a tourniquet 5-7 cm above the wound, never over a joint. Tighten until the bleeding STOPS, note the time, and do not loosen it." },
+    { "text": "For a wound in a junction the tourniquet cannot reach (groin, armpit, neck), pack the wound cavity tight with cloth and press down hard on the packing." }
+  ],
+  "verify": [
+    "Bleeding has stopped, not merely slowed.",
+    "After a tourniquet, the pulse below it is gone — a tourniquet tight enough to hurt but not tight enough to stop the pulse increases blood loss."
+  ],
+  "limits": [
+    "This controls EXTERNAL bleeding. It does nothing for internal bleeding, which has no first-aid answer and needs surgery.",
+    "A tourniquet buys time at the cost of the limb's circulation. It is the right trade against bleeding to death and the wrong one against anything less.",
+    "Nothing in this corpus replaces getting to medical care. Stopping the bleeding is step one of a longer problem."
+  ],
+  "cautions": [
+    "Do not use a tourniquet narrower than about 4 cm — a cord or wire cuts tissue instead of compressing the vessel.",
+    "Write the time of application somewhere on the casualty. The clock is what a clinician needs first.",
+    "Elevation and pressure points are adjuncts, not substitutes for direct pressure."
+  ],
+  "tags": ["bleeding", "clotting", "trauma", "tourniquet", "wound packing"]
+}

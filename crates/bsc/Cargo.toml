@@ -112,6 +112,8 @@ bsc-security = { path = "../bsc-security" }
 # `bsc news` — the LOW-TRUST news layer. Deliberately separate from `research`: that crate holds
 # citable sources, this one holds claims, and no verb converts between them.
 bsc-news = { path = "../bsc-news" }
+# The caveman network's offline survival corpus — procedures + natural remedies (#the-caveman-network).
+bsc-survival = { path = "../bsc-survival" }
 mcp-rpc = { path = "../mcp-rpc" }
 # `bsc config` — read/adopt verbs for the runtime config-seed mirror diverging from the packaged seed
 # (#168): status (classify + diff) and reset (adopt the packaged copy).

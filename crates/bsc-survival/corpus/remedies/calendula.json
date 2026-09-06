@@ -1,0 +1,33 @@
+{
+  "id": "calendula",
+  "name": "Calendula (pot marigold)",
+  "latin": "Calendula officinalis",
+  "functions": ["anti_inflammatory", "antiseptic", "burn"],
+  "regions": ["europe", "mediterranean", "north-america", "worldwide"],
+  "habitat": "Gardens, escaped onto waste ground and old fields; grown widely, self-seeds readily, and flowers late into the year.",
+  "parts": ["flower head", "petal"],
+  "identify": [
+    "Bright orange to yellow daisy-like flower heads, 4-7 cm across, on soft slightly sticky stems.",
+    "Leaves are pale green, soft, oblong, slightly sticky and aromatic, clasping the stem.",
+    "Seeds are curved and warty like tiny claws — a distinctive check.",
+    "It is a Calendula, not a Tagetes 'French marigold' — the tell is the soft hairy sticky foliage and the curved seed."
+  ],
+  "lookalikes": [
+    {
+      "name": "French / African marigold",
+      "latin": "Tagetes spp.",
+      "danger": "Low, but they are a different plant with a different and much more pungent smell and none of the same tradition.",
+      "tell": "Tagetes has finely divided fern-like leaves and a strong sharp scent; calendula has simple oblong leaves and a resinous sticky feel."
+    }
+  ],
+  "preparations": [
+    { "form": "infused oil", "method": "Pack DRIED flower heads into oil and leave warm for two weeks, or heat gently for a few hours; strain.", "for_use": "The base for a salve for grazes, chapping, nappy rash and minor burns. Dry the flowers first — water in fresh flowers spoils the oil." },
+    { "form": "infusion", "method": "Steep flower heads in hot water 10 minutes and cool.", "for_use": "A wash or compress for inflamed skin and grazes." }
+  ],
+  "cautions": [
+    "Asteraceae family: cross-reacts with ragweed, chrysanthemum and daisy allergies.",
+    "Avoid internal use in pregnancy.",
+    "It supports minor skin healing. It does nothing for a deep or infected wound."
+  ],
+  "evidence": "Approved for topical inflammation by the German Commission E, with several small trials for radiation dermatitis and wound healing. Among the better-supported skin herbs here."
+}

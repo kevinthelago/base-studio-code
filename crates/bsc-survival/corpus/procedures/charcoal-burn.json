@@ -1,0 +1,34 @@
+{
+  "id": "charcoal-burn",
+  "category": "tools",
+  "name": "Make charcoal",
+  "summary": "Burn hardwood under restricted air until it stops smoking, then smother it — the feedstock for a filter, a hotter fire, and a wound-drawing poultice.",
+  "time": "1-3 hours plus cooling",
+  "materials": [
+    { "item": "hardwood", "substitutes": ["oak", "maple", "birch", "untreated hardwood"] },
+    { "item": "fire", "substitutes": ["fire", "coals"] },
+    { "item": "metal container with a loose lid", "substitutes": ["tin can", "pot", "billy"], "optional": true },
+    { "item": "soil or sand to smother with", "substitutes": ["earth", "sand", "dirt"] }
+  ],
+  "steps": [
+    { "text": "Pit method: burn a hot hardwood fire down in a pit until it is a bed of glowing coals with no flame." },
+    { "text": "Rake the coals level and cover them completely with 5-10 cm of soil, cutting off the air.", "why": "Charcoal is what is left when wood is cooked without enough oxygen to finish burning. Air at this stage turns your charcoal into ash." },
+    { "text": "Can method: pack hardwood into a metal can, put the lid on loose, and set it in the fire. Smoke and jets of flame will vent from the gap." },
+    { "text": "When the venting smoke stops, the wood has given up its volatiles. Pull the can out and seal the gap with soil." },
+    { "text": "Let it cool completely before opening — an hour or more. Opening it hot lets air in and it burns to ash." },
+    { "text": "Crush to coarse grit for a filter; keep lumps for fuel." }
+  ],
+  "verify": [
+    "Good charcoal is black through the break, light for its size, and rings faintly. Brown at the core means it was undercooked; grey and crumbling means it burned to ash.",
+    "It should snap cleanly rather than splinter like wood."
+  ],
+  "limits": [
+    "This is charcoal, not ACTIVATED carbon. Activation needs steam or chemical treatment at temperatures a field fire does not hold, and the difference is roughly an order of magnitude in adsorptive surface.",
+    "Charcoal adsorbs some organics, tastes and odours. It does not remove pathogens, salt or most metals."
+  ],
+  "cautions": [
+    "Only ever untreated wood. Painted, glued, pressure-treated or salvaged construction timber puts arsenic, formaldehyde and heavy metals into anything the charcoal later touches.",
+    "A smothered pit stays hot for many hours. Do not sleep on top of one."
+  ],
+  "tags": ["charcoal", "fire", "filter", "feedstock"]
+}

@@ -843,6 +843,7 @@ dependencies = [
  "bsc-shot",
  "bsc-sound",
  "bsc-studio",
+ "bsc-survival",
  "bsc-teams",
  "bsc-ui",
  "bsc-util",
@@ -1526,6 +1527,19 @@ dependencies = [
  "bsc-json-store",
  "bsc-sqlite-util",
  "bsc-util",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-survival"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "bsc-util",
+ "include_dir",
+ "rusqlite",
  "serde",
  "serde_json",
 ]

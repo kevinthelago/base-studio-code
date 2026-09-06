@@ -1,0 +1,33 @@
+{
+  "id": "oak-bark",
+  "name": "Oak bark",
+  "latin": "Quercus spp.",
+  "functions": ["astringent", "antiseptic", "hemostatic"],
+  "regions": ["north-america", "europe", "asia", "mediterranean"],
+  "habitat": "Woodland, hedgerow and parkland across the temperate northern hemisphere.",
+  "parts": ["inner bark", "young twig bark", "acorn"],
+  "identify": [
+    "Lobed leaves — rounded lobes in the white-oak group, bristle-tipped points in the red-oak group.",
+    "Acorns sitting in a scaly cup. The cup is the family mark and no other tree here has one.",
+    "Deeply furrowed grey to brown bark on mature trunks."
+  ],
+  "lookalikes": [
+    {
+      "name": "Horse chestnut / buckeye",
+      "latin": "Aesculus spp.",
+      "danger": "Poisonous nuts; mistaking them for acorns is the classic error.",
+      "tell": "Buckeye and horse chestnut nuts come out of a thick spiny or leathery husk and have NO scaly cup; their leaves are palmate, radiating from one point like fingers, not lobed."
+    }
+  ],
+  "preparations": [
+    { "form": "decoction", "method": "Simmer a handful of chopped inner bark or young twig bark in water for 15-20 minutes until it is tea-dark.", "for_use": "An astringent wound wash, a gargle for sore throat, and a soak for weeping skin. Tannins bind protein and tighten tissue, which is what slows an ooze." },
+    { "form": "poultice", "method": "Apply the cooled boiled bark directly.", "for_use": "Weeping grazes, haemorrhoids, and stopping capillary ooze." },
+    { "form": "tanning", "method": "The same tannin solution, used long and cold.", "for_use": "Tanning hide." }
+  ],
+  "cautions": [
+    "Tannins are irritant in quantity — a strong decoction taken internally causes stomach upset and, sustained, kidney damage. Use it as a wash and a gargle, not as a daily drink.",
+    "Do not use a strong tannin wash inside a deep open wound; it damages the tissue trying to granulate.",
+    "Acorns must be leached before eating — see `food-acorn-leaching`."
+  ],
+  "evidence": "Oak bark is an official astringent in several European pharmacopoeias for topical and gargle use. The tannin chemistry is well characterised."
+}
