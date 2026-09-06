@@ -1,0 +1,18 @@
+[package]
+name = "bsc-incident"
+version = "0.1.0"
+edition = "2021"
+description = "The incident ledger — the alerting brain. Coalesces detections into incidents (a scan is one cluster, not sixty alarms), tracks severity and state, honours silences, and decides — once — whether an observation is worth a notification. Pure: no I/O, no clock, no database; persistence and delivery wrap it."
+
+[lib]
+name = "bsc_incident"
+
+# PURE. No I/O, no async runtime, no HTTP/SSH, no database, no app shell. Time is
+# an argument and the store is in memory, so every rule is answerable from a
+# constructed sequence. Persistence (SQLite) and delivery (the tunnel) wrap this
+# crate; they never live inside it.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
