@@ -328,6 +328,7 @@ This is the model-free clean-up that comes first.",
 struct Args {
     all: bool,
     out: Option<String>,
+    engine: Option<String>,
     limit: Option<usize>,
     live_dir: Option<String>,
     replay_dir: Option<String>,
@@ -344,6 +345,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         match flag {
             "--all" => a.all = true,
             "--out" => a.out = Some(rest.value("--out needs a playback device for the sweep")?),
+            "--engine" => a.engine = Some(rest.value("--engine needs a value: spectral or rnnoise")?),
             "--live-dir" => a.live_dir = Some(rest.value("--live-dir needs a directory of live recordings")?),
             "--replay-dir" => a.replay_dir = Some(rest.value("--replay-dir needs a directory of replayed recordings")?),
             "--json" => a.json = true,
@@ -939,6 +941,11 @@ fn cmd_clean(a: &Args) -> Result<(), String> {
         return Err("pass one or more wav files to clean".into());
     }
     let opts = Options::default();
+    let engine = match a.engine.as_deref() {
+        None | Some("spectral") => clean::Engine::Spectral,
+        Some("rnnoise") => clean::Engine::Rnnoise,
+        Some(other) => return Err(format!("unknown --engine '{other}': use spectral or rnnoise")),
+    };
     let out_dir = a.out.as_ref().map(PathBuf::from);
     if let Some(d) = &out_dir {
         std::fs::create_dir_all(d).map_err(|e| format!("could not create {}: {e}", d.display()))?;
@@ -947,7 +954,7 @@ fn cmd_clean(a: &Args) -> Result<(), String> {
     let mut rows = Vec::new();
     for f in &files {
         let (samples, sr) = read_wav(f)?;
-        let cleaned = clean::clean(&samples, sr, &opts);
+        let cleaned = clean::clean_with(&samples, sr, engine, &opts)?;
         let dest = match &out_dir {
             Some(d) => d.join(format!(
                 "{}.clean.wav",

@@ -177,6 +177,54 @@ pub fn spectral_subtract(samples: &[f32], opts: &Options) -> Vec<f32> {
     out
 }
 
+/// Which denoiser to run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Engine {
+    /// Hand-rolled high-pass + spectral subtraction. Model-free, no dependency; weak on the
+    /// non-stationary noise (rain, handling) that has no steady spectrum to estimate.
+    Spectral,
+    /// The RNNoise recurrent neural denoiser (via nnnoiseless). Trained on real noise, so it removes
+    /// the non-stationary noise spectral subtraction cannot. Operates at 48 kHz only.
+    Rnnoise,
+}
+
+/// Denoise with RNNoise. Requires 48 kHz mono — the network is trained at that rate, and resampling
+/// is the caller's job (we hold the 48 kHz originals, so we denoise those and downsample after).
+///
+/// RNNoise expects samples in i16 MAGNITUDE, not normalised [-1, 1] — a normalised signal fed in
+/// reads as near-silence and the denoiser passes it through untouched, which looks like "it did
+/// nothing." So we scale up on the way in and back down on the way out.
+pub fn denoise_rnnoise(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
+    if sample_rate != 48_000 {
+        return Err(format!(
+            "rnnoise needs 48kHz audio; this is {sample_rate}Hz — denoise the 48k original, then downsample"
+        ));
+    }
+    let mut st = nnnoiseless::DenoiseState::new();
+    let f = nnnoiseless::DenoiseState::FRAME_SIZE;
+    let mut inbuf = vec![0.0f32; f];
+    let mut outbuf = vec![0.0f32; f];
+    let mut out = Vec::with_capacity(samples.len());
+    for chunk in samples.chunks(f) {
+        for (i, slot) in inbuf.iter_mut().enumerate() {
+            *slot = chunk.get(i).copied().unwrap_or(0.0) * 32768.0;
+        }
+        st.process_frame(&mut outbuf, &inbuf);
+        out.extend(outbuf.iter().take(chunk.len()).map(|s| s / 32768.0));
+    }
+    Ok(out)
+}
+
+/// Clean with a chosen engine.
+pub fn clean_with(samples: &[f32], sample_rate: u32, engine: Engine, opts: &Options) -> Result<Vec<f32>, String> {
+    match engine {
+        Engine::Spectral => Ok(clean(samples, sample_rate, opts)),
+        // High-pass the transients first (RNNoise targets broadband noise, not a DC-ish thump), then
+        // hand the rest to the network.
+        Engine::Rnnoise => denoise_rnnoise(&high_pass(samples, sample_rate, opts.highpass_hz), sample_rate),
+    }
+}
+
 /// The full cleaning pass: high-pass the transients, then spectrally subtract the stationary noise.
 /// Order matters — removing the low-frequency thump first keeps it out of the noise estimate, so the
 /// estimate describes the steady room rather than being skewed by a one-off bump.
@@ -308,6 +356,19 @@ mod tests {
         let nofloor = Options { highpass_hz: 0.0, oversubtract: 5.0, floor: 0.0 };
         let collapsed = rms(&spectral_subtract(&sig, &nofloor)) / rms(&sig);
         assert!(collapsed < kept, "with no floor the same signal collapses further: {collapsed} < {kept}");
+    }
+
+    /// The RNNoise engine refuses non-48kHz (the network's trained rate) rather than silently
+    /// producing garbage, and at 48kHz it runs and preserves length. Quality is judged by ear on
+    /// real speech, not asserted on a synthetic tone RNNoise's speech-trained VAD would gate.
+    #[test]
+    fn rnnoise_requires_48k_and_preserves_length() {
+        let sig = tone(300.0, 0.5, 0.3); // SR = 16000
+        assert!(denoise_rnnoise(&sig, SR).is_err(), "non-48k must be refused, not fudged");
+        let n = 48_000usize / 2;
+        let s48: Vec<f32> = (0..n).map(|i| 0.2 * (2.0 * PI * 300.0 * i as f32 / 48_000.0).sin()).collect();
+        let out = denoise_rnnoise(&s48, 48_000).expect("48k must run");
+        assert_eq!(out.len(), s48.len(), "denoise must preserve length");
     }
 
     /// Clean, INTERMITTENT audio survives the pass near unity — the cleaning must not distort what

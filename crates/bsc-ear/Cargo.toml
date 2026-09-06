@@ -21,6 +21,9 @@ hound = "3.5"
 # For silencing ALSA's own diagnostics at the fd level while enumerating. Already in the tree via
 # cpal -> alsa, so this makes a transitive dependency direct rather than adding one.
 libc = "0.2"
+# Learned speech denoiser (pure-Rust RNNoise port): no model download, no C, no ort. Handles the
+# non-stationary rain/handling noise that spectral subtraction cannot. RNNoise operates at 48kHz.
+nnnoiseless = "0.5"
 
 [lints.clippy]
 wildcard_enum_match_arm = "deny"
