@@ -328,6 +328,17 @@ fingerprint separates voices: a similar-sounding friend can be mistaken for you.
 upgrade is the neural embedding model; this is the first cut that measures whether it is needed.",
     },
     CmdDoc {
+        name: "embed",
+        summary: "speaker-embedding cosine distances between clips (ECAPA-TDNN via ort) — the recognition validator",
+        usage: "\
+bsc ear embed <wav>...
+
+Embeds each 16kHz clip with the ECAPA-TDNN speaker model and prints the pairwise cosine distances.
+Small distance = same voice; large = different. This is how we check the embedding recognises a
+voice ACROSS sessions, which the cheap voiceprint could not. Needs the model under
+~/.base-studio-code/models/speaker-embedding.",
+    },
+    CmdDoc {
         name: "clean",
         summary: "strip handling thumps and stationary noise (rain/hiss) from a recording",
         usage: "\
@@ -975,6 +986,30 @@ fn labelled_from(dir: &std::path::Path) -> Result<Vec<(String, crate::classify::
         ));
     }
     Ok(out)
+}
+
+fn cmd_embed(a: &Args) -> Result<(), String> {
+    use crate::embed::{cosine_distance, Embedder};
+    let files: Vec<PathBuf> = a.positional[1..].iter().map(PathBuf::from).collect();
+    if files.len() < 2 {
+        return Err("pass at least two wav files to compare".into());
+    }
+    let model = bsc_util::bsc_base_dir()
+        .map(|d| d.join("models").join("speaker-embedding").join("ecapa-tdnn512.onnx"))
+        .ok_or("no home directory")?;
+    let mut emb = Embedder::load(&model)?;
+    let mut vecs = Vec::new();
+    for f in &files {
+        let (samples, sr) = read_wav(f)?;
+        vecs.push((f.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string(), emb.embed(&samples, sr)?));
+    }
+    println!("pairwise cosine distance (0 = same voice, ~1 = unrelated):");
+    for i in 0..vecs.len() {
+        for j in i + 1..vecs.len() {
+            println!("  {:.3}   {}  vs  {}", cosine_distance(&vecs[i].1, &vecs[j].1), vecs[i].0, vecs[j].0);
+        }
+    }
+    Ok(())
 }
 
 fn cmd_clean(a: &Args) -> Result<(), String> {
@@ -1770,6 +1805,7 @@ pub fn run(argv: Vec<String>, prog: &str) -> Result<(), String> {
         Some("diarize") => cmd_diarize(&a),
         Some("attribute") => cmd_attribute(&a, &p),
         Some("imprint") => cmd_imprint(&a, &p),
+        Some("embed") => cmd_embed(&a),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other.unwrap_or(""))),
     }
 }
@@ -1790,7 +1826,7 @@ mod tests {
             vec![
                 "devices", "start", "stop", "status", "listen", "levels", "liveness", "floor",
                 "classify", "features", "prosody", "transcribe", "transcripts", "segments",
-                "diarize", "attribute", "imprint", "clean"
+                "diarize", "attribute", "imprint", "embed", "clean"
             ]
         );
     }

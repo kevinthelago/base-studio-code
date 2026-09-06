@@ -16,6 +16,7 @@ pub mod capture;
 pub mod chain;
 pub mod clean;
 pub mod deepfilternet;
+pub mod embed;
 pub mod classify;
 pub mod liveness;
 pub mod prosody;
