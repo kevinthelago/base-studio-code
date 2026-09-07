@@ -50,7 +50,6 @@
   "bsc-graph--imports.rs": 12,
   "bsc-graph--lib.rs": 27,
   "bsc-graph--methods.rs": 15,
-  "bsc-graph--migrate.rs": 56,
   "bsc-graph--node-urn.rs": 6,
   "bsc-graph--repo-store.rs": 15,
   "bsc-graph--rust-test.rs": 9,
