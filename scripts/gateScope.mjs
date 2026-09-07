@@ -130,6 +130,9 @@ export function graphCommands() {
     // (measured, 67 -> 59). This is the only thing that looks. It also catches the record and the file
     // it was lifted from drifting apart, which it found on its FIRST run.
     { label: "graph (rust test edges)", key: "graph-rust-tests", stage: "test", cmd: "node", args: ["scripts/graph-rust-tests.mjs"] },
+    // Every import/use of another record IS a relationship (`bsc-graph-derives-and-verifies-relationships`);
+    // this fails when a NEW/edited record uses a record without a `composes` edge, vs a grandfathered baseline.
+    { label: "graph (relationships)", key: "graph-relationships", stage: "test", cmd: "node", args: ["scripts/graph-relationships.mjs", "--check"] },
   ];
 }
 
@@ -229,6 +232,8 @@ export function isGraphSourcePath(file) {
     || file === "scripts/graph-rust-compile.mjs"
     || file === "scripts/graph-cross-kit.mjs"
     || file === "scripts/graph-rust-tests.mjs"
+    || file === "scripts/graph-relationships.mjs"
+    || file === "scripts/graph-relationships.baseline.json"
     // The cross-kit CONTRACT: adding a case must re-run the agreement check that reads it.
     || file === "src/features/algorithms/lib/crossKit.fixtures.json";
 }

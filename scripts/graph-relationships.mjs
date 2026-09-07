@@ -8,7 +8,8 @@
 import fs from 'node:fs';
 const STORE = process.env.GRAPH_STORE || 'graph/algorithms.json';
 const BASELINE = 'scripts/graph-relationships.baseline.json';
-const recs = JSON.parse(fs.readFileSync(STORE,'utf8')).implementations;
+const store = JSON.parse(fs.readFileSync(STORE,'utf8'));
+const recs = store.implementations;
 const by = new Map(recs.map(r=>[r.id,r]));
 const prov = new Map();
 for (const r of recs) if (r.provides) (prov.get(r.provides)??prov.set(r.provides,[]).get(r.provides)).push(r.id);
@@ -49,4 +50,8 @@ if(mode==='--report'){ const g=gaps(); const prod=recs.filter(r=>r.role==='algor
   if(nu.length){ console.error(`RELATIONSHIP GATE: ${nu.length} NEW missing composes edge(s) not in baseline:`); nu.slice(0,20).forEach(x=>console.error('  '+x)); process.exit(1); }
   console.log('relationship gate: no new missing edges'); 
 }else if(mode==='--baseline'){ fs.writeFileSync(BASELINE, JSON.stringify(gaps(),null,2)+'\n'); console.log('baseline written'); }
-else if(mode==='--apply'){ console.error('--apply is GUARDED: mass composes write held for maintainer green-light (see change note). No-op.'); process.exit(2); }
+else if(mode==='--apply'){ let added=0,changed=0;
+  for(const r of recs){ const der=derive(r); if(!der.size)continue; const existing=r.composes||[]; const have=new Set(existing);
+    const add=[...der].filter(x=>!have.has(x)).sort(); if(add.length){ r.composes=[...existing,...add]; added+=add.length; changed++; } }
+  fs.writeFileSync(STORE, JSON.stringify(store,null,2)+'\n');
+  console.log(`backfill applied: +${added} composes edges across ${changed} records (union-preserving, composes-only)`); }
