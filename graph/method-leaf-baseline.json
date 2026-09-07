@@ -47,7 +47,6 @@
   "bsc-graph--emit.rs": 9,
   "bsc-graph--features.rs": 2,
   "bsc-graph--impl-refresh.rs": 2,
-  "bsc-graph--imports.rs": 12,
   "bsc-graph--lib.rs": 27,
   "bsc-graph--methods.rs": 15,
   "bsc-graph--node-urn.rs": 6,
