@@ -24,5 +24,6 @@ pub mod retention;
 pub mod transcribe;
 pub mod transcript;
 pub mod segment;
+pub mod detect;
 pub mod diarize;
 pub mod imprint;
