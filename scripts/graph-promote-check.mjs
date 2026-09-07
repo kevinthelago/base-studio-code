@@ -21,7 +21,7 @@
  * What DOES fail: a record that exists in both stores and differs. That is an edit which never reached
  * the compiler, and the underlying verb names the ids.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -43,6 +43,59 @@ export function drifted(stdout) {
     }
   }
   return [];
+}
+
+/**
+ * The wall-clock bound for the underlying `bsc graph promote --check`, in milliseconds.
+ *
+ * This leg execs a `bsc` subcommand that compares the committed store against the SHARED runtime store
+ * every concurrent session authors. MEASURED 2026-09-07: at store size 1395, with ~13 sessions
+ * authoring at once, that comparison spun ON-CPU for 32+ minutes (a healthy run is ~37s) — and
+ * `gate.mjs` epoll-waited on it the whole time HOLDING the single full-gate slot lock, so every other
+ * session's `--full` gate blocked behind it (request #253). A gate leg that can hang unboundedly and
+ * starve a shared slot is the failure this bound exists to stop.
+ *
+ * Configurable via `BSC_PROMOTE_CHECK_TIMEOUT_MS`; the default (180s) sits well ABOVE the ~37s a healthy
+ * run takes — so an honestly-slow check is never cut off — and far BELOW the 32-minute spin that starved
+ * the slot. A non-positive or unparseable value falls back to the default rather than DISABLING the
+ * bound: a check with no bound is exactly the bug, so "junk" must never mean "run forever".
+ */
+export const PROMOTE_CHECK_DEFAULT_TIMEOUT_MS = 180_000;
+
+/** How many drifted ids to attribute IN DETAIL before truncating (request #253). A red run under heavy
+ *  concurrent authoring can carry hundreds of drifted ids (MEASURED 344); the check's JSON already NAMES
+ *  every one, so the per-id blame is diminishing signal past a couple dozen — and each entry shells out
+ *  to git + `bsc`. This caps the noise; the wall-clock deadline is the hard stop on top of it. */
+export const PROMOTE_CHECK_DETAIL_CAP = 25;
+
+export function promoteCheckTimeoutMs(env = {}) {
+  const raw = env.BSC_PROMOTE_CHECK_TIMEOUT_MS;
+  if (raw === undefined || raw === "") return PROMOTE_CHECK_DEFAULT_TIMEOUT_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : PROMOTE_CHECK_DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * The LOUD verdict printed when the check is aborted on its wall-clock bound.
+ *
+ * It says the seam was NOT verified — never that it is clean. A timeout is not a pass: it is a check
+ * that could not check, and conflating the two would make the gate lie in exactly the way this repo
+ * keeps getting caught by. The CLI exits NON-ZERO alongside this, so it reads red in the gate.
+ */
+export function promoteCheckTimeoutVerdict(ms, signal, error) {
+  const timedOut = error?.code === "ETIMEDOUT" || (signal && !error);
+  const detail = timedOut
+    ? `exceeded its ${Math.round(ms / 1000)}s wall-clock bound`
+    : `was terminated (${signal || error?.code || "unknown"})`;
+  return `${[
+    "",
+    `graph: TIMED OUT — repo-store drift was NOT verified (${detail}).`,
+    "  `bsc graph promote --check` compares the committed store against the SHARED runtime store that",
+    "  every concurrent session authors; under heavy concurrent authoring it can spin far past its",
+    "  normal ~37s. This leg was aborted so it could NOT hold the full-gate slot (request #253).",
+    "  This is NOT a pass. Re-run the gate when the box is quieter, or raise",
+    "  BSC_PROMOTE_CHECK_TIMEOUT_MS if a healthy check legitimately needs longer.",
+  ].join("\n")}\n`;
 }
 
 /** `<n> seconds/minutes/hours/days ago`, or null for an unparseable/absent stamp. */
@@ -70,11 +123,22 @@ export function ago(iso, nowMs) {
  * `unknown` is printed as-is rather than hidden: an unattributed write is itself the finding, and that
  * is what `fleet-director-bridge.ts` had — rev 0, no author, no timestamp, unowned for weeks.
  */
-export function attribute(ids, historyFor, nowMs) {
+export function attribute(ids, historyFor, nowMs, opts = {}) {
   if (ids.length === 0) return "";
+  const { limit = Infinity, deadlineMs } = opts;
   const lines = ["", "who last authored each drifted node (from the RUNTIME store, which is shared):"];
   let fresh = false;
+  let done = 0;
   for (const id of ids) {
+    // BOUND THE LOOP. `historyFor` shells out to `bsc` per id; with hundreds of drifted ids under heavy
+    // concurrent authoring that aggregate is unbounded (request #253). Stop at a count cap or a wall-clock
+    // deadline and say so — every drifted id is still named in the check's own JSON above, so truncating
+    // this per-id detail loses no finding, only the noise of attributing 344 records nobody will read.
+    if (done >= limit || (deadlineMs && Date.now() > deadlineMs)) {
+      lines.push(`  … stopped after ${done} of ${ids.length} (${done >= limit ? "detail cap" : "time budget"}); every drifted id is named in the check output above.`);
+      break;
+    }
+    done += 1;
     const h = historyFor(id);
     if (!h) {
       lines.push(`  ${id} — no history available`);
@@ -162,11 +226,23 @@ export function lastRepoCommit(id, commits, recordAt, limit = 40) {
 }
 
 /** The repo-side attribution + drift shape for each drifted id, as printable lines. */
-export function diagnose(ids, io) {
+export function diagnose(ids, io, opts = {}) {
   if (ids.length === 0) return "";
+  const { limit = Infinity, deadlineMs } = opts;
   const lines = ["", "what drifted, and who last authored it in the COMMITTED store:"];
   let collapsed = false;
+  let done = 0;
   for (const id of ids) {
+    // BOUND THE LOOP — this is the DOMINANT cost of a red run (request #253). Per id, `io.blame` walks
+    // the git history of the ~2 MB committed store; with hundreds of drifted ids (the shape of heavy
+    // concurrent authoring — MEASURED 344 at once) that is thousands of full-file `git show`s + JSON
+    // parses, which is the real 32-minute spin. Stop at a count cap or a deadline; the ids are all named
+    // in the check's JSON above, so this truncates detail, not the finding.
+    if (done >= limit || (deadlineMs && Date.now() > deadlineMs)) {
+      lines.push(`  … stopped after ${done} of ${ids.length} (${done >= limit ? "detail cap" : "time budget"}); every drifted id is named in the check output above.`);
+      break;
+    }
+    done += 1;
     const shape = shapeOf(io.runtime(id), io.repo(id));
     const commit = io.blame(id);
     lines.push(`  ${id}`);
@@ -310,22 +386,60 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
     );
     process.exit(0);
   }
-  try {
-    const out = execFileSync(usable.path, ["graph", "promote", "--check", "--root", ROOT], { encoding: "utf8" });
+  // WALL-CLOCK BOUND on the check itself (request #253). `spawnSync` rather than `execFileSync`
+  // because it RETURNS the timeout outcome (signal + ETIMEDOUT) instead of throwing an error that reads
+  // identically to a real drift. On the bound the child is SIGKILL'd — the pathology is a CPU-bound
+  // spin and a spinning process can be slow to honour SIGTERM; the check only READS the stores, so a
+  // hard kill loses no in-flight write. Exiting here is what frees the shared gate slot: `gate.mjs`
+  // releases it the instant this leg's process returns, so a leg that always terminates can never
+  // starve the fleet the way the 32-minute spin did.
+  const timeoutMs = promoteCheckTimeoutMs(process.env);
+  // ONE deadline for the WHOLE leg — the check plus the diagnostics below. The check gets the full
+  // budget; whatever it leaves is what the per-id diagnostics may spend before they truncate. This is
+  // the guarantee the request asks for: the leg terminates within roughly `timeoutMs`, freeing the slot.
+  const legDeadlineMs = Date.now() + timeoutMs;
+  const r = spawnSync(usable.path, ["graph", "promote", "--check", "--root", ROOT], {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  // `signal`/`error` are set ONLY when the child was KILLED or failed to run rather than exiting on its
+  // own. A real drift EXITS with status 1 and a null signal, so the abort case and the drift case never
+  // collide — the timeout is reported as its own verdict, not misread as clean.
+  if (r.signal || r.error) {
+    process.stdout.write(String(r.stdout ?? ""));
+    process.stderr.write(String(r.stderr ?? ""));
+    process.stdout.write(promoteCheckTimeoutVerdict(timeoutMs, r.signal, r.error));
+    // NON-ZERO on purpose: a timeout DID NOT VERIFY the seam, and a check that cannot check must not
+    // read as a pass. Exit 3 (distinct from 1 = real drift) so the two are separable in a log.
+    process.exit(3);
+  }
+  if (r.status === 0) {
+    const out = String(r.stdout ?? "");
     process.stdout.write(out.trim() ? `${out.trim()}\n` : "graph: repo store is current\n");
     process.exit(0);
-  } catch (err) {
-    process.stdout.write(String(err.stdout ?? ""));
-    process.stderr.write(String(err.stderr ?? ""));
-    const ids = drifted(String(err.stdout ?? ""));
-    process.stdout.write(attribute(ids, (id) => history(usable.path, id), Date.now()));
-    process.stdout.write(
-      diagnose(ids, {
+  }
+  // A genuine drift: non-zero exit carrying the JSON line the underlying verb emitted.
+  process.stdout.write(String(r.stdout ?? ""));
+  process.stderr.write(String(r.stderr ?? ""));
+  const ids = drifted(String(r.stdout ?? ""));
+  const diagOpts = { limit: PROMOTE_CHECK_DETAIL_CAP, deadlineMs: legDeadlineMs };
+  process.stdout.write(attribute(ids, (id) => history(usable.path, id), Date.now(), diagOpts));
+  // Compute the committed-store commit list ONCE, not once per id. It was inside the per-id `blame`
+  // closure, so a run with 344 drifted ids ran `git log` over the 2 MB store 344 times (request #253);
+  // `lastRepoCommit` only READS this list, so one call feeds every id.
+  const commits = commitsTouchingStore(ROOT);
+  process.stdout.write(
+    diagnose(
+      ids,
+      {
         runtime: (id) => impl(usable.path, id),
         repo: (id) => repoRecord(ROOT, id),
-        blame: (id) => lastRepoCommit(id, commitsTouchingStore(ROOT), (sha) => recordAtCommit(ROOT, sha, id)),
-      }),
-    );
-    process.exit(1);
-  }
+        blame: (id) => lastRepoCommit(id, commits, (sha) => recordAtCommit(ROOT, sha, id)),
+      },
+      diagOpts,
+    ),
+  );
+  process.exit(1);
 }
