@@ -16,7 +16,7 @@
 //   e2e/vite.config.ts     its OWN config, outside the root tsconfig. Retiring `Spacer` broke the whole
 //                          Playwright harness because this one was missed.
 //   reactUiKit.gen.test.ts the kit generator walks the import graph itself.
-//   graph/algorithms.json  the RUST closure walker (`bsc ui emit`), record `bsc-ui--emit.rs`. The
+//   graph/algorithms.json  the RUST closure walker (`bsc ui emit`), record `bsc-ui--emit--mod.rs`. The
 //                          SEVENTH, and the only one
 //                          outside the TS build: it vendors an alias-free tree by resolving each `@/…`
 //                          against the packaged kit artifact overlaid with the store, so a module that
@@ -67,7 +67,7 @@ describe("record resolvers (#3604)", () => {
   // in some OTHER closure would slip straight past.
   it("the Rust emit walker still has its whole-kit closure guard", () => {
     // `bsc-ui` COMPILES FROM THE GRAPH now, so `crates/bsc-ui/src/emit.rs` no longer exists — the
-    // module is the record `bsc-ui--emit.rs` in the repo store, which is the file
+    // module is the record `bsc-ui--emit--mod.rs` in the repo store, which is the file
     // `crates/graph-materialize/build.rs` actually materializes for the compiler. Reading the store is
     // therefore the same evidence this assertion always wanted, taken one step closer to the source of
     // truth; reading the file would now be reading nothing at all.
@@ -79,8 +79,8 @@ describe("record resolvers (#3604)", () => {
     // must fail LOUDLY here. A `?? ""` fallback would turn either into a silent `toContain` failure
     // that reads as "the guard was dropped" and sends the next reader to the wrong place.
     expect(impls.length).toBeGreaterThan(100);
-    const emit = impls.find((i) => i.id === "bsc-ui--emit.rs")?.code;
-    expect(emit, "no `bsc-ui--emit.rs` record in graph/algorithms.json").toBeTypeOf("string");
+    const emit = impls.find((i) => i.id === "bsc-ui--emit--mod.rs")?.code;
+    expect(emit, "no `bsc-ui--emit--mod.rs` record in graph/algorithms.json").toBeTypeOf("string");
     expect(emit).toContain("fn the_whole_packaged_kit_plans_an_alias_free_closure");
     expect(emit).toContain("unvendored_aliases");
   });
