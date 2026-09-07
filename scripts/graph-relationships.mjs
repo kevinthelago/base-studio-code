@@ -15,7 +15,10 @@ const prov = new Map();
 for (const r of recs) if (r.provides) (prov.get(r.provides)??prov.set(r.provides,[]).get(r.provides)).push(r.id);
 const RUST_KW = new Set(['std','core','alloc']);
 function modpath(r){ const i=r.id; if(!i.endsWith('.rs'))return null;
-  let segs=i.slice(0,-3).split('--'); const crate=segs.shift();
+  const base=i.slice(0,-3);
+  if(!base.includes('--')){ // bare-id toy-library record: a root module, not a crate
+    return ['<lib>', [base.replaceAll('-','_')]]; }
+  let segs=base.split('--'); const crate=segs.shift();
   if(segs.at(-1)==='mod')segs=segs.slice(0,-1);
   return [crate, segs.map(s=>s.replaceAll('-','_'))]; }
 const idx=new Map(); const key=(c,p)=>c+'|'+p.join('::');
