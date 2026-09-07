@@ -181,6 +181,26 @@ only the `develop` REF, so promote never has to know where `wt-integrate` is; it
 run the gate there, because `gate-tree-guard` refuses a second cargo over the `target/` that
 `tauri dev` owns — and after the inversion that `target/` is the root's.
 
+**Clean up the branches a promote just landed — it is the last step of the promote, not an optional
+tidy.** A branch here is LOCAL and never pushed, so once it is merged into `develop` (and
+fast-forwarded onto `main`) its ref carries nothing you cannot reach from `develop` — it is pure
+clutter, and it is how a session's branch list quietly grows to dozens. Two halves, worktrees first
+because a branch checked out in a worktree cannot be deleted:
+
+```bash
+bsc worktree cap                   # DESTRUCTIVE: remove merged/parked worktrees beyond the cap (frees their branches)
+git branch --merged develop --format='%(refname:short)' | grep -vxE 'develop|main' | xargs -r git branch -d
+```
+
+`git branch -d` (never `-D`) refuses a branch that is not fully merged, so this can only ever remove
+LANDED work — a branch still holding un-integrated commits is left alone, loudly. Run the
+sweep where HEAD is `develop`/`main` (the post-promote root, or `wt-integrate`) — `git branch -d`
+resolves “merged” against the CURRENT branch, so from an unrelated worktree it wrongly refuses every one. Like `promote`
+itself the sweep is **explicit, not automatic** — it runs when you promote, never on every merge — and
+it only ever touches YOUR local refs. `bsc worktree cap` owns the worktree half; the branch-ref sweep
+is a raw pipeline only until a first-class `bsc` verb is filed for it
+(`record-operations-belong-on-the-bsc-surface-not-in-scripts`).
+
 Hot-swapping the app instead is **not** available and that is settled: the `bsc` sidecar swaps because
 it is a separate short-lived binary (`a-resolved-request-goes-live-without-a-restart`), while the app's
 Rust half is a live process behind a webview — `sub-second-command-surface-requires-an-interpreted-surface`
