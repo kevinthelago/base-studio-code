@@ -57,6 +57,21 @@ for (const r of recs) {
 }
 function rootSymResolve(crate, sym) { const s = rootSym.get(crate + '|' + sym); return s && s.size === 1 ? [...s][0] : null; }
 
+// symbol-DEFINITION index: which record DEFINES a top-level pub item (fn/struct/enum/const/static/
+// trait/type/union) at module scope — matched at column 0 of the record's code, so impl methods (indented)
+// are excluded. `mod` is deliberately omitted: a module IS its own record, resolved by the module-path
+// index, and indexing `pub mod foo` here would wrongly point crate::foo at the DECLARING parent.
+// Lets `crate::Symbol` resolve to the defining record even with no `pub use` re-export. Conservative:
+// an edge is derived only when exactly ONE record in the crate defines the symbol; ambiguous → skip.
+const defSym = new Map();
+const DEF_RE = /^pub(?:\(crate\))?\s+(?:async\s+)?(?:unsafe\s+)?(?:fn|struct|enum|const|static|trait|type|union)\s+([A-Za-z_]\w*)/gm;
+for (const r of recs) {
+  if (r.tech !== 'rust') continue;
+  const crate = r.id.split('--')[0];
+  for (const m of (r.code || '').matchAll(DEF_RE)) { const k = crate + '|' + m[1]; (defSym.get(k) ?? defSym.set(k, new Set()).get(k)).add(r.id); }
+}
+function defSymResolve(crate, sym) { const s = defSym.get(crate + '|' + sym); return s && s.size === 1 ? [...s][0] : null; }
+
 // is `targetId`'s module a STRICT ancestor of curSegs in the same crate? (→ child→parent, skip)
 function isAncestor(targetId, crate, curSegs) {
   const mp = modpath(by.get(targetId)); if (!mp || mp[0] !== crate) return false;
@@ -86,10 +101,10 @@ export function derive(r) {
       else base = [...segs, ...rawSegs.filter(x => ID.test(x))]; // bare: external crate OR own submodule
       const targets = [];
       if (braceItems) {
-        for (const it of braceItems) { targets.push(rkey(crate, [...base, it]) ?? rkey(crate, base)); if (base.length === 0) { const rs = rootSymResolve(crate, it); if (rs) targets.push(rs); } }
+        for (const it of braceItems) { targets.push(rkey(crate, [...base, it]) ?? rkey(crate, base)); if (base.length === 0) { const rs = rootSymResolve(crate, it) ?? defSymResolve(crate, it); if (rs) targets.push(rs); } }
       } else {
         let h = rkey(crate, base);
-        if (!h && head === 'crate' && base.length === 1) h = rootSymResolve(crate, base[0]); // crate-root symbol
+        if (!h && head === 'crate' && base.length === 1) h = rootSymResolve(crate, base[0]) ?? defSymResolve(crate, base[0]); // crate-root symbol (re-export or definition)
         targets.push(h);
       }
       for (const h of targets) { if (!h || h === '<AMBIG>' || h === r.id) continue; if (isSuper && isAncestor(h, crate, segs)) continue; t.add(h); }
