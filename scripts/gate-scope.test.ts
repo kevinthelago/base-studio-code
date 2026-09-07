@@ -347,13 +347,15 @@ describe("graph step", () => {
     expect(plan(["crates/plandb/src/lib.rs"]).runGraph).toBe(false);
   });
 
-  it("carries all four halves — nodes compile, the repo store is current, the kits agree, the rust test edges run", () => {
+  it("carries all five halves — nodes compile, the repo store is current, the kits agree, the rust test edges run, relationships are complete", () => {
     const cmds = graphCommands();
-    expect(cmds).toHaveLength(4);
+    expect(cmds).toHaveLength(5);
     expect(cmds[0].args).toContain("scripts/graph-rust-compile.mjs");
     expect(cmds[1].args).toContain("scripts/graph-promote-check.mjs");
     expect(cmds[2].args).toContain("scripts/graph-cross-kit.mjs");
     expect(cmds[3].args).toContain("scripts/graph-rust-tests.mjs");
+    expect(cmds[4].args).toContain("scripts/graph-relationships.mjs");
+    expect(cmds[4].args).toContain("--check");
   });
 
   // THE CLAIM CENSUS IS NOT SCOPED, and that is deliberate — see the comment on it in gateScope.mjs.
