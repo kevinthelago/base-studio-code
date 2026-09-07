@@ -51,7 +51,6 @@
   "bsc-graph--lib.rs": 27,
   "bsc-graph--methods.rs": 15,
   "bsc-graph--node-urn.rs": 6,
-  "bsc-graph--repo-store.rs": 15,
   "bsc-graph--rust-test.rs": 9,
   "bsc-imagine--store.rs": 5,
   "bsc-json-store--lib.rs": 2,
