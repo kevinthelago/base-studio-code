@@ -193,7 +193,9 @@ git branch --merged develop --format='%(refname:short)' | grep -vxE 'develop|mai
 ```
 
 `git branch -d` (never `-D`) refuses a branch that is not fully merged, so this can only ever remove
-LANDED work — a branch still holding un-integrated commits is left alone, loudly. Like `promote`
+LANDED work — a branch still holding un-integrated commits is left alone, loudly. Run the
+sweep where HEAD is `develop`/`main` (the post-promote root, or `wt-integrate`) — `git branch -d`
+resolves “merged” against the CURRENT branch, so from an unrelated worktree it wrongly refuses every one. Like `promote`
 itself the sweep is **explicit, not automatic** — it runs when you promote, never on every merge — and
 it only ever touches YOUR local refs. `bsc worktree cap` owns the worktree half; the branch-ref sweep
 is a raw pipeline only until a first-class `bsc` verb is filed for it
