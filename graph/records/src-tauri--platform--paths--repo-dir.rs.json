@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--platform--paths--repo-dir.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "repo_dir",
+  "composes": [
+    "src-tauri--platform--paths--project-dir.rs",
+    "src-tauri--platform--paths--repo-short.rs"
+  ],
+  "code": "use super::{project_dir, repo_short};\n\n/// The on-disk clone location of a repo within its project hub:\n/// `projects/<sanitized-project-key>/<short-repo-name>`, where the short name is\n/// the part of `owner/name` after the `/`. Each repo clone is a repo session's CWD.\npub(crate) fn repo_dir(project_key: &str, repo_full_name: &str) -> std::path::PathBuf {\n    project_dir(project_key).join(repo_short(repo_full_name))\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/repo_dir.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "llm--launch-cmd--sh-quote.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sh_quote",
+  "src": "crates/llm/src/launch_cmd/sh_quote.rs",
+  "folder": "crates/llm/src/launch_cmd",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// POSIX single-quote a shell argument.\n///\n/// Wraps in `'…'` and renders an embedded `'` as `'\\''` — close the quote, emit an escaped quote,\n/// reopen. Everything else, INCLUDING newlines, `$`, backticks and double quotes, is literal inside\n/// single quotes and needs no further treatment.\npub fn sh_quote(s: &str) -> String {\n    format!(\"'{}'\", s.replace('\\'', \"'\\\\''\"))\n}\n"
+}

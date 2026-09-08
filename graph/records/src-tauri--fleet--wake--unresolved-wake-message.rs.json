@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--fleet--wake--unresolved-wake-message.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "unresolved_wake_message",
+  "src": "src-tauri/src/fleet/wake/unresolved_wake_message.rs",
+  "folder": "src-tauri/src/fleet/wake",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The FALLBACK refusal message — reached only when the frontend answered `woke: false` with no\n/// `ack.error`, i.e. it could not name a reason (an app build older than\n/// `a-refused-wake-must-name-which-condition-refused-it`, or a bridge exception before it reached\n/// `refusalReason`). The named-cause path is normal now; this is what is left over.\n///\n/// Request #133 (network-monitor:director) is this string, quoted verbatim, from a director stuck\n/// retrying a wake for five-plus minutes: \"the app could not wake ... it resolved to no open tab, or is\n/// disabled\". `a-wake-revives-a-disabled-pane` fixed the *cause* — DISABLED no longer refuses a wake, it\n/// revives one — but left this sentence still claiming disabled panes as a possible cause, which is now\n/// simply wrong and would send the next reader chasing a condition that cannot happen. Say what remains\n/// instead: no owning tab to recreate, or a stream neither the roster nor plan.db names.\npub(crate) fn unresolved_wake_message(pane_id: &str) -> String {\n    format!(\n        \"fleet wake: the app could not wake '{pane_id}' and did not say why — it resolved to no open \\\n         tab it could recreate, or to a stream neither the roster nor plan.db names. `bsc fleet list` \\\n         shows the current state; `bsc plan fleet get` shows what plan.db knows about this stream.\"\n    )\n}\n"
+}

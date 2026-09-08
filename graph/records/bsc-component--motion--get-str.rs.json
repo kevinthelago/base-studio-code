@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--motion--get-str.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "get_str",
+  "code": "use serde_json::Value;\n\npub(crate) fn get_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {\n    v.get(key).and_then(Value::as_str)\n}\n",
+  "folder": "crates/bsc-component/src/motion",
+  "src": "crates/bsc-component/src/motion/get_str.rs",
+  "moduleVis": "private",
+  "composes": []
+}

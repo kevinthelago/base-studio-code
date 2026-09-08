@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--platform--paths--nearest-existing-ancestor.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "nearest_existing_ancestor",
+  "code": "/// The nearest existing ancestor directory of `path` (native form), or \"\" if none\n/// exists. Used by `pty_create` to avoid the silent $HOME fallback when a session's\n/// configured cwd is missing — we land in the closest real directory instead (#367).\npub(crate) fn nearest_existing_ancestor(path: &str) -> String {\n    let mut p = std::path::Path::new(path);\n    loop {\n        if p.as_os_str().is_empty() { return String::new(); }\n        if p.is_dir() { return p.to_string_lossy().into_owned(); }\n        match p.parent() {\n            Some(parent) => p = parent,\n            None => return String::new(),\n        }\n    }\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/nearest_existing_ancestor.rs",
+  "moduleVis": "private",
+  "composes": []
+}

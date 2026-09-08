@@ -1,0 +1,15 @@
+{
+  "id": "bsc-record--src-at-rev-of.rs",
+  "src": "crates/bsc-record/src/src_at_rev_of.rs",
+  "folder": "crates/bsc-record/src",
+  "name": "src_at_rev_of",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-record--lib.rs",
+    "bsc-record--entry-moved-src-of.rs"
+  ],
+  "code": "use serde_json::Value;\nuse crate::{entry_moved_src_of, HISTORY, PREV_SRC, REV};\n\n/// [`crate::src_at_rev`] over an explicit content field — `code` for the algorithms graph.\npub fn src_at_rev_of(record: &Value, rev: i64, content: &str) -> Option<String> {\n    let history = record.get(HISTORY).and_then(Value::as_array)?;\n    let rung = history\n        .iter()\n        .filter(|e| e.get(REV).and_then(Value::as_i64).is_some_and(|r| r > rev))\n        .find(|e| entry_moved_src_of(e, content))?;\n    rung.get(PREV_SRC).and_then(Value::as_str).map(str::to_owned)\n}\n"
+}

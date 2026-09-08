@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--emit--classify-file.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "classify_file",
+  "composes": [],
+  "code": "use super::*;\n\n/// Classify an on-disk emitted file against the CURRENT store — the pure core of `emit sync`.\n///\n/// `path` is the emit-dir-relative path; `content` is what is on disk. Shares\n/// [`bsc_cli_util::vendored::classify`] with `bsc ui emit sync`, so both surfaces apply one precedence:\n/// unstamped → left alone; hand-edited → skipped loudly; a path the store dropped → unknown.\npub fn classify_file(plan: &EmitPlan, path: &str, content: &str) -> SyncVerdict {\n    let fresh = plan.files.iter().find(|f| f.path == path).map(|f| f.content.clone());\n    classify(content, fresh)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/emit",
+  "src": "crates/bsc-graph/src/emit/classify_file.rs",
+  "moduleVis": "private"
+}

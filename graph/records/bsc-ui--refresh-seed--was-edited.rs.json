@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--refresh-seed--was-edited.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "was_edited",
+  "code": "//! `was_edited` — The store gate: has a designer edited this record since it was packaged?\n\nuse bsc_record::record_source::{code_only, norm};\n\n/// The store gate: has a designer edited this record since it was packaged?\npub fn was_edited(seed_source: &str, live_source: Option<&str>) -> bool {\n    let Some(live) = live_source else { return true };\n    code_only(&norm(live)) != code_only(&norm(seed_source))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/refresh_seed",
+  "src": "crates/bsc-ui/src/refresh_seed/was_edited.rs",
+  "moduleVis": "private",
+  "composes": []
+}

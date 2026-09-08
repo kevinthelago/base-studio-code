@@ -1,0 +1,14 @@
+{
+  "id": "logs--metrics--latest-run-span-ms.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "latest_run_span_ms",
+  "composes": [
+    "logs--metrics--attributed-to.rs"
+  ],
+  "code": "use super::*;\n\n/// The span of the MOST RECENT contiguous run of the project's activity. `activity.log` accumulates\n/// across every relaunch, so first-ever→last-ever spans the project's whole life (observed: weeks);\n/// splitting on [`EPISODE_GAP_MS`] and taking the last episode yields \"how long the last run took\".\n/// Non-positive stamps (a malformed line) are dropped so one bad row can't anchor the bracket at the\n/// epoch. `0` when the last run has fewer than two events (nothing to span).\npub(crate) fn latest_run_span_ms(project: &str, activity: &[(String, i64)]) -> u64 {\n    let mut ts: Vec<i64> =\n        activity.iter().filter(|(p, t)| *t > 0 && attributed_to(project, p)).map(|(_, t)| *t).collect();\n    if ts.len() < 2 {\n        return 0;\n    }\n    ts.sort_unstable();\n    // Walk back from the newest event; the run ends the moment a gap exceeds the threshold.\n    let last = *ts.last().unwrap();\n    let mut start = last;\n    for pair in ts.windows(2).rev() {\n        let (earlier, later) = (pair[0], pair[1]);\n        if later - earlier > EPISODE_GAP_MS {\n            break; // `later` is the first event of the latest run\n        }\n        start = earlier;\n    }\n    (last - start) as u64\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/metrics",
+  "src": "crates/logs/src/metrics/latest_run_span_ms.rs",
+  "moduleVis": "private"
+}

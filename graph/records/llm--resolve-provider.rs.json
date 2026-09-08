@@ -1,0 +1,13 @@
+{
+  "id": "llm--resolve-provider.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "resolve_provider",
+  "code": "use crate::ProviderKind;\n\n/// Resolve a provider name (`\"anthropic\"` | `\"openai\"` | `\"gemini\"` | `\"local\"` | `\"ollama\"`) to a\n/// [`crate::ProviderKind`]. Errors on an unknown provider rather than silently defaulting.\npub fn resolve_provider(name: &str) -> Result<ProviderKind, String> {\n    match name {\n        \"anthropic\" => Ok(ProviderKind::Anthropic),\n        \"openai\" => Ok(ProviderKind::OpenAi),\n        \"gemini\" => Ok(ProviderKind::Gemini),\n        \"local\" => Ok(ProviderKind::Local),\n        \"ollama\" => Ok(ProviderKind::Ollama),\n        other => Err(format!(\"Unknown LLM provider: '{other}'\")),\n    }\n}\n",
+  "folder": "crates/llm/src",
+  "src": "crates/llm/src/resolve_provider.rs",
+  "moduleVis": "private",
+  "composes": [
+    "llm--lib.rs"
+  ]
+}

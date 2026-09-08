@@ -1,0 +1,13 @@
+{
+  "id": "bsc-news--outlets--get.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "get",
+  "src": "crates/bsc-news/src/outlets/get.rs",
+  "folder": "crates/bsc-news/src/outlets",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-news--outlets--roster.rs"
+  ],
+  "code": "use super::*;\n\n/// One outlet by id.\npub fn get(id: &str) -> Option<Outlet> {\n    roster().into_iter().find(|o| o.id == id)\n}\n"
+}

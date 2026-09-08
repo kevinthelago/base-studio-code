@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--viable--over-window.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "over_window",
+  "code": "use super::*;\nuse crate::money::{money, sum, Money};\n\n/// What one tier costs over `months` months — the annual framing.\npub fn over_window(v: &ViableIncome, t: &TierRequirement, months: usize) -> Money {\n    let each = vec![t.typical_month; months];\n    sum(&each, v.currency).unwrap_or_else(|_| money(0, v.currency))\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/viable",
+  "src": "crates/bsc-fin/src/viable/over_window.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--money.rs"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--pane-status--pane-count-for-layout.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "pane_count_for_layout",
+  "code": "/// Pane-cell count for a `\"C×R\"` layout string.\n///\n/// A malformed layout falls back to 1, and so does a ZERO dimension — `2×0` is one cell, not none,\n/// because the TypeScript's `(c || 1) * (r || 1)` reads `0` as falsy. That is a sentinel, not an\n/// arithmetic result, and it needs its own fixture case: a corpus of real grids passes either version.\npub fn pane_count_for_layout(layout: &str) -> i64 {\n    let mut parts = layout.split('×');\n    let c: i64 = parts.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0);\n    let r: i64 = parts.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0);\n    let c = if c == 0 { 1 } else { c };\n    let r = if r == 0 { 1 } else { r };\n    c * r\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_status",
+  "src": "crates/bsc-util/src/pane_status/pane_count_for_layout.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,11 @@
+{
+  "id": "plandb--phase-from-db.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "phase_from_db",
+  "code": "pub(crate) fn phase_from_db(s: Option<String>) -> Option<serde_json::Value> {\n    s.and_then(|t| serde_json::from_str(&t).ok())\n}\n",
+  "folder": "crates/plandb/src",
+  "src": "crates/plandb/src/phase_from_db.rs",
+  "moduleVis": "private",
+  "composes": []
+}

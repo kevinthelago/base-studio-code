@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--obligations--occurrences.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "occurrences",
+  "code": "use super::*;\nuse crate::recurring::Recurring;\n\n/// A hard cap, so a bad cadence can never spin. 5 years of weekly is comfortably inside it.\nconst MAX_OCCURRENCES: i64 = 400;\n\npub(crate) fn occurrences(r: &Recurring, from: &str, to: &str) -> Vec<String> {\n    let mut out = Vec::new();\n    for n in 1..=MAX_OCCURRENCES {\n        let Some(at) = step(&r.last_seen, r.cadence, n) else { break };\n        if at.as_str() > to {\n            break;\n        }\n        if at.as_str() >= from {\n            out.push(at);\n        }\n    }\n    out\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/obligations",
+  "src": "crates/bsc-fin/src/obligations/occurrences.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--recurring.rs"
+  ]
+}

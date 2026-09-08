@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--preview-props--first-string-literal.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "first_string_literal",
+  "code": "/// The first `\"…\"` string literal in `ty` (the first enum member of a union), or `None`. Mirrors the TS\n/// `type.match(/\"([^\"]+)\"/)` — the leftmost quote pair enclosing at least one non-quote char.\npub(crate) fn first_string_literal(ty: &str) -> Option<String> {\n    let b = ty.as_bytes();\n    let n = b.len();\n    let mut i = 0;\n    while i < n {\n        if b[i] == b'\"' {\n            let mut j = i + 1;\n            while j < n && b[j] != b'\"' {\n                j += 1;\n            }\n            if j < n && j > i + 1 {\n                return Some(ty[i + 1..j].to_string());\n            }\n        }\n        i += 1;\n    }\n    None\n}\n",
+  "folder": "crates/bsc-component/src/preview_props",
+  "src": "crates/bsc-component/src/preview_props/first_string_literal.rs",
+  "moduleVis": "private",
+  "composes": []
+}

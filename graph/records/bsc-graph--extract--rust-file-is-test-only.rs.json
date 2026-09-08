@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--extract--rust-file-is-test-only.rs",
+  "name": "rust_file_is_test_only",
+  "tech": "rust",
+  "role": "algorithm",
+  "folder": "crates/bsc-graph/src/extract",
+  "src": "crates/bsc-graph/src/extract/rust_file_is_test_only.rs",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Is this Rust FILE test-only — nothing in it is reachable from production code?\n///\n/// The filename is the TRIGGER, never the verdict (`a-test-only-module-is-not-an-algorithm`). #4136\n/// gated `*_test.rs` / `*_tests.rs` out of the harvest by name alone, which was right about the files\n/// it was written for and wrong about the rule: `crates/bsc-graph/src/rust_test.rs` is 358 lines of\n/// production logic — nine `pub fn` and a `pub struct`, the Rust half of `bsc graph test` — and the\n/// suffix called it a test, so no record could be created and the crate could not migrate.\n///\n/// So the suffix only raises the question and the file's own contents answer it: a test-only file\n/// EXPORTS NOTHING. Everything it holds is a `#[test]` fn or a helper for one, reachable from nowhere\n/// else, and there is nothing in it for another module to reuse — which is exactly what the function\n/// harvest is looking for.\n///\n/// Deliberately scoped to the suffix rather than applied to every Rust file: every production module in\n/// this workspace carries an inline `#[cfg(test)] mod tests`, and a rule that read \"has tests\" as\n/// \"is a test\" would empty the harvest. Measured population: 3 files in the tree match the suffix.\n///\n/// `pub(crate)` / `pub(super)` count as exports — they are reachable from elsewhere in the crate.\npub(crate) fn rust_file_is_test_only(name: &str, src: &str) -> bool {\n    if !(name.ends_with(\"_test.rs\") || name.ends_with(\"_tests.rs\")) {\n        return false;\n    }\n    // TOP-LEVEL only (column 0). A `pub fn` nested inside the file's own `#[cfg(test)] mod tests` is\n    // not an export of the file, and counting it would make every test module look like production.\n    !src.lines().any(|l| l.starts_with(\"pub \") || l.starts_with(\"pub(\"))\n}\n"
+}

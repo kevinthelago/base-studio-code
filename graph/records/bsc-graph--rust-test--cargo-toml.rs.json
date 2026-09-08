@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--rust-test--cargo-toml.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "cargo_toml",
+  "composes": [],
+  "code": "/// The manifest for a materialized record. No dependencies by construction: a `role: algorithm` record\n/// composes only other records and language primitives, so anything it needs is either in the flat\n/// scope or in std. A record that reached for an external crate would fail to compile here, which is\n/// the isolation working rather than a gap in it.\npub fn cargo_toml(name: &str) -> String {\n    format!(\"[package]\\nname = \\\"{name}\\\"\\nversion = \\\"0.0.0\\\"\\nedition = \\\"2021\\\"\\n\\n[dependencies]\\n\")\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/rust_test",
+  "src": "crates/bsc-graph/src/rust_test/cargo_toml.rs",
+  "moduleVis": "private"
+}

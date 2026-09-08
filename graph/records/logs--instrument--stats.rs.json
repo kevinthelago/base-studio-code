@@ -1,0 +1,12 @@
+{
+  "id": "logs--instrument--stats.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "stats",
+  "code": "use super::*;\n\n/// Summarize samples. `None` for an EMPTY set — absence must stay distinguishable from zero, or a window\n/// with no data reads as a window with perfect performance.\npub fn stats(samples: &[f64]) -> Option<Stats> {\n    if samples.is_empty() {\n        return None;\n    }\n    let mut v = samples.to_vec();\n    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));\n    let pick = |q: f64| v[((v.len() as f64 * q) as usize).min(v.len() - 1)];\n    Some(Stats {\n        n: v.len(),\n        median: pick(0.5),\n        mean: v.iter().sum::<f64>() / v.len() as f64,\n        p90: pick(0.9),\n        max: v[v.len() - 1],\n        over_frame_pct: v.iter().filter(|x| **x > 16.0).count() as f64 * 100.0 / v.len() as f64,\n    })\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/stats.rs",
+  "moduleVis": "private",
+  "composes": []
+}

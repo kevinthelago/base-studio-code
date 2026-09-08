@@ -1,0 +1,11 @@
+{
+  "id": "data--shape--norm-key.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "norm_key",
+  "src": "crates/data/src/shape/norm_key.rs",
+  "folder": "crates/data/src/shape",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Normalize a field key for name matching: drop a trailing FK suffix and lowercase, so `parentId`,\n/// `parent_id`, `PARENT_ID` and `parent` all read as `parent`.\n///\n/// The suffix is stripped ONLY when it is delimited — `_id` / `_ID`, or a camelCase capital `Id`.\n/// Chopping a bare lowercase `id` off any key would turn `valid` into `val` and make an ordinary\n/// boolean flag masquerade as the value half of an attribute bag.\npub(crate) fn norm_key(key: &str) -> String {\n    let k = key.trim();\n    if let Some(stem) = k.strip_suffix(\"_id\").or_else(|| k.strip_suffix(\"_ID\")) {\n        if !stem.is_empty() {\n            return stem.to_ascii_lowercase();\n        }\n    }\n    if let Some(stem) = k.strip_suffix(\"Id\") {\n        if !stem.is_empty() {\n            return stem.to_ascii_lowercase();\n        }\n    }\n    k.to_ascii_lowercase()\n}\n"
+}

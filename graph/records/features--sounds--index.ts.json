@@ -1,0 +1,13 @@
+{
+  "id": "features--sounds--index.ts",
+  "tech": "typescript",
+  "role": "algorithm",
+  "name": "index",
+  "composes": [],
+  "code": "// Public API barrel for the Sounds feature (#3072) — cross-feature consumers import ONLY from here.\nexport { SoundsWorkspace } from \"@/features/sounds/SoundsWorkspace\";\n// #4215: the graph-hosted workspace — what the planner mounts. The file component above stays exported;\n// both copies coexist under the record<->file parity guard.\nexport { SoundsGraphHost } from \"@/features/sounds/SoundsGraphHost\";\nexport { BUILTIN_KITS, STARTER_KIT, mergeKits } from \"@/features/sounds/lib/soundKits\";\nexport { loadKits, pushKit, dropKit } from \"@/features/sounds/lib/soundBridge\";\nexport { playCue, compileCue, voiceDuration, type CompiledCue, type CompiledVoice } from \"@/features/sounds/lib/synth\";\nexport {\n  validateKit, SOUND_CATEGORIES, CATEGORY_LABEL,\n  type Primitive, type Voice, type Cue, type SoundKit, type SoundCategory, type Envelope,\n} from \"@/features/sounds/lib/soundDescriptor\";\n// Cross-graph composition (#3117) — the sound-graph NodeLookup another pillar composes into its resolver,\n// and the self-contained cue-player emit its preview vendors.\nexport { soundNodeLookup } from \"@/features/sounds/lib/crossGraphAdapter\";\nexport { cuePlayerModule } from \"@/features/sounds/lib/cuePlayerModule\";\n// Consumer runtime (#3082, P4a) — opt-in app notification sounds voicing fleet coord events.\nexport { useNotificationSounds } from \"@/features/sounds/useNotificationSounds\";\nexport { coordEventCue, cuesForLines, type NotifyCue } from \"@/features/sounds/lib/notifyCues\";\n",
+  "domain": "sounds",
+  "src": "src/features/sounds/index.ts",
+  "folder": "features/sounds",
+  "provides": "@/features/sounds",
+  "feature": "sounds"
+}

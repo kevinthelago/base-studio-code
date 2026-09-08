@@ -1,0 +1,10 @@
+{
+  "id": "src-tauri--observability--logs--label-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "label_for",
+  "code": "/// The human label for a managed stream, keyed by the `bsc_util::LOG_STREAMS` canonical key (plus the\n/// two module-owned pseudo-streams `app` / `perf`). Unknown keys fall back to the key itself.\npub(super) fn label_for(key: &str) -> &'static str {\n    match key {\n        \"tool\" => \"Tool-attempt audit\",\n        \"skill\" => \"Skill usage\",\n        \"mcp\" => \"MCP calls\",\n        \"hook\" => \"Hook fires\",\n        \"activity\" => \"Turn activity\",\n        \"done\" => \"Worker self-close\",\n        \"automation\" => \"Schedule fires\",\n        \"coord\" => \"Coordination events\",\n        \"perm\" => \"Permission denials\",\n        \"tokens\" => \"Token & cost accounting\",\n        \"ui\" => \"UI design activity\",\n        \"divergence\" => \"Migration divergence\",\n        \"ratelimit\" => \"Provider rate-limit headroom\",\n        \"app\" => \"Application log\",\n        \"perf\" => \"Performance database\",\n        _ => \"Log stream\",\n    }\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn label_for_covers_every_managed_key_and_falls_back() {\n        // Every registry key + the two module-owned pseudo-streams resolve to a non-fallback label,\n        // so the inventory never shows the placeholder for a real stream.\n        for s in bsc_util::LOG_STREAMS {\n            assert_ne!(label_for(s.key), \"Log stream\", \"{} has a real label\", s.key);\n        }\n        assert_eq!(label_for(\"app\"), \"Application log\");\n        assert_eq!(label_for(\"perf\"), \"Performance database\");\n        assert_eq!(label_for(\"nonexistent\"), \"Log stream\", \"unknown key falls back\");\n    }\n}\n",
+  "folder": "src-tauri/src/observability/logs",
+  "src": "src-tauri/src/observability/logs/label_for.rs",
+  "moduleVis": "private"
+}

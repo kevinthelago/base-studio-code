@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--telemetry--audit-target.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "audit_target",
+  "code": "use serde_json::Value;\n\n/// The audit target: the first relevant arg field, tabs/newlines stripped, ≤160 chars\n/// (mirrors the `bsc-audit` hook; `content` is deliberately excluded).\npub(crate) fn audit_target(args: &Value) -> String {\n    for k in [\"command\", \"file_path\", \"path\", \"url\", \"pattern\"] {\n        if let Some(s) = args.get(k).and_then(|v| v.as_str()) {\n            return s.chars().map(|c| if c == '\\t' || c == '\\n' { ' ' } else { c }).take(160).collect();\n        }\n    }\n    String::new()\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/telemetry",
+  "src": "crates/bsc-agent/src/telemetry/audit_target.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,16 @@
+{
+  "id": "bsc-lan-core--adapters--switch.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "switch",
+  "composes": [
+    "bsc-lan-core--error.rs",
+    "bsc-lan-core--evidence.rs",
+    "bsc-lan-core--primitives.rs"
+  ],
+  "code": "//! [`SwitchAdapter`]: the TL-SG2008P CLI over an interactive PTY.\n//! Implemented by `bsc-lan-adapter-switch`.\n\nuse crate::error::{ControlError, ObservationError};\nuse crate::evidence::{Observed, Verified};\nuse crate::primitives::{Hostname, PortNumber, VlanId};\n\n/// A switch port's VLAN configuration: PVID plus 802.1Q tagged membership.\n/// `set_port_vlan` reads back both together, in one type, because reading\n/// them separately is exactly the failure mode that cost three attempts on\n/// this network -- membership alone read back correctly while PVID quietly\n/// stayed wrong.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct SwitchPortVlanState {\n    pub pvid: VlanId,\n    pub tagged_members: Vec<VlanId>,\n}\n\n/// Full status of one switch port.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct SwitchPortStatus {\n    pub vlan: SwitchPortVlanState,\n    pub link_up: bool,\n    pub poe_enabled: Option<bool>,\n}\n\n/// The TL-SG2008P's CLI, over an interactive PTY session.\npub trait SwitchAdapter: Send + Sync {\n    /// Set PVID and 802.1Q membership as a single composite operation and\n    /// read both back. The action fails (`Err`) if either does not read\n    /// back as intended, per the switch-cli-adapter contract -- there is\n    /// no success value representing \"membership changed but PVID did\n    /// not\".\n    fn set_port_vlan(\n        &self,\n        switch: &Hostname,\n        port: PortNumber,\n        vlan: VlanId,\n    ) -> impl std::future::Future<Output = Result<Verified<SwitchPortVlanState>, ControlError>> + Send;\n\n    /// Enable or disable the port (link admin state).\n    fn set_port_state(\n        &self,\n        switch: &Hostname,\n        port: PortNumber,\n        enabled: bool,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// Enable or disable PoE on the port.\n    fn set_poe(\n        &self,\n        switch: &Hostname,\n        port: PortNumber,\n        enabled: bool,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// Full status of one port, for `topology()`, `drift()` and dry-run\n    /// idempotency previews.\n    fn read_port_status(\n        &self,\n        switch: &Hostname,\n        port: PortNumber,\n    ) -> impl std::future::Future<Output = Result<Observed<SwitchPortStatus>, ObservationError>> + Send;\n\n    /// Every port's status in one read, for `topology()`.\n    fn read_all_ports(\n        &self,\n        switch: &Hostname,\n    ) -> impl std::future::Future<\n        Output = Result<Observed<Vec<(PortNumber, SwitchPortStatus)>>, ObservationError>,\n    > + Send;\n}\n",
+  "domain": "bsc-lan-core",
+  "src": "crates/bsc-lan-core/src/adapters/switch.rs",
+  "folder": "crates/bsc-lan-core/src/adapters",
+  "moduleVis": "pub"
+}

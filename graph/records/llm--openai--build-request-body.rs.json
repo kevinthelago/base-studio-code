@@ -1,0 +1,13 @@
+{
+  "id": "llm--openai--build-request-body.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_request_body",
+  "src": "crates/llm/src/openai/build_request_body.rs",
+  "folder": "crates/llm/src/openai",
+  "moduleVis": "private",
+  "composes": [
+    "llm--openai--token-param.rs"
+  ],
+  "code": "use super::*;\n\n/// Build the OpenAI `/v1/chat/completions` request body. OpenAI has no top-level\n/// `system` field, so a non-empty system prompt is prepended as the first message.\n/// The token-limit field name varies by model (see [`token_param`]).\n/// Pure — extracted so it can be unit-tested without I/O (and reused by the local provider).\npub(crate) fn build_request_body(req: &LlmRequest) -> serde_json::Value {\n    let mut messages: Vec<serde_json::Value> = Vec::with_capacity(req.messages.len() + 1);\n    if !req.system.is_empty() {\n        messages.push(serde_json::json!({ \"role\": \"system\", \"content\": req.system }));\n    }\n    messages.extend(req.messages.iter().cloned());\n    let mut body = serde_json::json!({\n        \"model\": req.model,\n        \"messages\": messages,\n    });\n    body[token_param(&req.model)] = serde_json::json!(req.max_tokens);\n    body\n}\n"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--agent--human-bytes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "human_bytes",
+  "code": "/// Bytes as something a reader can size at a glance.\npub(crate) fn human_bytes(n: usize) -> String {\n    if n < 1024 {\n        format!(\"{n} B\")\n    } else if n < 1024 * 1024 {\n        format!(\"{:.1} KB\", n as f64 / 1024.0)\n    } else {\n        format!(\"{:.1} MB\", n as f64 / (1024.0 * 1024.0))\n    }\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/agent",
+  "src": "crates/bsc-agent/src/agent/human_bytes.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--ingest-port-file.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ingest_port_file",
+  "composes": [
+    "src-tauri--platform--paths--bsc-base-dir.rs"
+  ],
+  "code": "use super::{bsc_base_dir};\n\n/// The app-wide **ingest port** file: `~/.base-studio-code/ingest.port` (#2262). The runtime-fault\n/// collector binds an OS-assigned loopback port at boot and writes it here, so the session env wiring\n/// (which has no handle to the collector state) can surface it as `$BSC_INGEST_PORT` without threading\n/// the state through. Refreshed each boot; absent/`0` ⇒ the collector isn't listening.\npub(crate) fn ingest_port_file() -> std::path::PathBuf {\n    bsc_base_dir().join(\"ingest.port\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/ingest_port_file.rs",
+  "moduleVis": "private"
+}

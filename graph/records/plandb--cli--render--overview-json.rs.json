@@ -1,0 +1,11 @@
+{
+  "id": "plandb--cli--render--overview-json.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "overview_json",
+  "code": "use super::PlanOverview;\n\n/// Render the overview as a structured object (for `summary --json`).\npub(crate) fn overview_json(o: &PlanOverview) -> serde_json::Value {\n    let status: serde_json::Map<String, serde_json::Value> =\n        o.status.iter().map(|(s, n)| (s.clone(), serde_json::json!(n))).collect();\n    let streams: serde_json::Map<String, serde_json::Value> =\n        o.streams.iter().map(|(s, n)| (s.clone(), serde_json::json!(n))).collect();\n    serde_json::json!({ \"total\": o.total, \"status\": status, \"streams\": streams })\n}\n",
+  "folder": "crates/plandb/src/cli/render",
+  "src": "crates/plandb/src/cli/render/overview_json.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--session--fresh-only--startup-prompt-fresh-only.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "startup_prompt_fresh_only",
+  "src": "src-tauri/src/session/fresh_only/startup_prompt_fresh_only.rs",
+  "folder": "src-tauri/src/session/fresh_only",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--session--fresh-only--is-studio-session-pane-id.rs",
+    "src-tauri--session--fresh-only--studio-pane-ids.rs"
+  ],
+  "code": "use super::*;\n\n/// Whether this pane's baked startup prompt must be suppressed on a resume.\n///\n/// `studio_pane_ids` is the resolved app-owned studio registry. An EMPTY registry yields `false` for\n/// every non-restored pane, which is the safe direction: a re-greeting, not a stranded session.\npub fn startup_prompt_fresh_only(\n    pane_id: &str,\n    restore_requested: bool,\n    studio_pane_ids: &[String],\n) -> bool {\n    // Checked FIRST and unconditionally: a manual console is never auto-recovered, so it is never\n    // fresh-only even when a restore is requested for it.\n    if is_manual_pane_id(pane_id) {\n        return false;\n    }\n    restore_requested || is_studio_session_pane_id(pane_id, studio_pane_ids)\n}\n"
+}

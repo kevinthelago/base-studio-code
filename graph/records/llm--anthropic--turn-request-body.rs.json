@@ -1,0 +1,14 @@
+{
+  "id": "llm--anthropic--turn-request-body.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "turn_request_body",
+  "src": "crates/llm/src/anthropic/turn_request_body.rs",
+  "folder": "crates/llm/src/anthropic",
+  "moduleVis": "private",
+  "composes": [
+    "llm--anthropic--build-messages.rs",
+    "llm--anthropic--cached-system.rs"
+  ],
+  "code": "use super::*;\n\n/// Build the Anthropic `/v1/messages` request body for a tool-using turn.\n/// Pure — unit-testable without I/O.\npub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {\n    let tools: Vec<serde_json::Value> = t\n        .tools\n        .iter()\n        .map(|d| serde_json::json!({ \"name\": d.name, \"description\": d.description, \"input_schema\": d.schema }))\n        .collect();\n    serde_json::json!({\n        \"model\": t.model,\n        \"max_tokens\": t.max_tokens,\n        \"system\": cached_system(&t.system),\n        \"messages\": build_messages(&t.messages),\n        \"tools\": tools,\n    })\n}\n"
+}

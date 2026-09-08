@@ -1,0 +1,13 @@
+{
+  "id": "bsc-lan-sense--eve--parse-timestamp-ms.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_timestamp_ms",
+  "src": "crates/bsc-lan-sense/src/eve/parse_timestamp_ms.rs",
+  "folder": "crates/bsc-lan-sense/src/eve",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-lan-sense--eve--split-offset.rs"
+  ],
+  "code": "use super::*;\n\n/// Milliseconds since the epoch for one EVE timestamp.\n///\n/// Suricata writes `2026-09-04T12:54:16.318316-0400`: fractional seconds and a\n/// numeric offset with no colon. `bsc_util::iso8601_to_epoch_ms` handles\n/// neither and returns `None`, so the Suricata-specific normalisation lives\n/// here, next to the rest of the EVE knowledge, and delegates the civil-date\n/// arithmetic rather than reimplementing it.\n///\n/// The offset IS applied rather than ignored. Within one file it usually\n/// cancels out, but a log spanning a DST change carries two different offsets,\n/// and treating those as equal would make an hour of events appear to arrive\n/// at once — which is precisely the misreading this function exists to prevent.\npub fn parse_timestamp_ms(ts: &str) -> Option<i64> {\n    let ts = ts.trim();\n    let (datetime, offset_ms) = split_offset(ts)?;\n    // Drop fractional seconds: millisecond resolution is far finer than any\n    // cadence decision made from it.\n    let base = match datetime.split_once('.') {\n        Some((whole, _frac)) => whole,\n        None => datetime,\n    };\n    let epoch = bsc_util::iso8601_to_epoch_ms(&format!(\"{base}Z\"))?;\n    Some(epoch - offset_ms)\n}\n"
+}

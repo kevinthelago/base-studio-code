@@ -1,0 +1,11 @@
+{
+  "id": "plandb--changes--json-vec.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "json_vec",
+  "src": "crates/plandb/src/changes/json_vec.rs",
+  "folder": "crates/plandb/src/changes",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn json_vec(s: &str) -> Vec<String> {\n    serde_json::from_str(s).unwrap_or_default()\n}\n"
+}

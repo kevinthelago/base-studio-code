@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--projects-root.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "projects_root",
+  "composes": [
+    "src-tauri--platform--paths--bsc-base-dir.rs"
+  ],
+  "code": "use super::{bsc_base_dir};\n\n/// The project hub directory and the planner session's CWD: `~/.base-studio-code/projects/<key>`.\n/// Holds the project's `CLAUDE.md` (ancestor-loaded context for repo sessions), plan sections\n/// (`goal.md`…), control files, `prompts/`, and the cloned repos as subdirectories.\n///\n/// ONE location for the life of the project — published or draft (#922). The hub NEVER moves, so\n/// the planner's cwd (and Claude's cwd-keyed `--continue` history) stays stable. Published-ness is\n/// an in-place marker file (`.published`), NOT the directory's location — see [`is_published`] /\n/// [`crate::mark_published`]. This replaces the #904 draft/ vs projects/ split, whose publish-time\n/// rename fought the Windows cwd lock (a live process can't have its cwd renamed), orphaned Claude\n/// history, and wedged into a permanent split-brain when the rename half-failed.\n/// The root that holds every project hub: `~/.base-studio-code/projects`. One source of truth for the\n/// path so callers stop hand-rolling `bsc_base_dir().join(\"projects\")` (#2081).\npub(crate) fn projects_root() -> std::path::PathBuf {\n    bsc_base_dir().join(\"projects\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/projects_root.rs",
+  "moduleVis": "private"
+}

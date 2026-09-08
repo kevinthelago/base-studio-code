@@ -1,0 +1,14 @@
+{
+  "id": "bsc-util--divergence--divergence-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "divergence_line",
+  "composes": [
+    "bsc-util--divergence--cell.rs"
+  ],
+  "code": "use super::cell::cell;\n\n/// Format one divergence line: `ts · pane · surface · derived_only · caller_only`.\n///\n/// Pure, so the shape can be tested without touching the filesystem — and the shape is a contract,\n/// because `logs::divergence` parses it back.\npub fn divergence_line(\n    ts: &str,\n    pane: &str,\n    surface: &str,\n    derived_only: &[String],\n    caller_only: &[String],\n) -> String {\n    format!(\"{ts}\\t{pane}\\t{surface}\\t{}\\t{}\\n\", cell(derived_only), cell(caller_only))\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/divergence",
+  "src": "crates/bsc-util/src/divergence/divergence_line.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "bsc-util--pane-status--clear-tab-statuses.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "clear_tab_statuses",
+  "composes": [
+    "bsc-util--pane-id--pane-belongs-to-tab.rs",
+    "bsc-util--pane-id--mod.rs"
+  ],
+  "code": "use super::PaneStatus;\nuse crate::pane_id::{pane_belongs_to_tab, IdentityTab};\nuse std::collections::BTreeMap;\n\n/// Drop every per-pane status belonging to `tab` (at grid index `tab_idx`), returning a NEW map.\n///\n/// Used when a tab's panes remount or the tab closes, so a previous session's `Run`/`On` cannot linger\n/// as a stale dot on the fresh panes. Membership is by IDENTITY, so a manual or minted fleet/triage\n/// pane is cleared too — the positional parse this replaced silently kept them.\n///\n/// An id that belongs to no tab (unparseable, or another tab's) SURVIVES. That asymmetry is the whole\n/// function: returning an empty map would satisfy every corpus whose entries all belong to the tab.\npub fn clear_tab_statuses(\n    statuses: &BTreeMap<String, PaneStatus>,\n    tab: &IdentityTab,\n    tab_idx: i64,\n) -> BTreeMap<String, PaneStatus> {\n    statuses\n        .iter()\n        .filter(|(pid, _)| !pane_belongs_to_tab(pid, tab, tab_idx))\n        .map(|(k, v)| (k.clone(), *v))\n        .collect()\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_status",
+  "src": "crates/bsc-util/src/pane_status/clear_tab_statuses.rs",
+  "moduleVis": "private"
+}

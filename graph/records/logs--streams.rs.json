@@ -1,0 +1,11 @@
+{
+  "id": "logs--streams.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "streams",
+  "code": "/// The streams a `bsc-logs` query knows about — `(canonical name, file)` — from the shared\n/// `bsc_util::LOG_STREAMS` registry (#1847), the ONE list also read by the pty env-writer. The\n/// token/cost stream is staged + written but read via the separate cost path, so it's excluded here.\npub(crate) fn streams() -> Vec<(&'static str, &'static str)> {\n    bsc_util::log_streams::reader_streams()\n}\n",
+  "folder": "crates/logs/src",
+  "src": "crates/logs/src/streams.rs",
+  "moduleVis": "private",
+  "composes": []
+}

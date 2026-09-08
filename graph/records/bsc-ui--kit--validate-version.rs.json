@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--kit--validate-version.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "validate_version",
+  "code": "//! `validate_version` — Validate a version: `[0-9A-Za-z.-]`, starting alphanumeric (so `.`/`..`/empty can never form a path segment).\n\n/// Validate a version: `[0-9A-Za-z.-]`, starting alphanumeric (so `.`/`..`/empty can never form a\n/// path segment). Exact versions only — pins carry no ranges.\npub fn validate_version(version: &str) -> Result<(), String> {\n    let ok = version.starts_with(|c: char| c.is_ascii_alphanumeric())\n        && version.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');\n    if ok { Ok(()) } else { Err(format!(\"invalid kit version '{version}' — want a semver like '1.0.0'\")) }\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/kit",
+  "src": "crates/bsc-ui/src/kit/validate_version.rs",
+  "moduleVis": "private",
+  "composes": []
+}

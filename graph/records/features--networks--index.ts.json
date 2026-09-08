@@ -1,0 +1,13 @@
+{
+  "id": "features--networks--index.ts",
+  "tech": "typescript",
+  "role": "algorithm",
+  "name": "index",
+  "composes": [],
+  "code": "// The networks feature's public API. A NETWORK is a domain: the set of projects that share one concern,\n// drawn as one Glance tab, and the owner of exactly one architect session.\n//\n// Cross-feature, import ONLY this barrel (#1545). Glance reaches networks through it; nothing reaches\n// past it into `lib/` or `store`.\nexport { createNetworksSlice, DEFAULT_NETWORK_ID, type NetworksSlice } from \"@/features/networks/store\";\nexport { mintNetworkId, type Network } from \"@/features/networks/lib/networkBridge\";\n",
+  "domain": "networks",
+  "src": "src/features/networks/index.ts",
+  "folder": "features/networks",
+  "provides": "@/features/networks",
+  "feature": "networks"
+}

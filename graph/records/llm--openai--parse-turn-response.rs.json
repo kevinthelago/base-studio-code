@@ -1,0 +1,13 @@
+{
+  "id": "llm--openai--parse-turn-response.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_turn_response",
+  "src": "crates/llm/src/openai/parse_turn_response.rs",
+  "folder": "crates/llm/src/openai",
+  "moduleVis": "private",
+  "composes": [
+    "llm--openai--normalize-usage.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse an OpenAI response into a [`TurnResult`]. `tool_calls[].function.arguments`\n/// is a JSON string, parsed back into `args`. Pure — unit-testable (reused by local).\npub(crate) fn parse_turn_response(raw: &serde_json::Value) -> TurnResult {\n    let msg = &raw[\"choices\"][0][\"message\"];\n    let text = msg[\"content\"].as_str().unwrap_or(\"\").to_string();\n    let tool_calls = msg[\"tool_calls\"]\n        .as_array()\n        .map(|calls| {\n            calls\n                .iter()\n                .map(|c| ToolCall {\n                    id: c[\"id\"].as_str().unwrap_or(\"\").to_string(),\n                    name: c[\"function\"][\"name\"].as_str().unwrap_or(\"\").to_string(),\n                    args: c[\"function\"][\"arguments\"]\n                        .as_str()\n                        .and_then(|s| serde_json::from_str(s).ok())\n                        .unwrap_or(serde_json::Value::Null),\n                })\n                .collect()\n        })\n        .unwrap_or_default();\n    TurnResult {\n        text,\n        tool_calls,\n        usage: normalize_usage(raw.get(\"usage\").unwrap_or(&serde_json::Value::Null)),\n        stop_reason: raw[\"choices\"][0][\"finish_reason\"].as_str().unwrap_or(\"\").to_string(),\n    }\n}\n"
+}

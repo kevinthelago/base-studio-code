@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--usage-scan--glob-patterns.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "glob_patterns",
+  "code": "use std::collections::BTreeSet;\n\n/// Every `import.meta.glob(\"PATTERN\")` pattern in `source`.\n///\n/// The shared [`crate::graph_health::import_specifiers`] cannot see these: the word before the string is\n/// `glob`, not `import`. Missing them is not academic — `algorithmsgraphhost`, `automationsgraphhost`\n/// and `datagraphhost` all carry a `provides` and are reached ONLY through `lazyWorkspaces`' glob, so a\n/// scanner without this reports them unused BECAUSE it could not see the import, which is the exact\n/// failure #3888 is about.\npub fn glob_patterns(source: &str) -> BTreeSet<String> {\n    const NEEDLE: &str = \"import.meta.glob\";\n    let mut out = BTreeSet::new();\n    let mut from = 0usize;\n    while let Some(rel) = source[from..].find(NEEDLE) {\n        let after = from + rel + NEEDLE.len();\n        from = after;\n        let rest: Vec<char> = source[after..].chars().take(4096).collect();\n        let mut i = 0usize;\n        // Skip to the opening quote of the first argument.\n        while i < rest.len() && rest[i] != '\"' && rest[i] != '\\'' && rest[i] != '`' && rest[i] != ')' {\n            i += 1;\n        }\n        let Some(&q) = rest.get(i) else { continue };\n        if q == ')' {\n            continue;\n        }\n        let mut val = String::new();\n        i += 1;\n        while i < rest.len() && rest[i] != q {\n            val.push(rest[i]);\n            i += 1;\n        }\n        if !val.is_empty() {\n            out.insert(val);\n        }\n    }\n    out\n}\n",
+  "folder": "crates/bsc-component/src/usage_scan",
+  "src": "crates/bsc-component/src/usage_scan/glob_patterns.rs",
+  "moduleVis": "private",
+  "composes": []
+}

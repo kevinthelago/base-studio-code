@@ -1,0 +1,12 @@
+{
+  "id": "bsc-component--similarity--overlaps.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "overlaps",
+  "code": "use std::collections::BTreeSet;\n\n/// A POSITIVE-ONLY set match: `Some(1.0)` when the sets intersect, else `None` (dropped).\npub(crate) fn overlaps(a: &BTreeSet<String>, b: &BTreeSet<String>) -> Option<f64> {\n    (!a.is_empty() && !a.is_disjoint(b)).then_some(1.0)\n}\n",
+  "domain": "bsc-component",
+  "folder": "crates/bsc-component/src/similarity",
+  "src": "crates/bsc-component/src/similarity/overlaps.rs",
+  "moduleVis": "private",
+  "composes": []
+}

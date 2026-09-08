@@ -1,0 +1,11 @@
+{
+  "id": "plandb--issues--is-done-status.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_done_status",
+  "src": "crates/plandb/src/issues/is_done_status.rs",
+  "folder": "crates/plandb/src/issues",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// True when `s` means the work is finished (see {@link DONE_STATUSES}). An UNKNOWN status is\n/// deliberately not-done: a typo must never silently inflate a completion count.\npub fn is_done_status(s: &str) -> bool {\n    DONE_STATUSES.contains(&s)\n}\n"
+}

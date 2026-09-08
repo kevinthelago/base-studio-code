@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--build-facet--facet.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "facet",
+  "composes": [],
+  "code": "use super::*;\n\n/// Render the facet. The overall verdict is `pass` only when EVERY target passed — a node that builds\n/// natively but not for wasm has not built, and reporting it as a pass would be the optimistic summary\n/// this repo's gate incidents are made of.\npub fn facet(hash: &str, toolchain: &str, at: &str, targets: &[TargetOutcome]) -> Value {\n    let mut map = serde_json::Map::new();\n    for t in targets {\n        let mut entry = json!({ \"verdict\": if t.passed { \"pass\" } else { \"fail\" } });\n        if let Some(a) = &t.artifact {\n            entry[\"artifact\"] = json!(a);\n        }\n        if let Some(b) = t.bytes {\n            entry[\"bytes\"] = json!(b);\n        }\n        if let Some(e) = t.exports {\n            entry[\"exports\"] = json!(e);\n        }\n        if let Some(d) = &t.detail {\n            entry[\"detail\"] = json!(d);\n        }\n        map.insert(t.name.to_string(), entry);\n    }\n    json!({\n        \"hash\": hash,\n        \"verdict\": if targets.iter().all(|t| t.passed) { \"pass\" } else { \"fail\" },\n        \"targets\": Value::Object(map),\n        \"at\": at,\n        \"toolchain\": toolchain,\n    })\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/build_facet",
+  "src": "crates/bsc-graph/src/build_facet/facet.rs",
+  "moduleVis": "private"
+}

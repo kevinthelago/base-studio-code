@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--fleet--wake--worker-pane.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "worker_pane",
+  "src": "src-tauri/src/fleet/wake/worker_pane.rs",
+  "folder": "src-tauri/src/fleet/wake",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Split a WORKER pane id into `(project key, stream id)`, or `None` when it is not one.\n///\n/// PURE, and separate from the lookup, because the ids this must turn down are the interesting half and\n/// a store is not needed to judge them. A director pane (`<key>:director`) carries no plan row and is\n/// created by `bsc fleet director new`; a triage pane is `<key>:<repo>:triage`, so a second colon means\n/// this grammar does not apply; and a bare id with no colon is not a fleet pane at all.\npub(crate) fn worker_pane(pane_id: &str) -> Option<(&str, &str)> {\n    let (key, stream_id) = pane_id.split_once(':')?;\n    if key.is_empty() || stream_id.is_empty() || stream_id == \"director\" || stream_id.contains(':') {\n        return None;\n    }\n    Some((key, stream_id))\n}\n"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "compliance--lib.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "compliance--lib",
+  "code": "//! Native compliance-standards source of truth for base-studio-code (#1005).\n//!\n//! The single, **user-updatable** store of current **regulation / accessibility / user-protection\n//! standards** (WCAG 2.2 AA, GDPR, CCPA/CPRA, SOC 2, user-protection basics), queried by the project\n//! planner so every plan bakes in the right requirements — and refreshable **without an app release**\n//! (the standards live in the store; `reseed`/`upsert` update them). Shipped as the bundled\n//! `bsc-compliance-mcp` stdio MCP server. \"Preserve the contract, swap the producer\": the agent-facing\n//! MCP tool surface is the contract; this crate is the native producer behind it.\n//!\n//! Layering: [`types`] is the normalized standard/requirement model (pure data + serde); [`seed`] is\n//! the baseline corpus; [`store`] is the SQLite source of truth (seeded on first open, user-editable);\n//! [`engine`] is the query + scoping logic; and [`mcp`] exposes the five tools the planner calls.\n\n\npub use types::{Domain, Requirement, Standard};\n",
+  "folder": "crates/compliance/src",
+  "src": "crates/compliance/src/lib.rs",
+  "composes": []
+}

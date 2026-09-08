@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--naming.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "naming",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// A backtick-quoted, comma-joined name list for a finding's prose, truncated past three. `ui-charts`\n/// carries FIFTEEN foreign exports and a finding that spells all fifteen into one sentence is a wall,\n/// not a report — the full list is one `bsc ui exports <id>` away, and `why` already names them.\npub fn naming(names: &[String]) -> String {\n    let shown: Vec<String> = names.iter().take(3).map(|n| format!(\"`{n}`\")).collect();\n    match names.len() {\n        0..=3 => shown.join(\", \"),\n        n => format!(\"{} and {} more\", shown.join(\", \"), n - 3),\n    }\n}\n",
+  "src": "crates/bsc-component/src/graph_health/naming.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

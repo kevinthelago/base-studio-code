@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--imports-siblings-by-record-id.rs",
+  "src": "crates/bsc-record/src/record_source/imports_siblings_by_record_id.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "imports_siblings_by_record_id",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Does a record import a sibling BY RECORD ID — `@/components/<id>` — and which ones?\n///\n/// There is no physical `@/components/` directory; the runtime loader intercepts the specifier and\n/// vendors the sibling's source in its place, so this form is invisible to any check that resolves\n/// against the file tree.\npub fn imports_siblings_by_record_id(src_text: &str) -> (bool, Vec<String>) {\n    let mut hits: Vec<String> = Vec::new();\n    let c: Vec<char> = src_text.chars().collect();\n    let n = c.len();\n    let mut i = 0usize;\n    while i + 4 < n {\n        if c[i..].starts_with(&['f', 'r', 'o', 'm']) {\n            let mut j = i + 4;\n            while j < n && c[j].is_whitespace() {\n                j += 1;\n            }\n            if j < n && matches!(c[j], '\"' | '\\'' | '`') {\n                let q = c[j];\n                let start = j + 1;\n                if let Some(off) = c[start..].iter().position(|ch| *ch == q) {\n                    let spec: String = c[start..start + off].iter().collect();\n                    if let Some(id) = spec.strip_prefix(\"@/components/\") {\n                        if !id.is_empty()\n                            && id.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))\n                        {\n                            hits.push(spec);\n                        }\n                    }\n                    i = start + off + 1;\n                    continue;\n                }\n            }\n        }\n        i += 1;\n    }\n    let mut seen = std::collections::BTreeSet::new();\n    let uniq: Vec<String> = hits.into_iter().filter(|h| seen.insert(h.clone())).collect();\n    (!uniq.is_empty(), uniq)\n}\n"
+}

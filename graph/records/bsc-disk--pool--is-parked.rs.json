@@ -1,0 +1,10 @@
+{
+  "id": "bsc-disk--pool--is-parked.rs",
+  "name": "is_parked",
+  "src": "crates/bsc-disk/src/pool/is_parked.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "moduleVis": "private",
+  "code": "//! `is_parked` — pure predicate, per-method record of the pool module.\n\n/// A branch is parked when it is literally named `parked-<something>` — the convention CLAUDE.md's\n/// recycle-don't-recreate step uses (`git checkout -B parked-<short> develop`). Anything else is a\n/// claimed ref and must never be a candidate.\npub fn is_parked(branch: Option<&str>) -> bool {\n    branch.is_some_and(|b| b.strip_prefix(\"parked-\").is_some_and(|rest| !rest.is_empty()))\n}\n",
+  "folder": "crates/bsc-disk/src"
+}

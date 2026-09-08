@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--pane-id--triage-pane-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "triage_pane_id",
+  "code": "/// A per-repo triage pane's identity id.\npub fn triage_pane_id(project_key: &str, repo: &str) -> String {\n    format!(\"{project_key}:{repo}:triage\")\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_id",
+  "src": "crates/bsc-util/src/pane_id/triage_pane_id.rs",
+  "moduleVis": "private",
+  "composes": []
+}

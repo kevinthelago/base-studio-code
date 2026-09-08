@@ -1,0 +1,12 @@
+{
+  "id": "bsc-publish--render--ref-marker.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ref_marker",
+  "code": "/// The hidden HTML-comment marker carrying an issue's planner-local `ref` through a publish.\n/// Invisible in GitHub's rendered view, present in the raw body.\npub fn ref_marker(r#ref: &str) -> String {\n    format!(\"<!-- bsc:ref={} -->\", r#ref)\n}\n",
+  "feature": "github",
+  "folder": "crates/bsc-publish/src/render",
+  "src": "crates/bsc-publish/src/render/ref_marker.rs",
+  "moduleVis": "private",
+  "composes": []
+}

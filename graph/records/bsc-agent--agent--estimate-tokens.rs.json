@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--agent--estimate-tokens.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "estimate_tokens",
+  "code": "/// Rough token estimate for a string — DELEGATED to `llm::estimate_tokens`, deliberately.\n///\n/// This used to be its own `s.len() / 4 + 1`, and `crates/llm` had already replaced that with a\n/// MEASURED 3.8 chars/token (this repo's `CLAUDE.md` is 94,357 chars and Ollama reported 24,604\n/// tokens for it). The agent never adopted it, so ONE budget calculation ran on TWO estimators and\n/// the compacting was done by the wrong one. `/4` under-counts by ~4%, and as that crate's doc says,\n/// under-counting \"is the direction that hurts: it is what lets the budget math conclude 'fits' for a\n/// prompt that does not, and an overflow costs half the window rather than the excess\".\npub(crate) fn estimate_tokens(s: &str) -> usize {\n    llm::estimate_tokens(s)\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/agent",
+  "src": "crates/bsc-agent/src/agent/estimate_tokens.rs",
+  "moduleVis": "private",
+  "composes": []
+}

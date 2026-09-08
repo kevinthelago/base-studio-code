@@ -1,0 +1,13 @@
+{
+  "code": "/// Interleave two sorted slices into one sorted `Vec`.\npub fn merge<T: Ord + Clone>(a: &[T], b: &[T]) -> Vec<T> {\n    let mut out = Vec::with_capacity(a.len() + b.len());\n    let (mut i, mut j) = (0, 0);\n    while i < a.len() && j < b.len() {\n        if a[i] <= b[j] {\n            out.push(a[i].clone());\n            i += 1;\n        } else {\n            out.push(b[j].clone());\n            j += 1;\n        }\n    }\n    out.extend_from_slice(&a[i..]);\n    out.extend_from_slice(&b[j..]);\n    out\n}\n",
+  "composes": [],
+  "feature": "reference",
+  "folder": "core",
+  "id": "merge.rs",
+  "kind": "transform",
+  "name": "merge",
+  "role": "algorithm",
+  "summary": "Interleave two sorted slices into one sorted Vec — the merge step of merge sort, taken in isolation.",
+  "tech": "rust",
+  "vizCode": "({ datatype: 'array', input: [1,4,7,2,3,9], run(a) { const mid = 3; const left = []; const right = []; for (let i=0;i<mid;i++) left.push(a.get(i)); for (let i=mid;i<a.length;i++) right.push(a.get(i)); let i=0,j=0,k=0; while (i<left.length && j<right.length) { a.cursor('i',i); a.cursor('j',j); if (left[i] <= right[j]) { a.set(k, left[i]); a.mark(k,'from-a'); i++; } else { a.set(k, right[j]); a.mark(k,'from-b'); j++; } k++; } while (i<left.length) { a.set(k, left[i]); a.mark(k,'from-a'); i++; k++; } while (j<right.length) { a.set(k, right[j]); a.mark(k,'from-b'); j++; k++; } a.markSorted(); } })"
+}

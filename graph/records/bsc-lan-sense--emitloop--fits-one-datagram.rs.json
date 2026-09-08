@@ -1,0 +1,11 @@
+{
+  "id": "bsc-lan-sense--emitloop--fits-one-datagram.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fits_one_datagram",
+  "src": "crates/bsc-lan-sense/src/emitloop/fits_one_datagram.rs",
+  "folder": "crates/bsc-lan-sense/src/emitloop",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether an event fits one datagram once framed.\npub fn fits_one_datagram(e: &Event) -> bool {\n    Frame::Delta(e.clone())\n        .encode()\n        .map(|b| b.len() <= bsc_lan_stream::envelope::MAX_PLAINTEXT_BYTES)\n        .unwrap_or(false)\n}\n"
+}

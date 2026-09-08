@@ -1,0 +1,15 @@
+{
+  "id": "llm--estimate-tool-tokens.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "estimate_tool_tokens",
+  "composes": [
+    "llm--estimate-tokens.rs",
+    "llm--tool-decl-inner.rs",
+    "llm--turn.rs"
+  ],
+  "code": "use crate::{estimate_tokens, tool_decl_inner, ToolDef};\n\n/// Approximate tokens the serialized tool declarations add to every turn's prompt.\n///\n/// These were previously counted as ZERO. They are not free: a session's ten native tools serialize\n/// to a few thousand tokens of JSON schema, sent on EVERY turn, inside the same window the system\n/// prompt has to fit in. Excluding them is how a budget check passes and the request still overflows.\npub fn estimate_tool_tokens(tools: &[ToolDef]) -> usize {\n    tools\n        .iter()\n        .map(|d| estimate_tokens(&serde_json::to_string(&tool_decl_inner(d)).unwrap_or_default()))\n        .sum()\n}\n",
+  "folder": "crates/llm/src",
+  "src": "crates/llm/src/estimate_tool_tokens.rs",
+  "moduleVis": "private"
+}

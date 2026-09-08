@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--usage-scan--strip-ext.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "strip_ext",
+  "code": "pub fn strip_ext(p: &str) -> String {\n    match p.rfind('.') {\n        Some(dot) if !p[dot + 1..].contains('/') => p[..dot].to_string(),\n        _ => p.to_string(),\n    }\n}\n",
+  "folder": "crates/bsc-component/src/usage_scan",
+  "src": "crates/bsc-component/src/usage_scan/strip_ext.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "llm--launch-cmd--quote-if-needed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "quote_if_needed",
+  "src": "crates/llm/src/launch_cmd/quote_if_needed.rs",
+  "folder": "crates/llm/src/launch_cmd",
+  "moduleVis": "private",
+  "composes": [
+    "llm--launch-cmd--sh-quote.rs",
+    "llm--launch-cmd--is-bare-token.rs"
+  ],
+  "code": "use super::*;\n\n/// Quote `s` only when it is not already a bare token.\n///\n/// WHY NOT ALWAYS QUOTE, which would be simpler. The TypeScript copy of this builder is still live\n/// and still answering real launches, and the reconciliation between the two is measured by\n/// `bsc logs divergence`. Quoting unconditionally would make the two answers differ on EVERY launch —\n/// `ollama run llama3` against `ollama run 'llama3'` — which turns the divergence channel into noise\n/// and hides the disagreements that actually matter. Quoting only what is unsafe keeps every ordinary\n/// launch byte-identical, so a firing divergence means something.\npub(crate) fn quote_if_needed(s: &str) -> String {\n    if is_bare_token(s) {\n        s.to_string()\n    } else {\n        sh_quote(s)\n    }\n}\n"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-ui--backing-reconcile--best-match.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "best_match",
+  "composes": [
+    "bsc-ui--backing-reconcile--containment.rs"
+  ],
+  "code": "//! `best_match` — The best file for a record's content, and the runner-up — a re-point is only safe when the winner is strong AND clearly ahead, so a near-tie\n\nuse std::collections::HashSet;\nuse super::{SrcFile, containment};\n\n/// The best file for a record's content, and the runner-up — a re-point is only safe when the winner is\n/// strong AND clearly ahead, so a near-tie is reported for a human rather than guessed at.\n///\n/// `files` is expected SORTED: the script inherited `readdirSync` order, which is unspecified, so a tie\n/// resolved differently on two machines. Sorting makes the winner reproducible.\npub fn best_match(rec_lines: &HashSet<String>, files: &[SrcFile]) -> ((Option<String>, f64), (Option<String>, f64)) {\n    let (mut best, mut second) = ((None, 0.0f64), (None, 0.0f64));\n    for f in files {\n        // Containment for the same reason drift uses it: a lifted record is fully inside a larger file.\n        let score = containment(rec_lines, &f.lines);\n        if score > best.1 {\n            second = best;\n            best = (Some(f.rel.clone()), score);\n        } else if score > second.1 {\n            second = (Some(f.rel.clone()), score);\n        }\n    }\n    (best, second)\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/backing_reconcile",
+  "src": "crates/bsc-ui/src/backing_reconcile/best_match.rs",
+  "moduleVis": "private"
+}

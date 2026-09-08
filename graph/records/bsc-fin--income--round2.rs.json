@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--income--round2.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "round2",
+  "code": "pub(crate) fn round2(x: f64) -> f64 {\n    (x * 100.0).round() / 100.0\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/income",
+  "src": "crates/bsc-fin/src/income/round2.rs",
+  "moduleVis": "private",
+  "composes": []
+}

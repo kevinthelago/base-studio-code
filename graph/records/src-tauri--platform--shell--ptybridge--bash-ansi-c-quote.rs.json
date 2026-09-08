@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--platform--shell--ptybridge--bash-ansi-c-quote.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "bash_ansi_c_quote",
+  "src": "src-tauri/src/platform/shell/ptybridge/bash_ansi_c_quote.rs",
+  "folder": "src-tauri/src/platform/shell/ptybridge",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Quote an arbitrary string as a single bash ANSI-C token (`$'...'`).\n///\n/// Used to bake a startup prompt into `claude <token>` safely: ANSI-C quoting\n/// keeps the whole value on one physical line (newlines become `\\n`) and `$`,\n/// backticks, and double quotes are literal — so no shell expansion, no PS2\n/// continuation, and any prompt content survives intact.\npub(crate) fn bash_ansi_c_quote(s: &str) -> String {\n    let mut out = String::with_capacity(s.len() + 4);\n    out.push_str(\"$'\");\n    for c in s.chars() {\n        match c {\n            '\\\\' => out.push_str(\"\\\\\\\\\"),\n            '\\'' => out.push_str(\"\\\\'\"),\n            '\\n' => out.push_str(\"\\\\n\"),\n            '\\r' => out.push_str(\"\\\\r\"),\n            '\\t' => out.push_str(\"\\\\t\"),\n            _ => out.push(c),\n        }\n    }\n    out.push('\\'');\n    out\n}\n"
+}

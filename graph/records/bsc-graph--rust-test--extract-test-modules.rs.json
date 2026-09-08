@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--rust-test--extract-test-modules.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "extract_test_modules",
+  "composes": [],
+  "code": "/// Extract every `#[cfg(test)]`-attributed module from a paired test, by balanced braces.\n///\n/// A Rust record's \"test\" is the whole harvested FILE (tests live inline in Rust), so appending it\n/// verbatim would bring the entire original module — imports, types, siblings — into a crate meant to\n/// hold one implementation. Only the test modules are wanted.\npub fn extract_test_modules(src: &str) -> Vec<String> {\n    let mut out = Vec::new();\n    let bytes: Vec<char> = src.chars().collect();\n    let mut search_from = 0usize;\n    while let Some(rel) = src[search_from..].find(\"#[cfg(test)]\") {\n        let attr_at = search_from + rel;\n        // The module's opening brace is the first `{` after the attribute.\n        let Some(brace_rel) = src[attr_at..].find('{') else { break };\n        let open = attr_at + brace_rel;\n        let open_idx = src[..open].chars().count();\n        let mut depth = 0i32;\n        let mut end_idx = None;\n        for (i, ch) in bytes.iter().enumerate().skip(open_idx) {\n            match ch {\n                '{' => depth += 1,\n                '}' => {\n                    depth -= 1;\n                    if depth == 0 {\n                        end_idx = Some(i);\n                        break;\n                    }\n                }\n                _ => {}\n            }\n        }\n        let Some(end_idx) = end_idx else { break };\n        let start_byte = attr_at;\n        let end_byte = bytes[..=end_idx].iter().map(|c| c.len_utf8()).sum::<usize>();\n        out.push(src[start_byte..end_byte].to_string());\n        search_from = end_byte;\n    }\n    out\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/rust_test",
+  "src": "crates/bsc-graph/src/rust_test/extract_test_modules.rs",
+  "moduleVis": "private"
+}

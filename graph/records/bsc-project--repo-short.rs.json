@@ -1,0 +1,11 @@
+{
+  "id": "bsc-project--repo-short.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "repo_short",
+  "code": "//! The short (owner-less) name of a repo.\n\n/// The SHORT repo name: the segment of a GitHub `owner/name` after the last `/`.\n///\n/// Every on-disk path derived from a repo uses this form — the clone dir under the hub, and the\n/// worktree dir name — so it is the single source of that idiom, mirrored from `platform::paths`.\npub fn repo_short(repo_full_name: &str) -> &str {\n    repo_full_name.rsplit('/').next().unwrap_or(repo_full_name)\n}\n",
+  "folder": "crates/bsc-project/src",
+  "src": "crates/bsc-project/src/repo_short.rs",
+  "moduleVis": "private",
+  "composes": []
+}

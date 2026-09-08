@@ -1,0 +1,12 @@
+{
+  "id": "bsc-news--signals--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "signals",
+  "composes": [],
+  "code": "//! The digest signals.\n//!\n//! Every one of them is **computed, not narrated**: a pure function over stored article text that\n//! reports counts alongside the [`Span`](crate::types::Span)s that produced them. No model runs\n//! here, and that is the crate's central constraint rather than a stage not yet reached — a digest\n//! whose findings cannot be checked against the text has replaced one opaque narrator with another,\n//! which is the thing this layer exists to expose.\n\n",
+  "domain": "bsc-news",
+  "src": "crates/bsc-news/src/signals/mod.rs",
+  "folder": "crates/bsc-news/src/signals",
+  "moduleVis": "pub"
+}

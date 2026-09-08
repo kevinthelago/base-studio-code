@@ -1,0 +1,11 @@
+{
+  "id": "data--shape--payload-fields.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "payload_fields",
+  "src": "crates/data/src/shape/payload_fields.rs",
+  "folder": "crates/data/src/shape",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Fields that carry payload rather than wiring — everything that is not a `ref` and not part of\n/// the identity. Drives the join-table read (a junction is nearly all wiring) and the list/table\n/// density split.\npub(crate) fn payload_fields(entity: &Entity) -> Vec<&Field> {\n    entity\n        .fields\n        .iter()\n        .filter(|f| f.ty != FieldType::Ref && !entity.identity.contains(&f.key))\n        .collect()\n}\n"
+}

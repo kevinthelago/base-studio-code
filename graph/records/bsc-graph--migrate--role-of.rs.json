@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--migrate--role-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "role_of",
+  "composes": [
+    "bsc-graph--migrate--role-for.rs"
+  ],
+  "code": "use super::*;\n\n/// The record role a set of declaration attributes implies — `test` for a `#[cfg(test)]` gate.\n///\n/// The same judgement [`role_for`] makes, over the attributes alone, so the two cannot answer\n/// differently for the same `#[cfg(test)]`.\npub(crate) fn role_of(attrs: &[String]) -> &'static str {\n    role_for(&ModuleDecl {\n        name: String::new(),\n        vis: String::new(),\n        line: String::new(),\n        block: String::new(),\n        docs: Vec::new(),\n        attrs: attrs.to_vec(),\n    })\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/role_of.rs",
+  "moduleVis": "private"
+}

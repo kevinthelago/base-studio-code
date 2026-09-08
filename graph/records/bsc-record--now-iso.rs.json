@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--now-iso.rs",
+  "src": "crates/bsc-record/src/now_iso.rs",
+  "folder": "crates/bsc-record/src",
+  "name": "now_iso",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The current write timestamp as ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`), matching the app's other\n/// stamps ([`bsc_util::epoch_ms_to_iso8601`]).\npub fn now_iso() -> String {\n    bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms())\n}\n"
+}

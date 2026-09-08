@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--retire--specifier-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "specifier_for",
+  "code": "//! `specifier_for` — The `@/…` specifier a retired module answers.\n\n/// The `@/…` specifier a retired module answers. A BARREL is addressed by its DIRECTORY — `/index` is\n/// dropped — because that is the form consumers normally write. Only a whole `/index` SEGMENT counts:\n/// `features/x/indexed` merely ends with the letters and keeps them.\npub fn specifier_for(rel: &str) -> String {\n    format!(\"@/{}\", rel.strip_suffix(\"/index\").unwrap_or(rel))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/retire",
+  "src": "crates/bsc-ui/src/retire/specifier_for.rs",
+  "moduleVis": "private",
+  "composes": []
+}

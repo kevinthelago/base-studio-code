@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--income--consistency-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "consistency_of",
+  "code": "use super::*;\n\n/// How tightly receipts cluster on the median, as a 0-1 score.\npub(crate) fn consistency_of(amounts: &[i64]) -> f64 {\n    let mid = median(amounts);\n    if mid == 0 {\n        return 0.0;\n    }\n    let spread = amounts.iter().map(|v| (v - mid).abs() as f64).sum::<f64>() / amounts.len() as f64;\n    (1.0 - spread / mid as f64).clamp(0.0, 1.0)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/income",
+  "src": "crates/bsc-fin/src/income/consistency_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--agent--jittered.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "jittered",
+  "code": "use std::time::Duration;\n/// Split a delay into a fixed half and a random half — \"equal jitter\".\n///\n/// WHY JITTER AT ALL: exponential backoff without it SYNCHRONISES. N workers that hit one rate limit\n/// in the same instant compute the same delay and retry in the same instant, so the second burst is\n/// as sharp as the first. Jitter is what turns a delay into a spread, and it is the property that\n/// matters at N concurrent clients rather than at one.\n///\n/// WHY EQUAL AND NOT FULL JITTER: full jitter draws from `[0, base]`, so a client can retry almost\n/// immediately after the server asked it to slow down. Keeping half the delay fixed preserves the\n/// backoff's meaning while still decorrelating the clients.\n///\n/// PURE, with `entropy` injected, so the spread is provable without depending on a clock.\npub(crate) fn jittered(base: Duration, entropy: u64) -> Duration {\n    let half = base / 2;\n    let span = half.as_nanos() as u64;\n    if span == 0 {\n        return base; // a zero or sub-2ns base has nothing to spread; tests pass ZERO deliberately\n    }\n    half + Duration::from_nanos(entropy % span)\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/agent",
+  "src": "crates/bsc-agent/src/agent/jittered.rs",
+  "moduleVis": "private",
+  "composes": []
+}

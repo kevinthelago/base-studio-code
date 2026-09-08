@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--ui--from-json.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "from_json",
+  "src": "crates/bsc-storefs/src/ui/from_json.rs",
+  "folder": "crates/bsc-storefs/src/ui",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub fn from_json(s: &str) -> Result<Vec<Component>, serde_json::Error> {\n    serde_json::from_str(s)\n}\n"
+}

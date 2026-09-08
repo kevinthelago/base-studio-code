@@ -1,0 +1,14 @@
+{
+  "id": "bsc-record--dropped-fields.rs",
+  "src": "crates/bsc-record/src/dropped_fields.rs",
+  "folder": "crates/bsc-record/src",
+  "name": "dropped_fields",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-record--lib.rs"
+  ],
+  "code": "use serde_json::Value;\nuse crate::{HISTORY, REV, UPDATED_AT, UPDATED_BY};\n\n/// The fields this write REMOVES — present in the stored record, absent from the one being written\n/// (#4197). Call it with the EFFECTIVE record (post-[`merge_over`]), which is what actually lands.\n///\n/// A merging `set` removes only what the write asked to remove (a `null`, or `--clear`), so this is\n/// normally empty. It is `--replace` — the verbatim whole-record write the app bridge and the seed\n/// reconcile need — that can still delete a field by omission, which is the case worth naming out loud.\n/// That is the defect #4154 fixed for the algorithms graph, where `impl set` was `*existing = im` and a\n/// domain-only edit deleted the code — it cost a 16-entry reorg before anyone noticed. It matters more\n/// here: `fleetpage` has no source file (#3636 deleted it), so its record is the only copy of that UI,\n/// and every page follows as the deletion track proceeds.\n///\n/// [`crate::changed_fields`] already counts a removal as a change, but files it alongside ordinary edits — so in\n/// `bsc ui log` a destructive write and a routine one look identical. This separates them. Pure; the CLI\n/// decides what to do about a non-empty result (warn), and `stamp_with_history` records it distinctly.\n///\n/// The server-managed fields are excluded: `rev`/`updatedAt`/`updatedBy`/`history` are re-stamped on every\n/// write regardless of the payload, and `seedHash` is a derived reconcile value, not authored content —\n/// reporting any of them would fire on every single write and train people to ignore the warning.\npub fn dropped_fields(prior: &Value, next: &Value) -> Vec<String> {\n    const SKIP: [&str; 5] = [REV, UPDATED_AT, UPDATED_BY, HISTORY, \"seedHash\"];\n    let (Some(p), Some(n)) = (prior.as_object(), next.as_object()) else { return vec![] };\n    p.keys()\n        .filter(|k| !SKIP.contains(&k.as_str()) && !n.contains_key(*k))\n        .cloned()\n        .collect::<std::collections::BTreeSet<_>>()\n        .into_iter()\n        .collect()\n}\n"
+}

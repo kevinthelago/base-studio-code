@@ -1,0 +1,15 @@
+{
+  "id": "data--transport--draft-from-openapi.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "draft_from_openapi",
+  "src": "crates/data/src/transport/draft_from_openapi.rs",
+  "folder": "crates/data/src/transport",
+  "moduleVis": "private",
+  "composes": [
+    "data--transport--resource-name-from-path.rs",
+    "data--transport--openapi-get-array-shape.rs",
+    "data--transport--openapi-guess-auth.rs"
+  ],
+  "code": "use super::*;\n\n/// Build a draft [`RuntimePreset`] from an OpenAPI / Swagger doc: id/label placeholders (label from\n/// `info.title` when present), auth guessed from `securitySchemes`, and one resource per GET path\n/// whose JSON response is an array (with an `array_key` guess for an enveloped array). `base_url` is\n/// the probe's `--base-url` (the doc's first `servers[].url` is the fallback). Read-only / pure.\npub fn draft_from_openapi(spec: &Value, base_url: &str) -> RuntimePreset {\n    let mut resources = Vec::new();\n    if let Some(paths) = spec.get(\"paths\").and_then(Value::as_object) {\n        for (path, item) in paths {\n            let get = match item.get(\"get\") {\n                Some(g) => g,\n                None => continue,\n            };\n            let (returns_array, array_key) = openapi_get_array_shape(get);\n            if !returns_array {\n                continue;\n            }\n            resources.push(RuntimeResource {\n                name: resource_name_from_path(path),\n                path: path.trim_start_matches('/').to_string(),\n                array_key,\n            });\n        }\n    }\n    resources.sort_by(|a, b| a.path.cmp(&b.path));\n    let base = if base_url.trim().is_empty() {\n        spec.get(\"servers\")\n            .and_then(Value::as_array)\n            .and_then(|a| a.first())\n            .and_then(|s| s.get(\"url\"))\n            .and_then(Value::as_str)\n            .map(|s| s.trim_end_matches('/').to_string())\n    } else {\n        Some(base_url.trim_end_matches('/').to_string())\n    };\n    RuntimePreset {\n        id: \"draft-connector\".into(),\n        label: spec\n            .get(\"info\")\n            .and_then(|i| i.get(\"title\"))\n            .and_then(Value::as_str)\n            .filter(|s| !s.trim().is_empty())\n            .unwrap_or(\"Draft connector\")\n            .to_string(),\n        category: String::new(),\n        base_url: base,\n        auth: openapi_guess_auth(spec),\n        oauth: None,\n        resources,\n    }\n}\n"
+}

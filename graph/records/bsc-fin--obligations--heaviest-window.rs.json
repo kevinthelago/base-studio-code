@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--obligations--heaviest-window.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "heaviest_window",
+  "code": "use super::*;\nuse crate::money::{sum, Money};\n\n/// The heaviest run of `days` consecutive days in the window — where a month-level view goes blind.\n///\n/// Every window STARTS on a real obligation, because a heavy run always begins at one; sliding day by\n/// day over an empty calendar would cost far more and find the same answer.\npub fn heaviest_window(c: &ObligationCalendar, days: i64) -> Option<Window> {\n    let first = c.obligations.first()?;\n    let currency = first.amount.currency;\n    let mut best: Option<Window> = None;\n    for o in &c.obligations {\n        let end = add_days(&o.date, days - 1);\n        let amounts: Vec<Money> = due_between(c, &o.date, &end).iter().map(|x| x.amount).collect();\n        let Ok(total) = sum(&amounts, currency) else { continue };\n        if best.as_ref().is_none_or(|b| total.minor > b.total.minor) {\n            best = Some(Window { from: o.date.clone(), to: end, total });\n        }\n    }\n    best\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/obligations",
+  "src": "crates/bsc-fin/src/obligations/heaviest_window.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--money.rs"
+  ]
+}

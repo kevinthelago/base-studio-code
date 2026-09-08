@@ -1,0 +1,13 @@
+{
+  "id": "bsc-graph--node-urn--parse-library-spec.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_library_spec",
+  "composes": [
+    "bsc-graph--node-urn--is-library-spec.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse `@bsc/<segment>/<name>`. The name may itself contain slashes; the SEGMENT splits on the\n/// first one, which is the mirror of the URN's last-slash rule and deliberately not the same.\npub fn parse_library_spec(spec: &str) -> Option<LibrarySpec> {\n    if !is_library_spec(spec) {\n        return None;\n    }\n    let after = &spec[LIBRARY_ROOT.len() + 1..];\n    let slash = after.find('/')?;\n    if slash == 0 {\n        return None;\n    }\n    let graph = NodeGraph::from_library_segment(&after[..slash])?;\n    let name = &after[slash + 1..];\n    if name.is_empty() {\n        return None;\n    }\n    Some(LibrarySpec { graph, name: name.to_string() })\n}\n",
+  "folder": "crates/bsc-graph/src/node_urn",
+  "src": "crates/bsc-graph/src/node_urn/parse_library_spec.rs",
+  "moduleVis": "private"
+}

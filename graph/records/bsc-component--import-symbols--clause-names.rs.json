@@ -1,0 +1,12 @@
+{
+  "id": "bsc-component--import-symbols--clause-names.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "clause_names",
+  "code": "/// The VALUE names a `{ … }` clause body (the text between the braces) binds — an entry prefixed `type `\n/// (per-binding erasure, #4076) is dropped, and `X as W` asks the target for `X`, the ORIGINAL exported\n/// name, never the local alias `W`.\npub(crate) fn clause_names(clause_body: &str) -> Vec<String> {\n    let mut out = Vec::new();\n    for part in clause_body.split(',') {\n        let part = part.trim();\n        if part.is_empty() {\n            continue;\n        }\n        if part.strip_prefix(\"type\").is_some_and(|r| r.starts_with(char::is_whitespace)) {\n            continue;\n        }\n        let name = part.split(\" as \").next().unwrap_or(part).trim();\n        if !name.is_empty() {\n            out.push(name.to_string());\n        }\n    }\n    out\n}\n",
+  "domain": "bsc-component",
+  "folder": "crates/bsc-component/src/import_symbols",
+  "src": "crates/bsc-component/src/import_symbols/clause_names.rs",
+  "moduleVis": "private",
+  "composes": []
+}

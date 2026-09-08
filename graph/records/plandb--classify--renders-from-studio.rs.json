@@ -1,0 +1,14 @@
+{
+  "id": "plandb--classify--renders-from-studio.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "renders_from_studio",
+  "composes": [
+    "plandb--classify--ui-system-of.rs"
+  ],
+  "code": "use super::*;\n\n/// Does this project render from OUR component graph? The gate for everything that only applies to\n/// studio-rendered projects — kit pinning, the graph vocabulary in worker context, the build/publish\n/// pipeline, and the render isolation the preview frames owe LLM-authored code.\npub fn renders_from_studio(cfg: Option<&ClassifyConfig>) -> bool {\n    ui_system_of(cfg) == \"studio\"\n}\n",
+  "domain": "plandb",
+  "folder": "crates/plandb/src/classify",
+  "src": "crates/plandb/src/classify/renders_from_studio.rs",
+  "moduleVis": "private"
+}

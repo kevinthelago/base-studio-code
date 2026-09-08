@@ -1,0 +1,11 @@
+{
+  "id": "llm--gemini--normalize-response.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "normalize_response",
+  "src": "crates/llm/src/gemini/normalize_response.rs",
+  "folder": "crates/llm/src/gemini",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Map a Gemini response into the normalized shape: join `candidates[0].content.parts[].text`\n/// into one text block; map `usageMetadata` -> `usage`. Pure — unit-testable without I/O.\npub(crate) fn normalize_response(raw: &serde_json::Value) -> serde_json::Value {\n    let text = raw[\"candidates\"][0][\"content\"][\"parts\"]\n        .as_array()\n        .map(|parts| {\n            parts\n                .iter()\n                .filter_map(|p| p[\"text\"].as_str())\n                .collect::<Vec<_>>()\n                .join(\"\")\n        })\n        .unwrap_or_default();\n    let usage = raw\n        .get(\"usageMetadata\")\n        .map(|u| {\n            serde_json::json!({\n                \"input_tokens\": u.get(\"promptTokenCount\").cloned().unwrap_or(serde_json::Value::Null),\n                \"output_tokens\": u.get(\"candidatesTokenCount\").cloned().unwrap_or(serde_json::Value::Null),\n                \"total_tokens\": u.get(\"totalTokenCount\").cloned().unwrap_or(serde_json::Value::Null),\n            })\n        })\n        .unwrap_or(serde_json::Value::Null);\n    serde_json::json!({\n        \"content\": [ { \"type\": \"text\", \"text\": text } ],\n        \"usage\": usage,\n    })\n}\n"
+}

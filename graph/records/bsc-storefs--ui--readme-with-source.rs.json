@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--ui--readme-with-source.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "readme_with_source",
+  "src": "crates/bsc-storefs/src/ui/readme_with_source.rs",
+  "folder": "crates/bsc-storefs/src/ui",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The README, told whether the SOURCE tier is present — the one fact that changes what a reader\n/// can do here, so it must not be stated from a constant.\npub(crate) fn readme_with_source(count: usize, generated_at: &str, has_source: bool) -> String {\n    let source_note = if has_source {\n        \"components/<id>/srcText  the component SOURCE, byte-for-byte as stored\"\n    } else {\n        \"A component's srcText is NOT projected in this snapshot — it was read with the summary\\n\\\n         tier (`bsc ui list`). There is no way to read a component's source from here.\"\n    };\n    format!(\n        \"The component store, as files. THIS IS AN INDEX, NOT THE SOURCE.\\n\\\n         \\n\\\n         components/<id>/name    .../role .../folder .../kit\\n\\\n         by-role/<role>          id and name, tab-separated\\n\\\n         by-kit/<kit>            id and name, tab-separated\\n\\\n         \\n\\\n         {source_note}\\n\\\n         \\n\\\n         THERE IS NO `bsc` IN THIS SESSION, so `bsc ui get <id>` is not a route from here. That is\\n\\\n         the point of the projection, not an oversight: a read surface can exist here precisely\\n\\\n         because no writable database is bound into the namespace. So a component's SOURCE cannot\\n\\\n         be read from inside the cage at all — this index is names and grouping only.\\n\\\n         To AUTHOR a component, write it to the /ui/out outbox (see that directory); the host\\n\\\n         drains it. To ask for a source you cannot read, emit it on the coordination outbox.\\n\\\n         \\n\\\n         THIS IS A SNAPSHOT, NOT A LIVE VIEW.\\n\\\n         {count} component(s), projected at {generated_at}.\\n\"\n    )\n}\n"
+}

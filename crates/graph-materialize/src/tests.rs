@@ -326,7 +326,11 @@ fn src_tauri_resolves_and_now_renders_every_record_it_owns() {
     assert_ne!(old_root, root, "`parent().parent()` from a one-deep crate leaves the repo entirely");
 
     // Selection over the REAL store.
-    let raw = std::fs::read_to_string(&plan.store_path).expect("the committed store reads");
+    // Through the crate's OWN merged loader, which is what `emit_into` reads the store with. A
+    // `read_to_string` here saw only the store FILE, so the day `src-tauri`'s 138 records split out
+    // into `graph/records/` this asserted "src-tauri owns only 0 records"
+    // (`epic-retire-json-ledgers-for-db-and-git-drivers`).
+    let raw = load_merged_store(&plan.store_path).expect("the committed store reads");
     let store: serde_json::Value = serde_json::from_str(&raw).expect("it parses");
     let impls = store.get("implementations").and_then(|v| v.as_array()).expect("implementations");
     let selected = plan.select(impls);

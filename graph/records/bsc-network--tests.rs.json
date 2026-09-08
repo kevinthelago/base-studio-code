@@ -1,0 +1,16 @@
+{
+  "id": "bsc-network--tests.rs",
+  "tech": "rust",
+  "role": "test",
+  "name": "tests",
+  "composes": [],
+  "code": "use bsc_json_store::Store;\nuse std::sync::atomic::{AtomicU64, Ordering};\n\n/// A per-test unique suffix so parallel tests never share a base dir. Keyed on the pid AND a\n/// counter: pid alone made the suite intermittently red under nextest, which runs each test in its\n/// own process but reuses pids across a long run.\nfn uniq() -> String {\n    static N: AtomicU64 = AtomicU64::new(0);\n    format!(\"{}-{}\", std::process::id(), N.fetch_add(1, Ordering::Relaxed))\n}\n\n/// #2986 (epic #2982) regression, carried to this store on day one rather than after the fact: the\n/// network store persists to a SQLite **`networks.db`**, NOT to per-id `networks/<id>.json` files.\n/// #2983 migrated the shared `bsc-json-store` backend JSON-files → SQLite transparently, and every\n/// shim pins that it actually rides it — a shim that quietly wrote files would still pass every\n/// behavioural test while orphaning its data from the rest of the app.\n///\n/// The crate exposes no base-dir-injectable API (only the `bsc network` CLI), so this drives the\n/// shared `Store` directly with the network store's own segment + noun, mirroring `cli::SPEC`.\n#[test]\nfn network_store_persists_to_sqlite_not_json_files() {\n    let base = std::env::temp_dir().join(format!(\"bsc-network-sqlite-{}\", uniq()));\n    let _ = std::fs::remove_dir_all(&base);\n    std::fs::create_dir_all(&base).unwrap();\n\n    // The network store exactly as its CLI configures it (mirrors `cli::SPEC.dir_segment` / `.noun`).\n    let store = Store::new(base.join(\"networks\"), \"network\");\n\n    let network = r#\"{\"id\":\"network-kitchen\",\"name\":\"kitchen\",\"position\":0}\"#;\n    store.set(\"network-kitchen\", network).unwrap();\n    assert_eq!(\n        store.get(\"network-kitchen\").unwrap().as_deref(),\n        Some(network),\n        \"the network reads back verbatim\",\n    );\n    assert_eq!(store.list(), vec![network.to_string()], \"and lists from the db\");\n\n    // The claim — SQLite, not files.\n    let db = base.join(\"networks.db\");\n    assert!(db.is_file(), \"networks.db exists after the write: {}\", db.display());\n    let legacy = base.join(\"networks\").join(\"network-kitchen.json\");\n    assert!(!legacy.exists(), \"no per-id json file was written: {}\", legacy.display());\n    assert!(\n        !base.join(\"networks\").exists(),\n        \"no file-based `networks/` store dir was created\",\n    );\n\n    let _ = std::fs::remove_dir_all(&base);\n}\n",
+  "domain": "bsc-network",
+  "src": "crates/bsc-network/src/tests.rs",
+  "folder": "crates/bsc-network/src",
+  "moduleAttrs": [
+    "#[cfg(test)]"
+  ],
+  "moduleVis": "private",
+  "feature": "cli-platform"
+}

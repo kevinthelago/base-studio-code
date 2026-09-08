@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--sandbox--bridge--sh-squote.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sh_squote",
+  "src": "src-tauri/src/session/sandbox/bridge/sh_squote.rs",
+  "folder": "src-tauri/src/session/sandbox/bridge",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Single-quote a string as one safe POSIX-shell token.\npub(crate) fn sh_squote(s: &str) -> String {\n    format!(\"'{}'\", s.replace('\\'', \"'\\\\''\"))\n}\n"
+}

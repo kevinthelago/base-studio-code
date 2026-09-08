@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--repo-store--edges-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "edges_of",
+  "composes": [],
+  "code": "use super::*;\n\n/// The edges a store carries, in file order.\n///\n/// READ-ONLY like [`crate::edges_of`]: it never inserts the key, so looking at a store with no edges\n/// cannot add `\"edges\": []` to it and churn every committed file that has none.\npub fn edges_of(store: &Value) -> Vec<Value> {\n    store.get(\"edges\").and_then(Value::as_array).cloned().unwrap_or_default()\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/edges_of.rs",
+  "moduleVis": "private"
+}

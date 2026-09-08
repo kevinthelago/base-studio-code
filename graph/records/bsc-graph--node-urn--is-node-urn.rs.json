@@ -1,0 +1,13 @@
+{
+  "id": "bsc-graph--node-urn--is-node-urn.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_node_urn",
+  "composes": [
+    "bsc-graph--node-urn--parse-node-urn.rs"
+  ],
+  "code": "use super::*;\n\npub fn is_node_urn(s: &str) -> bool {\n    parse_node_urn(s).is_some()\n}\n",
+  "folder": "crates/bsc-graph/src/node_urn",
+  "src": "crates/bsc-graph/src/node_urn/is_node_urn.rs",
+  "moduleVis": "private"
+}

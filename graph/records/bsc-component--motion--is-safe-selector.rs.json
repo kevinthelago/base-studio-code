@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--motion--is-safe-selector.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_safe_selector",
+  "code": "/// A non-empty CHILD selector using ONLY selector-safe characters (mirrors `SAFE_SELECTOR`).\npub(crate) fn is_safe_selector(s: &str) -> bool {\n    !s.is_empty()\n        && s.chars().all(|c| {\n            c.is_ascii_alphanumeric()\n                || matches!(\n                    c,\n                    ' ' | '.' | '_' | '#' | '>' | '[' | ']' | '=' | '\"' | '\\'' | '-' | ':' | '(' | ')'\n                        | ',' | '*' | '+' | '~'\n                )\n        })\n}\n",
+  "folder": "crates/bsc-component/src/motion",
+  "src": "crates/bsc-component/src/motion/is_safe_selector.rs",
+  "moduleVis": "private",
+  "composes": []
+}

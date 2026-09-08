@@ -1,0 +1,13 @@
+{
+  "id": "llm--tool-decl-inner.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tool_decl_inner",
+  "code": "use crate::ToolDef;\n\n/// The bare `{name, description, parameters}` tool declaration every provider builds from a [`ToolDef`].\n/// OpenAI and Ollama-native wrap this in `{type:\"function\", function: …}`; Gemini and the Hermes-style\n/// `<tools>` manifest use the bare object. Shared so the field mapping lives in one place.\npub(crate) fn tool_decl_inner(d: &ToolDef) -> serde_json::Value {\n    serde_json::json!({ \"name\": d.name, \"description\": d.description, \"parameters\": d.schema })\n}\n",
+  "folder": "crates/llm/src",
+  "src": "crates/llm/src/tool_decl_inner.rs",
+  "moduleVis": "private",
+  "composes": [
+    "llm--turn.rs"
+  ]
+}

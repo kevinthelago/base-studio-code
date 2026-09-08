@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--sources--data--data-scan--behaviors-summary.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "behaviors_summary",
+  "src": "src-tauri/src/sources/data/data_scan/behaviors_summary.rs",
+  "folder": "src-tauri/src/sources/data/data_scan",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Concise behavior labels from a connector's platform scan (capped for the pane).\n#[cfg(feature = \"source-stage\")]\npub(crate) fn behaviors_summary(scan: &bsc_data::PlatformScan) -> Vec<ScanBehavior> {\n    let mut out = Vec::new();\n    for a in &scan.automations {\n        out.push(ScanBehavior { label: a.name.clone() });\n    }\n    for p in &scan.business_processes {\n        out.push(ScanBehavior { label: p.name.clone() });\n    }\n    for d in &scan.derived_logic {\n        out.push(ScanBehavior { label: format!(\"{} (formula)\", d.name) });\n    }\n    out.truncate(8);\n    out\n}\n"
+}

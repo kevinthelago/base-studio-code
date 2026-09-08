@@ -1,0 +1,11 @@
+{
+  "id": "plandb--scope--deny-write.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "deny_write",
+  "code": "pub(crate) fn deny_write(issue_ref: &str, own: &str, requested: &str) -> String {\n    format!(\"scoped to stream '{own}': you can't add issue '{issue_ref}' to stream '{requested}'\")\n}\n",
+  "folder": "crates/plandb/src/scope",
+  "src": "crates/plandb/src/scope/deny_write.rs",
+  "moduleVis": "private",
+  "composes": []
+}

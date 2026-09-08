@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--membership--project-key-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "project_key_of",
+  "code": "/// The project key in front of a pane id (`<key>:<stream>`, `<key>:<repo>:triage`). Project keys are\n/// slugs and carry no colon, so the first segment is the key.\npub fn project_key_of(pane_id: &str) -> &str {\n    pane_id.split(':').next().unwrap_or(pane_id)\n}\n",
+  "folder": "crates/bsc-fleet/src/membership",
+  "src": "crates/bsc-fleet/src/membership/project_key_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

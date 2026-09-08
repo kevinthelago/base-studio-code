@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--observability--tokens--cost--latest-transcript-per-pane.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "latest_transcript_per_pane",
+  "src": "src-tauri/src/observability/tokens/cost/latest_transcript_per_pane.rs",
+  "folder": "src-tauri/src/observability/tokens/cost",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--observability--tokens--cost--latest-per-key.rs"
+  ],
+  "code": "use super::*;\n\n/// The latest `(pane, session_id, transcript_path)` per pane from a `tokens.log` body,\n/// newest pane first. The log is append-only oldest-first, so a later line for a pane\n/// supersedes earlier ones (a resumed `--continue` session keeps the same transcript,\n/// which already accumulates all usage). Pure (no fs) so it's unit-testable.\npub(crate) fn latest_transcript_per_pane(log_text: &str) -> Vec<(String, String, String)> {\n    latest_per_key(log_text, 4, |f| {\n        let (pane, sid, tp) = (f[1].to_string(), f[2].to_string(), f[3].to_string());\n        if pane.is_empty() || tp.is_empty() {\n            return None;\n        }\n        Some((pane.clone(), (pane, sid, tp)))\n    })\n}\n"
+}

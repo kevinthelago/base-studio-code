@@ -1,0 +1,14 @@
+{
+  "id": "bsc-agent--permissions--under-any-harvest-root.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "under_any_harvest_root",
+  "composes": [
+    "bsc-agent--permissions--is-absolute.rs"
+  ],
+  "code": "use super::is_absolute::is_absolute;\n\n/// Whether a `read_file` `target` sits under one of the read-only harvest roots (#3530) — mirrors\n/// `isUnderHarvestRoot` in `fsConfine.ts` and the `__bsc_read_harvestable` shell helper. Same\n/// conservatism as [`super::path_confined`]: only an ABSOLUTE path with no `..` segment, under a listed\n/// root (a shared prefix is not containment). Empty roots contribute nothing.\npub(crate) fn under_any_harvest_root(roots: &[String], target: &str) -> bool {\n    if target.is_empty() || !is_absolute(target) {\n        return false;\n    }\n    let norm = target.replace('\\\\', \"/\");\n    if norm.split('/').any(|seg| seg == \"..\") {\n        return false;\n    }\n    roots.iter().any(|root| {\n        if root.is_empty() {\n            return false;\n        }\n        let r = root.replace('\\\\', \"/\");\n        let r = r.trim_end_matches('/');\n        norm == r || norm.starts_with(&format!(\"{r}/\"))\n    })\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/permissions",
+  "src": "crates/bsc-agent/src/permissions/under_any_harvest_root.rs",
+  "moduleVis": "private"
+}

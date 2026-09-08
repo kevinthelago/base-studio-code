@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--mobile--fcm--build-message.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_message",
+  "src": "src-tauri/src/mobile/fcm/build_message.rs",
+  "folder": "src-tauri/src/mobile/fcm",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--mobile--fcm--notification-body.rs",
+    "src-tauri--mobile--fcm--build-push.rs"
+  ],
+  "code": "use super::*;\n\n/// Build the FCM push for a pane raising a `user_request` (the agent is waiting on the user).\n/// `data` values are all strings (FCM requires it).\npub fn build_message(\n    device_token: &str,\n    pane_id: &str,\n    prompt: &str,\n    session_name: &str,\n) -> serde_json::Value {\n    let title = if session_name.trim().is_empty() { \"Studio Code\" } else { session_name };\n    build_push(\n        device_token,\n        title,\n        &notification_body(prompt),\n        // Contract — mobile parses these exact keys; values MUST be strings.\n        serde_json::json!({\n            \"type\": \"user_request\",\n            \"paneId\": pane_id,\n            \"prompt\": prompt,\n        }),\n    )\n}\n"
+}

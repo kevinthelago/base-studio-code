@@ -1,0 +1,16 @@
+{
+  "id": "bsc-fin--balance--prefer-observed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "prefer_observed",
+  "composes": [
+    "bsc-fin--balance--record.rs",
+    "bsc-fin--position--mod.rs"
+  ],
+  "code": "use crate::position::AccountBalance;\nuse super::record;\n\n/// Merge derived balances under observed ones — **the observed wins on the same day**.\n///\n/// Both are observations, so neither is categorically better; the tie-break is which one a person\n/// can correct. A statement's closing figure is fixed by the export, while a balance somebody typed\n/// is what they were looking at in the account — often BECAUSE the derived one looked wrong. Letting\n/// the derivation overwrite that would make the correction impossible to express, and it would do it\n/// silently, which is the part that matters.\n///\n/// A stored balance on any OTHER day is kept as its own observation rather than replacing anything —\n/// [`record`]'s same-account-same-day rule is the whole of the collision policy.\npub fn prefer_observed(stored: &[AccountBalance], derived: &[AccountBalance]) -> Vec<AccountBalance> {\n    let mut out = derived.to_vec();\n    for b in stored {\n        record(&mut out, b.clone());\n    }\n    out\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/balance",
+  "src": "crates/bsc-fin/src/balance/prefer_observed.rs",
+  "moduleVis": "private"
+}

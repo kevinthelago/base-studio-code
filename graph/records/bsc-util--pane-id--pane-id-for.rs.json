@@ -1,0 +1,15 @@
+{
+  "id": "bsc-util--pane-id--pane-id-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "pane_id_for",
+  "composes": [
+    "bsc-util--pane-id--manual-pane-id.rs",
+    "bsc-util--pane-id--positional-pane-id.rs"
+  ],
+  "code": "use super::manual_pane_id::manual_pane_id;\nuse super::positional_pane_id::positional_pane_id;\nuse super::IdentityTab;\n\n/// Resolve a pane's identity id from its tab + grid position.\n///\n/// The order is load-bearing and is the TypeScript's: a minted `pane_ids[idx]` wins; else a\n/// `kind`-bearing (fleet/triage) tab keeps the POSITIONAL id; else a manual tab with a stable `id`\n/// mints a `man:` id; else positional. `tab` is optional because the caller reads it out of app state\n/// that may not have one yet, and the absent case falls through to positional like an id-less tab.\n///\n/// Note the second rule: a fleet tab WITHOUT mints does not get a `man:` id even when it has an `id`.\n/// That looks like an oversight and is the shipping behaviour — Stage 1 fleet tabs are positional.\npub fn pane_id_for(tab: Option<&IdentityTab>, tab_idx: i64, pane_idx: i64) -> String {\n    if let Some(t) = tab {\n        if let Some(Some(minted)) = t.pane_ids.get(pane_idx as usize) {\n            if !minted.is_empty() {\n                return minted.clone();\n            }\n        }\n        if t.kind.is_some() {\n            return positional_pane_id(tab_idx, pane_idx);\n        }\n        if let Some(id) = t.id.as_ref().filter(|i| !i.is_empty()) {\n            return manual_pane_id(id, pane_idx);\n        }\n    }\n    positional_pane_id(tab_idx, pane_idx)\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_id",
+  "src": "crates/bsc-util/src/pane_id/pane_id_for.rs",
+  "moduleVis": "private"
+}

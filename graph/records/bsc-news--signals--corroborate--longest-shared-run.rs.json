@@ -1,0 +1,15 @@
+{
+  "id": "bsc-news--signals--corroborate--longest-shared-run.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "longest_shared_run",
+  "composes": [
+    "bsc-news--signals--corroborate--words.rs",
+    "bsc-news--signals--corroborate--shingle-width.rs",
+    "bsc-news--types.rs"
+  ],
+  "code": "use crate::types::{ArticleVersion, Span};\nuse super::{shingle_width, words};\n\n/// The longest run of consecutive words `a` and `b` share, as a span into `a`'s text.\npub(crate) fn longest_shared_run(a: &ArticleVersion, b: &ArticleVersion) -> Option<Span> {\n    let (aw, bw) = (words(&a.text()), words(&b.text()));\n    if aw.is_empty() || bw.is_empty() {\n        return None;\n    }\n    // Classic DP over word arrays; texts here are headline+summary, so this stays small.\n    let mut prev = vec![0usize; bw.len() + 1];\n    let mut cur = vec![0usize; bw.len() + 1];\n    let (mut best, mut best_end_a) = (0usize, 0usize);\n    for i in 1..=aw.len() {\n        for j in 1..=bw.len() {\n            cur[j] = if aw[i - 1] == bw[j - 1] { prev[j - 1] + 1 } else { 0 };\n            if cur[j] > best {\n                best = cur[j];\n                best_end_a = i;\n            }\n        }\n        std::mem::swap(&mut prev, &mut cur);\n        cur.iter_mut().for_each(|c| *c = 0);\n    }\n    // A run shorter than the width these two were compared at is coincidence, not evidence.\n    if best < shingle_width(aw.len(), bw.len()) {\n        return None;\n    }\n    let run = aw[best_end_a - best..best_end_a].join(\" \");\n    let text = a.text();\n    // Locate the run in the original text so the offset points at real characters. The words are\n    // normalized, so fall back to the first word's position when the join does not match verbatim.\n    let start = text\n        .to_lowercase()\n        .find(&run)\n        .or_else(|| text.to_lowercase().find(aw[best_end_a - best].as_str()))?;\n    Some(Span {\n        url: a.url.clone(),\n        outlet_id: a.outlet_id.clone(),\n        start,\n        end: (start + run.len()).min(text.len()),\n        text: run,\n    })\n}\n",
+  "folder": "crates/bsc-news/src/signals/corroborate",
+  "src": "crates/bsc-news/src/signals/corroborate/longest_shared_run.rs",
+  "moduleVis": "private"
+}

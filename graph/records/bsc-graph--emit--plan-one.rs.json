@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--emit--plan-one.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_one",
+  "composes": [
+    "bsc-graph--emit--field.rs",
+    "bsc-graph--emit--store-version.rs",
+    "bsc-graph--emit--plan-from.rs"
+  ],
+  "code": "use super::*;\n\n/// Plan the emit for one record by id. `Err` when the id is not in the store at all — a caller asking\n/// for a specific id deserves a hard error, not an empty plan it might read as success.\npub fn plan_one(graph: &Value, id: &str) -> Result<EmitPlan, String> {\n    let impls = crate::implementations_of(graph);\n    let im = impls\n        .iter()\n        .find(|im| field(im, \"id\") == Some(id))\n        .ok_or_else(|| format!(\"no implementation with id `{id}` — `bsc graph impl list` shows what exists\"))?;\n    Ok(plan_from(std::slice::from_ref(im), store_version(graph)))\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/emit",
+  "src": "crates/bsc-graph/src/emit/plan_one.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--viable--is-essential-category.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_essential_category",
+  "code": "use super::*;\n\npub(crate) fn is_essential_category(c: &str) -> bool {\n    ESSENTIAL_CATEGORIES.contains(&c)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/viable",
+  "src": "crates/bsc-fin/src/viable/is_essential_category.rs",
+  "moduleVis": "private",
+  "composes": []
+}

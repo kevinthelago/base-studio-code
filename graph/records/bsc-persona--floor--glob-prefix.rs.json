@@ -1,0 +1,11 @@
+{
+  "id": "bsc-persona--floor--glob-prefix.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "glob_prefix",
+  "code": "/// The literal prefix of a glob — everything before the first wildcard. `scratch/**` ⇒ `scratch/`.\npub(crate) fn glob_prefix(glob: &str) -> &str {\n    match glob.find(['*', '?', '[']) {\n        Some(i) => &glob[..i],\n        None => glob,\n    }\n}\n",
+  "folder": "crates/bsc-persona/src/floor",
+  "src": "crates/bsc-persona/src/floor/glob_prefix.rs",
+  "moduleVis": "private",
+  "composes": []
+}

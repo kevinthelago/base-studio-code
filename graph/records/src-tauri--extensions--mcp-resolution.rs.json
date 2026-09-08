@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--extensions--mcp-resolution.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mcp_resolution",
+  "composes": [],
+  "code": "//! Which MCP servers a session gets — RE-EXPORTED from `crates/bsc-resolve`.\n//!\n//! The decision moved out of this binary on\n//! `the-resolution-decisions-live-in-the-app-binary-not-a-crate`. Its only coupling to the app was\n//! reading `mcp/builtin-servers.json` through `platform::config::load_str`, which the crate now does\n//! for itself through `bsc-config` — the SAME on-disk-wins-then-packaged precedence, so the app and a\n//! `bsc` call resolve identical built-ins for the same session.\n//!\n//! This module survives as a SHIM so no call site or test had to change with the move — notably\n//! `console/pty/mod.rs`, which names these types directly and is the file the move exists to stop\n//! churning.\n\n// EXACTLY what this binary uses — see the note in `skill_resolution.rs`. `builtin_mcp_servers_from`\n// (the pure parse) stays on the crate, where the CLI and the tests reach it.\npub use bsc_resolve::mcp::{\n    builtin_mcp_servers, mcp_reachable_from, reconcile_mcp, resolve_persona_mcp, to_bsc_agent_mcp,\n    to_mcp_payload, BscAgentMcpCfg, McpServer,\n};\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/extensions/mcp_resolution.rs",
+  "folder": "src-tauri/src/extensions",
+  "moduleVis": "pub"
+}

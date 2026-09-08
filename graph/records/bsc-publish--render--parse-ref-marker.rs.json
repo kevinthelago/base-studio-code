@@ -1,0 +1,12 @@
+{
+  "id": "bsc-publish--render--parse-ref-marker.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_ref_marker",
+  "code": "/// Extract the planner-local ref from a published issue body's marker, or `None`.\n///\n/// Mirrors the TS regex `/<!--\\s*bsc:ref=([^\\s>]+)\\s*-->/` — tolerant of the whitespace variations\n/// a hand-edited body might pick up, and stopping at whitespace or `>` so a marker glued to\n/// following text still yields the bare ref.\npub fn parse_ref_marker(body: &str) -> Option<String> {\n    let start = body.find(\"<!--\")?;\n    let rest = &body[start + 4..];\n    let end = rest.find(\"-->\")?;\n    let inner = rest[..end].trim();\n    let value = inner.strip_prefix(\"bsc:ref=\")?;\n    let value: String = value.chars().take_while(|c| !c.is_whitespace() && *c != '>').collect();\n    if value.is_empty() {\n        None\n    } else {\n        Some(value)\n    }\n}\n",
+  "feature": "github",
+  "folder": "crates/bsc-publish/src/render",
+  "src": "crates/bsc-publish/src/render/parse_ref_marker.rs",
+  "moduleVis": "private",
+  "composes": []
+}

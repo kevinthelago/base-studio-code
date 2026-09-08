@@ -1,0 +1,11 @@
+{
+  "id": "research--http--truncate.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "truncate",
+  "code": "/// Truncate to at most `n` chars (on a char boundary), appending `…` when shortened.\npub(crate) fn truncate(s: &str, n: usize) -> String {\n    match s.char_indices().nth(n) {\n        Some((idx, _)) => format!(\"{}…\", &s[..idx]),\n        None => s.to_string(),\n    }\n}\n",
+  "folder": "crates/research/src/http",
+  "src": "crates/research/src/http/truncate.rs",
+  "moduleVis": "private",
+  "composes": []
+}

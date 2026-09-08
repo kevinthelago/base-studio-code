@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--plan--readme.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "readme",
+  "src": "crates/bsc-storefs/src/plan/readme.rs",
+  "folder": "crates/bsc-storefs/src/plan",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn readme(count: usize, generated_at: &str) -> String {\n    format!(\n        \"The plan store, as files.\\n\\\n         \\n\\\n         items/<ref>/status       open | in_progress | blocked | complete | verified | failed\\n\\\n         items/<ref>/title\\n\\\n         items/<ref>/body         markdown\\n\\\n         items/<ref>/acceptance   one criterion per line\\n\\\n         items/<ref>/labels       one per line\\n\\\n         items/<ref>/dependsOn    one per line\\n\\\n         by-status/<status>/<ref> contains the title — ls it to see what is in that state\\n\\\n         \\n\\\n         THIS IS A SNAPSHOT, NOT A LIVE VIEW.\\n\\\n         {count} item(s), projected at {generated_at}. It does not change when the store does.\\n\\\n         It is mounted read-only, so a write is refused by the mount rather than being lost.\\n\\\n         \\n\\\n         THERE IS NO `bsc` IN THIS SESSION. That is the point of the projection, not an oversight:\\n\\\n         a read surface can exist here precisely because no writable database is bound into the\\n\\\n         namespace. This snapshot is the whole of what you can read of the plan.\\n\\\n         There is no plan WRITE path from inside the cage yet — no /plan/out to match /coord/out.\\n\\\n         To raise something you cannot do from here, emit it on the coordination outbox\\n\\\n         (bsc-ask); the host is what reaches the store.\\n\"\n    )\n}\n"
+}

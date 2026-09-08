@@ -1,0 +1,13 @@
+{
+  "id": "bsc-persona--floor--glob-within.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "glob_within",
+  "composes": [
+    "bsc-persona--floor--glob-prefix.rs"
+  ],
+  "code": "use super::glob_prefix::glob_prefix;\n\n/// Is `child` within the boundary `ancestor` describes?\n///\n/// Exact match, or a PREFIX-EXTENSION of one of the ancestor's globs (`scratch/**` admits\n/// `scratch/kits/**`, and refuses `src/**`). Full glob-containment is undecidable in the general\n/// case, so this covers the shape real narrowing takes and refuses everything it cannot prove —\n/// refusing is the safe direction, and the error names the ancestor glob so the fix is obvious.\npub(crate) fn glob_within(child: &str, ancestor: &[String]) -> bool {\n    ancestor\n        .iter()\n        .any(|a| a == child || (!glob_prefix(a).is_empty() && child.starts_with(glob_prefix(a))))\n}\n",
+  "folder": "crates/bsc-persona/src/floor",
+  "src": "crates/bsc-persona/src/floor/glob_within.rs",
+  "moduleVis": "private"
+}

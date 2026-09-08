@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--repo-store--promote-into-with.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "promote_into_with",
+  "composes": [
+    "bsc-graph--repo-store--impls-of.rs",
+    "bsc-graph--repo-store--loses-fields.rs",
+    "bsc-graph--repo-store--content-of.rs"
+  ],
+  "code": "use super::*;\n\n/// [`promote_into`] with the projection chosen by the caller — `content_of` for the build-readable\n/// repo store, `seed_content_of` for the packaged seed.\npub fn promote_into_with(\n    repo: &Value,\n    runtime: &[Value],\n    ids: &[String],\n    project: fn(&Value) -> Value,\n) -> (Value, Vec<String>, Vec<String>) {\n    let mut out = repo.clone();\n    let mut missing = Vec::new();\n    let mut refused = Vec::new();\n    let mut list = impls_of(repo);\n    for id in ids {\n        let Some(up) = runtime\n            .iter()\n            .find(|i| i.get(\"id\").and_then(Value::as_str) == Some(id.as_str()))\n        else {\n            missing.push(id.clone());\n            continue;\n        };\n        let fresh = project(up);\n        match list.iter().position(|i| i.get(\"id\").and_then(Value::as_str) == Some(id.as_str())) {\n            Some(at) => {\n                // NEVER let a promote DELETE a field the committed copy carries. The same shape as\n                // `promote-records --adopt-seed` refusing to drop an export the seed declares: a\n                // regressed upstream must not be able to quietly strip the richer downstream copy.\n                if loses_fields(&fresh, &content_of(&list[at])) {\n                    refused.push(id.clone());\n                    continue;\n                }\n                list[at] = fresh\n            }\n            None => list.push(fresh),\n        }\n    }\n    if let Some(o) = out.as_object_mut() {\n        o.insert(\"implementations\".into(), Value::Array(list));\n    }\n    (out, missing, refused)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/promote_into_with.rs",
+  "moduleVis": "private"
+}

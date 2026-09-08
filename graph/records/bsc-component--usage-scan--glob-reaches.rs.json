@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--usage-scan--glob-reaches.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "glob_reaches",
+  "code": "/// Does `pattern` (an `import.meta.glob` pattern) reach `spec`?\n///\n/// Deliberately loose: match on the literal prefix before the first `*`. A glob is a WIDENING signal —\n/// its whole purpose is to import a set nobody enumerated — so over-inclusion here reports a module used\n/// when something in its directory is globbed, and the alternative (a precise matcher) reports it UNUSED\n/// and gets it deleted. Between those two errors this one is recoverable.\npub fn glob_reaches(pattern: &str, spec: &str) -> bool {\n    let prefix = pattern.split('*').next().unwrap_or(\"\");\n    !prefix.is_empty() && spec.starts_with(prefix)\n}\n",
+  "folder": "crates/bsc-component/src/usage_scan",
+  "src": "crates/bsc-component/src/usage_scan/glob_reaches.rs",
+  "moduleVis": "private",
+  "composes": []
+}

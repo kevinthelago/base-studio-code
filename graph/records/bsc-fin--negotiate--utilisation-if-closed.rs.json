@@ -1,0 +1,16 @@
+{
+  "id": "bsc-fin--negotiate--utilisation-if-closed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "utilisation_if_closed",
+  "code": "use crate::account::Kind;\nuse crate::position::{AccountPosition, Position};\n\n/// What overall utilisation would become if this line were CLOSED.\n///\n/// The reason it matters is the reason \"I'll close it\" is dangerous advice: THEY MIGHT SAY YES. The\n/// balance moves nowhere and the limit disappears, so utilisation across everything left jumps.\npub fn utilisation_if_closed(position: &Position, account: &str) -> Option<f64> {\n    let lines: Vec<&AccountPosition> = position.accounts.iter().filter(|a| a.kind == Kind::Credit && a.credit_limit.is_some()).collect();\n    let limit: i64 = lines.iter().filter(|a| a.account != account).map(|a| a.credit_limit.map(|l| l.minor).unwrap_or(0)).sum();\n    if limit <= 0 {\n        return None;\n    }\n    // The owed total keeps the CLOSED line's balance — that is the entire point. It does not go\n    // anywhere; only the limit does.\n    let owed: i64 = lines.iter().map(|a| a.owed.map(|o| o.minor).unwrap_or(0)).sum();\n    Some((owed as f64 / limit as f64 * 1000.0).round() / 1000.0)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/negotiate",
+  "src": "crates/bsc-fin/src/negotiate/utilisation_if_closed.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--account.rs",
+    "bsc-fin--position--mod.rs"
+  ]
+}

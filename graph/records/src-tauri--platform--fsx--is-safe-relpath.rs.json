@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--platform--fsx--is-safe-relpath.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_safe_relpath",
+  "src": "src-tauri/src/platform/fsx/is_safe_relpath.rs",
+  "folder": "src-tauri/src/platform/fsx",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Whether `rel` is a safe relative path: not absolute, with no drive prefix, root component, or any\n/// `..` segment. Shared by the pipeline file primitives so a pipeline can never write/read outside\n/// its own project dir.\npub(crate) fn is_safe_relpath(rel: &std::path::Path) -> bool {\n    !rel.is_absolute()\n        && !rel.components().any(|c| matches!(\n            c,\n            std::path::Component::ParentDir\n                | std::path::Component::Prefix(_)\n                | std::path::Component::RootDir\n        ))\n}\n"
+}

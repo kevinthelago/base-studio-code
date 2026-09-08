@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--github--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "github",
+  "composes": [
+    "src-tauri--github--api.rs"
+  ],
+  "code": "//! GitHub integration & auth (#1300): the REST/GraphQL proxy + gists, OAuth device flow,\n//! and git-hook inspection.\n\n/// The `User-Agent` header sent on every GitHub request (REST, GraphQL, gists, and the OAuth\n/// device flow). Single source of truth, built from the crate version so it tracks releases\n/// automatically (replaces the formerly hardcoded, stale `base-studio-code/0.2.0`). Used by\n/// both `api.rs` and `oauth.rs`.\npub(crate) const USER_AGENT: &str = concat!(\"base-studio-code/\", env!(\"CARGO_PKG_VERSION\"));\n\n// `board_state` and `repo_credentials` MOVED to `crates/bsc-github`\n// (`the-github-domains-pure-logic-lives-in-bsc-github`). Both were Tauri-free with no importers, and\n// living here meant no live session could reach them through `bsc`. Reach them as\n// `bsc_github::board_state` / `bsc_github::repo_credentials`.\n\n// Preserve the pre-restructure path `crate::github::<fn>` for the REST/GraphQL commands that\n// lived in the old flat `github.rs` (now `api.rs`) — used by the invoke handler + callers.\npub(crate) use api::*;\n\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/github/mod.rs",
+  "folder": "src-tauri/src/github",
+  "moduleVis": "private"
+}

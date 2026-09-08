@@ -1,0 +1,12 @@
+{
+  "id": "src-tauri--app--mod.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "app",
+  "composes": [],
+  "code": "",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/app/mod.rs",
+  "folder": "src-tauri/src/app",
+  "moduleVis": "private"
+}

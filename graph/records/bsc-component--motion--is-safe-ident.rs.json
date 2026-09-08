@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--motion--is-safe-ident.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_safe_ident",
+  "code": "/// A safe CSS identifier — `^[a-z][a-z0-9-]*$` (mirrors animations.ts `SAFE_IDENT`).\npub(crate) fn is_safe_ident(s: &str) -> bool {\n    let mut chars = s.chars();\n    match chars.next() {\n        Some(c) if c.is_ascii_lowercase() => {}\n        _ => return false,\n    }\n    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')\n}\n",
+  "folder": "crates/bsc-component/src/motion",
+  "src": "crates/bsc-component/src/motion/is_safe_ident.rs",
+  "moduleVis": "private",
+  "composes": []
+}

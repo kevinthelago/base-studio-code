@@ -1,0 +1,11 @@
+{
+  "id": "bsc-sound--lib.rs",
+  "tech": "rust",
+  "role": "doc",
+  "name": "bsc-sound--lib",
+  "code": "`bsc-sound` — the sound-kit shim over the shared `bsc-json-store` (#2158, epic #3071). The user\nsound library (`~/.base-studio-code/sounds.db`, #3080) is a verbatim-JSON-per-id store; the CRUD +\nthe `list/get/set/remove` CLI live once in [`bsc_json_store`], and this crate supplies only the\nsound-kit-specific noun + lean `list` fields.\n\nA **sound kit** is a cohesive, CRUD-able set of SYNTHESIZED sounds — primitives (oscillators/noise) →\nvoices (patches: pitch + envelope + filter) → cues (UI-mapped sounds = layered voices). A sound is a\nDESCRIPTOR (Web Audio graph), not a binary file, so it's diffable + seedable, exactly like a component\nor an algorithm impl. It is the one store the desktop Sounds library and a live session's own shell\nshare: the desktop UI reaches it through the generic `bsc` command (`bsc sound …`, over the #2114\nbridge), and a session's shell reaches the same store through the [`cli`] module. Packaged (built-in)\nkits are seeded into this store on first hydrate + kept reconciled by the frontend, like the persona +\nblueprint libraries.\nTwo stores live here, deliberately split (#3371): the FLAT working store above (mutable, SQLite,\nkeyed by bare kit id — what a session authors into), and the VERSIONED [`release`] store (immutable\n`id@version` artifacts under `~/.base-studio-code/sound-kits/`, content-addressed by sha256 — what a\nblueprint PINS). The release store mirrors the UI-kit one (`bsc_ui::kit`, #2465) contract-for-contract.\n",
+  "folder": "crates/bsc-sound/src",
+  "src": "crates/bsc-sound/src/lib.rs",
+  "composes": [],
+  "feature": "sounds"
+}

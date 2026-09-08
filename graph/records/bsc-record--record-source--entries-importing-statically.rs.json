@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--entries-importing-statically.rs",
+  "src": "crates/bsc-record/src/record_source/entries_importing_statically.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "entries_importing_statically",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Is `rel_specifier` imported STATICALLY by an app entry — and by which one?\n///\n/// THE RULE, and why it is its own class. The dev server's pre-transform pass resolves an `@/…` alias to\n/// `/src/…` BEFORE the records plugin is installed, so a module an entry imports statically must exist as\n/// a FILE however good its record is. Retire one and the app fails to boot with `tsc`, `lint`, `vitest`\n/// and `vite build` all green, because only a real boot observes it — `ConsoleGraphHost` was retired and\n/// restored for exactly this.\n///\n/// ONE definition, shared by the tool that DELETES and the census that GRADES. They disagreed before it\n/// existed: the census offered four candidates the tool refused, every one for this rule.\n///\n/// `read` and `exists` are injected so the decision is testable with no filesystem, matching the JS.\npub fn entries_importing_statically(\n    repo: &str,\n    rel_specifier: &str,\n    read: &dyn Fn(&str) -> String,\n    exists: &dyn Fn(&str) -> bool,\n) -> Vec<String> {\n    const ENTRIES: [&str; 2] = [\"app/main.tsx\", \"app/App.tsx\"];\n    // Mirrors the JS `^\\s*import\\s+[^;]*from\\s+[\"']@/<spec>[\"']` exactly. The `[^;]*` bars a semicolon\n    // BEFORE `from` — it does NOT bar the trailing one every real import line ends with, which is the\n    // distinction a hand-rolled predicate got wrong: rejecting any line containing `;` matched nothing\n    // in the actual tree, and the census then offered `ConsoleGraphHost` — the very module retired and\n    // restored because `App.tsx` imports it statically.\n    let pattern = format!(\n        r#\"(?m)^\\s*import\\s+[^;]*from\\s+[\"']@/{}[\"']\"#,\n        regex::escape(rel_specifier)\n    );\n    let Ok(re) = regex::Regex::new(&pattern) else { return Vec::new() };\n    ENTRIES\n        .iter()\n        .filter(|e| exists(&format!(\"{repo}/src/{e}\")))\n        .filter(|e| re.is_match(&read(&format!(\"{repo}/src/{e}\"))))\n        .map(|e| (*e).to_string())\n        .collect()\n}\n"
+}

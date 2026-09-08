@@ -1,0 +1,16 @@
+{
+  "id": "bsc-graph--repo-store--promote-edges-into.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "promote_edges_into",
+  "composes": [
+    "bsc-graph--repo-store--edges-of.rs",
+    "bsc-graph--repo-store--edge-content-of.rs",
+    "bsc-graph--repo-store--loses-fields.rs"
+  ],
+  "code": "use super::*;\n\n/// Apply an EDGE promotion: return the store with each named edge id replaced by the runtime version.\n///\n/// The same contract as [`promote_into_with`] — ids absent upstream are reported rather than dropped,\n/// and a write that would DELETE a field the committed copy carries is refused rather than performed.\npub fn promote_edges_into(\n    repo: &Value,\n    runtime: &[Value],\n    ids: &[String],\n) -> (Value, Vec<String>, Vec<String>) {\n    let mut out = repo.clone();\n    let mut missing = Vec::new();\n    let mut refused = Vec::new();\n    let mut list = edges_of(repo);\n    let mut touched = false;\n    for id in ids {\n        let Some(up) = runtime.iter().find(|e| e.get(\"id\").and_then(Value::as_str) == Some(id.as_str()))\n        else {\n            missing.push(id.clone());\n            continue;\n        };\n        let fresh = edge_content_of(up);\n        match list.iter().position(|e| e.get(\"id\").and_then(Value::as_str) == Some(id.as_str())) {\n            Some(at) => {\n                if loses_fields(&fresh, &edge_content_of(&list[at])) {\n                    refused.push(id.clone());\n                    continue;\n                }\n                list[at] = fresh;\n            }\n            None => list.push(fresh),\n        }\n        touched = true;\n    }\n    // ADDITIVE, exactly as `edges_of` is: a promote that names no edge must not insert an empty\n    // `edges` array into a store that has none. That is what keeps `graph/algorithms.json` and the\n    // packaged seed byte-stable for every session that never touches the tier.\n    if touched || out.get(\"edges\").is_some() {\n        if let Some(o) = out.as_object_mut() {\n            o.insert(\"edges\".into(), Value::Array(list));\n        }\n    }\n    (out, missing, refused)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/promote_edges_into.rs",
+  "moduleVis": "private"
+}

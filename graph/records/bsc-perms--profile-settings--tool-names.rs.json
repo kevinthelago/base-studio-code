@@ -1,0 +1,11 @@
+{
+  "id": "bsc-perms--profile-settings--tool-names.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tool_names",
+  "code": "/// The Claude Code tool name(s) each profile capability maps to, as whole-tool (bare) rules.\n///\n/// `edit` covers the in-place edit tools and `web` is both fetch and search, so one capability can\n/// yield two rules. There is no `MultiEdit`: it was removed from Claude Code (#3534).\npub(crate) fn tool_names(key: &str) -> &'static [&'static str] {\n    match key {\n        \"read\" => &[\"Read\"],\n        \"grep\" => &[\"Grep\"],\n        \"glob\" => &[\"Glob\"],\n        \"edit\" => &[\"Edit\", \"NotebookEdit\"],\n        \"write\" => &[\"Write\"],\n        \"bash\" => &[\"Bash\"],\n        \"web\" => &[\"WebFetch\", \"WebSearch\"],\n        \"task\" => &[\"Task\"],\n        _ => &[],\n    }\n}\n",
+  "folder": "crates/bsc-perms/src/profile_settings",
+  "src": "crates/bsc-perms/src/profile_settings/tool_names.rs",
+  "moduleVis": "private",
+  "composes": []
+}

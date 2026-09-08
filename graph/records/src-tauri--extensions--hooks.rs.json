@@ -1,0 +1,14 @@
+{
+  "id": "src-tauri--extensions--hooks.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "hooks",
+  "composes": [
+    "src-tauri--prelude.rs"
+  ],
+  "code": "use crate::prelude::*;\n\n/// Overwrite `config.hooks` with the resolved hooks, grouped by event:\n/// `{event: [{matcher?, hooks: [{type:\"command\", command}]}]}`. Empty → key removed.\npub(crate) fn write_session_hooks(config: &mut serde_json::Value, hooks: &[HookCfg]) {\n    let obj = config.as_object_mut().unwrap();\n    if hooks.is_empty() { obj.remove(\"hooks\"); return; }\n    let mut by_event = serde_json::Map::new();\n    for h in hooks {\n        let inner = serde_json::json!({ \"type\": \"command\", \"command\": h.command });\n        let entry = if h.matcher.is_empty() {\n            serde_json::json!({ \"hooks\": [inner] })\n        } else {\n            serde_json::json!({ \"matcher\": h.matcher, \"hooks\": [inner] })\n        };\n        by_event\n            .entry(h.event.clone())\n            .or_insert_with(|| serde_json::json!([]))\n            .as_array_mut().unwrap()\n            .push(entry);\n    }\n    obj.insert(\"hooks\".into(), serde_json::Value::Object(by_event));\n}\n",
+  "domain": "src-tauri",
+  "src": "src-tauri/src/extensions/hooks.rs",
+  "folder": "src-tauri/src/extensions",
+  "moduleVis": "pub"
+}

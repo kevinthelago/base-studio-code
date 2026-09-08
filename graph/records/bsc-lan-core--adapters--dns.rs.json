@@ -1,0 +1,17 @@
+{
+  "id": "bsc-lan-core--adapters--dns.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "dns",
+  "composes": [
+    "bsc-lan-core--error.rs",
+    "bsc-lan-core--evidence.rs",
+    "bsc-lan-core--primitives.rs",
+    "bsc-lan-core--target.rs"
+  ],
+  "code": "//! [`DnsAdapter`]: the Unbound blocklist. Implemented by\n//! `bsc-lan-adapter-opnsense`.\n\nuse crate::error::{ControlError, ObservationError};\nuse crate::evidence::{Observed, Verified};\nuse crate::primitives::Hostname;\nuse crate::target::{Target, TimeWindow};\n\n/// One resolved DNS query, as read from Unbound's query log.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct DnsQueryRecord {\n    pub source: Target,\n    pub query: Hostname,\n}\n\n/// The Unbound blocklist and query log.\npub trait DnsAdapter: Send + Sync {\n    /// Block `domain`, idempotently.\n    fn add_block(\n        &self,\n        domain: &Hostname,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// Unblock `domain`, idempotently.\n    fn remove_block(\n        &self,\n        domain: &Hostname,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// The current blocklist, for dry-run idempotency previews and\n    /// `drift()`.\n    fn read_blocklist(\n        &self,\n    ) -> impl std::future::Future<Output = Result<Observed<Vec<Hostname>>, ObservationError>> + Send;\n\n    /// Resolved queries in `window`, optionally filtered to one source --\n    /// the source for the `dns_queries()` Tier 0 tool.\n    fn read_queries(\n        &self,\n        source: Option<&Target>,\n        window: TimeWindow,\n    ) -> impl std::future::Future<Output = Result<Observed<Vec<DnsQueryRecord>>, ObservationError>> + Send;\n}\n",
+  "domain": "bsc-lan-core",
+  "src": "crates/bsc-lan-core/src/adapters/dns.rs",
+  "folder": "crates/bsc-lan-core/src/adapters",
+  "moduleVis": "pub"
+}

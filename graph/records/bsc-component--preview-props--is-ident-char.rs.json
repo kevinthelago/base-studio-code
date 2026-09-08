@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--preview-props--is-ident-char.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_ident_char",
+  "code": "\n/// Is `c` legal INSIDE an identifier (a leading digit is excluded by [`is_ident`]'s first-char check)?\npub(crate) fn is_ident_char(c: char) -> bool {\n    c.is_ascii_alphanumeric() || c == '_' || c == '$'\n}\n",
+  "folder": "crates/bsc-component/src/preview_props",
+  "src": "crates/bsc-component/src/preview_props/is_ident_char.rs",
+  "moduleVis": "private",
+  "composes": []
+}

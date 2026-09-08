@@ -1,0 +1,11 @@
+{
+  "id": "llm--canonical-usage.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "canonical_usage",
+  "code": "/// Build the canonical 4-key usage shape `tokens.rs` parses from a provider's raw input/output token\n/// counts. None of these providers exposes a prompt-cache split, so `cache_*` = 0. Shared by every\n/// provider's `normalize_usage`/`native_usage` so the shape can't drift from what `tokens.rs` reads.\npub(crate) fn canonical_usage(input: u64, output: u64) -> serde_json::Value {\n    serde_json::json!({\n        \"input_tokens\": input,\n        \"output_tokens\": output,\n        \"cache_creation_input_tokens\": 0,\n        \"cache_read_input_tokens\": 0,\n    })\n}\n",
+  "folder": "crates/llm/src",
+  "src": "crates/llm/src/canonical_usage.rs",
+  "moduleVis": "private",
+  "composes": []
+}

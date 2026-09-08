@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--extract--is-trivial.rs",
+  "name": "is_trivial",
+  "tech": "rust",
+  "role": "algorithm",
+  "folder": "crates/bsc-graph/src/extract",
+  "src": "crates/bsc-graph/src/extract/is_trivial.rs",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Is the body empty of real statements (only comments / whitespace / braces)? Nothing worth storing.\n/// A brace-less expression body (a one-liner arrow) is NOT trivial — it computes something.\npub(crate) fn is_trivial(code: &str) -> bool {\n    match code.split_once('{') {\n        Some((_, body)) => !body.lines().any(|l| {\n            let t = l.trim();\n            !t.is_empty() && !t.starts_with(\"//\") && t != \"}\" && t != \"{\"\n        }),\n        None => false,\n    }\n}\n"
+}

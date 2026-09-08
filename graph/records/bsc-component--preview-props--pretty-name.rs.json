@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--preview-props--pretty-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "pretty_name",
+  "code": "/// A readable placeholder from a name (`whenUse` → `When Use`). Mirrors `prettyName`: space before each\n/// ASCII-uppercase char, `-`/`_` → space, trim, uppercase the first char.\npub(crate) fn pretty_name(name: &str) -> String {\n    let mut spaced = String::with_capacity(name.len() + 4);\n    for c in name.chars() {\n        if c.is_ascii_uppercase() {\n            spaced.push(' ');\n            spaced.push(c);\n        } else if c == '-' || c == '_' {\n            spaced.push(' ');\n        } else {\n            spaced.push(c);\n        }\n    }\n    let trimmed = spaced.trim();\n    let mut chars = trimmed.chars();\n    match chars.next() {\n        Some(first) => first.to_uppercase().chain(chars).collect(),\n        None => String::new(),\n    }\n}\n",
+  "folder": "crates/bsc-component/src/preview_props",
+  "src": "crates/bsc-component/src/preview_props/pretty_name.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--retire--is-algorithm-seed-module.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_algorithm_seed_module",
+  "code": "//! `is_algorithm_seed_module` — `shared/lib/algorithms/<one segment>` — the packaged seed modules, and only those.\n\n/// `shared/lib/algorithms/<one segment>` — the packaged seed modules, and only those.\n///\n/// Anchored to a SINGLE segment on purpose: a nested `shared/lib/algorithms/viz/foo.ts` is not a seed\n/// module and must stay retirable.\npub fn is_algorithm_seed_module(rel: &str) -> bool {\n    rel.strip_prefix(\"shared/lib/algorithms/\").is_some_and(|r| !r.contains('/'))\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/retire",
+  "src": "crates/bsc-ui/src/retire/is_algorithm_seed_module.rs",
+  "moduleVis": "private",
+  "composes": []
+}

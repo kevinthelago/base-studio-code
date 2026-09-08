@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--backing-reconcile--containment.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "containment",
+  "code": "//! `containment` — How much of the RECORD still lives in the file: |A∩B| / |A|.\n\nuse std::collections::HashSet;\n\n/// How much of the RECORD still lives in the file: |A∩B| / |A|.\n///\n/// THIS, not Jaccard, is the drift measure. Many records are a component LIFTED OUT of a larger file, so\n/// the file legitimately holds far more. Jaccard read that size gap as disagreement and flagged 205 of 384\n/// records as drifted — mostly records perfectly faithful to the part of the file they describe.\npub fn containment(rec: &HashSet<String>, file: &HashSet<String>) -> f64 {\n    if rec.is_empty() {\n        return 1.0;\n    }\n    rec.iter().filter(|x| file.contains(*x)).count() as f64 / rec.len() as f64\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/backing_reconcile",
+  "src": "crates/bsc-ui/src/backing_reconcile/containment.rs",
+  "moduleVis": "private",
+  "composes": []
+}

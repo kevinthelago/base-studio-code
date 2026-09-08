@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph--imports--parse-statement.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_statement",
+  "composes": [
+    "bsc-graph--imports--parse-clause.rs",
+    "bsc-graph--imports--normalize-ws.rs",
+    "bsc-graph--imports--quoted.rs",
+    "bsc-graph--imports--quoted-last.rs"
+  ],
+  "code": "use super::*;\n\n/// Parse ONE clean import-statement text into 1–2 [`ImportSpec`]s (a `default, { named }` statement\n/// yields two, one per shape, sharing the `from`). Whitespace is normalized first so a multi-line\n/// clause parses the same as a single-line one.\npub(crate) fn parse_statement(stmt: &str) -> Vec<ImportSpec> {\n    let norm = normalize_ws(stmt);\n    let s = norm.trim().trim_end_matches(';').trim();\n    let rest = match s.strip_prefix(\"import\") {\n        Some(r) => r.trim_start(),\n        None => return Vec::new(),\n    };\n    // `import type …`\n    let (type_only, rest) = match rest.strip_prefix(\"type \") {\n        Some(r) => (true, r.trim_start()),\n        None => (false, rest),\n    };\n    // side-effect: `import \"x\"` — no clause, just the source.\n    if rest.starts_with('\"') || rest.starts_with('\\'') {\n        return match quoted(rest) {\n            Some(from) => vec![ImportSpec {\n                from,\n                symbols: Vec::new(),\n                type_only,\n                kind: \"side-effect\".to_string(),\n            }],\n            None => Vec::new(),\n        };\n    }\n    // Otherwise: `<clause> from \"<source>\"`. The source is the final quoted string; the ` from `\n    // keyword sits just before it (rfind is robust to a symbol literally named `from`).\n    let from = match quoted_last(rest) {\n        Some(f) => f,\n        None => return Vec::new(),\n    };\n    let clause = match rest.rfind(\" from \") {\n        Some(i) => rest[..i].trim(),\n        None => return Vec::new(),\n    };\n    parse_clause(clause, &from, type_only)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/imports",
+  "src": "crates/bsc-graph/src/imports/parse_statement.rs",
+  "moduleVis": "private"
+}

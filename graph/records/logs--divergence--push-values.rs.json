@@ -1,0 +1,12 @@
+{
+  "id": "logs--divergence--push-values.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "push_values",
+  "code": "/// Split a cell into distinct values, preserving first-seen order. `∅` is the emitter's explicit\n/// \"this side was empty\" marker and contributes nothing.\npub(crate) fn push_values(into: &mut Vec<String>, cell: &str) {\n    if cell == \"∅\" || cell.is_empty() {\n        return;\n    }\n    for v in cell.split(',').map(str::trim).filter(|v| !v.is_empty()) {\n        if !into.iter().any(|x| x == v) {\n            into.push(v.to_string());\n        }\n    }\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/divergence",
+  "src": "crates/logs/src/divergence/push_values.rs",
+  "moduleVis": "private",
+  "composes": []
+}

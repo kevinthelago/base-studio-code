@@ -1,0 +1,12 @@
+{
+  "id": "bsc-session--claude-project-dir-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "claude_project_dir_name",
+  "code": "/// Claude Code's on-disk directory name for a launch `cwd`: every non-alphanumeric character replaced\n/// by `-`, no cap (`C:\\Users\\Kevin\\foo` → `C--Users-Kevin-foo`).\n///\n/// SEMANTICS ARE FROZEN — this must match what Claude Code itself writes under `~/.claude/projects`,\n/// so it is not ours to tidy. Not to be confused with the app's `claude_project_key`, which\n/// slash-normalises the same cwd for the `projects` map in `~/.claude.json`: a different transform for\n/// a different on-disk contract, deliberately kept separate.\npub fn claude_project_dir_name(cwd: &str) -> String {\n    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()\n}\n",
+  "feature": "fleet",
+  "folder": "crates/bsc-session/src",
+  "src": "crates/bsc-session/src/claude_project_dir_name.rs",
+  "moduleVis": "private",
+  "composes": []
+}

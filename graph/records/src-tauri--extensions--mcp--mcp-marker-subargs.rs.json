@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--extensions--mcp--mcp-marker-subargs.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mcp_marker_subargs",
+  "src": "src-tauri/src/extensions/mcp/mcp_marker_subargs.rs",
+  "folder": "src-tauri/src/extensions/mcp",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `bsc mcp <sub>` subcommand args a built-in marker prepends before any user args (#1877): both\n/// bundled servers are now subcommands of the unified `bsc` binary, so the resolved command is the\n/// `bsc` exe and these are the leading args. A non-marker command prepends nothing.\npub(crate) fn mcp_marker_subargs(command: &str) -> &'static [&'static str] {\n    match command {\n        RESEARCH_MCP_MARKER => &[\"mcp\", \"research\"],\n        COMPLIANCE_MCP_MARKER => &[\"mcp\", \"compliance\"],\n        CHANNEL_MOCK_MCP_MARKER => &[\"mcp\", \"channel-mock\"],\n        _ => &[],\n    }\n}\n"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "bsc-fin--position--from-statement-balance.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "from_statement_balance",
+  "code": "use crate::account::Kind;\nuse crate::money::{money, Money};\n\n/// Convert the number a statement PRINTS into the signed convention.\n///\n/// A debt statement prints what you owe as a positive number, because from the institution's side it\n/// is an asset. Net worth needs the other side of that. A card in credit (you overpaid) prints a\n/// negative and comes back positive, which is also right — negation is the whole rule and it holds\n/// in both directions rather than being a special case for the common one.\npub fn from_statement_balance(kind: Kind, printed: Money) -> Money {\n    if kind.is_debt() {\n        money(-printed.minor, printed.currency)\n    } else {\n        printed\n    }\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/position",
+  "src": "crates/bsc-fin/src/position/from_statement_balance.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--account.rs",
+    "bsc-fin--money.rs"
+  ]
+}

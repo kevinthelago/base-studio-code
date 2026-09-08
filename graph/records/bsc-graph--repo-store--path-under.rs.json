@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--repo-store--path-under.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "path_under",
+  "composes": [],
+  "code": "use super::*;\n\n/// The repo store's path under `root`.\npub fn path_under(root: &Path) -> PathBuf {\n    root.join(\"graph\").join(\"algorithms.json\")\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/path_under.rs",
+  "moduleVis": "private"
+}

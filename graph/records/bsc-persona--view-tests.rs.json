@@ -1,0 +1,15 @@
+{
+  "id": "bsc-persona--view-tests.rs",
+  "tech": "rust",
+  "role": "test",
+  "name": "view_tests",
+  "composes": [],
+  "code": "use super::*;\n\n/// The view fields are OPTIONAL on the wire, and that has to stay true.\n///\n/// `whatami` answers a session that may be running against an older app (the CLI and the app are\n/// separate binaries, and a `bsc` on PATH outlives the build that shipped it). An ack from an app\n/// that predates these fields must still deserialize — otherwise adding an observability field\n/// breaks the verb an agent uses to find out what it is, which is the worst possible thing to\n/// break with a diagnostic.\n#[test]\nfn an_ack_without_the_view_still_deserializes() {\n    let old = r#\"{\"paneId\":\"p\",\"role\":\"designer\"}\"#;\n    let res: WhatamiResult = serde_json::from_str(old).expect(\"an older app's ack must parse\");\n    assert_eq!(res.role.as_deref(), Some(\"designer\"));\n    assert!(res.viewing.is_none() && res.workspace.is_none() && res.page_tab.is_none());\n}\n\n/// ...and an absent view is OMITTED rather than serialized as null.\n///\n/// `viewing: null` reads as \"the app answered, and the answer is nothing\"; an absent key reads as\n/// \"unknown\". They are different states — a workspace with no tab selected yet is the first, a\n/// stale app is the second — and the CLI prints the line only when it has something to say.\n#[test]\nfn an_absent_view_is_omitted_not_nulled() {\n    let json = serde_json::to_string(&WhatamiResult {\n        pane_id: \"p\".into(),\n        role: Some(\"designer\".into()),\n        ..Default::default()\n    })\n    .unwrap();\n    assert!(!json.contains(\"viewing\"), \"absent view must not appear at all: {json}\");\n    assert!(!json.contains(\"null\"), \"no field should serialize as null: {json}\");\n}\n\n/// The wire name is `pageTab`, not `page_tab` — the frontend sends camelCase.\n#[test]\nfn the_tab_field_crosses_as_camel_case() {\n    let res: WhatamiResult =\n        serde_json::from_str(r#\"{\"paneId\":\"p\",\"viewing\":\"Components — React\",\"pageTab\":\"react\"}\"#)\n            .expect(\"the frontend's camelCase ack must parse\");\n    assert_eq!(res.page_tab.as_deref(), Some(\"react\"));\n    assert_eq!(res.viewing.as_deref(), Some(\"Components — React\"));\n}\n",
+  "domain": "bsc-persona",
+  "src": "crates/bsc-persona/src/view_tests.rs",
+  "folder": "crates/bsc-persona/src",
+  "moduleVis": "private",
+  "moduleAttrs": [
+    "#[cfg(test)]"
+  ]
+}

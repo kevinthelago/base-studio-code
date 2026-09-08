@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--kit--split-ref.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "split_ref",
+  "code": "//! `split_ref` — Split an `id@version` ref on the LAST `@` (the id itself never carries one, but be forgiving).\n\n/// Split an `id@version` ref on the LAST `@` (the id itself never carries one, but be forgiving).\npub fn split_ref(kit_ref: &str) -> Result<(&str, &str), String> {\n    match kit_ref.rsplit_once('@') {\n        Some((id, version)) if !id.is_empty() && !version.is_empty() => Ok((id, version)),\n        _ => Err(format!(\"invalid kit ref '{kit_ref}' — want '<id>@<version>' (e.g. bsc/react-ui@1.0.0)\")),\n    }\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/kit",
+  "src": "crates/bsc-ui/src/kit/split_ref.rs",
+  "moduleVis": "private",
+  "composes": []
+}

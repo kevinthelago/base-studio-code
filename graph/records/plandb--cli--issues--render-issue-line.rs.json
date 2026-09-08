@@ -1,0 +1,11 @@
+{
+  "id": "plandb--cli--issues--render-issue-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "render_issue_line",
+  "src": "crates/plandb/src/cli/issues/render_issue_line.rs",
+  "folder": "crates/plandb/src/cli/issues",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A one-line list entry: `F3  [in_progress]  Add login   (auth)`.\npub(crate) fn render_issue_line(i: &PlanIssue) -> String {\n    let stream = i.stream.as_deref().map(|s| format!(\"   ({s})\")).unwrap_or_default();\n    format!(\"{:<8} [{}]  {}{}\", i.r#ref, i.status, i.title, stream)\n}\n"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--ingest-token-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ingest_token_path",
+  "composes": [
+    "src-tauri--platform--paths--project-dir.rs"
+  ],
+  "code": "use super::{project_dir};\n\n/// The project's **durable ingest token** file: `projects/<key>/ingest-token` (#2262). A per-project\n/// secret the runtime-fault collector validates; it lives in the hub next to `error.db` so a shim baked\n/// into a generated app at generation keeps validating across desktop restarts (the old in-memory mint\n/// did not). Read-or-mint by `CollectorState::ensure_token`; read (for `$BSC_INGEST_TOKEN`) by the\n/// session env wiring.\npub(crate) fn ingest_token_path(project_key: &str) -> std::path::PathBuf {\n    project_dir(project_key).join(\"ingest-token\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/ingest_token_path.rs",
+  "moduleVis": "private"
+}

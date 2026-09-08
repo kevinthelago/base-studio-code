@@ -1,0 +1,11 @@
+{
+  "id": "plandb--scope--deny-issue.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "deny_issue",
+  "code": "pub(crate) fn deny_issue(issue_ref: &str, own: &str, owner: Option<&str>) -> String {\n    match owner {\n        Some(o) => format!(\"scoped to stream '{own}': issue '{issue_ref}' belongs to stream '{o}', not yours\"),\n        None => format!(\"scoped to stream '{own}': issue '{issue_ref}' has no stream — it isn't yours to work (the director assigns it)\"),\n    }\n}\n",
+  "folder": "crates/plandb/src/scope",
+  "src": "crates/plandb/src/scope/deny_issue.rs",
+  "moduleVis": "private",
+  "composes": []
+}

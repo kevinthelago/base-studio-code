@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--is-node-slot-prop.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_node_slot_prop",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// Is `(name, ty)` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Mirrors\n/// `isNodeSlotProp` (graphHealth.ts) + how the preview samples props: a `reactnode`/`node`-typed prop is\n/// filled with a placeholder standalone, so a component with one renders a demo (#2921).\npub fn is_node_slot_prop(name: &str, ty: &str) -> bool {\n    if name == \"children\" {\n        return false;\n    }\n    let t = ty.to_lowercase();\n    t.contains(\"reactnode\") || t.contains(\"node\")\n}\n",
+  "src": "crates/bsc-component/src/graph_health/is_node_slot_prop.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

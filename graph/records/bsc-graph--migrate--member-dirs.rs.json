@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--migrate--member-dirs.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "member_dirs",
+  "composes": [],
+  "code": "/// Which members `krate` names — matched on the member path's LAST SEGMENT, or on the whole path.\n///\n/// The tool's argument has always been a DIRECTORY name (`data`, whose package is `bsc-data`), so the\n/// last segment is what it has always meant; accepting the full path too means `crates/data` and\n/// `src-tauri` can both be typed literally. Every match is returned rather than the first, because two\n/// members ending in the same segment is a question for the caller and not something to resolve by\n/// declaration order — see [`resolve_crate_dir`].\npub fn member_dirs(members: &[String], krate: &str) -> Vec<String> {\n    members\n        .iter()\n        .filter(|m| m.as_str() == krate || m.rsplit('/').next() == Some(krate))\n        .cloned()\n        .collect()\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/member_dirs.rs",
+  "moduleVis": "private"
+}

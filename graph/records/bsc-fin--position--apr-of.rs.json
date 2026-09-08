@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--position--apr-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "apr_of",
+  "code": "use crate::account::Account;\n\n/// Basis points as the fraction the arithmetic uses. Exact: 2499 bps is 0.2499.\npub(crate) fn apr_of(a: &Account) -> Option<f64> {\n    a.apr_bps.map(|b| b as f64 / 10_000.0)\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/position",
+  "src": "crates/bsc-fin/src/position/apr_of.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--account.rs"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--build-facet--materializes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "materializes",
+  "composes": [
+    "bsc-graph--build-facet--takes-materializer-as-a-build-dependency.rs"
+  ],
+  "code": "use super::*;\n\n/// Does this manifest opt the crate into graph materialization, by EITHER route?\n///\n/// One predicate rather than two call-site `contains` checks, so a third route (if one is ever added)\n/// has one place to land instead of two that can disagree.\n///\n/// # The dependency half is SECTION-SCOPED, and a whole-file `contains` is wrong\n///\n/// `crates/bsc-graph` takes `graph-materialize` as a **dev-dependency** — `materialize_plan_tests`\n/// drives the shipped symbols rather than a restatement of them — and its own source is NOT\n/// materialized. A whole-file `contains` therefore reported it Tier A, which would have EXCLUDED its\n/// records from the standalone sweep: the opposite error to the one this function was widened for, and\n/// the quieter of the two, since a record that is never swept never reports anything at all. Found by\n/// [`tests::both_routes_are_present_among_the_repos_own_crates`], which asserts the POPULATION rather\n/// than a single example.\n///\n/// The KEY is what is matched inside that section, not [`MATERIALIZE_DEP`] verbatim: `src-tauri`\n/// reaches the same package at `../crates/graph-materialize`, so the path is not part of the question.\n/// A test pins that `MATERIALIZE_DEP` — the exact line the migration writes — satisfies this.\npub fn materializes(cargo_toml: &str) -> bool {\n    cargo_toml.contains(MATERIALIZE_MARKER) || takes_materializer_as_a_build_dependency(cargo_toml)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/build_facet",
+  "src": "crates/bsc-graph/src/build_facet/materializes.rs",
+  "moduleVis": "private"
+}

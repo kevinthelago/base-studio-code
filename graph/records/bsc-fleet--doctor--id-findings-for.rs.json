@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--doctor--id-findings-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "id_findings_for",
+  "code": "use super::*;\n\n/// Findings about the stream ID ITSELF — asked of every planned member, worktree or not.\n///\n/// SEPARATE FROM [`findings_for`] on purpose, and the separation is the whole fix. `findings_for`\n/// returns nothing when there is no worktree to inspect, which is correct — an absent worktree for an\n/// unlaunched stream is the expected state, and reporting it would bury the checks that matter. But an\n/// id that breaks the pane-id grammar is precisely the condition that PREVENTS a worktree from ever\n/// being created, so every worktree-shaped check is structurally blind to it. MEASURED: the\n/// twitter-clone-test fleet sat in exactly this state — one stream, permanently unwakeable — and\n/// `bsc fleet doctor` printed nothing at all.\n///\n/// Sources: the STREAM ID as plan.db stores it, vs the PANE-ID GRAMMAR `worker_pane` parses. The rule\n/// itself is `plandb::validate::stream_id_problem`, the same function that refuses the write — one\n/// source deliberately, because a doctor that re-derived the grammar could clear a row the writer\n/// rejects, or report one the writer allows, and either way the two would be lying about each other.\n///\n/// A blank stream id is not a finding: the director and triage panes are not streams.\npub fn id_findings_for(pane_id: &str, stream_id: &str) -> Vec<Finding> {\n    if stream_id.trim().is_empty() {\n        return Vec::new();\n    }\n    match plandb::validate::stream_id_problem(stream_id) {\n        None => Vec::new(),\n        Some(why) => vec![Finding {\n            pane_id: pane_id.to_string(),\n            category: \"bad-stream-id\",\n            detail: format!(\"the stream id {stream_id:?} cannot be used as a pane-id tail — {why}\"),\n            consequence: \"this stream can never be launched OR woken: its pane id does not parse as a worker, so `bsc fleet wake` resolves no plan row and the launch is refused with \\\"<no cwd>\\\", naming neither the stream nor the id\",\n            fix: BAD_STREAM_ID_FIX,\n        }],\n    }\n}\n",
+  "folder": "crates/bsc-fleet/src/doctor",
+  "src": "crates/bsc-fleet/src/doctor/id_findings_for.rs",
+  "moduleVis": "private",
+  "composes": []
+}

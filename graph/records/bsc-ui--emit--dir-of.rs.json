@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--dir-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "dir_of",
+  "code": "//! `dir_of` — The directory portion of a `src/`-relative path (`shared/ui/data/Card.tsx` → `shared/ui/data`; a top-level file → `\"\"`).\n\n/// The directory portion of a `src/`-relative path (`shared/ui/data/Card.tsx` → `shared/ui/data`;\n/// a top-level file → `\"\"`).\npub(crate) fn dir_of(path: &str) -> &str {\n    path.rsplit_once('/').map(|(d, _)| d).unwrap_or(\"\")\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/dir_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

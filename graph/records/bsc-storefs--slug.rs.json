@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--slug.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "slug",
+  "code": "//! Slugify a store value into one path segment (a grouping key: role/domain/verb/pane id).\n\n/// Turn an arbitrary store value into something addressable as one path segment.\n///\n/// Unlike [`crate::id_is_safe`] this is used for *grouping* keys (a role, a domain, a verb, a pane id),\n/// which routinely contain `:` or `/`. Those are index directories we invent, so mapping is\n/// right where rejecting would silently drop a whole group.\npub(crate) fn slug(v: &str) -> String {\n    let s: String = v\n        .chars()\n        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })\n        .collect();\n    let s = s.trim_matches('-').to_string();\n    if s.is_empty() { \"unspecified\".into() } else { s }\n}\n",
+  "folder": "crates/bsc-storefs/src",
+  "src": "crates/bsc-storefs/src/slug.rs",
+  "moduleVis": "private",
+  "composes": []
+}

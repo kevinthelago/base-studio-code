@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--migrate--with-carried-docs.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "with_carried_docs",
+  "composes": [
+    "bsc-graph--migrate--docs-as-inner.rs"
+  ],
+  "code": "use super::*;\n\n/// The module source with the parent's `///` docs carried in as its own `//!` header — `None` when\n/// nothing should be written.\n///\n/// Carrying happens only onto an UNDOCUMENTED module. A module that already opens with `//!` states\n/// what it is, and prepending the parent's one-line summary leaves the record with two headers saying\n/// nearly the same thing — measured on the earlier rollout, 5 of 91 migrated records carry that\n/// duplication. Where both exist the module's own block is the real documentation and the parent's line\n/// is a table-of-contents entry, so the module's wins.\npub fn with_carried_docs(module_src: &str, docs: &[String]) -> Option<String> {\n    if docs.is_empty() || module_src.trim_start().starts_with(\"//!\") {\n        return None;\n    }\n    Some(format!(\"{}\\n{}\", docs_as_inner(docs).join(\"\\n\"), module_src))\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/with_carried_docs.rs",
+  "moduleVis": "private"
+}

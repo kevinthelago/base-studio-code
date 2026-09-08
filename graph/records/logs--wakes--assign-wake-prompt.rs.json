@@ -1,0 +1,11 @@
+{
+  "id": "logs--wakes--assign-wake-prompt.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "assign_wake_prompt",
+  "src": "crates/logs/src/wakes/assign_wake_prompt.rs",
+  "folder": "crates/logs/src/wakes",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The prompt for a worker the director assigned new work.\npub fn assign_wake_prompt(a: &AssignedWork) -> String {\n    let titled = if a.title.is_empty() { String::new() } else { format!(\": {}\", a.title) };\n    let mut lines = vec![format!(\n        \"The director assigned you new work{titled}. Start on it now and carry it through your normal \\\n         loop (implement → gate → integrate). Do not ask the user.\"\n    )];\n    let body = a.body.trim();\n    if !body.is_empty() {\n        lines.push(String::new());\n        lines.push(body.to_string());\n    }\n    if let Some(cp) = a.checkpoint.as_deref() {\n        lines.push(String::new());\n        // BEFORE beginning — the order is the instruction.\n        lines.push(format!(\"First re-read your checkpoint: {cp}, then begin the new work.\"));\n    }\n    lines.join(\"\\n\")\n}\n"
+}

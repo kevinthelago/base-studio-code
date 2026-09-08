@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--is-url-specifier.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_url_specifier",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,\n/// `http:`, `data:`)? Such a specifier resolves DIRECTLY in the preview iframe (the import-map's own\n/// values ARE esm.sh URLs), so it needs no import-map entry and must never be flagged as an unresolvable\n/// bare import (#2963). Mirrors `isUrlSpecifier` (TS). (Protocol-relative `//` is already excluded by the\n/// leading-`/` check in `is_bare_specifier`.)\npub fn is_url_specifier(spec: &str) -> bool {\n    match (spec.find(':'), spec.find('/')) {\n        (Some(colon), Some(slash)) => colon < slash, // a scheme (`https:`) before any path `/`\n        (Some(_), None) => true,                     // `data:…` with no slash\n        _ => false,\n    }\n}\n",
+  "src": "crates/bsc-component/src/graph_health/is_url_specifier.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

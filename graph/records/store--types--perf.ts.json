@@ -1,0 +1,13 @@
+{
+  "id": "store--types--perf.ts",
+  "tech": "typescript",
+  "role": "algorithm",
+  "name": "perf",
+  "composes": [],
+  "code": "// Performance-monitoring config (#569). Split from the former store/types monolith (#1634).\nexport interface PerfConfig {\n  enabled: boolean;\n  /** Sampling cadence in seconds (0 = off). */\n  intervalSecs: number;\n  /** Retain samples for N hours (0 = unlimited). */\n  retentionHours: number;\n  /** Max SQLite DB size in MB (0 = no limit). */\n  maxDbMb: number;\n  trackProcess: boolean;\n  trackFrontend: boolean;\n}\n\nexport const DEFAULT_PERF_CONFIG: PerfConfig = {\n  enabled: true,\n  intervalSecs: 2,\n  retentionHours: 24,\n  maxDbMb: 50,\n  trackProcess: true,\n  trackFrontend: true,\n};\n",
+  "domain": "store",
+  "src": "src/store/types/perf.ts",
+  "folder": "store/types",
+  "provides": "@/store/types/perf",
+  "feature": "store"
+}

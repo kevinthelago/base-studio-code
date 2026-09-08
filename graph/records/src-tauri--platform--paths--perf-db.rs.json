@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--paths--perf-db.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "perf_db",
+  "composes": [
+    "src-tauri--platform--paths--bsc-base-dir.rs"
+  ],
+  "code": "use super::{bsc_base_dir};\n\n/// The performance/cost metrics store: `~/.base-studio-code/perf.db` (#1607). Not per-project.\npub(crate) fn perf_db() -> std::path::PathBuf {\n    bsc_base_dir().join(\"perf.db\")\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/perf_db.rs",
+  "moduleVis": "private"
+}

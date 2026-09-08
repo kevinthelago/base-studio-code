@@ -1,0 +1,13 @@
+{
+  "id": "bsc-cli-util--surface--help-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "help_for",
+  "code": "use crate::CmdDoc;\nuse super::resolve_surface;\n\n/// [`crate::help_for`] with the surface record applied. See [`help_overview`] for why this is a\n/// separate door rather than an effect inside the pure renderer.\npub fn help_for(prog: &str, tagline: &str, cmds: &[CmdDoc], name: &str) -> String {\n    let (tagline, cmds) = resolve_surface(prog, tagline, cmds);\n    crate::help_for(prog, tagline, cmds, name)\n}\n",
+  "folder": "crates/bsc-cli-util/src/surface",
+  "src": "crates/bsc-cli-util/src/surface/help_for.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-cli-util--lib.rs"
+  ]
+}

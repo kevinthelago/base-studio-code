@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--launch--bsc-agent-session-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "bsc_agent_session_path",
+  "src": "src-tauri/src/session/launch/bsc_agent_session_path.rs",
+  "folder": "src-tauri/src/session/launch",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Where `bsc-agent` persists (and resumes) the conversation for `cwd`:\n/// `~/.base-studio-code/agent-sessions/<cwd-key>/conversation.json`. The app owns this keying\n/// (mirroring Claude's per-cwd projects dir, via the same `claude_project_dir_name` slug) and hands\n/// the path to the sidecar through `$BSC_AGENT_SESSION`; the sidecar just reads/writes it. The\n/// adapter checks the same path for `detect_history`. Empty cwd ⇒ None (no persistence). (#1144)\npub(crate) fn bsc_agent_session_path(cwd: &str) -> Option<std::path::PathBuf> {\n    bsc_session::agent_session_path(cwd)\n}\n"
+}

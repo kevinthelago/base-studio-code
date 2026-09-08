@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--pane-id--parse-positional.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_positional",
+  "code": "/// `/^t(\\d+)p(\\d+)$/`.\npub(crate) fn parse_positional(id: &str) -> Option<(i64, i64)> {\n    let rest = id.strip_prefix('t')?;\n    let split = rest.find('p')?;\n    let (a, b) = (&rest[..split], &rest[split + 1..]);\n    let digits = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());\n    if !digits(a) || !digits(b) {\n        return None;\n    }\n    Some((a.parse().ok()?, b.parse().ok()?))\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/pane_id",
+  "src": "crates/bsc-util/src/pane_id/parse_positional.rs",
+  "moduleVis": "private",
+  "composes": []
+}

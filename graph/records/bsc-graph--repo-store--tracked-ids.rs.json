@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--repo-store--tracked-ids.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tracked_ids",
+  "composes": [
+    "bsc-graph--repo-store--impls-of.rs"
+  ],
+  "code": "use super::*;\n\n/// The ids a repo store TRACKS — the set `promote` refreshes and `promote --check` compares.\npub fn tracked_ids(store: &Value) -> Vec<String> {\n    impls_of(store)\n        .iter()\n        .filter_map(|i| i.get(\"id\").and_then(Value::as_str).map(str::to_string))\n        .collect()\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/tracked_ids.rs",
+  "moduleVis": "private"
+}

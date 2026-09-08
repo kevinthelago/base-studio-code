@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--fleet--wake--wake-prompt-override.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "wake_prompt_override",
+  "src": "src-tauri/src/fleet/wake/wake_prompt_override.rs",
+  "folder": "src-tauri/src/fleet/wake",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Which prompt the wake payload should carry — `None` meaning \"leave the caller's alone\".\n///\n/// THE PRECEDENCE IS THE POINT. An explicit `--prompt` is the director saying something the standard\n/// wake cannot know, so it always wins; only an ABSENT one falls back. `compose` is taken lazily and\n/// is NOT called for an explicit prompt, so the ordinary wake pays no coord-log read.\n///\n/// Whitespace-only counts as absent: `--prompt \" \"` is how a shell says nothing, and honouring it\n/// literally would wake a session to a blank instruction — the empty-prompt failure this replaces.\npub(crate) fn wake_prompt_override(supplied: &str, compose: impl FnOnce() -> String) -> Option<String> {\n    supplied.trim().is_empty().then(compose)\n}\n"
+}

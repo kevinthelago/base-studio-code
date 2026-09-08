@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--planner--workspace--context-signature.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "context_signature",
+  "src": "src-tauri/src/planner/workspace/context_signature.rs",
+  "folder": "src-tauri/src/planner/workspace",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "// PLANNING_TEMPLATE_VERSION is a pub(crate) const in the sibling prompts module; import it\n// explicitly here because a parent glob re-import does not travel through `use super::*`.\nuse crate::planner::prompts::PLANNING_TEMPLATE_VERSION;\n\n/// The single source of truth for the planning context signature (#175/#756): the template\n/// version + the sorted inputs (repos, enabled stages). Used by BOTH `setup_workspaces` (to\n/// record the baseline) and `compute_context_signature` (the live value Planning.tsx compares\n/// against) so the two can never disagree on format/version.\npub(crate) fn context_signature(repos: &[String], stages: &[String]) -> String {\n    let mut r = repos.to_vec(); r.sort();\n    let mut s = stages.to_vec(); s.sort();\n    format!(\"v{}|{}|{}\", PLANNING_TEMPLATE_VERSION, r.join(\",\"), s.join(\",\"))\n}\n"
+}

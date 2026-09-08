@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--migrate--point-lib-at-shared-root.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "point_lib_at_shared_root",
+  "composes": [
+    "bsc-graph--migrate--point-root-at-shared-root.rs"
+  ],
+  "code": "use super::*;\n\n/// The manifest with its `[lib]` table pointing at the SHARED crate root.\n///\n/// Idempotent, and it REPLACES an existing `path` key rather than adding a second one — two `path`\n/// keys in one table is a hard cargo error, and it would land after the source file was deleted.\n/// A crate with no `[lib]` table at all gains one, because `path` has nowhere else to live.\npub fn point_lib_at_shared_root(cargo_toml: &str, crate_dir: &str) -> String {\n    point_root_at_shared_root(cargo_toml, crate_dir, \"lib.rs\", \"\")\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/point_lib_at_shared_root.rs",
+  "moduleVis": "private"
+}

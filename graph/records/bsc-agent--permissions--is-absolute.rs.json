@@ -1,0 +1,12 @@
+{
+  "id": "bsc-agent--permissions--is-absolute.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_absolute",
+  "code": "/// Absolute paths: POSIX (`/…`), home (`~…`), Windows drive (`C:…`), or UNC (`\\\\…`).\n/// Mirrors `isAbsolute` in `fsConfine.ts`.\npub(crate) fn is_absolute(p: &str) -> bool {\n    p.starts_with('/')\n        || p.starts_with('~')\n        || p.starts_with(\"\\\\\\\\\")\n        || (p.len() >= 2 && p.as_bytes()[0].is_ascii_alphabetic() && p.as_bytes()[1] == b':')\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/permissions",
+  "src": "crates/bsc-agent/src/permissions/is_absolute.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-notify--ntfy-message.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ntfy_message",
+  "code": "//! Map an incident to an ntfy message — the pure mapping at the heart of push delivery.\n\nuse bsc_incident::{Incident, Severity};\n\n/// Map an incident to an ntfy message. PURE — no network, no clock.\n///\n/// The title names the severity and the kind; the body LEADS with the detector's own evidence line\n/// (which itself leads with the frequency and received power an attacker cannot forge) and then adds\n/// the coalescing context — which sensor, how many times, since when — so a burst reads as a burst.\npub fn ntfy_message(inc: &Incident, topic: &str) -> crate::NtfyMessage {\n    let sev = match inc.severity {\n        Severity::Info => \"INFO\",\n        Severity::Low => \"LOW\",\n        Severity::Medium => \"MEDIUM\",\n        Severity::High => \"HIGH\",\n        Severity::Critical => \"CRITICAL\",\n    };\n    let title = format!(\"{sev} — {}\", crate::label_for(inc.kind));\n\n    let mut body = inc.evidence.summary.clone();\n    // The coalescing context turns \"an alarm\" into \"an ongoing thing\", which is the difference\n    // between reacting once and understanding what is happening.\n    if inc.count > 1 {\n        body.push_str(&format!(\"\\n\\nSeen {}× on sensor '{}'.\", inc.count, inc.source));\n    } else {\n        body.push_str(&format!(\"\\n\\nSensor '{}'.\", inc.source));\n    }\n\n    crate::NtfyMessage {\n        topic: topic.to_string(),\n        title,\n        priority: crate::priority_for(inc.severity),\n        tags: crate::tags_for(inc.kind),\n        body,\n        markdown: false,\n        click: None,\n    }\n}\n",
+  "folder": "crates/bsc-notify/src",
+  "src": "crates/bsc-notify/src/ntfy_message.rs",
+  "moduleVis": "private",
+  "composes": []
+}

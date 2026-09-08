@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--preview-props--source-from-record.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "source_from_record",
+  "code": "use serde_json::Value;\n\n/// The component's own implementation source — `source` (the verbatim `.tsx`) preferred over the `srcText`\n/// usage snippet, the same precedence the TS build scan uses. Empty when the record carries neither.\npub fn source_from_record(rec: &Value) -> String {\n    for field in [\"source\", \"srcText\"] {\n        if let Some(s) = rec.get(field).and_then(Value::as_str) {\n            if !s.is_empty() {\n                return s.to_string();\n            }\n        }\n    }\n    String::new()\n}\n",
+  "folder": "crates/bsc-component/src/preview_props",
+  "src": "crates/bsc-component/src/preview_props/source_from_record.rs",
+  "moduleVis": "private",
+  "composes": []
+}

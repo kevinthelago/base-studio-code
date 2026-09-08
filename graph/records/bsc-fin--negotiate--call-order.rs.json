@@ -1,0 +1,13 @@
+{
+  "id": "bsc-fin--negotiate--call-order.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "call_order",
+  "code": "use super::*;\n\n/// The order to make the calls in, with the one sentence that opens each.\npub fn call_order(cases: &[NegotiationCase]) -> Vec<String> {\n    cases\n        .iter()\n        .map(|c| match c.ask {\n            Ask::FeeWaiver => format!(\"{}: \\\"I saw a fee on my last statement and I'd like to ask for it to be waived.\\\"\", c.institution),\n            Ask::HardshipPlan => format!(\"{}: \\\"I want to stay current and I'm not going to be able to at this rate. What hardship options do you have?\\\"\", c.institution),\n            Ask::RateReduction => format!(\"{}: \\\"I've been a customer a while and I'm looking at my rate. What can you do?\\\"\", c.institution),\n        })\n        .collect()\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/negotiate",
+  "src": "crates/bsc-fin/src/negotiate/call_order.rs",
+  "moduleVis": "private",
+  "composes": []
+}

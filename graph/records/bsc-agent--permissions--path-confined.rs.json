@@ -1,0 +1,14 @@
+{
+  "id": "bsc-agent--permissions--path-confined.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "path_confined",
+  "composes": [
+    "bsc-agent--permissions--is-absolute.rs"
+  ],
+  "code": "use super::is_absolute::is_absolute;\n\n/// Whether a file-tool `target` stays within `root` — mirrors `isPathConfined` in\n/// `src/shared/lib/session/fsConfine.ts` (#158) so the `bsc-agent` runtime and the Claude\n/// `bsc-confine` hook confine identically: empty → confined; any `..` segment → NOT confined\n/// (rejected conservatively, even within-repo); absolute path → confined only if under `root`;\n/// plain relative → confined (resolved against the repo-root cwd). String-based, no realpath,\n/// portable across OSes.\npub(crate) fn path_confined(root: &str, target: &str) -> bool {\n    if target.is_empty() {\n        return true;\n    }\n    let norm = target.replace('\\\\', \"/\");\n    if norm.split('/').any(|seg| seg == \"..\") {\n        return false;\n    }\n    if is_absolute(target) {\n        let r = root.replace('\\\\', \"/\");\n        let r = r.trim_end_matches('/');\n        return norm == r || norm.starts_with(&format!(\"{r}/\"));\n    }\n    true\n}\n",
+  "feature": "console",
+  "folder": "crates/bsc-agent/src/permissions",
+  "src": "crates/bsc-agent/src/permissions/path_confined.rs",
+  "moduleVis": "private"
+}

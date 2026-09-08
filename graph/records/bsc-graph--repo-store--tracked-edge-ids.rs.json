@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--repo-store--tracked-edge-ids.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "tracked_edge_ids",
+  "composes": [
+    "bsc-graph--repo-store--edges-of.rs"
+  ],
+  "code": "use super::*;\n\n/// The EDGE ids a repo store tracks — the second half of [`tracked_ids`].\n///\n/// Kept separate rather than folded in, because the two tiers live in different arrays and a caller\n/// that mixed them would promote an edge into `implementations` and vice versa.\npub fn tracked_edge_ids(store: &Value) -> Vec<String> {\n    edges_of(store)\n        .iter()\n        .filter_map(|e| e.get(\"id\").and_then(Value::as_str).map(str::to_string))\n        .collect()\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/tracked_edge_ids.rs",
+  "moduleVis": "private"
+}

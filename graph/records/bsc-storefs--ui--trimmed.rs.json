@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--ui--trimmed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "trimmed",
+  "src": "crates/bsc-storefs/src/ui/trimmed.rs",
+  "folder": "crates/bsc-storefs/src/ui",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn trimmed(fields: &[(String, String)], key: &str) -> Option<String> {\n    fields\n        .iter()\n        .find(|(k, _)| k == key)\n        .map(|(_, v)| v.trim().to_string())\n        .filter(|v| !v.is_empty())\n}\n"
+}

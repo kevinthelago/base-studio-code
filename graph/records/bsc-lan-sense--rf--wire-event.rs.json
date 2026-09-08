@@ -1,0 +1,13 @@
+{
+  "id": "bsc-lan-sense--rf--wire-event.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "wire_event",
+  "src": "crates/bsc-lan-sense/src/rf/wire_event.rs",
+  "folder": "crates/bsc-lan-sense/src/rf",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-lan-sense--rf--event-from.rs"
+  ],
+  "code": "use super::*;\n\n/// The wire event for a verdict, or `None` when there is nothing to say.\n///\n/// Every arm is written out: a new [`Verdict`] variant fails to compile here\n/// rather than silently taking a neighbouring meaning on the wire.\npub fn wire_event(v: &Verdict) -> Option<Event> {\n    match v {\n        // Quiet is the steady state and would flood the stream with\n        // non-events; the snapshot already carries the sensor's health.\n        Verdict::Quiet { .. } => None,\n        // NOT emitted as an RF finding: a radio that saw nothing is a SENSOR\n        // fault, not an RF observation, and it belongs in the posture the\n        // snapshot already attests. Emitting it here would let \"my capture is\n        // broken\" render as \"the air is clear\".\n        Verdict::NotObserved => None,\n        Verdict::Elevated(e) => Some(event_from(e, false)),\n        Verdict::Flood(e) => Some(event_from(e, true)),\n    }\n}\n"
+}

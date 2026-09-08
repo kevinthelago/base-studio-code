@@ -1,0 +1,11 @@
+{
+  "id": "bsc-persona--floor--str-list.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "str_list",
+  "code": "use serde_json::Value;\n\npub(crate) fn str_list(floor: &Value, key: &str) -> Option<Vec<String>> {\n    floor.get(key)?.as_array().map(|a| {\n        a.iter()\n            .filter_map(|v| v.as_str().map(str::to_string))\n            .collect()\n    })\n}\n",
+  "folder": "crates/bsc-persona/src/floor",
+  "src": "crates/bsc-persona/src/floor/str_list.rs",
+  "moduleVis": "private",
+  "composes": []
+}

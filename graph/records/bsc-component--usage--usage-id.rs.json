@@ -1,0 +1,12 @@
+{
+  "id": "bsc-component--usage--usage-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "usage_id",
+  "code": "/// Deterministic edge id — one edge per (project, kit); re-adding the same pair is idempotent.\npub fn usage_id(project_key: &str, kit_id: &str) -> String {\n    format!(\"{project_key}>{kit_id}\")\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn usage_id_is_the_deterministic_project_kit_key() {\n        assert_eq!(usage_id(\"proj-a\", \"react-ui\"), \"proj-a>react-ui\");\n    }\n}\n",
+  "domain": "bsc-component",
+  "folder": "crates/bsc-component/src/usage",
+  "src": "crates/bsc-component/src/usage/usage_id.rs",
+  "moduleVis": "private",
+  "composes": []
+}

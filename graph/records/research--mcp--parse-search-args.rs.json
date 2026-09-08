@@ -1,0 +1,13 @@
+{
+  "id": "research--mcp--parse-search-args.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_search_args",
+  "composes": [
+    "research--types.rs"
+  ],
+  "code": "use crate::types::{SearchQuery, Source};\nuse mcp_rpc::arg_str;\nuse serde_json::Value;\n\n/// Parse the `search` tool arguments into a [`SearchQuery`].\npub fn parse_search_args(args: &Value) -> Result<SearchQuery, String> {\n    let mut q = SearchQuery::new(arg_str(args, \"query\")?);\n    if let Some(limit) = args.get(\"limit\").and_then(|v| v.as_u64()) {\n        q.limit = (limit as usize).clamp(1, 100);\n    }\n    if let Some(year) = args.get(\"year_from\").and_then(|v| v.as_u64()) {\n        q.year_from = Some(year as u32);\n    }\n    if let Some(arr) = args.get(\"sources\").and_then(|v| v.as_array()) {\n        let mut sources = Vec::new();\n        for s in arr {\n            if let Some(tok) = s.as_str() {\n                match Source::parse(tok) {\n                    Some(src) => sources.push(src),\n                    None => return Err(format!(\"unknown source '{tok}'\")),\n                }\n            }\n        }\n        q.sources = sources;\n    }\n    Ok(q)\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    use crate::types::Source;\n    use serde_json::json;\n\n    #[test]\n    fn parse_search_args_reads_all_fields() {\n        let args = json!({ \"query\": \"ray tracing\", \"limit\": 5, \"year_from\": 2022, \"sources\": [\"arxiv\", \"s2\"] });\n        let q = parse_search_args(&args).unwrap();\n        assert_eq!(q.query, \"ray tracing\");\n        assert_eq!(q.limit, 5);\n        assert_eq!(q.year_from, Some(2022));\n        assert_eq!(q.sources, vec![Source::Arxiv, Source::SemanticScholar]);\n        // Missing query is an error; unknown source is an error.\n        assert!(parse_search_args(&json!({})).is_err());\n        assert!(parse_search_args(&json!({ \"query\": \"x\", \"sources\": [\"bogus\"] })).is_err());\n        // limit is clamped.\n        assert_eq!(parse_search_args(&json!({ \"query\": \"x\", \"limit\": 9999 })).unwrap().limit, 100);\n    }\n}\n",
+  "folder": "crates/research/src/mcp",
+  "src": "crates/research/src/mcp/parse_search_args.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--alias-for-dir.rs",
+  "src": "crates/bsc-record/src/record_source/alias_for_dir.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "alias_for_dir",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// `fromDir` + a relative specifier, collapsed to an `@/…` alias.\npub fn alias_for_dir(from_dir: &str, spec: &str) -> String {\n    let mut out: Vec<&str> = Vec::new();\n    let joined = format!(\"{from_dir}/{spec}\");\n    for seg in joined.split('/') {\n        match seg {\n            \"\" | \".\" => continue,\n            \"..\" => {\n                out.pop();\n            }\n            _ => out.push(seg),\n        }\n    }\n    let path = out.join(\"/\");\n    format!(\"@/{}\", path.strip_prefix(\"src/\").unwrap_or(&path))\n}\n"
+}

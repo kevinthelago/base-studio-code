@@ -1,0 +1,16 @@
+{
+  "id": "bsc-ui--seed-patch--parse-top-level-fields.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_top_level_fields",
+  "composes": [
+    "bsc-ui--seed-patch--skip-string.rs",
+    "bsc-ui--seed-patch--skip-value.rs",
+    "bsc-ui--seed-patch--skip-ws.rs"
+  ],
+  "code": "//! `parse_top_level_fields` — Parse the document's top-level fields — key, source indent, and the byte span of its value — by scanning depth-0 (relative to the outermost \n\nuse super::{Field, skip_string, skip_value, skip_ws};\n\n/// Parse the document's top-level fields — key, source indent, and the byte span of its value — by\n/// scanning depth-0 (relative to the outermost object) with a minimal hand-rolled JSON tokenizer.\n/// This is NOT a general JSON parser: it only needs to walk PAST nested values (objects, arrays,\n/// strings — including ones that themselves contain `{`/`}`/`\"key\":`-shaped text) without\n/// interpreting them, which [`skip_value`] does by tracking string/escape state and bracket depth.\npub(crate) fn parse_top_level_fields(text: &str) -> Result<Vec<Field>, String> {\n    let bytes = text.as_bytes();\n    let mut i = skip_ws(bytes, 0);\n    if bytes.get(i) != Some(&b'{') {\n        return Err(\"seed file does not start with a JSON object\".to_string());\n    }\n    i += 1;\n    let mut fields = Vec::new();\n    loop {\n        i = skip_ws(bytes, i);\n        match bytes.get(i) {\n            Some(b'}') => break,\n            Some(b'\"') => {\n                let key_start = i;\n                let key_end = skip_string(bytes, i)?;\n                let key: String = serde_json::from_str(&text[key_start..key_end])\n                    .map_err(|e| format!(\"bad field name at byte {key_start}: {e}\"))?;\n                let line_start = text[..key_start].rfind('\\n').map(|p| p + 1).unwrap_or(0);\n                let indent = text[line_start..key_start].to_string();\n                i = skip_ws(bytes, key_end);\n                if bytes.get(i) != Some(&b':') {\n                    return Err(format!(\"expected ':' after field '{key}'\"));\n                }\n                i = skip_ws(bytes, i + 1);\n                let value_start = i;\n                let value_end = skip_value(bytes, value_start)?;\n                fields.push(Field { key, indent, value_start, value_end });\n                i = skip_ws(bytes, value_end);\n                match bytes.get(i) {\n                    Some(b',') => i += 1,\n                    Some(b'}') => break,\n                    other => return Err(format!(\"unexpected byte after field value: {other:?}\")),\n                }\n            }\n            other => return Err(format!(\"expected a field name, found {other:?}\")),\n        }\n    }\n    if fields.is_empty() {\n        return Err(\"seed record has no fields\".to_string());\n    }\n    Ok(fields)\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/seed_patch",
+  "src": "crates/bsc-ui/src/seed_patch/parse_top_level_fields.rs",
+  "moduleVis": "private"
+}

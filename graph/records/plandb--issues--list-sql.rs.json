@@ -1,0 +1,11 @@
+{
+  "id": "plandb--issues--list-sql.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "list_sql",
+  "src": "crates/plandb/src/issues/list_sql.rs",
+  "folder": "crates/plandb/src/issues",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Build a `list`/`list_summary` query: pick the column set, AND together the optional filters\n/// (status / stream / `updated_at > since`), then stable plan order + optional `LIMIT`. The named\n/// params are bound conditionally by {@link list_query}.\npub(crate) fn list_sql(cols: &str, status: bool, stream: bool, since: bool, limit: Option<usize>) -> String {\n    let mut sql = String::from(cols);\n    let mut clauses: Vec<&str> = Vec::new();\n    if status {\n        clauses.push(\"status = :status\");\n    }\n    if stream {\n        clauses.push(\"stream = :stream\");\n    }\n    if since {\n        clauses.push(\"updated_at > :since\");\n    }\n    if !clauses.is_empty() {\n        sql.push_str(\" WHERE \");\n        sql.push_str(&clauses.join(\" AND \"));\n    }\n    sql.push_str(\" ORDER BY position, ref\");\n    if let Some(n) = limit {\n        sql.push_str(&format!(\" LIMIT {n}\"));\n    }\n    sql\n}\n"
+}

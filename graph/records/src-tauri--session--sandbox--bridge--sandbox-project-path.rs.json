@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--sandbox--bridge--sandbox-project-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sandbox_project_path",
+  "src": "src-tauri/src/session/sandbox/bridge/sandbox_project_path.rs",
+  "folder": "src-tauri/src/session/sandbox/bridge",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The project hub's distro-native path for `key` (the in-distro analogue of `project_dir`).\n///\n/// Lives in the group-shared [`SHARED_BASE`] (#4260), not in one user's home: the hub is what the\n/// director, every worker, and the planner all have to agree on — `plan.db`, the section files, the\n/// kickoffs, `coord.log`. Per-agent isolation covers the worktrees ([`sandbox_worktree_path`]), which\n/// is where an agent's own edits live.\npub(crate) fn sandbox_project_path(key: &str) -> String {\n    format!(\"{SHARED_BASE}/projects/{}\", crate::platform::fsx::sanitize_project_key(key))\n}\n"
+}

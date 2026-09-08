@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--platform--fsx--map-slug.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "map_slug",
+  "src": "src-tauri/src/platform/fsx/map_slug.rs",
+  "folder": "src-tauri/src/platform/fsx",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "//! Small filesystem utilities (#1300) — project-key sanitization, path-escape guarding, recursive\n//! text-file reads, and plan section-file ingestion. Pure-ish helpers shared across domains.\n//! Extracted verbatim from `lib.rs`.\n\n/// Map a string to a filesystem-safe slug: every char for which `allow` is true is kept as-is,\n/// every other char is replaced by `fill`; when `cap` is `Some(n)` the result is truncated to the\n/// first `n` chars. This is the single char-map primitive the Family-A slug helpers delegate to\n/// (#1663) — each named wrapper supplies its own allowed-char set / fill / cap so its byte-exact\n/// semantics are preserved.\npub(crate) fn map_slug(s: &str, allow: impl Fn(char) -> bool, fill: char, cap: Option<usize>) -> String {\n    let mapped = s.chars().map(|c| if allow(c) { c } else { fill });\n    match cap {\n        Some(n) => mapped.take(n).collect(),\n        None => mapped.collect(),\n    }\n}\n"
+}

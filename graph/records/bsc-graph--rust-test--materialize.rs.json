@@ -1,0 +1,17 @@
+{
+  "id": "bsc-graph--rust-test--materialize.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "materialize",
+  "composes": [
+    "bsc-graph--rust-test--field.rs",
+    "bsc-graph--rust-test--imported-names.rs",
+    "bsc-graph--rust-test--imports-for.rs",
+    "bsc-graph--rust-test--drop-crate-uses.rs"
+  ],
+  "code": "use super::*;\n\n/// The `src/lib.rs` of the materialized crate: derived imports, then the flat closure, then any\n/// extracted test modules.\npub fn materialize(closure: &Closure, test_modules: &[String]) -> String {\n    let bodies: Vec<String> = closure\n        .algorithms\n        .iter()\n        .map(|a| drop_crate_uses(field(a, \"code\").unwrap_or_default()))\n        .collect();\n    let joined = bodies.join(\"\\n\");\n    let mut out = String::from(\"#![allow(dead_code, unused_imports, unused_mut)]\\n\");\n    for imp in imports_for(&closure.primitives, &imported_names(&joined)) {\n        out.push_str(&imp);\n        out.push('\\n');\n    }\n    out.push('\\n');\n    out.push_str(&joined);\n    out.push('\\n');\n    for m in test_modules {\n        out.push('\\n');\n        out.push_str(m);\n        out.push('\\n');\n    }\n    out\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/rust_test",
+  "src": "crates/bsc-graph/src/rust_test/materialize.rs",
+  "moduleVis": "private"
+}

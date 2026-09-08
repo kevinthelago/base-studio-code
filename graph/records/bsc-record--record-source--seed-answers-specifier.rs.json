@@ -1,0 +1,12 @@
+{
+  "id": "bsc-record--record-source--seed-answers-specifier.rs",
+  "src": "crates/bsc-record/src/record_source/seed_answers_specifier.rs",
+  "folder": "crates/bsc-record/src/record_source",
+  "name": "seed_answers_specifier",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Does a shipped seed answer `spec` — and if not, is there a case-only near miss?\n///\n/// THE MATCH IS EXACT, deliberately. The runtime loader compares specifiers by string and\n/// `.bsc-records/` emission is keyed off `provides`, so a case-insensitive check would wave through the\n/// one bug that works on Windows and breaks on a case-sensitive filesystem — exactly how `pageheader`\n/// survived tsc, `vite build` and the whole suite with a seed saying `@/shared/ui/pages/PageHeader`\n/// against a `pageHeader.tsx` file. \"Missing\" and \"case mismatch\" need different fixes, so they are\n/// reported differently rather than folded into one answer.\npub fn seed_answers_specifier<'a>(\n    spec: &str,\n    seed_provides: impl IntoIterator<Item = &'a str>,\n) -> (bool, Vec<String>) {\n    let all: Vec<String> = seed_provides.into_iter().map(|s| s.trim().to_string()).collect();\n    if all.iter().any(|s| s == spec) {\n        return (true, Vec::new());\n    }\n    let lower = spec.to_lowercase();\n    (false, all.into_iter().filter(|s| s.to_lowercase() == lower).collect())\n}\n"
+}

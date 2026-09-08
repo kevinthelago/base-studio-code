@@ -1,0 +1,12 @@
+{
+  "id": "bsc-component--similarity--agrees.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "agrees",
+  "code": "/// A POSITIVE-ONLY scalar match: `Some(1.0)` when both sides carry the field and AGREE, else `None`\n/// (dropped). See the mismatch rationale in {@link contract_terms}.\npub(crate) fn agrees(a: &str, b: &str) -> Option<f64> {\n    let (a, b) = (a.trim(), b.trim());\n    (!a.is_empty() && a == b).then_some(1.0)\n}\n",
+  "domain": "bsc-component",
+  "folder": "crates/bsc-component/src/similarity",
+  "src": "crates/bsc-component/src/similarity/agrees.rs",
+  "moduleVis": "private",
+  "composes": []
+}

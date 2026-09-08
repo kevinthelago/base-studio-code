@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--platform--paths--bsc-base-dir.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "bsc_base_dir",
+  "code": "pub(crate) fn bsc_base_dir() -> std::path::PathBuf {\n    bsc_util::bsc_base_dir().unwrap_or_else(|| std::path::PathBuf::from(\".base-studio-code\"))\n}\n",
+  "folder": "src-tauri/src/platform/paths",
+  "src": "src-tauri/src/platform/paths/bsc_base_dir.rs",
+  "moduleVis": "private",
+  "composes": []
+}

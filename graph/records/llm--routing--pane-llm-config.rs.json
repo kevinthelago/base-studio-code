@@ -1,0 +1,13 @@
+{
+  "id": "llm--routing--pane-llm-config.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "pane_llm_config",
+  "src": "crates/llm/src/routing/pane_llm_config.rs",
+  "folder": "crates/llm/src/routing",
+  "moduleVis": "private",
+  "composes": [
+    "llm--routing--provider-needs-bsc-agent.rs"
+  ],
+  "code": "use super::*;\n\n/// This pane's effective configuration. `tier_model_ids` is the shipped tier list\n/// (`data/console/models.json`); a pane model matching one of those is a tier selection, not a local\n/// model name.\npub fn pane_llm_config(global: &LlmConfig, pane_model: Option<&str>, tier_model_ids: &[String]) -> LlmConfig {\n    // Rule 1. An empty string is falsy in the TypeScript and lands here too, not in rule 4.\n    let Some(pane_model) = pane_model.filter(|m| !m.is_empty()) else {\n        return global.clone();\n    };\n    // Rule 2.\n    if tier_model_ids.iter().any(|id| id == pane_model) {\n        return global.clone();\n    }\n    // Rule 3.\n    if provider_needs_bsc_agent(&global.provider) {\n        return LlmConfig { model: pane_model.to_string(), ..global.clone() };\n    }\n    // Rule 4 — #173. The emptiness test TRIMS, matching `llm::resolve_base_url` and the TypeScript this\n    // is proved against — see the module docs.\n    LlmConfig {\n        provider: \"ollama\".to_string(),\n        model: pane_model.to_string(),\n        api_key: String::new(),\n        base_url: if global.base_url.trim().is_empty() {\n            DEFAULT_LOCAL_BASE_URL.to_string()\n        } else {\n            global.base_url.trim().to_string()\n        },\n        num_ctx: global.num_ctx,\n    }\n}\n"
+}

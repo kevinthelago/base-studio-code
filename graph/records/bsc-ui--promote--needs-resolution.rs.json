@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--promote--needs-resolution.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "needs_resolution",
+  "code": "//! `needs_resolution` — Should this `@/…` import count as unresolvable?\n\n/// Should this `@/…` import count as unresolvable?\n///\n/// `?raw` / `?url` are answered by the LOADER, not by registration: `makeRequire` calls `rawImportSpec`\n/// and returns the string the importer's contract promised. Counting them demands a registration that\n/// cannot exist — a specifier carrying a query is not a registry key.\npub fn needs_resolution(spec: &str) -> bool {\n    !spec.ends_with(\".css\")\n        && !spec.ends_with(\".svg\")\n        && !spec.ends_with(\".png\")\n        && !spec.ends_with(\"?raw\")\n        && !spec.ends_with(\"?url\")\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/promote",
+  "src": "crates/bsc-ui/src/promote/needs_resolution.rs",
+  "moduleVis": "private",
+  "composes": []
+}

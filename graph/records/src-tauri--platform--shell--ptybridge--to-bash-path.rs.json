@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--platform--shell--ptybridge--to-bash-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "to_bash_path",
+  "src": "src-tauri/src/platform/shell/ptybridge/to_bash_path.rs",
+  "folder": "src-tauri/src/platform/shell/ptybridge",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Converts a native OS path to a bash-compatible POSIX path.\n/// On Windows (Git Bash): `C:\\Users\\foo` → `/c/Users/foo`.\n/// On Unix: returns the path unchanged.\npub(crate) fn to_bash_path(p: &str) -> String {\n    #[cfg(windows)]\n    {\n        let s = p.replace('\\\\', \"/\");\n        if s.len() >= 2 && s.as_bytes()[1] == b':' {\n            let drive = s[..1].to_lowercase();\n            return format!(\"/{}{}\", drive, &s[2..]);\n        }\n        s\n    }\n    #[cfg(not(windows))]\n    p.to_string()\n}\n"
+}

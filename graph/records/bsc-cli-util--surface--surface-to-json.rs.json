@@ -1,0 +1,13 @@
+{
+  "id": "bsc-cli-util--surface--surface-to-json.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "surface_to_json",
+  "code": "use crate::CmdDoc;\nuse serde_json::Value;\n\n/// The compiled surface as a record — what an author edits, so the record is DERIVED rather than\n/// hand-authored. Round-tripping this through [`surface_from_json`] must be lossless; that is what\n/// makes \"dump it, change one line\" a safe workflow rather than a lossy retype.\npub fn surface_to_json(tagline: &str, cmds: &[CmdDoc]) -> Value {\n    serde_json::json!({\n        \"tagline\": tagline,\n        \"commands\": cmds.iter().map(|c| serde_json::json!({\n            \"name\": c.name, \"summary\": c.summary, \"usage\": c.usage,\n        })).collect::<Vec<_>>(),\n    })\n}\n",
+  "folder": "crates/bsc-cli-util/src/surface",
+  "src": "crates/bsc-cli-util/src/surface/surface_to_json.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-cli-util--lib.rs"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "bsc-graph--emit--plan-all.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "plan_all",
+  "composes": [
+    "bsc-graph--emit--store-version.rs",
+    "bsc-graph--emit--plan-from.rs"
+  ],
+  "code": "use super::*;\n\n/// Plan the emit for the whole library.\npub fn plan_all(graph: &Value) -> EmitPlan {\n    plan_from(&crate::implementations_of(graph), store_version(graph))\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/emit",
+  "src": "crates/bsc-graph/src/emit/plan_all.rs",
+  "moduleVis": "private"
+}

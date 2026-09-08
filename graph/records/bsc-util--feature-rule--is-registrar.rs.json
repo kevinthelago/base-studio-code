@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--feature-rule--is-registrar.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_registrar",
+  "code": "/// A record's module-registration point, exempt by shape.\n///\n/// `*-graph-platform.ts` (and the `graphPlatform` component) exists to name modules across the app for\n/// the runtime loader. Composing across features is what it is FOR.\npub fn is_registrar(id: &str) -> bool {\n    id.ends_with(\"graph-platform.ts\") || id.ends_with(\"graphPlatform.ts\") || id == \"graphplatform\"\n}\n",
+  "domain": "bsc-util",
+  "folder": "crates/bsc-util/src/feature_rule",
+  "src": "crates/bsc-util/src/feature_rule/is_registrar.rs",
+  "moduleVis": "private",
+  "composes": []
+}

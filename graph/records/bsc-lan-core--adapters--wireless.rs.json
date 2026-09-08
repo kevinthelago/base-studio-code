@@ -1,0 +1,16 @@
+{
+  "id": "bsc-lan-core--adapters--wireless.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "wireless",
+  "composes": [
+    "bsc-lan-core--error.rs",
+    "bsc-lan-core--evidence.rs",
+    "bsc-lan-core--primitives.rs"
+  ],
+  "code": "//! [`WirelessAdapter`]: the Omada V5 controller API. Implemented by\n//! `bsc-lan-adapter-omada`.\n\nuse std::net::IpAddr;\nuse std::time::SystemTime;\n\nuse crate::error::{ControlError, ObservationError};\nuse crate::evidence::{Observed, Verified};\nuse crate::primitives::MacAddr;\n\n/// One client the Omada controller currently manages.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct WirelessClient {\n    pub mac: MacAddr,\n    pub ip: Option<IpAddr>,\n    pub ssid: String,\n    pub connected_at: SystemTime,\n}\n\n/// Wireless client control and the AP client list. The controller manages\n/// wireless clients only -- see the module docs on why this adapter must\n/// refuse anything that would target the switch or imply adoption; that\n/// refusal is `bsc-lan-adapter-omada`'s job to enforce, since it requires\n/// knowing the switch is out of scope, not something this trait's shape\n/// can express structurally.\npub trait WirelessAdapter: Send + Sync {\n    /// Block a client from associating. Refused for a wired client -- the\n    /// caller (`bsc-lan-policy`) is expected to have already resolved the\n    /// connection medium before dispatch, but the adapter refuses again as\n    /// defence in depth.\n    fn block_client(\n        &self,\n        mac: MacAddr,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// Unblock a client (the inverse of `block_client`).\n    fn unblock_client(\n        &self,\n        mac: MacAddr,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// Disconnect a currently-associated client. Read-back verified against\n    /// the client list, per the omada-controller-adapter contract.\n    fn kick_client(\n        &self,\n        mac: MacAddr,\n    ) -> impl std::future::Future<Output = Result<Verified<bool>, ControlError>> + Send;\n\n    /// Every client the controller currently sees associated, across all\n    /// APs -- feeds `topology()` and the asset model.\n    fn read_clients(\n        &self,\n    ) -> impl std::future::Future<Output = Result<Observed<Vec<WirelessClient>>, ObservationError>> + Send;\n}\n",
+  "domain": "bsc-lan-core",
+  "src": "crates/bsc-lan-core/src/adapters/wireless.rs",
+  "folder": "crates/bsc-lan-core/src/adapters",
+  "moduleVis": "pub"
+}

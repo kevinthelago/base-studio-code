@@ -1,0 +1,15 @@
+{
+  "id": "bsc-ui--refresh-seed--decide.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "decide",
+  "composes": [
+    "bsc-ui--refresh-seed--dropped-exports.rs",
+    "bsc-ui--refresh-seed--was-edited.rs"
+  ],
+  "code": "//! `decide` — Decide one seed.\n\nuse bsc_record::record_source::{code_only, norm, split_preamble};\nuse super::{Verdict, dropped_exports, imported_specifiers, was_edited};\n\n/// Decide one seed. `resolvable` answers whether a RECORD can resolve a specifier.\n#[allow(clippy::too_many_arguments)]\npub fn decide(\n    seed_source: &str,\n    file_src: &str,\n    live_source: Option<&str>,\n    consumers_of: &dyn Fn(&str) -> Vec<String>,\n    resolvable: &dyn Fn(&str) -> bool,\n) -> Verdict {\n    let normalized = norm(seed_source);\n    let (preamble, body) = split_preamble(&normalized, file_src);\n    if code_only(&body) == code_only(file_src) {\n        return Verdict::AlreadyOk;\n    }\n    if was_edited(seed_source, live_source) {\n        return Verdict::Edited;\n    }\n    if let Some((lost, consumers)) = dropped_exports(seed_source, file_src, consumers_of) {\n        return Verdict::WouldDropExport { lost, consumers };\n    }\n    let unresolved: Vec<String> =\n        imported_specifiers(file_src).into_iter().filter(|s| !resolvable(s)).collect();\n    if !unresolved.is_empty() {\n        return Verdict::Unresolvable(unresolved);\n    }\n    let next = if preamble.is_empty() {\n        format!(\"{file_src}\\n\")\n    } else {\n        format!(\"{preamble}\\n{file_src}\\n\")\n    };\n    let preamble_lines = if preamble.is_empty() { 0 } else { preamble.split('\\n').count() };\n    Verdict::Refresh { next, preamble_lines }\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/refresh_seed",
+  "src": "crates/bsc-ui/src/refresh_seed/decide.rs",
+  "moduleVis": "private"
+}

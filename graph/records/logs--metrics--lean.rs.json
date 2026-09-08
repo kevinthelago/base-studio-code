@@ -1,0 +1,15 @@
+{
+  "id": "logs--metrics--lean.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lean",
+  "composes": [
+    "logs--metrics--kfmt.rs",
+    "logs--metrics--dur.rs"
+  ],
+  "code": "use super::*;\n\n/// The terse default line — everything the metric cares about in one glance, agent-readable.\npub(crate) fn lean(m: &ProjectMetrics) -> String {\n    let status = match m.status() {\n        BuildStatus::Final => \"final\",\n        BuildStatus::InFlight => \"in-flight\",\n        BuildStatus::Unknown => \"completion unknown\",\n    };\n    let issues = match (m.issues_done, m.issues_total) {\n        (Some(d), Some(t)) => format!(\"{d}/{t} issues · \"),\n        _ => String::new(),\n    };\n    format!(\n        \"{} · ${:.4} (build ${:.4} / run ${:.4}) · {} in / {} out · cache {:.0}% · {} · {} panes · {}{}\",\n        m.project,\n        m.cost_usd,\n        m.build_cost_usd,\n        m.run_cost_usd,\n        kfmt(m.input),\n        kfmt(m.output),\n        m.cache_hit_rate * 100.0,\n        dur(m.wall_clock_ms),\n        m.panes,\n        issues,\n        status,\n    )\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/metrics",
+  "src": "crates/logs/src/metrics/lean.rs",
+  "moduleVis": "private"
+}

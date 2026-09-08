@@ -1,0 +1,15 @@
+{
+  "id": "bsc-persona--tests.rs",
+  "tech": "rust",
+  "role": "test",
+  "name": "tests",
+  "composes": [],
+  "code": "use bsc_json_store::Store;\nuse std::sync::atomic::{AtomicU64, Ordering};\n\n/// A per-test unique suffix so parallel tests never share a base dir.\nfn uniq() -> String {\n    static N: AtomicU64 = AtomicU64::new(0);\n    format!(\"{}-{}\", std::process::id(), N.fetch_add(1, Ordering::Relaxed))\n}\n\n/// #2986 (epic #2982) regression: the persona store persists to a SQLite **`personas.db`**, NOT to\n/// per-id `personas/<id>.json` files. #2983 migrated the shared `bsc-json-store` backend\n/// JSON-files → SQLite transparently; `bsc-persona` rides it over `bsc_json_store::Store` with\n/// segment `personas` / noun `persona` (the [`cli::SPEC`](crate::cli) config). This pins that a\n/// round-trip write/read through the persona store leaves a `<base>/personas.db` and creates no\n/// `<base>/personas/<id>.json`.\n///\n/// The crate exposes no base-dir-injectable persona API (only the `bsc persona` CLI), so — per the\n/// #2986 spec — it drives the shared `Store` directly with the persona store's own segment + noun.\n#[test]\nfn persona_store_persists_to_sqlite_not_json_files() {\n    // A fresh temp base — the `~/.base-studio-code` root the persona store lives under.\n    let base = std::env::temp_dir().join(format!(\"bsc-persona-sqlite-{}\", uniq()));\n    let _ = std::fs::remove_dir_all(&base);\n    std::fs::create_dir_all(&base).unwrap();\n\n    // The persona store exactly as its CLI configures it (mirrors `cli::SPEC.dir_segment` / `.noun`).\n    let store = Store::new(base.join(\"personas\"), \"persona\");\n\n    // Round-trip: write a persona, read it back verbatim (and via list).\n    let persona = r#\"{\"id\":\"review-bot\",\"name\":\"Review Bot\",\"role\":\"reviewer\"}\"#;\n    store.set(\"review-bot\", persona).unwrap();\n    assert_eq!(\n        store.get(\"review-bot\").unwrap().as_deref(),\n        Some(persona),\n        \"the persona reads back verbatim\",\n    );\n    assert_eq!(store.list(), vec![persona.to_string()], \"and lists from the db\");\n\n    // The claim — SQLite, not files: the sibling `<base>/personas.db` exists after the write…\n    let db = base.join(\"personas.db\");\n    assert!(db.is_file(), \"personas.db exists after the write: {}\", db.display());\n    // …and NO legacy per-id file (nor even the `personas/` dir) was created.\n    let legacy = base.join(\"personas\").join(\"review-bot.json\");\n    assert!(!legacy.exists(), \"no per-id json file was written: {}\", legacy.display());\n    assert!(\n        !base.join(\"personas\").exists(),\n        \"no file-based `personas/` store dir was created\",\n    );\n\n    let _ = std::fs::remove_dir_all(&base);\n}\n",
+  "domain": "bsc-persona",
+  "src": "crates/bsc-persona/src/tests.rs",
+  "folder": "crates/bsc-persona/src",
+  "moduleVis": "private",
+  "moduleAttrs": [
+    "#[cfg(test)]"
+  ]
+}

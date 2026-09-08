@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--preview-props--is-set-type.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_set_type",
+  "code": "/// Is `t` (LOWERCASED) a `Set<T>` / `ReadonlySet<T>`? Its empty literal is `new Set()`. The `set<` boundary\n/// (or an exact bare `set`) keeps `offset`/`dataset`/`subset` out. Mirrors `isSetType`.\npub(crate) fn is_set_type(t: &str) -> bool {\n    t == \"set\" || t.starts_with(\"set<\") || t.starts_with(\"readonlyset<\")\n}\n",
+  "folder": "crates/bsc-component/src/preview_props",
+  "src": "crates/bsc-component/src/preview_props/is_set_type.rs",
+  "moduleVis": "private",
+  "composes": []
+}

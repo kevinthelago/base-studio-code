@@ -1,0 +1,14 @@
+{
+  "id": "bsc-util--test-display-name.rs",
+  "name": "test_display_name",
+  "role": "algorithm",
+  "tech": "rust",
+  "folder": "crates/bsc-util/src",
+  "src": "crates/bsc-util/src/test_display_name.rs",
+  "moduleVis": "pub",
+  "domain": null,
+  "composes": [
+    "bsc-util--first-describe-title.rs"
+  ],
+  "code": "/// A test file's display name: its FIRST top-level `describe(\"…\")` title, else the file's basename.\n///\n/// The title is what a reader recognises; the basename is the honest fallback for a file that opens\n/// straight into `it(…)`.\npub fn test_display_name(path: &std::path::Path, contents: &str) -> String {\n    if let Some(title) = crate::first_describe_title(contents) {\n        return title;\n    }\n    path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()\n}"
+}

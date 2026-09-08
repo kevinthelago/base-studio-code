@@ -1,0 +1,11 @@
+{
+  "id": "bsc-self--humanize-ms.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "humanize_ms",
+  "code": "/// `1m 12s` / `3d 4h` — a duration a reader can act on, rather than a millisecond count.\npub fn humanize_ms(ms: i64) -> String {\n    let s = (ms.abs() as f64 / 1000.0).round() as i64;\n    if s < 60 {\n        return format!(\"{s}s\");\n    }\n    let m = s / 60;\n    if m < 60 {\n        return format!(\"{m}m {}s\", s % 60);\n    }\n    let h = m / 60;\n    if h < 24 {\n        return format!(\"{h}h {}m\", m % 60);\n    }\n    format!(\"{}d {}h\", h / 24, h % 24)\n}\n",
+  "folder": "crates/bsc-self/src",
+  "src": "crates/bsc-self/src/humanize_ms.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-storefs--lines.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "lines",
+  "code": "//! Render a list as one newline-terminated file body.\n\n/// Render a list as one item per line, newline-terminated, or empty for an empty list.\npub(crate) fn lines(v: &[String]) -> String {\n    if v.is_empty() {\n        String::new()\n    } else {\n        let mut s = v.join(\"\\n\");\n        s.push('\\n');\n        s\n    }\n}\n",
+  "folder": "crates/bsc-storefs/src",
+  "src": "crates/bsc-storefs/src/lines.rs",
+  "moduleVis": "private",
+  "composes": []
+}

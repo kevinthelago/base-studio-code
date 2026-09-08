@@ -1,0 +1,11 @@
+{
+  "id": "llm--anthropic--normalize-usage.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "normalize_usage",
+  "src": "crates/llm/src/anthropic/normalize_usage.rs",
+  "folder": "crates/llm/src/anthropic",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Normalize Anthropic usage to the canonical 4-key shape `tokens.rs` parses\n/// (`input_tokens`/`output_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens`);\n/// Anthropic already uses these names, so this just defaults any missing key to 0.\npub(crate) fn normalize_usage(u: &serde_json::Value) -> serde_json::Value {\n    serde_json::json!({\n        \"input_tokens\": usage_u64(u, \"input_tokens\"),\n        \"output_tokens\": usage_u64(u, \"output_tokens\"),\n        \"cache_creation_input_tokens\": usage_u64(u, \"cache_creation_input_tokens\"),\n        \"cache_read_input_tokens\": usage_u64(u, \"cache_read_input_tokens\"),\n    })\n}\n"
+}

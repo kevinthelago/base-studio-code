@@ -1,0 +1,16 @@
+{
+  "id": "bsc-fin--viable--obligation-is-essential.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "obligation_is_essential",
+  "code": "use super::*;\nuse crate::obligations::ObligationKind;\nuse crate::spending::categorise;\n\n/// Whether an obligation is essential, and whether the table could place it at all.\n///\n/// An obligation nothing can place is treated as ESSENTIAL — for a floor, over-stating is the safe\n/// direction and under-stating is a missed payment. It is NAMED rather than quietly promoted.\npub(crate) fn obligation_is_essential(label: &str, kind: ObligationKind) -> (bool, bool) {\n    // A missed minimum is a credit event, not a cancelled luxury. Essential regardless of wording.\n    if kind == ObligationKind::Minimum {\n        return (true, true);\n    }\n    match categorise(label) {\n        None => (true, false),\n        Some(c) => (is_essential_category(c), true),\n    }\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/viable",
+  "src": "crates/bsc-fin/src/viable/obligation_is_essential.rs",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-fin--obligations--mod.rs",
+    "bsc-fin--spending--categorise.rs"
+  ]
+}

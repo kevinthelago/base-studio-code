@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--external-package.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "external_package",
+  "code": "//! `external_package` — The npm PACKAGE name of a non-first-party specifier — `react` / `react/jsx-runtime` → `react`, `@scope/pkg/sub` → `@scope/pkg`.\n\n/// The npm PACKAGE name of a non-first-party specifier — `react` / `react/jsx-runtime` → `react`,\n/// `@scope/pkg/sub` → `@scope/pkg`. `None` for a relative specifier (`.`/`..`) — those resolve within\n/// the emitted tree and are never external.\npub(crate) fn external_package(spec: &str) -> Option<String> {\n    if spec.starts_with('.') || spec.starts_with('/') {\n        return None;\n    }\n    let parts: Vec<&str> = spec.split('/').collect();\n    if spec.starts_with('@') {\n        // Scoped: keep `@scope/name`.\n        (parts.len() >= 2).then(|| format!(\"{}/{}\", parts[0], parts[1]))\n    } else {\n        parts.first().map(|s| s.to_string())\n    }\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/external_package.rs",
+  "moduleVis": "private",
+  "composes": []
+}

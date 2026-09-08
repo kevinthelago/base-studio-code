@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--launch--claude-project-dir-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "claude_project_dir_name",
+  "src": "src-tauri/src/session/launch/claude_project_dir_name.rs",
+  "folder": "src-tauri/src/session/launch",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Claude Code's on-disk *directory name* for a launch cwd. Conversations live at\n/// `~/.claude/projects/<dir>/<session>.jsonl`, where `<dir>` is the cwd with every\n/// non-alphanumeric character replaced by `-`\n/// (e.g. `C:\\Users\\Kevin\\foo` → `C--Users-Kevin-foo`).\n///\n/// NOT to be confused with [`crate::session::claude_config::claude_project_key`] (`claude_config.rs`):\n/// that produces the cwd's *key in the `projects` map of `~/.claude.json`* — a slash-normalised path\n/// (`C:/Users/Kevin/foo`), a different transform for a different on-disk Claude Code contract. Both\n/// names are frozen to match what Claude Code writes; do not \"unify\" them.\npub(crate) fn claude_project_dir_name(cwd: &str) -> String {\n    // ONE definition, in `bsc-session`, because `bsc session reset` needs the same answer and cannot\n    // reach a `pub(crate)` here. Semantics stay frozen; this is now a re-export in function form so\n    // the nine existing call sites keep their name. (`map_slug` deliberately did NOT move — it has\n    // other callers in `fsx.rs`, and only its RULE was needed here.)\n    bsc_session::claude_project_dir_name(cwd)\n}\n"
+}

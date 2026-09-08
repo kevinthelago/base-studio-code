@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--migrate--crate-doc-markdown.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "crate_doc_markdown",
+  "composes": [],
+  "code": "/// The crate root's own documentation, as the MARKDOWN a `#![doc = include_str!(…)]` wants.\n///\n/// `//!` is a doc comment in Rust and noise in markdown, so the marker is stripped and the prose is\n/// kept verbatim — including its rustdoc intra-doc links, which resolve identically from an included\n/// markdown file because the attribute sits in the real crate root rather than in an `include!`d one.\n/// That distinction is the whole reason this migration is possible; see [`root_is_bare`].\npub fn crate_doc_markdown(lib_src: &str) -> String {\n    let mut out: Vec<&str> = Vec::new();\n    for line in lib_src.lines() {\n        let t = line.trim_start();\n        let Some(rest) = t.strip_prefix(\"//!\") else { continue };\n        out.push(rest.strip_prefix(' ').unwrap_or(rest));\n    }\n    let mut doc = out.join(\"\\n\");\n    if !doc.is_empty() && !doc.ends_with('\\n') {\n        doc.push('\\n');\n    }\n    doc\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/crate_doc_markdown.rs",
+  "moduleVis": "private"
+}

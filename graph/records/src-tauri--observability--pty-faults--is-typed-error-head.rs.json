@@ -1,0 +1,10 @@
+{
+  "id": "src-tauri--observability--pty-faults--is-typed-error-head.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_typed_error_head",
+  "code": "//! `is_typed_error_head` — pure typed-error head predicate (per-method record of the pty_faults parser).\n\n/// A `Something(Error|Exception): message` head — a single leading identifier ending in `Error`/\n/// `Exception` before the first colon. Matches the typed-error line Node/V8, Python, and the JVM\n/// print; rejects `note:`, `at x: y`, `GET /a: 200` (the pre-colon token has whitespace) and plain\n/// lowercase words.\npub(crate) fn is_typed_error_head(t: &str) -> bool {\n    let Some((head, _)) = t.split_once(':') else {\n        return false;\n    };\n    let head = head.trim();\n    if head.is_empty() || head.contains(char::is_whitespace) {\n        return false;\n    }\n    let starts_upper = head.chars().next().is_some_and(|c| c.is_ascii_uppercase());\n    starts_upper && (head.ends_with(\"Error\") || head.ends_with(\"Exception\"))\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn typed_error_head_is_specific() {\n        assert!(is_typed_error_head(\"TypeError: x is undefined\"));\n        assert!(is_typed_error_head(\"Error: boom\"));\n        assert!(is_typed_error_head(\"SomeException: nope\"));\n        // Not typed-error heads:\n        assert!(!is_typed_error_head(\"note: run with RUST_BACKTRACE=1\"));\n        assert!(!is_typed_error_head(\"at foo: bar\"), \"pre-colon token has whitespace\");\n        assert!(!is_typed_error_head(\"GET /api: 200\"));\n        assert!(!is_typed_error_head(\"warning: deprecated\"));\n    }\n}\n",
+  "folder": "src-tauri/src/observability/pty_faults",
+  "src": "src-tauri/src/observability/pty_faults/is_typed_error_head.rs",
+  "moduleVis": "private"
+}

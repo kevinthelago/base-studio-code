@@ -1,0 +1,12 @@
+{
+  "id": "bsc-util--test-source-ext.rs",
+  "name": "test_source_ext",
+  "role": "algorithm",
+  "tech": "rust",
+  "folder": "crates/bsc-util/src",
+  "src": "crates/bsc-util/src/test_source_ext.rs",
+  "moduleVis": "pub",
+  "domain": null,
+  "composes": [],
+  "code": "/// The carried `ext` facet for a test read from `path` (#148): the file's REAL extension, in the\n/// `.ts`/`.tsx`/`.js`/`.jsx` form the emitter's `ext` field expects (`scripts/emit-records.mjs`\n/// `extFor`/its `/^\\.[jt]sx?$/` validator).\n///\n/// A writer that reads a test's `src` from an actual file already knows this for free — the path it\n/// just read is right there — so it should never leave the emitter to GUESS from the body. The guess\n/// (`extFor`) treats any `<Tag>`-shaped substring as JSX, and an ordinary TypeScript generic like\n/// `<T>(a: readonly T[])` matches that just as well as a real element: the test is re-emitted as\n/// `.tsx` and vitest runs it in the `dom` project instead of `node` — still green, silently ~35x\n/// slower. `None` for a path with no extension or one the emitter does not model, so a caller falls\n/// back to the emitter's guess exactly as it did before this field existed.\npub fn test_source_ext(path: &std::path::Path) -> Option<String> {\n    let ext = path.extension()?.to_str()?;\n    matches!(ext, \"ts\" | \"tsx\" | \"js\" | \"jsx\").then(|| format!(\".{ext}\"))\n}"
+}

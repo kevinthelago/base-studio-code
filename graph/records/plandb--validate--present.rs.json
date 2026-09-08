@@ -1,0 +1,12 @@
+{
+  "id": "plandb--validate--present.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "present",
+  "code": "//! `present` — a present-non-null Value field predicate, per-method record of the validate module.\n\nuse serde_json::Value;\n\n/// A field that is PRESENT with a non-null value (whatever its type) — for \"this field must not be\n/// set\" rules where even a wrong-typed value signals intent.\npub(crate) fn present(v: &Value, key: &str) -> bool {\n    v.get(key).map(|x| !x.is_null()).unwrap_or(false)\n}\n",
+  "domain": "plandb",
+  "folder": "crates/plandb/src/validate",
+  "src": "crates/plandb/src/validate/present.rs",
+  "moduleVis": "private",
+  "composes": []
+}

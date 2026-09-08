@@ -1,0 +1,11 @@
+{
+  "id": "llm--local--chat-completions-url.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "chat_completions_url",
+  "src": "crates/llm/src/local/chat_completions_url.rs",
+  "folder": "crates/llm/src/local",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The chat-completions endpoint for a base URL (tolerant of a trailing slash).\npub(crate) fn chat_completions_url(base: &str) -> String {\n    format!(\"{}/chat/completions\", base.trim_end_matches('/'))\n}\n"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "src-tauri--observability--renderer-watch--is-renderer-comm.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_renderer_comm",
+  "code": "use super::RENDERER_COMM_PREFIX;\n\n/// Whether a `/proc/<pid>/comm` value names the renderer. Pure, so the truncation rule is testable\n/// against the real observed strings rather than against what the process is \"called\".\npub fn is_renderer_comm(comm: &str) -> bool {\n    comm.starts_with(RENDERER_COMM_PREFIX)\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn the_truncated_comm_name_is_what_proc_actually_holds() {\n        // THE 15-CHARACTER CAP. `TASK_COMM_LEN` is 16 including the NUL, so `/proc/<pid>/comm` holds\n        // at most fifteen characters and the full 16-char name is never what is there. Comparing\n        // against it meant the sampler matched NOTHING — the fault read `unknown` while the renderer\n        // sat at 28.5 GB.\n        assert!(is_renderer_comm(\"WebKitWebProces\"), \"the TRUNCATED name is what /proc actually holds\");\n        assert!(is_renderer_comm(\"WebKitWebProcess\"), \"and the full one, wherever it is not truncated\");\n        // The sibling network process is exactly 15 chars and must NOT count — it is small, and\n        // mistaking it for the renderer would understate the peak by orders of magnitude.\n        assert!(!is_renderer_comm(\"WebKitNetworkPr\"));\n        assert!(!is_renderer_comm(\"base-studio-cod\"));\n        assert!(!is_renderer_comm(\"\"));\n    }\n}\n",
+  "folder": "src-tauri/src/observability/renderer_watch",
+  "src": "src-tauri/src/observability/renderer_watch/is_renderer_comm.rs",
+  "moduleVis": "private"
+}

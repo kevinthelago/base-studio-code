@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--session--fresh-only--is-studio-session-pane-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_studio_session_pane_id",
+  "src": "src-tauri/src/session/fresh_only/is_studio_session_pane_id.rs",
+  "folder": "src-tauri/src/session/fresh_only",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--session--fresh-only--studio-pane-ids.rs"
+  ],
+  "code": "use super::*;\n\n/// Is `pane_id` one of the fixed, app-owned studio sessions?\n///\n/// Membership, NOT a prefix test. `debug-studio:debugger` is in the registry; `debug-studio:req-4212`\n/// shares its prefix and must not match — see the module docs for what that cost.\npub fn is_studio_session_pane_id(pane_id: &str, studio_pane_ids: &[String]) -> bool {\n    studio_pane_ids.iter().any(|id| id == pane_id)\n}\n"
+}

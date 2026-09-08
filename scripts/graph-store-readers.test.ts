@@ -94,25 +94,40 @@ function sourceUnits(): { name: string; text: string }[] {
 }
 
 /**
- * Every place a unit reads `…graph/algorithms.json` off disk itself.
+ * Every place a unit reads the committed store off disk itself.
  *
  * Scoped to the enclosing STATEMENT — the text back to the nearest `;`, `{` or `}` — so a mention in a
  * comment, a path binding on its own line, or a `loadStore(resolve(REPO, "graph/algorithms.json"))`
- * does not read as a direct parse. The statement must also name `graph` and must NOT name `knowledge`:
- * the PACKAGED SEED at `src-tauri/data/knowledge/algorithms.json` is a different file that is one file
- * by design, ships inside the binaries, and is nobody's business here.
+ * does not read as a direct parse.
+ *
+ * # It matches the path's ALIASES, not only the literal
+ *
+ * A literal-only rule has a hole big enough to drive the whole failure through, and it did: the
+ * materializer's own `src_tauri_resolves_and_now_renders_every_record_it_owns` read
+ * `std::fs::read_to_string(&plan.store_path)` — no literal in sight — and the day `src-tauri`'s 138
+ * records split out it asserted "src-tauri owns only 0 records". So the names the repo uses FOR that
+ * path count as the path: `store_path`, `path_under(`, `REPO_STORE_REL`.
+ *
+ * A literal match must also name `graph` and must NOT name `knowledge`: the PACKAGED SEED at
+ * `src-tauri/data/knowledge/algorithms.json` is a different file, one file by design, that ships
+ * inside the binaries and is nobody's business here.
  */
 export function directReads(units: { name: string; text: string }[]): string[] {
   const found: string[] = [];
   for (const { name, text: raw } of units) {
     const text = withoutLineComments(raw);
-    for (const m of text.matchAll(/algorithms\.json/g)) {
+    const at: number[] = [];
+    for (const m of text.matchAll(/algorithms\.json|store_path|path_under\s*\(|REPO_STORE_REL/g)) {
       const head = text.slice(Math.max(0, m.index - 400), m.index);
       const cut = Math.max(head.lastIndexOf(";"), head.lastIndexOf("{"), head.lastIndexOf("}"));
       const stmt = cut >= 0 ? head.slice(cut + 1) : head;
-      if (!stmt.includes("graph") || stmt.includes("knowledge") || !READ.test(stmt)) continue;
-      found.push(`${name}:${text.slice(0, m.index).split("\n").length}`);
+      if (!READ.test(stmt)) continue;
+      // A LITERAL path has to say which store; an ALIAS already names the repo one by construction.
+      if (m[0] === "algorithms.json" && (!stmt.includes("graph") || stmt.includes("knowledge"))) continue;
+      const line = text.slice(0, m.index).split("\n").length;
+      if (!at.includes(line)) at.push(line);
     }
+    for (const line of at) found.push(`${name}:${line}`);
   }
   return found;
 }
@@ -162,8 +177,12 @@ describe("the committed graph store has exactly one reader: the merged loader", 
       directReads([
         { name: "x.rs", text: 'let raw = std::fs::read_to_string(root.join("graph").join("algorithms.json"));' },
         { name: "y.ts", text: "const recs = JSON.parse(readFileSync('graph/algorithms.json','utf8'));" },
+        // THE ONE THAT GOT THROUGH: the path reaches the read through a variable, so there is no
+        // literal to match. This shape read as green while returning zero records.
+        { name: "z.rs", text: 'let raw = std::fs::read_to_string(&plan.store_path).expect("reads");' },
+        { name: "w.rs", text: 'let raw = std::fs::read_to_string(path_under(&root)).unwrap();' },
       ]),
-    ).toEqual(["x.rs:1", "y.ts:1"]);
+    ).toEqual(["x.rs:1", "y.ts:1", "z.rs:1", "w.rs:1"]);
     // …and does NOT fire on the seed, on a comment, or on a call that goes through the loader.
     expect(
       directReads([

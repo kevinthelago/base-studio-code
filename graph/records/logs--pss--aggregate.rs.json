@@ -1,0 +1,11 @@
+{
+  "id": "logs--pss--aggregate.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "aggregate",
+  "src": "crates/logs/src/pss/aggregate.rs",
+  "folder": "crates/logs/src/pss",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Aggregate one sample's processes into per-category totals, sorted by descending PSS (the biggest\n/// consumer first — what a reader scanning the table wants).\npub fn aggregate(procs: &[ProcSample]) -> Vec<CategoryTotal> {\n    let mut totals: BTreeMap<&'static str, (u64, usize)> = BTreeMap::new();\n    for p in procs {\n        let e = totals.entry(p.category).or_insert((0, 0));\n        e.0 += p.pss_bytes;\n        e.1 += 1;\n    }\n    let mut out: Vec<CategoryTotal> = totals\n        .into_iter()\n        .map(|(category, (pss_bytes, procs))| CategoryTotal { category, pss_bytes, procs })\n        .collect();\n    out.sort_by_key(|a| std::cmp::Reverse(a.pss_bytes));\n    out\n}\n"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-publish--repo-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "repo_for",
+  "code": "use plandb::PlanIssue;\n\n/// Which repo an issue belongs to: its declared `repo`, else the default (first) repo.\npub fn repo_for<'a>(issue: &'a PlanIssue, repos: &'a [String]) -> Option<&'a String> {\n    match issue.repo.as_ref().filter(|r| !r.is_empty()) {\n        Some(r) => repos.iter().find(|x| *x == r).or(Some(r)),\n        None => repos.first(),\n    }\n}\n",
+  "feature": "github",
+  "folder": "crates/bsc-publish/src",
+  "src": "crates/bsc-publish/src/repo_for.rs",
+  "moduleVis": "private",
+  "composes": []
+}

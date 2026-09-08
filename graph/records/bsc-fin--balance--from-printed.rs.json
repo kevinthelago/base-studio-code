@@ -1,0 +1,17 @@
+{
+  "id": "bsc-fin--balance--from-printed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "from_printed",
+  "composes": [
+    "bsc-fin--account.rs",
+    "bsc-fin--money.rs",
+    "bsc-fin--position--mod.rs"
+  ],
+  "code": "use crate::account::Kind;\nuse crate::money::Money;\nuse crate::position::AccountBalance;\n\n/// Record a balance from the figure a statement PRINTS.\n///\n/// The `kind` decides the sign, so this is the only place a printed number becomes a signed one.\npub fn from_printed(account: &str, as_of: &str, printed: Money, kind: Kind) -> AccountBalance {\n    AccountBalance {\n        account: account.to_string(),\n        as_of: as_of.to_string(),\n        balance: crate::position::from_statement_balance(kind, printed),\n    }\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/balance",
+  "src": "crates/bsc-fin/src/balance/from_printed.rs",
+  "moduleVis": "private"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "bsc-record--changed-fields.rs",
+  "src": "crates/bsc-record/src/changed_fields.rs",
+  "folder": "crates/bsc-record/src",
+  "name": "changed_fields",
+  "tech": "rust",
+  "role": "algorithm",
+  "domain": "bsc-record",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-record--read-rev.rs",
+    "bsc-record--lib.rs"
+  ],
+  "code": "use serde_json::Value;\nuse crate::{HISTORY, REV, UPDATED_AT, UPDATED_BY, read_rev};\n\n/// The top-level fields that DIFFER between the prior record and the new one — the auto-summary of a\n/// change (#3568). Excludes the provenance/history fields themselves and `seedHash` (a derived reconcile\n/// hash, not an authored change). A brand-new record (prior absent/empty at rev 0) → `[\"created\"]`.\n/// Returns names sorted for a stable entry. Pure. A REMOVED field counts as a change here; see\n/// [`crate::dropped_fields`] for the removals on their own, which is what makes a destructive write legible.\npub fn changed_fields(prior: &Value, next: &Value) -> Vec<String> {\n    const SKIP: [&str; 5] = [REV, UPDATED_AT, UPDATED_BY, HISTORY, \"seedHash\"];\n    let Some(n) = next.as_object() else { return vec![] };\n    let p = prior.as_object();\n    if p.is_none_or(serde_json::Map::is_empty) && read_rev(prior) == 0 {\n        return vec![\"created\".to_string()];\n    }\n    let p = p.expect(\"non-new ⇒ prior is a non-empty object\");\n    let mut changed = std::collections::BTreeSet::new();\n    for (k, v) in n {\n        if !SKIP.contains(&k.as_str()) && p.get(k) != Some(v) {\n            changed.insert(k.clone());\n        }\n    }\n    for k in p.keys() {\n        if !SKIP.contains(&k.as_str()) && !n.contains_key(k) {\n            changed.insert(k.clone()); // a removed field is a change too\n        }\n    }\n    changed.into_iter().collect()\n}\n"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--migrate--remove-decl-blocks.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "remove_decl_blocks",
+  "composes": [],
+  "code": "use super::*;\n\n/// A source with a set of `mod x;` declaration blocks removed — the shared half of [`rewrite_lib`] and\n/// [`strip_child_decls`].\n///\n/// The attributes and the doc block leave WITH the declaration they belong to — see [`module_decls`]\n/// for what a leftover one did to `crates/llm`.\npub(crate) fn remove_decl_blocks(src: &str, decls: &[ModuleDecl]) -> Result<String, String> {\n    let mut out = src.to_string();\n    for d in decls {\n        let block = format!(\"{}\\n\", d.block);\n        // A removal that did not happen must NOT be silent. Returning the text unchanged would leave a\n        // `mod x;` pointing at a file the apply path is about to delete, and the first thing anyone\n        // would see is an unresolved-module error with nothing connecting it to this step.\n        let at = out.find(&block).ok_or_else(|| {\n            format!(\"cannot locate the declaration block for `mod {}` to remove it\", d.name)\n        })?;\n        out.replace_range(at..at + block.len(), \"\");\n    }\n    Ok(out)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/migrate",
+  "src": "crates/bsc-graph/src/migrate/remove_decl_blocks.rs",
+  "moduleVis": "private"
+}

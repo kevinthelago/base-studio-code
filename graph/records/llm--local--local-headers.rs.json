@@ -1,0 +1,11 @@
+{
+  "id": "llm--local--local-headers.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "local_headers",
+  "src": "crates/llm/src/local/local_headers.rs",
+  "folder": "crates/llm/src/local",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Auth headers for the local endpoint. Ollama needs no auth, so the bearer token\n/// is forwarded only when an API key is configured (an empty key sends no header).\npub(crate) fn local_headers(api_key: &str) -> Vec<(&'static str, String)> {\n    if api_key.is_empty() {\n        Vec::new()\n    } else {\n        vec![(\"authorization\", format!(\"Bearer {}\", api_key))]\n    }\n}\n"
+}

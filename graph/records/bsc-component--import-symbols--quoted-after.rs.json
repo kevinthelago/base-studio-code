@@ -1,0 +1,12 @@
+{
+  "id": "bsc-component--import-symbols--quoted-after.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "quoted_after",
+  "code": "/// The first quoted string literal following the whole word `word` in `s`.\npub(crate) fn quoted_after(s: &str, word: &str) -> Option<String> {\n    let idx = s.find(word)?;\n    let after = s[idx + word.len()..].trim_start();\n    let quote = after.chars().next().filter(|c| matches!(c, '\"' | '\\'' | '`'))?;\n    let body = &after[quote.len_utf8()..];\n    let end = body.find(quote)?;\n    Some(body[..end].to_string())\n}\n",
+  "domain": "bsc-component",
+  "folder": "crates/bsc-component/src/import_symbols",
+  "src": "crates/bsc-component/src/import_symbols/quoted_after.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "compliance--mcp--parse-domain-arg.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_domain_arg",
+  "code": "use crate::types::Domain;\nuse serde_json::Value;\n\n/// Parse a `domain` arg into an `Option<Domain>`; an unknown token is an error.\npub fn parse_domain_arg(args: &Value) -> Result<Option<Domain>, String> {\n    match args.get(\"domain\").and_then(|v| v.as_str()) {\n        None => Ok(None),\n        Some(tok) if tok.trim().is_empty() => Ok(None),\n        Some(tok) => Domain::parse(tok).map(Some).ok_or_else(|| format!(\"unknown domain '{tok}'\")),\n    }\n}\n",
+  "domain": "compliance",
+  "folder": "crates/compliance/src/mcp",
+  "src": "crates/compliance/src/mcp/parse_domain_arg.rs",
+  "moduleVis": "private",
+  "composes": [
+    "compliance--types.rs"
+  ]
+}

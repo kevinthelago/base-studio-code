@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--rel-import.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rel_import",
+  "code": "//! `rel_import` — The POSIX relative import from a file in `from_dir` to the extension-less target `to`, always prefixed `./` or `../` so a bundler treats it \n\n/// The POSIX relative import from a file in `from_dir` to the extension-less target `to`, always\n/// prefixed `./` or `../` so a bundler treats it as a relative path (not a bare package).\npub(crate) fn rel_import(from_dir: &str, to: &str) -> String {\n    let from: Vec<&str> = from_dir.split('/').filter(|s| !s.is_empty()).collect();\n    let to_parts: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();\n    let common = from.iter().zip(&to_parts).take_while(|(a, b)| a == b).count();\n    let mut segs: Vec<String> = vec![\"..\".to_string(); from.len() - common];\n    segs.extend(to_parts[common..].iter().map(|s| s.to_string()));\n    let joined = segs.join(\"/\");\n    if joined.starts_with(\"..\") {\n        joined\n    } else {\n        format!(\"./{joined}\")\n    }\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/rel_import.rs",
+  "moduleVis": "private",
+  "composes": []
+}

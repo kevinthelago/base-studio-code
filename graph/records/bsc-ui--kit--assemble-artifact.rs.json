@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--kit--assemble-artifact.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "assemble_artifact",
+  "code": "//! `assemble_artifact` — Assemble a `component-kit` release artifact from a live kit + its components (#3167, the `--from-store` one-shot) — so a release no longer h\n\nuse serde_json::{json, Value};\n\n/// Assemble a `component-kit` release artifact from a live kit + its components (#3167, the\n/// `--from-store` one-shot) — so a release no longer has to be hand-piped through `--file`. Produces the\n/// SAME shape `release add --file` expects: a JSON object `{ id, version, kit, components }`, where `kit`\n/// is the kit record from the component library and `components` is every component the caller gathered\n/// for it. `id`/`version` are the RELEASE's store identity (the positional `add` args), NOT the working\n/// kit's own id. Serialized pretty with a trailing newline — the artifact's canonical form (matching the\n/// packaged `react-ui.json`). The emptiness floor is [`validate_artifact`], which the `add` verb runs on\n/// this result, so an assembly that gathered no components is refused there rather than silently stored.\npub fn assemble_artifact(id: &str, version: &str, kit: Value, components: Vec<Value>) -> String {\n    let artifact = json!({ \"id\": id, \"version\": version, \"kit\": kit, \"components\": components });\n    // Pretty + trailing newline mirrors the generator's canonical bytes (`JSON.stringify(…, 2) + \"\\n\"`).\n    let mut s = serde_json::to_string_pretty(&artifact).unwrap_or_else(|_| \"{}\".to_string());\n    s.push('\\n');\n    s\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/kit",
+  "src": "crates/bsc-ui/src/kit/assemble_artifact.rs",
+  "moduleVis": "private",
+  "composes": []
+}

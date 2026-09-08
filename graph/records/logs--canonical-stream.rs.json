@@ -1,0 +1,12 @@
+{
+  "id": "logs--canonical-stream.rs",
+  "name": "canonical_stream",
+  "role": "algorithm",
+  "tech": "rust",
+  "folder": "crates/logs/src",
+  "src": "crates/logs/src/canonical_stream.rs",
+  "moduleVis": "pub",
+  "domain": "logs",
+  "composes": [],
+  "code": "/// Resolve a user-supplied stream alias to its canonical name (e.g. `audit`→`tool`, `skills`→`skill`).\npub fn canonical_stream(name: &str) -> Option<&'static str> {\n    match name {\n        \"tool\" | \"audit\" | \"tools\" => Some(\"tool\"),\n        \"skill\" | \"skills\" => Some(\"skill\"),\n        \"mcp\" => Some(\"mcp\"),\n        \"hook\" | \"hooks\" => Some(\"hook\"),\n        \"activity\" => Some(\"activity\"),\n        \"done\" => Some(\"done\"),\n        // Schedule fires (hooks-and-schedules-belong-to-the-persona): written by the DESKTOP\n        // scheduler rather than a session shell, since a schedule has no shell to emit from.\n        \"automation\" | \"automations\" | \"schedule\" | \"schedules\" => Some(\"automation\"),\n        \"coord\" => Some(\"coord\"),\n        \"perm\" | \"perms\" | \"deny\" | \"denials\" => Some(\"perm\"),\n        // UI-design activity (#2525): `bsc logs tail ui` — the designer session's `ui-touch` stream.\n        \"ui\" => Some(\"ui\"),\n        // Migration divergence: the two implementations of one migrated policy disagreed. The\n        // aliases are the words a reader reaches for when they do not recall the stream's name —\n        // `bsc logs tail disagreement` should not be a dead end.\n        \"divergence\" | \"divergences\" | \"disagreement\" | \"disagreements\" | \"drift\" => Some(\"divergence\"),\n        // Provider rate-limit headroom — what budget a fleet has left.\n        \"ratelimit\" | \"ratelimits\" | \"rate-limit\" | \"headroom\" | \"budget\" => Some(\"ratelimit\"),\n        _ => None,\n    }\n}"
+}

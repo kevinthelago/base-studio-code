@@ -1,0 +1,12 @@
+{
+  "id": "logs--instrument--rollup.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "rollup",
+  "code": "use super::*;\n\n/// Roll up `(name, ms)` pairs, heaviest TOTAL first — total rather than worst, because a 5ms cost paid on\n/// every commit outranks a 30ms one paid once, and ranking by worst hides exactly that.\npub fn rollup(items: impl IntoIterator<Item = (String, u64)>) -> Vec<Rollup> {\n    let mut by: std::collections::BTreeMap<String, (usize, u64, u64)> = Default::default();\n    for (name, ms) in items {\n        let e = by.entry(name).or_insert((0, 0, 0));\n        e.0 += 1;\n        e.1 += ms;\n        e.2 = e.2.max(ms);\n    }\n    let mut out: Vec<Rollup> = by\n        .into_iter()\n        .map(|(name, (calls, total_ms, worst_ms))| Rollup {\n            name,\n            calls,\n            total_ms,\n            worst_ms,\n            mean_ms: total_ms / calls.max(1) as u64,\n        })\n        .collect();\n    out.sort_by(|a, b| b.total_ms.cmp(&a.total_ms).then(a.name.cmp(&b.name)));\n    out\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/rollup.rs",
+  "moduleVis": "private",
+  "composes": []
+}

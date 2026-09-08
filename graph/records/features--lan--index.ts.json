@@ -1,0 +1,13 @@
+{
+  "id": "features--lan--index.ts",
+  "tech": "typescript",
+  "role": "algorithm",
+  "name": "index",
+  "composes": [],
+  "code": "// The `lan` feature's public API (#1545). Cross-feature code imports\n// `@/features/lan` and nothing deeper: the internals stay free to move.\n//\n// The analyzer surface itself ships as a RECORD\n// (src-tauri/data/components/app/features/lan/), so this barrel re-exports the\n// specifier that record `provides` rather than a local file — the barrel is the\n// boundary, not the storage.\nexport {\n  SpectrumAnalyzer,\n  LiveSpectrumAnalyzer,\n  useLanSpectrum,\n  binFrequencyMhz,\n  binEdgesMhz,\n  binDbm,\n  rampColor,\n  strengthFraction,\n  strengthColor,\n  spanOf,\n  pushRow,\n  rowGradient,\n  isCurrent,\n  ageLabel,\n  emptyStateDiagnosis,\n  staleBanner,\n  contributingSensors,\n  NEVER_HEARD,\n  HISTORY,\n  MIN_RANGE_DB,\n  extentOf,\n  rangeDb,\n  timeTicks,\n  axisTicks,\n  tickAnchor,\n  ROW_PX,\n  CHANNEL_WIDTH_MHZ,\n  UNOBSERVED,\n  type SpectrumBins,\n  type Liveness,\n  type LivenessState,\n  type Row,\n  type Span,\n  type Extent,\n  type TimeTick,\n} from \"@/features/lan/SpectrumAnalyzer\";\n",
+  "domain": "lan",
+  "src": "src/features/lan/index.ts",
+  "folder": "features/lan",
+  "provides": "@/features/lan",
+  "feature": "lan"
+}

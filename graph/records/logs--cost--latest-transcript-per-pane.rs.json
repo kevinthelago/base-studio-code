@@ -1,0 +1,12 @@
+{
+  "id": "logs--cost--latest-transcript-per-pane.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "latest_transcript_per_pane",
+  "code": "use std::collections::HashMap;\n\n/// The latest `(pane, transcript_path)` per pane from a `tokens.log` body (a later line for a\n/// pane supersedes earlier ones — a resumed session keeps the same accumulating transcript).\npub(crate) fn latest_transcript_per_pane(log_text: &str) -> Vec<(usize, String, String)> {\n    let mut latest: HashMap<String, (usize, String)> = HashMap::new();\n    for (i, line) in log_text.lines().enumerate() {\n        let f: Vec<&str> = line.split('\\t').collect();\n        if f.len() < 4 {\n            continue;\n        }\n        let (pane, tp) = (f[1].to_string(), f[3].to_string());\n        if pane.is_empty() || tp.is_empty() {\n            continue;\n        }\n        latest.insert(pane, (i, tp));\n    }\n    let mut rows: Vec<(usize, String, String)> =\n        latest.into_iter().map(|(pane, (ord, tp))| (ord, pane, tp)).collect();\n    rows.sort_by_key(|r| std::cmp::Reverse(r.0)); // newest line first\n    rows\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/cost",
+  "src": "crates/logs/src/cost/latest_transcript_per_pane.rs",
+  "moduleVis": "private",
+  "composes": []
+}

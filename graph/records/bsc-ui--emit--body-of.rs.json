@@ -1,0 +1,12 @@
+{
+  "id": "bsc-ui--emit--body-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "body_of",
+  "code": "//! `body_of` — The body of a vendored file — everything after the first (stamp) line, which is what the stamp's sha256 covers.\n\n/// The body of a vendored file — everything after the first (stamp) line, which is what the stamp's\n/// sha256 covers.\npub(crate) fn body_of(content: &str) -> &str {\n    content.find('\\n').map(|i| &content[i + 1..]).unwrap_or(\"\")\n}\n",
+  "domain": "bsc-ui",
+  "folder": "crates/bsc-ui/src/emit",
+  "src": "crates/bsc-ui/src/emit/body_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

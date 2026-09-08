@@ -1,0 +1,12 @@
+{
+  "id": "logs--instrument--between.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "between",
+  "code": "/// The substring between `open` and the next `close`, if both are present in order.\npub(crate) fn between<'a>(hay: &'a str, open: &str, close: &str) -> Option<&'a str> {\n    let s = hay.find(open)? + open.len();\n    let rest = &hay[s..];\n    let e = rest.find(close)?;\n    Some(&rest[..e])\n}\n",
+  "domain": "logs",
+  "folder": "crates/logs/src/instrument",
+  "src": "crates/logs/src/instrument/between.rs",
+  "moduleVis": "private",
+  "composes": []
+}

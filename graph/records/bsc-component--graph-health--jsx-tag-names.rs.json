@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--graph-health--jsx-tag-names.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "jsx_tag_names",
+  "composes": [],
+  "code": "#![allow(unused_imports)]\nuse super::*;\n\n/// The set of JSX element/component tag names OPENED in `source` — every `<Ident` that is not a closing\n/// `</…` tag. (A TS generic like `<Number>` lands here too, which only makes the self-reference check\n/// MORE conservative — a stub carrying a generic simply isn't flagged.) Mirrors `jsxTagNames` (graphHealth.ts).\npub fn jsx_tag_names(source: &str) -> BTreeSet<String> {\n    let bytes = source.as_bytes();\n    let mut set = BTreeSet::new();\n    let mut i = 0;\n    while i < bytes.len() {\n        if bytes[i] == b'<' && i + 1 < bytes.len() && (bytes[i + 1] as char).is_ascii_alphabetic() {\n            let start = i + 1;\n            let mut k = start;\n            while k < bytes.len() && ((bytes[k] as char).is_ascii_alphanumeric() || bytes[k] == b'_') {\n                k += 1;\n            }\n            set.insert(source[start..k].to_string());\n            i = k;\n            continue;\n        }\n        i += 1;\n    }\n    set\n}\n",
+  "src": "crates/bsc-component/src/graph_health/jsx_tag_names.rs",
+  "folder": "crates/bsc-component/src/graph_health",
+  "moduleVis": "private"
+}

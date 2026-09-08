@@ -1,0 +1,12 @@
+{
+  "id": "plandb--classify--app-type-of.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "app_type_of",
+  "code": "use super::*;\n\n/// The project's app type, with the unclassified default applied.\npub fn app_type_of(cfg: Option<&ClassifyConfig>) -> &str {\n    axis(cfg.and_then(|c| c.app_type.as_deref()), &APP_TYPES, \"application\")\n}\n",
+  "domain": "plandb",
+  "folder": "crates/plandb/src/classify",
+  "src": "crates/plandb/src/classify/app_type_of.rs",
+  "moduleVis": "private",
+  "composes": []
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-news--engine--select.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "select",
+  "src": "crates/bsc-news/src/engine/select.rs",
+  "folder": "crates/bsc-news/src/engine",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Select the articles matching `query` — all terms must appear, case-insensitively.\n///\n/// This is a keyword filter, not an event clusterer, and the epic says so: real cross-lingual event\n/// clustering is L3 and is deliberately deferred behind the question of whether the digest is worth\n/// reading at all. A keyword is enough to answer that and is honest about what it did.\npub fn select(articles: Vec<ArticleVersion>, query: &str) -> Vec<ArticleVersion> {\n    let terms: Vec<String> = query.split_whitespace().map(|t| t.to_lowercase()).collect();\n    if terms.is_empty() {\n        return articles;\n    }\n    articles\n        .into_iter()\n        .filter(|a| {\n            let text = a.text().to_lowercase();\n            terms.iter().all(|t| text.contains(t))\n        })\n        .collect()\n}\n"
+}

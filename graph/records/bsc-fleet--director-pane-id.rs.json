@@ -1,0 +1,11 @@
+{
+  "id": "bsc-fleet--director-pane-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "director_pane_id",
+  "code": "/// The pane a project's director runs on. Pane identity is `<projectKey>:director`, the same grammar\n/// [`crate::cli::director_project_key`] reads back — one spelling, so create / list / brief all name the same pane.\npub fn director_pane_id(project_key: &str) -> String {\n    format!(\"{project_key}:director\")\n}\n",
+  "folder": "crates/bsc-fleet/src",
+  "src": "crates/bsc-fleet/src/director_pane_id.rs",
+  "moduleVis": "private",
+  "composes": []
+}

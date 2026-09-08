@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--usage-scan--mount-ids.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "mount_ids",
+  "code": "use std::collections::BTreeSet;\n\n/// Every `<GraphComponent … id=\"X\">` id named in `source`.\n///\n/// A hand scanner, like every other one in this crate (no regex dep). Verified on the real store: all\n/// mount sites use a LITERAL string id, so a static read is reliable here — there is no variable-id\n/// indirection to defeat it.\npub fn mount_ids(source: &str) -> BTreeSet<String> {\n    const TAG: &str = \"GraphComponent\";\n    let mut out = BTreeSet::new();\n    let bytes: Vec<char> = source.chars().collect();\n    let mut from = 0usize;\n    let hay: String = source.to_string();\n    while let Some(rel) = hay[from..].find(TAG) {\n        let start = from + rel + TAG.len();\n        from = start;\n        // Scan this element's attributes up to `>`, and take the first `id=\"…\"`.\n        let mut i = start;\n        while i < bytes.len() && bytes[i] != '>' {\n            if bytes[i] == 'i' && bytes.get(i + 1) == Some(&'d') {\n                let mut j = i + 2;\n                while j < bytes.len() && bytes[j].is_whitespace() {\n                    j += 1;\n                }\n                if bytes.get(j) == Some(&'=') {\n                    j += 1;\n                    while j < bytes.len() && bytes[j].is_whitespace() {\n                        j += 1;\n                    }\n                    if let Some(&q @ ('\"' | '\\'')) = bytes.get(j) {\n                        let mut k = j + 1;\n                        let mut val = String::new();\n                        while k < bytes.len() && bytes[k] != q {\n                            val.push(bytes[k]);\n                            k += 1;\n                        }\n                        if !val.is_empty() {\n                            out.insert(val);\n                        }\n                        break;\n                    }\n                }\n            }\n            i += 1;\n        }\n    }\n    out\n}\n",
+  "folder": "crates/bsc-component/src/usage_scan",
+  "src": "crates/bsc-component/src/usage_scan/mount_ids.rs",
+  "moduleVis": "private",
+  "composes": []
+}

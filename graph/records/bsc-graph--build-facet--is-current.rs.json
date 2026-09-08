@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--build-facet--is-current.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_current",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether a node's recorded verdict still applies to `hash`.\n///\n/// A node with no facet, or one whose hash differs, is NOT current — the caller must rebuild. This\n/// deliberately says nothing about whether the artifact file exists; that is checked separately, so a\n/// swept-away cache re-derives instead of being trusted on the strength of a matching hash.\npub fn is_current(node: &Value, hash: &str) -> bool {\n    node.get(\"build\")\n        .and_then(|b| b.get(\"hash\"))\n        .and_then(Value::as_str)\n        .is_some_and(|h| h == hash)\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/build_facet",
+  "src": "crates/bsc-graph/src/build_facet/is_current.rs",
+  "moduleVis": "private"
+}

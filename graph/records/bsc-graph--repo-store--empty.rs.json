@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--repo-store--empty.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "empty",
+  "composes": [],
+  "code": "use super::*;\n\n/// An empty store document — what `promote` creates on first use.\npub fn empty() -> Value {\n    serde_json::json!({\n        \"version\": 1,\n        \"note\": \"The COMMITTED, build-readable graph store. Authoring happens in the runtime store \\\n                 (~/.base-studio-code/knowledge/algorithms.json); `bsc graph promote` moves records here, \\\n                 and `bsc graph promote --check` is the gate. Read directly, never through bsc_graph::load(), \\\n                 because load() reconciles the packaged seed and would append it wholesale.\",\n        \"implementations\": []\n    })\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/repo_store",
+  "src": "crates/bsc-graph/src/repo_store/empty.rs",
+  "moduleVis": "private"
+}

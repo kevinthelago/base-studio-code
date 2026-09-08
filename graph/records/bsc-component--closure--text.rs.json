@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--closure--text.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "text",
+  "code": "use serde_json::Value;\n\n/// A component's source field; an impl's is `code` — its module IS the code (`bsc graph harvest\n/// --module`), so it vendors exactly like a component's `srcText`.\npub fn text(v: &Value, key: &str) -> String {\n    v.get(key).and_then(Value::as_str).unwrap_or_default().to_string()\n}\n",
+  "folder": "crates/bsc-component/src/closure",
+  "src": "crates/bsc-component/src/closure/text.rs",
+  "moduleVis": "private",
+  "composes": []
+}

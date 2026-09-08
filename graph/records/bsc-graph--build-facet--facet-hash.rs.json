@@ -1,0 +1,12 @@
+{
+  "id": "bsc-graph--build-facet--facet-hash.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "facet_hash",
+  "composes": [],
+  "code": "/// The identity of a build: materialized source, the compiler, and the flags.\n///\n/// `flags` is joined rather than hashed per element so a reordering shows as a change — it can be one.\npub fn facet_hash(materialized: &str, toolchain: &str, flags: &[&str]) -> String {\n    let mut buf = String::with_capacity(materialized.len() + 128);\n    buf.push_str(materialized);\n    buf.push('\\u{1}');\n    buf.push_str(toolchain);\n    buf.push('\\u{1}');\n    buf.push_str(&flags.join(\" \"));\n    bsc_cli_util::vendored::sha256_hex(buf.as_bytes())\n}",
+  "domain": "bsc-graph",
+  "folder": "crates/bsc-graph/src/build_facet",
+  "src": "crates/bsc-graph/src/build_facet/facet_hash.rs",
+  "moduleVis": "private"
+}

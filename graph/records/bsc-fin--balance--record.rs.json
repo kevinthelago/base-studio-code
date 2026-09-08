@@ -1,0 +1,15 @@
+{
+  "id": "bsc-fin--balance--record.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "record",
+  "composes": [
+    "bsc-fin--position--mod.rs"
+  ],
+  "code": "use crate::position::AccountBalance;\n\n/// Add an observation, keeping every earlier one — unless it is the same account on the same DAY, in\n/// which case it is a correction rather than a new observation and replaces it.\npub fn record(balances: &mut Vec<AccountBalance>, next: AccountBalance) {\n    match balances.iter_mut().find(|b| b.account == next.account && b.as_of == next.as_of) {\n        Some(slot) => *slot = next,\n        None => {\n            balances.push(next);\n            balances.sort_by(|a, b| a.account.cmp(&b.account).then(a.as_of.cmp(&b.as_of)));\n        }\n    }\n}\n",
+  "domain": "finance",
+  "feature": "finance",
+  "folder": "crates/bsc-fin/src/balance",
+  "src": "crates/bsc-fin/src/balance/record.rs",
+  "moduleVis": "private"
+}

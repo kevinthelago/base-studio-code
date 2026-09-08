@@ -1,0 +1,14 @@
+{
+  "id": "llm--gemini--build-request-body.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "build_request_body",
+  "src": "crates/llm/src/gemini/build_request_body.rs",
+  "folder": "crates/llm/src/gemini",
+  "moduleVis": "private",
+  "composes": [
+    "llm--gemini--gemini-role.rs",
+    "llm--gemini--message-text.rs"
+  ],
+  "code": "use super::*;\n\n/// Build the Gemini `:generateContent` request body. The system prompt becomes\n/// `systemInstruction` (only when non-empty); messages become `contents`.\n/// Pure — extracted so it can be unit-tested without I/O.\npub(crate) fn build_request_body(req: &LlmRequest) -> serde_json::Value {\n    let contents: Vec<serde_json::Value> = req\n        .messages\n        .iter()\n        .map(|m| serde_json::json!({ \"role\": gemini_role(m), \"parts\": [ { \"text\": message_text(m) } ] }))\n        .collect();\n    let mut body = serde_json::json!({\n        \"contents\": contents,\n        \"generationConfig\": { \"maxOutputTokens\": req.max_tokens },\n    });\n    if !req.system.is_empty() {\n        body[\"systemInstruction\"] = serde_json::json!({ \"parts\": [ { \"text\": req.system } ] });\n    }\n    // Attach tool declarations when the caller passes any (#2093) — the one-shot path formerly dropped\n    // them, so a `complete` call with tools ran as if it had none. Gemini's `req.tools` are the raw\n    // JSON the caller already speaks; each is expected to be a `{name, description, parameters/schema}`\n    // object, mapped to Gemini's single `functionDeclarations` wrapper.\n    let decls: Vec<serde_json::Value> = req\n        .tools\n        .iter()\n        .map(|t| serde_json::json!({\n            \"name\": t.get(\"name\").cloned().unwrap_or(serde_json::Value::Null),\n            \"description\": t.get(\"description\").cloned().unwrap_or(serde_json::Value::Null),\n            \"parameters\": t.get(\"parameters\").or_else(|| t.get(\"schema\")).cloned().unwrap_or(serde_json::Value::Null),\n        }))\n        .collect();\n    if !decls.is_empty() {\n        body[\"tools\"] = serde_json::json!([ { \"functionDeclarations\": decls } ]);\n    }\n    body\n}\n"
+}

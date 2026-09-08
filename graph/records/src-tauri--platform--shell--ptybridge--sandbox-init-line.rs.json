@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--platform--shell--ptybridge--sandbox-init-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sandbox_init_line",
+  "src": "src-tauri/src/platform/shell/ptybridge/sandbox_init_line.rs",
+  "folder": "src-tauri/src/platform/shell/ptybridge",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--platform--shell--ptybridge--bash-ansi-c-quote.rs"
+  ],
+  "code": "use super::*;\n\n/// The interactive-shell init line for a session running INSIDE the sealed WSL2 distro (#1988).\n/// Mirrors the host bash init (cwd + OSC7/state markers + screen clear + optional launch). The host env\n/// does NOT traverse the wsl boundary, so this exports `env` (the session env — e.g. bsc-agent's\n/// provider/model/key + `GH_TOKEN`) INTO the distro shell, then bakes the distro's own `bsc`/`bsc-agent`\n/// paths over the top. Sources no host rc. `cwd` is distro-native (`/home/agent/...`); `launch` (e.g. a\n/// `bsc-agent …` command) is appended to start the agent. (In-distro bsc-* helper rc is a follow-up.)\npub(crate) fn sandbox_init_line(\n    cwd: &str,\n    launch: Option<&str>,\n    env: &std::collections::HashMap<String, String>,\n) -> String {\n    let cd = if cwd.is_empty() {\n        String::new()\n    } else {\n        format!(\"cd \\\"{cwd}\\\" 2>/dev/null; \")\n    };\n    // Cross the session env in. Only valid shell identifiers; the distro's own BSC_BIN/BSC_AGENT_BIN\n    // below override any crossed value, so the distro's sidecars always win.\n    let mut env_exports = String::new();\n    for (k, v) in env {\n        if !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {\n            env_exports.push_str(&format!(\"export {k}={}; \", bash_ansi_c_quote(v)));\n        }\n    }\n    let launch_suffix = launch.map(|s| format!(\"; {s}\")).unwrap_or_default();\n    format!(\n        \"{env_exports}export BSC_BIN=/usr/local/bin/bsc BSC_AGENT_BIN=/usr/local/bin/bsc-agent; \\\n         {cd}__bsc_osc7() {{ printf $'\\\\033]7;file://localhost%s\\\\a' \\\"$(pwd)\\\"; }}; \\\n         __bsc_state() {{ printf $'\\\\033]100;%s\\\\a' \\\"$1\\\"; }}; \\\n         PROMPT_COMMAND=\\\"${{PROMPT_COMMAND:+$PROMPT_COMMAND; }}__bsc_osc7; __bsc_state idle\\\"; \\\n         __bsc_osc7; __bsc_state idle; printf '\\\\033[2J\\\\033[H'{launch_suffix}\\n\"\n    )\n}\n"
+}
