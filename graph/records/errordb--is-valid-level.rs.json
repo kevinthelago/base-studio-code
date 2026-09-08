@@ -1,0 +1,12 @@
+{
+  "id": "errordb--is-valid-level.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_valid_level",
+  "code": "pub fn is_valid_level(l: &str) -> bool {\n    crate::LEVELS.contains(&l)\n}\n",
+  "feature": "observability",
+  "folder": "crates/errordb/src",
+  "src": "crates/errordb/src/is_valid_level.rs",
+  "moduleVis": "private",
+  "composes": []
+}

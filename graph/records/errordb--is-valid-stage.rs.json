@@ -1,0 +1,12 @@
+{
+  "id": "errordb--is-valid-stage.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_valid_stage",
+  "code": "pub fn is_valid_stage(s: &str) -> bool {\n    crate::STAGES.contains(&s)\n}\n",
+  "feature": "observability",
+  "folder": "crates/errordb/src",
+  "src": "crates/errordb/src/is_valid_stage.rs",
+  "moduleVis": "private",
+  "composes": []
+}

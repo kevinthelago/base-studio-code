@@ -422,6 +422,42 @@ impl Plan {
 /// written. Taking the manifest, the output directory and the root as ARGUMENTS rather than reading
 /// them from the environment is what lets the rules below be driven end to end by a test at any depth,
 /// against a temp store, without a build and without mutating process-global state.
+/// Load the committed record store, merging the legacy single file `graph/algorithms.json` with any
+/// per-record files under `graph/records/*.json`. Each per-record file is one record object and is
+/// appended to the `implementations` array; `graph/records/` absent means the legacy store is
+/// returned untouched. Returns merged JSON text because every consumer re-parses `raw`.
+fn load_merged_store(store_path: &Path) -> Result<String, String> {
+    let raw = std::fs::read_to_string(store_path)
+        .map_err(|e| format!("cannot read the committed graph store at {}: {e}", store_path.display()))?;
+    let records_dir = match store_path.parent() {
+        Some(p) => p.join("records"),
+        None => return Ok(raw),
+    };
+    if !records_dir.is_dir() {
+        return Ok(raw);
+    }
+    let mut store: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("{} is not valid JSON: {e}", store_path.display()))?;
+    let impls = store
+        .get_mut("implementations")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| format!("{} has no `implementations` array", store_path.display()))?;
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&records_dir)
+        .map_err(|e| format!("cannot read {}: {e}", records_dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+        .collect();
+    files.sort();
+    for p in files {
+        let text = std::fs::read_to_string(&p)
+            .map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        let rec: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| format!("{} is not valid JSON: {e}", p.display()))?;
+        impls.push(rec);
+    }
+    serde_json::to_string(&store).map_err(|e| format!("cannot serialize the merged store: {e}"))
+}
+
 pub fn emit_into(
     manifest: &Path,
     out_dir: &Path,
@@ -432,8 +468,19 @@ pub fn emit_into(
     for p in &plan.rerun {
         println!("cargo:rerun-if-changed={}", p.display());
     }
-    let raw = std::fs::read_to_string(&plan.store_path)
-        .map_err(|e| format!("cannot read the committed graph store at {}: {e}", plan.store_path.display()))?;
+    // Merge the legacy single-file store with any per-record files under `graph/records/` — the
+    // file-per-record layout (mirroring `src-tauri/data/components/**`) that retires the 27 MB
+    // monolith (`epic-retire-json-ledgers-for-db-and-git-drivers`). A no-op until records are split
+    // out, so this is transition-safe: a record lives in exactly one place at a time.
+    let raw = load_merged_store(&plan.store_path)?;
+    if let Some(dir) = plan.store_path.parent().map(|p| p.join("records")) {
+        if dir.is_dir() {
+            println!("cargo:rerun-if-changed={}", dir.display());
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                println!("cargo:rerun-if-changed={}", e.path().display());
+            }
+        }
+    }
     // The crate's own documentation, ALWAYS written — `crate_root.rs` `include_str!`s it
     // unconditionally, so a missing file is a compile error rather than an empty doc page, and a crate
     // that has authored no doc record yet must still build. Written BEFORE the module render can bail,

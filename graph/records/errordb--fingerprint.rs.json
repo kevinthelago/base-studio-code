@@ -1,0 +1,15 @@
+{
+  "id": "errordb--fingerprint.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fingerprint",
+  "code": "/// Deterministic, dependency-free fault fingerprint — the dedup key **shared** by the CLI and the\n/// (slice-2) collector, so both compute the SAME id for the same fault (like the project-link id).\n/// FNV-1a over a normalized signature `stage \\n title \\n first-stack-frame`, with volatile bits in the\n/// frame (addresses, line/column numbers → runs of digits) masked, so the same fault at a shifted line\n/// still collapses. Best-effort by design: a good-enough grouping, not a semantic stack analysis.\npub fn fingerprint(stage: &str, title: &str, stack: Option<&str>) -> String {\n    let frame = stack\n        .and_then(|s| s.lines().map(str::trim).find(|l| !l.is_empty()))\n        .map(crate::normalize_frame)\n        .unwrap_or_default();\n    let title_norm = title.split_whitespace().collect::<Vec<_>>().join(\" \");\n    crate::fnv1a_hex(&format!(\"{stage}\\n{title_norm}\\n{frame}\"))\n}\n",
+  "feature": "observability",
+  "folder": "crates/errordb/src",
+  "src": "crates/errordb/src/fingerprint.rs",
+  "moduleVis": "private",
+  "composes": [
+    "errordb--normalize-frame.rs",
+    "errordb--fnv1a-hex.rs"
+  ]
+}
