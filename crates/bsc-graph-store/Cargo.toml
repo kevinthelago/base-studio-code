@@ -17,7 +17,12 @@ bsc-util = { path = "../bsc-util" }
 # `vendored::sha256_hex` — the ONE content-hash form in this workspace, for the ledger's signature.
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `preserve_order` — LOAD-BEARING, and not merely inherited. This crate's promise is that exporting
+# `main` reproduces the store it imported, BYTE for byte; a BTreeMap sorts every record's keys on the
+# way through and rewrites all 1,808 files to no effect. It was passing only by cargo's per-invocation
+# feature unification with `bsc-graph`, which sets it — so `cargo test -p bsc-graph-store` silently got
+# a BTreeMap and the export guard could not see key-order drift at all.
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [build-dependencies]
 # build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
