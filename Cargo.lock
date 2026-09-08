@@ -821,6 +821,7 @@ dependencies = [
  "bsc-github",
  "bsc-graph",
  "bsc-imagine",
+ "bsc-imprint",
  "bsc-lan",
  "bsc-llm",
  "bsc-loop",
@@ -1146,6 +1147,17 @@ dependencies = [
  "bsc-cli-util",
  "bsc-util",
  "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-imprint"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
+ "bsc-util",
  "serde",
  "serde_json",
 ]
