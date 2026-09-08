@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--methods--fn-name.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fn_name",
+  "src": "crates/bsc-graph/src/methods/fn_name.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn fn_name(node: Node, src: &[u8]) -> Option<String> {\n    let name = node.child_by_field_name(\"name\")?;\n    Some(name.utf8_text(src).unwrap_or_default().to_string())\n}\n"
+}

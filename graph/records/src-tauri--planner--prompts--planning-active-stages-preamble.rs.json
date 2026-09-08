@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--planner--prompts--planning-active-stages-preamble.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "planning_active_stages_preamble",
+  "src": "src-tauri/src/planner/prompts/planning_active_stages_preamble.rs",
+  "folder": "src-tauri/src/planner/prompts",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--prompts--md.rs"
+  ],
+  "code": "use super::*;\n\n// The user-facing planner INTRODUCTION kickoffs (#1240) — the startup prompt baked into the planner\n// launch that has the planner OPEN the conversation (introduce itself, sketch the stage journey,\n// summarize capabilities, ask one orienting question). Trusted, app-authored content (#1107), and\n// per-mode like the CLAUDE.md spec intros — but addressed to the user, not the spec. Distinct from\n// planning_*_intro above, which is the Claude-facing instruction set written into CLAUDE.md.\n/// The \"## Active planning stages\" preamble (`build_active_stages_md`, directives.rs).\npub(crate) fn planning_active_stages_preamble() -> String { md(\"planner/active-stages-preamble.md\") }\n"
+}

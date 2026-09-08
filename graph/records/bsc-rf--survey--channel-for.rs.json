@@ -1,0 +1,12 @@
+{
+  "id": "bsc-rf--survey--channel-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "channel_for",
+  "src": "crates/bsc-rf/src/survey/channel_for.rs",
+  "folder": "crates/bsc-rf/src/survey",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The 802.11 channel number for a centre frequency, for display only.\n///\n/// Returns `None` outside the bands this tool observes rather than guessing — a frequency we cannot\n/// name is reported by its frequency, which is never wrong.\npub fn channel_for(freq_mhz: u32) -> Option<u32> {\n    match freq_mhz {\n        2484 => Some(14),\n        2412..=2472 if (freq_mhz - 2412).is_multiple_of(5) => Some((freq_mhz - 2407) / 5),\n        5160..=5885 if (freq_mhz - 5000).is_multiple_of(5) => Some((freq_mhz - 5000) / 5),\n        _ => None,\n    }\n}\n",
+  "feature": "rf"
+}

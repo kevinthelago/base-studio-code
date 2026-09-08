@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--methods--leaf-signature.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "leaf_signature",
+  "src": "crates/bsc-graph/src/methods/leaf_signature.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// A leaf's SIGNATURE text (parameters + return type) — where type-coupling shows, without the body's\n/// incidental mentions.\npub(crate) fn leaf_signature(node: Node, src: &[u8]) -> String {\n    let mut s = String::new();\n    if let Some(p) = node.child_by_field_name(\"parameters\") {\n        s.push_str(p.utf8_text(src).unwrap_or(\"\"));\n    }\n    if let Some(r) = node.child_by_field_name(\"return_type\") {\n        s.push(' ');\n        s.push_str(r.utf8_text(src).unwrap_or(\"\"));\n    }\n    s\n}\n"
+}

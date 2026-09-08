@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--methods--language-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "language_for",
+  "src": "crates/bsc-graph/src/methods/language_for.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\npub(crate) fn language_for(tech: &str) -> Option<tree_sitter::Language> {\n    match tech {\n        \"rust\" => Some(tree_sitter_rust::LANGUAGE.into()),\n        // TypeScript classification is intentionally out of scope for the first version: the store holds\n        // 32 Rust records against thousands of Rust functions, and the maintainer's decomposition target\n        // is the Rust side. A `tsx`/`ts` arm can ride the same shape later.\n        _ => None,\n    }\n}\n"
+}

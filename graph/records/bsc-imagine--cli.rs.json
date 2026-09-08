@@ -8,7 +8,8 @@
   "src": "crates/bsc-imagine/src/cli.rs",
   "moduleVis": "pub",
   "composes": [
-    "bsc-imagine--store.rs",
-    "bsc-imagine--lib.rs"
+    "bsc-imagine--lib.rs",
+    "bsc-imagine--store--mod.rs",
+    "bsc-imagine--store.rs"
   ]
 }

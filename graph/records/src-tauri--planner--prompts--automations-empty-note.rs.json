@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--planner--prompts--automations-empty-note.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "automations_empty_note",
+  "src": "src-tauri/src/planner/prompts/automations_empty_note.rs",
+  "folder": "src-tauri/src/planner/prompts",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--prompts--md.rs"
+  ],
+  "code": "use super::*;\n\n/// The `automations.md` empty-state note when no automations are saved (`setup_workspaces`).\npub(crate) fn automations_empty_note() -> String { md(\"planner/automations-empty.md\") }\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--methods--is-test-attributed.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_test_attributed",
+  "src": "crates/bsc-graph/src/methods/is_test_attributed.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Does a top-level `function_item` node carry a `#[test]` / `#[cfg(test)]` attribute? Production leaves\n/// never do; a rare top-level test fn (most live inside `#[cfg(test)] mod tests`, which is a `mod_item`\n/// this walk never descends) must not be counted.\npub(crate) fn is_test_attributed(node: Node, src: &[u8]) -> bool {\n    let mut sib = node.prev_sibling();\n    while let Some(s) = sib {\n        if s.kind() == \"attribute_item\" {\n            let t = s.utf8_text(src).unwrap_or(\"\");\n            if t.contains(\"test\") || t.contains(\"cfg(test)\") {\n                return true;\n            }\n            sib = s.prev_sibling();\n            continue;\n        }\n        // line/block comments and empty lines sit between an attribute and its item; keep scanning past\n        // them, but stop at the previous real item.\n        if s.kind() == \"line_comment\" || s.kind() == \"block_comment\" {\n            sib = s.prev_sibling();\n            continue;\n        }\n        break;\n    }\n    false\n}\n"
+}

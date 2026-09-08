@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--crossgraph--pillar-for-segment.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "pillar_for_segment",
+  "src": "crates/bsc-component/src/crossgraph/pillar_for_segment.rs",
+  "folder": "crates/bsc-component/src/crossgraph",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `<segment>` → pillar mapping, or `None` for a segment the URN grammar does not define.\npub(crate) fn pillar_for_segment(segment: &str) -> Option<&'static str> {\n    SEGMENT_TO_PILLAR.iter().find(|(s, _)| *s == segment).map(|(_, p)| *p)\n}\n"
+}

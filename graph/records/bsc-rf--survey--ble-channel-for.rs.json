@@ -1,0 +1,12 @@
+{
+  "id": "bsc-rf--survey--ble-channel-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "ble_channel_for",
+  "src": "crates/bsc-rf/src/survey/ble_channel_for.rs",
+  "folder": "crates/bsc-rf/src/survey",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The logical BLE channel for a centre frequency, for display only: `0..=36` are data channels and\n/// `37`/`38`/`39` are the ADVERTISING channels (2402 / 2426 / 2480 MHz) a passive observer actually\n/// watches. BLE channels sit on a 2 MHz grid from 2402 to 2480; `None` off the grid, the same\n/// discipline [`channel_for`] keeps off the 802.11 grid — a frequency we cannot name is never guessed.\npub fn ble_channel_for(freq_mhz: u32) -> Option<u8> {\n    if !(2402..=2480).contains(&freq_mhz) || !(freq_mhz - 2402).is_multiple_of(2) {\n        return None;\n    }\n    let rf = ((freq_mhz - 2402) / 2) as u8; // 0..=39 in frequency order\n    Some(match rf {\n        0 => 37,\n        12 => 38,\n        39 => 39,\n        1..=11 => rf - 1,  // data 0..=10\n        _ => rf - 2,       // rf 13..=38 -> data 11..=36\n    })\n}\n",
+  "feature": "rf"
+}

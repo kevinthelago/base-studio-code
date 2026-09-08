@@ -1,0 +1,11 @@
+{
+  "id": "bsc-component--crossgraph--by-direction.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "by_direction",
+  "src": "crates/bsc-component/src/crossgraph/by_direction.rs",
+  "folder": "crates/bsc-component/src/crossgraph",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// `from_pillar -> to_pillar` counts, the one-line summary of [`meter`].\npub fn by_direction(refs: &[CrossRef]) -> BTreeMap<String, usize> {\n    let mut m = BTreeMap::new();\n    for r in refs {\n        *m.entry(format!(\"{}->{}\", r.from_pillar, r.to_pillar)).or_insert(0) += 1;\n    }\n    m\n}\n"
+}
