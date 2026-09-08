@@ -216,6 +216,25 @@ impl Plan {
                             .collect()
                     })
                     .unwrap_or_default();
+                // THE COMMAND FACET (`a-tauri-command-is-a-record-facet`). `#[tauri::command]` is not
+                // formatting: it generates `__cmd__<name>` in the module that holds the function, and
+                // the handler list resolves it there — so as body TEXT it pinned every command to its
+                // module and made the 201-entry `generate_handler!` list a second statement of the
+                // same set. As data, `render` re-attaches the attribute and builds the list from ONE
+                // declaration. Absent ⇒ no commands, which is every record but ~72.
+                let commands: Vec<TauriCommand> = i
+                    .get("tauriCommands")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|e| {
+                                let name = e.get("name").and_then(|v| v.as_str())?.to_string();
+                                let args = e.get("args").and_then(|v| v.as_str()).map(str::to_string);
+                                Some(TauriCommand { name, args })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 Some(Unit {
                     id: id.to_string(),
                     path,
@@ -223,6 +242,7 @@ impl Plan {
                     vis,
                     attrs,
                     imports,
+                    commands,
                 })
             })
             .collect();

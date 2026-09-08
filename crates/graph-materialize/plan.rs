@@ -98,6 +98,66 @@ pub struct Unit {
     /// nothing generated and the record's hand-written `use` lines stand (backward-compat during the
     /// migration).
     pub imports: Vec<ImportSpec>,
+    /// The `#[tauri::command]` functions this module declares, as DATA rather than as attribute text
+    /// in `code` (`a-tauri-command-is-a-record-facet`). [`apply_tauri_commands`] puts the attribute
+    /// back on the way to the compiler and [`render_handler_macro`] builds `generate_handler!` from
+    /// the same list, so the two sides cannot drift. Empty for every module that declares none, which
+    /// is all but ~72 of them.
+    pub commands: Vec<TauriCommand>,
+}
+
+/// One `#[tauri::command]` a record declares as a FACET of itself.
+///
+/// # Why the attribute is data and not text
+///
+/// `#[tauri::command]` on `fn foo` generates `__cmd__foo` and `__tauri_command_name_foo` IN THE MODULE
+/// THAT HOLDS THE FUNCTION, and `tauri::generate_handler![m::foo]` resolves both in module `m`. So the
+/// attribute silently pins a function to its module: lifting one into a child record breaks the build
+/// (measured on 24 of them: 60 `error[E0433]`), and the 201-entry handler list in
+/// `src-tauri/src/app/run.rs` was a SECOND hand-maintained statement of the same set, free to drift
+/// from the first. Both facts follow from the attribute being body text.
+///
+/// As a facet it is neither: the materializer re-attaches the attribute wherever the function now
+/// lives, and derives the handler entry from the SAME declaration, so moving a command is a record
+/// move and nothing else. The body left behind is ordinary comparable Rust.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TauriCommand {
+    /// The function's name — the identifier `fn` declares, and the name the frontend invokes.
+    pub name: String,
+    /// The tokens inside `#[tauri::command(...)]`, when the command needs any (`rename_all = "..."`).
+    /// `None` emits the bare attribute, which is what all 201 of this repo's commands want today.
+    pub args: Option<String>,
+}
+
+/// One command as [`apply_tauri_commands`] found it in the body: the name it declared, and the
+/// `#[cfg(...)]` attributes it turned out to be gated by.
+///
+/// A named type and not a `(String, Vec<String>)`, because clippy's `type_complexity` refuses the
+/// nested tuple in the return position — and it is right to: the pair reads as nothing at a call site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandSite {
+    /// The command's function name, as the facet declared it.
+    pub name: String,
+    /// The `#[cfg(...)]` attributes above the declaration, in the order they appear.
+    pub cfgs: Vec<String>,
+}
+
+/// One entry of the generated `generate_handler!` list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandlerEntry {
+    /// The command's fully-qualified path — `crate::app::dialog::pick_directory`.
+    ///
+    /// ABSOLUTE, and derived from where the record actually is. The hand-written list reached 53 of
+    /// its 201 entries through a re-export (`github::github_request` for `github::api::github_request`,
+    /// which works only because `github/mod.rs` globs the child), so a record move that was invisible
+    /// to the re-export was invisible to the list. An absolute path cannot be right by accident.
+    pub path: String,
+    /// The `#[cfg(...)]` attributes the function carries, carried onto the handler ARM as well.
+    ///
+    /// Read off the body rather than restated in the facet: a cfg that gates the function and a cfg
+    /// that gates its registration are the same fact, and two copies of one fact is the drift this
+    /// change exists to remove. Six of this repo's commands are gated on `feature = "source-stage"`.
+    pub cfgs: Vec<String>,
 }
 
 /// The crate ROOT's record, split into the two halves the shared root wants.
@@ -228,6 +288,186 @@ pub fn expected_id(crate_dir: &str, rest: &str) -> String {
     format!("{}.rs", segments.join("--"))
 }
 
+/// The name of the macro the materializer generates to carry a crate's `generate_handler!` list.
+///
+/// A `macro_rules!` and not a function, because the list must reach the compiler as the SAME TOKENS
+/// at the SAME PLACE it always did: `tauri::generate_handler!` expands to a closure over
+/// `tauri::ipc::Invoke<R>`, and wrapping that in a returning function would put a hand-written
+/// `impl Fn(…) -> bool` between the record and the builder — a type to get wrong, for nothing. A
+/// macro invocation is a token splice, so `.invoke_handler(graph_tauri_handler!())` compiles to
+/// exactly what `.invoke_handler(tauri::generate_handler![…])` compiled to.
+///
+/// It is also the crate's LOUD FAILURE for a total loss of the facet: no record declaring a command
+/// means no macro is emitted, and the record that invokes it fails to compile with "cannot find
+/// macro". A silently empty command surface is not reachable from here.
+pub const HANDLER_MACRO: &str = "graph_tauri_handler";
+
+/// Put each declared `#[tauri::command]` back on its function, and report what the handler list needs.
+///
+/// Returns the rewritten body and, per command, the `#[cfg(...)]` attributes it is gated by.
+///
+/// # The attribute goes ON the declaration line, and that is the whole trick
+///
+/// Every module in a generated `crate.rs` carries `// record <id> — line N here is line N-<offset> in
+/// the record.`, which is the only thing making a compiler error inside a 12,609-line record
+/// navigable. Emitting the attribute on a line of its OWN would shift every line below it by one and
+/// make that subtraction wrong for the rest of the module — silently, since the header would still
+/// look right. So it is prefixed to a line that already exists, exactly as [`split_root`] rewrites
+/// `//!` to `//` in place rather than dropping the lines. **The line count is invariant**, which is
+/// the property the tests assert directly.
+///
+/// # WHICH line
+///
+/// The one the attribute sat on before this change: the first line of the function's attribute run
+/// that is not a `#[cfg…]`, else the `fn` line itself. Attribute ORDER is not cosmetic — attributes
+/// BEFORE an attribute macro apply to its expansion, attributes AFTER it are part of the item handed
+/// to it — so `#[cfg]` stays above (it must gate the whole expansion) and the six commands carrying
+/// `#[allow(clippy::too_many_arguments)]` keep it inside, where the fn re-emitted by the macro gets it.
+///
+/// # Failure is loud, in two shapes
+///
+/// A facet naming a function the body does not declare, and a facet whose name matches TWO
+/// declarations — the second is the case a fixture string holding Rust source produces, and taking
+/// the first match would attach a command to a doc example.
+pub fn apply_tauri_commands(
+    id: &str,
+    code: &str,
+    commands: &[TauriCommand],
+) -> Result<(String, Vec<CommandSite>), String> {
+    if commands.is_empty() {
+        return Ok((code.to_string(), Vec::new()));
+    }
+    // `split('\n')`, never `lines()`: `lines()` drops a trailing newline and the rejoin would silently
+    // shorten the body by one line — the exact arithmetic this function exists to preserve.
+    let mut lines: Vec<String> = code.split('\n').map(str::to_string).collect();
+    let mut sites: Vec<CommandSite> = Vec::new();
+    for cmd in commands {
+        let hits: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| declares_fn(l, &cmd.name))
+            .map(|(i, _)| i)
+            .collect();
+        let decl = match hits.len() {
+            1 => hits[0],
+            0 => {
+                return Err(format!(
+                    "record `{id}` declares `{}` as a #[tauri::command] but its body has no `fn {}` — \
+                     the facet names a function that is not there. Fix the name, or drop the entry \
+                     from `tauriCommands`.",
+                    cmd.name, cmd.name
+                ))
+            }
+            n => {
+                return Err(format!(
+                    "record `{id}` declares `{}` as a #[tauri::command] but its body has {n} lines \
+                     declaring `fn {}` (lines {}). One of them is not the command — a doc example or a \
+                     fixture string reads exactly like a declaration — and attaching the attribute to \
+                     the wrong one would register the wrong function.",
+                    cmd.name,
+                    cmd.name,
+                    hits.iter().map(|i| (i + 1).to_string()).collect::<Vec<_>>().join(", ")
+                ))
+            }
+        };
+        // Walk the contiguous attribute run above the declaration. `#[cfg…]` entries are carried to
+        // the handler arm AND left above the inserted attribute; the first non-cfg one is where the
+        // attribute goes.
+        let mut top = decl;
+        while top > 0 && lines[top - 1].trim_start().starts_with("#[") {
+            top -= 1;
+        }
+        let mut cfgs: Vec<String> = Vec::new();
+        let mut at = decl;
+        for (offset, line) in lines[top..decl].iter().enumerate() {
+            if line.trim_start().starts_with("#[cfg") {
+                cfgs.push(line.trim().to_string());
+            } else {
+                at = top + offset;
+                break;
+            }
+        }
+        let attr = match &cmd.args {
+            Some(a) => format!("#[tauri::command({a})]"),
+            None => "#[tauri::command]".to_string(),
+        };
+        let indent: String = lines[at].chars().take_while(|c| c.is_whitespace()).collect();
+        lines[at] = format!("{indent}{attr} {}", lines[at].trim_start());
+        sites.push(CommandSite { name: cmd.name.clone(), cfgs });
+    }
+    Ok((lines.join("\n"), sites))
+}
+
+/// Does `line` declare `fn <name>`?
+///
+/// Deliberately a LINE rule and not a parse: this file is `include!`d by a build script that must not
+/// grow a syn dependency, and the population it runs over is 201 declarations whose shape is known.
+/// Everything before `fn` must be visibility and function keywords, so a `use`, a call, a type or a
+/// `where` clause mentioning the name cannot match; a string literal holding Rust source still can,
+/// which is why the caller requires exactly one hit.
+fn declares_fn(line: &str, name: &str) -> bool {
+    let t = line.trim_start();
+    let Some(idx) = t.find("fn ") else { return false };
+    if idx > 0 && !t.as_bytes()[idx - 1].is_ascii_whitespace() {
+        return false;
+    }
+    if !is_fn_prefix(&t[..idx]) {
+        return false;
+    }
+    let after = t[idx + 3..].trim_start();
+    let ident: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+    if ident != name {
+        return false;
+    }
+    after[ident.len()..].trim_start().starts_with(['(', '<'])
+}
+
+/// Is `head` — everything on the line before `fn` — a legal function-declaration prefix?
+fn is_fn_prefix(head: &str) -> bool {
+    let mut s = head.trim();
+    if let Some(rest) = s.strip_prefix("pub") {
+        s = rest.trim_start();
+        if s.starts_with('(') {
+            match s.find(')') {
+                Some(i) => s = s[i + 1..].trim_start(),
+                None => return false,
+            }
+        }
+    }
+    s.split_whitespace()
+        .all(|tok| matches!(tok, "async" | "const" | "unsafe" | "default" | "extern") || (tok.starts_with('"') && tok.ends_with('"')))
+}
+
+/// The `macro_rules!` carrying this crate's whole `generate_handler!` list, derived from the facets.
+///
+/// Entries are sorted by path so the output is byte-deterministic — cargo re-runs the materializer on
+/// every store change and a shuffled list would recompile the crate for nothing.
+///
+/// `#[allow(unused_macros)]` because a crate can legitimately declare commands in a module while the
+/// record that registers them is still being written; the loud failure is the other direction (the
+/// invocation with no definition), and that one is a compile error nothing can silence.
+pub fn render_handler_macro(name: &str, entries: &[HandlerEntry]) -> String {
+    let mut sorted: Vec<&HandlerEntry> = entries.iter().collect();
+    sorted.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut out = String::new();
+    out.push_str(&format!(
+        "// The `generate_handler!` list, DERIVED from the `tauriCommands` facet of every record of this\n\
+         // crate ({} commands) — `a-tauri-command-is-a-record-facet`. Registering a command is no longer\n\
+         // a second place to remember: the same declaration emits the attribute and this entry.\n",
+        sorted.len()
+    ));
+    out.push_str("#[allow(unused_macros)]\n");
+    out.push_str(&format!("macro_rules! {name} {{\n    () => {{\n        tauri::generate_handler![\n"));
+    for e in &sorted {
+        for cfg in &e.cfgs {
+            out.push_str(&format!("            {cfg}\n"));
+        }
+        out.push_str(&format!("            {},\n", e.path));
+    }
+    out.push_str("        ]\n    };\n}\n");
+    out
+}
+
 /// The generated `crate.rs` body, or a hard error naming what is wrong with the selection.
 ///
 /// # Failure is loud, in three shapes
@@ -288,11 +528,79 @@ pub fn render(
         }
     }
 
+    // THE COMMAND FACET, applied before a byte is written. Each declared `#[tauri::command]` goes back
+    // onto its function IN PLACE (the line count is invariant, so every module's offset header stays
+    // exact), and the SAME declaration becomes one entry of the generated handler list — which is what
+    // makes registering a command stop being a second place to remember.
+    // A COMMAND'S MODULE MUST BE NAMEABLE FROM ANYWHERE IN THE CRATE, because the generated list
+    // reaches it by an absolute `crate::…` path and the registration site is a module this materializer
+    // knows nothing about. Rust's rule decides where that bites: a private item is visible in its
+    // DEFINING module and that module's descendants, so a private module at depth 1 is visible crate-
+    // wide (its parent is the crate root) and one deeper is visible only inside its own subtree. Eight
+    // of this repo's modules were the second kind — `mobile::tunnel::commands` and its like, reached
+    // only through a parent's `pub use child::*;`, which is precisely the indirection that let a record
+    // move without the hand-written list noticing. Refused rather than worked around: the fix is
+    // `moduleVis`, one field on the record, and guessing a re-export the store does not describe would
+    // put the fragility straight back.
+    let vis_of: std::collections::HashMap<&[String], &str> =
+        units.iter().map(|u| (u.path.as_slice(), u.vis.as_str())).collect();
+    for u in units.iter().filter(|u| !u.commands.is_empty()) {
+        for depth in 2..=u.path.len() {
+            let seg = &u.path[..depth];
+            if vis_of.get(seg).is_some_and(|v| v.is_empty()) {
+                return Err(format!(
+                    "record `{}` of crate `{crate_dir}` declares a #[tauri::command], but module `{}` is \
+                     PRIVATE and is not a top-level module — the generated `generate_handler!` list names \
+                     the command by its absolute path (`crate::{}::…`) and a private module is visible \
+                     only inside its own parent's subtree. Set that module record's `moduleVis` to \
+                     `pub(crate)`.",
+                    u.id,
+                    seg.join("::"),
+                    u.path.join("::"),
+                ));
+            }
+        }
+    }
+
+    let mut handler: Vec<HandlerEntry> = Vec::new();
+    for u in units.iter_mut() {
+        let (code, sites) = apply_tauri_commands(&u.id, &u.code, &u.commands)?;
+        u.code = code;
+        for site in sites {
+            let path = format!("crate::{}::{}", u.path.join("::"), site.name);
+            handler.push(HandlerEntry { path, cfgs: site.cfgs });
+        }
+    }
+    // A COMMAND NAME IS CRATE-GLOBAL, not module-scoped: `#[tauri::command]` on a `pub`/`pub(crate)` fn
+    // `#[macro_export]`s `__cmd__<name>`, and `generate_handler!` matches an invoke on the name STRING.
+    // Two records declaring one name is a collision rustc reports as a macro redefinition far from its
+    // cause, and the frontend would reach whichever arm the match happened to try first.
+    let mut named: Vec<(&str, &str)> = handler
+        .iter()
+        .map(|e| (e.path.rsplit("::").next().unwrap_or_default(), e.path.as_str()))
+        .collect();
+    named.sort_unstable();
+    if let Some(dup) = named.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(format!(
+            "two records of crate `{crate_dir}` declare the #[tauri::command] `{}`: `{}` and `{}`. A \
+             command name is crate-global — the frontend invokes it by that string — so one of them \
+             must be renamed.",
+            dup[0].0, dup[0].1, dup[1].1
+        ));
+    }
+
     // The generated file's own preamble is part of `out` BEFORE the first module is emitted, because
     // the offsets are line numbers in THIS FILE. Rendering the modules and prepending the preamble
     // afterwards would shift every one of them by the preamble's height, silently — the arithmetic
     // would still look right and every reported line would be wrong.
     let mut out = String::from(header);
+    // The handler macro goes ABOVE everything, because `macro_rules!` is textually scoped: the record
+    // that invokes it is a module emitted below, and a definition after its use resolves to nothing.
+    // Every offset below is read from the LIVE line count, so these lines push the whole file down and
+    // nothing has to know they are here.
+    if !handler.is_empty() {
+        out.push_str(&render_handler_macro(HANDLER_MACRO, &handler));
+    }
     // THE CRATE ROOT'S OWN BODY GOES FIRST, at the top level, because that is where it was. Item order
     // is nothing to rustc, but it is everything to a reader diffing the generated file against the root
     // it replaced. Its offset header is computed exactly as a module's is — see `emit_level`.

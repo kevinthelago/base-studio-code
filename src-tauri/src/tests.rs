@@ -22,6 +22,11 @@
         text: String,
         /// `true` when this module exists ONLY as a graph record, with no file on disk.
         record_only: bool,
+        /// The `#[tauri::command]` functions this unit declares, from its record's `tauriCommands`
+        /// facet (`a-tauri-command-is-a-record-facet`). EMPTY for a file, and that is not a gap: the
+        /// attribute is no longer body text, so a file cannot declare a command any more — the
+        /// residue guard below is what makes sure none tries.
+        commands: Vec<String>,
     }
 
     impl SourceUnit {
@@ -73,9 +78,22 @@
     /// The collapse floor for `crates/` — files PLUS records. MEASURED 2026-09-04: **514** units, of
     /// which **80 exist only as records** (25 crates already compile out of the graph store).
     const MIN_CRATE_UNITS: usize = 420;
-    /// The floor on `#[tauri::command]` declarations. Measured when the registration guard was
-    /// written: 174 declared, 174 registered.
-    const MIN_TAURI_COMMANDS: usize = 100;
+    /// The floor on `#[tauri::command]` declarations — now read off the `tauriCommands` FACET rather
+    /// than counted in body text (`a-tauri-command-is-a-record-facet`). MEASURED 2026-09-08: **201**
+    /// declared across **67** records, and the hand-written `generate_handler!` list this change
+    /// deleted held exactly the same 201 names.
+    ///
+    /// Raised from 100 when the facet landed, and deliberately: generating the handler list makes the
+    /// store LOAD-BEARING for the app's command surface, so a facet that silently stops being read
+    /// takes commands out of the running app while every gate stays green. A floor of 100 would have
+    /// let half of them go.
+    const MIN_TAURI_COMMANDS: usize = 195;
+    /// The floor on RECORDS declaring at least one command. MEASURED 2026-09-08: **67**. A second
+    /// population, because the two collapse differently: a facet reader that stopped matching takes the
+    /// command count with it, while a store read that lost records takes this one — and 21 of the 201
+    /// commands live in ONE record, so the command floor alone would not notice several small records
+    /// going missing.
+    const MIN_COMMAND_RECORDS: usize = 64;
 
     /// The repository root — `src-tauri`'s parent.
     fn repo_root() -> std::path::PathBuf {
@@ -153,6 +171,13 @@
             if !rel.ends_with(".rs") {
                 continue;
             }
+            let commands: Vec<String> = record
+                .get("tauriCommands")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter().filter_map(|c| c.get("name").and_then(|v| v.as_str()).map(str::to_string)).collect()
+                })
+                .unwrap_or_default();
             // THE FILE WINS when both exist, and that is not a preference: while a file is on disk it
             // is what rustc compiles, and a record sharing its path is an edit that has not been
             // materialized yet. Scanning both would let a stale record raise an offender that is not
@@ -161,6 +186,7 @@
                 rel: rel.to_string(),
                 text: code.to_string(),
                 record_only: true,
+                commands,
             });
         }
 
@@ -192,7 +218,7 @@
             } else if path.extension().is_some_and(|x| x == "rs") {
                 let Ok(text) = std::fs::read_to_string(&path) else { continue };
                 let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-                out.insert(rel.clone(), SourceUnit { rel, text, record_only: false });
+                out.insert(rel.clone(), SourceUnit { rel, text, record_only: false, commands: Vec::new() });
             }
         }
     }
@@ -1250,55 +1276,78 @@
     /// an error anywhere: it is a feature rendering its EMPTY STATE forever, on a screen, while every
     /// gate stays green.
     ///
-    /// Measured when this was written: 174 declared, 174 registered. The list has never actually
-    /// drifted — which is why the guard is cheap now and expensive to add after the first time it does.
+    /// # What this guard became, and why it got sharper rather than redundant
+    ///
+    /// It used to compare two HAND-MAINTAINED statements of one set: the `#[tauri::command]` attributes
+    /// in the bodies, and the 201-entry list in `app/run.rs`. Both are gone. A record declares its
+    /// commands as the `tauriCommands` facet, `graph-materialize` re-attaches the attribute AND
+    /// generates the handler list from that one declaration, so the two sides cannot drift by
+    /// construction (`a-tauri-command-is-a-record-facet`).
+    ///
+    /// What that buys in safety it spends in exposure: the STORE is now load-bearing for the app's
+    /// command surface. A record that fails to declare its facet loses its commands from the running
+    /// app and nothing fails. So this reads the two ends and asserts they meet:
+    ///
+    ///   * the committed store's facets — what the author declared;
+    ///   * `$OUT_DIR/crate.rs` — what the materializer actually emitted and **what this very binary was
+    ///     compiled from**. Not a re-render, not a copy: the generated file the compiler read.
+    ///
+    /// and it asserts the COUNT on both, against a floor, so a generator that stopped emitting or a
+    /// facet reader that stopped matching fails loudly instead of agreeing about nothing.
     #[test]
     fn every_tauri_command_is_registered_in_the_invoke_handler() {
         let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
         let decls = collect_command_decls(&units);
 
-        // Non-vacuity: a parser that stopped matching — or a walk that lost modules to the graph
-        // store — would make this pass while checking nothing.
+        // Non-vacuity, on BOTH populations — see the two floors' own documentation for why one is not
+        // enough. A walk that lost modules to the graph store, or a facet reader that stopped matching,
+        // would otherwise make this pass while checking nothing.
         assert!(
             decls.len() >= MIN_TAURI_COMMANDS,
-            "expected the whole command surface, found {} declarations (floor {MIN_TAURI_COMMANDS})",
+            "the command surface collapsed to {} declarations (floor {MIN_TAURI_COMMANDS}). Every one \
+             is a function the frontend invokes by name, and a lost facet takes it out of the generated \
+             handler list — where `safeInvoke` turns the rejection into a silent empty result.",
             decls.len(),
         );
+        let bearing = units.iter().filter(|u| !u.commands.is_empty()).count();
+        assert!(
+            bearing >= MIN_COMMAND_RECORDS,
+            "only {bearing} records declare a #[tauri::command] (floor {MIN_COMMAND_RECORDS}) — records \
+             carrying commands have gone missing from the walk, or lost their `tauriCommands` facet.",
+        );
 
-        // Resolved as a UNIT, not `read_to_string`d: the registration list is exactly the kind of
-        // module that migrates, and `.expect("app/run.rs")` would then be a panic about a missing file
-        // rather than a guard reading a record.
-        let run = unit_text(&units, "app/run.rs", "it is where `generate_handler!` lives");
-        let start = run.find("generate_handler!").expect("generate_handler! in app/run.rs");
-        // Bracket-match the macro body rather than scanning a fixed window: the list grows, and a
-        // truncated window would silently stop covering the commands added at the end of it.
-        let body = &run[start..];
-        let open = body.find('[').expect("generate_handler! opens a list");
-        let mut depth = 0usize;
-        let mut end = None;
-        for (i, ch) in body[open..].char_indices() {
-            match ch {
-                '[' => depth += 1,
-                ']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(open + i);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let list = &body[open..end.expect("generate_handler! list is closed")];
-        // Each entry is a path (`logs::logs_tail`, `crate::fleet::x::y`); the command name is its last
-        // segment. Compare on that, so moving a command between modules is not a false failure.
-        let registered: std::collections::HashSet<&str> = list
-            .split(',')
-            .filter_map(|e| e.rsplit("::").next())
-            .map(|e| e.trim())
-            .filter(|e| !e.is_empty())
+        // THE GENERATED FILE THIS BINARY WAS COMPILED FROM. `$OUT_DIR/crate.rs` is what `lib.rs`
+        // `include!`s, so reading it here is reading the program, not a reconstruction of it.
+        let generated = std::fs::read_to_string(
+            std::path::Path::new(env!("OUT_DIR")).join("crate.rs"),
+        )
+        .expect("$OUT_DIR/crate.rs — the generated crate body this test's own binary was compiled from");
+        let start = generated.find("tauri::generate_handler![").unwrap_or_else(|| {
+            panic!(
+                "no generated `generate_handler!` list in $OUT_DIR/crate.rs. The list is derived from \
+                 the `tauriCommands` facet of every record; NO record declaring one means no macro at \
+                 all, and the app registers nothing."
+            )
+        });
+        let end = start
+            + generated[start..].find("]\n    };").expect("the generated handler list is closed");
+        let registered: std::collections::HashSet<&str> = generated[start..end]
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("crate::"))
+            .filter_map(|l| l.trim_end_matches(',').rsplit("::").next())
             .collect();
 
+        assert_eq!(
+            registered.len(),
+            decls.len(),
+            "the generated handler list registers {} commands for {} declared in the store. The list is \
+             DERIVED from those declarations, so a disagreement means the generator is reading \
+             something this guard is not — and whichever side is short is a command the frontend \
+             cannot reach.",
+            registered.len(),
+            decls.len(),
+        );
         let mut missing: Vec<String> = decls
             .iter()
             .filter(|(name, _)| !registered.contains(name.as_str()))
@@ -1307,31 +1356,76 @@
         missing.sort();
         assert!(
             missing.is_empty(),
-            "these are #[tauri::command] but are NOT in generate_handler! in app/run.rs, so every \
-             invoke of them rejects — and `safeInvoke` turns that into a silent empty result:\n  {}",
+            "these carry a `tauriCommands` facet but are NOT in the generated `generate_handler!` list, \
+             so every invoke of them rejects — and `safeInvoke` turns that into a silent empty \
+             result:\n  {}",
             missing.join("\n  "),
         );
     }
 
-    /// Map every `#[tauri::command]` in `units` to `(is_async, "where:line")`. Attribute and
-    /// signature can be separated by doc comments and other attributes, so scan forward to the first
-    /// `fn` rather than assuming the next line.
+    /// **THE ATTRIBUTE IS DATA NOW, AND A BODY THAT STILL CARRIES IT IS A COMMAND NOBODY REGISTERS.**
+    ///
+    /// This is the other half of the guard above, and it is the one that catches the shape a person
+    /// actually produces: writing `#[tauri::command]` above a new function, the way every example on
+    /// the internet says to. That function would be a real command — the attribute still works — and it
+    /// would be in NO handler list, because the list is generated from the facet. It would compile, the
+    /// gate would be green, and its `invoke` would reject forever.
+    ///
+    /// The floor is asserted here too: a walk that stopped matching would report an empty offender list
+    /// exactly as a clean tree does.
+    #[test]
+    fn no_source_unit_carries_the_tauri_command_attribute_as_text() {
+        let units = source_units("src-tauri/src", MIN_SRC_TAURI_UNITS);
+        assert!(
+            units.iter().filter(|u| !u.commands.is_empty()).count() >= MIN_COMMAND_RECORDS,
+            "the command-bearing population collapsed — this guard would report a clean tree either way",
+        );
+        let mut offenders: Vec<String> = Vec::new();
+        for unit in &units {
+            for (i, line) in unit.text.lines().enumerate() {
+                if line.trim_start().starts_with("#[tauri::command") {
+                    offenders.push(format!("{}:{}", unit.label(), i + 1));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "these carry `#[tauri::command]` as body TEXT. It is a record FACET now \
+             (`a-tauri-command-is-a-record-facet`): the materializer re-attaches the attribute AND \
+             derives the `generate_handler!` entry from the same declaration, so an attribute written \
+             by hand is a command that is never registered — `safeInvoke` swallows the rejection and the \
+             feature renders its empty state forever. Move it to `tauriCommands` on the record:\n  {}",
+            offenders.join("\n  "),
+        );
+    }
+
+    /// Map every declared `#[tauri::command]` to `(is_async, "where:line")`.
+    ///
+    /// READ OFF THE `tauriCommands` FACET, not off attribute text in the body
+    /// (`a-tauri-command-is-a-record-facet`). The attribute is data now: `graph-materialize` re-attaches
+    /// it on the way to the compiler and builds `generate_handler!` from the same declaration, so the
+    /// body a guard reads no longer carries it. Scanning for `#[tauri::command` here would find nothing
+    /// and every caller would pass over an empty population — which is why the callers assert a floor
+    /// and why `no_source_unit_carries_the_tauri_command_attribute_as_text` exists beside them.
+    ///
+    /// The DECLARATION LINE is still found in the text, because that is where `async` lives and asyncness
+    /// is a property of the function, not of the facet.
     fn collect_command_decls(units: &[SourceUnit]) -> std::collections::HashMap<String, (bool, String)> {
         let mut out: std::collections::HashMap<String, (bool, String)> = Default::default();
         for unit in units {
             let lines: Vec<&str> = unit.text.lines().collect();
-            for (i, line) in lines.iter().enumerate() {
-                if !line.trim_start().starts_with("#[tauri::command") {
-                    continue;
-                }
-                for probe in lines.iter().skip(i + 1).take(8) {
-                    if let Some(rest) = probe.split(" fn ").nth(1) {
-                        let name: String =
-                            rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-                        out.insert(name, (probe.contains("async fn"), format!("{}:{}", unit.label(), i + 1)));
-                        break;
-                    }
-                }
+            for name in &unit.commands {
+                let found = lines.iter().enumerate().find(|(_, l)| {
+                    l.split(" fn ").nth(1).is_some_and(|rest| {
+                        rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<String>() == *name
+                    })
+                });
+                // A facet naming a function the body does not declare is a BUILD failure in
+                // `apply_tauri_commands`, so it cannot reach here — but recording the declaration as
+                // absent rather than skipping it keeps `hot_path_commands…` able to say so.
+                let (line_no, is_async) =
+                    found.map_or((0, false), |(i, l)| (i + 1, l.contains("async fn")));
+                out.insert(name.clone(), (is_async, format!("{}:{}", unit.label(), line_no)));
             }
         }
         out
