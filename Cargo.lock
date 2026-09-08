@@ -1133,6 +1133,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-graph-store"
+version = "0.1.0"
+dependencies = [
+ "bsc-sqlite-util",
+ "bsc-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-hook"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,17 @@
+[package]
+name = "bsc-graph-store"
+version = "0.1.0"
+edition = "2021"
+description = "The graph's RECORD STORE, as a database (epic-retire-json-ledgers-for-db-and-git-drivers). One row per record, queried by id; every version ever written kept as rows and appended by TRIGGER, so no write path can skip recording history and a bad write is recoverable by moving back a version. Replaces the 27.5 MB committed JSON ledger, the 50 MB runtime blob, and the four-copy propagation between them."
+
+[dependencies]
+# The shared SQLite helpers every store in this workspace opens through (plandb/skilldb/logs/json-store),
+# so the graph store resolves its path, migrates and reads exactly as its siblings do rather than
+# inventing a fourth way to open a database.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# The same rusqlite every SQLite store here links (plandb/skilldb/compliance): `bundled` so the store
+# does not depend on a system SQLite, matching its siblings rather than introducing a second answer.
+rusqlite = { version = "0.40", features = ["bundled"] }
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
