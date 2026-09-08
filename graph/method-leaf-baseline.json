@@ -165,18 +165,25 @@
   "src-tauri--platform--fsx.rs": 6,
   "src-tauri--platform--paths.rs": 27,
   "src-tauri--platform--shell--ptybridge.rs": 6,
-  "src-tauri--project--graph-layout.rs": 4,
-  "src-tauri--project--plan-db.rs": 8,
-  "src-tauri--project--preview.rs": 2,
-  "src-tauri--project--ui-skeleton.rs": 4,
+  "src-tauri--session--studio-ws.rs": 2,
+  "src-tauri--session--librarian.rs": 2,
+  "src-tauri--session--sandbox--bridge.rs": 15,
+  "src-tauri--session--sound-designer.rs": 2,
   "src-tauri--session--architect.rs": 6,
   "src-tauri--session--studio-ws.rs": 2,
   "src-tauri--session--debug.rs": 2,
   "src-tauri--session--designer.rs": 2,
+<<<<<<< HEAD
   "src-tauri--session--sound-designer.rs": 2,
   "src-tauri--session--integrator.rs": 2,
   "src-tauri--sources--data--data-scan.rs": 15,
   "src-tauri--sources--credentials.rs": 7,
   "src-tauri--session--librarian.rs": 2,
   "src-tauri--sources--data--data-csv.rs": 12
+=======
+  "src-tauri--session--fresh-only.rs": 4,
+  "src-tauri--session--integrator.rs": 2,
+  "src-tauri--session--launch-cmd.rs": 3,
+  "src-tauri--session--launch.rs": 9
+>>>>>>> decompose-src-tauri-sources-project
 }
