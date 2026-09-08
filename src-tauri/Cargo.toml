@@ -193,6 +193,10 @@ llm = { path = "../crates/llm", package = "bsc-llm" }
 # TEACHES the `bsc graph` CLI, so its content test derives the expected verb/flag surface from
 # `bsc_graph::cli::{VERBS, IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list.
 bsc-graph = { path = "../crates/bsc-graph" }
+# `vendored::sha256_hex` — the ONE content-hash form in this workspace, for `graph_sig`. Already in this
+# crate's tree transitively (bsc-graph depends on it), so the direct edge costs nothing at build time
+# and buys not having a second spelling of "the hash of this thing" that can drift from the first.
+bsc-cli-util = { path = "../crates/bsc-cli-util" }
 # The session-memory store, read IN-PROCESS at launch like plandb and bsc-graph beside it — so
 #  needs no subprocess. Tauri-free and DuckDB-free; this edge costs nothing.
 bsc-memory = { path = "../crates/bsc-memory" }
