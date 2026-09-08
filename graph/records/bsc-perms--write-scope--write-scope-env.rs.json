@@ -1,0 +1,13 @@
+{
+  "id": "bsc-perms--write-scope--write-scope-env.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "write_scope_env",
+  "src": "crates/bsc-perms/src/write_scope/write_scope_env.rs",
+  "folder": "crates/bsc-perms/src/write_scope",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-perms--write-scope--scope-write-globs.rs"
+  ],
+  "code": "use super::*;\n\n/// Derive the write-scope env for a pane holding `cap`.\n///\n/// A pane with NO role capability gets neither variable; that is the caller's branch, not this one, and\n/// it is why this takes a `&RoleCapability` rather than an `Option`.\npub fn write_scope_env(cap: &RoleCapability) -> WriteScopeEnv {\n    let globs = scope_write_globs(cap);\n    let scope_globs = if !globs.is_empty() {\n        // Space-joined, matching `$BSC_SCOPE_GLOBS`'s own whitespace-separated shape.\n        Some(globs.join(\" \"))\n    } else if cap.code == Tier::None {\n        Some(DENY_ALL.to_string())\n    } else {\n        // `code` is only ever `none` or `write` today, so this arm is reached only by `write`. That is\n        // an ASSUMPTION about the role model, not a property of this function, and\n        // `code_is_only_ever_none_or_write` guards it: a `code: read` role introduced later would fall\n        // here and be left UNSET — allow-all — which for a read tier is exactly backwards.\n        None\n    };\n    WriteScopeEnv {\n        scope_globs,\n        // A BTreeMap, so the key order is stable rather than dependent on insertion.\n        scopes: serde_json::to_string(&session_scopes(cap)).expect(\"session scopes are plain strings\"),\n    }\n}\n"
+}

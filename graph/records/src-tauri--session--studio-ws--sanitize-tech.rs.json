@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--studio-ws--sanitize-tech.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "sanitize_tech",
+  "src": "src-tauri/src/session/studio_ws/sanitize_tech.rs",
+  "folder": "src-tauri/src/session/studio_ws",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Keep `[a-z0-9-]`, fold everything else to `-`. Never empty (an all-invalid input becomes `tech`),\n/// because a directory named \"\" would silently collapse to the parent and re-create the sharing this\n/// split exists to end.\npub(crate) fn sanitize_tech(t: &str) -> String {\n    let s: String = t\n        .to_ascii_lowercase()\n        .chars()\n        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })\n        .collect();\n    let s = s.trim_matches('-').to_string();\n    if s.is_empty() { \"tech\".to_string() } else { s }\n}\n"
+}

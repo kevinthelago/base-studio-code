@@ -7,7 +7,6 @@
   "folder": "crates/bsc-ui/src",
   "src": "crates/bsc-ui/src/lib.rs",
   "composes": [
-    "bsc-ui--sanitize-variant-name.rs",
-    "bsc-ui--validate-value.rs"
+    "bsc-ui--sanitize-variant-name.rs"
   ]
 }

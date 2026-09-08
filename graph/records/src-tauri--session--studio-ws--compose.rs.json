@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--studio-ws--compose.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "compose",
+  "src": "src-tauri/src/session/studio_ws/compose.rs",
+  "folder": "src-tauri/src/session/studio_ws",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The spec, then the session's own context under a rule.\n///\n/// The separator matters: the spec is PACKAGED and the context is per-session, so a reader (human or\n/// agent) needs to see where one ends. It also makes the file idempotent to rewrite — the whole thing\n/// is regenerated on every panel open, exactly as it was before.\npub(crate) fn compose(spec: &str, context: Option<&str>) -> String {\n    match context.map(str::trim).filter(|c| !c.is_empty()) {\n        Some(c) => format!(\"{}\\n\\n---\\n\\n{}\\n\", spec.trim_end(), c),\n        None => spec.to_string(),\n    }\n}\n"
+}

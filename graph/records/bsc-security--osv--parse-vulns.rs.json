@@ -8,6 +8,6 @@
   "src": "crates/bsc-security/src/osv/parse_vulns.rs",
   "moduleVis": "private",
   "composes": [
-    "bsc-security--types.rs"
+    "bsc-security--types--mod.rs"
   ]
 }

@@ -1,0 +1,12 @@
+{
+  "id": "bsc-rf--device--iface-up.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "iface_up",
+  "src": "crates/bsc-rf/src/device/iface_up.rs",
+  "folder": "crates/bsc-rf/src/device",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// `IFF_UP` out of the hex flags word in `/sys/class/net/<if>/flags`.\n///\n/// Pure, and separate from the read because the parse is the part that can be wrong.\npub fn iface_up(flags_hex: &str) -> Option<bool> {\n    let s = flags_hex.trim();\n    let s = s.strip_prefix(\"0x\").unwrap_or(s);\n    u32::from_str_radix(s, 16).ok().map(|f| f & 0x1 != 0)\n}\n",
+  "feature": "rf"
+}

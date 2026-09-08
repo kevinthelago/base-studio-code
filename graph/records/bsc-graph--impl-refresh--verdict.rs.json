@@ -1,0 +1,11 @@
+{
+  "id": "bsc-graph--impl-refresh--verdict.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "verdict",
+  "src": "crates/bsc-graph/src/impl_refresh/verdict.rs",
+  "folder": "crates/bsc-graph/src/impl_refresh",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Decide what a refresh does, given the record's current `code` and the file's record-shaped source.\n/// Pure: every store and filesystem effect belongs to the caller.\npub fn verdict(before: Option<&str>, code: &str) -> Verdict {\n    let Some(before) = before else { return Verdict::NotInStore };\n    if before == code {\n        return Verdict::AlreadyEqual;\n    }\n    let (had, now) = (exported_names(before), exported_names(code));\n    // Both sides must be knowable for either list to mean anything: `exported_names` returns None on a\n    // star re-export, and pairing a known set against an unknown one manufactures differences.\n    let (restored, removed) = match (&had, &now) {\n        (Some(h), Some(n)) => (\n            Some(n.difference(h).cloned().collect::<Vec<_>>()),\n            Some(h.difference(n).cloned().collect::<Vec<_>>()),\n        ),\n        _ => (None, None),\n    };\n    Verdict::Refresh(Change {\n        // UTF-16 CODE UNITS, matching the JS `.length` this report is compared against. Bytes and\n        // chars both diverge on the first emoji or em-dash in a module.\n        before_len: before.encode_utf16().count(),\n        after_len: code.encode_utf16().count(),\n        restored,\n        removed,\n    })\n}\n"
+}

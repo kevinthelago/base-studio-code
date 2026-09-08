@@ -1,0 +1,11 @@
+{
+  "id": "bsc-github--issue-provenance--triage-issue-list-args.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "triage_issue_list_args",
+  "src": "crates/bsc-github/src/issue_provenance/triage_issue_list_args.rs",
+  "folder": "crates/bsc-github/src/issue_provenance",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The `gh issue list` selector triage uses — restricted to bsc-authored issues by default.\npub fn triage_issue_list_args(restrict_to_bsc: bool) -> String {\n    if restrict_to_bsc {\n        format!(\"--state open --label {BSC_ISSUE_LABEL} --limit 100\")\n    } else {\n        \"--state open --limit 100\".to_string()\n    }\n}\n"
+}

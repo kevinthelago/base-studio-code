@@ -1,0 +1,12 @@
+{
+  "id": "bsc-rf--device--parse-phy-modes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_phy_modes",
+  "src": "crates/bsc-rf/src/device/parse_phy_modes.rs",
+  "folder": "crates/bsc-rf/src/device",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Supported interface modes out of `iw phy <phy> info`.\n///\n/// The block is introduced by `Supported interface modes:` and each mode is a ` * <name>` bullet;\n/// the list ends at the first line that is not a bullet. Pure.\npub fn parse_phy_modes(text: &str) -> Vec<String> {\n    let mut modes = Vec::new();\n    let mut inside = false;\n    for line in text.lines() {\n        let t = line.trim();\n        if t.starts_with(\"Supported interface modes\") {\n            inside = true;\n            continue;\n        }\n        if inside {\n            match t.strip_prefix(\"* \") {\n                Some(m) => modes.push(m.trim().to_string()),\n                // The block is over. Stop rather than continue, so a later `* ` bullet from a\n                // different section (there are several) cannot leak in as an interface mode.\n                None => break,\n            }\n        }\n    }\n    modes\n}\n",
+  "feature": "rf"
+}

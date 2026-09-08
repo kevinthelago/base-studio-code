@@ -8,6 +8,6 @@
   "src": "crates/bsc-security/src/osv/query_body.rs",
   "moduleVis": "private",
   "composes": [
-    "bsc-security--types.rs"
+    "bsc-security--types--mod.rs"
   ]
 }

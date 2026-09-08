@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--sandbox--provision--emit-install.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "emit_install",
+  "src": "src-tauri/src/session/sandbox/provision/emit_install.rs",
+  "folder": "src-tauri/src/session/sandbox/provision",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Emit one `sandbox-install` progress event to the frontend (phases: `start` · `log` · `done`), so\n/// the install surface shows exactly what's happening live.\npub(crate) fn emit_install(app: &tauri::AppHandle, phase: &str, line: &str) {\n    let _ = app.emit(\"sandbox-install\", serde_json::json!({ \"phase\": phase, \"line\": line }));\n}\n"
+}

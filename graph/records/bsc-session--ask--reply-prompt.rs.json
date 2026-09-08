@@ -1,0 +1,13 @@
+{
+  "id": "bsc-session--ask--reply-prompt.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "reply_prompt",
+  "src": "crates/bsc-session/src/ask/reply_prompt.rs",
+  "folder": "crates/bsc-session/src/ask",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-session--ask--reply.rs"
+  ],
+  "code": "use super::*;\n\n/// What a turn's RECIPIENT receives — the message, who sent it, and how to answer.\n///\n/// A closed loop says so, because a recipient told only the text would answer into a loop that can no\n/// longer take a turn and be refused for reasons it could not have known.\npub fn reply_prompt(\n    loop_id: i64,\n    recipient: &str,\n    speaker: &str,\n    text: &str,\n    closed: Option<&str>,\n) -> String {\n    match closed {\n        Some(why) => format!(\n            \"[loop {loop_id}, from {speaker} — now CLOSED ({why})] {text}\\n\\n\\\n             The exchange is over; nothing further is expected of you on it.\"\n        ),\n        None => format!(\n            \"[loop {loop_id}, from {speaker}] {text}\\n\\n\\\n             Answer with `bsc session reply {loop_id} \\\"<your answer>\\\"` — you are `{recipient}` in \\\n             this loop. Append {ANSWER_SIGNAL} to your final message when it is fully served.\"\n        ),\n    }\n}\n"
+}

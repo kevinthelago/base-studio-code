@@ -5,7 +5,7 @@
   "name": "subscription",
   "composes": [
     "bsc-lan-stream--crypto.rs",
-    "bsc-lan-stream--envelope.rs",
+    "bsc-lan-stream--envelope--mod.rs",
     "bsc-lan-stream--error.rs",
     "bsc-lan-stream--frame.rs",
     "bsc-lan-stream--liveness.rs",

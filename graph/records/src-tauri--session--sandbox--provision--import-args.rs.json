@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--session--sandbox--provision--import-args.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "import_args",
+  "src": "src-tauri/src/session/sandbox/provision/import_args.rs",
+  "folder": "src-tauri/src/session/sandbox/provision",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The `wsl --import <distro> <dir> <tarball> --version 2` argument vector. Pure, so it can be\n/// unit-tested without WSL present.\npub(crate) fn import_args(distro: &str, install_dir: &str, tarball: &str) -> Vec<String> {\n    vec![\n        \"--import\".into(),\n        distro.into(),\n        install_dir.into(),\n        tarball.into(),\n        \"--version\".into(),\n        \"2\".into(),\n    ]\n}\n"
+}

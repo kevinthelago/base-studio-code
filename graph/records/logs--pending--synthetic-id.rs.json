@@ -1,0 +1,11 @@
+{
+  "id": "logs--pending--synthetic-id.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "synthetic_id",
+  "src": "crates/logs/src/pending/synthetic_id.rs",
+  "folder": "crates/logs/src/pending",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// The synthetic id for a row whose emitter passed none — `<session>@<at>`.\n///\n/// Copied from the frontend reducer rather than invented: it already falls back to exactly this for\n/// an issue, and uses it unconditionally for a brief. Deriving the id FROM THE ROW is what makes an\n/// un-`--id`'d issue closable at all — the director reads the id out of this queue and passes it to\n/// `bsc-assign --issue`. The alternative, minting an id inside `bsc-issue`, was rejected: it would\n/// change an emitter every persona already calls, to produce a value the emitting session has no use\n/// for and never sees.\npub(crate) fn synthetic_id(session: &str, at: u64) -> String {\n    format!(\"{session}@{at}\")\n}\n"
+}

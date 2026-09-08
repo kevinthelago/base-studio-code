@@ -1,0 +1,11 @@
+{
+  "id": "bsc-tunnel--noise--initiator.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "initiator",
+  "src": "crates/bsc-tunnel/src/noise/initiator.rs",
+  "folder": "crates/bsc-tunnel/src/noise",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Build the initiator handshake (mobile side) from its static private key plus the\n/// responder's static public key (learned from the QR). Used by the mobile client\n/// and the crypto tests here.\n#[allow(dead_code)] // mirrors the mobile initiator; exercised by tests + #242b\npub fn initiator(static_priv: &[u8], remote_pub: &[u8]) -> Result<HandshakeState, snow::Error> {\n    Builder::new(PARAMS.parse().expect(\"valid noise params\"))\n        .local_private_key(static_priv)?\n        .remote_public_key(remote_pub)?\n        .build_initiator()\n}\n"
+}

@@ -17,8 +17,7 @@
     "rust"
   ],
   "composes": [
-    "bsc-rf--survey--mod.rs",
-    "bsc-rf--survey.rs"
+    "bsc-rf--survey--mod.rs"
   ],
   "tests": [
     {

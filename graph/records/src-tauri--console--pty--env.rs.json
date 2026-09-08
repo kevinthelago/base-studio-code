@@ -5,7 +5,6 @@
   "name": "env",
   "composes": [
     "src-tauri--console--shell-rc--mod.rs",
-    "src-tauri--platform--shell--ptybridge.rs",
     "src-tauri--platform--paths--bsc-base-dir.rs",
     "src-tauri--platform--shell--ptybridge--mod.rs",
     "src-tauri--platform--shell--ptybridge--to-bash-path.rs"

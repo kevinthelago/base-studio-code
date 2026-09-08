@@ -19,8 +19,8 @@
     "src-tauri--console--pty--launch--sandbox-emitter-rc.rs",
     "src-tauri--console--pty--launch--shell-safe.rs",
     "src-tauri--console--pty--launch--build-bash-init-line.rs",
-    "src-tauri--platform--shell--ptybridge.rs",
-    "src-tauri--platform--shell--ptybridge--to-bash-path.rs"
+    "src-tauri--platform--shell--ptybridge--to-bash-path.rs",
+    "src-tauri--platform--shell--ptybridge--mod.rs"
   ],
   "moduleAttrs": [
     "#[allow(unused_imports)]"

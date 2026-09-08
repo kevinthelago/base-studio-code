@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--fleet--protocols--fleet-protocol-md.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "fleet_protocol_md",
+  "src": "src-tauri/src/fleet/protocols/fleet_protocol_md.rs",
+  "folder": "src-tauri/src/fleet/protocols",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "/// Coordination protocol appended to every fleet worker's CLAUDE.local.md (#369) so the\n/// defer-to-director / never-ask-the-user rules are authoritative context, not just a\n/// first-message hint. Loaded at runtime via [`crate::platform::config::load_str`] (#2027 P2) — the\n/// user's `fleet/worker-protocol.md` under the config dir if present, else the embedded seed.\n/// Consumed by `worktree::write_worker_context` (the worker context), not the director —\n/// it lives here (a neutral home) rather than in `director.rs` (#1623).\npub(crate) fn fleet_protocol_md() -> String {\n    crate::platform::config::load_str(\"fleet/worker-protocol.md\")\n}\n"
+}

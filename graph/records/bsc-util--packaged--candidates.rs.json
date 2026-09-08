@@ -1,0 +1,11 @@
+{
+  "id": "bsc-util--packaged--candidates.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "candidates",
+  "src": "crates/bsc-util/src/packaged/candidates.rs",
+  "folder": "crates/bsc-util/src/packaged",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Every candidate path for one seed, named by its path RELATIVE to `src-tauri/data/`\n/// (e.g. `\"components/react-ui.json\"`).\npub fn candidates(rel: &str) -> Vec<PathBuf> {\n    data_dirs().into_iter().map(|d| d.join(rel)).collect()\n}\n"
+}

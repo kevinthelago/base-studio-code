@@ -1,0 +1,12 @@
+{
+  "id": "bsc-rf--device--monitor-from-modes.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "monitor_from_modes",
+  "src": "crates/bsc-rf/src/device/monitor_from_modes.rs",
+  "folder": "crates/bsc-rf/src/device",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Whether a phy's mode list includes monitor mode.\npub fn monitor_from_modes(modes: &[String]) -> Tristate {\n    if modes.is_empty() {\n        return Tristate::Unknown;\n    }\n    if modes.iter().any(|m| m == \"monitor\") {\n        Tristate::Yes\n    } else {\n        Tristate::No\n    }\n}\n",
+  "feature": "rf"
+}

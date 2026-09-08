@@ -1,0 +1,11 @@
+{
+  "id": "bsc-lan-stream--envelope--parse-verified.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_verified",
+  "src": "crates/bsc-lan-stream/src/envelope/parse_verified.rs",
+  "folder": "crates/bsc-lan-stream/src/envelope",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Parse the already-signature-verified region into an [`Envelope`].\npub(crate) fn parse_verified(region: &[u8]) -> Result<Envelope, WireError> {\n    let kind = Kind::from_byte(region[5])?;\n    let mut boot_id = [0u8; BOOT_ID_LEN];\n    boot_id.copy_from_slice(&region[6..6 + BOOT_ID_LEN]);\n\n    let seq_at = 6 + BOOT_ID_LEN;\n    let mut seq_bytes = [0u8; 8];\n    seq_bytes.copy_from_slice(&region[seq_at..seq_at + 8]);\n\n    let nonce_at = seq_at + 8;\n    let mut nonce = [0u8; NONCE_LEN];\n    nonce.copy_from_slice(&region[nonce_at..nonce_at + NONCE_LEN]);\n\n    Ok(Envelope {\n        kind,\n        boot_id,\n        seq: u64::from_be_bytes(seq_bytes),\n        nonce,\n        ciphertext: region[HEADER_LEN..].to_vec(),\n    })\n}\n"
+}

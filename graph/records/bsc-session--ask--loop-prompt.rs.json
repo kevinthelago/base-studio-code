@@ -1,0 +1,13 @@
+{
+  "id": "bsc-session--ask--loop-prompt.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "loop_prompt",
+  "src": "crates/bsc-session/src/ask/loop_prompt.rs",
+  "folder": "crates/bsc-session/src/ask",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-session--ask--reply.rs"
+  ],
+  "code": "use super::*;\n\n/// What the target actually receives: the request, plus how to answer it.\n///\n/// The loop id has to travel WITH the request rather than sit in a store the session would have to go\n/// looking for — the previous design put it somewhere findable and 20 asks were never found. A session\n/// that is handed the request is handed the way to reply in the same breath.\n///\n/// `reply` rather than `bsc loop say` deliberately: `say` posts a turn and stops there, while `reply`\n/// posts it AND delivers it to the other participant, which is what makes the exchange a cycle instead\n/// of two messages into a store.\npub fn loop_prompt(loop_id: i64, session_id: &str, request: &str) -> String {\n    format!(\n        \"{request}\\n\\n\\\n         [loop {loop_id}] Answer with `bsc session reply {loop_id} \\\"<your answer>\\\"` — that delivers it \\\n         back to whoever asked. If you need something clarified before you can do this, reply with the \\\n         QUESTION; you will get an answer the same way. Append {ANSWER_SIGNAL} to your final message \\\n         when the request is fully served, which closes the loop.\\n\\\n         You are `{session_id}` in this loop.\"\n    )\n}\n"
+}

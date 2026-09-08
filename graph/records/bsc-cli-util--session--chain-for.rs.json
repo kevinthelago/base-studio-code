@@ -1,0 +1,11 @@
+{
+  "id": "bsc-cli-util--session--chain-for.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "chain_for",
+  "src": "crates/bsc-cli-util/src/session/chain_for.rs",
+  "folder": "crates/bsc-cli-util/src/session",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Every `.claude/session.json` from the filesystem root down to `start`, least-specific first.\n///\n/// Root-first is the same ordering the `CLAUDE.md` chain uses, and for the same reason: the deepest\n/// file is the most specific, so it must be applied last.\npub fn chain_for(start: &Path, home: Option<&Path>) -> Vec<PathBuf> {\n    let mut out = Vec::new();\n    // The machine defaults live under HOME and are NOT an ancestor of a project hub or a worktree, so\n    // the ancestor walk below would miss them — exactly as `compose_system_inner` reads the global\n    // CLAUDE.md separately, and for the same reason.\n    if let Some(h) = home {\n        let p = h.join(SESSION_DIR).join(SESSION_FILE);\n        if p.is_file() {\n            out.push(p);\n        }\n    }\n    let mut dirs: Vec<&Path> = start.ancestors().collect();\n    dirs.reverse();\n    for d in dirs {\n        let p = d.join(SESSION_DIR).join(SESSION_FILE);\n        if p.is_file() && !out.contains(&p) {\n            out.push(p);\n        }\n    }\n    out\n}\n"
+}

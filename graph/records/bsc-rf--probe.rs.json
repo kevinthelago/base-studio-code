@@ -17,7 +17,11 @@
     "rust"
   ],
   "composes": [
-    "bsc-rf--device.rs"
+    "bsc-rf--device--mod.rs",
+    "bsc-rf--device--classify-spectral.rs",
+    "bsc-rf--device--iface-up.rs",
+    "bsc-rf--device--monitor-from-modes.rs",
+    "bsc-rf--device--parse-phy-modes.rs"
   ],
   "tests": [
     {
