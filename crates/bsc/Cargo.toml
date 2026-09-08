@@ -32,6 +32,7 @@ bsc-fin = { path = "../bsc-fin" }
 bsc-rf = { path = "../bsc-rf" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-memory = { path = "../bsc-memory" }
+bsc-imprint = { path = "../bsc-imprint" }
 bsc-bluetooth = { path = "../bsc-bluetooth" }
 bsc-secret = { path = "../bsc-secret" }
 bsc-mem = { path = "../bsc-mem" }

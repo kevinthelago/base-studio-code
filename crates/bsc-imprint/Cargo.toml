@@ -1,0 +1,28 @@
+[package]
+name = "bsc-imprint"
+version = "0.1.0"
+edition = "2021"
+build = "../graph-materialize/build.rs"
+description = "bsc imprint — the WRITTEN half of knowing who the user is. `bsc ear` learns the maintainer's voice; this asks the same question of text, with no microphone and no camera: does this read like the person the app knows? A named feature vector over how someone writes — casing, apostrophes, habitual misspellings, emoticon vocabulary — accumulated from a corpus and reported PER DIMENSION. It decides nothing: no verdict, no score, and no record of any comparison, because a mechanism that accumulates evidence against a person is the one thing the maintainer's stated values forbid."
+
+[build-dependencies]
+# build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.
+serde_json = "1"
+
+[lib]
+name = "bsc_imprint"
+# THE SHARED CRATE ROOT — this crate owns no source file. See crates/graph-materialize/crate_root.rs.
+path = "../graph-materialize/crate_root.rs"
+
+[dependencies]
+# The shared verbatim-JSON-per-id store (imprint.db), as bsc-memory/bsc-persona ride it.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold: CmdDoc + help.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The one ~/.base-studio-code resolver, so this surface agrees with every other store on where it lives.
+bsc-util = { path = "../bsc-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"
