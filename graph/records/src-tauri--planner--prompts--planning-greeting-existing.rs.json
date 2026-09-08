@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--planner--prompts--planning-greeting-existing.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "planning_greeting_existing",
+  "src": "src-tauri/src/planner/prompts/planning_greeting_existing.rs",
+  "folder": "src-tauri/src/planner/prompts",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--prompts--md.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn planning_greeting_existing() -> String { md(\"planner/greeting.existing.md\") }\n"
+}

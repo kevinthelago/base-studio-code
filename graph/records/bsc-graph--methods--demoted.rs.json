@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--methods--demoted.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "demoted",
+  "src": "crates/bsc-graph/src/methods/demoted.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--methods--cohesion-reason.rs",
+    "bsc-graph--methods--is-candidate-record.rs"
+  ],
+  "code": "use super::*;\n\n/// Records that HOLD more than one extractable leaf but are DEMOTED as cohesive (leave whole) — id +\n/// the reason — so `bsc graph methods` can show what it declined to flag and why, and the inflated raw\n/// count is visible beside the genuine one.\npub fn demoted(impls: &[Value]) -> Vec<(String, String)> {\n    let mut out: Vec<(String, String)> = impls\n        .iter()\n        .filter(|r| is_candidate_record(r))\n        .filter_map(|r| {\n            let id = r.get(\"id\").and_then(Value::as_str)?.to_string();\n            let code = r.get(\"code\").and_then(Value::as_str).unwrap_or(\"\");\n            let tech = r.get(\"tech\").and_then(Value::as_str).unwrap_or(\"\");\n            let names = extractable_leaves(code, tech);\n            if names.len() <= 1 {\n                return None;\n            }\n            cohesion_reason(code, tech, &names).map(|why| (id, why))\n        })\n        .collect();\n    out.sort_by(|a, b| a.0.cmp(&b.0));\n    out\n}\n"
+}

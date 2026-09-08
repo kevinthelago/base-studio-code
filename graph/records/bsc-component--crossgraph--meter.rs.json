@@ -1,0 +1,13 @@
+{
+  "id": "bsc-component--crossgraph--meter.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "meter",
+  "src": "crates/bsc-component/src/crossgraph/meter.rs",
+  "folder": "crates/bsc-component/src/crossgraph",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-component--crossgraph--refs-in-source.rs"
+  ],
+  "code": "use super::*;\n\n/// The meter over both stores: every cross-pillar reference held by a component record (`srcText`) or an\n/// algorithm record (`code`), sorted by (from_id, spec) so two runs over an unchanged library produce\n/// byte-identical output and a diff means something moved.\n///\n/// `components` and `implementations` are passed in rather than read here, so the derivation is pure and\n/// testable without either store on disk.\npub fn meter(components: &[Value], implementations: &[Value]) -> Vec<CrossRef> {\n    let mut out = Vec::new();\n    for (records, pillar, content) in\n        [(components, \"ui\", \"srcText\"), (implementations, \"algo\", \"code\")]\n    {\n        for rec in records {\n            let Some(id) = rec.get(\"id\").and_then(Value::as_str) else { continue };\n            let Some(src) = rec.get(content).and_then(Value::as_str) else { continue };\n            out.extend(refs_in_source(id, pillar, src));\n        }\n    }\n    out.sort_by(|a, b| (&a.from_id, &a.spec).cmp(&(&b.from_id, &b.spec)));\n    out\n}\n"
+}

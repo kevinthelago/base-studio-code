@@ -1,0 +1,13 @@
+{
+  "id": "bsc-component--crossgraph--parse-library-spec.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "parse_library_spec",
+  "src": "crates/bsc-component/src/crossgraph/parse_library_spec.rs",
+  "folder": "crates/bsc-component/src/crossgraph",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-component--crossgraph--pillar-for-segment.rs"
+  ],
+  "code": "use super::*;\n\n/// Split a `@bsc/<segment>/<name>` specifier into its pillar + name, or `None` when it is not one.\n///\n/// A name containing `/` is kept whole: the grammar's `<name>` is the in-kit id and the resolver takes\n/// it verbatim, so splitting further would invent structure the URN does not have.\npub fn parse_library_spec(spec: &str) -> Option<(&'static str, String)> {\n    let rest = spec.strip_prefix(\"@bsc/\")?;\n    let (segment, name) = rest.split_once('/')?;\n    if name.is_empty() {\n        return None;\n    }\n    Some((pillar_for_segment(segment)?, name.to_string()))\n}\n"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--planner--prompts--planning-new-intro.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "planning_new_intro",
+  "src": "src-tauri/src/planner/prompts/planning_new_intro.rs",
+  "folder": "src-tauri/src/planner/prompts",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--prompts--md.rs"
+  ],
+  "code": "use super::*;\n\npub(crate) fn planning_new_intro() -> String { md(\"planner/intro.new.md\") }\n"
+}

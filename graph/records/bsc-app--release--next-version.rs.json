@@ -1,0 +1,13 @@
+{
+  "id": "bsc-app--release--next-version.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "next_version",
+  "src": "crates/bsc-app/src/release/next_version.rs",
+  "folder": "crates/bsc-app/src/release",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-app--release--finish.rs"
+  ],
+  "code": "use super::*;\n\n/// The next version, given the current one.\npub fn next_version(current: &str, bump: &Bump) -> Result<String, String> {\n    if let Bump::Exact(v) = bump {\n        return finish(current, v.clone());\n    }\n    let parts: Vec<u64> = current\n        .split('.')\n        .map(|p| p.parse::<u64>().map_err(|_| format!(\"current version '{current}' is not x.y.z\")))\n        .collect::<Result<_, _>>()?;\n    if parts.len() != 3 {\n        return Err(format!(\"current version '{current}' is not x.y.z\"));\n    }\n    let idx = match bump {\n        Bump::Major => 0,\n        Bump::Minor => 1,\n        Bump::Patch => 2,\n        Bump::Exact(_) => unreachable!(\"handled above\"),\n    };\n    let mut p = parts;\n    p[idx] += 1;\n    // Everything to the RIGHT of the bumped position resets.\n    for slot in p.iter_mut().skip(idx + 1) {\n        *slot = 0;\n    }\n    finish(current, format!(\"{}.{}.{}\", p[0], p[1], p[2]))\n}\n"
+}

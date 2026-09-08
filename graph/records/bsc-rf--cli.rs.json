@@ -19,6 +19,9 @@
   "composes": [
     "bsc-rf--detect.rs",
     "bsc-rf--device.rs",
+    "bsc-rf--survey--band-label.rs",
+    "bsc-rf--survey--channel-for.rs",
+    "bsc-rf--survey--mod.rs",
     "bsc-rf--survey.rs"
   ],
   "tests": [
