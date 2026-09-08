@@ -19,6 +19,12 @@ export default defineConfig({
   resolve: { alias: {
     "@": fileURLToPath(new URL("./src", import.meta.url)),
     "@data": fileURLToPath(new URL("./src-tauri/data", import.meta.url)),
+    // `@scripts/…` → `scripts/…`, and DELIBERATELY NOT IN `vite.config.ts`. Build tooling is not app
+    // source: a test may reach it (several read the committed graph store through
+    // `scripts/lib/recordStore.mjs`, and a test carried on a RECORD is emitted to a path whose depth it
+    // cannot know, so a relative import is not available to it), while a bundled module that tried
+    // would fail to resolve at build time — which is the boundary, enforced rather than asked for.
+    "@scripts": fileURLToPath(new URL("./scripts", import.meta.url)),
   } },
   test: {
     // ── WORKER FAN-OUT (#vitest-worker-fan-out-is-capped-like-cargos) ──

@@ -61,10 +61,33 @@ export function withoutLineComments(text: string): string {
 }
 
 /**
- * The units to scan: every source FILE under the code roots, plus every RECORD's code.
+ * Every string a record document carries, as its own unit.
  *
- * `data/` is excluded because `src-tauri/data/knowledge/algorithms.json` IS a store, not a reader of
- * one, and `target/`/`node_modules`/`.bsc-records` are build output.
+ * A WALK rather than a field list, because the field that got past this guard was not `code`: three
+ * store readers were carried as `tests[].src` — one on an algorithm record, one on an EDGE in the
+ * packaged seed, one on a component record — and the split found them by breaking them, not by being
+ * scanned. A list of fields to look at is a list that will be missing the next one.
+ */
+function recordStrings(doc: unknown, name: string, out: { name: string; text: string }[]): void {
+  if (typeof doc === "string") {
+    if (doc.includes("\n")) out.push({ name, text: doc });
+  } else if (Array.isArray(doc)) {
+    doc.forEach((v, i) => recordStrings(v, `${name}[${i}]`, out));
+  } else if (doc && typeof doc === "object") {
+    const id = (doc as { id?: string }).id;
+    for (const [k, v] of Object.entries(doc)) {
+      recordStrings(v, id ? `${name}:${id}.${k}` : `${name}.${k}`, out);
+    }
+  }
+}
+
+/**
+ * The units to scan: every source FILE under the code roots, plus every string in every RECORD —
+ * the committed store, the PACKAGED SEED (impls and edges alike), and the component seeds.
+ *
+ * `data/` is skipped by the file walk because the stores under it are stores, not readers; their
+ * CONTENT is scanned as records instead. `target/`/`node_modules` are build output, and `.bsc-records`
+ * is the emitted form of records already scanned at their source, where it cannot go stale.
  */
 function sourceUnits(): { name: string; text: string }[] {
   const out: { name: string; text: string }[] = [];
@@ -87,9 +110,20 @@ function sourceUnits(): { name: string; text: string }[] {
   walk(join(REPO, "src"), [".ts", ".tsx"]);
   walk(join(REPO, "crates"), [".rs"]);
   walk(join(REPO, "src-tauri"), [".rs"]);
-  for (const rec of loadStore(join(REPO, "graph/algorithms.json")).implementations as { id: string; code?: string }[]) {
-    if (rec.code) out.push({ name: `record:${rec.id}`, text: rec.code });
-  }
+  recordStrings(loadStore(join(REPO, "graph/algorithms.json")), "record", out);
+  recordStrings(
+    JSON.parse(readFileSync(join(REPO, "src-tauri/data/knowledge/algorithms.json"), "utf8")),
+    "seed",
+    out,
+  );
+  const components = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      const p = join(dir, e);
+      if (statSync(p).isDirectory()) components(p);
+      else if (e.endsWith(".json")) recordStrings(JSON.parse(readFileSync(p, "utf8")), "component", out);
+    }
+  };
+  components(join(REPO, "src-tauri/data/components"));
   return out;
 }
 
@@ -141,6 +175,9 @@ export function directReads(units: { name: string; text: string }[]): string[] {
 const LOADERS = [
   "scripts/lib/recordStore.mjs",
   "crates/graph-materialize/emit.rs",
+  // The `bsc graph store` verb's own help prose and the `repo_store` module that IS the merge.
+  "record:bsc-graph--cli.rs",
+  "record:bsc-graph--repo-store--mod.rs",
   // THIS FILE. The scanner has to hold both shapes it recognises as literal fixtures, or the bite test
   // below could only ever be written somewhere the scanner does not look — which is to say, nowhere.
   "scripts/graph-store-readers.test.ts",
@@ -154,8 +191,11 @@ describe("the committed graph store has exactly one reader: the merged loader", 
     // read) would report an empty offender list, which is indistinguishable from a pass. The floors are
     // deliberately far below today's population — this detects a COLLAPSE, not a single unit going
     // missing.
-    expect(units.filter((u) => !u.name.startsWith("record:")).length, "source files").toBeGreaterThan(250);
-    expect(units.filter((u) => u.name.startsWith("record:")).length, "records").toBeGreaterThan(1000);
+    const kind = (p: string) => units.filter((u) => u.name.startsWith(p)).length;
+    expect(kind("scripts") + kind("src") + kind("crates"), "source files").toBeGreaterThan(250);
+    expect(kind("record"), "committed-store record strings").toBeGreaterThan(1000);
+    expect(kind("seed"), "packaged-seed record strings").toBeGreaterThan(500);
+    expect(kind("component"), "component record strings").toBeGreaterThan(200);
   });
 
   it("finds no reader that parses graph/algorithms.json itself", () => {
