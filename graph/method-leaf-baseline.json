@@ -48,7 +48,7 @@
   "bsc-record--lib.rs": 14,
   "bsc-record--record-source.rs": 22,
   "bsc-rf--device.rs": 4,
-  "bsc-rf--survey.rs": 3,
+  "bsc-rf--survey.rs": 6,
   "bsc-runtime--lib.rs": 2,
   "bsc-secret--lib.rs": 2,
   "bsc-security--mcp.rs": 2,
