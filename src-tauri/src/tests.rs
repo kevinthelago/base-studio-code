@@ -1153,7 +1153,7 @@
     /// SEE `release.rs`, so it reported green over a crate it had silently stopped covering, and the
     /// "done" was recorded against a check that was no longer looking.
     const KNOWN_SEED_EMBEDS: &[(&str, &str)] = &[(
-        "crates/bsc-sound/src/release.rs",
+        "crates/bsc-sound/src/release/mod.rs",
         "#bsc-sound-still-embeds-the-signal-seed-as-a-record — the fix is a graph-store write \
          (`bsc graph impl set` + `promote` on `bsc-sound--release.rs`), out of scope here",
     )];
