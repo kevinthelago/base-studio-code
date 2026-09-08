@@ -82,3 +82,16 @@
 
 /* The domain filter's `.algo-domain-filter` rule was removed with the dropdown itself (#4128) — the rail
    is organized by the folder tree alone, matching the Components rail, and search is its one filter. */
+
+/* The hydrate fallback, said out loud (#the-algorithms-page-says-which-store-it-is-showing).
+   A failed read keeps the packaged seed, which renders a graph that looks correct and is a third the
+   size — so the page must not present it as the store. Amber, not red: nothing is broken, the view is
+   incomplete, and it heals itself on the next successful poll. */
+.algorithms-seed-notice {
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--warn-fg, #8a6100);
+  background: var(--warn-bg, #fff6e0);
+  border-bottom: 1px solid var(--warn-border, #f0d9a0);
+}
