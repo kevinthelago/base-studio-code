@@ -59,14 +59,11 @@
   "bsc-rf--survey.rs": 3,
   "bsc-runtime--lib.rs": 2,
   "bsc-secret--lib.rs": 2,
-  "bsc-security--finding.rs": 3,
   "bsc-security--mcp.rs": 2,
   "bsc-security--osv.rs": 4,
   "bsc-security--types.rs": 2,
-  "bsc-self--lib.rs": 5,
   "bsc-session--ask.rs": 4,
   "bsc-session--lib.rs": 13,
-  "bsc-sound--release.rs": 10,
   "bsc-sqlite-util--lib.rs": 5,
   "src-tauri--sources--data--data-csv.rs": 12,
   "src-tauri--sources--data--data-scan.rs": 15,
@@ -89,7 +86,12 @@
   "bsc-widget--lib.rs": 5,
   "channel--mock.rs": 2,
   "compliance--engine.rs": 2,
+<<<<<<< HEAD
   "compliance--mcp.rs": 5,
+=======
+  "data--connector.rs": 4,
+  "data--ddl.rs": 7,
+>>>>>>> decompose-small-crates
   "data--entity.rs": 4,
   "errordb--lib.rs": 7,
   "src-tauri--session--launch-cmd.rs": 3,
