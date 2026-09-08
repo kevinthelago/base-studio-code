@@ -226,6 +226,31 @@ export function lastRepoCommit(id, commits, recordAt, limit = 40) {
   return null;
 }
 
+/**
+ * Whether the verb's own report says it actually checked the store — the COVERAGE guard.
+ *
+ * `checked` is `tracked_ids(repo).len() + edge_ids.len()`, so `checked - checkedEdges` must equal the
+ * number of implementations in the merged committed store. Anything less is a check that verified a
+ * fraction of the seam and reported `ok: true` about the rest.
+ *
+ * THIS IS NOT HYPOTHETICAL, and it passed a full gate. `target/debug/bsc` was a ZERO-BYTE file (what a
+ * binary IS for the seconds it is being linked), so `pickUsable` correctly rejected it and fell through
+ * to the STALE staged `~/.base-studio-code/bin/bsc` — which predates the per-record split and reads only
+ * the store FILE. That file now holds no implementations, so the stale binary found `tracked: 0`,
+ * checked the 8 edges, and reported the repo store current. Rebuilt, the same check covered 1,734 and
+ * found real drift.
+ *
+ * A version handshake would NOT have caught it: the binary answered `version` perfectly well: it was
+ * current for its own build and simply older than the layout. What separates the two is how much it
+ * says it looked at.
+ */
+export function coverageShortfall(report, storeRecords) {
+  if (!report || typeof report.checked !== "number") return null;
+  const impls = report.checked - (report.checkedEdges ?? 0);
+  if (impls >= storeRecords) return null;
+  return { checked: impls, expected: storeRecords };
+}
+
 /** The repo-side attribution + drift shape for each drifted id, as printable lines. */
 export function diagnose(ids, io, opts = {}) {
   if (ids.length === 0) return "";
@@ -313,7 +338,19 @@ function commitsTouchingRecordFile(root, id) {
   try {
     const out = execFileSync(
       "git",
-      ["log", "--format=%h%x1f%an%x1f%ad%x1f%s", "--date=short", "--", `graph/records/${id}.json`],
+      [
+        "log",
+        "--format=%h%x1f%an%x1f%ad%x1f%s",
+        "--date=short",
+        // MODIFICATIONS ONLY. Every record file was ADDED by the one commit that split the store, so
+        // without this every record blames that commit and the answer is useless — worse than the walk
+        // it replaces, which at least found the change. A record MODIFIED since the split has a real
+        // answer here; one that has not been touched falls through to the monolith walk below, which
+        // is where its history actually lives.
+        "--diff-filter=M",
+        "--",
+        `graph/records/${id}.json`,
+      ],
       { cwd: root, encoding: "utf8", timeout: 20_000 },
     );
     return out
@@ -367,11 +404,30 @@ function recordAtCommit(root, sha, id) {
   } catch {
     // not split out at that commit — fall through to the whole store
   }
+  return pick(monolithAtCommit(root, sha, show), id);
+}
+
+/**
+ * The whole committed store as it stood at `sha`, MEMOIZED by sha for the life of the process.
+ *
+ * The walk is per-ID but the blob is not, and that asymmetry is the leg's known pathology: at 25 ids
+ * over a 40-commit window it was 1,000 `git show`s of a 27 MB file (request #253's 32-minute spin).
+ * One parse per commit serves every id — 40 instead of 1,000 — and the window is bounded, so the cache
+ * is bounded with it.
+ *
+ * `null` is CACHED too, so a commit from before the file existed is not re-fetched once per id.
+ */
+const MONOLITH_AT = new Map();
+function monolithAtCommit(root, sha, show) {
+  if (MONOLITH_AT.has(sha)) return MONOLITH_AT.get(sha);
+  let doc;
   try {
-    return pick(JSON.parse(show("graph/algorithms.json", 64 * 1024 * 1024)), id);
+    doc = JSON.parse(show("graph/algorithms.json", 64 * 1024 * 1024));
   } catch {
-    return null;
+    doc = null;
   }
+  MONOLITH_AT.set(sha, doc);
+  return doc;
 }
 
 /** The `id` record out of a parsed store document. */
@@ -461,6 +517,37 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
   if (r.status === 0) {
     const out = String(r.stdout ?? "");
     process.stdout.write(out.trim() ? `${out.trim()}\n` : "graph: repo store is current\n");
+    // A CLEAN VERDICT IS ONLY WORTH WHAT IT COVERED. See `coverageShortfall` — a stale `bsc` reading
+    // only the store file reports the seam current after checking 8 of 1,734.
+    const parse = (text) => {
+      try {
+        return JSON.parse(text.trim().split("\n").pop() ?? "");
+      } catch {
+        return null;
+      }
+    };
+    const storeRecords = () => {
+      try {
+        return (loadStore(join(ROOT, "graph", "algorithms.json")).implementations ?? []).length;
+      } catch {
+        return 0;
+      }
+    };
+    const expected = storeRecords();
+    const short = expected > 0 ? coverageShortfall(parse(out), expected) : null;
+    if (short) {
+      process.stdout.write(
+        `\ngraph: REFUSING a clean verdict — \`bsc graph promote --check\` covered ${short.checked} ` +
+          `implementation(s) of the ${short.expected} this checkout's committed store holds.\n` +
+          `  The binary at ${usable.path} disagrees with this script about what the store IS. The usual ` +
+          `cause is a stale one: records live one-per-file under \`graph/records/\` and a binary from ` +
+          `before that reads only \`graph/algorithms.json\`, which now holds none of them.\n` +
+          `  Rebuild it: cargo build -p bsc --bin bsc\n`,
+      );
+      // Exit 4 — distinct from 1 (real drift) and 3 (timeout), because this is neither: the seam was
+      // NOT verified, and a check that could not check must not read as a pass.
+      process.exit(4);
+    }
     process.exit(0);
   }
   // A genuine drift: non-zero exit carrying the JSON line the underlying verb emitted.
