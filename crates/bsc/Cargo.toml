@@ -32,6 +32,7 @@ bsc-fin = { path = "../bsc-fin" }
 bsc-rf = { path = "../bsc-rf" }
 bsc-persona = { path = "../bsc-persona" }
 bsc-memory = { path = "../bsc-memory" }
+bsc-bluetooth = { path = "../bsc-bluetooth" }
 bsc-secret = { path = "../bsc-secret" }
 bsc-mem = { path = "../bsc-mem" }
 # The WORK loop (#the-gate-does-not-record-its-own-evidence-so-a-session-transcribes-it) — the seam

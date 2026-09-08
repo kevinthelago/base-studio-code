@@ -802,6 +802,7 @@ dependencies = [
  "atlasdb",
  "bsc-app",
  "bsc-blueprint",
+ "bsc-bluetooth",
  "bsc-cad",
  "bsc-capability",
  "bsc-cli-util",
@@ -905,6 +906,15 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "serde",
  "serde_json",
 ]
 
