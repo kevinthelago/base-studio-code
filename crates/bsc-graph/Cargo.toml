@@ -42,14 +42,19 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tree-sitter = "0.26"
 tree-sitter-typescript = "0.23"
 tree-sitter-rust = "0.24"
-
-[dev-dependencies]
-# The MATERIALIZER, as a real package rather than an `include!` of its source
-# (`graph-materialize-becomes-a-real-build-dependency`). `migrate-crate` names what it writes with
-# `extract::module_id`, and the build SELECTS on `plan::expected_id`; the two must agree exactly, and
-# `materialize_plan_tests` is where that is proved over every real path in the tree. Depending on the
-# crate means those tests drive the SHIPPED symbols — a restatement could drift, and the drift would be
-# invisible precisely where it matters.
+# The MATERIALIZER, promoted from a dev-dependency to a real one because `repo_store` now READS the
+# committed store through it (`graph_materialize::load_merged_value`). The store is being taken apart
+# into `graph/records/<id>.json` (`epic-retire-json-ledgers-for-db-and-git-drivers`), and "which
+# records exist" must have exactly ONE definition: the build's. A second merge implemented here could
+# disagree with the compiler about what the store holds, which is the silent-divergence failure the
+# split exists to remove. It stays LEAN — `serde_json` and nothing else — so this edge costs nothing.
+#
+# IT WAS A DEV-DEPENDENCY FIRST, for a separate reason that still holds
+# (`graph-materialize-becomes-a-real-build-dependency`): `migrate-crate` names what it writes with
+# `extract::module_id` and the build SELECTS on `plan::expected_id`, the two must agree exactly, and
+# `materialize_plan_tests` proves that over every real path in the tree. Depending on the crate means
+# those tests drive the SHIPPED symbols — a restatement could drift, and the drift would be invisible
+# precisely where it matters.
 graph-materialize = { path = "../graph-materialize" }
 
 [build-dependencies]
