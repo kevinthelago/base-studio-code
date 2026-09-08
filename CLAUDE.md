@@ -242,7 +242,7 @@ there is nothing running to do the work. Build failures are different — they h
 The **gate is deliberately not wired to this**: it already fails loudly in your own shell, and ten
 worktree agents gating in parallel would pin every node red and destroy the signal.
 
-### What every build COST — `bsc mem`
+### What every build COST — `bsc cost`
 
 The same wrapper also records what a run cost, and that half **is** wired into the gate, because
 recording a cost cannot pin anything red. Every gate leg — `cargo clippy`, `cargo nextest`, `tsc`,
@@ -251,11 +251,11 @@ clock and the peak RSS of the whole process tree while filing **no fault**. It a
 rather than piping, so cargo's live progress and colours survive being measured.
 
 ```bash
-bsc mem build                              # what builds cost: n · median · worst · latest
-bsc mem build --source gate:clippy         # ONE surface's history
-bsc mem compare --at $(date +%s%3N)        # did my change help? (take the boundary BEFORE you start)
-bsc mem app                                # the running app's JS heap / DOM nodes / listeners
-bsc mem growth --session <id>              # a live session's RSS slope — the leak question
+bsc cost build                             # what builds cost: n · median · worst · latest
+bsc cost build --source gate:clippy        # ONE surface's history
+bsc cost compare --at $(date +%s%3N)       # did my change help? (take the boundary BEFORE you start)
+bsc cost app                               # the running app's JS heap / DOM nodes / listeners
+bsc cost growth --session <id>             # a live session's RSS slope — the leak question
 ```
 
 Measurements are per-leg and keyed on a stable id, so a **scoped** run and a **full** run of the same
@@ -265,7 +265,7 @@ above, so the numbers are comparable to the ones already written down here rathe
 incompatible metric.
 
 **Every hand-measured figure in this file is now reproducible rather than remembered.** They were
-taken once, by someone, and have no history behind them; `bsc mem build --source gate:<leg>` is the
+taken once, by someone, and have no history behind them; `bsc cost build --source gate:<leg>` is the
 trend. An absent measurement reads as ABSENT, never as zero — a build recorded at 0 ms would poison
 every median it entered.
 
