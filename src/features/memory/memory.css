@@ -67,6 +67,21 @@
 }
 .mem-horizon { color: var(--accent, #58a6ff); border-color: currentColor; }
 .mem-tag { color: var(--fg-dim); }
+.mem-kind {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  text-transform: uppercase;
+}
+/* The kind tints its own badge and the row's left edge. Redundant with the badge TEXT on purpose —
+   colour reinforces, it never carries. */
+.mem-row[data-kind="lesson"]    { border-left-color: var(--warning, #d29922); }
+.mem-row[data-kind="highlight"] { border-left-color: var(--accent, #58a6ff); }
+.mem-row[data-kind="record"]    { border-left-color: var(--success, #3fb950); }
+.mem-row[data-kind="ambient"]   { border-left-color: var(--fg-dim); }
+.mem-row[data-kind="note"]      { border-left-style: dashed; }
 
 .mem-links { margin-top: 2px; }
 .mem-chip {
@@ -84,6 +99,12 @@
   color: var(--fg-dim);
   padding: 1px 5px;
 }
+.mem-chip-kind {
+  color: var(--fg-dim);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .mem-chip-ref { padding: 1px 6px 1px 0; }
 /* The kind tints the chip's border only — the relationship and the target are both already text. */
 .mem-chip[data-kind="record"] { border-color: color-mix(in srgb, var(--success, #3fb950) 45%, var(--border)); }
@@ -93,3 +114,67 @@
 
 .mem-cmd { display: inline-block; font-size: 11px; opacity: 0.85; }
 .mem-foot { color: var(--fg-dim); font-size: 11px; margin: 4px 0 0; }
+
+/* ── The graph page ──────────────────────────────────────────────────────────
+   Node geometry is owned by `layoutGraph` in lib/memory (NODE_W / NODE_H) and applied inline, so the
+   edges the layout computed and the boxes the browser paints cannot disagree. Nothing here sets a
+   node's size. */
+
+.mem-graph-toolbar { gap: 10px; }
+.mem-graph-stat { color: var(--fg-dim); font-size: 11px; white-space: nowrap; }
+
+.mem-edge {
+  stroke: var(--border);
+  stroke-width: 1.5;
+  fill: none;
+}
+.mem-edge-rel {
+  fill: var(--fg-dim);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+}
+
+.mem-node {
+  background: var(--bg-raised, var(--bg));
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  padding: 8px 10px;
+  text-align: left;
+}
+.mem-node:hover { border-color: var(--accent, #58a6ff); }
+.mem-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.mem-node-kind {
+  color: var(--fg-dim);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mem-node-label {
+  font-size: 11.5px;
+  line-height: 1.35;
+  overflow: hidden;
+}
+/* Said in words, not only shown as a shade: an edgeless memory is a state to act on. */
+.mem-node-orphan { color: var(--warning, #d29922); font-size: 9.5px; }
+
+.mem-node[data-kind="lesson"]    { border-left-color: var(--warning, #d29922); }
+.mem-node[data-kind="highlight"] { border-left-color: var(--accent, #58a6ff); }
+.mem-node[data-kind="record"]    { border-left-color: var(--success, #3fb950); }
+.mem-node[data-kind="ambient"]   { border-left-color: var(--fg-dim); }
+.mem-node[data-kind="note"]      { border-left-style: dashed; }
+/* A STUB is the thing a memory is ABOUT, not a memory — flatter, so the eye reads the two apart. */
+.mem-node[data-stub="true"] {
+  background: transparent;
+  border-style: dashed;
+  border-left-width: 1px;
+}
+.mem-node[data-orphan="true"] { border-color: var(--warning, #d29922); }
+

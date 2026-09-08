@@ -45,7 +45,7 @@
   "bsc-lan-sense--rf.rs": 4,
   "bsc-lan-stream--envelope.rs": 3,
   "bsc-mem--app.rs": 2,
-  "bsc-memory--lib.rs": 6,
+  "bsc-memory--lib.rs": 9,
   "bsc-news--engine.rs": 8,
   "bsc-news--outlets.rs": 2,
   "bsc-news--signals--corroborate.rs": 5,
