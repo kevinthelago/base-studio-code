@@ -193,6 +193,10 @@ llm = { path = "../crates/llm", package = "bsc-llm" }
 # TEACHES the `bsc graph` CLI, so its content test derives the expected verb/flag surface from
 # `bsc_graph::cli::{VERBS, IMPL_SUBVERBS, FLAGS}` instead of a second hand-written list.
 bsc-graph = { path = "../crates/bsc-graph" }
+# The session-memory store, read IN-PROCESS at launch like plandb and bsc-graph beside it — so
+#  needs no subprocess. Tauri-free and DuckDB-free; this edge costs nothing.
+bsc-memory = { path = "../crates/bsc-memory" }
+bsc-json-store = { path = "../crates/bsc-json-store" }
 # The COMPONENT library, so a feature's `requires` resolves in EITHER graph (#requires-names-components).
 # DuckDB-free, like bsc-graph beside it — this edge costs nothing at build time.
 bsc-component = { path = "../crates/bsc-component" }
