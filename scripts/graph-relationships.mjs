@@ -7,9 +7,10 @@
 // resolves to an ANCESTOR is skipped (that is child→parent, a trivial inverse of the parent's own edge).
 // External-crate/std refs resolve to nothing. Validated: 21/21 observability parent→child, 93/94 hand-set.
 import fs from 'node:fs';
+import { loadStore } from './lib/recordStore.mjs';
 const STORE = process.env.GRAPH_STORE || 'graph/algorithms.json';
 const BASELINE = 'scripts/graph-relationships.baseline.json';
-const store = JSON.parse(fs.readFileSync(STORE, 'utf8'));
+const store = loadStore(STORE); // merges graph/records/*.json (retire-json migration)
 const recs = store.implementations;
 const by = new Map(recs.map(r => [r.id, r]));
 const ID = /^[A-Za-z_]\w*$/;
