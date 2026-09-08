@@ -1011,6 +1011,27 @@ Two rules the implementation enforces rather than trusts:
 Because `render` is the single source for both the PR body and the changelog entry, neither is
 maintained separately from the work — which is why `CHANGELOG.md` kept drifting behind `develop`.
 
+### Capturing what a session learns — `bsc memory`
+
+The change record says what a slice DID; `bsc memory` catches what a session LEARNED but has no plan
+item for — a finding, a decision and its reason, a lesson, a trap, a parked thread you had to leave
+behind. Those used to evaporate when the terminal closed. Capture is the habit this surface exists to
+make cheap, so **write the thought down when you have it**, not later when the reasoning is gone.
+
+```bash
+bsc memory add "<the thought>" --tag <a,b> [--link <ref>,<ref>]   # capture — tags retrieve, links relate
+bsc memory list --tag <t>                                         # newest-first; also --status / --link / --json
+bsc memory link <id> <ref> [<ref>...]                             # connect it to a related memory, a graph
+                                                                  # record id, or a plan ref — untyped on purpose
+bsc memory neighbors <id>                                         # traverse: what it links to, and what links back
+bsc memory done <id>                                              # once it is acted on or folded elsewhere
+```
+
+It is a USER store (`memory.db`), local like everything else, in the always-allowed `bsc` tier — so any
+session reaches it without a grant. Prefer it over a scratch note or a comment for anything a future
+session would want: the point of the `--link` edges is that memory is a graph you traverse, not a flat
+pile you scroll. (Distinct from `bsc cost`, the resource-cost surface that used to be `bsc mem`.)
+
 ### GitHub stays silent
 
 Reads are fine (`gh issue list`, `gh api` GET) — they are how the eventual sync learns about drift.
