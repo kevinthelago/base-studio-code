@@ -3,7 +3,7 @@ name = "bsc-memory"
 version = "0.1.0"
 edition = "2021"
 build = "../graph-materialize/build.rs"
-description = "bsc memory — the session-memory surface (#memory): capture the findings, decisions, lessons and parked threads a session generates but has no plan item for, so they don't evaporate when the terminal closes. A thin, tagged, linkable log over the shared bsc-json-store (memory.db), the same store bsc-persona and bsc-blueprint use. Entries carry free-form `links` — to each other, to a graph record id, to a plan ref — so memory is traversable, not just a flat pile."
+description = "bsc memory — the session-memory surface (#memory): capture the findings, decisions, lessons and parked threads a session generates but has no plan item for, so they don't evaporate when the terminal closes. A thin, tagged, TYPED-EDGE log over the shared bsc-json-store (memory.db). Entries carry a horizon (now vs future) and typed links — {ref, rel} to another memory, a graph record id, a symbol anchor, or a plan ref — so memory is a graph you traverse, told apart from a flat pile of notes."
 
 [build-dependencies]
 # build.rs parses the committed graph store directly — see crates/graph-materialize/build.rs.

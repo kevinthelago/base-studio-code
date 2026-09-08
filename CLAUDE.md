@@ -1014,23 +1014,33 @@ maintained separately from the work — which is why `CHANGELOG.md` kept driftin
 ### Capturing what a session learns — `bsc memory`
 
 The change record says what a slice DID; `bsc memory` catches what a session LEARNED but has no plan
-item for — a finding, a decision and its reason, a lesson, a trap, a parked thread you had to leave
-behind. Those used to evaporate when the terminal closed. Capture is the habit this surface exists to
-make cheap, so **write the thought down when you have it**, not later when the reasoning is gone.
+item for — a finding, a decision and its reason, a lesson, a trap, a parked thread. Those used to
+evaporate when the terminal closed. Capture is the habit this surface exists to make cheap, so **write
+the thought down when you have it**, not later when the reasoning is gone.
+
+It is a TYPED GRAPH, not a flat pile. Two facets carry the weight:
+
+- **`horizon`** — `now` (applies to what is ALREADY IMPLEMENTED: a fact, a lesson, an applicable fix)
+  vs `future` (a forward-looking idea or hope, NOT yet real). Default is `now`; `--future` opts in.
+  This keeps "what we KNOW about a record" from muddling with "what we DREAM for it".
+- **typed links** `{ref, rel}` — an edge to another memory, a graph record id, a symbol anchor
+  (`bsc-disk--sweep.rs#DEFAULT_DAYS`), or a plan ref. `rel` is a free string so the vocabulary grows
+  from use: `about` · `because` · `supersedes` · `contradicts` · `lesson-of` · `blocks` · `todo-for`
+  (`related` when unstated).
 
 ```bash
-bsc memory add "<the thought>" --tag <a,b> [--link <ref>,<ref>]   # capture — tags retrieve, links relate
-bsc memory list --tag <t>                                         # newest-first; also --status / --link / --json
-bsc memory link <id> <ref> [<ref>...]                             # connect it to a related memory, a graph
-                                                                  # record id, or a plan ref — untyped on purpose
-bsc memory neighbors <id>                                         # traverse: what it links to, and what links back
-bsc memory done <id>                                              # once it is acted on or folded elsewhere
+bsc memory add "<thought>" --tag <a,b> [--link rel:ref,rel:ref] [--future]   # capture
+bsc memory list --tag <t>                          # newest-first; also --status/--rel/--horizon/--json
+bsc memory link <id> <rel> <ref> [<ref>...]        # add a typed edge to related refs
+bsc memory neighbors <id>                          # traverse: edges out, and the ones pointing back
+bsc memory horizon <id> now|future                 # reclassify
+bsc memory done <id>                               # once acted on or folded elsewhere
 ```
 
-It is a USER store (`memory.db`), local like everything else, in the always-allowed `bsc` tier — so any
-session reaches it without a grant. Prefer it over a scratch note or a comment for anything a future
-session would want: the point of the `--link` edges is that memory is a graph you traverse, not a flat
-pile you scroll. (Distinct from `bsc cost`, the resource-cost surface that used to be `bsc mem`.)
+It is a USER store (`memory.db`), local, in the always-allowed `bsc` tier — any session reaches it
+without a grant. The records are now method-first, so a memory's edges point AT that id space; the
+`neighbors` view is why memory is a graph you traverse rather than a pile you scroll. (Distinct from
+`bsc cost`, the resource-cost surface that used to be `bsc mem`.)
 
 ### GitHub stays silent
 
