@@ -43,6 +43,11 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
+// The MERGED store loader (`epic-retire-json-ledgers-for-db-and-git-drivers`). Aliased because this
+// module exports a `loadStore` of its own with different semantics — that one takes a store path or
+// falls back to the per-user RUNTIME store; this one merges a store file with the per-record files
+// beside it.
+import { loadStore as loadMergedStore } from "./lib/recordStore.mjs";
 
 /**
  * The store is read ONLY by the CLI block below, never at import time: these helpers are pure so a test
@@ -87,10 +92,46 @@ export function loadGateSources(root) {
       return []; // absent is legitimate: a repo may have migrated nothing yet
     }
   };
-  return mergeById(
-    read(join(root, "src-tauri", "data", "knowledge", "algorithms.json")),
-    read(join(root, "graph", "algorithms.json")),
-  );
+  const readMerged = (p) => {
+    try {
+      return loadMergedStore(p).implementations ?? [];
+    } catch {
+      return []; // same rule: absent is legitimate
+    }
+  };
+  // The seed is ONE file by design; the repo store is a file PLUS `graph/records/<id>.json` per
+  // record, so it goes through the merged loader. Reading it with `read` saw an empty
+  // `implementations` array the day the records split out — and this function SWALLOWS errors and
+  // returns `[]`, so the sweep would have reported "0 nodes, 0 failures" and exited green.
+  const seedPath = join(root, "src-tauri", "data", "knowledge", "algorithms.json");
+  const storePath = join(root, "graph", "algorithms.json");
+  const seed = read(seedPath);
+  const store = readMerged(storePath);
+  // A POPULATION FLOOR PER SOURCE, because both readers above swallow their errors and return `[]` —
+  // right for "this repo has migrated nothing yet", catastrophic for "the read stopped working".
+  //
+  // PER SOURCE, not on the merge, and that distinction is the whole value: MEASURED when the repo
+  // store split into per-record files and this function still read only the store FILE, the repo half
+  // fell to ZERO while the packaged seed kept the merged total near 700 — so a floor on the total saw
+  // nothing, and `graph-cross-kit` fell from 39 cases to 5 and exited 0. A check that silently covers
+  // an eighth of what its reader assumes is this repo's signature failure.
+  //
+  // Each floor is far below its real population (~670 seed records, 1,726 committed) on purpose: this
+  // detects a COLLAPSE, not a record going missing. Only a source whose file EXISTS is floored — a
+  // checkout that has migrated nothing is legitimate — and `BSC_GRAPH_STORE` returns early above, so a
+  // test pointing at a small temp store never reaches here.
+  const floor = (label, path, impls, min) => {
+    if (existsSync(path) && impls.length < min) {
+      throw new Error(
+        `the gate's ${label} collapsed to ${impls.length} implementation(s) (floor ${min}) — ${path} ` +
+          `exists, so this is a READ that stopped working, not an empty repo. Every check fed by it ` +
+          `would pass over nothing and report green.`,
+      );
+    }
+  };
+  floor("packaged seed", seedPath, seed, 300);
+  floor("committed repo store", storePath, store, 500);
+  return mergeById(seed, store);
 }
 
 /** The line a crate adds to its manifest when it owns no build script of its own. */

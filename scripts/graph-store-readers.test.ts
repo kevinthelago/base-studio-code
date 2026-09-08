@@ -169,6 +169,30 @@ describe("the committed graph store has exactly one reader: the merged loader", 
     ).toEqual([]);
   });
 
+  it("the store FILE alone carries no records, which is what makes an unmigrated reader LOUD", () => {
+    // THE STRUCTURAL HALF of this invariant, and the more reliable half.
+    //
+    // The scanner above catches the shapes it knows. What catches the rest is that after the split
+    // there is nothing left in the store file to see: a reader that parses it alone gets ZERO records,
+    // not a plausible-looking subset. Every such reader in this repo carries a population floor, so
+    // zero fails loudly — and the two that were still missed when the split ran both failed exactly
+    // that way within minutes ("src-tauri owns only 0 records", cross-kit falling 39 cases to 5).
+    //
+    // The mixed state — some records in the file, some in `graph/records/` — is the ONLY silent one,
+    // and this assertion is what says the repo is not in it.
+    const raw = JSON.parse(readFileSync(join(REPO, "graph/algorithms.json"), "utf8")) as {
+      implementations?: unknown[];
+    };
+    const merged = loadStore(join(REPO, "graph/algorithms.json")) as { implementations: unknown[] };
+    expect(merged.implementations.length, "the merged store").toBeGreaterThan(1000);
+    expect(
+      raw.implementations ?? [],
+      "records live one-per-file under `graph/records/`; the store file keeps `version`, `note` and " +
+        "`edges`. A record left in the file is the one state where an unmigrated reader sees a " +
+        "plausible subset instead of nothing — `bsc graph store split --apply` finishes the move.",
+    ).toEqual([]);
+  });
+
   it("still recognises a direct read when it sees one", () => {
     // Guard the guard: the assertion above passes for a scanner that matches nothing at all, which is
     // the one failure a boundary test cannot afford. These are the two shapes actually found in the
