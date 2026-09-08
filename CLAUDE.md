@@ -242,7 +242,7 @@ there is nothing running to do the work. Build failures are different — they h
 The **gate is deliberately not wired to this**: it already fails loudly in your own shell, and ten
 worktree agents gating in parallel would pin every node red and destroy the signal.
 
-### What every build COST — `bsc mem`
+### What every build COST — `bsc cost`
 
 The same wrapper also records what a run cost, and that half **is** wired into the gate, because
 recording a cost cannot pin anything red. Every gate leg — `cargo clippy`, `cargo nextest`, `tsc`,
@@ -251,11 +251,11 @@ clock and the peak RSS of the whole process tree while filing **no fault**. It a
 rather than piping, so cargo's live progress and colours survive being measured.
 
 ```bash
-bsc mem build                              # what builds cost: n · median · worst · latest
-bsc mem build --source gate:clippy         # ONE surface's history
-bsc mem compare --at $(date +%s%3N)        # did my change help? (take the boundary BEFORE you start)
-bsc mem app                                # the running app's JS heap / DOM nodes / listeners
-bsc mem growth --session <id>              # a live session's RSS slope — the leak question
+bsc cost build                             # what builds cost: n · median · worst · latest
+bsc cost build --source gate:clippy        # ONE surface's history
+bsc cost compare --at $(date +%s%3N)       # did my change help? (take the boundary BEFORE you start)
+bsc cost app                               # the running app's JS heap / DOM nodes / listeners
+bsc cost growth --session <id>             # a live session's RSS slope — the leak question
 ```
 
 Measurements are per-leg and keyed on a stable id, so a **scoped** run and a **full** run of the same
@@ -265,7 +265,7 @@ above, so the numbers are comparable to the ones already written down here rathe
 incompatible metric.
 
 **Every hand-measured figure in this file is now reproducible rather than remembered.** They were
-taken once, by someone, and have no history behind them; `bsc mem build --source gate:<leg>` is the
+taken once, by someone, and have no history behind them; `bsc cost build --source gate:<leg>` is the
 trend. An absent measurement reads as ABSENT, never as zero — a build recorded at 0 ms would poison
 every median it entered.
 
@@ -1010,6 +1010,37 @@ Two rules the implementation enforces rather than trusts:
 
 Because `render` is the single source for both the PR body and the changelog entry, neither is
 maintained separately from the work — which is why `CHANGELOG.md` kept drifting behind `develop`.
+
+### Capturing what a session learns — `bsc memory`
+
+The change record says what a slice DID; `bsc memory` catches what a session LEARNED but has no plan
+item for — a finding, a decision and its reason, a lesson, a trap, a parked thread. Those used to
+evaporate when the terminal closed. Capture is the habit this surface exists to make cheap, so **write
+the thought down when you have it**, not later when the reasoning is gone.
+
+It is a TYPED GRAPH, not a flat pile. Two facets carry the weight:
+
+- **`horizon`** — `now` (applies to what is ALREADY IMPLEMENTED: a fact, a lesson, an applicable fix)
+  vs `future` (a forward-looking idea or hope, NOT yet real). Default is `now`; `--future` opts in.
+  This keeps "what we KNOW about a record" from muddling with "what we DREAM for it".
+- **typed links** `{ref, rel}` — an edge to another memory, a graph record id, a symbol anchor
+  (`bsc-disk--sweep.rs#DEFAULT_DAYS`), or a plan ref. `rel` is a free string so the vocabulary grows
+  from use: `about` · `because` · `supersedes` · `contradicts` · `lesson-of` · `blocks` · `todo-for`
+  (`related` when unstated).
+
+```bash
+bsc memory add "<thought>" --tag <a,b> [--link rel:ref,rel:ref] [--future]   # capture
+bsc memory list --tag <t>                          # newest-first; also --status/--rel/--horizon/--json
+bsc memory link <id> <rel> <ref> [<ref>...]        # add a typed edge to related refs
+bsc memory neighbors <id>                          # traverse: edges out, and the ones pointing back
+bsc memory horizon <id> now|future                 # reclassify
+bsc memory done <id>                               # once acted on or folded elsewhere
+```
+
+It is a USER store (`memory.db`), local, in the always-allowed `bsc` tier — any session reaches it
+without a grant. The records are now method-first, so a memory's edges point AT that id space; the
+`neighbors` view is why memory is a graph you traverse rather than a pile you scroll. (Distinct from
+`bsc cost`, the resource-cost surface that used to be `bsc mem`.)
 
 ### GitHub stays silent
 
