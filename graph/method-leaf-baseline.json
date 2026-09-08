@@ -61,6 +61,7 @@
   "bsc-studio--lib.rs": 15,
   "bsc-tunnel--noise.rs": 3,
   "bsc-ui--lib.rs": 20,
+  "bsc-ui--validate-value.rs": 2,
   "bsc-util--deny.rs": 7,
   "bsc-util--divergence.rs": 3,
   "bsc-util--feature-rule.rs": 3,
