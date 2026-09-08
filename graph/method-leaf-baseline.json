@@ -140,6 +140,7 @@
   "skilldb--lib.rs": 7,
   "src-tauri--app--ack.rs": 2,
   "src-tauri--app--recovery.rs": 2,
+<<<<<<< HEAD
   "src-tauri--app--single-instance.rs": 2,
   "src-tauri--session--sound-designer.rs": 2,
   "src-tauri--extensions--mcp.rs": 9,
@@ -147,23 +148,33 @@
   "src-tauri--extensions--skills.rs": 2,
   "src-tauri--sources--data--data-scan.rs": 15,
   "src-tauri--sources--data--data-csv.rs": 12,
+=======
+  "src-tauri--session--sandbox--bridge.rs": 15,
+  "src-tauri--console--pty--launch.rs": 4,
+  "src-tauri--session--librarian.rs": 2,
+  "src-tauri--extensions--skill-resolution.rs": 2,
+  "src-tauri--session--launch.rs": 9,
+  "src-tauri--fleet--commons.rs": 7,
+  "src-tauri--fleet--inspect.rs": 7,
+>>>>>>> decompose-src-tauri-mobile-platform
   "src-tauri--fleet--protocols.rs": 2,
   "src-tauri--sources--credentials.rs": 7,
   "src-tauri--session--librarian.rs": 2,
   "src-tauri--session--studio-ws.rs": 2,
   "src-tauri--fleet--worktree-reconcile.rs": 2,
-  "src-tauri--mobile--fcm.rs": 8,
+  "src-tauri--sources--data--data-csv.rs": 12,
   "src-tauri--mobile--tunnel--commands.rs": 9,
-  "src-tauri--mobile--tunnel--state.rs": 2,
+  "src-tauri--session--launch-cmd.rs": 3,
   "src-tauri--observability--attest.rs": 2,
-  "src-tauri--observability--tokens--cost.rs": 3,
-  "src-tauri--observability--tokens--messages.rs": 3,
+  "src-tauri--session--studio-ws.rs": 2,
+  "src-tauri--session--sound-designer.rs": 2,
   "src-tauri--planner--directives.rs": 5,
   "src-tauri--planner--prompts.rs": 13,
   "src-tauri--session--sandbox--bridge.rs": 15,
   "src-tauri--platform--docstore.rs": 2,
-  "src-tauri--platform--fsx.rs": 6,
+  "src-tauri--sources--credentials.rs": 7,
   "src-tauri--platform--paths.rs": 27,
+<<<<<<< HEAD
   "src-tauri--platform--shell--ptybridge.rs": 6,
 <<<<<<< HEAD
   "src-tauri--session--studio-ws.rs": 2,
@@ -183,6 +194,9 @@
   "src-tauri--sources--data--data-csv.rs": 12
 =======
 =======
+=======
+  "src-tauri--sources--data--data-scan.rs": 15,
+>>>>>>> decompose-src-tauri-mobile-platform
   "src-tauri--project--graph-layout.rs": 4,
   "src-tauri--project--plan-db.rs": 8,
   "src-tauri--project--preview.rs": 2,
@@ -193,6 +207,7 @@
   "src-tauri--session--designer.rs": 2,
 >>>>>>> decompose-src-tauri-fleet
   "src-tauri--session--fresh-only.rs": 4,
+<<<<<<< HEAD
   "src-tauri--session--integrator.rs": 2,
   "src-tauri--session--launch-cmd.rs": 3,
   "src-tauri--session--launch.rs": 9
@@ -200,4 +215,7 @@
 >>>>>>> decompose-src-tauri-sources-project
 =======
 >>>>>>> decompose-src-tauri-fleet
+=======
+  "src-tauri--session--integrator.rs": 2
+>>>>>>> decompose-src-tauri-mobile-platform
 }
