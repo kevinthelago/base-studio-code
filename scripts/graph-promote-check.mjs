@@ -23,7 +23,7 @@
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { homedir } from "node:os";
 import { candidatePaths, pickUsable } from "./lib/bscBinary.mjs";
 import { loadStore } from "./lib/recordStore.mjs";
@@ -542,7 +542,16 @@ if (process.argv[1]?.endsWith("graph-promote-check.mjs")) {
           `  The binary at ${usable.path} disagrees with this script about what the store IS. The usual ` +
           `cause is a stale one: records live one-per-file under \`graph/records/\` and a binary from ` +
           `before that reads only \`graph/algorithms.json\`, which now holds none of them.\n` +
-          `  Rebuild it: cargo build -p bsc --bin bsc\n`,
+          // NAME THE RIGHT REMEDY FOR THE PATH IT ACTUALLY USED. These are different commands, and a
+          // reader told to rebuild `target/debug/bsc` when the binary in play is the SHARED STAGED one
+          // will rebuild, see no change, and conclude the guard is broken. `pickUsable` falls through
+          // to the staged copy whenever this tree's own binary is missing or zero-byte — which is what
+          // a binary IS while it is being linked, and is how this leg came to run against a stale
+          // `bsc` without anyone noticing.
+          (usable.path.includes(`${sep}.base-studio-code${sep}bin${sep}`)
+            ? `  That is the SHARED STAGED binary, which every session on this box uses. Refresh it: npm run build:plan\n` +
+              `  (this tree's own target/debug/bsc was missing or zero-byte, so resolution fell through to it)\n`
+            : `  Rebuild it: cargo build -p bsc --bin bsc\n`),
       );
       // Exit 4 — distinct from 1 (real drift) and 3 (timeout), because this is neither: the seam was
       // NOT verified, and a check that could not check must not read as a pass.
