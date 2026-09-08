@@ -1,0 +1,16 @@
+{
+  "id": "bsc-rf--survey--band-label.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "band_label",
+  "src": "crates/bsc-rf/src/survey/band_label.rs",
+  "folder": "crates/bsc-rf/src/survey",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-rf--survey--channel-for.rs",
+    "bsc-rf--survey--ble-channel-for.rs",
+    "bsc-rf--survey--is-ble-advertising.rs"
+  ],
+  "code": "use super::*;\n\n/// The fullest single-token label for a centre frequency across every band this surface now knows —\n/// the 802.11 channel AND/OR the BLE channel, since 2.4 GHz carries both: `ch6`, `ch1·BLE4`,\n/// `BLE37·adv`, or a raw `2402MHz` when it lands on no grid we can name.\npub fn band_label(freq_mhz: u32) -> String {\n    match (channel_for(freq_mhz), ble_channel_for(freq_mhz)) {\n        (Some(w), Some(b)) => format!(\"ch{w}·BLE{b}\"),\n        (Some(w), None) => format!(\"ch{w}\"),\n        (None, Some(b)) if is_ble_advertising(freq_mhz) => format!(\"BLE{b}·adv\"),\n        (None, Some(b)) => format!(\"BLE{b}\"),\n        (None, None) => format!(\"{freq_mhz}MHz\"),\n    }\n}\n",
+  "feature": "rf"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "bsc-graph--methods--is-candidate-record.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "is_candidate_record",
+  "src": "crates/bsc-graph/src/methods/is_candidate_record.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--methods--worklist.rs"
+  ],
+  "code": "use super::*;\n\n/// Should this record be considered at all? Algorithm role only (test/doc/primitive are never targets),\n/// and never a `--mod.rs` dir-module parent (those deliberately keep the module's stateful glue).\npub(crate) fn is_candidate_record(rec: &Value) -> bool {\n    if rec.get(\"role\").and_then(Value::as_str) != Some(\"algorithm\") {\n        return false;\n    }\n    let id = rec.get(\"id\").and_then(Value::as_str).unwrap_or(\"\");\n    // A `--mod.rs` dir-module parent deliberately keeps the module's stateful glue.\n    if id.ends_with(\"--mod.rs\") {\n        return false;\n    }\n    // A CLI dispatcher is a cohesive command surface, not a decomposition target (Decision 3): a match\n    // over a verb enum plus the helpers that shape its arguments and render its output is ONE thing,\n    // however many pure formatters it holds. Excluded by id so the worklist is not dominated by them.\n    if id.ends_with(\"--cli.rs\") || id.ends_with(\"--nouns.rs\") {\n        return false;\n    }\n    true\n}\n"
+}

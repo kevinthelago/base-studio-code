@@ -1,0 +1,11 @@
+{
+  "id": "bsc-app--release--finish.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "finish",
+  "src": "crates/bsc-app/src/release/finish.rs",
+  "folder": "crates/bsc-app/src/release",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "pub(crate) fn finish(current: &str, next: String) -> Result<String, String> {\n    if next == current {\n        return Err(format!(\"next version equals current ({current}).\"));\n    }\n    Ok(next)\n}\n"
+}

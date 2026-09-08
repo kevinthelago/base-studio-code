@@ -1,0 +1,11 @@
+{
+  "id": "src-tauri--planner--prompts--md.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "md",
+  "src": "src-tauri/src/planner/prompts/md.rs",
+  "folder": "src-tauri/src/planner/prompts",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "// The planner prose blocks below are runtime-loaded (#2027 P2) via `config::load_str` — the user's\n// copy under ~/.base-studio-code/config/planner/ if present, else the embedded seed — so a prompt\n// edit takes effect on next launch with no rebuild, and each file is part of the exportable config\n// bundle (P3). One thin `md()` helper centralizes the config-dir paths.\npub(crate) fn md(rel: &str) -> String {\n    crate::platform::config::load_str(rel)\n}\n"
+}

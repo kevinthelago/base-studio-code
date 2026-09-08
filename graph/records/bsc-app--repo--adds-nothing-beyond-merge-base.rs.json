@@ -1,0 +1,11 @@
+{
+  "id": "bsc-app--repo--adds-nothing-beyond-merge-base.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "adds_nothing_beyond_merge_base",
+  "src": "crates/bsc-app/src/repo/adds_nothing_beyond_merge_base.rs",
+  "folder": "crates/bsc-app/src/repo",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// Does `git_ref` add any content beyond where it diverged from `other`?\n///\n/// Asked of git rather than inferred from the commit graph: \"every ahead commit is a merge\" says\n/// those commits carry no content of their OWN, but a merge can still resolve to a tree the merge\n/// base did not have (a conflict resolved by hand, an `--ours`). Reconciling on the weaker signal\n/// alone would merge over that resolution and lose it silently.\n///\n/// AGAINST THE MERGE BASE, not against `other`'s current tree. Comparing the two refs answers \"are\n/// these identical right now\", which stops being true the moment `other` moves ahead — after any\n/// integration, i.e. before every real promotion. This asks only what `git_ref` contributed, so it\n/// holds however far develop has travelled since.\npub fn adds_nothing_beyond_merge_base(root: &Path, git_ref: &str, other: &str) -> bool {\n    let Ok(base) = git(root, &[\"merge-base\", git_ref, other]) else { return false };\n    git_ok(root, &[\"diff\", \"--quiet\", &base, git_ref])\n}\n"
+}

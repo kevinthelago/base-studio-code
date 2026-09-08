@@ -1,0 +1,14 @@
+{
+  "id": "bsc-graph--methods--worklist.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "worklist",
+  "src": "crates/bsc-graph/src/methods/worklist.rs",
+  "folder": "crates/bsc-graph/src/methods",
+  "moduleVis": "private",
+  "composes": [
+    "bsc-graph--methods--cohesion-reason.rs",
+    "bsc-graph--methods--is-candidate-record.rs"
+  ],
+  "code": "use super::*;\n\n/// Every candidate record that holds MORE THAN ONE extractable pure leaf — the decomposition worklist —\n/// ranked most-leaves-first, ties broken by id for determinism. A record with exactly one leaf is either\n/// already single-method or a cohesive module whose one pure helper is not worth a split, so it is not a\n/// \"multi-method\" finding.\npub fn worklist(impls: &[Value]) -> Vec<RecordLeaves> {\n    let mut out: Vec<RecordLeaves> = impls\n        .iter()\n        .filter(|r| is_candidate_record(r))\n        .filter_map(|r| {\n            let id = r.get(\"id\").and_then(Value::as_str)?.to_string();\n            let code = r.get(\"code\").and_then(Value::as_str).unwrap_or(\"\");\n            let tech = r.get(\"tech\").and_then(Value::as_str).unwrap_or(\"\");\n            let names = extractable_leaves(code, tech);\n            if names.len() <= 1 {\n                return None;\n            }\n            // DEMOTE cohesive modules — the worklist is GENUINE independent-leaf collections only, so a\n            // decomposition pass is never aimed at a module Decision 3 says to leave whole.\n            if cohesion_reason(code, tech, &names).is_some() {\n                return None;\n            }\n            Some(RecordLeaves { id, names })\n        })\n        .collect();\n    out.sort_by(|a, b| b.names.len().cmp(&a.names.len()).then_with(|| a.id.cmp(&b.id)));\n    out\n}\n"
+}

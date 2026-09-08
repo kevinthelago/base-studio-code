@@ -1,0 +1,13 @@
+{
+  "id": "src-tauri--planner--prompts--github-useful-commands.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "github_useful_commands",
+  "src": "src-tauri/src/planner/prompts/github_useful_commands.rs",
+  "folder": "src-tauri/src/planner/prompts",
+  "moduleVis": "private",
+  "composes": [
+    "src-tauri--planner--prompts--md.rs"
+  ],
+  "code": "use super::*;\n\n/// The `## Useful gh commands` read-only cheat-sheet appended to `github_context.md` (`setup_workspaces`).\npub(crate) fn github_useful_commands() -> String { md(\"planner/github-commands.md\") }\n"
+}

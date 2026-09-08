@@ -1,0 +1,13 @@
+{
+  "id": "bsc--hook--perm-log-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "perm_log_line",
+  "src": "crates/bsc/src/hook/perm_log_line.rs",
+  "folder": "crates/bsc/src/hook",
+  "moduleVis": "private",
+  "composes": [
+    "bsc--hook--clip.rs"
+  ],
+  "code": "use super::*;\n\n/// Format one `perm.log` row (`ts·pane·gate·verdict·target·reason` + `\\n`). Pure — every free field is\n/// stripped of tabs/newlines and capped so a single row can never break the TSV.\npub(crate) fn perm_log_line(ts: u128, pane: &str, gate: &str, verdict: &str, cmd: &str, reason: &str) -> String {\n    format!(\"{ts}\\t{pane}\\t{}\\t{}\\t{}\\t{}\\n\", clip(gate), clip(verdict), clip(cmd), clip(reason))\n}\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bsc-imagine--store--image-path.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "image_path",
+  "src": "crates/bsc-imagine/src/store/image_path.rs",
+  "folder": "crates/bsc-imagine/src/store",
+  "moduleVis": "private",
+  "composes": [],
+  "code": "use super::*;\n\n/// The image file for an entry id.\npub fn image_path(dir: &Path, id: &str) -> PathBuf {\n    dir.join(format!(\"{id}.png\"))\n}\n"
+}

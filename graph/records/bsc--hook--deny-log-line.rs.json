@@ -1,0 +1,13 @@
+{
+  "id": "bsc--hook--deny-log-line.rs",
+  "tech": "rust",
+  "role": "algorithm",
+  "name": "deny_log_line",
+  "src": "crates/bsc/src/hook/deny_log_line.rs",
+  "folder": "crates/bsc/src/hook",
+  "moduleVis": "private",
+  "composes": [
+    "bsc--hook--perm-log-line.rs"
+  ],
+  "code": "use super::*;\n\n/// The `deny`-gate row (`gate=deny`, `verdict=block`) — the bash-deny block's shape (unchanged).\npub(crate) fn deny_log_line(ts: u128, pane: &str, cmd: &str, reason: &str) -> String {\n    perm_log_line(ts, pane, \"deny\", \"block\", cmd, reason)\n}\n"
+}
