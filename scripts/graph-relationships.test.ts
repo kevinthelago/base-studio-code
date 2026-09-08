@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { derive } from './graph-relationships.mjs';
+// The MERGED store loader (`epic-retire-json-ledgers-for-db-and-git-drivers`) — the committed store is
+// a file PLUS one `graph/records/<id>.json` per split-out record. Reading the file alone would shrink
+// the population this recognizer is proved over without failing: the `parents.length > 0` floor below
+// would still pass on whatever observability records happened to remain.
+import { loadStore } from './lib/recordStore.mjs';
 
 // The recognizer must reproduce the observability parent->child edges set during decomposition:
 // a --mod.rs parent re-exports its leaves (`pub(crate) use <child>::<fn>;`), which IS a relationship.
 // This fails against a resolver that ignores relative (self/bare) uses — the bug found while building it.
 describe('graph relationship recognizer', () => {
-  const recs = JSON.parse(readFileSync('graph/algorithms.json','utf8')).implementations;
+  const recs = loadStore('graph/algorithms.json').implementations;
   const by = new Map(recs.map((r: any)=>[r.id,r]));
   it('reproduces every hand-set observability parent→child composes edge from code', () => {
     const parents = recs.filter((r: any)=> r.id.endsWith('--mod.rs') && r.id.includes('observability') && (r.composes||[]).length);
